@@ -68,6 +68,8 @@ func RegisterPhase4Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	// --- Knowledge tools (tasks 4.09-4.10) ---
 	registry.RegisterHandler("rag.search", RAGSearchHandler(deps))
 	registry.RegisterHandler("external.search", ExternalSearchHandler(deps))
+	// §121 spec corpus — privileged, staff-only (agent.spec_search node).
+	registry.RegisterHandler("spec.search", SpecSearchHandler(deps))
 
 	// --- Intelligence tools (ADR-076 Amendment 2, on-demand source/record
 	// refresh and content regeneration).

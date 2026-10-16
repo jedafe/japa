@@ -3186,6 +3186,15 @@ type RagIndexFailure struct {
 	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
 }
 
+type RagSpecSource struct {
+	ID         pgtype.UUID        `json:"id"`
+	Path       string             `json:"path"`
+	Title      string             `json:"title"`
+	FileSha256 string             `json:"file_sha256"`
+	ChunkCount int32              `json:"chunk_count"`
+	IndexedAt  pgtype.Timestamptz `json:"indexed_at"`
+}
+
 type Reaction struct {
 	EntityType  string             `json:"entity_type"`
 	EntityID    pgtype.UUID        `json:"entity_id"`

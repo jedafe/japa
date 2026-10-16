@@ -4,6 +4,7 @@
 // Routes (Section 69, ADR-069):
 //
 //	POST   /api/v1/admin/rag/reindex            — queue full corpus re-index
+//	POST   /api/v1/admin/rag/reindex-specs      — enqueue JEOS spec corpus reindex (§121)
 //	GET    /api/v1/admin/rag/status             — index stats (total chunks, last indexed)
 //	POST   /api/v1/admin/rag/retry-failures     — re-enqueue failed index operations
 //	DELETE /api/v1/admin/rag/entity/:type/:id   — purge embeddings for an entity
@@ -18,6 +19,7 @@ package rag
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -111,6 +113,38 @@ func (h *Handlers) HandleReindex(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.QueueReindex(r.Context()); err != nil {
 		slog.Error("rag: reindex failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reindex_failed", "Failed to queue re-index")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
+		"data": map[string]any{
+			"status": "queued",
+		},
+	})
+}
+
+// HandleReindexSpecs handles POST /api/v1/admin/rag/reindex-specs — enqueue
+// the §121 spec corpus reindex task. Gated by ai.rag.reindex permission
+// (checked by RBAC middleware at the route registration site).
+func (h *Handlers) HandleReindexSpecs(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
+		return
+	}
+
+	if err := h.service.QueueSpecReindex(r.Context(), ""); err != nil {
+		if errors.Is(err, ErrSpecCorpusDisabled) {
+			errpkg.WriteError(w, http.StatusForbidden, "feature_disabled", "Spec corpus is disabled (feature flag rag.spec_corpus)")
+			return
+		}
+
+		slog.Error("rag: reindex-specs failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reindex_failed", "Failed to queue spec corpus re-index")
 
 		return
 	}

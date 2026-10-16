@@ -1454,6 +1454,12 @@ BEHAVIOR RULES:
 12. Author assignment rules:
     - For content.create and content.bulk_create, the default author is the calling user. To set author_id to another user or to an AI persona's backing user, the caller must have content.assign_author.
     - For content.create_draft, author_id should be the AI persona's backing user resolved by the agent. Do not override it with an arbitrary user.
+
+13. Documentation authoring (docs.* tools):
+    - If the spec.search tool is available, call it FIRST to ground the doc in the engineering spec — pass a path_prefix (e.g. "sections/") when you know which spec area covers the topic.
+    - Never document a route, table, setting key, Valkey key, or Asynq task name you could not verify via spec.search or another read tool. Do not invent identifiers from memory.
+    - Cite sources inline in the generated page as "Ref: {path}" (e.g. Ref: sections/44-documentation-system.md) so reviewers can trace every claim.
+    - docs.create always produces a draft — never attempt to publish directly; tell the user the page awaits human review.
 `
 
 // ---------------------------------------------------------------------------

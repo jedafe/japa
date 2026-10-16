@@ -70,3 +70,88 @@ func ChunkText(text string, maxTokens, overlapTokens int) []string {
 
 	return chunks
 }
+
+// ChunkSpecDoc splits markdown spec text on heading boundaries (H1–H4) and
+// packs consecutive sections into chunks of at most maxTokens. A section
+// larger than maxTokens falls back to ChunkText's overlapping word windows
+// so no section is silently truncated. Used by the §121 spec corpus indexer —
+// heading-aligned chunks keep each retrieval result self-contained (a section
+// heading + its body) rather than cutting mid-argument.
+//
+// Ref: japaconnect-engineering/sections/121-engineering-spec-corpus.md
+func ChunkSpecDoc(text string, maxTokens int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	var sections []string
+	var current strings.Builder
+
+	flush := func() {
+		if s := strings.TrimSpace(current.String()); s != "" {
+			sections = append(sections, s)
+		}
+
+		current.Reset()
+	}
+
+	for line := range strings.Lines(text) {
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, "#") {
+			marker := strings.TrimRight(trimmed, " \t\r\n")
+			if h, _, ok := strings.Cut(marker, " "); ok && len(h) <= 4 && strings.Trim(h, "#") == "" {
+				// Heading line (all '#' chars, ≤4) → start a new section.
+				flush()
+			}
+		}
+
+		current.WriteString(line)
+	}
+
+	flush()
+
+	// Approximate tokens: words / 1.3 — same convention as ChunkText.
+	approxTokens := func(s string) int {
+		return int(float64(len(strings.Fields(s))) * 1.3)
+	}
+
+	var chunks []string
+	var packed strings.Builder
+	packedTokens := 0
+
+	for _, sec := range sections {
+		secTokens := approxTokens(sec)
+
+		if secTokens > maxTokens {
+			// Oversized section: emit whatever is packed, then word-window it.
+			if s := strings.TrimSpace(packed.String()); s != "" {
+				chunks = append(chunks, s)
+				packed.Reset()
+				packedTokens = 0
+			}
+
+			chunks = append(chunks, ChunkText(sec, maxTokens, maxTokens/5)...)
+			continue
+		}
+
+		if packedTokens+secTokens > maxTokens {
+			chunks = append(chunks, strings.TrimSpace(packed.String()))
+			packed.Reset()
+			packedTokens = 0
+		}
+
+		if packed.Len() > 0 {
+			packed.WriteString("\n\n")
+		}
+
+		packed.WriteString(sec)
+		packedTokens += secTokens
+	}
+
+	if s := strings.TrimSpace(packed.String()); s != "" {
+		chunks = append(chunks, s)
+	}
+
+	return chunks
+}

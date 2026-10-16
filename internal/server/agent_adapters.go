@@ -114,6 +114,37 @@ func (a *agentRAGAdapter) Retrieve(ctx context.Context, query, language string, 
 	return out, nil
 }
 
+// RetrievePrivileged calls rag.Service.RetrievePrivileged — the §121
+// staff-only spec-corpus path used by the spec.search tool. Translates
+// rag.ErrSpecCorpusDisabled into the ai-package mirror sentinel so tool
+// handlers can distinguish flag-off from real failures.
+func (a *agentRAGAdapter) RetrievePrivileged(ctx context.Context, query, language, pathPrefix string, topK int32) ([]ai.RAGChunk, error) {
+	chunks, err := a.svc.RetrievePrivileged(ctx, query, language, pathPrefix, topK)
+	if err != nil {
+		if errors.Is(err, rag.ErrSpecCorpusDisabled) {
+			return nil, ai.ErrSpecCorpusDisabled
+		}
+
+		return nil, err
+	}
+
+	out := make([]ai.RAGChunk, 0, len(chunks))
+	for _, c := range chunks {
+		out = append(out, ai.RAGChunk{
+			EntityID:   c.EntityID,
+			EntityType: c.EntityType,
+			ChunkText:  c.ChunkText,
+			Similarity: c.Similarity,
+			Tier:       c.Tier,
+			Title:      c.Title,
+			Slug:       c.Slug,
+			URL:        c.URL,
+		})
+	}
+
+	return out, nil
+}
+
 // agentContentCreatorBridge adapts content.Service.CreateContent to the
 // ai.ContentCreator function type. The ai package uses a provider-agnostic
 // ContentCreateInput/ContentCreateRow so it doesn't import internal/content.

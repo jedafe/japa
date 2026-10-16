@@ -13,6 +13,15 @@ import (
 // DefaultEmbeddingModel is the embedding model used when no model is specified.
 const DefaultEmbeddingModel = "text-embedding-3-small"
 
+// EmbeddingDimension is the storage width of the vector columns
+// (content_embeddings.embedding is vector(1536)). Providers returning
+// shorter vectors (e.g. local Ollama models at 768) are zero-padded to this
+// width — zero-padding preserves cosine distance exactly when applied to
+// both indexed chunks and query vectors, and keeps every row in the shared
+// column physically dimension-consistent for the HNSW index. Longer vectors
+// are an error, not silently truncated.
+const EmbeddingDimension = 1536
+
 // EmbeddingPayload is the request payload for embedding generation.
 // The Provider receives this as map[string]any via Request.Payload.
 type EmbeddingPayload struct {
@@ -43,7 +52,28 @@ func GenerateContentEmbedding(ctx context.Context, dispatcher *Dispatcher, text,
 		return nil, fmt.Errorf("generating embedding: %w", err)
 	}
 
-	return parseEmbeddingResponse(resp)
+	vec, err := parseEmbeddingResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return padEmbedding(vec)
+}
+
+// padEmbedding normalizes a provider vector to EmbeddingDimension. Shorter
+// vectors get zero-padded (cosine-invariant); longer vectors are an error —
+// truncating would silently corrupt similarity math.
+func padEmbedding(vec []float32) ([]float32, error) {
+	switch {
+	case len(vec) == EmbeddingDimension:
+		return vec, nil
+	case len(vec) > EmbeddingDimension:
+		return nil, fmt.Errorf("embedding dimension %d exceeds storage width %d — configure a ≤%d-dim model", len(vec), EmbeddingDimension, EmbeddingDimension)
+	default:
+		padded := make([]float32, EmbeddingDimension)
+		copy(padded, vec)
+		return padded, nil
+	}
 }
 
 // parseEmbeddingResponse extracts the embedding vector from a provider Response.

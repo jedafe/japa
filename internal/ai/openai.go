@@ -167,6 +167,10 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 		return Response{}, errors.New("openai: API key not configured")
 	}
 
+	if req.Category == "embedding" {
+		return p.sendEmbedding(ctx, req)
+	}
+
 	prompt, _ := req.Payload["prompt"].(string)
 	if prompt == "" {
 		return Response{}, errors.New("openai: prompt is required in payload")
@@ -642,4 +646,72 @@ func (p *OpenAIProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	return models, nil
+}
+
+// sendEmbedding handles the "embedding" category — POST {baseURL}/embeddings
+// with the OpenAI-compatible {model, input} shape (also supported by Ollama's
+// /v1 surface). The float vector lands in Raw["embedding"] for
+// GenerateContentEmbedding's parseEmbeddingResponse.
+func (p *OpenAIProvider) sendEmbedding(ctx context.Context, req Request) (Response, error) {
+	text, _ := req.Payload["text"].(string)
+	if text == "" {
+		text, _ = req.Payload["prompt"].(string)
+	}
+
+	if text == "" {
+		return Response{}, errors.New("openai: text is required in payload for embedding")
+	}
+
+	model := p.model
+	if m, ok := req.Payload["model"].(string); ok && m != "" {
+		model = m
+	}
+
+	body, err := json.Marshal(map[string]any{"model": model, "input": text})
+	if err != nil {
+		return Response{}, fmt.Errorf("openai: marshal embedding request: %w", err)
+	}
+
+	endpoint := p.baseURL + "/embeddings"
+
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return Response{}, fmt.Errorf("openai: build embedding request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	httpResp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
+	if err != nil {
+		return Response{}, fmt.Errorf("openai: embedding request failed: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(httpResp.Body, 10<<20))
+	if err != nil {
+		return Response{}, fmt.Errorf("openai: reading embedding response: %w", err)
+	}
+
+	if httpResp.StatusCode != http.StatusOK {
+		return Response{}, fmt.Errorf("openai: embeddings API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+	}
+
+	var parsed struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return Response{}, fmt.Errorf("openai: parsing embedding response: %w", err)
+	}
+
+	if len(parsed.Data) == 0 || len(parsed.Data[0].Embedding) == 0 {
+		return Response{}, errors.New("openai: empty embedding in response")
+	}
+
+	return Response{
+		Status: "success",
+		Raw:    map[string]any{"embedding": parsed.Data[0].Embedding},
+	}, nil
 }

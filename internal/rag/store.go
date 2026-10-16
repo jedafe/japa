@@ -28,6 +28,10 @@ const (
 	EntityTypeSpace        = "space"
 	EntityTypeAcademyTrack = "academy_track"
 	EntityTypeWikiPage     = "wiki_page"
+	// §121 (ADR-131): engineering spec corpus — .jeos file chunks. Always
+	// visibility='private'; reachable only via the privileged spec search
+	// (SearchSpecEmbeddings), never via viewer-scoped retrieval.
+	EntityTypeSpecDoc = "spec_doc"
 )
 
 // SourceTier classifies an entity as editorial (Tier 1) or community (Tier 2).
@@ -45,6 +49,10 @@ func SourceTier(entityType, contentType string) string {
 	}
 
 	switch tierKey {
+	case EntityTypeSpecDoc:
+		// §121: spec chunks are authoritative for how the platform is
+		// built — ranked above editorial in prompt labels.
+		return "canonical"
 	case "guide", "blog_post", "academy_track", "comparison":
 		return "editorial"
 	case "discussion", "forum_thread", "space":
@@ -144,6 +152,10 @@ func SourceURL(entityType, contentType, slug string) string {
 		// entity_slug carries "space_slug/page_slug" — see the wiki_page
 		// arm of SearchContentEmbeddings.
 		return "/wiki/" + slug
+	case EntityTypeSpecDoc:
+		// §121: spec sources have no frontend route — slug carries the
+		// corpus-relative path and clients render a non-linking fallback.
+		return ""
 	default:
 		return ""
 	}

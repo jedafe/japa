@@ -94,6 +94,10 @@ func (r *ragCapture) Retrieve(ctx context.Context, query, language string, geoSp
 	return r.chunks, nil
 }
 
+func (r *ragCapture) RetrievePrivileged(ctx context.Context, query, language, pathPrefix string, topK int32) ([]RAGChunk, error) {
+	return r.chunks, nil
+}
+
 func TestRAGSearchHandler_MissingQuery(t *testing.T) {
 	t.Parallel()
 

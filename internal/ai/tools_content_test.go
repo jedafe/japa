@@ -1018,5 +1018,9 @@ func (s *stubRAGService) Retrieve(ctx context.Context, query, language string, g
 	return s.chunks, s.err
 }
 
+func (s *stubRAGService) RetrievePrivileged(ctx context.Context, query, language, pathPrefix string, topK int32) ([]RAGChunk, error) {
+	return s.chunks, s.err
+}
+
 // ensure errors is used (stubs reference it).
 var _ = errors.New

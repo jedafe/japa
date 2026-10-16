@@ -137,6 +137,7 @@ var Registry = []Feature{
 	{Key: "geo_personalization.enabled", Label: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Default: true, Category: "Integrations", SettingsCategory: "geo_personalization"},
 	// V2 AI / Infrastructure extensions
 	{Key: "rag.enabled", Label: "RAG / JapaBot Knowledge", Description: "Retrieval-augmented generation knowledge layer for JapaBot grounding", Default: false, Category: "AI", SettingsCategory: "rag"},
+	{Key: "rag.spec_corpus", Label: "Engineering Spec Corpus", Description: "Indexes the .jeos spec tree into RAG as private spec_doc chunks for the staff-only spec.search agent tool (§121)", Default: false, Category: "AI", SettingsCategory: "rag"},
 	{Key: "studio.enabled", Label: "AI Content Studio", Description: "AI-powered content generation studio with persona-driven jobs", Default: false, Category: "AI", SettingsCategory: "studio"},
 	{Key: "participation.enabled", Label: "Participation Orchestration", Description: "Persona-driven participation orchestration engine", Default: false, Category: "AI", SettingsCategory: "participation"},
 	{Key: "campaign.enabled", Label: "AI Content Campaigns", Description: "Admin-run AI content campaign planning and execution (§104)", Default: true, Category: "AI"},

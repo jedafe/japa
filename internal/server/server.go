@@ -2312,6 +2312,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// also chunks and upserts into content_embeddings (Section 69, ADR-069).
 	worker.RegisterRAGIndexer(ragService)
 
+	// §121 (ADR-131): register the spec corpus indexer for the
+	// rag:reindex_specs task. Flag-off is a stable state — wrap it in
+	// asynq.SkipRetry so the task doesn't burn retries.
+	worker.RegisterSpecCorpusIndexer(func(ctx context.Context, dir string) error {
+		if dir == "" {
+			dir = cfg.SpecCorpusDir
+		}
+
+		if _, err := ragService.ReindexSpecCorpus(ctx, dir); err != nil {
+			if errors.Is(err, rag.ErrSpecCorpusDisabled) {
+				return fmt.Errorf("%w: %w", asynq.SkipRetry, err)
+			}
+
+			return err
+		}
+
+		return nil
+	})
+
 	// Cache flusher for admin-only cache invalidation.
 	cacheFlusher := analytics.NewCacheFlusher(vkClient)
 	analyticsHandlers.SetCacheFlusher(cacheFlusher)
@@ -5595,6 +5614,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// All gated by ai.rag.* permission nodes seeded in migration 000245.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.reindex")).
 				Post("/admin/rag/reindex", ragHandlers.HandleReindex)
+			// §121: spec corpus reindex — same ai.rag.reindex node.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.reindex")).
+				Post("/admin/rag/reindex-specs", ragHandlers.HandleReindexSpecs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
 				Get("/admin/rag/status", ragHandlers.HandleStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
@@ -8281,6 +8303,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/queue/{queue_name}/tasks", controlHandlers.ListQueueTasks)
 			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
 				Post("/queue/{queue_name}/tasks/{task_id}/retry", controlHandlers.RetryQueueTask)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
+				Post("/queue/{queue_name}/tasks/{task_id}/archive", controlHandlers.ArchiveQueueTask)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
+				Delete("/queue/{queue_name}/tasks/{task_id}", controlHandlers.DeleteQueueTask)
 			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
 				Post("/queue/{queue_name}/archive", controlHandlers.ArchiveAllQueueTasks)
 			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).

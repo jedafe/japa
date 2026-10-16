@@ -108,6 +108,9 @@ SELECT
  WHEN 'space' THEN (SELECT s.name FROM spaces s WHERE s.id = ce.entity_id)
  WHEN 'academy_track' THEN (SELECT lt.title FROM academy_tracks lt WHERE lt.id = ce.entity_id)
  WHEN 'wiki_page' THEN (SELECT wp.title FROM wiki_pages wp WHERE wp.id = ce.entity_id)
+ -- §121 spec corpus: title/slug resolve via the rag_spec_sources registry
+ -- (slug carries the corpus-relative path; SourceURL emits no URL).
+ WHEN 'spec_doc' THEN (SELECT ss.title FROM rag_spec_sources ss WHERE ss.id = ce.entity_id)
  ELSE NULL END AS entity_title,
  CASE ce.entity_type
  WHEN 'content' THEN (SELECT c.slug FROM contents c WHERE c.id = ce.entity_id)
@@ -119,6 +122,7 @@ SELECT
  WHEN 'wiki_page' THEN (SELECT s.slug || '/' || wp.slug
    FROM wiki_pages wp JOIN spaces s ON s.id = wp.space_id
    WHERE wp.id = ce.entity_id)
+ WHEN 'spec_doc' THEN (SELECT ss.path FROM rag_spec_sources ss WHERE ss.id = ce.entity_id)
  ELSE NULL END AS entity_slug
 FROM content_embeddings ce
 WHERE (@language::text = '' OR ce.language = @language)
@@ -153,6 +157,12 @@ WHERE (@language::text = '' OR ce.language = @language)
  SELECT 1 FROM wiki_pages wp
  WHERE wp.id = ce.entity_id
  AND wp.is_japabot_indexed = true
+ )
+ -- §121: spec chunks stay honest — a registry row swept on file
+ -- deletion immediately orphans its chunks.
+ WHEN 'spec_doc' THEN EXISTS (
+ SELECT 1 FROM rag_spec_sources ss
+ WHERE ss.id = ce.entity_id
  )
  ELSE true
  END
@@ -440,3 +450,63 @@ WHERE entity_type = @entity_type AND entity_id = @entity_id AND operation = @ope
 -- name: DeleteNonContentRAGIndexFailures :execrows
 DELETE FROM rag_index_failures
 WHERE entity_type <> 'content';
+
+-- =====================================================================
+-- Engineering Spec Corpus (§121, ADR-131) — rag_spec_sources registry.
+-- One row per indexed .jeos file; id is the deterministic UUIDv5 of
+-- 'jeos:'+path and is shared by the file's content_embeddings rows
+-- (entity_type='spec_doc'). file_sha256 enables skip-unchanged reindex.
+-- =====================================================================
+
+-- name: GetSpecSourceByPath :one
+SELECT * FROM rag_spec_sources
+WHERE path = @path;
+
+-- name: UpsertSpecSource :one
+INSERT INTO rag_spec_sources (id, path, title, file_sha256, chunk_count, indexed_at)
+VALUES (@id, @path, @title, @file_sha256, @chunk_count, now())
+ON CONFLICT (path) DO UPDATE SET
+ title = EXCLUDED.title,
+ file_sha256 = EXCLUDED.file_sha256,
+ chunk_count = EXCLUDED.chunk_count,
+ indexed_at = now()
+RETURNING *;
+
+-- name: ListSpecSources :many
+-- Reindex sweep: enumerates registered paths so files deleted/renamed on
+-- disk can have their registry rows + chunks purged.
+SELECT id, path FROM rag_spec_sources
+ORDER BY path;
+
+-- name: DeleteSpecSource :exec
+DELETE FROM rag_spec_sources
+WHERE id = @id;
+
+-- =====================================================================
+-- Privileged spec-corpus retrieval (§121). Deliberately a dedicated query
+-- rather than a generic privileged search: it only ever touches
+-- entity_type='spec_doc' rows AND hard-requires visibility='private', so a
+-- caller bug can never widen it into user content. path_prefix post-filters
+-- on the registry path (e.g. 'sections/', 'adr/').
+-- =====================================================================
+
+-- name: SearchSpecEmbeddings :many
+SELECT
+ ce.id,
+ ce.entity_type,
+ ce.entity_id,
+ ce.chunk_index,
+ ce.chunk_text,
+ ce.language,
+ ce.created_at,
+ (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity,
+ ss.title AS entity_title,
+ ss.path AS entity_slug
+FROM content_embeddings ce
+JOIN rag_spec_sources ss ON ss.id = ce.entity_id
+WHERE ce.entity_type = 'spec_doc'
+ AND ce.visibility = 'private'
+ AND (@language::text = '' OR ce.language = @language)
+ AND (sqlc.narg(path_prefix)::text = '' OR ss.path LIKE sqlc.narg(path_prefix) || '%')
+ORDER BY ce.embedding <=> @query_embedding
+LIMIT @top_k;

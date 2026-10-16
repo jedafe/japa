@@ -45,6 +45,7 @@ const (
 	TypeMediaCleanupDeleted           = "media:cleanup_deleted"
 	TypeContentFanOutToFeeds          = "content:fan_out_to_feeds"
 	TypeAIGenerateContentEmbedding    = "content:generate_embedding"
+	TypeRAGReindexSpecs               = "rag:reindex_specs"
 	TypeContentGenerateDraft          = "content:generate_draft"
 	TypeContentRegenerateFromSource   = "content:regenerate_from_source"
 	TypeAgentCreateDraftRequest       = "agent:create_draft_request"
@@ -218,6 +219,7 @@ var handlerRegistry = []struct {
 	{TypeMediaCleanupDeleted, HandleMediaCleanupDeleted},
 	{TypeContentFanOutToFeeds, HandleContentFanOutToFeeds},
 	{TypeAIGenerateContentEmbedding, HandleAIGenerateContentEmbedding},
+	{TypeRAGReindexSpecs, HandleRAGReindexSpecs},
 	{TypeContentGenerateDraft, HandleContentGenerateDraft},
 	{TypeContentRegenerateFromSource, HandleContentRegenerateFromSource},
 	{TypeAgentCreateDraftRequest, HandleAgentCreateDraftRequest},

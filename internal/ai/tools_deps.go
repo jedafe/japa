@@ -57,6 +57,10 @@ type CustomFieldsService interface {
 // viewerID scopes retrieval to what the caller may see (§69 scoped retrieval).
 type RAGService interface {
 	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]RAGChunk, error)
+	// RetrievePrivileged is the §121 staff-only path over the private
+	// spec_doc corpus (indexed .jeos files). Called only by the spec.search
+	// tool, which is gated by the agent.spec_search permission node.
+	RetrievePrivileged(ctx context.Context, query, language, pathPrefix string, topK int32) ([]RAGChunk, error)
 }
 
 // ComparisonService is the subset of internal/comparison.Service the

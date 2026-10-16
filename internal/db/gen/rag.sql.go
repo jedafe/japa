@@ -145,6 +145,16 @@ func (q *Queries) DeleteRAGIndexFailures(ctx context.Context, entityType string)
 	return err
 }
 
+const deleteSpecSource = `-- name: DeleteSpecSource :exec
+DELETE FROM rag_spec_sources
+WHERE id = $1
+`
+
+func (q *Queries) DeleteSpecSource(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSpecSource, id)
+	return err
+}
+
 const getContentEmbeddingMeta = `-- name: GetContentEmbeddingMeta :one
 SELECT title, body, status, visibility, space_id, author_id
 FROM contents
@@ -235,6 +245,32 @@ func (q *Queries) GetContentEmbeddingStatsByType(ctx context.Context) ([]GetCont
 		return nil, err
 	}
 	return items, nil
+}
+
+const getSpecSourceByPath = `-- name: GetSpecSourceByPath :one
+
+SELECT id, path, title, file_sha256, chunk_count, indexed_at FROM rag_spec_sources
+WHERE path = $1
+`
+
+// =====================================================================
+// Engineering Spec Corpus (§121, ADR-131) — rag_spec_sources registry.
+// One row per indexed .jeos file; id is the deterministic UUIDv5 of
+// 'jeos:'+path and is shared by the file's content_embeddings rows
+// (entity_type='spec_doc'). file_sha256 enables skip-unchanged reindex.
+// =====================================================================
+func (q *Queries) GetSpecSourceByPath(ctx context.Context, path string) (RagSpecSource, error) {
+	row := q.db.QueryRow(ctx, getSpecSourceByPath, path)
+	var i RagSpecSource
+	err := row.Scan(
+		&i.ID,
+		&i.Path,
+		&i.Title,
+		&i.FileSha256,
+		&i.ChunkCount,
+		&i.IndexedAt,
+	)
+	return i, err
 }
 
 const listAcademyTrackIDsForReindex = `-- name: ListAcademyTrackIDsForReindex :many
@@ -523,6 +559,38 @@ func (q *Queries) ListSpaceIDsForReindex(ctx context.Context, arg ListSpaceIDsFo
 	return items, nil
 }
 
+const listSpecSources = `-- name: ListSpecSources :many
+SELECT id, path FROM rag_spec_sources
+ORDER BY path
+`
+
+type ListSpecSourcesRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Path string      `json:"path"`
+}
+
+// Reindex sweep: enumerates registered paths so files deleted/renamed on
+// disk can have their registry rows + chunks purged.
+func (q *Queries) ListSpecSources(ctx context.Context) ([]ListSpecSourcesRow, error) {
+	rows, err := q.db.Query(ctx, listSpecSources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpecSourcesRow
+	for rows.Next() {
+		var i ListSpecSourcesRow
+		if err := rows.Scan(&i.ID, &i.Path); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const orphanThreadEmbeddingsBySpace = `-- name: OrphanThreadEmbeddingsBySpace :exec
 UPDATE content_embeddings
 SET visibility = 'private', space_id = NULL
@@ -575,6 +643,9 @@ SELECT
  WHEN 'space' THEN (SELECT s.name FROM spaces s WHERE s.id = ce.entity_id)
  WHEN 'academy_track' THEN (SELECT lt.title FROM academy_tracks lt WHERE lt.id = ce.entity_id)
  WHEN 'wiki_page' THEN (SELECT wp.title FROM wiki_pages wp WHERE wp.id = ce.entity_id)
+ -- §121 spec corpus: title/slug resolve via the rag_spec_sources registry
+ -- (slug carries the corpus-relative path; SourceURL emits no URL).
+ WHEN 'spec_doc' THEN (SELECT ss.title FROM rag_spec_sources ss WHERE ss.id = ce.entity_id)
  ELSE NULL END AS entity_title,
  CASE ce.entity_type
  WHEN 'content' THEN (SELECT c.slug FROM contents c WHERE c.id = ce.entity_id)
@@ -586,6 +657,7 @@ SELECT
  WHEN 'wiki_page' THEN (SELECT s.slug || '/' || wp.slug
    FROM wiki_pages wp JOIN spaces s ON s.id = wp.space_id
    WHERE wp.id = ce.entity_id)
+ WHEN 'spec_doc' THEN (SELECT ss.path FROM rag_spec_sources ss WHERE ss.id = ce.entity_id)
  ELSE NULL END AS entity_slug
 FROM content_embeddings ce
 WHERE ($2::text = '' OR ce.language = $2)
@@ -620,6 +692,12 @@ WHERE ($2::text = '' OR ce.language = $2)
  SELECT 1 FROM wiki_pages wp
  WHERE wp.id = ce.entity_id
  AND wp.is_japabot_indexed = true
+ )
+ -- §121: spec chunks stay honest — a registry row swept on file
+ -- deletion immediately orphans its chunks.
+ WHEN 'spec_doc' THEN EXISTS (
+ SELECT 1 FROM rag_spec_sources ss
+ WHERE ss.id = ce.entity_id
  )
  ELSE true
  END
@@ -885,6 +963,92 @@ func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg Se
 	return items, nil
 }
 
+const searchSpecEmbeddings = `-- name: SearchSpecEmbeddings :many
+
+SELECT
+ ce.id,
+ ce.entity_type,
+ ce.entity_id,
+ ce.chunk_index,
+ ce.chunk_text,
+ ce.language,
+ ce.created_at,
+ (1.0 - (ce.embedding <=> $1))::float8 AS similarity,
+ ss.title AS entity_title,
+ ss.path AS entity_slug
+FROM content_embeddings ce
+JOIN rag_spec_sources ss ON ss.id = ce.entity_id
+WHERE ce.entity_type = 'spec_doc'
+ AND ce.visibility = 'private'
+ AND ($2::text = '' OR ce.language = $2)
+ AND ($3::text = '' OR ss.path LIKE $3 || '%')
+ORDER BY ce.embedding <=> $1
+LIMIT $4
+`
+
+type SearchSpecEmbeddingsParams struct {
+	QueryEmbedding *pgvector_go.Vector `json:"query_embedding"`
+	Language       string              `json:"language"`
+	PathPrefix     *string             `json:"path_prefix"`
+	TopK           int32               `json:"top_k"`
+}
+
+type SearchSpecEmbeddingsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	ChunkIndex  int32              `json:"chunk_index"`
+	ChunkText   string             `json:"chunk_text"`
+	Language    string             `json:"language"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Similarity  float64            `json:"similarity"`
+	EntityTitle string             `json:"entity_title"`
+	EntitySlug  string             `json:"entity_slug"`
+}
+
+// =====================================================================
+// Privileged spec-corpus retrieval (§121). Deliberately a dedicated query
+// rather than a generic privileged search: it only ever touches
+// entity_type='spec_doc' rows AND hard-requires visibility='private', so a
+// caller bug can never widen it into user content. path_prefix post-filters
+// on the registry path (e.g. 'sections/', 'adr/').
+// =====================================================================
+func (q *Queries) SearchSpecEmbeddings(ctx context.Context, arg SearchSpecEmbeddingsParams) ([]SearchSpecEmbeddingsRow, error) {
+	rows, err := q.db.Query(ctx, searchSpecEmbeddings,
+		arg.QueryEmbedding,
+		arg.Language,
+		arg.PathPrefix,
+		arg.TopK,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchSpecEmbeddingsRow
+	for rows.Next() {
+		var i SearchSpecEmbeddingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ChunkIndex,
+			&i.ChunkText,
+			&i.Language,
+			&i.CreatedAt,
+			&i.Similarity,
+			&i.EntityTitle,
+			&i.EntitySlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateEmbeddingScope = `-- name: UpdateEmbeddingScope :exec
 UPDATE content_embeddings
 SET visibility = $1, space_id = $2, author_id = $3
@@ -1033,4 +1197,43 @@ func (q *Queries) UpsertRAGIndexFailure(ctx context.Context, arg UpsertRAGIndexF
 		arg.Error,
 	)
 	return err
+}
+
+const upsertSpecSource = `-- name: UpsertSpecSource :one
+INSERT INTO rag_spec_sources (id, path, title, file_sha256, chunk_count, indexed_at)
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT (path) DO UPDATE SET
+ title = EXCLUDED.title,
+ file_sha256 = EXCLUDED.file_sha256,
+ chunk_count = EXCLUDED.chunk_count,
+ indexed_at = now()
+RETURNING id, path, title, file_sha256, chunk_count, indexed_at
+`
+
+type UpsertSpecSourceParams struct {
+	ID         pgtype.UUID `json:"id"`
+	Path       string      `json:"path"`
+	Title      string      `json:"title"`
+	FileSha256 string      `json:"file_sha256"`
+	ChunkCount int32       `json:"chunk_count"`
+}
+
+func (q *Queries) UpsertSpecSource(ctx context.Context, arg UpsertSpecSourceParams) (RagSpecSource, error) {
+	row := q.db.QueryRow(ctx, upsertSpecSource,
+		arg.ID,
+		arg.Path,
+		arg.Title,
+		arg.FileSha256,
+		arg.ChunkCount,
+	)
+	var i RagSpecSource
+	err := row.Scan(
+		&i.ID,
+		&i.Path,
+		&i.Title,
+		&i.FileSha256,
+		&i.ChunkCount,
+		&i.IndexedAt,
+	)
+	return i, err
 }
