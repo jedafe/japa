@@ -793,10 +793,12 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 				s.markDeletionFailed(ctx, requestID)
 				return fmt.Errorf("deleting honcho context for user %s: %w", request.UserID, err)
 			}
-		} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
-			// AUDIT-BE-019: In production, Honcho erasure is mandatory.
-			// A nil eraser means the service was misconfigured — fail the
-			// entire deletion job so it retries after correct wiring.
+		} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") && os.Getenv("JC_HONCHO_URL") != "" {
+			// AUDIT-BE-019: In production, Honcho erasure is mandatory — but
+			// only when a Honcho deployment exists (JC_HONCHO_URL set). A nil
+			// eraser with Honcho deployed means misconfigured wiring — fail
+			// the job so it retries after correct wiring. When no Honcho
+			// deployment exists there is no AI context to erase.
 			s.markDeletionFailed(ctx, requestID)
 			return fmt.Errorf("honcho eraser not configured — required in production for user %s", request.UserID)
 		} else {
@@ -956,7 +958,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 
 			slog.Warn("hard delete: honcho erasure failed (non-production, proceeding)", "user_id", userID.String(), "error", err)
 		}
-	} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+	} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") && os.Getenv("JC_HONCHO_URL") != "" {
 		return fmt.Errorf("hard delete blocked: honcho eraser not configured — required in production for user %s", userID)
 	}
 

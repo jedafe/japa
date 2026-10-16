@@ -942,8 +942,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// GDPR / NDPR Compliance subsystem (Section 19).
 	honchoClient := honcho.NewClient(cfg.HonchoURL)
 	gdprService := gdpr.NewServiceWithEnqueuer(database, taskEnqueuer, cfg.SiteName)
-	gdprService.SetHonchoEraser(honchoClient)
-	gdprService.SetHonchoFetcher(&honchoFetcherAdapter{client: honchoClient})
+	// Only wire the Honcho eraser/fetcher when a deployment exists — the
+	// client otherwise defaults to an unreachable localhost:8001 and GDPR
+	// erasure would fail on a dead endpoint. With JC_HONCHO_URL unset the
+	// gdpr service treats AI-context deletion as a no-op (nothing to erase).
+	if os.Getenv("JC_HONCHO_URL") != "" {
+		gdprService.SetHonchoEraser(honchoClient)
+		gdprService.SetHonchoFetcher(&honchoFetcherAdapter{client: honchoClient})
+	}
 	// ADR-130 Phase 4: the ai:migrate_conversations task reads legacy
 	// context entries through the same client.
 	worker.RegisterHonchoFetcher(honchoClient)
