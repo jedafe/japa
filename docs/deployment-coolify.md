@@ -8,7 +8,7 @@ shared project network (reachable by service name).
 
 | Coolify app | Dockerfile | Notes |
 |---|---|---|
-| `api` | root `Dockerfile` | **HTTP + Asynq worker + scheduler run in one process** (`cmd/api/main.go` starts all three). One container covers web + background jobs. If you ever scale api replicas >1, pin the scheduler — duplicate schedulers enqueue duplicate periodic tasks. |
+| `api` | root `Dockerfile` | **HTTP + Asynq worker + scheduler run in one process** (`cmd/api/main.go` starts all three). One container covers web + background jobs. Scaling to >1 replica: set `JC_SCHEDULER_ENABLED=0` on all but one replica — only a single scheduler may run (duplicate schedulers enqueue duplicate periodic tasks). Workers and HTTP scale freely. |
 | `main` | `apps/main/Dockerfile` | |
 | `admin` | `apps/admin/Dockerfile` | |
 | `control` | `apps/control/Dockerfile` | |

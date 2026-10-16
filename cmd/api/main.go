@@ -99,21 +99,28 @@ func run() error {
 
 	// Start the Asynq scheduler for periodic tasks (scheduled publishing,
 	// velocity score recalculation). Shares the same Redis connection.
-	scheduler := worker.NewScheduler(workerCfg)
-	go func() {
-		slog.Info("asynq scheduler starting", "addr", worker.Addr(workerCfg))
+	// Only ONE process may run the scheduler — when api replicas scale >1,
+	// set JC_SCHEDULER_ENABLED=0 on the extras so periodic tasks don't
+	// enqueue once per replica.
+	schedulerEnabled := os.Getenv("JC_SCHEDULER_ENABLED") != "0"
+	if schedulerEnabled {
+		scheduler := worker.NewScheduler(workerCfg)
+		go func() {
+			slog.Info("asynq scheduler starting", "addr", worker.Addr(workerCfg))
 
-		if err := scheduler.Run(); err != nil {
-			slog.Error("asynq scheduler stopped", "error", err)
-		}
-	}()
+			if err := scheduler.Run(); err != nil {
+				slog.Error("asynq scheduler stopped", "error", err)
+			}
+		}()
+
+		defer scheduler.Shutdown()
+	}
 
 	defer func() {
 		if workerShutdown != nil {
 			workerShutdown()
 		}
 
-		scheduler.Shutdown()
 		server.Shutdown()
 	}()
 
