@@ -178,7 +178,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<div class="flex flex-wrap items-center justify-between gap-2">
 			<div class="flex items-center gap-1.5 text-sm">
 				<a
@@ -219,7 +219,7 @@
 		</div>
 	</div>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if editing}
 			<!-- Ref: §55 — staff inline edit reuses the shared DealForm. -->
 			<DealForm

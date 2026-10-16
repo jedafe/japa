@@ -953,6 +953,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// ADR-130 Phase 4: the ai:migrate_conversations task reads legacy
 	// context entries through the same client.
 	worker.RegisterHonchoFetcher(honchoClient)
+	// The daily retention sweep needs GetContext + DeleteEntry — wired the
+	// same way: explicit JC_HONCHO_URL only, so it no-ops without a deployment.
+	if os.Getenv("JC_HONCHO_URL") != "" {
+		worker.RegisterHonchoSweeper(honchoClient)
+	}
 	gdprService.SetSessionDeleter(gdpr.NewValkeySessionDeleter(vkClient.Redis()))
 	gdprService.SetSettings(settingsService)
 	// GAP-GDPR-A: explicit LocalStorage wiring so the data export file is

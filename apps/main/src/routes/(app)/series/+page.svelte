@@ -104,7 +104,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('series.heading', 'Series')}</h1>
 	<ListPageBar>
 		<UrlTabs {tabs} value={data.tab} onValueChange={switchTab} class="!border-b-0 !bg-transparent" />
@@ -113,7 +113,7 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showFilters}
 			<!-- Filters: content type + sort via AutocompleteSelect (Rule 16 —
 			     type options are server-fetched from GET /content-types). -->

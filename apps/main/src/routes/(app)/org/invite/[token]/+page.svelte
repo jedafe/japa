@@ -45,7 +45,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
 			{#if acceptedSlug}
 				<div class="flex flex-col items-center gap-3 py-6 text-center">

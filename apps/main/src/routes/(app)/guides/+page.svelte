@@ -221,7 +221,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('guides.heading', 'Guides')}</h1>
 	<ListPageBar>
 		<UrlTabs
@@ -250,7 +250,7 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showFilters && categoryFilterApplies}
 			<!-- Category filter — admin-configured options from GET /content-types
 			     (§14), same FilterToggle/Autocomplete pattern as /blog and /forum. -->

@@ -118,7 +118,7 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<ListPageBar>
 		<MessagesTabs value="requests" />
 	</ListPageBar>
@@ -154,7 +154,7 @@
 		{/if}
 
 		{#if data.loadError}
-			<div class="p-4">
+			<div class="mx-auto w-full max-w-3xl p-4">
 				<EmptyState
 					icon={UserX}
 					title={t('messages.requests_load_error', 'Could not load requests')}

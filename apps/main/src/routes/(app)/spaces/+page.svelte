@@ -270,7 +270,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<!-- Header + search (H1/description; Filter + Create controls sit on the heading row) -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: var(--page-gutter)">
 		<div class="flex items-start justify-between gap-3">
@@ -442,7 +442,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		</div>
 	{/if}
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.forbidden}
 			<div class="flex flex-col items-center gap-3 py-16 text-center">
 				<ShieldX size={40} class="text-[var(--color-muted)]" />

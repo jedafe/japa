@@ -564,6 +564,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </SetSidebar>
 
 <!-- Space header — cover banner + overlapping logo, follows ProfileHeader pattern -->
+<div class="mx-auto w-full max-w-3xl">
 <header class="border-b border-[var(--color-border)] bg-[var(--color-surface)]" use:imgLightbox>
 	<!-- Cover banner — image with dark fade at bottom, or gradient fallback.
 	     The dark fade at the bottom improves logo/title legibility. -->
@@ -674,11 +675,12 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		</div>
 	</div>
 </header>
+</div>
 
-<UrlTabs {tabs} bind:value={activeTab} />
+<div class="mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} /></div>
 
-<div class="mx-auto w-full max-w-full">
-	<div class="p-3">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if activeTab === 'feed'}
 			<div class="mb-3">
 				<DigestWidget spaceId={space.id} digest={data.digest} />

@@ -130,6 +130,7 @@
 	<OrgProfileSidebar members={data.members} owner={data.org.owner ?? null} />
 </SetSidebar>
 
+<div class="mx-auto w-full max-w-3xl">
 <OrgHeader {org} {canManage}>
 	{#snippet children()}
 		{#if page.data.user}
@@ -147,11 +148,12 @@
 		{/if}
 	{/snippet}
 </OrgHeader>
+</div>
 
-<UrlTabs {tabs} bind:value={activeTab} />
+<div class="mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} /></div>
 
-<div class="mx-auto w-full max-w-full">
-	<div class="p-3">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if activeTab === 'about'}
 			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				{#if org.description}

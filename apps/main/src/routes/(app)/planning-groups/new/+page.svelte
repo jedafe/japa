@@ -92,7 +92,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<a
 			href="/planning-groups"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"

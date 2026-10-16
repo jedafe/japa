@@ -26,13 +26,13 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">{t('explore.heading', 'Explore')}</h1>
 	</div>
 	<JourneyContextBar />
 	<JourneyOnboardingModal />
 	<FeedSortBar tab="explore" sort={data.sort} />
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		<FeedList
 			items={data.items}
 			tab="explore"

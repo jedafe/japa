@@ -269,7 +269,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('stories.heading', 'Community Stories')}</h1>
 	<ListPageBar>
 		<UrlTabs {tabs} value={activeTab} onValueChange={(v) => switchTab(v)} class="!border-b-0 !bg-transparent" />
@@ -286,7 +286,7 @@
 	</ListPageBar>
 
 	<!-- Story list -->
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showFilters && data.tab !== 'featured' && data.tab !== 'series'}
 			<!-- Filters (autocomplete for all four: origin, dest, visa, profession) -->
 			<div id="stories-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">

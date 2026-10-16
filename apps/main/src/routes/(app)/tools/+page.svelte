@@ -108,8 +108,8 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
-	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
+	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Compass size={20} /> {t('tools.heading', 'Tools')}
 		</h1>
@@ -126,7 +126,7 @@
 			<UrlTabs {tabs} bind:value={activeTab} class="!border-b-0 !bg-transparent" />
 		</ListPageBar>
 
-		<div class="p-3">
+		<div class="mx-auto w-full max-w-3xl p-4">
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each activeTools as tool (tool.href)}
 					{@render toolCard(tool)}

@@ -109,7 +109,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('planning_groups.heading', 'Planning Groups')}</h1>
 	<ListPageBar>
 		<UrlTabs {tabs} bind:value={view} class="!border-b-0 !bg-transparent" />
@@ -123,7 +123,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{/snippet}
 	</ListPageBar>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showFilters}
 			<!-- Filter panel -->
 			<div id="planning-groups-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">

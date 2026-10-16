@@ -45,7 +45,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="p-6">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		<!-- Certificate card -->
 		<section class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 			<div class="border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-6 py-8 text-center">

@@ -323,7 +323,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Breadcrumb + actions -->
-	<div class="mx-4 flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-2.5 sm:mx-6 sm:px-6">
+	<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-2.5 sm:px-6" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<nav aria-label={t('a11y.breadcrumb', 'Breadcrumb')} class="min-w-0 text-xs text-[var(--color-muted)]">
 			<ol class="flex items-center gap-1.5">
 				<li>
@@ -400,7 +400,7 @@
 
 	<!-- Title block: flag/logo + name + tagline -->
 	{#if data.fromSpace && data.spaceDetail?.wiki_only && showWikiOnlyBanner}
-		<div class="mx-4 mt-4 flex items-start gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:mx-6">
+		<div class="mt-4 flex items-start gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 			<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)]">
 				<BookOpen size={18} class="text-[var(--color-primary)]" aria-hidden="true" />
 			</span>
@@ -422,7 +422,7 @@
 			</button>
 		</div>
 	{/if}
-	<div class="flex items-start gap-3 px-4 pt-5 sm:px-6">
+	<div class="mx-auto flex w-full max-w-3xl items-start gap-3 px-4 pt-5">
 		{#if logoUrl}
 			<img
 				src={logoUrl}
@@ -446,11 +446,11 @@
 	</div>
 
 	<!-- Category tab strip -->
-	<div class="px-1 sm:px-3">
+	<div class="mx-auto w-full max-w-3xl px-1 sm:px-3">
 		<WikiTabs spaceSlug={data.spaceSlug} categories={apiCategories} pages={data.index} active="overview" />
 	</div>
 
-	<div class="px-4 pb-8 sm:px-6">
+	<div class="mx-auto w-full max-w-3xl px-4 pb-8">
 		{#if heroUrl}
 			<img
 				src={heroUrl}

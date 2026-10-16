@@ -247,7 +247,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<a
 			href="/deals"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
@@ -406,7 +406,7 @@
 		{/if}
 	</div>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if coupons.length === 0}
 			<EmptyState
 				icon={Ticket}

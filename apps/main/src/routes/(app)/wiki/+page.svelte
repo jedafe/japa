@@ -121,10 +121,10 @@
 	<link rel="canonical" href={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1.5rem">
+<div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1rem">
 	<ListPageBar title={t('wiki.heading', 'Wiki')} />
 
-	<div class="p-6">
+	<div class="p-4">
 	<p class="text-sm text-[var(--color-muted)]">
 		{t('wiki.landing_description', 'Choose a destination to explore community-maintained guides.')}
 	</p>

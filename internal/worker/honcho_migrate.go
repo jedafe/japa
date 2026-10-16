@@ -302,3 +302,21 @@ func sortedKeys[V any](m map[string]V) []string {
 
 	return keys
 }
+
+// honchoContextDeleter extends the fetcher with per-entry deletion so the
+// retention sweep can prune old memory entries.
+type honchoContextDeleter interface {
+	GetContext(ctx context.Context, userID string) ([]honcho.ContextEntry, error)
+	DeleteEntry(ctx context.Context, userID, entryID string) error
+}
+
+// honchoSweeper is set at startup via RegisterHonchoSweeper — nil when no
+// Honcho deployment exists (JC_HONCHO_URL unset), in which case the
+// retention sweep is a no-op.
+var honchoSweeper honchoContextDeleter
+
+// RegisterHonchoSweeper sets the client used by the honcho:retention_sweep
+// task. Call at startup alongside RegisterHonchoFetcher.
+func RegisterHonchoSweeper(d honchoContextDeleter) {
+	honchoSweeper = d
+}

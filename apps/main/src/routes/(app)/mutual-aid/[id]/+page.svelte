@@ -177,7 +177,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full px-4 py-6">
+<div class="mx-auto w-full max-w-3xl px-4 py-6">
 	<a
 		href="/mutual-aid"
 		class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"

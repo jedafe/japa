@@ -120,7 +120,7 @@
 </SetSidebar>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="mx-4 flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<a
 			href="/wiki/{data.spaceSlug}/{data.pageSlug}"
 			class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
@@ -132,7 +132,7 @@
 		</h1>
 	</div>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if !wikiEnabled && data.loadError}
 			<EmptyState
 				icon={History}

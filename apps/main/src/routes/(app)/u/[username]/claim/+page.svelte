@@ -144,7 +144,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<ShieldQuestion size={20} />
 			{t('video_claims.heading', 'Claim or report channel')}
@@ -154,7 +154,7 @@
 		</p>
 	</div>
 
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if !isAuthed}
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center">
 				<p class="text-sm text-[var(--color-text)]">

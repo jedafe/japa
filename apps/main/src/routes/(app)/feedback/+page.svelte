@@ -73,7 +73,7 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<section class="mx-auto max-w-full space-y-6 px-4 py-8">
+<section class="mx-auto max-w-3xl space-y-6 px-4 py-8">
 	<header class="flex items-center gap-3">
 		<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
 			<MessageSquare class="h-5 w-5" />

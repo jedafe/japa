@@ -487,7 +487,7 @@
 			</div>
 
 			{#if data.loadError}
-				<div class="p-4">
+				<div class="mx-auto w-full max-w-3xl p-4">
 					<EmptyState
 						icon={MessageSquareOff}
 						title={t('messages.load_error', 'Could not load conversations')}

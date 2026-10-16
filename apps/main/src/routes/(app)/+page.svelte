@@ -103,10 +103,10 @@
 	<LandingRenderer blocks={data.landing.blocks} {fetchCtx} geoCountry={data.contentCountry} guestHome={data.home} />
 {:else}
 	<!-- Authenticated home timeline in the app shell -->
-	<div class="mx-auto w-full max-w-full">
+	<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 		<div
-			class="sticky top-0 z-10 mx-3 flex items-center border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
-			style="min-height: var(--nav-height)"
+			class="sticky top-0 z-10 flex items-center border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
+			style="margin-inline: max(1rem, calc((100% - 48rem)/2)); min-height: var(--nav-height)"
 		>
 			<UrlTabs
 				{tabs}
@@ -129,7 +129,7 @@
 		<FeedSortBar tab={data.tab} sort={data.sort} />
 		<!-- Phase 23 — live feed update pill (driven by WS feed_update events) -->
 		<FeedUpdatePill />
-		<div class="p-3">
+		<div class="mx-auto w-full max-w-3xl p-4">
 			<!-- §09: finish-setup reminder — self-gating on page.data.onboardingCompleted -->
 			<OnboardingSetupCard />
 			<FeedList

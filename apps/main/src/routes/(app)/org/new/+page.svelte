@@ -94,7 +94,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header -->
-	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Building2 size={20} /> {t('organizations.new.heading', 'New organization')}
 		</h1>
@@ -103,7 +103,7 @@
 		</p>
 	</div>
 
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if form?.message}
 			<div
 				class="mb-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-subtle)]"

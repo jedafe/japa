@@ -97,7 +97,7 @@
 	<meta name="description" content={source.description ?? source.domain} />
 </svelte:head>
 
-<div class="flex flex-col gap-4 p-4">
+<div class="mx-auto w-full max-w-3xl flex flex-col gap-4 p-4">
 	<div class="flex items-start gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		{#if source.logo_url && !logoError}
 			<img

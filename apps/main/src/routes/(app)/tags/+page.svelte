@@ -126,7 +126,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header + search + filters -->
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<div class="flex items-start justify-between gap-4">
 			<div>
 				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
@@ -154,7 +154,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	{#if showFilters}
 		<!-- Sort filter (moved from always-visible chips to the toggle panel) -->
-		<div id="tags-filter-panel" class="flex flex-wrap gap-2 border-b border-[var(--color-border)] px-4 py-3">
+		<div id="tags-filter-panel" class="flex flex-wrap gap-2 border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 			{#each sortOptions as so (so.value)}
 				<button
 					type="button"
@@ -169,7 +169,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		</div>
 	{/if}
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.forbidden}
 			<div class="flex flex-col items-center gap-3 py-16 text-center">
 				<ShieldX size={40} class="text-[var(--color-muted)]" />

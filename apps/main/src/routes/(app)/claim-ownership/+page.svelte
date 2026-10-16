@@ -161,7 +161,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header -->
-	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<ShieldQuestion size={20} />
 			{org ? t('claim_ownership.heading', 'Claim ownership') : t('claim_ownership.my_claims_title', 'My ownership claims')}
@@ -175,7 +175,7 @@
 
 	{#if !org}
 		<!-- My claims — claimant-scoped list from GET /me/claim-ownership. -->
-		<div class="p-3">
+		<div class="mx-auto w-full max-w-3xl p-4">
 			{#if claimsError}
 				<p class="mb-3 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
 					{claimsError}
@@ -242,7 +242,7 @@
 			{/if}
 		</div>
 	{:else}
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		<!-- Org context card -->
 		<div
 			class="mb-4 flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"

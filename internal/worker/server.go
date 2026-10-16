@@ -133,6 +133,9 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// §35 scheduled admin broadcasts — every minute.
 	schedule("* * * * *", TypeBroadcastDispatch, 1*time.Minute)
 
+	// Honcho memory retention sweep — daily (JC_HONCHO_RETENTION_DAYS).
+	schedule("40 4 * * *", TypeHonchoRetentionSweep, 24*time.Hour)
+
 	// Velocity score recalculation — every 5 minutes.
 	// Writes to content_scores.velocity_score (used by feed ranking queries).
 	schedule("*/5 * * * *", TypeMaintenanceUpdateVelocityScores, 5*time.Minute)

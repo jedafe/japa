@@ -701,7 +701,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6" style="--page-gutter: 0px">
+<div class="max-w-6xl mx-auto p-4 space-y-6" style="--page-gutter: 0px">
 	<h1 class="sr-only">{t('jce.compare.heading')}</h1>
 
 	{#if user && (!selectedType || mine)}
@@ -1026,9 +1026,9 @@
 
 		<!-- Sticky zone: AI quick panel + compare tray (hidden in nested browse mode) -->
 		{#if !isNestedSource}
-			<div class="sticky bottom-20 z-40 -mx-4 space-y-2 sm:bottom-0 sm:-mx-6" style="background-color: var(--color-bg)">
+			<div class="sticky bottom-20 z-40 -mx-4 space-y-2 sm:bottom-0" style="background-color: var(--color-bg)">
 				{#if aiQuickOpen && aiQuickEnabled}
-					<div class="px-4 sm:px-6">
+					<div class="px-4">
 						<AiQuickPanel
 							loading={aiQuickLoading}
 							result={aiQuickResult}

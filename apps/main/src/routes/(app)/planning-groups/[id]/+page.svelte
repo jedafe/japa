@@ -177,7 +177,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-3xl">
 	{#if data.loadError || !group}
 		<div class="p-4">
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">

@@ -393,15 +393,15 @@
 </SetSidebar>
 
 <!-- Center column: tag header + content grid -->
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<!-- Cover image hero -->
 	{#if tag.cover_url}
-		<div class="relative h-32 w-full overflow-hidden border-b border-[var(--color-border)] sm:h-40">
+		<div class="relative mx-auto h-32 w-full max-w-3xl overflow-hidden border-b border-[var(--color-border)] sm:h-40">
 			<img src={tag.cover_url} alt={tag.name} class="h-full w-full object-cover" />
 		</div>
 	{/if}
 
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<a
 			href="/discover?tab=tags"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
@@ -476,9 +476,9 @@
 		{/if}
 	</div>
 
-	<UrlTabs {tabs} value={tab} onValueChange={(v) => goto(`?tab=${v}`)} class="mx-4" />
+	<div class="mx-auto w-full max-w-3xl"><UrlTabs {tabs} value={tab} onValueChange={(v) => goto(`?tab=${v}`)} class="mx-4" /></div>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if tab === 'search'}
 			<!-- Search within this tag (auth required by the backend). -->
 			<form class="mb-4 flex gap-2" onsubmit={(e) => { e.preventDefault(); runSearch(); }}>

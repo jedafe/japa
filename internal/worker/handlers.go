@@ -5923,3 +5923,79 @@ func HandleBroadcastDispatchScheduled(ctx context.Context, _ *asynq.Task) error 
 
 	return nil
 }
+
+// HandleHonchoRetentionSweep prunes Honcho context entries older than
+// JC_HONCHO_RETENTION_DAYS (default 90; 0 disables). Iterates users in
+// batches of 500 and calls DeleteEntry on expired entries. No-op when no
+// Honcho deployment exists. Daily via the Asynq scheduler (§11).
+func HandleHonchoRetentionSweep(ctx context.Context, _ *asynq.Task) error {
+	if honchoSweeper == nil || dbPool == nil {
+		return nil
+	}
+
+	days := 90
+	if v := os.Getenv("JC_HONCHO_RETENTION_DAYS"); v != "" {
+		// #nosec G109 // env var, parse error falls through to default
+		if n, err := strconv.Atoi(v); err == nil {
+			days = n
+		}
+	}
+
+	if days <= 0 {
+		slog.Info("task:honcho:retention_sweep: disabled (retention_days <= 0)")
+		return nil
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -days)
+	deleted := 0
+
+	for offset := 0; ; offset += 500 {
+		rows, err := dbPool.Reader.Query(ctx,
+			`SELECT id FROM users WHERE deleted_at IS NULL ORDER BY id LIMIT 500 OFFSET $1`, offset)
+		if err != nil {
+			slog.Error("task:honcho:retention_sweep: user page failed", "offset", offset, "error", err)
+			return err
+		}
+
+		var ids []pgtype.UUID
+		for rows.Next() {
+			var id pgtype.UUID
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+
+			ids = append(ids, id)
+		}
+
+		rows.Close()
+
+		if len(ids) == 0 {
+			break
+		}
+
+		for _, uid := range ids {
+			entries, err := honchoSweeper.GetContext(ctx, uid.String())
+			if err != nil {
+				slog.Warn("task:honcho:retention_sweep: fetch failed", "user_id", uid, "error", err)
+				continue
+			}
+
+			for _, e := range entries {
+				if e.CreatedAt.After(cutoff) {
+					continue
+				}
+
+				if err := honchoSweeper.DeleteEntry(ctx, uid.String(), e.ID); err != nil {
+					slog.Warn("task:honcho:retention_sweep: delete failed", "user_id", uid, "entry", e.ID, "error", err)
+					continue
+				}
+
+				deleted++
+			}
+		}
+	}
+
+	slog.Info("task:honcho:retention_sweep: complete", "entries_deleted", deleted, "cutoff", cutoff)
+	return nil
+}

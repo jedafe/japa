@@ -124,7 +124,7 @@
 	<meta name="description" content={description} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<!-- Header -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: var(--page-gutter)">
 		<div class="flex flex-wrap items-start justify-between gap-4">
@@ -232,7 +232,7 @@
 		{/if}
 	</ListPageBar>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		<!-- NOTE: the curated-collections sections (GET /sources/collections)
 			were intentionally removed from this page — the directory is just the
 			sorted grid below. Do not re-add collection rails here; the API

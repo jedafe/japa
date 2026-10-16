@@ -102,7 +102,7 @@
 	<meta property="og:url" content={page.url.origin + '/forum'} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('forum.heading', 'Forum')}</h1>
 	<ListPageBar>
 		<UrlTabs
@@ -131,7 +131,7 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showFilters && data.sort !== 'featured'}
 			<div
 				id="forum-filter-panel"

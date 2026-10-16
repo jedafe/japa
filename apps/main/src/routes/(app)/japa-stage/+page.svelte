@@ -118,7 +118,7 @@
 	<meta property="og:type" content="website" />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('japa_stage.heading', 'Japa Stage — Find Members by Stage')}</h1>
 	<ListPageBar>
 		<UrlTabs
@@ -139,7 +139,7 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showFilters}
 		<!-- Filter panel -->
 		<div id="japa-stage-filter-panel" class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">

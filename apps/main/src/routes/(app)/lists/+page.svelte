@@ -121,7 +121,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('lists.title', 'Lists')}</h1>
 	<ListPageBar>
 		<UrlTabs
@@ -147,7 +147,7 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.loadError}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">
 				{t('lists.load_error', 'Failed to load lists. Please try again later.')}

@@ -247,7 +247,7 @@
 	{/if}
 {/snippet}
 
-<div class="mx-auto max-w-full px-4 py-8">
+<div class="mx-auto max-w-3xl px-4 py-8">
 	<h1 class="mb-6 text-2xl font-bold text-[var(--color-text)]">{t('search.heading', 'Search')}</h1>
 
 	<form onsubmit={submitSearch} class="mb-4">

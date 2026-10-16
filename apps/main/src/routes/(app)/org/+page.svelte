@@ -130,7 +130,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header + search + filters -->
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Building2 size={20} /> {t('organizations.heading', 'Organizations')}
 		</h1>
@@ -187,7 +187,7 @@
 		</div>
 	</div>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.forbidden}
 			<div class="flex flex-col items-center gap-3 py-16 text-center">
 				<ShieldX size={40} class="text-[var(--color-muted)]" />

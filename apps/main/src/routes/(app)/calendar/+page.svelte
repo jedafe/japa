@@ -441,7 +441,7 @@
 	{/if}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('calendar.heading', 'Community Calendar')}</h1>
 	<ListPageBar>
 		<UrlTabs
@@ -485,7 +485,7 @@
 	</ListPageBar>
 
 	<!-- Content -->
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showFilters}
 			<!-- Filter panel -->
 			<div id="calendar-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">

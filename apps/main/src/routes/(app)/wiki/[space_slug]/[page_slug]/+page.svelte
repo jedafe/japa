@@ -374,7 +374,7 @@
 	     resolves from actual space links arbitrated by the declared type
 	     edges (§80 Hierarchical UX); falls back to the static kind label
 	     when no ancestors resolve. -->
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-2.5 sm:px-6">
+	<div class="border-b border-[var(--color-border)] px-4 py-2.5 sm:px-6" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<nav aria-label={t('a11y.breadcrumb', 'Breadcrumb')} class="min-w-0 text-xs text-[var(--color-muted)]">
 			<ol class="flex items-center gap-1.5">
 				<li>
@@ -429,7 +429,7 @@
 	</div>
 
 	<!-- Guide tab strip — active tab = this page's category -->
-	<div class="px-1 sm:px-3">
+	<div class="mx-auto w-full max-w-3xl px-1 sm:px-3">
 		<WikiTabs
 			spaceSlug={data.spaceSlug}
 			categories={data.apiCategories ?? []}

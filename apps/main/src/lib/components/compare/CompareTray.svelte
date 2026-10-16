@@ -40,7 +40,7 @@
 </script>
 
 <div
-	class="border-t px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6"
+	class="border-t px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
 	style="background-color: var(--color-bg); border-color: var(--color-border)"
 	role="region"
 	aria-label={t('jce.compare.heading')}

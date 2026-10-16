@@ -320,9 +320,9 @@
 	</div>
 </SetSidebar>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<!-- University header -->
-	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<a
 			href="/universities"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
@@ -403,9 +403,9 @@
 	</div>
 
 	<!-- Tabs — Section 39 / ADR-039: Overview / Posts / Forums / Courses / Members / Reviews / Compare -->
-	<UrlTabs {tabs} bind:value={activeTab} class="mx-3 px-4" />
+	<div class="mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} class="mx-3 px-4" /></div>
 
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		<!-- Stats row -->
 		<div class="grid grid-cols-3 gap-2">
 			{#each stats as stat (stat.label)}

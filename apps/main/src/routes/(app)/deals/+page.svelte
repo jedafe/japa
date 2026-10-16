@@ -261,7 +261,7 @@
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<ListPageBar title={t('deals.heading', 'Deals')}>
 		{#snippet actions()}
 			{#if lastUpdated}
@@ -275,7 +275,7 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="p-4">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		<!-- Server-side search + filter + sort toolbar (§55 /coupons params).
 		     Rendered even on loadError — adjusting a filter retries the load. -->
 		<div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">

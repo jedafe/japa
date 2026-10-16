@@ -163,7 +163,7 @@
 	<meta property="og:type" content="website" />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('scam_alerts.heading', 'Scam Alerts')}</h1>
 	<ListPageBar>
 		<UrlTabs
@@ -183,7 +183,7 @@
 	</ListPageBar>
 
 	<!-- List -->
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showSubmitted}
 			<div class="mb-4 rounded-[var(--radius)] border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">
 				<div class="flex items-start gap-2">

@@ -105,20 +105,20 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
-	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">{t('discover.heading', 'Discover')}</h1>
 	</div>
 
 	<!-- Tab bar -->
 	<nav
-		class="discover-tabs sticky top-0 z-10 mx-3"
+		class="discover-tabs sticky top-0 z-10" style="margin-inline: max(0.75rem, calc((100% - 48rem)/2))"
 		aria-label={t('discover.tabs_label', 'Discover tabs')}
 	>
 		<UrlTabs {tabs} value={data.tab} onValueChange={(v) => goto(`?tab=${v}`)} />
 	</nav>
 
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if tab === 'spaces'}
 			{#if data.spaces.length === 0}
 				<EmptyState icon={Compass} title={t('discover.spaces_empty', 'No space suggestions yet')} />

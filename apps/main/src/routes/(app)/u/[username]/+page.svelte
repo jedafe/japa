@@ -780,6 +780,9 @@
 	/>
 </SetSidebar>
 
+<!-- Centered to the same max-w-3xl column as the tab body so the header's
+     left/right margins stay symmetric when the side nav is collapsed. -->
+<div class="mx-auto w-full max-w-3xl">
 <ProfileHeader {user} {isOwnProfile} followers={data.followers} following={data.following}>
 	{#if !isOwnProfile}
 		<FollowButton
@@ -803,6 +806,7 @@
 		{/if}
 	{/snippet}
 </ProfileHeader>
+</div>
 
 <ReportDialog bind:open={reportOpen} entityType="user" entityId={user.id} entityName={user.display_name ?? user.username} />
 <MessageUserDialog bind:open={messageOpen} recipientId={messageRecipient.id} recipientName={messageRecipient.name} authed={isAuthenticated} />
@@ -812,7 +816,7 @@
 set. Best-effort: data.japaStage is null when the feature flag is off, the
 profile is private, or no stage is set. -->
 {#if data.japaStage?.stage}
-	<div class="mx-auto w-full max-w-full px-3 pt-3">
+	<div class="mx-auto w-full max-w-3xl px-4 pt-3">
 		<a
 			href={`/japa-stage?stage=${data.japaStage.stage}`}
 			class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm transition-colors hover:bg-[var(--color-surface-subtle)]"
@@ -830,9 +834,9 @@ profile is private, or no stage is set. -->
 	</div>
 {/if}
 
-<UrlTabs {tabs} bind:value={activeTab} />
+<div class="mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} /></div>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	{#snippet toolbar(options: FilterOption[], count: number, sortable = false)}
 		<!-- Search + filter are only useful past one default page of items.
 		     A single-option filter dropdown (e.g. followers = "All users")
@@ -932,7 +936,7 @@ profile is private, or no stage is set. -->
 		{/if}
 	{/snippet}
 
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if activeTab === 'posts'}
 			{@render toolbar(postsFilterOptions, data.posts.length, true)}
 			{#if data.posts.length === 0}

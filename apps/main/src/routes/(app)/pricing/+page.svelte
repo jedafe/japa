@@ -22,7 +22,7 @@
 	<meta name="description" content={t('pricing.description', 'Choose the plan that fits your journey.')} />
 </svelte:head>
 
-<div class="mx-auto max-w-full px-4 py-8">
+<div class="mx-auto max-w-3xl px-4 py-8">
 	<header class="mb-8 text-center">
 		<h1 class="text-2xl font-bold text-[var(--color-text)]">
 			{t('pricing.heading', 'Choose your plan')}

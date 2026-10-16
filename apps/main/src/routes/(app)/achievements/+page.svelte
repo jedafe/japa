@@ -157,7 +157,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('achievements.heading', 'Achievements')}</h1>
 	<ListPageBar>
 		<UrlTabs
@@ -177,7 +177,7 @@
 	</ListPageBar>
 
 	<!-- List -->
-	<div class="p-3">
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showFilters}
 			<!-- Filter panel -->
 			<div id="achievements-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">

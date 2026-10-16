@@ -305,7 +305,7 @@
 	<meta name="description" content={t('wiki.create_description', 'Create a new wiki page')} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl p-4 sm:p-6">
+<div class="mx-auto w-full max-w-3xl p-4">
 	<div class="mb-6 flex items-center gap-3">
 		<a
 			href="/wiki/{data.spaceSlug}"
