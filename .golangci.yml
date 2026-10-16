@@ -7,6 +7,11 @@ run:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 50
+  # Ratchet: ~3.9k pre-existing findings (2026-10-16 audit) are tracked in
+  # .jeos/audit/backend-audit.md for a dedicated cleanup campaign. Gate only
+  # issues introduced since origin/main so CI enforces the bar going forward
+  # without blocking on the backlog. Requires fetch-depth: 0 in CI.
+  new-from-merge-base: origin/main
 
 linters:
   enable:
