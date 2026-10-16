@@ -33,6 +33,7 @@ func (a *ProcessorAdapter) ProcessImage(ctx context.Context, mediaID, operation 
 		if err := id.Scan(mediaID); err != nil {
 			return fmt.Errorf("invalid media_id %q: %w", mediaID, err)
 		}
+
 		return a.svc.OptimizeMedia(ctx, id)
 	}
 

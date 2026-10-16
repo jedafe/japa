@@ -66,9 +66,11 @@ func saturateTokenCount(v int) int32 {
 	if v < 0 {
 		return 0
 	}
+
 	if v > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	return int32(v)
 }
 
@@ -106,6 +108,7 @@ func (g *intelMeteredAIGateway) ChatWithTools(ctx context.Context, category stri
 		if model == "" {
 			model = req.Model
 		}
+
 		g.usage.record(ctx, "intel_"+category, resp.ProviderName, model, resp.ProviderRef, resp.Usage)
 	}
 
@@ -274,26 +277,32 @@ func (a *intelRelevanceClassifierAdapter) Classify(ctx context.Context, item rel
 	}
 
 	var b strings.Builder
+
 	b.WriteString("You are a topical relevance classifier for JapaConnect, a platform for ")
 	b.WriteString("Nigerians/Africans migrating, relocating, studying abroad, working abroad, or settling overseas.\n")
+
 	if len(topics) > 0 {
 		b.WriteString("The channel's topic vocabulary is: ")
 		b.WriteString(strings.Join(topics, ", "))
 		b.WriteString(".\n")
 	}
+
 	b.WriteString("Decide whether this item is topically relevant (migration, relocation, travel, study abroad, jobs, scholarships, settlement, diaspora, visas, or the channel topics above).\n\n")
 	b.WriteString("Title: ")
 	b.WriteString(item.Title)
 	b.WriteString("\nURL: ")
 	b.WriteString(item.URL)
+
 	if item.Summary != "" {
 		summary := item.Summary
 		if len(summary) > 500 {
 			summary = summary[:500] // bound the prompt — the gate is a cheap pass
 		}
+
 		b.WriteString("\nSummary: ")
 		b.WriteString(summary)
 	}
+
 	b.WriteString("\n\nRespond with ONLY a JSON object (no markdown, no explanation): {\"on_topic\": true} or {\"on_topic\": false}")
 
 	resp, err := a.d.Dispatch(ctx, "classification", ai.Request{
@@ -355,10 +364,12 @@ func parseClassifierVerdict(text string) (bool, error) {
 		OnTopic  *bool `json:"on_topic"`
 		Relevant *bool `json:"relevant"`
 	}
+
 	if err := json.Unmarshal([]byte(cleaned), &out); err == nil {
 		if out.OnTopic != nil {
 			return *out.OnTopic, nil
 		}
+
 		if out.Relevant != nil {
 			return *out.Relevant, nil
 		}

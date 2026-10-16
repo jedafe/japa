@@ -51,7 +51,6 @@ func (h *Handlers) enqueueAdEventIngest(campaignID, userID pgtype.UUID, eventTyp
 
 	// Build payload — omit user_id when invalid (guest/anonymous event).
 	payloadMap := map[string]string{
-
 		"campaign_id": campaignID.String(),
 		"event_type":  eventType,
 	}
@@ -324,7 +323,6 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 	// notification when status = active. Fire-and-forget per Rule 8.
 	if h.AsynqClient != nil {
 		notifyPayload, _ := json.Marshal(map[string]string{
-
 			"campaign_id": id.String(),
 		})
 		if _, err := h.AsynqClient.Enqueue(
@@ -408,7 +406,6 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 	// Enqueue credit refund task (fire-and-forget per Rule 8).
 	if h.AsynqClient != nil {
 		payload, _ := json.Marshal(map[string]string{
-
 			"campaign_id": id.String(),
 		})
 		if _, err := h.AsynqClient.Enqueue(
@@ -420,7 +417,6 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 
 		// Enqueue status notification (fire-and-forget).
 		notifyPayload, _ := json.Marshal(map[string]string{
-
 			"campaign_id": id.String(),
 		})
 		if _, err := h.AsynqClient.Enqueue(
@@ -446,7 +442,6 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 // space targeting uses the optional space_id query param. Paid campaigns are
 // served first; house ads fill the slot when none are eligible (§25).
 func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
-
 	slotName := r.URL.Query().Get("slot")
 	if slotName == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slot", "slot query parameter is required")
@@ -462,6 +457,7 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var spaceID string
+
 	if raw := r.URL.Query().Get("space_id"); raw != "" {
 		var u pgtype.UUID
 		if err := u.Scan(raw); err == nil {
@@ -489,6 +485,7 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 	for i, c := range campaigns {
 		wire[i] = campaignToWire(c)
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": wire})
 }
 
@@ -529,7 +526,6 @@ func campaignToWire(c AdCampaign) map[string]any {
 // Accepts a batch of ad events for async ingestion. Public (catalog: POST
 // /ads/events) — fire-and-forget impression/click ingestion from guests too.
 func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Events []struct {
 			CampaignID string `json:"campaign_id"`
@@ -965,7 +961,6 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 // column. Uses the generated UpdateAdCampaignDetails query via the service
 // layer (Rule 2 — never raw SQL in handlers).
 func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
@@ -998,7 +993,6 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 // via the generated GetAdSlotTypeByID query. The previous raw-SQL handler
 // referenced non-existent width/height columns and would 500.
 func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")

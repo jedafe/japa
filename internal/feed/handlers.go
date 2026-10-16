@@ -193,7 +193,6 @@ func parseSort(r *http.Request) string {
 // BUG-006: caches results in Valkey (jc:explore:{platform}:{geo}:{page}, Section 53, TTL 15min).
 // Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
-
 	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
@@ -345,7 +344,6 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 // optional — guests see all public rows. When the viewer is authenticated,
 // mutual user_blocks are excluded per §41 (BUG-002).
 func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
-
 	authorIDStr := chi.URLParam(r, "user_id")
 
 	var authorID pgtype.UUID

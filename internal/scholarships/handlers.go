@@ -59,7 +59,6 @@ func (h *Handlers) resolveLiterals(r *http.Request, v any) {
 // HandleFindScholarships searches published scholarship guides.
 // GET /scholarships.
 func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request) {
-
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
@@ -86,6 +85,7 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "min_amount must be a number")
 			return
 		}
+
 		filters.MinAmount = f
 	}
 
@@ -95,6 +95,7 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "max_amount must be a number")
 			return
 		}
+
 		filters.MaxAmount = f
 	}
 
@@ -135,7 +136,6 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 // HandleScholarshipDetail returns a single scholarship guide.
 // GET /scholarships/{id}.
 func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Request) {
-
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
@@ -161,7 +161,6 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 // HandleStatuses returns the canonical saved-scholarship status options.
 // GET /scholarships/statuses (Rule 16).
 func (h *Handlers) HandleStatuses(w http.ResponseWriter, r *http.Request) {
-
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
@@ -176,7 +175,6 @@ func (h *Handlers) HandleStatuses(w http.ResponseWriter, r *http.Request) {
 // scholarship guides — the option list for the finder's level filter
 // (Rule 16). GET /scholarships/levels.
 func (h *Handlers) HandleLevels(w http.ResponseWriter, r *http.Request) {
-
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
@@ -334,6 +332,7 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 			return
 		}
 	}
+
 	page, limit := parsePagination(r)
 
 	rows, total, err := h.svc.ListSavedScholarships(r.Context(), userID, status, guideID, page, limit)
@@ -466,20 +465,25 @@ func sanitizeScholarshipURL(raw string) (string, bool) {
 	if v == "" {
 		return "", true
 	}
+
 	if strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") {
 		return "", false
 	}
+
 	lower := strings.ToLower(v)
 	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 		return "", false
 	}
+
 	if len(v) <= len("https://") {
 		return "", false
 	}
+
 	host := v[strings.Index(v, "://")+3:]
 	if host == "" || strings.HasPrefix(host, "/") {
 		return "", false
 	}
+
 	return v, true
 }
 
@@ -580,7 +584,6 @@ func buildScholarshipCreateParams(
 	fieldsOfStudy, eligibleCountries, requiredDocuments, funding, languageReqs := normalizeScholarshipSlices(body)
 
 	return gen.CreateScholarshipParams{
-
 		GuideID:              guideID,
 		Title:                *body.Title,
 		Description:          body.Description,
@@ -769,7 +772,8 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 	search := q.Get("q")
 	status := q.Get("verification_status")
 
-	rows, err := h.svc.store.AdminListScholarships(r.Context(), gen.AdminListScholarshipsParams{Column1: search, Column2: status, Limit: safeInt32(limit),
+	rows, err := h.svc.store.AdminListScholarships(r.Context(), gen.AdminListScholarshipsParams{
+		Column1: search, Column2: status, Limit: safeInt32(limit),
 		Offset: offset,
 	})
 	if err != nil {
@@ -841,7 +845,6 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 
 	// 1. Insert the guide content row.
 	contentParams := gen.CreateContentParams{
-
 		AuthorID:        userID,
 		ContentType:     "guide",
 		Title:           *body.Title,
@@ -920,7 +923,6 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 
 	// Merge: use provided values or fall back to existing.
 	arg := gen.UpdateScholarshipParams{
-
 		ID:                   id,
 		Title:                existing.Title,
 		Description:          existing.Description,

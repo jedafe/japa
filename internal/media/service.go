@@ -32,9 +32,11 @@ func saturateInt32(v int) int32 {
 	if v < 0 {
 		return 0
 	}
+
 	if v > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	return int32(v)
 }
 
@@ -123,7 +125,6 @@ func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, fi
 	bucket := s.storageBucket(ctx)
 
 	m, err := s.store.InsertMedia(ctx, gen.InsertMediaParams{
-
 		UploaderUserID:   uploaderID,
 		OriginalFilename: filename,
 		MimeType:         mimeType,
@@ -190,6 +191,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 	// confirmed. The row's file_size_bytes recorded the claimed size at
 	// initiate — persist the real byte count so listings stay accurate.
 	size, serr := s.objectSizeBytes(ctx, m.StorageBucket, m.StoragePath)
+
 	switch {
 	case errors.Is(serr, errObjectMissing):
 		return fmt.Errorf("%w: upload did not complete — object not found in storage", errObjectMissing)
@@ -199,7 +201,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 		// or oversized object). Reject as retryable; the row stays
 		// unconfirmed and the client can re-confirm after recovery, or
 		// the nightly scan sweep finalizes it.
-		return fmt.Errorf("%w: %v", errStorageUnavailable, serr)
+		return fmt.Errorf("%w: %w", errStorageUnavailable, serr)
 	case size <= 0:
 		return fmt.Errorf("%w: uploaded object is empty", errUploadInvalid)
 	case size > s.MaxUploadBytes(ctx):
@@ -225,8 +227,10 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 		if errors.Is(err, errObjectMissing) || os.IsNotExist(err) {
 			return fmt.Errorf("%w: upload did not complete — object not found in storage", errObjectMissing)
 		}
-		return fmt.Errorf("%w: %v", errStorageUnavailable, err)
+
+		return fmt.Errorf("%w: %w", errStorageUnavailable, err)
 	}
+
 	if len(header) == 0 {
 		return fmt.Errorf("%w: could not read stored object bytes", errStorageUnavailable)
 	}
@@ -235,6 +239,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 	if verifyErr != nil {
 		return fmt.Errorf("mime verification failed: %w", verifyErr)
 	}
+
 	if !matches {
 		return fmt.Errorf("%w: MIME mismatch — client claimed %s but content is %s",
 			errUploadInvalid, CanonicalMIMEType(m.MimeType), detected)
@@ -318,15 +323,18 @@ func (s *Service) fetchFromS3(ctx context.Context, bucket, path string, n int64)
 // retryable rather than confirming unverified objects).
 func (s *Service) objectSizeBytes(ctx context.Context, bucket, path string) (int64, error) {
 	var upstreamErr error
+
 	notFound := s.s3 == nil // local-only storage: stat decides missing
 
 	if s.s3 != nil {
 		objectURL := fmt.Sprintf("%s/%s/%s", s.s3.endpoint, bucket, path)
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, objectURL, nil)
 		if err == nil {
 			resp, err := s.s3.httpClient.Do(req)
 			if err == nil {
 				_ = resp.Body.Close()
+
 				switch {
 				case resp.StatusCode == http.StatusOK && resp.ContentLength >= 0:
 					return resp.ContentLength, nil
@@ -350,10 +358,12 @@ func (s *Service) objectSizeBytes(ctx context.Context, bucket, path string) (int
 		if upstreamErr != nil {
 			return 0, upstreamErr
 		}
+
 		return 0, err
 	}
 
 	fi, statErr := os.Stat(localPath)
+
 	switch {
 	case statErr == nil:
 		return fi.Size(), nil
@@ -406,6 +416,7 @@ func defaultOpenFile(path string) (io.ReadCloser, error) {
 	if err := validateMediaPath(path); err != nil {
 		return nil, err
 	}
+
 	return os.Open(path) // #nosec G304 // path validated by validateMediaPath
 }
 
@@ -529,6 +540,7 @@ func (s *Service) HardDeleteMedia(ctx context.Context, mediaID pgtype.UUID) erro
 	if m, err := s.store.GetMediaByIDAny(ctx, mediaID); err == nil {
 		_ = s.deleteObject(ctx, m.StorageBucket, m.StoragePath)
 	}
+
 	return s.store.HardDeleteMedia(ctx, mediaID)
 }
 
@@ -547,16 +559,19 @@ func (s *Service) PurgeDeletedMedia(ctx context.Context, retentionDays, limit in
 	}
 
 	purged := 0
+
 	for _, row := range rows {
 		if err := s.deleteObject(ctx, row.StorageBucket, row.StoragePath); err != nil {
 			slog.Warn("media gc: object delete failed, keeping row for next sweep",
 				"media_id", row.ID.String(), "error", err)
 			continue
 		}
+
 		if err := s.store.HardDeleteMedia(ctx, row.ID); err != nil {
 			slog.Warn("media gc: row delete failed", "media_id", row.ID.String(), "error", err)
 			continue
 		}
+
 		purged++
 	}
 
@@ -780,7 +795,6 @@ func NormalizeMIMEType(mimeType string) string {
 // DirectUpload stores a file locally and creates the media record.
 func (s *Service) DirectUpload(ctx context.Context, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64, localPath, storagePath string) (pgtype.UUID, error) {
 	m, err := s.store.InsertMedia(ctx, gen.InsertMediaParams{
-
 		UploaderUserID:   uploaderID,
 		OriginalFilename: filename,
 		MimeType:         mimeType,
@@ -838,6 +852,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 			ext = fe
 		}
 	}
+
 	storagePath := fmt.Sprintf("%s/%s%s", StoragePathMedia,
 
 		uuid.New().String(),
@@ -866,7 +881,6 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 
 	// Build insert params with optional attribution.
 	params := gen.InsertMediaParams{
-
 		UploaderUserID:   uploaderID,
 		OriginalFilename: filename,
 		MimeType:         mimeType,
@@ -917,7 +931,7 @@ func (s *Service) StoreFromURL(ctx context.Context, uploaderID pgtype.UUID, sour
 	u, err := url.Parse(sourceURL)
 	if err != nil || u == nil || u.Host == "" || u.User != nil ||
 		(u.Scheme != "https" && u.Scheme != "http") {
-		return pgtype.UUID{}, fmt.Errorf("invalid source url")
+		return pgtype.UUID{}, errors.New("invalid source url")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
@@ -970,6 +984,7 @@ func DetectStorageMIME(data []byte, filename string) string {
 			return brand
 		}
 	}
+
 	if mimeType == "application/octet-stream" ||
 		strings.HasPrefix(mimeType, "text/plain") ||
 		strings.HasPrefix(mimeType, "text/xml") {
@@ -1001,6 +1016,7 @@ func DetectStorageMIME(data []byte, filename string) string {
 // govern user uploads, not system ingestion.
 func isStorableMediaMIME(mimeType string) bool {
 	c := CanonicalMIMEType(mimeType)
+
 	return strings.HasPrefix(c, "image/") ||
 		strings.HasPrefix(c, "video/") ||
 		strings.HasPrefix(c, "audio/") ||

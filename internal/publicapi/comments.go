@@ -57,6 +57,7 @@ func (h *Handlers) CreatePublicComment(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
+
 	if h.comments == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
@@ -73,6 +74,7 @@ func (h *Handlers) CreatePublicComment(w http.ResponseWriter, r *http.Request) {
 		ParentID    string `json:"parent_id"`
 		IsAnonymous bool   `json:"is_anonymous"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return

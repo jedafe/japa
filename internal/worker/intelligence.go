@@ -590,6 +590,7 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 	}
 
 	method := sources.CrawlMethod(ch.CrawlMethod)
+
 	switch {
 	case sources.InboundMethod(method):
 		// Push channels ingest via the inbound endpoints — a stray enqueue
@@ -604,6 +605,7 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 		// crawl-now) enqueues the headless sniff instead of a fetch; the
 		// task discovers and materializes api channels.
 		slog.Info("task:intel:fetch_channel: xhr_sniff channel, enqueuing sniff task", "channel_id", channelID.String())
+
 		payload := marshalPayload(intelXHRSniffPayload{
 			Version:   intelPayloadVersion,
 			SourceID:  ch.SourceID.String(),
@@ -612,12 +614,14 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 		if payload != nil {
 			enqueueIntel(TypeIntelXHRSniff, payload)
 		}
+
 		return nil
 	case method == sources.CrawlMethodSearch:
 		// search channels poll the configured SERP provider via their own
 		// task (queue tier + observability per the Phase-3 plan); the task
 		// re-enters the shared fetch core below.
 		slog.Info("task:intel:fetch_channel: search channel, enqueuing search poll", "channel_id", channelID.String())
+
 		payload := marshalPayload(intelChannelPayload{
 			Version:   intelPayloadVersion,
 			SourceID:  ch.SourceID.String(),
@@ -626,6 +630,7 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 		if payload != nil {
 			enqueueIntel(TypeIntelSearchPoll, payload)
 		}
+
 		return nil
 	}
 
@@ -663,15 +668,19 @@ func HandleIntelFetchChannel(ctx context.Context, t *asynq.Task) error {
 			slog.Warn("task:intel:fetch_channel: rejecting invalid url_override", "channel_id", channelID.String(), "url_override", p.URLOverride)
 			return nil
 		}
+
 		opts.URLOverride = p.URLOverride
 	}
+
 	if p.ParentDocID != "" {
 		parentID, perr := scanUUID(p.ParentDocID)
 		if perr != nil {
 			return fmt.Errorf("task:intel:fetch_channel: parent_document_id: %w", perr)
 		}
+
 		opts.ParentDocID = parentID
 	}
+
 	opts.SitemapChild = p.SitemapChild
 	opts.SpiderChild = p.SpiderChild
 	opts.SpiderDepth = p.SpiderDepth
@@ -723,6 +732,7 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 	effCh := ch
 	if opts.URLOverride != "" {
 		effCh.EntryUrl = opts.URLOverride
+
 		switch {
 		case opts.SitemapChild:
 			effCh.CrawlMethod = string(sources.CrawlMethodSitemap)
@@ -757,6 +767,7 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 	// Derived fetches compare per-URL — a child page's previous capture,
 	// not the manifest's hash.
 	var priorHash string
+
 	switch {
 	case opts.URLOverride != "":
 		priorHash, _ = intelStores.GetLatestIntelRawDocHashForChannelURL(ctx, ch.ID, opts.URLOverride)
@@ -935,6 +946,7 @@ func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, 
 	} else {
 		err = intelPreflight.CheckChannel(ctx, src, ch)
 	}
+
 	if err != nil {
 		licenseBlocked := errors.Is(err, fetcher.ErrLicenseRepublish)
 
@@ -990,10 +1002,12 @@ func intelReleaseChannelLock(ctx context.Context, channelID, urlOverride string)
 	if intelPreflight == nil {
 		return
 	}
+
 	if urlOverride != "" {
 		intelPreflight.ReleaseChannelCrawlLockScoped(ctx, channelID, urlOverride)
 		return
 	}
+
 	intelPreflight.ReleaseChannelCrawlLock(ctx, channelID)
 }
 
@@ -1102,6 +1116,7 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 		if !derived {
 			intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, false)
 		}
+
 		return nil
 	case changedetector.DecisionChanged:
 		// Mark the crawl unit as having changed content so the promoter can
@@ -1113,6 +1128,7 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 			} else {
 				_ = intelSourcesStore.MarkLastChanged(ctx, sourceID)
 			}
+
 			intelRecordChannelCrawlOutcome(ctx, sourceID, channelID, true)
 		}
 	// First crawl — no prior content to mark as changed.
@@ -1165,6 +1181,7 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	intelEnqueueHarvestOutbound(ctx, rawDoc)
 
 	pipeline := sources.PipelineExtract
+
 	if chResolved {
 		if p2 := sources.Pipeline(ch.Pipeline); p2.IsValid() {
 			pipeline = p2
@@ -1251,7 +1268,9 @@ func intelIsManifestDoc(doc gen.IntelRawDocument) bool {
 // '{}' channel still honours the source's max_urls/url_filter.
 func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifestDoc gen.IntelRawDocument) {
 	var prevBody []byte
+
 	var prevErr error
+
 	var prev gen.IntelRawDocument
 
 	if manifestDoc.ParentDocumentID.Valid {
@@ -1259,6 +1278,7 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 	} else {
 		prev, prevErr = intelStores.GetPrevIntelRawDocByChannel(ctx, ch.ID, manifestDoc.ID)
 	}
+
 	if prevErr == nil {
 		prevBody = prev.Body
 	} else if !errors.Is(prevErr, pgx.ErrNoRows) {
@@ -1271,6 +1291,7 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 	}
 
 	providerConfig := ch.ProviderConfig
+
 	if intelSourcesStore != nil {
 		if src, err := intelSourcesStore.Get(ctx, ch.SourceID); err == nil {
 			providerConfig = fetcher.ResolveChannelProviderConfig(ch, src)
@@ -1284,6 +1305,7 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 
 	filter := intelCfgString(cfg, "url_filter")
 	maxChildren := intelCfgInt(cfg, "max_urls", 0)
+
 	if manifestKind == fetcher.ManifestKindSpider {
 		// max_children overrides max_urls for spider manifests —
 		// max_urls also caps the manifest's breadth at fetch time, so a
@@ -1293,6 +1315,7 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 			maxChildren = n
 		}
 	}
+
 	if maxChildren <= 0 && appSettings != nil {
 		if manifestKind == fetcher.ManifestKindSpider {
 			maxChildren = appSettings.GetIntOr(ctx, "intel.spider.max_children_per_crawl", 25)
@@ -1300,6 +1323,7 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 			maxChildren = appSettings.GetIntOr(ctx, "intel.sitemap.max_children_per_crawl", 25)
 		}
 	}
+
 	if maxChildren <= 0 {
 		maxChildren = 25
 	}
@@ -1318,10 +1342,12 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 	// every child.
 	spiderDepth, spiderMaxDepth, spiderChild := 0, 1, false
 	spiderScope := ""
+
 	if manifestKind == fetcher.ManifestKindSpider {
 		spiderDepth = fetcher.SpiderManifestDepth(intelDocHeaders(manifestDoc))
 		spiderMaxDepth = fetcher.SpiderMaxDepth(providerConfig)
 		spiderChild = spiderDepth+1 < spiderMaxDepth
+
 		spiderScope = intelDocHeaders(manifestDoc)[fetcher.SpiderScopeHeader]
 		if spiderScope == "" {
 			spiderScope = manifestDoc.Url
@@ -1334,11 +1360,13 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 			slog.Info("task:intel:detect_changes: manifest fan-out capped", "channel_id", ch.ID.String(), "max", maxChildren, "changed_total", len(changed))
 			break
 		}
+
 		parsed, err := url.Parse(u)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || sources.IsPrivateIPLiteral(parsed.Hostname()) {
 			slog.Warn("task:intel:detect_changes: skipping invalid manifest URL", "channel_id", ch.ID.String(), "url", u)
 			continue
 		}
+
 		if manifestKind == fetcher.ManifestKindSpider && !fetcher.SpiderSameScope(u, spiderScope) {
 			// Defense in depth — the fetcher already scoped extraction to
 			// the page's host+port origin, but a replayed/hand-edited
@@ -1346,6 +1374,7 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 			slog.Warn("task:intel:detect_changes: skipping out-of-scope spider URL", "channel_id", ch.ID.String(), "url", u)
 			continue
 		}
+
 		if filter != "" && !intelManifestURLMatch(filter, u) {
 			continue
 		}
@@ -1363,7 +1392,9 @@ func intelExpandManifest(ctx context.Context, ch gen.IntelSourceChannel, manifes
 		if payload == nil {
 			continue
 		}
+
 		enqueueIntel(TypeIntelFetchChannel, payload)
+
 		enqueued++
 	}
 
@@ -1397,6 +1428,7 @@ func intelInjectSpiderDepth(providerConfig []byte, depth int) []byte {
 	if err := json.Unmarshal(providerConfig, &m); err != nil || m == nil {
 		m = map[string]any{}
 	}
+
 	m["spider_depth"] = depth
 
 	b, err := json.Marshal(m)
@@ -1435,11 +1467,14 @@ func intelManifestURLMatch(pattern, rawURL string) bool {
 	if err != nil {
 		return false
 	}
+
 	p := u.EscapedPath()
 	if p == "" {
 		p = "/"
 	}
+
 	matched, err := path.Match(pattern, p)
+
 	return err == nil && matched
 }
 
@@ -1450,6 +1485,7 @@ func intelCfgString(cfg map[string]any, key string) string {
 	if s, ok := cfg[key].(string); ok {
 		return s
 	}
+
 	return ""
 }
 
@@ -1460,6 +1496,7 @@ func intelCfgInt(cfg map[string]any, key string, fallback int) int {
 	case int:
 		return v
 	}
+
 	return fallback
 }
 
@@ -1504,6 +1541,7 @@ func intelRecordChannelCrawlOutcome(ctx context.Context, sourceID, channelID pgt
 
 	if channelID.Valid {
 		key = channelID.String()
+
 		if ch, err := intelSourcesStore.GetChannel(ctx, channelID); err == nil {
 			base = ch.CrawlFrequencyMins
 		}
@@ -1560,6 +1598,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	// text. None of them contain an extractable entity — running the LLM on
 	// them only produces all-null records that pollute the review queue.
 	rawBody := string(rawDoc.Body)
+
 	contentType := ""
 	if rawDoc.ContentType != nil {
 		contentType = *rawDoc.ContentType
@@ -1624,7 +1663,9 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	skipItems := intelNormalizeItemURLSet(p.SkipItemURLs)
 
 	var persisted int
+
 	var retriesExhausted, curateOnly bool
+
 	for _, entityType := range entityTypes {
 		// Curate-only entity types (article, event, dataset) have no LLM
 		// prompt template — a dispatch here means a curate/hybrid channel
@@ -1633,7 +1674,9 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		// curate-only the doc routes to the review queue below.
 		if schemas.IsCurateOnly(entityType) {
 			slog.Warn("task:intel:extract: curate-only entity type reached extract, skipping", "raw_doc_id", p.RawDocID, "entity_type", entityType)
+
 			curateOnly = true
+
 			continue
 		}
 
@@ -1643,14 +1686,19 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 				// Per-type tolerance: a mixed source loses only this type's
 				// pass — other types' records are still persisted.
 				slog.Warn("task:intel:extract: retries exhausted for entity type", "raw_doc_id", p.RawDocID, "entity_type", entityType)
+
 				retriesExhausted = true
+
 				continue
 			}
+
 			if errors.Is(extErr, schemas.ErrCurateOnlyEntityType) {
 				// Defense-in-depth: the adapter refused a curate-only type
 				// the worker-side guard missed.
 				slog.Warn("task:intel:extract: adapter refused curate-only entity type", "raw_doc_id", p.RawDocID, "entity_type", entityType)
+
 				curateOnly = true
+
 				continue
 			}
 
@@ -1661,6 +1709,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		if perr != nil {
 			return perr
 		}
+
 		persisted += n
 	}
 
@@ -1722,14 +1771,18 @@ func resolveChannelEntityTypes(ch gen.IntelSourceChannel, src gen.IntelSource) [
 			if et == "" {
 				continue
 			}
+
 			if _, ok := schemas.ForEntityType(et); !ok {
 				slog.Warn("task:intel:extract: channel entity type has no registered schema, skipping", "entity_type", et)
 				continue
 			}
+
 			if _, dup := seen[et]; dup {
 				continue
 			}
+
 			seen[et] = struct{}{}
+
 			out = append(out, et)
 		}
 
@@ -1757,14 +1810,18 @@ func resolveSourceEntityTypes(src gen.IntelSource) []string {
 			if et == "" {
 				continue
 			}
+
 			if _, ok := schemas.ForEntityType(et); !ok {
 				slog.Warn("task:intel:extract: provider_config entity type has no registered schema, skipping", "entity_type", et)
 				continue
 			}
+
 			if _, dup := seen[et]; dup {
 				continue
 			}
+
 			seen[et] = struct{}{}
+
 			out = append(out, et)
 		}
 
@@ -1859,6 +1916,7 @@ func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, chann
 			}
 
 			slog.Info("task:intel:extract: record off-topic", "record_id", record.ID.String(), "index", i, "entity_type", entityType, "external_key", result.ExternalKey)
+
 			continue
 		}
 
@@ -1964,6 +2022,7 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:curate_channel: channel_id: %w", err)
 	}
+
 	if !channelID.Valid {
 		channelID = rawDoc.ChannelID
 	}
@@ -2071,6 +2130,7 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var persisted, gated, skipped int
+
 	extractEnqueued := false
 
 	// claimedURLs tracks the canonical item URL of every record this pass
@@ -2086,9 +2146,12 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 		if entityType == "" {
 			entityType = defaultEntityType
 		}
+
 		if entityType == "" {
 			slog.Warn("task:intel:curate_channel: record has no resolvable entity type, skipping", "channel_id", channelIDStr, "external_key", rec.ExternalKey)
+
 			skipped++
+
 			continue
 		}
 
@@ -2104,9 +2167,11 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 		// downstream chain entirely.
 		if rel != nil && rel.verdict(ctx, item, "task:intel:curate_channel") == relevance.VerdictOffTopic {
 			gated++
+
 			if intelPersistOffTopicRecord(ctx, rawDoc, ch, rec, entityType, "task:intel:curate_channel") != intelPersistFailed {
 				claimItem()
 			}
+
 			continue
 		}
 
@@ -2124,24 +2189,32 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 					if outcome == intelPersistExists {
 						claimItem()
 					}
+
 					skipped++
+
 					continue
 				}
+
 				if uerr := intelStores.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 					ID:     recordID,
 					Status: "review_required",
 				}); uerr != nil {
 					return fmt.Errorf("task:intel:curate_channel: set review status: %w", uerr)
 				}
+
 				persisted++
+
 				claimItem()
+
 				continue
 			}
 
 			if !extractEnqueued {
 				slog.Info("task:intel:curate_channel: hybrid record missing required fields, routing doc to extract", "raw_doc_id", p.RawDocID, "entity_type", entityType, "external_key", rec.ExternalKey)
+
 				extractEnqueued = true
 			}
+
 			continue
 		}
 
@@ -2150,10 +2223,14 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 			if outcome == intelPersistExists {
 				claimItem()
 			}
+
 			skipped++
+
 			continue
 		}
+
 		persisted++
+
 		claimItem()
 
 		// Trust gate (Task 11): sources at or below
@@ -2183,6 +2260,7 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 			if payload != nil {
 				enqueueIntel(TypeIntelPromote, payload)
 			}
+
 			continue
 		}
 
@@ -2258,6 +2336,7 @@ func intelMissingRequiredFields(rawExtraction []byte, entityType string) bool {
 	var fields map[string]struct {
 		Value any `json:"value"`
 	}
+
 	if err := json.Unmarshal(rawExtraction, &fields); err != nil {
 		return false
 	}
@@ -2266,10 +2345,12 @@ func intelMissingRequiredFields(rawExtraction []byte, entityType string) bool {
 		if !f.Required {
 			continue
 		}
+
 		fe, ok := fields[f.Name]
 		if !ok || fe.Value == nil {
 			return true
 		}
+
 		if s, ok := fe.Value.(string); ok && strings.TrimSpace(s) == "" {
 			return true
 		}
@@ -2477,11 +2558,13 @@ func intelRelevanceMapTopics(ctx context.Context, ch sources.Channel, src gen.In
 	if len(cats) == 0 && src.Category != "" {
 		cats = []string{src.Category}
 	}
+
 	if len(cats) == 0 {
 		return nil
 	}
 
 	var mapJSON []byte
+
 	if appSettings != nil {
 		if s := appSettings.GetStringOr(ctx, "intel.category_method_map", ""); s != "" {
 			mapJSON = []byte(s)
@@ -2499,6 +2582,7 @@ func intelItemFromExtraction(raw []byte) relevance.ItemInput {
 	var fields map[string]struct {
 		Value any `json:"value"`
 	}
+
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return relevance.ItemInput{}
 	}
@@ -2509,6 +2593,7 @@ func intelItemFromExtraction(raw []byte) relevance.ItemInput {
 			if !ok {
 				continue
 			}
+
 			if s, ok := f.Value.(string); ok && strings.TrimSpace(s) != "" {
 				return s
 			}
@@ -2554,6 +2639,7 @@ func intelNormalizeItemURLSet(raw []string) map[string]struct{} {
 	}
 
 	out := make(map[string]struct{}, len(raw))
+
 	for _, u := range raw {
 		if n := intelNormalizeItemURL(u); n != "" {
 			out[n] = struct{}{}
@@ -2605,6 +2691,7 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:dedup: %w", err)
 	}
+
 	record, err := intelStores.GetIntelRecord(ctx, recordID)
 	if err != nil {
 		return fmt.Errorf("task:intel:dedup: get record: %w", err)
@@ -2706,6 +2793,7 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:publish_gate: %w", err)
 	}
+
 	record, err := intelStores.GetIntelRecord(ctx, recordID)
 	if err != nil {
 		return fmt.Errorf("task:intel:publish_gate: get record: %w", err)
@@ -3084,6 +3172,7 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 		EntityType string `json:"entity_type"`
 		EventType  string `json:"type"`
 	}
+
 	if err := parsePayloadOrSkip(t, &p); err != nil {
 		return err
 	}
@@ -3097,6 +3186,7 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 	if domainIDStr == "" {
 		domainIDStr = p.EntityID
 	}
+
 	if domainIDStr == "" {
 		// An entity-less event has nothing to resolve — nothing a retry
 		// can heal, so this is a skip, not a failure.
@@ -3128,6 +3218,7 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 				slog.Warn("task:intel:notify_discoveries: scholarship no longer exists, skipping", "domain_id", domainID.String())
 				return nil
 			}
+
 			return fmt.Errorf("task:intel:notify_discoveries: load scholarship: %w", err)
 		}
 

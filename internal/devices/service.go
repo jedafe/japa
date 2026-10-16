@@ -160,7 +160,6 @@ func (s *Service) RegisterDevice(ctx context.Context, userID pgtype.UUID, input 
 	}
 
 	row, err := s.store.UpsertToken(ctx, gen.UpsertDeviceTokenParams{
-
 		UserID:     userID,
 		DeviceID:   input.DeviceID,
 		Token:      input.Token,
@@ -181,7 +180,6 @@ func (s *Service) DeregisterDevice(ctx context.Context, userID pgtype.UUID, devi
 	}
 
 	if err := s.store.DeregisterToken(ctx, gen.DeregisterDeviceTokenParams{
-
 		UserID:   userID,
 		DeviceID: deviceID,
 	}); err != nil {
@@ -194,7 +192,6 @@ func (s *Service) DeregisterDevice(ctx context.Context, userID pgtype.UUID, devi
 // ListDevices returns the user's registered devices as DeviceInfo (no token).
 func (s *Service) ListDevices(ctx context.Context, userID pgtype.UUID) ([]DeviceInfo, error) {
 	rows, err := s.store.ListUserTokens(ctx, gen.ListUserDeviceTokensParams{
-
 		UserID:     userID,
 		ActiveOnly: true,
 	})

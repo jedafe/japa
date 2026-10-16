@@ -410,7 +410,6 @@ func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any
 // Ref: v2 source directory item feed for comparison sources.
 func (s *Service) ListComparisonContentsBySourceID(ctx context.Context, sourceID pgtype.UUID, sortMode string, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error) {
 	rows, err := s.read.ListComparisonContentsBySourceID(ctx, gen.ListComparisonContentsBySourceIDParams{
-
 		IntelSourceID: sourceID,
 		SortMode:      sortMode,
 		PageLimit:     limit,

@@ -124,7 +124,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListTemplates is an exported method.
 func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
-
 	filterType := r.URL.Query().Get("type")
 	filterIsActive := r.URL.Query().Get("is_active")
 	limit := parsePageSize(r)
@@ -141,7 +140,6 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 
 // GetTemplate is an exported method.
 func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
@@ -159,7 +157,6 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTemplate is an exported method.
 func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
@@ -189,7 +186,6 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // ResetTemplate is an exported method.
 func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
@@ -205,7 +201,6 @@ func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
-
 	// Rate limit: 3 test emails per minute per user.
 	// Uses Valkey distributed rate limiting when available, falls back to
 	// in-memory for single-instance deployments.

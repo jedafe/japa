@@ -86,7 +86,6 @@ func (s *stubAgentSessions) ListAgentSessionsByUser(_ context.Context, arg gen.L
 
 func (s *stubAgentSessions) CountAgentSessionsByUser(_ context.Context, userID pgtype.UUID) (int64, error) {
 	rows, _ := s.ListAgentSessionsByUser(context.Background(), gen.ListAgentSessionsByUserParams{
-
 		UserID: userID,
 	})
 
@@ -143,7 +142,6 @@ func (s *stubAgentSessions) ListAgentSessionsForAdmin(_ context.Context, arg gen
 
 func (s *stubAgentSessions) CountAgentSessionsForAdmin(_ context.Context, statusFilter string) (int64, error) {
 	rows, _ := s.ListAgentSessionsForAdmin(context.Background(), gen.ListAgentSessionsForAdminParams{
-
 		StatusFilter: statusFilter,
 	})
 

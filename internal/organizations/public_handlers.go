@@ -121,10 +121,11 @@ func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Reques
 	orgType := strings.TrimSpace(r.URL.Query().Get("org_type"))
 
 	verified := strings.TrimSpace(r.URL.Query().Get("verified"))
-	if verified == "" {
+	switch verified {
+	case "":
 		// Default: only verified orgs (preserves original behavior).
 		verified = "true"
-	} else if verified == "all" {
+	case "all":
 		// The SQL treats "" as "no filter" — map the explicit "all" value to it.
 		// Without this, "all" would fall into verified=('all'='true')=false and
 		// incorrectly return only unverified orgs.

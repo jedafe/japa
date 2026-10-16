@@ -39,6 +39,7 @@ func (h *Handlers) HandleListWikiTypes(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("wiki: list types failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "types_failed", "Failed to list wiki types")
+
 		return
 	}
 
@@ -52,6 +53,7 @@ func (h *Handlers) HandleAdminListWikiTypes(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("wiki: admin list types failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "types_failed", "Failed to list wiki types")
+
 		return
 	}
 

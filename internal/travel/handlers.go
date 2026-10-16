@@ -178,7 +178,6 @@ func writeConflictIfDuplicate(w http.ResponseWriter, err error, code, message st
 // flight search to the configured provider.
 // Query: origin, dest, date, adults, return_date, cabin_class.
 func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
-
 	origin := r.URL.Query().Get("origin")
 	dest := r.URL.Query().Get("dest")
 	date := r.URL.Query().Get("date")
@@ -265,7 +264,6 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 // search to the configured provider.
 // Query: dest, checkin, checkout, guests, rooms.
 func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
-
 	dest := r.URL.Query().Get("dest")
 	checkin := r.URL.Query().Get("checkin")
 	checkout := r.URL.Query().Get("checkout")
@@ -413,6 +411,7 @@ func (h *Handlers) HandleHotelDirectory(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Error("travel: hotel directory failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "directory_failed", "Failed to load hotel directory")
+
 		return
 	}
 
@@ -446,6 +445,7 @@ func (h *Handlers) HandleAirlineDirectory(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("travel: airline directory failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "directory_failed", "Failed to load airline directory")
+
 		return
 	}
 
@@ -462,7 +462,6 @@ func (h *Handlers) HandleAirlineDirectory(w http.ResponseWriter, r *http.Request
 // HandlePublicListProviders handles GET /api/v1/travel/providers — list active
 // travel providers for the current platform. Public, no auth required.
 func (h *Handlers) HandlePublicListProviders(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
 		return
@@ -580,7 +579,6 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	provider, err := h.service.CreateProvider(r.Context(), gen.CreateTravelProviderParams{
-
 		Name:            body.Name,
 		Slug:            body.Slug,
 		ProviderType:    body.ProviderType,
@@ -670,7 +668,6 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	provider, err := h.service.UpdateProvider(r.Context(), gen.UpdateTravelProviderParams{
-
 		ID:              providerID,
 		Name:            body.Name,
 		ProviderType:    body.ProviderType,

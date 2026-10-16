@@ -17,10 +17,12 @@ func TestGetGPTActionsSpec(t *testing.T) {
 	if !ok || len(servers) != 1 {
 		t.Fatalf("servers = %v, want exactly one entry", spec["servers"])
 	}
+
 	serverURL, _ := servers[0].(map[string]any)["url"].(string)
 	if serverURL != "https://api.japaconnect.com/api/v1" {
 		t.Fatalf("server url = %q", serverURL)
 	}
+
 	if strings.Contains(serverURL, "localhost") {
 		t.Fatal("localhost leaked into servers")
 	}
@@ -66,11 +68,13 @@ func TestGetGPTActionsSpec(t *testing.T) {
 		if !ok {
 			continue
 		}
+
 		for _, method := range []string{"post", "put", "patch", "delete"} {
 			if _, ok := ops[method]; ok {
 				t.Errorf("%s %s present — GPT Actions spec must be read-only", strings.ToUpper(method), path)
 			}
 		}
+
 		if _, ok := ops["get"]; !ok {
 			t.Errorf("%s has no GET operation", path)
 		}
@@ -88,14 +92,17 @@ func TestGetGPTActionsSpec(t *testing.T) {
 	if !ok {
 		t.Fatal("components missing")
 	}
+
 	schemes, ok := components["securitySchemes"].(map[string]any)
 	if !ok {
 		t.Fatal("securitySchemes missing")
 	}
+
 	apiKey, ok := schemes["apiKeyAuth"].(map[string]any)
 	if !ok {
 		t.Fatal("apiKeyAuth scheme missing")
 	}
+
 	if apiKey["in"] != "header" || apiKey["name"] != "X-API-Key" {
 		t.Fatalf("apiKeyAuth = %v, want header X-API-Key", apiKey)
 	}

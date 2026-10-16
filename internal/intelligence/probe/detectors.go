@@ -757,6 +757,7 @@ func (spiderDetector) Detect(_ context.Context, page *FetchedPage, out *Report) 
 		if lu.Path == base.Path && (lu.RawQuery == base.RawQuery || lu.Fragment != "") {
 			return
 		}
+
 		if spiderSkipExts[strings.ToLower(path.Ext(lu.Path))] {
 			return
 		}
@@ -774,6 +775,7 @@ func (spiderDetector) Detect(_ context.Context, page *FetchedPage, out *Report) 
 
 	out.addMethod(string(sources.CrawlMethodSpider), weightSpider,
 		fmt.Sprintf("%d distinct same-host links", count))
+
 	out.Channels = append(out.Channels, ChannelProposal{
 		Label:       "Site crawl (shallow link walk)",
 		EntryURL:    page.FinalURL,

@@ -89,16 +89,20 @@ func (s *ProjectService) validateVoicePin(ctx context.Context, voiceID string) e
 	if voiceID == "" {
 		return nil
 	}
+
 	uid, err := scanUUID(voiceID)
 	if err != nil || !uid.Valid {
 		return ErrInvalidVoicePin
 	}
+
 	if _, err := s.store.GetPersonaVoiceByID(ctx, uid); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrInvalidVoicePin
 		}
+
 		return fmt.Errorf("validating voice pin: %w", err)
 	}
+
 	return nil
 }
 
@@ -108,6 +112,7 @@ func mapWriteErr(err error, fallback string) error {
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return ErrProjectNameTaken
 	}
+
 	return fmt.Errorf("%s: %w", fallback, err)
 }
 
@@ -115,10 +120,12 @@ func (s *ProjectService) Create(ctx context.Context, userID pgtype.UUID, in Proj
 	if err := s.validateVoicePin(ctx, in.DefaultVoiceID); err != nil {
 		return gen.AiProject{}, err
 	}
+
 	tools := in.DefaultTools
 	if len(tools) == 0 {
 		tools = []byte("{}")
 	}
+
 	p, err := s.store.CreateAIProject(ctx, gen.CreateAIProjectParams{
 		UserID:         userID,
 		Name:           in.Name,
@@ -131,6 +138,7 @@ func (s *ProjectService) Create(ctx context.Context, userID pgtype.UUID, in Proj
 	if err != nil {
 		return gen.AiProject{}, mapWriteErr(err, "creating project")
 	}
+
 	return p, nil
 }
 
@@ -143,8 +151,10 @@ func (s *ProjectService) Get(ctx context.Context, userID, projectID pgtype.UUID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.AiProject{}, ErrProjectNotFound
 		}
+
 		return gen.AiProject{}, fmt.Errorf("loading project: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -157,10 +167,12 @@ func (s *ProjectService) List(ctx context.Context, userID pgtype.UUID, limit, of
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing projects: %w", err)
 	}
+
 	total, err := s.store.CountAIProjectsForUser(ctx, userID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting projects: %w", err)
 	}
+
 	return rows, total, nil
 }
 
@@ -168,10 +180,12 @@ func (s *ProjectService) Update(ctx context.Context, userID, projectID pgtype.UU
 	if err := s.validateVoicePin(ctx, in.DefaultVoiceID); err != nil {
 		return gen.AiProject{}, err
 	}
+
 	tools := in.DefaultTools
 	if len(tools) == 0 {
 		tools = []byte("{}")
 	}
+
 	p, err := s.store.UpdateAIProjectForUser(ctx, gen.UpdateAIProjectForUserParams{
 		ID:             projectID,
 		UserID:         userID,
@@ -186,8 +200,10 @@ func (s *ProjectService) Update(ctx context.Context, userID, projectID pgtype.UU
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.AiProject{}, ErrProjectNotFound
 		}
+
 		return gen.AiProject{}, mapWriteErr(err, "updating project")
 	}
+
 	return p, nil
 }
 
@@ -204,16 +220,21 @@ func (s *ProjectService) Delete(ctx context.Context, userID, projectID pgtype.UU
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrProjectNotFound
 			}
+
 			return fmt.Errorf("deleting project: %w", err)
 		}
+
 		if err := st.ClearAIConversationProjectForProject(ctx, projectID); err != nil {
 			return fmt.Errorf("ungrouping conversations: %w", err)
 		}
+
 		return st.ClearAIAgentSessionProjectForProject(ctx, projectID)
 	}
+
 	if s.pool != nil {
 		return db.WithTx(ctx, s.pool, func(q *gen.Queries) error { return do(q) })
 	}
+
 	return do(s.store)
 }
 
@@ -224,12 +245,15 @@ func (s *ProjectService) Delete(ctx context.Context, userID, projectID pgtype.UU
 // existence.
 func (s *ProjectService) SetConversationProject(ctx context.Context, userID, convID pgtype.UUID, projectID *pgtype.UUID) error {
 	var pid pgtype.UUID
+
 	if projectID != nil && projectID.Valid {
 		if _, err := s.Get(ctx, userID, *projectID); err != nil {
 			return err
 		}
+
 		pid = *projectID
 	}
+
 	if _, err := s.store.SetAIConversationProject(ctx, gen.SetAIConversationProjectParams{
 		ID:        convID,
 		UserID:    userID,
@@ -238,6 +262,7 @@ func (s *ProjectService) SetConversationProject(ctx context.Context, userID, con
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrConversationNotFound
 		}
+
 		return fmt.Errorf("assigning conversation project: %w", err)
 	}
 	// Cascade to the thread's sessions — their grouping mirrors the
@@ -249,6 +274,7 @@ func (s *ProjectService) SetConversationProject(ctx context.Context, userID, con
 	}); err != nil {
 		return fmt.Errorf("cascading project to sessions: %w", err)
 	}
+
 	return nil
 }
 
@@ -259,12 +285,15 @@ func (s *ProjectService) SetConversationProject(ctx context.Context, userID, con
 // conversation instead.
 func (s *ProjectService) SetSessionProject(ctx context.Context, userID, sessionID pgtype.UUID, projectID *pgtype.UUID) error {
 	var pid pgtype.UUID
+
 	if projectID != nil && projectID.Valid {
 		if _, err := s.Get(ctx, userID, *projectID); err != nil {
 			return err
 		}
+
 		pid = *projectID
 	}
+
 	sess, err := s.store.GetAgentSessionForUser(ctx, gen.GetAgentSessionForUserParams{
 		ID:     sessionID,
 		UserID: userID,
@@ -273,11 +302,14 @@ func (s *ProjectService) SetSessionProject(ctx context.Context, userID, sessionI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrSessionNotFound
 		}
+
 		return fmt.Errorf("loading session: %w", err)
 	}
+
 	if sess.ConversationID.Valid {
 		return ErrSessionLinked
 	}
+
 	if _, err := s.store.SetAIAgentSessionProject(ctx, gen.SetAIAgentSessionProjectParams{
 		ID:        sessionID,
 		UserID:    userID,
@@ -286,8 +318,10 @@ func (s *ProjectService) SetSessionProject(ctx context.Context, userID, sessionI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrSessionNotFound
 		}
+
 		return fmt.Errorf("assigning session project: %w", err)
 	}
+
 	return nil
 }
 
@@ -299,9 +333,11 @@ func (s *ProjectService) InstructionsFor(ctx context.Context, userID pgtype.UUID
 	if !conv.ProjectID.Valid {
 		return ""
 	}
+
 	p, err := s.Get(ctx, userID, conv.ProjectID)
 	if err != nil {
 		return ""
 	}
+
 	return p.Instructions
 }

@@ -38,6 +38,7 @@ func IsPrivateIP(ip net.IP) bool {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
+
 	for _, cidr := range privateIPRanges {
 		_, network, err := net.ParseCIDR(cidr)
 		if err != nil {

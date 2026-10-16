@@ -86,6 +86,7 @@ func (f *fakeBookingBackend) MentorshipBookingRow(_ context.Context, id pgtype.U
 
 func (f *fakeBookingBackend) ListMentorshipBookingsByBooker(_ context.Context, _ pgtype.UUID, status string, _, _ int32) ([]servicedir.BookingRow, error) {
 	out := make([]servicedir.BookingRow, 0, len(f.rows))
+
 	for _, r := range f.rows {
 		if status == "" || r.Status == status {
 			out = append(out, r)
@@ -97,10 +98,12 @@ func (f *fakeBookingBackend) ListMentorshipBookingsByBooker(_ context.Context, _
 
 func (f *fakeBookingBackend) ListMentorshipBookingsByProvider(_ context.Context, providerID pgtype.UUID, status string, _, _ int32) ([]servicedir.BookingRow, error) {
 	out := make([]servicedir.BookingRow, 0, len(f.rows))
+
 	for _, r := range f.rows {
 		if r.ProviderUserID != providerID {
 			continue
 		}
+
 		if status == "" || r.Status == status {
 			out = append(out, r)
 		}
@@ -111,16 +114,20 @@ func (f *fakeBookingBackend) ListMentorshipBookingsByProvider(_ context.Context,
 
 func (f *fakeBookingBackend) ListMentorshipBookingsAdmin(_ context.Context, status string, providerID, bookerID pgtype.UUID, _, _ int32) ([]servicedir.BookingRow, error) {
 	out := make([]servicedir.BookingRow, 0, len(f.rows))
+
 	for _, r := range f.rows {
 		if status != "" && r.Status != status {
 			continue
 		}
+
 		if providerID.Valid && r.ProviderUserID != providerID {
 			continue
 		}
+
 		if bookerID.Valid && r.BookerUserID != bookerID {
 			continue
 		}
+
 		out = append(out, r)
 	}
 
@@ -132,6 +139,7 @@ func (f *fakeBookingBackend) RespondToBooking(_ context.Context, _, bookingID pg
 	if f.afterRespond != nil {
 		f.afterRespond()
 	}
+
 	if f.respondErr != nil {
 		return servicedir.BookingDTO{}, f.respondErr
 	}
@@ -207,6 +215,7 @@ func TestBookingStatusTranslation(t *testing.T) {
 		if got := bookingStatus(in); got != want {
 			t.Errorf("bookingStatus(%q) = %q, want %q", in, got, want)
 		}
+
 		if got := connectionStatus(want); want == "confirmed" || want == "fulfilled" {
 			if got != in {
 				t.Errorf("connectionStatus(%q) = %q, want %q", want, got, in)
@@ -279,18 +288,23 @@ func TestConnectionFromBookingRow(t *testing.T) {
 	if c.MentorID != mentorID || c.MenteeID != menteeID {
 		t.Errorf("ids wrong: mentor=%v mentee=%v", c.MentorID, c.MenteeID)
 	}
+
 	if c.Status != "active" {
 		t.Errorf("status = %q, want active", c.Status)
 	}
+
 	if c.Goals == nil || *c.Goals != "ship it" {
 		t.Errorf("goals = %v, want meta goals", c.Goals)
 	}
+
 	if c.RespondedAt != ts {
 		t.Errorf("responded_at = %v, want confirmed_at %v", c.RespondedAt, ts)
 	}
+
 	if c.DestinationSpaceID != destID || c.CancelReason == nil || *c.CancelReason != reason {
 		t.Errorf("dest/reason mapping wrong: %+v", c)
 	}
+
 	if c.MentorUsername == nil || *c.MentorUsername != mentorUser ||
 		c.MenteeUsername == nil || *c.MenteeUsername != menteeUser {
 		t.Errorf("username joins wrong: %+v", c)
@@ -299,6 +313,7 @@ func TestConnectionFromBookingRow(t *testing.T) {
 	// fulfilled → completed + completed_at set.
 	row.Status = servicedir.BookingStatusFulfilled
 	row.FulfilledAt = ts
+
 	c = connectionFromBookingRow(row)
 	if c.Status != "completed" || !c.CompletedAt.Valid {
 		t.Errorf("fulfilled mapping wrong: status=%q completed_at=%v", c.Status, c.CompletedAt)
@@ -307,6 +322,7 @@ func TestConnectionFromBookingRow(t *testing.T) {
 	// Declined rows: responded_at rides meta (no confirmed_at).
 	row.Status = servicedir.BookingStatusDeclined
 	row.ConfirmedAt = pgtype.Timestamptz{}
+
 	c = connectionFromBookingRow(row)
 	if c.Status != "declined" || !c.RespondedAt.Valid {
 		t.Errorf("declined mapping wrong: status=%q responded_at=%v", c.Status, c.RespondedAt)
@@ -316,6 +332,7 @@ func TestConnectionFromBookingRow(t *testing.T) {
 	note := "legacy goals"
 	row.Meta = nil
 	row.Note = &note
+
 	c = connectionFromBookingRow(row)
 	if c.Goals == nil || *c.Goals != note {
 		t.Errorf("note fallback wrong: goals=%v", c.Goals)
@@ -326,33 +343,41 @@ func TestConnectionMethodsRequireBackend(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{} // bookings seam unwired
-	ctx := context.Background()
+	ctx := t.Context()
 	id := mustUUID(t, "55555555-5555-5555-5555-555555555555")
 
 	if _, err := svc.CreateConnection(ctx, id, mustUUID(t, "66666666-6666-6666-6666-666666666666"), nil, pgtype.UUID{}); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("CreateConnection = %v, want errBackendUnavailable", err)
 	}
+
 	if _, err := svc.ListOutgoingConnections(ctx, id, "", 10, 0); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("ListOutgoingConnections = %v, want errBackendUnavailable", err)
 	}
+
 	if err := svc.CancelOutgoingConnection(ctx, id, id); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("CancelOutgoingConnection = %v, want errBackendUnavailable", err)
 	}
+
 	if _, err := svc.ListIncomingConnections(ctx, id, "", 10, 0); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("ListIncomingConnections = %v, want errBackendUnavailable", err)
 	}
+
 	if _, err := svc.AcceptConnection(ctx, id, id); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("AcceptConnection = %v, want errBackendUnavailable", err)
 	}
+
 	if _, err := svc.CompleteConnection(ctx, id, id); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("CompleteConnection = %v, want errBackendUnavailable", err)
 	}
+
 	if _, err := svc.CancelConnection(ctx, id, id, nil); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("CancelConnection = %v, want errBackendUnavailable", err)
 	}
+
 	if _, err := svc.ListAllConnections(ctx, "", pgtype.UUID{}, pgtype.UUID{}, 10, 0); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("ListAllConnections = %v, want errBackendUnavailable", err)
 	}
+
 	if _, err := svc.AdminUpdateConnection(ctx, id, "active"); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("AdminUpdateConnection = %v, want errBackendUnavailable", err)
 	}
@@ -361,7 +386,7 @@ func TestConnectionMethodsRequireBackend(t *testing.T) {
 func TestCreateConnectionDelegates(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mentorID := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	menteeID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	listingID := mustUUID(t, "33333333-3333-3333-3333-333333333333")
@@ -380,6 +405,7 @@ func TestCreateConnectionDelegates(t *testing.T) {
 	}
 
 	svc := &Service{bookings: backend}
+
 	conn, err := svc.CreateConnection(ctx, mentorID, menteeID, &goals, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("CreateConnection: %v", err)
@@ -388,9 +414,11 @@ func TestCreateConnectionDelegates(t *testing.T) {
 	if conn.ID != bookingID || conn.Status != "pending" {
 		t.Errorf("conn = %+v, want id=%s status=pending", conn, bookingID)
 	}
+
 	if len(backend.created) != 1 {
 		t.Fatalf("CreateBooking calls = %d, want 1", len(backend.created))
 	}
+
 	if backend.created[0].Intent != servicedir.BookingIntentInquiry || backend.created[0].Goals != goals {
 		t.Errorf("input = %+v, want inquiry + goals", backend.created[0])
 	}
@@ -401,7 +429,8 @@ func TestCreateConnectionSelfMentor(t *testing.T) {
 
 	svc := &Service{bookings: newFakeBackend()}
 	id := mustUUID(t, "11111111-1111-1111-1111-111111111111")
-	if _, err := svc.CreateConnection(context.Background(), id, id, nil, pgtype.UUID{}); !errors.Is(err, ErrCannotSelfMentor) {
+
+	if _, err := svc.CreateConnection(t.Context(), id, id, nil, pgtype.UUID{}); !errors.Is(err, ErrCannotSelfMentor) {
 		t.Errorf("CreateConnection self = %v, want ErrCannotSelfMentor", err)
 	}
 }
@@ -413,7 +442,7 @@ func TestCreateConnectionNoListing(t *testing.T) {
 	backend.listingErr = pgx.ErrNoRows
 	svc := &Service{bookings: backend}
 
-	_, err := svc.CreateConnection(context.Background(),
+	_, err := svc.CreateConnection(t.Context(),
 		mustUUID(t, "11111111-1111-1111-1111-111111111111"),
 		mustUUID(t, "22222222-2222-2222-2222-222222222222"), nil, pgtype.UUID{})
 	if !errors.Is(err, ErrMentorNotFound) {
@@ -424,7 +453,7 @@ func TestCreateConnectionNoListing(t *testing.T) {
 func TestAcceptConnectionGuards(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mentorID := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	menteeID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	other := mustUUID(t, "99999999-9999-9999-9999-999999999999")
@@ -473,13 +502,16 @@ func TestAcceptConnectionGuards(t *testing.T) {
 			r.ConfirmedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
 			backend.rows[connID.String()] = r
 		})
+
 		conn, err := svc.AcceptConnection(ctx, mentorID, connID)
 		if err != nil {
 			t.Fatalf("AcceptConnection: %v", err)
 		}
+
 		if conn.Status != "active" {
 			t.Errorf("status = %q, want active", conn.Status)
 		}
+
 		if len(backend.responded) != 1 || backend.responded[0] != "accept" {
 			t.Errorf("responded = %v, want [accept]", backend.responded)
 		}
@@ -489,7 +521,7 @@ func TestAcceptConnectionGuards(t *testing.T) {
 func TestCancelOutgoingConnectionGuard(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	menteeID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	connID := mustUUID(t, "44444444-4444-4444-4444-444444444444")
 

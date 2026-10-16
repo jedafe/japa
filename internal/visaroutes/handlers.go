@@ -127,7 +127,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /visa-routes — list published+active visa routes
 // with filters. Query params: ?dest=&profession=&education=&experience_years=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
@@ -181,7 +180,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleCompare handles GET /visa-routes/compare — compare up to 4 visa
 // routes side-by-side. Query params: ?ids=id1,id2,id3,id4 (max 4).
 func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
@@ -196,12 +194,15 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 	// Optional ?dest= filter: when present, only routes for that
 	// destination space are returned (unknown dest → 400).
 	var destFilter pgtype.UUID
+
 	var filterByDest bool
+
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destFilter.Scan(v); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
+
 		filterByDest = true
 	}
 
@@ -248,9 +249,12 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 
 	routes := result.Routes
 	missing := result.MissingIDs
+
 	if filterByDest {
 		kept := routes[:0]
+
 		var destMissing []string
+
 		for _, route := range routes {
 			if route.DestinationSpaceID == destFilter.String() {
 				kept = append(kept, route)
@@ -258,7 +262,9 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 				destMissing = append(destMissing, route.ID)
 			}
 		}
+
 		routes = kept
+
 		missing = append(missing, destMissing...)
 	}
 
@@ -276,7 +282,6 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /visa-routes/:id — single published+active visa
 // route detail.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return

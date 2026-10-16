@@ -33,7 +33,6 @@ func (s *Service) CreateSeries(ctx context.Context, authorUserID pgtype.UUID, in
 	}
 
 	return s.store.createBlogSeries(ctx, gen.CreateBlogSeriesParams{
-
 		Title:        input.Title,
 		Slug:         input.Slug,
 		Description:  description,
@@ -141,6 +140,7 @@ func (s *Service) DeleteSeries(ctx context.Context, id pgtype.UUID, force bool) 
 	if force {
 		return s.store.hardDeleteBlogSeries(ctx, id)
 	}
+
 	return s.store.deleteBlogSeries(ctx, id)
 }
 
@@ -243,7 +243,6 @@ func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, 
 	}
 
 	return s.store.createContentReview(ctx, gen.CreateContentReviewParams{
-
 		ContentID:      input.ContentID,
 		ReviewerUserID: reviewerUserID, // zero value → NULL when no reviewer
 		Status:         status,
@@ -310,7 +309,6 @@ func (s *Service) FeaturePost(ctx context.Context, input FeaturePostInput) (gen.
 	}
 
 	return s.store.featureContent(ctx, gen.FeatureContentParams{
-
 		ContentID:     input.ContentID,
 		FeaturedOrder: input.FeaturedOrder,
 		FeaturedUntil: input.FeaturedUntil,

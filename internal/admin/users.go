@@ -64,13 +64,13 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var userID pgtype.UUID
 
 	userID, err = h.Queries.CreateUser(r.Context(), gen.CreateUserParams{
-
 		Email:        input.Email,
 		Username:     input.Username,
 		PasswordHash: &passwordHash,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
+
 		isDuplicate := errors.Is(err, errpkg.ErrDuplicate) || (errors.As(err, &pgErr) && pgErr.Code == "23505")
 		if isDuplicate {
 			// users has unique indexes on both email and username —
@@ -80,7 +80,9 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusConflict, "username_exists", "A user with this username already exists")
 				return
 			}
+
 			errpkg.WriteError(w, http.StatusConflict, "email_exists", "A user with this email already exists")
+
 			return
 		}
 

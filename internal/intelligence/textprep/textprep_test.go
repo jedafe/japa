@@ -20,6 +20,7 @@ func TestSourceText_StripsMarkupAndKeepsContent(t *testing.T) {
 			t.Errorf("SourceText missing %q in %q", want, got)
 		}
 	}
+
 	for _, unwanted := range []string{"display:none", "var x = 1", "track()", "color:red", "<script", "<style"} {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("SourceText leaked markup/script %q in %q", unwanted, got)
@@ -45,6 +46,7 @@ func TestSourceText_LengthCap(t *testing.T) {
 	t.Parallel()
 
 	long := strings.Repeat("word ", 50000) // ~250k chars
+
 	got := SourceText(long, "text/plain", 1000)
 	if len([]rune(got)) > 1000 {
 		t.Errorf("SourceText length = %d, want <= 1000", len([]rune(got)))
@@ -71,6 +73,7 @@ func TestIsSoft404(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := IsSoft404(tc.body, tc.ct, tc.status); got != tc.want {
 				t.Errorf("IsSoft404 = %v, want %v", got, tc.want)
 			}
@@ -97,6 +100,7 @@ func TestHasExtractableText(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := HasExtractableText(tc.body, tc.ct); got != tc.want {
 				t.Errorf("HasExtractableText = %v, want %v", got, tc.want)
 			}

@@ -65,8 +65,10 @@ type assistCall struct {
 // The shared "content_generation" gateway category + default-model setting
 // key for all assist ops — a single platform default powers every content
 // assistant surface.
-const assistCategory = "content_generation"
-const assistDefaultModelKey = "ai.model.default.content_generation"
+const (
+	assistCategory        = "content_generation"
+	assistDefaultModelKey = "ai.model.default.content_generation"
+)
 
 // AssistImproveInput — POST /ai/assist/improve and the content.improve tool.
 type AssistImproveInput struct {

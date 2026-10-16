@@ -50,7 +50,6 @@ func (s *Service) GetTopContent(ctx context.Context, period, contentType string,
 	days := periodToDays(period)
 
 	return s.store.TopContent(ctx, gen.AdvancedAnalyticsTopContentParams{
-
 		Days:        int32(days), // #nosec
 		ContentType: contentType,
 		TopN:        int32(limit), // #nosec
@@ -88,7 +87,6 @@ func (s *Service) GetAdPerformance(ctx context.Context, status string, limit int
 	}
 
 	return s.store.AdPerformance(ctx, gen.AdvancedAnalyticsAdPerformanceParams{
-
 		Status: status,
 		TopN:   int32(limit), // #nosec
 	})
@@ -117,7 +115,6 @@ func (s *Service) GetRetentionCohorts(ctx context.Context, limit int) ([]gen.Adv
 	fromDate := pgtype.Timestamptz{Time: time.Now().AddDate(0, -3, 0), Valid: true}
 
 	return s.store.RetentionCohorts(ctx, gen.AdvancedAnalyticsRetentionCohortsParams{
-
 		FromDate: fromDate,
 		TopN:     int32(limit), // #nosec
 	})
@@ -166,11 +163,13 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					return err
 				}
 			}
+
 			return nil
 		})
 		if err != nil {
 			return "", nil, err
 		}
+
 		return csvStr, headers, nil
 
 	case "revenue_streams":
@@ -198,11 +197,13 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					return err
 				}
 			}
+
 			return nil
 		})
 		if err != nil {
 			return "", nil, err
 		}
+
 		return csvStr, headers, nil
 
 	case "ad_performance":
@@ -225,11 +226,13 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					return err
 				}
 			}
+
 			return nil
 		})
 		if err != nil {
 			return "", nil, err
 		}
+
 		return csvStr, headers, nil
 
 	case "newsletter":
@@ -258,11 +261,13 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					return err
 				}
 			}
+
 			return nil
 		})
 		if err != nil {
 			return "", nil, err
 		}
+
 		return csvStr, headers, nil
 
 	case "retention":
@@ -293,11 +298,13 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					return err
 				}
 			}
+
 			return nil
 		})
 		if err != nil {
 			return "", nil, err
 		}
+
 		return csvStr, headers, nil
 
 	default:
@@ -308,14 +315,18 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 // writeCSV builds a CSV string with proper escaping using encoding/csv.
 func writeCSV(headers []string, writeRows func(w *csv.Writer) error) (string, error) {
 	var sb strings.Builder
+
 	w := csv.NewWriter(&sb)
 	if err := w.Write(headers); err != nil {
 		return "", fmt.Errorf("advancedanalytics: writing CSV headers: %w", err)
 	}
+
 	if err := writeRows(w); err != nil {
 		return "", fmt.Errorf("advancedanalytics: writing CSV rows: %w", err)
 	}
+
 	w.Flush()
+
 	if err := w.Error(); err != nil {
 		return "", fmt.Errorf("advancedanalytics: flushing CSV: %w", err)
 	}

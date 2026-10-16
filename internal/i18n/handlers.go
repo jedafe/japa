@@ -95,7 +95,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // ListByLocale returns all translations for a given locale.
 // GET /admin/translations?locale=en.
 func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
-
 	locale := r.URL.Query().Get("locale")
 	if locale == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
@@ -137,7 +136,6 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 // ListLocales returns distinct locales with counts.
 // GET /admin/translations/locales.
 func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
-
 	counts, err := h.Service.Counts(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -150,7 +148,6 @@ func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
 // Upsert handles create/update of a single translation.
 // POST /admin/translations.
 func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Locale  string  `json:"locale"`
 		Key     string  `json:"key"`
@@ -193,7 +190,6 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 // UpsertBatch handles batch creation/update of translations.
 // POST /admin/translations/batch.
 func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Translations []struct {
 			Locale  string  `json:"locale"`
@@ -236,7 +232,6 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 // Delete removes a translation.
 // DELETE /admin/translations/{id}?locale=en.
 func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid translation ID")
@@ -263,7 +258,6 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 // DeleteByLocale removes all translations for a locale.
 // DELETE /admin/i18n/languages/{locale}.
 func (h *Handlers) DeleteByLocale(w http.ResponseWriter, r *http.Request) {
-
 	locale := chi.URLParam(r, "locale")
 	if locale == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_locale", "locale path parameter is required")
@@ -282,7 +276,6 @@ func (h *Handlers) DeleteByLocale(w http.ResponseWriter, r *http.Request) {
 // into the requested target locale and upserts the result.
 // POST /admin/i18n/strings/{id}/translate — body: {"target_locale": "fr"}.
 func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
-
 	if h.AIDispatcher == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI translation is not configured")
 		return
@@ -363,7 +356,6 @@ func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
 // per Rule 8 — returns 202 immediately.
 // POST /admin/i18n/strings/ai-translate-batch — body: {"source_locale":"en","target_locale":"fr"}.
 func (h *Handlers) AITranslateBatch(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		SourceLocale string `json:"source_locale"`
 		TargetLocale string `json:"target_locale"`
@@ -434,7 +426,6 @@ func extractAITranslationText(resp ai.Response) string {
 // GetLocaleTranslations returns all translations for a locale as a flat map.
 // GET /api/v1/translations/{locale}.
 func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request) {
-
 	// Catalog route param is :lang_code (was :locale).
 	locale := chi.URLParam(r, "lang_code")
 	if locale == "" {
@@ -457,7 +448,6 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 // HandleListPublicLocales returns the list of enabled locales for the platform.
 // GET /api/v1/i18n/locales — public, no auth required.
 func (h *Handlers) HandleListPublicLocales(w http.ResponseWriter, r *http.Request) {
-
 	locales, err := h.Service.ListLocales(r.Context())
 	if err != nil {
 		handleServiceError(w, err)

@@ -174,7 +174,6 @@ func (s *Service) Create(ctx context.Context, userID pgtype.UUID, input CreateTi
 	}
 
 	t := Timeline{
-
 		UserID:             userID,
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -344,6 +343,7 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, userID pgtype.UU
 	}
 
 	var occurredAt pgtype.Timestamptz
+
 	if input.OccurredAt != "" {
 		ts, err := parseOccurredAt(input.OccurredAt)
 		if err != nil {
@@ -437,6 +437,7 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, timelineID, 
 
 	if input.OccurredAt != nil {
 		var ts pgtype.Timestamptz
+
 		if *input.OccurredAt != "" {
 			parsed, err := parseOccurredAt(*input.OccurredAt)
 			if err != nil {
@@ -511,7 +512,6 @@ func (s *Service) GetTrend(ctx context.Context, destSpaceID pgtype.UUID, visaCat
 
 // AdminList returns all timelines (any share state) for the moderation queue.
 func (s *Service) AdminList(ctx context.Context, filter AdminListFilter) ([]TimelineDTO, int64, error) {
-
 	timelines, total, err := s.store.AdminList(ctx, filter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("visatimeline: admin list: %w", err)
@@ -811,7 +811,6 @@ func (s *Service) CreateProcessingTime(ctx context.Context, input CreateProcessi
 	}
 
 	row, err := s.store.CreateProcessingTime(ctx, CreateProcessingTimeInput{
-
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       input.VisaCategory,

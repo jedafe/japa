@@ -61,7 +61,7 @@ type FeatureChecker interface {
 }
 
 // DigestEditionDTO is the API response shape for a digest edition (listing).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type DigestEditionDTO struct {
 	ID           string `json:"id"`
 	SpaceID      string `json:"space_id,omitempty"`
@@ -76,7 +76,7 @@ type DigestEditionDTO struct {
 }
 
 // DigestEditionDetailDTO is the full digest edition with content.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type DigestEditionDetailDTO struct {
 	DigestEditionDTO
 	Content json.RawMessage `json:"content"`
@@ -233,7 +233,6 @@ func (s *Service) AdminList(ctx context.Context, f AdminListFilter, page, limit 
 	offset := (page - 1) * limit
 
 	editions, total, err := s.store.ListEditions(ctx, ListEditionsFilter{
-
 		SpaceID: f.SpaceID,
 		Status:  f.Status,
 		Query:   f.Query,
@@ -385,7 +384,6 @@ func (s *Service) generateForPlatform(ctx context.Context, spaceID pgtype.UUID) 
 	// can still publish early via AdminPublish (which short-circuits the
 	// window). Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 	editionID, err := s.store.CreateEdition(ctx, DigestEdition{
-
 		SpaceID:      spaceID,
 		Cadence:      "weekly",
 		Status:       "draft",

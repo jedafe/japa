@@ -200,10 +200,12 @@ func resolveStructFields(ctx context.Context, rv reflect.Value, rc RenderContext
 	applyContentGeo(rv, &itemRC)
 
 	var env *expr.Env
+
 	resolveStr := func(s string) string {
 		if !strings.Contains(s, "{{") {
 			return s
 		}
+
 		if env == nil {
 			env = itemRC.ToEnv()
 		}
@@ -291,10 +293,12 @@ func resolveMapValues(ctx context.Context, rv reflect.Value, rc RenderContext, t
 	}
 
 	var env *expr.Env
+
 	resolveStr := func(s string) string {
 		if !strings.Contains(s, "{{") {
 			return s
 		}
+
 		if env == nil {
 			env = rc.ToEnv()
 		}
@@ -360,7 +364,7 @@ func isOpaqueType(t reflect.Type) bool {
 // field_values (origin_country / destination_country / country keys — ISO
 // code or name). A post with no geo renders the literal's fallback.
 // // Ref: japaconnect-engineering/sections/14-content-type-system.md
-// (Global Template Literals)
+// (Global Template Literals).
 func applyContentGeo(rv reflect.Value, rc *RenderContext) {
 	rc.SourceCountry, rc.SourceCode = "", ""
 	rc.DestinationCountry, rc.DestinationCode = "", ""
@@ -373,6 +377,7 @@ func applyContentGeo(rv reflect.Value, rc *RenderContext) {
 		if src == "" {
 			src = geoFieldValue(fv, "source_country", "origin_country")
 		}
+
 		if dst == "" {
 			dst = geoFieldValue(fv, "target_country", "destination_country", "country")
 		}

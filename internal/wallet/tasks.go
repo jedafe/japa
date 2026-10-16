@@ -106,7 +106,6 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, userID pgtype.UU
 
 	// Read current credits balance within the transaction.
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -127,7 +126,6 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, userID pgtype.UU
 	}
 
 	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationPurchase,
@@ -279,6 +277,7 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 	}
 
 	var ()
+
 	if err := (error)(nil); err != nil {
 		return fmt.Errorf("wallet:deduct_credits: invalid id: %w", err)
 	}
@@ -356,7 +355,6 @@ func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerTy
 	}
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     userID,
 		LedgerType: ledgerType,
 	})
@@ -381,7 +379,6 @@ func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerTy
 
 	src := source
 	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           userID,
 		LedgerType:       ledgerType,
 		Operation:        operation,

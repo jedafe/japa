@@ -43,7 +43,6 @@ func (s *Store) listLedgerEntriesByUser(ctx context.Context, userID pgtype.UUID,
 	}
 
 	rows, err := s.read.ListLedgerEntriesByUser(ctx, gen.ListLedgerEntriesByUserParams{
-
 		UserID:     userID,
 		LedgerType: derefString(ledgerType),
 		PageLimit:  limit,
@@ -58,7 +57,6 @@ func (s *Store) listLedgerEntriesByUser(ctx context.Context, userID pgtype.UUID,
 
 func (s *Store) getLatestBalance(ctx context.Context, userID pgtype.UUID, ledgerType string) (int64, error) {
 	balance, err := s.read.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     userID,
 		LedgerType: ledgerType,
 	})
@@ -119,7 +117,6 @@ func (s *Store) getActivityRuleByKey(ctx context.Context, activityKey string) (g
 // with a given source. Used to enforce one-time activity point rules.
 func (s *Store) countUserLedgerBySource(ctx context.Context, userID pgtype.UUID, source string) (int64, error) {
 	count, err := s.read.CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
-
 		UserID: userID,
 		Source: &source,
 	})
@@ -158,7 +155,6 @@ func (s *Store) listActivityRulesByPlatform(ctx context.Context, limit, offset i
 	}
 
 	rows, err := s.read.ListActivityRules(ctx, gen.ListActivityRulesParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -240,7 +236,6 @@ func (s *Store) listUnprocessedEvents(ctx context.Context, limit int32) ([]gen.A
 
 func (s *Store) countUserActivityToday(ctx context.Context, userID pgtype.UUID, activityKey string) (int64, error) {
 	count, err := s.read.CountUserActivityToday(ctx, gen.CountUserActivityTodayParams{
-
 		UserID:      userID,
 		ActivityKey: activityKey,
 	})
@@ -253,7 +248,6 @@ func (s *Store) countUserActivityToday(ctx context.Context, userID pgtype.UUID, 
 
 func (s *Store) countUserActivityThisWeek(ctx context.Context, userID pgtype.UUID, activityKey string) (int64, error) {
 	count, err := s.read.CountUserActivityThisWeek(ctx, gen.CountUserActivityThisWeekParams{
-
 		UserID:      userID,
 		ActivityKey: activityKey,
 	})
@@ -279,7 +273,6 @@ func (s *Store) getWalletSettings(ctx context.Context) (gen.WalletSetting, error
 
 func (s *Store) upsertWalletSettings(ctx context.Context, pointsToCreditsRate, dailyEarningCap int32, enableEarning bool) (gen.WalletSetting, error) {
 	row, err := s.write.UpsertWalletSettings(ctx, gen.UpsertWalletSettingsParams{
-
 		PointsToCreditsRate: &pointsToCreditsRate,
 		DailyEarningCap:     dailyEarningCap,
 		EnableEarning:       enableEarning,

@@ -47,12 +47,15 @@ func FXConvertHandler(deps *ToolDeps) ToolHandler {
 			From   string  `json:"from"`
 			To     string  `json:"to"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Amount <= 0 {
 			return errorToolResult("invalid_amount", "amount must be greater than zero"), nil
 		}
+
 		if a.From == "" || a.To == "" {
 			return errorToolResult("missing_currency", "from and to ISO currency codes are required"), nil
 		}
@@ -61,6 +64,7 @@ func FXConvertHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("fx_convert_failed", err.Error()), nil
 		}
+
 		return successToolResult(result), nil
 	}
 }
@@ -78,6 +82,7 @@ func CRSCalculateHandler(deps *ToolDeps) ToolHandler {
 		if deps == nil || deps.CRSCalculator == nil {
 			return errorToolResult("crs_unavailable", "crs calculator is not configured"), nil
 		}
+
 		if len(args) == 0 {
 			return errorToolResult("missing_arguments", "a CRS profile object is required"), nil
 		}
@@ -86,6 +91,7 @@ func CRSCalculateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("crs_calculate_failed", err.Error()), nil
 		}
+
 		return successToolResult(result), nil
 	}
 }
@@ -106,9 +112,11 @@ func POFCalculateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.DestSpaceID == "" {
 			return errorToolResult("missing_dest_space_id", "dest_space_id (UUID or geo code) is required"), nil
 		}
+
 		if a.VisaType == "" {
 			return errorToolResult("missing_visa_type", "visa_type is required"), nil
 		}
@@ -117,6 +125,7 @@ func POFCalculateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("pof_calculate_failed", err.Error()), nil
 		}
+
 		return successToolResult(map[string]any{"requirements": results, "count": len(results)}), nil
 	}
 }

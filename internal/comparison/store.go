@@ -57,7 +57,6 @@ func (s *Store) listComparisonTypesByPlatform(ctx context.Context, limit, offset
 	}
 
 	rows, err := s.read.ListComparisonTypes(ctx, gen.ListComparisonTypesParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

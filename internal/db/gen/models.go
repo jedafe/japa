@@ -350,6 +350,9 @@ type AdminBroadcast struct {
 	SentBy         pgtype.UUID        `json:"sent_by"`
 	SentAt         pgtype.Timestamptz `json:"sent_at"`
 	RecipientCount int32              `json:"recipient_count"`
+	ScheduledAt    pgtype.Timestamptz `json:"scheduled_at"`
+	Target         string             `json:"target"`
+	TargetID       pgtype.UUID        `json:"target_id"`
 }
 
 type AdsCampaign struct {

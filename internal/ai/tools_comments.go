@@ -44,6 +44,7 @@ func CommentsListHandler(deps *ToolDeps) ToolHandler {
 			Limit     int32  `json:"limit,omitempty"`
 			Offset    int32  `json:"offset,omitempty"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
@@ -58,20 +59,24 @@ func CommentsListHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("invalid_parent_id", "parent_id is not a valid UUID"), nil
 			}
+
 			replies, err := deps.Comments.ListRepliesByParent(ctx, parentID, userID, limit, a.Offset)
 			if err != nil {
 				return errorToolResult("comments_list_failed", err.Error()), nil
 			}
+
 			out := make([]any, 0, len(replies))
 			for _, r := range replies {
 				out = append(out, r)
 			}
+
 			return successToolResult(map[string]any{"replies": out, "count": len(out)}), nil
 		}
 
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required (or pass parent_id to list replies)"), nil
 		}
+
 		contentID, err := scanUUID(a.ContentID)
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
@@ -81,14 +86,17 @@ func CommentsListHandler(deps *ToolDeps) ToolHandler {
 		if sort == "" {
 			sort = "new"
 		}
+
 		comments, err := deps.Comments.ListCommentsByContent(ctx, contentID, userID, sort, limit, a.Offset)
 		if err != nil {
 			return errorToolResult("comments_list_failed", err.Error()), nil
 		}
+
 		out := make([]any, 0, len(comments))
 		for _, c := range comments {
 			out = append(out, c)
 		}
+
 		return successToolResult(map[string]any{"comments": out, "count": len(out)}), nil
 	}
 }
@@ -111,15 +119,18 @@ func CommentsCreateHandler(deps *ToolDeps) ToolHandler {
 			Body        json.RawMessage `json:"body"`
 			IsAnonymous bool            `json:"is_anonymous,omitempty"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
 
 		in := CommentCreateInput{IsAnonymous: a.IsAnonymous}
+
 		contentID, err := scanUUID(a.ContentID)
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
 		}
+
 		in.ContentID = contentID
 
 		if a.ParentID != "" {
@@ -127,6 +138,7 @@ func CommentsCreateHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("invalid_parent_id", "parent_id is not a valid UUID"), nil
 			}
+
 			in.ParentID = parentID
 		}
 
@@ -134,12 +146,14 @@ func CommentsCreateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_body", err.Error()), nil
 		}
+
 		in.Body = body
 
 		comment, err := deps.Comments.CreateComment(ctx, userID, in)
 		if err != nil {
 			return errorToolResult("comment_create_failed", err.Error()), nil
 		}
+
 		return successToolResult(map[string]any{
 			"id":         uuidString(comment.ID),
 			"content_id": uuidString(comment.ContentID),
@@ -166,9 +180,11 @@ func CommentsUpdateHandler(deps *ToolDeps) ToolHandler {
 			CommentID string          `json:"comment_id"`
 			Body      json.RawMessage `json:"body"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		id, err := scanUUID(a.CommentID)
 		if err != nil {
 			return errorToolResult("invalid_comment_id", "comment_id is not a valid UUID"), nil
@@ -183,6 +199,7 @@ func CommentsUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("comment_update_failed", err.Error()), nil
 		}
+
 		return successToolResult(map[string]any{
 			"id":        uuidString(comment.ID),
 			"is_edited": comment.IsEdited,
@@ -202,9 +219,11 @@ func CommentsDeleteHandler(deps *ToolDeps) ToolHandler {
 		var a struct {
 			CommentID string `json:"comment_id"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		id, err := scanUUID(a.CommentID)
 		if err != nil {
 			return errorToolResult("invalid_comment_id", "comment_id is not a valid UUID"), nil
@@ -213,6 +232,7 @@ func CommentsDeleteHandler(deps *ToolDeps) ToolHandler {
 		if err := deps.Comments.SoftDeleteCommentByAuthor(ctx, id, userID); err != nil {
 			return errorToolResult("comment_delete_failed", err.Error()), nil
 		}
+
 		return successToolResult(map[string]any{"deleted": true, "comment_id": a.CommentID}), nil
 	}
 }
@@ -233,9 +253,11 @@ func CommentsVoteHandler(deps *ToolDeps) ToolHandler {
 			CommentID string `json:"comment_id"`
 			Value     int16  `json:"value"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		id, err := scanUUID(a.CommentID)
 		if err != nil {
 			return errorToolResult("invalid_comment_id", "comment_id is not a valid UUID"), nil
@@ -245,8 +267,10 @@ func CommentsVoteHandler(deps *ToolDeps) ToolHandler {
 			if err := deps.Comments.RemoveCommentVote(ctx, id, userID); err != nil {
 				return errorToolResult("vote_remove_failed", err.Error()), nil
 			}
+
 			return successToolResult(map[string]any{"voted": false, "comment_id": a.CommentID}), nil
 		}
+
 		if a.Value != 1 && a.Value != -1 {
 			return errorToolResult("invalid_vote_value", "value must be 1 (up), -1 (down), or 0 (remove)"), nil
 		}
@@ -254,6 +278,7 @@ func CommentsVoteHandler(deps *ToolDeps) ToolHandler {
 		if err := deps.Comments.VoteComment(ctx, id, userID, a.Value); err != nil {
 			return errorToolResult("vote_failed", err.Error()), nil
 		}
+
 		return successToolResult(map[string]any{"voted": true, "comment_id": a.CommentID, "value": a.Value}), nil
 	}
 }

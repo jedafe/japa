@@ -42,6 +42,7 @@ func encodeDMCursor(c dmCursor) string {
 	if err != nil {
 		return ""
 	}
+
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
@@ -49,14 +50,17 @@ func decodeDMCursor(raw string) *dmCursor {
 	if raw == "" {
 		return nil
 	}
+
 	b, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
 		return nil
 	}
+
 	var c dmCursor
 	if err := json.Unmarshal(b, &c); err != nil || c.ID == "" {
 		return nil
 	}
+
 	return &c
 }
 
@@ -67,12 +71,15 @@ func dmCursorArgs(sort string, c *dmCursor) (has bool, ts pgtype.Timestamptz, i 
 	if c == nil || (c.S != "" && c.S != sort) {
 		return false, ts, 0, "", id
 	}
+
 	if err := id.Scan(c.ID); err != nil {
 		return false, ts, 0, "", id
 	}
+
 	if c.T != 0 {
 		ts = pgtype.Timestamptz{Time: time.Unix(0, c.T).UTC(), Valid: true}
 	}
+
 	return true, ts, c.N, c.K, id
 }
 
@@ -121,7 +128,6 @@ func (s *Store) GetWSTicketForRedemption(ctx context.Context, id pgtype.UUID) (g
 // GetOrCreateConversation gets existing or creates new DM conversation.
 func (s *DMStore) GetOrCreateConversation(ctx context.Context, participant1ID, participant2ID pgtype.UUID) (gen.DmConversation, error) {
 	return s.write.GetOrCreateConversation(ctx, gen.GetOrCreateConversationParams{
-
 		Participant1ID: participant1ID,
 		Participant2ID: participant2ID,
 	})
@@ -133,7 +139,6 @@ func (s *DMStore) GetOrCreateConversation(ctx context.Context, participant1ID, p
 // enforcement for already-active threads.
 func (s *DMStore) GetConversationByParticipants(ctx context.Context, userA, userB pgtype.UUID) (gen.DmConversation, error) {
 	return s.read.GetConversationByParticipants(ctx, gen.GetConversationByParticipantsParams{
-
 		Participant1ID: userA,
 		Participant2ID: userB,
 	})
@@ -217,7 +222,6 @@ func (s *DMStore) GetConversationMessages(ctx context.Context, conversationID pg
 	}
 
 	return s.read.GetConversationMessages(ctx, gen.GetConversationMessagesParams{
-
 		ConversationID: conversationID,
 		HasCursor:      has,
 		CursorTs:       ts,
@@ -276,7 +280,6 @@ func (s *DMStore) GetMessageRequest(ctx context.Context, requestID pgtype.UUID) 
 // ordering). Platform-scoped (Rule 4).
 func (s *DMStore) CreateMessageRequest(ctx context.Context, requesterID, recipientID, conversationID pgtype.UUID, previewMessage string) error {
 	return s.write.CreateMessageRequest(ctx, gen.CreateMessageRequestParams{
-
 		RequesterID:    requesterID,
 		RecipientID:    recipientID,
 		ConversationID: conversationID,
@@ -316,7 +319,6 @@ func (s *DMStore) GetPendingMessageRequests(ctx context.Context, recipientID pgt
 	}
 
 	return s.read.GetPendingMessageRequests(ctx, gen.GetPendingMessageRequestsParams{
-
 		RecipientID: recipientID,
 		Q:           q,
 		Sort:        sort,
@@ -361,7 +363,6 @@ func (s *DMStore) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool
 // so we call it twice and AND the results.
 func (s *DMStore) IsMutualFollow(ctx context.Context, initiatorID, recipientID pgtype.UUID) (bool, error) {
 	initiatorFollowsRecipient, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
-
 		EntityID:   recipientID,
 		FollowerID: initiatorID,
 	})
@@ -374,7 +375,6 @@ func (s *DMStore) IsMutualFollow(ctx context.Context, initiatorID, recipientID p
 	}
 
 	recipientFollowsInitiator, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
-
 		EntityID:   initiatorID,
 		FollowerID: recipientID,
 	})
@@ -690,6 +690,7 @@ func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, q,
 	if sort == "" {
 		sort = "recent"
 	}
+
 	rows, err := s.store.GetUserConversations(ctx, userID, q, filter, sort, limit, offset, cursor)
 	if err != nil {
 		return nil, "", fmt.Errorf("getting user conversations: %w", err)
@@ -753,6 +754,7 @@ func nextConversationCursor(rows []gen.GetUserConversationsRow, sort string, lim
 		if last.LastMessageAt.Valid {
 			ts = last.LastMessageAt
 		}
+
 		c.T = ts.Time.UnixNano()
 	}
 
@@ -763,6 +765,7 @@ func effectivePageLimit(limit int32) int32 {
 	if limit <= 0 || limit > MaxPageSize {
 		return DefaultPageSize
 	}
+
 	return limit
 }
 
@@ -812,6 +815,7 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 	}
 
 	var nextCursor string
+
 	if int32(len(rows)) == effectivePageLimit(limit) && len(rows) > 0 {
 		last := rows[len(rows)-1]
 		nextCursor = encodeDMCursor(dmCursor{T: last.CreatedAt.Time.UnixNano(), ID: last.ID.String()})
@@ -854,6 +858,7 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, requestID, userID 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrDMRequestNotFound
 		}
+
 		return "", fmt.Errorf("looking up message request: %w", err)
 	}
 
@@ -871,6 +876,7 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, requestID, userID 
 		if err := s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestAccepted); err != nil {
 			return "", err
 		}
+
 		return dmReq.ConversationID.String(), nil
 	case MessageRequestDeclined:
 		return "", s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestDeclined)
@@ -883,6 +889,7 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, requestID, userID 
 		if err := s.store.CreateUserBlock(ctx, userID, dmReq.RequesterID); err != nil {
 			return "", fmt.Errorf("creating user block: %w", err)
 		}
+
 		return "", nil
 	default:
 		return "", fmt.Errorf("invalid action: %s", action)
@@ -910,6 +917,7 @@ func (s *DMService) GetPendingMessageRequests(ctx context.Context, recipientID p
 	if sort == "" {
 		sort = "recent"
 	}
+
 	rows, err := s.store.GetPendingMessageRequests(ctx, recipientID, q, sort, limit, offset, cursor)
 	if err != nil {
 		return nil, "", fmt.Errorf("getting pending message requests: %w", err)

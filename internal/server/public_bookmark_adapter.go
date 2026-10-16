@@ -51,13 +51,16 @@ func (a *publicBookmarkAdapter) ListBookmarks(ctx context.Context, userID pgtype
 		if b.FolderID != nil {
 			items[i].FolderID = *b.FolderID
 		}
+
 		if b.Title != nil {
 			items[i].Title = *b.Title
 		}
+
 		if b.Slug != nil {
 			items[i].Slug = *b.Slug
 		}
 	}
+
 	return items, nil
 }
 
@@ -71,6 +74,7 @@ func (a *publicBookmarkAdapter) AddContentBookmark(ctx context.Context, userID, 
 	if err != nil {
 		return publicapi.PublicBookmarkItem{}, fmt.Errorf("check content visibility: %w", err)
 	}
+
 	if !visible {
 		return publicapi.PublicBookmarkItem{}, fmt.Errorf("%w: content", errpkg.ErrNotFound)
 	}
@@ -92,6 +96,7 @@ func (a *publicBookmarkAdapter) AddContentBookmark(ctx context.Context, userID, 
 	if err != nil {
 		return publicapi.PublicBookmarkItem{}, err
 	}
+
 	if !already && a.onChange != nil {
 		a.onChange(content.EntityContent, contentID, "bookmark", 1)
 	}
@@ -110,6 +115,7 @@ func (a *publicBookmarkAdapter) RemoveContentBookmark(ctx context.Context, userI
 	if err != nil {
 		return fmt.Errorf("check bookmark: %w", err)
 	}
+
 	if !exists {
 		return fmt.Errorf("%w: bookmark", errpkg.ErrNotFound)
 	}
@@ -117,9 +123,11 @@ func (a *publicBookmarkAdapter) RemoveContentBookmark(ctx context.Context, userI
 	if err := a.content.RemoveBookmark(ctx, userID, content.EntityContent, contentID); err != nil {
 		return err
 	}
+
 	if a.onChange != nil {
 		a.onChange(content.EntityContent, contentID, "bookmark", -1)
 	}
+
 	return nil
 }
 

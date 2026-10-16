@@ -54,7 +54,6 @@ func TestHandleAgentCreateDraftRequest_EmptyTopicPrompt_Skips(t *testing.T) {
 	agentDraftProcessor = stub
 
 	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
-
 		PersonaID:   "00000000-0000-0000-0000-000000000002",
 		ContentType: "article",
 		// TopicPrompt intentionally empty
@@ -77,7 +76,6 @@ func TestHandleAgentCreateDraftRequest_EmptyPersonaID_Skips(t *testing.T) {
 	agentDraftProcessor = stub
 
 	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
-
 		ContentType: "article",
 		TopicPrompt: "Tell me about Nigerian visas",
 		// PersonaID intentionally empty
@@ -100,7 +98,6 @@ func TestHandleAgentCreateDraftRequest_EmptyContentType_Skips(t *testing.T) {
 	agentDraftProcessor = stub
 
 	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
-
 		PersonaID:   "00000000-0000-0000-0000-000000000002",
 		TopicPrompt: "Tell me about Nigerian visas",
 		// ContentType intentionally empty
@@ -122,7 +119,6 @@ func TestHandleAgentCreateDraftRequest_NoProcessor_Skips(t *testing.T) {
 	agentDraftProcessor = nil
 
 	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
-
 		PersonaID:   "00000000-0000-0000-0000-000000000002",
 		ContentType: "article",
 		TopicPrompt: "Tell me about Nigerian visas",
@@ -177,7 +173,6 @@ func TestHandleAgentCreateDraftRequest_ProcessorError_Propagates(t *testing.T) {
 	agentDraftProcessor = stub
 
 	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
-
 		PersonaID:   "00000000-0000-0000-0000-000000000002",
 		ContentType: "article",
 		TopicPrompt: "Tell me about Nigerian visas",

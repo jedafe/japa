@@ -147,17 +147,21 @@ func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string)
 	if s.enqueuer == nil {
 		return errors.New("ecaguide: task enqueuer not configured")
 	}
+
 	if params["destination_space_id"] == "" || params["provider_id"] == "" {
 		return errors.New("destination_space_id and provider_id are required")
 	}
+
 	payload := map[string]string{"entity_type": "eca_guide"}
 	for k, v := range params {
 		payload[k] = v
 	}
+
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
+
 	return s.enqueuer.Enqueue("tool:generate_draft", raw)
 }
 
@@ -167,10 +171,12 @@ func (s *Service) ListProviders(ctx context.Context, destSpaceID pgtype.UUID) ([
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ProviderDTO, 0, len(rows))
 	for _, p := range rows {
 		out = append(out, providerDTO(p))
 	}
+
 	return out, nil
 }
 
@@ -180,6 +186,7 @@ func providerDTO(p ProviderRow) ProviderDTO {
 	if p.Website != nil {
 		d.Website = *p.Website
 	}
+
 	return d
 }
 
@@ -187,6 +194,7 @@ func providerDTO(p ProviderRow) ProviderDTO {
 func providerDTOAdmin(p ProviderRow) ProviderDTO {
 	d := providerDTO(p)
 	d.IsActive = &p.IsActive
+
 	return d
 }
 
@@ -196,6 +204,7 @@ func (s *Service) ListGuides(ctx context.Context, destSpaceID pgtype.UUID, purpo
 	if err != nil {
 		return nil, err
 	}
+
 	return guideDTOs(rows), nil
 }
 
@@ -205,10 +214,12 @@ func (s *Service) GetGuide(ctx context.Context, id pgtype.UUID) (*GuideDetailDTO
 	if err != nil {
 		return nil, err
 	}
+
 	updates, err := s.store.ListApprovedUpdates(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+
 	return &GuideDetailDTO{Guide: guideDTO(g), Updates: updateDTOs(updates)}, nil
 }
 
@@ -217,13 +228,16 @@ func (s *Service) CompareGuides(ctx context.Context, destSpaceID pgtype.UUID, pr
 	if len(providerIDs) == 0 {
 		return nil, errors.New("provider_ids is required")
 	}
+
 	if len(providerIDs) > 8 {
 		return nil, errors.New("provider_ids: max 8 providers")
 	}
+
 	rows, err := s.store.CompareGuides(ctx, destSpaceID, providerIDs)
 	if err != nil {
 		return nil, err
 	}
+
 	return guideDTOs(rows), nil
 }
 
@@ -232,22 +246,28 @@ func (s *Service) CreateCommunityUpdate(ctx context.Context, guideID, userID pgt
 	if in.FeeEstimate == "" && in.TurnaroundDays == nil && in.Note == "" {
 		return "", errors.New("at least one of fee_estimate, turnaround_days or note is required")
 	}
+
 	if in.StepIndex != nil && *in.StepIndex < 0 {
 		return "", errors.New("step_index must be >= 0")
 	}
+
 	if in.TurnaroundDays != nil && *in.TurnaroundDays < 0 {
 		return "", errors.New("turnaround_days must be >= 0")
 	}
+
 	if len(in.FeeEstimate) > 100 {
 		return "", errors.New("fee_estimate is too long (max 100 chars)")
 	}
+
 	if len(in.Note) > 500 {
 		return "", errors.New("note is too long (max 500 chars)")
 	}
+
 	id, err := s.store.CreateCommunityUpdate(ctx, guideID, userID, in.StepIndex, in.FeeEstimate, in.TurnaroundDays, in.Note)
 	if err != nil {
 		return "", err
 	}
+
 	return uuidStr(id), nil
 }
 
@@ -257,6 +277,7 @@ func (s *Service) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, 
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return guideDTOs(rows), total, nil
 }
 
@@ -265,23 +286,28 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 	if in.DestinationSpaceID == "" || in.ProviderID == "" || in.Purpose == "" || in.PathwaySteps == nil {
 		return nil, errors.New("destination_space_id, provider_id, purpose and pathway_steps are required")
 	}
+
 	row := GuideRow{
 		Purpose: in.Purpose,
 		Status:  orDefault(in.Status, StatusDraft),
 	}
 	if err := row.DestinationSpaceID.Scan(in.DestinationSpaceID); err != nil {
-		return nil, fmt.Errorf("invalid destination_space_id")
+		return nil, errors.New("invalid destination_space_id")
 	}
+
 	if err := row.ProviderID.Scan(in.ProviderID); err != nil {
-		return nil, fmt.Errorf("invalid provider_id")
+		return nil, errors.New("invalid provider_id")
 	}
+
 	row.PathwaySteps = *in.PathwaySteps
 	if in.DocumentsRequired != nil {
 		row.DocumentsRequired = *in.DocumentsRequired
 	}
+
 	if in.AcceptedFor != nil {
 		row.AcceptedFor = *in.AcceptedFor
 	}
+
 	row.FeeEstimate = in.FeeEstimate
 	row.Currency = in.Currency
 	row.TimelineEstimate = in.TimelineEstimate
@@ -291,8 +317,10 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 	if err != nil {
 		return nil, err
 	}
+
 	dto := guideDTO(row)
 	dto.ID = uuidStr(id)
+
 	return &dto, nil
 }
 
@@ -309,15 +337,19 @@ func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, in GuideReque
 	if in.PathwaySteps != nil {
 		row.PathwaySteps = *in.PathwaySteps
 	}
+
 	if in.DocumentsRequired != nil {
 		row.DocumentsRequired = *in.DocumentsRequired
 	}
+
 	if in.AcceptedFor != nil {
 		row.AcceptedFor = *in.AcceptedFor
 	}
+
 	if in.IsActive != nil {
 		row.IsActive = pgtype.Bool{Bool: *in.IsActive, Valid: true}
 	}
+
 	return s.store.UpdateGuide(ctx, id, row)
 }
 
@@ -327,7 +359,9 @@ func (s *Service) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, 
 	if err := s.store.ApproveGuide(ctx, id, reviewerID, notes); err != nil {
 		return err
 	}
+
 	s.enqueueIndex(id)
+
 	return nil
 }
 
@@ -337,6 +371,7 @@ func (s *Service) AdminListUpdates(ctx context.Context, status string, page, lim
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return updateDTOs(rows), total, nil
 }
 
@@ -345,6 +380,7 @@ func (s *Service) ModerateUpdate(ctx context.Context, id, reviewerID pgtype.UUID
 	if status != StatusApproved && status != StatusRejected {
 		return errors.New("status must be approved or rejected")
 	}
+
 	return s.store.ModerateUpdate(ctx, id, reviewerID, status)
 }
 
@@ -357,6 +393,7 @@ func guideDTOs(rows []GuideRow) []GuideDTO {
 	for _, g := range rows {
 		out = append(out, guideDTO(g))
 	}
+
 	return out
 }
 
@@ -375,38 +412,49 @@ func guideDTO(g GuideRow) GuideDTO {
 	if g.DestinationSpaceName != nil {
 		d.DestinationSpaceName = *g.DestinationSpaceName
 	}
+
 	if g.ProviderSlug != nil {
 		d.ProviderSlug = *g.ProviderSlug
 	}
+
 	if g.ProviderName != nil {
 		d.ProviderName = *g.ProviderName
 	}
+
 	if g.FeeEstimate != nil {
 		d.FeeEstimate = *g.FeeEstimate
 	}
+
 	if g.Currency != nil {
 		d.Currency = *g.Currency
 	}
+
 	if g.TimelineEstimate != nil {
 		d.TimelineEstimate = *g.TimelineEstimate
 	}
+
 	if len(g.DocumentsRequired) > 0 {
 		d.DocumentsRequired = json.RawMessage(g.DocumentsRequired)
 	}
+
 	if len(g.AcceptedFor) > 0 {
 		d.AcceptedFor = json.RawMessage(g.AcceptedFor)
 	}
+
 	if g.OfficialURL != nil {
 		d.OfficialURL = *g.OfficialURL
 	}
+
 	if g.SourceURLLastChecked.Valid {
 		d.SourceURLLastChecked = g.SourceURLLastChecked.Time.Format("2006-01-02")
 	}
+
 	return d
 }
 
 func updateDTOs(rows []UpdateRow) []UpdateDTO {
 	out := make([]UpdateDTO, 0, len(rows))
+
 	for _, u := range rows {
 		d := UpdateDTO{
 			ID:      uuidStr(u.ID),
@@ -416,25 +464,32 @@ func updateDTOs(rows []UpdateRow) []UpdateDTO {
 		if u.UserName != nil {
 			d.UserName = *u.UserName
 		}
+
 		if u.StepIndex.Valid {
 			v := u.StepIndex.Int32
 			d.StepIndex = &v
 		}
+
 		if u.FeeEstimate != nil {
 			d.FeeEstimate = *u.FeeEstimate
 		}
+
 		if u.TurnaroundDays.Valid {
 			v := u.TurnaroundDays.Int32
 			d.TurnaroundDays = &v
 		}
+
 		if u.Note != nil {
 			d.Note = *u.Note
 		}
+
 		if u.CreatedAt.Valid {
 			d.CreatedAt = u.CreatedAt.Time.Format(time.RFC3339)
 		}
+
 		out = append(out, d)
 	}
+
 	return out
 }
 
@@ -442,6 +497,7 @@ func orDefault(v, def string) string {
 	if v == "" {
 		return def
 	}
+
 	return v
 }
 
@@ -449,7 +505,9 @@ func uuidStr(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
+
 	b := u.Bytes
+
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
@@ -465,10 +523,12 @@ func (s *Service) AdminListProviders(ctx context.Context) ([]ProviderDTO, error)
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ProviderDTO, 0, len(rows))
 	for _, p := range rows {
 		out = append(out, providerDTOAdmin(p))
 	}
+
 	return out, nil
 }
 
@@ -477,22 +537,27 @@ func (s *Service) CreateProvider(ctx context.Context, in ProviderRequest) (Provi
 	if in.Slug == "" || in.Name == "" {
 		return ProviderDTO{}, errors.New("slug and name are required")
 	}
+
 	var website *string
 	if in.Website != "" {
 		website = &in.Website
 	}
+
 	var active pgtype.Bool
 	if in.IsActive != nil {
 		active = pgtype.Bool{Bool: *in.IsActive, Valid: true}
 	}
+
 	id, err := s.store.CreateProvider(ctx, in.Slug, in.Name, website, active)
 	if err != nil {
 		return ProviderDTO{}, err
 	}
+
 	row := ProviderRow{ID: id, Slug: in.Slug, Name: in.Name, Website: website, IsActive: true}
 	if in.IsActive != nil {
 		row.IsActive = *in.IsActive
 	}
+
 	return providerDTO(row), nil
 }
 
@@ -502,10 +567,12 @@ func (s *Service) UpdateProvider(ctx context.Context, id pgtype.UUID, in Provide
 	if in.Website != "" {
 		website = &in.Website
 	}
+
 	var active pgtype.Bool
 	if in.IsActive != nil {
 		active = pgtype.Bool{Bool: *in.IsActive, Valid: true}
 	}
+
 	return s.store.UpdateProvider(ctx, id, in.Slug, in.Name, website, active)
 }
 
@@ -538,10 +605,12 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 	if s.aiDispatcher == nil {
 		return errors.New("ecaguide: no AI dispatcher configured")
 	}
+
 	var dest, provider pgtype.UUID
 	if err := dest.Scan(params["destination_space_id"]); err != nil {
 		return errors.New("ecaguide: destination_space_id param is required")
 	}
+
 	if err := provider.Scan(params["provider_id"]); err != nil {
 		return errors.New("ecaguide: provider_id param is required")
 	}
@@ -570,9 +639,11 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 		AcceptedFor       *json.RawMessage `json:"accepted_for"`
 		OfficialURL       *string          `json:"official_url"`
 	}
+
 	if err := json.Unmarshal(extractJSON(resp.Text), &out); err != nil {
 		return fmt.Errorf("ecaguide: generate draft: unparseable AI output: %w", err)
 	}
+
 	if out.Purpose == "" || out.PathwaySteps == nil {
 		return errors.New("ecaguide: generate draft: AI output missing required fields")
 	}
@@ -592,10 +663,13 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 	if out.DocumentsRequired != nil {
 		row.DocumentsRequired = *out.DocumentsRequired
 	}
+
 	if out.AcceptedFor != nil {
 		row.AcceptedFor = *out.AcceptedFor
 	}
+
 	_, err = s.store.CreateGuide(ctx, row)
+
 	return err
 }
 
@@ -607,14 +681,17 @@ func extractJSON(s string) []byte {
 		if j := strings.Index(s, "\n"); j >= 0 {
 			s = s[j+1:]
 		}
+
 		if k := strings.LastIndex(s, "```"); k >= 0 {
 			s = s[:k]
 		}
 	}
+
 	start := strings.IndexAny(s, "{[")
 	if start < 0 {
 		return []byte(s)
 	}
+
 	return []byte(s[start:])
 }
 
@@ -623,11 +700,15 @@ func formatParams(params map[string]string) string {
 	if len(params) == 0 {
 		return "Generate the guide."
 	}
+
 	var b strings.Builder
+
 	b.WriteString("Generate an ECA guide with these hints:\n")
+
 	for k, v := range params {
 		fmt.Fprintf(&b, "- %s: %s\n", k, v)
 	}
+
 	return b.String()
 }
 
@@ -637,6 +718,7 @@ func (s *Service) enqueueIndex(id pgtype.UUID) {
 	if s.enqueuer == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"entity_type": "eca_guide",
 		"entity_id":   id.String(),
@@ -645,6 +727,7 @@ func (s *Service) enqueueIndex(id pgtype.UUID) {
 		slog.Error("ecaguide: marshal index payload", "error", err)
 		return
 	}
+
 	if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
 		slog.Error("ecaguide: enqueue index task", "id", id.String(), "error", err)
 	}

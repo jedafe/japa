@@ -34,7 +34,6 @@ func (s *Store) insertFeedItem(ctx context.Context, params gen.InsertFeedItemPar
 // provided by the slugs array. Used for the readiness roadmap feed.
 func (s *Store) getContentsBySlugs(ctx context.Context, requesterID pgtype.UUID, slugs []string, limit, offset int32) ([]gen.ListContentsBySlugsRow, error) {
 	rows, err := s.read.ListContentsBySlugs(ctx, gen.ListContentsBySlugsParams{
-
 		Slugs:             slugs,
 		CanSeeUnpublished: false,
 		CanSeePrivate:     false,
@@ -60,7 +59,6 @@ func (s *Store) getExploreFeed(ctx context.Context, visitorCountryCode, visitorR
 	}
 
 	rows, err := s.read.GetExploreFeed(ctx, gen.GetExploreFeedParams{
-
 		VisitorCountryCode: &visitorCountryCode,
 		VisitorRegion:      &visitorRegion,
 		PageLimit:          limit,
@@ -82,7 +80,6 @@ func (s *Store) getPrimaryFeed(ctx context.Context, userID pgtype.UUID, sort str
 	}
 
 	rows, err := s.read.GetPrimaryFeed(ctx, gen.GetPrimaryFeedParams{
-
 		UserID:     userID,
 		Sort:       sort,
 		PageLimit:  limit,
@@ -105,7 +102,6 @@ func (s *Store) getSpaceFeed(ctx context.Context, spaceID, viewerID pgtype.UUID,
 	}
 
 	rows, err := s.read.GetSpaceFeed(ctx, gen.GetSpaceFeedParams{
-
 		SpaceID:    spaceID,
 		ViewerID:   viewerID,
 		Sort:       sort,
@@ -129,7 +125,6 @@ func (s *Store) getProfileFeed(ctx context.Context, authorID, viewerID pgtype.UU
 	}
 
 	rows, err := s.read.GetProfileFeed(ctx, gen.GetProfileFeedParams{
-
 		AuthorID:   authorID,
 		ViewerID:   viewerID,
 		Sort:       sort,
@@ -152,7 +147,6 @@ func (s *Store) getTopFeed(ctx context.Context, visitorCountryCode, visitorRegio
 	}
 
 	rows, err := s.read.GetTopFeed(ctx, gen.GetTopFeedParams{
-
 		VisitorCountryCode: &visitorCountryCode,
 		VisitorRegion:      &visitorRegion,
 		PageLimit:          limit,
@@ -174,7 +168,6 @@ func (s *Store) getRisingFeed(ctx context.Context, visitorCountryCode, visitorRe
 	}
 
 	rows, err := s.read.GetRisingFeed(ctx, gen.GetRisingFeedParams{
-
 		VisitorCountryCode: &visitorCountryCode,
 		VisitorRegion:      &visitorRegion,
 		PageLimit:          limit,
@@ -257,7 +250,6 @@ func (s *Store) getFollowedEntityIDs(
 	ctx context.Context, followerID pgtype.UUID, entityType string,
 ) ([]pgtype.UUID, error) {
 	ids, err := s.read.GetFollowedEntityIDsByType(ctx, gen.GetFollowedEntityIDsByTypeParams{
-
 		FollowerID: followerID,
 		EntityType: entityType,
 	})

@@ -88,7 +88,9 @@ func (h *Handlers) requirePerm(w http.ResponseWriter, r *http.Request, userID pg
 	if h.perms == nil || h.perms.HasPermission(r.Context(), userID, permKey) {
 		return true
 	}
+
 	errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to perform this action")
+
 	return false
 }
 
@@ -267,11 +269,12 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 // source in the platform so the video content single page can render the
 // embed. Non-existent IDs return 404.
 func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
-
 	param := chi.URLParam(r, "id")
 
 	var source gen.VideoSource
+
 	var err error
+
 	var id pgtype.UUID
 	if scanErr := id.Scan(param); scanErr == nil && id.Valid {
 		source, err = h.Service.GetSourceByID(r.Context(), id)
@@ -279,6 +282,7 @@ func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
 		// §106 — /video/{slug} resolves bare video sources by slug.
 		source, err = h.Service.GetSourceBySlug(r.Context(), param)
 	}
+
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -334,7 +338,6 @@ func (h *Handlers) Summarize(w http.ResponseWriter, r *http.Request) {
 
 // ListChannelVideos handles GET /api/v1/u/{username}/videos.
 func (h *Handlers) ListChannelVideos(w http.ResponseWriter, r *http.Request) {
-
 	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
@@ -399,11 +402,14 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "youtube_not_configured", "YouTube import is not configured on this platform")
 			return
 		}
+
 		if isVideoClientError(err) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 			return
 		}
+
 		errpkg.HandleServiceError(w, err)
+
 		return
 	}
 
@@ -551,11 +557,14 @@ func (h *Handlers) PreviewBulkImport(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "youtube_not_configured", "YouTube import is not configured on this platform")
 			return
 		}
+
 		if isVideoClientError(err) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 			return
 		}
+
 		errpkg.HandleServiceError(w, err)
+
 		return
 	}
 

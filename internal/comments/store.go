@@ -53,7 +53,6 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 	}
 
 	comment, err := s.write.CreateComment(ctx, gen.CreateCommentParams{
-
 		ContentID:    input.ContentID,
 		AuthorUserID: userID,
 		ParentID:     parentID,
@@ -676,7 +675,6 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 	}
 
 	if _, err := s.write.UpsertCommentVote(ctx, gen.UpsertCommentVoteParams{
-
 		CommentID: commentID,
 		UserID:    userID,
 		Value:     value,
@@ -702,7 +700,6 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 // Platform-scoped per Guide §4.2/§9 (SEC-001).
 func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) error {
 	if err := s.write.DeleteCommentVote(ctx, gen.DeleteCommentVoteParams{
-
 		CommentID: commentID,
 		UserID:    userID,
 	}); err != nil {

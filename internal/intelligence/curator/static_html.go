@@ -113,6 +113,7 @@ func (s StaticHTML) Curate(_ context.Context, body []byte, contentType string, c
 		if sel == "" {
 			continue
 		}
+
 		if text := collapseSpace(doc.Find(sel).First().Text()); text != "" {
 			field(ext, fieldName, selectorCoerce(schema, fieldName, text), text)
 		}
@@ -155,9 +156,11 @@ func staticRecordTooThin(ext extractor.Extraction, cfg staticConfig) bool {
 	if _, ok := ext["title"]; !ok {
 		return true
 	}
+
 	if len(cfg.Selectors) > 0 {
 		return false
 	}
+
 	for name, f := range ext {
 		if name != "title" && name != "source_url" && f.Value != nil {
 			return false
@@ -176,29 +179,35 @@ func ldjsonRecordsFromHTML(doc *goquery.Document, ch sources.Channel) []Record {
 	// fetcher body (newline-joined single-line blocks), in-page scripts can
 	// hold multi-line JSON, so the line-splitting helper does not apply.
 	var nodes []map[string]any
+
 	doc.Find(`script[type="application/ld+json"]`).Each(func(_ int, s *goquery.Selection) {
 		var v any
 		if err := json.Unmarshal([]byte(strings.TrimSpace(s.Text())), &v); err == nil {
 			nodes = append(nodes, flattenLDJSON(v)...)
 		}
 	})
+
 	if len(nodes) == 0 {
 		return nil
 	}
 
 	var out []Record
+
 	for _, node := range nodes {
 		entityType := nodeEntityType(node)
 		if entityType == "" {
 			continue
 		}
+
 		if len(ch.EntityTypes) > 0 && !containsString(ch.EntityTypes, entityType) {
 			continue
 		}
+
 		ext := nodeToExtraction(node, entityType)
 		if ext == nil {
 			continue
 		}
+
 		out = append(out, Record{
 			Extraction:  validate(ext, entityType),
 			ExternalKey: ldjsonKey(node, entityType),
@@ -215,19 +224,24 @@ func metaFill(ext extractor.Extraction, doc *goquery.Document) {
 	meta := func(keys ...string) string {
 		for _, k := range keys {
 			var v string
+
 			doc.Find("meta").EachWithBreak(func(_ int, s *goquery.Selection) bool {
 				p, _ := s.Attr("property")
 				n, _ := s.Attr("name")
+
 				if p == k || n == k {
 					v, _ = s.Attr("content")
 					return false
 				}
+
 				return true
 			})
+
 			if strings.TrimSpace(v) != "" {
 				return strings.TrimSpace(v)
 			}
 		}
+
 		return ""
 	}
 
@@ -238,11 +252,13 @@ func metaFill(ext extractor.Extraction, doc *goquery.Document) {
 			fieldConf(ext, "title", t, t, heuristicFieldConfidence)
 		}
 	}
+
 	if !hasField(ext, "description_summary") && !hasField(ext, "summary") {
 		if d := meta("og:description", "twitter:description", "description"); d != "" {
 			field(ext, "description_summary", d, d)
 		}
 	}
+
 	if !hasField(ext, "application_url") && !hasField(ext, "article_url") {
 		if u := meta("og:url"); u != "" {
 			field(ext, "application_url", u, u)
@@ -250,6 +266,7 @@ func metaFill(ext extractor.Extraction, doc *goquery.Document) {
 			field(ext, "application_url", href, href)
 		}
 	}
+
 	if !hasField(ext, "published_date") && !hasField(ext, "deadline") {
 		if d := meta("article:published_time", "date", "dcterms.date"); d != "" {
 			if iso := ldjsonDate(d); iso != "" {
@@ -257,6 +274,7 @@ func metaFill(ext extractor.Extraction, doc *goquery.Document) {
 			}
 		}
 	}
+
 	if !hasField(ext, "image_url") {
 		if i := meta("og:image", "twitter:image"); i != "" {
 			field(ext, "image_url", i, i)
@@ -277,6 +295,7 @@ func selectorCoerce(schema schemas.EntitySchema, fieldName, value string) any {
 		if iso := parseHumanDate(value); iso != "" {
 			return iso
 		}
+
 		if iso := ldjsonDate(value); iso != "" {
 			return iso
 		}
@@ -295,6 +314,7 @@ func staticPageKey(ext extractor.Extraction, ch sources.Channel) string {
 			}
 		}
 	}
+
 	if ch.EntryUrl != "" {
 		return ch.EntryUrl
 	}
@@ -333,9 +353,11 @@ func fieldConf(ext extractor.Extraction, name string, value any, evidence string
 	if value == nil {
 		return
 	}
+
 	if s, ok := value.(string); ok && strings.TrimSpace(s) == "" {
 		return
 	}
+
 	ev := evidence
 	ext[name] = extractor.FieldExtraction{Value: value, Confidence: conf, Evidence: &ev}
 }
@@ -366,6 +388,7 @@ func parseStaticConfig(raw []byte) staticConfig {
 	if len(raw) == 0 {
 		return cfg
 	}
+
 	_ = json.Unmarshal(raw, &cfg)
 
 	return cfg

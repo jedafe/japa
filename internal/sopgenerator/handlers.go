@@ -81,6 +81,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -90,21 +91,25 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page, limit = 1, 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -153,6 +158,7 @@ func (h *Handlers) HandleListTemplates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("sopgenerator: list templates failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list templates")
+
 		return
 	}
 
@@ -177,11 +183,13 @@ func (h *Handlers) HandleListSamples(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePageParams(r)
+
 	samples, total, err := h.service.ListSamples(r.Context(), dest,
 		r.URL.Query().Get("level"), r.URL.Query().Get("field"), page, limit)
 	if err != nil {
 		slog.Error("sopgenerator: list samples failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list samples")
+
 		return
 	}
 
@@ -223,6 +231,7 @@ func (h *Handlers) HandleQuota(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -232,6 +241,7 @@ func (h *Handlers) HandleQuota(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("sopgenerator: quota failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "quota_failed", "Failed to load quota")
+
 		return
 	}
 
@@ -245,6 +255,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -271,16 +282,19 @@ func (h *Handlers) HandleListDrafts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
 	}
 
 	page, limit := parsePageParams(r)
+
 	drafts, total, err := h.service.ListDrafts(r.Context(), user.UserID, page, limit)
 	if err != nil {
 		slog.Error("sopgenerator: list drafts failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list drafts")
+
 		return
 	}
 
@@ -299,6 +313,7 @@ func (h *Handlers) HandleGetDraft(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -324,6 +339,7 @@ func (h *Handlers) HandleUpdateDraft(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -352,6 +368,7 @@ func (h *Handlers) HandleUpdateDraft(w http.ResponseWriter, r *http.Request) {
 		serviceErr(w, r, err, "Draft not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": draft})
 }
 
@@ -362,6 +379,7 @@ func (h *Handlers) HandleDeleteDraft(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -385,16 +403,19 @@ func (h *Handlers) HandleAdminListTemplates(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
 	}
 
 	page, limit := parsePageParams(r)
+
 	templates, total, err := h.service.AdminListTemplates(r.Context(), page, limit)
 	if err != nil {
 		slog.Error("sopgenerator: admin list templates failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list templates")
+
 		return
 	}
 
@@ -414,6 +435,7 @@ func (h *Handlers) HandleAdminGenerateTemplate(w http.ResponseWriter, r *http.Re
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -428,6 +450,7 @@ func (h *Handlers) HandleAdminGenerateTemplate(w http.ResponseWriter, r *http.Re
 		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"status": "queued"}})
 }
 
@@ -438,6 +461,7 @@ func (h *Handlers) HandleAdminApproveSample(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -451,6 +475,7 @@ func (h *Handlers) HandleAdminApproveSample(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		ReviewNotes string `json:"review_notes"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	if err := h.service.ApproveSample(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
@@ -467,6 +492,7 @@ func (h *Handlers) HandleAdminCreateTemplate(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -483,6 +509,7 @@ func (h *Handlers) HandleAdminCreateTemplate(w http.ResponseWriter, r *http.Requ
 		serviceErr(w, r, err, "")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tpl})
 }
 
@@ -492,6 +519,7 @@ func (h *Handlers) HandleAdminUpdateTemplate(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -512,6 +540,7 @@ func (h *Handlers) HandleAdminUpdateTemplate(w http.ResponseWriter, r *http.Requ
 		serviceErr(w, r, err, "Template not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -521,6 +550,7 @@ func (h *Handlers) HandleAdminDeleteTemplate(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -535,6 +565,7 @@ func (h *Handlers) HandleAdminDeleteTemplate(w http.ResponseWriter, r *http.Requ
 		serviceErr(w, r, err, "Template not found or is published")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -545,6 +576,7 @@ func (h *Handlers) HandleAdminApproveTemplate(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -559,6 +591,7 @@ func (h *Handlers) HandleAdminApproveTemplate(w http.ResponseWriter, r *http.Req
 		serviceErr(w, r, err, "Template not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusPublished}})
 }
 
@@ -568,6 +601,7 @@ func (h *Handlers) HandleAdminRejectTemplate(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -582,6 +616,7 @@ func (h *Handlers) HandleAdminRejectTemplate(w http.ResponseWriter, r *http.Requ
 		serviceErr(w, r, err, "Template not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
 }
 
@@ -591,12 +626,14 @@ func (h *Handlers) HandleAdminListSamples(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
 	}
 
 	page, limit := parsePageParams(r)
+
 	var destID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destID.Scan(v); err != nil {
@@ -604,12 +641,15 @@ func (h *Handlers) HandleAdminListSamples(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+
 	samples, total, err := h.service.AdminListSamples(r.Context(), destID, r.URL.Query().Get("status"), page, limit)
 	if err != nil {
 		slog.Error("sopgenerator: admin samples failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list samples")
+
 		return
 	}
+
 	h.resolveLiterals(r, &samples)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -624,6 +664,7 @@ func (h *Handlers) HandleAdminCreateSample(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -640,6 +681,7 @@ func (h *Handlers) HandleAdminCreateSample(w http.ResponseWriter, r *http.Reques
 		serviceErr(w, r, err, "")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": sample})
 }
 
@@ -649,6 +691,7 @@ func (h *Handlers) HandleAdminUpdateSample(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -669,6 +712,7 @@ func (h *Handlers) HandleAdminUpdateSample(w http.ResponseWriter, r *http.Reques
 		serviceErr(w, r, err, "Sample not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -678,6 +722,7 @@ func (h *Handlers) HandleAdminDeleteSample(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -692,6 +737,7 @@ func (h *Handlers) HandleAdminDeleteSample(w http.ResponseWriter, r *http.Reques
 		serviceErr(w, r, err, "Sample not found or is published")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -702,6 +748,7 @@ func (h *Handlers) HandleAdminRejectSample(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -715,12 +762,14 @@ func (h *Handlers) HandleAdminRejectSample(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		ReviewNotes string `json:"review_notes"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	if err := h.service.RejectSample(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
 		serviceErr(w, r, err, "Sample not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
 }
 
@@ -736,6 +785,7 @@ func (h *Handlers) HandleListFields(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("sopgenerator: list fields failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list fields")
+
 		return
 	}
 
@@ -750,16 +800,19 @@ func (h *Handlers) HandleAdminListFields(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
 	}
 
 	page, limit := parsePageParams(r)
+
 	fields, total, err := h.service.AdminListFields(r.Context(), r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		slog.Error("sopgenerator: admin list fields failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list fields")
+
 		return
 	}
 
@@ -774,6 +827,7 @@ func (h *Handlers) HandleAdminCreateField(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -790,6 +844,7 @@ func (h *Handlers) HandleAdminCreateField(w http.ResponseWriter, r *http.Request
 		serviceErr(w, r, err, "")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": field})
 }
 
@@ -799,6 +854,7 @@ func (h *Handlers) HandleAdminUpdateField(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -819,6 +875,7 @@ func (h *Handlers) HandleAdminUpdateField(w http.ResponseWriter, r *http.Request
 		serviceErr(w, r, err, "Field not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -829,6 +886,7 @@ func (h *Handlers) HandleAdminDeleteField(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -843,5 +901,6 @@ func (h *Handlers) HandleAdminDeleteField(w http.ResponseWriter, r *http.Request
 		serviceErr(w, r, err, "Field not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }

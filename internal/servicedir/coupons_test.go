@@ -159,6 +159,7 @@ func TestListingCouponPublicJSONShape(t *testing.T) {
 	}
 
 	var m map[string]any
+
 	raw, err := json.Marshal(c)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -168,16 +169,20 @@ func TestListingCouponPublicJSONShape(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	want := []string{"id", "title", "code", "discount_type", "discount_value",
-		"currency", "expires_at", "terms_url", "referral_url", "applies_to"}
+	want := []string{
+		"id", "title", "code", "discount_type", "discount_value",
+		"currency", "expires_at", "terms_url", "referral_url", "applies_to",
+	}
 	for _, k := range want {
 		if _, ok := m[k]; !ok {
 			t.Errorf("missing key %q in public payload", k)
 		}
 	}
 
-	for _, k := range []string{"status", "max_redemptions", "per_user_limit",
-		"min_spend", "first_time_only", "org_id", "position"} {
+	for _, k := range []string{
+		"status", "max_redemptions", "per_user_limit",
+		"min_spend", "first_time_only", "org_id", "position",
+	} {
 		if _, ok := m[k]; ok {
 			t.Errorf("internal key %q leaked into public payload", k)
 		}
@@ -185,7 +190,7 @@ func TestListingCouponPublicJSONShape(t *testing.T) {
 }
 
 func TestCouponsEnabled(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("flag on via settings", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{"service_coupons.enabled": "true"}}

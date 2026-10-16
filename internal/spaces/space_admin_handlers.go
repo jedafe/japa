@@ -144,6 +144,7 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 			"status": input.Status,
 			"reason": strings.TrimSpace(input.Reason),
 		})
+
 		if _, aerr := h.Service.write.CreateAuditLog(r.Context(), gen.CreateAuditLogParams{
 			ActorUserID: user.UserID,
 			ActionType:  "space.status_update",
@@ -227,7 +228,6 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 // given a composite id (space_id::user_id) so the panel can target a specific
 // request for approval/rejection.
 func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request) {
-
 	rows, err := h.Service.read.ListAllSpaceJoinRequests(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
@@ -264,7 +264,6 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 // encodes space_id::user_id, which is split and applied via the existing
 // UpdateSpaceJoinRequest store call.
 func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Request, status string) {
-
 	composite := chi.URLParam(r, "id")
 
 	parts := strings.Split(composite, "::")

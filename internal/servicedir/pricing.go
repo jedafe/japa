@@ -68,11 +68,13 @@ func applyDiscount(base int64, dtype string, dval float64) int64 {
 	}
 
 	var out int64
+
 	switch dtype {
 	case "percent":
 		if dval >= 100 {
 			return 0
 		}
+
 		out = int64(math.Round(float64(base) * (100 - dval) / 100))
 	case "fixed":
 		out = base - int64(math.Round(dval))

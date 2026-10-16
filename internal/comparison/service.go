@@ -85,7 +85,6 @@ func (s *Service) CreateComparisonType(ctx context.Context, input CreateComparis
 	}
 
 	return s.store.createComparisonType(ctx, gen.CreateComparisonTypeParams{
-
 		Name:         input.Name,
 		Slug:         input.Slug,
 		Description:  description,
@@ -186,6 +185,7 @@ func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string) (Com
 			if fieldToDimensionType(f.FieldType, f.Options) == "" {
 				continue // non-comparable composite — §80 Wiki Topic Pages
 			}
+
 			dimensions = append(dimensions, ComparisonTypeDimension{
 				ID:          f.ID.String(),
 				Name:        f.Label,
@@ -390,9 +390,11 @@ func fieldToDimensionType(fieldType string, options []byte) string {
 	if opts == nil || opts.PrimaryPart == "" {
 		return ""
 	}
+
 	if opts.PricePartKind(opts.PrimaryPart) == customfields.PricePartKindNumber {
 		return DimensionTypeNumber
 	}
+
 	return DimensionTypeCurrency
 }
 
@@ -494,6 +496,7 @@ func filterFieldsByConfigSections(fields []gen.ListCustomFieldsByGroupRow, confi
 	var cfg struct {
 		Sections []string `json:"sections"`
 	}
+
 	if err := json.Unmarshal(config, &cfg); err != nil || len(cfg.Sections) == 0 {
 		return fields
 	}
@@ -504,6 +507,7 @@ func filterFieldsByConfigSections(fields []gen.ListCustomFieldsByGroupRow, confi
 	}
 
 	out := make([]gen.ListCustomFieldsByGroupRow, 0, len(fields))
+
 	for _, f := range fields {
 		if f.Section != nil && set[*f.Section] {
 			out = append(out, f)
@@ -649,6 +653,7 @@ func (s *Service) CreateComparison(ctx context.Context, userID pgtype.UUID, inpu
 		// Auto-generate dimensions from the type's field group (Section 30).
 		if autoFields != nil {
 			pos := 0
+
 			for _, f := range autoFields {
 				dimType := fieldToDimensionType(f.FieldType, f.Options)
 				if dimType == "" {
@@ -656,6 +661,7 @@ func (s *Service) CreateComparison(ctx context.Context, userID pgtype.UUID, inpu
 					// price_parts field with no usable primary_part).
 					continue
 				}
+
 				_, derr := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
 					ContentID: contentRow.ID,
 
@@ -670,6 +676,7 @@ func (s *Service) CreateComparison(ctx context.Context, userID pgtype.UUID, inpu
 				if derr != nil {
 					return CreateComparisonResult{}, fmt.Errorf("auto-creating dimension %d: %w", pos, derr)
 				}
+
 				pos++
 			}
 		} else {
@@ -1647,34 +1654,44 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 		rate      float64 // local units per 1 base unit; 0 = unconvertible
 		base      string
 	}
+
 	cellFxByCode := make(map[string]cellFx)
 	itemFx := func(item gen.ListComparisonItemsByContentRow) cellFx {
 		if s.currencyRes == nil {
 			return cellFx{}
 		}
+
 		resolved := resolveItem(item)
 		if resolved == nil {
 			return cellFx{}
 		}
+
 		raw, _ := resolved.Metadata["geo_space_id"].(string)
+
 		var sid pgtype.UUID
+
 		if raw == "" || sid.Scan(raw) != nil || !sid.Valid {
 			return cellFx{}
 		}
+
 		code, err := s.currencyRes.ResolveSpaceCurrencyCode(ctx, sid)
 		if err != nil || code == "" {
 			return cellFx{}
 		}
+
 		fx, ok := cellFxByCode[code]
 		if !ok {
 			fx = cellFx{localCode: code}
+
 			if s.fxRates != nil {
 				if rate, base, _, _, ferr := s.fxRates.BaseRate(ctx, code); ferr == nil && rate > 0 {
 					fx.rate, fx.base = rate, base
 				}
 			}
+
 			cellFxByCode[code] = fx
 		}
+
 		return fx
 	}
 	// applyCellFx denominates a currency-dimension cell: converted → base
@@ -1684,8 +1701,10 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 			*md.ValueRating /= fx.rate
 			md.CurrencyCode = fx.base
 			md.Normalized = true
+
 			return
 		}
+
 		md.CurrencyCode = fx.localCode
 	}
 
@@ -1703,6 +1722,7 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 			if dim.DimensionType == DimensionTypeCurrency {
 				md.CurrencyCode = customfields.CurrencyCodeFromOptions(dim.SourceFieldOptions)
 			}
+
 			if val, ok := valueIndex[valueKey{item.ID.Bytes, dim.ID.Bytes}]; ok {
 				md.Value = val.Value
 
@@ -1769,6 +1789,7 @@ func hydrateMatrixCell(md *ComparisonMatrixDimension, dimType, fieldKey string, 
 				if pp == "" {
 					return // non-comparable field — no cell
 				}
+
 				raw, ok = parts[pp]
 				if !ok || raw == nil {
 					return
@@ -1968,7 +1989,6 @@ func (s *Service) ListComparisons(ctx context.Context, f ListComparisonsFilter) 
 	}
 
 	return s.store.listComparisonsFiltered(ctx, gen.ListComparisonsFilteredParams{
-
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
 		PageOffset: f.Offset,
@@ -2015,7 +2035,7 @@ func (s *Service) DeleteJCEComparisonCaches(ctx context.Context, contentID pgtyp
 		return
 	}
 
-	if err := s.vk.Del(ctx, fmt.Sprintf("jc:jce:freshness:%s", contentID.String())).Err(); err != nil {
+	if err := s.vk.Del(ctx, "jc:jce:freshness:"+contentID.String()).Err(); err != nil {
 		slog.Warn("comparison: failed to delete JCE freshness cache", "error", err)
 	}
 }

@@ -56,7 +56,6 @@ func (s *Store) MapSourcesByRecordIDs(ctx context.Context, recordIDs []pgtype.UU
 // in the generated query ensures a user can only apply once per job.
 func (s *Store) CreateJobApplication(ctx context.Context, jobID, applicantID, submissionID pgtype.UUID) (gen.JobApplication, error) {
 	app, err := s.writeQueries.CreateJobApplication(ctx, gen.CreateJobApplicationParams{
-
 		JobID:        jobID,
 		ApplicantID:  applicantID,
 		SubmissionID: submissionID,
@@ -101,7 +100,6 @@ func (s *Store) UpdateJobApplicationStatus(ctx context.Context, appID pgtype.UUI
 // view), optionally filtered by status.
 func (s *Store) ListJobApplicationsByJob(ctx context.Context, jobID pgtype.UUID, status string, pageOffset, pageLimit int32) ([]gen.ListJobApplicationsByJobRow, error) {
 	rows, err := s.queries.ListJobApplicationsByJob(ctx, gen.ListJobApplicationsByJobParams{
-
 		JobID:      jobID,
 		Status:     status,
 		PageOffset: pageOffset,
@@ -118,7 +116,6 @@ func (s *Store) ListJobApplicationsByJob(ctx context.Context, jobID pgtype.UUID,
 // job, optionally filtered by status.
 func (s *Store) CountJobApplicationsByJob(ctx context.Context, jobID pgtype.UUID, status string) (int64, error) {
 	return s.queries.CountJobApplicationsByJob(ctx, gen.CountJobApplicationsByJobParams{
-
 		JobID:  jobID,
 		Status: status,
 	})
@@ -127,7 +124,6 @@ func (s *Store) CountJobApplicationsByJob(ctx context.Context, jobID pgtype.UUID
 // ListUserJobApplications returns an applicant's application history.
 func (s *Store) ListUserJobApplications(ctx context.Context, userID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.ListUserJobApplicationsRow, error) {
 	rows, err := s.queries.ListUserJobApplications(ctx, gen.ListUserJobApplicationsParams{
-
 		UserID:     userID,
 		PageOffset: pageOffset,
 		PageLimit:  pageLimit,
@@ -152,7 +148,6 @@ func (s *Store) CountUserJobApplications(ctx context.Context, userID pgtype.UUID
 // filtered by status.
 func (s *Store) AdminListJobApplications(ctx context.Context, status string, pageOffset, pageLimit int32) ([]gen.AdminListJobApplicationsRow, error) {
 	rows, err := s.queries.AdminListJobApplications(ctx, gen.AdminListJobApplicationsParams{
-
 		Status:     status,
 		PageOffset: pageOffset,
 		PageLimit:  pageLimit,

@@ -17,7 +17,7 @@ var tierRanks = map[string]int{
 // RequireTier enforces that the API key owner's unified user tier is at
 // least minTier. The tier is resolved per request via tr so a lapsed
 // subscription revokes access immediately without key revocation.
-// Ref: docs/superpowers/specs/2026-09-23-agent-data-api-design.md (Tier gating)
+// Ref: docs/superpowers/specs/2026-09-23-agent-data-api-design.md (Tier gating).
 func RequireTier(tr TierResolver, minTier string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +28,7 @@ func RequireTier(tr TierResolver, minTier string) func(http.Handler) http.Handle
 			}
 
 			tier := "regular"
+
 			if tr != nil {
 				if resolved, err := tr.ResolveUserTier(r.Context(), keyCtx.UserID); err == nil && resolved != "" {
 					tier = resolved

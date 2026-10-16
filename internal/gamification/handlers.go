@@ -139,7 +139,6 @@ func writeDisabled(w http.ResponseWriter, err error) bool {
 // HandleListBadges handles GET /api/v1/gamification/badges — all active badge
 // definitions. Public route (gamification.view permission at registration site).
 func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
 		return
@@ -167,7 +166,6 @@ func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
 // HandleListChallenges handles GET /api/v1/gamification/challenges — active
 // challenges within their date range. Public route.
 func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
 		return
@@ -196,7 +194,6 @@ func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) 
 // points leaderboard. Query params: scope (global|space:{id}), period
 // (all_time|monthly|weekly). Public route.
 func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
 		return
@@ -215,6 +212,7 @@ func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) 
 	// Optional limit — the service caches the full top-N and slices to the
 	// requested size (1..defaultLeaderboardTopN).
 	limit := int32(defaultLeaderboardTopN)
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= defaultLeaderboardTopN {
 			limit = int32(n) // #nosec
@@ -317,7 +315,6 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 // HandleUserBadges handles GET /api/v1/users/:username/badges — public badge
 // display for a user's profile. Public route.
 func (h *Handlers) HandleUserBadges(w http.ResponseWriter, r *http.Request) {
-
 	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")

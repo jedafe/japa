@@ -38,6 +38,7 @@ func TestRequireTier(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			RequireTier(stubTierResolver{tier: c.userTier}, c.minTier)(ok).ServeHTTP(rec, requireTierReq(c.userTier))
+
 			if rec.Code != c.want {
 				t.Fatalf("status = %d, want %d", rec.Code, c.want)
 			}
@@ -48,6 +49,7 @@ func TestRequireTier(t *testing.T) {
 		rec := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/public/x", nil)
 		RequireTier(stubTierResolver{tier: "pro"}, "pro")(ok).ServeHTTP(rec, r)
+
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401", rec.Code)
 		}

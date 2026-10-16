@@ -96,6 +96,7 @@ func (API) Curate(_ context.Context, body []byte, _ string, ch sources.Channel) 
 	if err != nil {
 		return nil, err
 	}
+
 	if len(objects) == 0 {
 		return nil, errors.New("curator: api: no record objects in body")
 	}
@@ -112,6 +113,7 @@ func (API) Curate(_ context.Context, body []byte, _ string, ch sources.Channel) 
 			thin++
 			continue
 		}
+
 		out = append(out, Record{
 			Extraction:  validate(ext, entityType),
 			ExternalKey: key,
@@ -125,6 +127,7 @@ func (API) Curate(_ context.Context, body []byte, _ string, ch sources.Channel) 
 		if thin > 0 {
 			return nil, fmt.Errorf("%w: %d record objects had no resolvable title", ErrNoCurator, thin)
 		}
+
 		return nil, errors.New("curator: api: no usable records")
 	}
 
@@ -136,49 +139,60 @@ func (API) Curate(_ context.Context, body []byte, _ string, ch sources.Channel) 
 // object is treated as one record.
 func apiRecordObjects(root any, recordsPath string) ([]map[string]any, error) {
 	node := root
+
 	if recordsPath != "" {
 		v, err := apiWalkPath(root, recordsPath)
 		if err != nil {
 			return nil, fmt.Errorf("curator: api: records_path %q: %w", recordsPath, err)
 		}
+
 		node = v
 	}
 
 	switch t := node.(type) {
 	case []any:
 		out := make([]map[string]any, 0, len(t))
+
 		for _, el := range t {
 			if m, ok := el.(map[string]any); ok {
 				out = append(out, m)
 			}
 		}
+
 		return out, nil
 	case map[string]any:
 		// A bare object that itself holds a single dominant array of
 		// objects ({"results": [...], "total": 5}) — use the largest object
 		// array so the common envelope shape works without config.
 		var best []any
+
 		for _, v := range t {
 			arr, ok := v.([]any)
 			if !ok || len(arr) == 0 {
 				continue
 			}
+
 			if _, isObj := arr[0].(map[string]any); !isObj {
 				continue
 			}
+
 			if len(arr) > len(best) {
 				best = arr
 			}
 		}
+
 		if len(best) > 0 {
 			out := make([]map[string]any, 0, len(best))
+
 			for _, el := range best {
 				if m, ok := el.(map[string]any); ok {
 					out = append(out, m)
 				}
 			}
+
 			return out, nil
 		}
+
 		return []map[string]any{t}, nil
 	default:
 		return nil, errors.New("curator: api: body is not a JSON object or array")
@@ -198,7 +212,9 @@ func apiObjectToExtraction(obj map[string]any, cfg apiConfig, schema schemas.Ent
 		if err != nil || v == nil {
 			continue
 		}
+
 		mappedKeys[strings.SplitN(path, ".", 2)[0]] = true
+
 		if s := apiScalar(v); s != "" {
 			field(ext, fieldName, apiCoerce(schema, fieldName, v, s), apiEvidence(path, v))
 		} else if nonScalar := schemaFieldType(schema, fieldName); nonScalar == "text_array" || nonScalar == "country_array" || nonScalar == "jsonb_object" {
@@ -212,6 +228,7 @@ func apiObjectToExtraction(obj map[string]any, cfg apiConfig, schema schemas.Ent
 		if hasField(ext, fieldName) {
 			return
 		}
+
 		for _, k := range keys {
 			if v, ok := lookupKeyFold(obj, k); ok {
 				if s := apiScalar(v); s != "" {
@@ -250,14 +267,17 @@ func apiObjectToExtraction(obj map[string]any, cfg apiConfig, schema schemas.Ent
 	// Preserve unmapped scalar fields under `data` — reviewers see the full
 	// source object even where no schema field exists for it.
 	data := map[string]any{}
+
 	for k, v := range obj {
 		if mappedKeys[k] {
 			continue
 		}
+
 		if s := apiScalar(v); s != "" {
 			data[k] = v
 		}
 	}
+
 	if len(data) > 0 {
 		if raw, err := json.Marshal(obj); err == nil {
 			fieldConf(ext, "data", data, string(raw), heuristicFieldConfidence)
@@ -282,12 +302,14 @@ func apiWalkPath(v any, path string) (any, error) {
 			if !ok {
 				return nil, fmt.Errorf("missing segment %q", seg)
 			}
+
 			cur = next
 		case []any:
 			i, err := strconv.Atoi(seg)
 			if err != nil || i < 0 || i >= len(node) {
 				return nil, fmt.Errorf("bad array index %q", seg)
 			}
+
 			cur = node[i]
 		default:
 			return nil, fmt.Errorf("cannot traverse %q", seg)
@@ -334,14 +356,17 @@ func apiCoerce(schema schemas.EntitySchema, fieldName string, v any, scalar stri
 		if arr, ok := v.([]any); ok {
 			return arr
 		}
+
 		return []any{scalar}
 	case schemaFieldType(schema, fieldName) == "date":
 		if iso := parseHumanDate(scalar); iso != "" {
 			return iso
 		}
+
 		if iso := ldjsonDate(scalar); iso != "" {
 			return iso
 		}
+
 		return scalar
 	case schemaFieldType(schema, fieldName) == "numeric":
 		// Numeric fields keep the JSON-native value so float64 lands cleanly.
@@ -375,13 +400,16 @@ func apiEvidence(path string, v any) string {
 		if len(s) > 200 {
 			s = s[:197] + "..."
 		}
+
 		return path + "=" + s
 	}
+
 	if raw, err := json.Marshal(v); err == nil {
 		s := string(raw)
 		if len(s) > 200 {
 			s = s[:197] + "..."
 		}
+
 		return path + "=" + s
 	}
 
@@ -392,6 +420,7 @@ func apiEvidence(path string, v any) string {
 // hashed, else a hash over the whole object.
 func apiRecordKey(obj map[string]any, cfg apiConfig) string {
 	var parts []string
+
 	for _, kf := range cfg.KeyFields {
 		if v, err := apiWalkPath(obj, kf); err == nil {
 			if s := apiScalar(v); s != "" {
@@ -399,6 +428,7 @@ func apiRecordKey(obj map[string]any, cfg apiConfig) string {
 			}
 		}
 	}
+
 	if len(parts) == 0 {
 		for _, kf := range apiIDKeys {
 			if v, ok := lookupKeyFold(obj, kf); ok {
@@ -409,6 +439,7 @@ func apiRecordKey(obj map[string]any, cfg apiConfig) string {
 			}
 		}
 	}
+
 	if len(parts) == 0 {
 		if raw, err := json.Marshal(obj); err == nil {
 			parts = append(parts, string(raw))
@@ -423,24 +454,30 @@ func apiRecordKey(obj map[string]any, cfg apiConfig) string {
 // with a hole in it is worse than none.
 func renderURLTemplate(tmpl string, obj map[string]any) string {
 	out := tmpl
+
 	for {
 		start := strings.Index(out, "{")
 		if start < 0 {
 			return out
 		}
+
 		end := strings.Index(out[start:], "}")
 		if end < 0 {
 			return ""
 		}
+
 		key := out[start+1 : start+end]
+
 		v, ok := obj[key]
 		if !ok {
 			return ""
 		}
+
 		s := apiScalar(v)
 		if s == "" {
 			return ""
 		}
+
 		out = out[:start] + s + out[start+end+1:]
 	}
 }
@@ -450,6 +487,7 @@ func parseAPIConfig(raw []byte) apiConfig {
 	if len(raw) == 0 {
 		return cfg
 	}
+
 	_ = json.Unmarshal(raw, &cfg)
 
 	return cfg

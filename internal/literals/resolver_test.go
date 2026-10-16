@@ -1,7 +1,6 @@
 package literals
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -25,7 +24,7 @@ func TestResolve(t *testing.T) {
 		{Key: "Custom_Greeting", Kind: "static", Value: "Hello"},
 	}
 
-	got, err := Resolve(context.Background(), "{{Custom_Greeting}} from {{Source_Country}} to {{Destination_Country}} in {{Current_Year}}", rc, tokens)
+	got, err := Resolve(t.Context(), "{{Custom_Greeting}} from {{Source_Country}} to {{Destination_Country}} in {{Current_Year}}", rc, tokens)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +40,7 @@ func TestResolveExpression(t *testing.T) {
 
 	rc := RenderContext{Now: time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC), DestinationCountry: "Nigeria"}
 
-	got, _ := Resolve(context.Background(), "Next year: {{year(Now) + 1}}, adjective: {{adjective(Destination_Country)}}", rc, nil)
+	got, _ := Resolve(t.Context(), "Next year: {{year(Now) + 1}}, adjective: {{adjective(Destination_Country)}}", rc, nil)
 	if got != "Next year: 2027, adjective: Nigerian" {
 		t.Fatalf("got %q; want %q", got, "Next year: 2027, adjective: Nigerian")
 	}
@@ -52,7 +51,7 @@ func TestResolveFallback(t *testing.T) {
 
 	rc := RenderContext{Now: time.Now()}
 
-	got, _ := Resolve(context.Background(), "{{Unknown|fallback value}}", rc, nil)
+	got, _ := Resolve(t.Context(), "{{Unknown|fallback value}}", rc, nil)
 	if got != "fallback value" {
 		t.Fatalf("got %q; want fallback value", got)
 	}
@@ -64,7 +63,7 @@ func TestResolveStatic(t *testing.T) {
 	rc := RenderContext{}
 	tokens := []TemplateLiteral{{Key: "Brand", Kind: "static", Value: "Japa"}}
 
-	got, _ := Resolve(context.Background(), "Welcome to {{Brand}}", rc, tokens)
+	got, _ := Resolve(t.Context(), "Welcome to {{Brand}}", rc, tokens)
 	if got != "Welcome to Japa" {
 		t.Fatalf("got %q; want Welcome to Japa", got)
 	}

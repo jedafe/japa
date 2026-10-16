@@ -68,10 +68,12 @@ func COLCityGetHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("invalid_city_id", "city_id is not a valid UUID"), nil
 			}
+
 			row, err := deps.COL.GetCityByID(ctx, id)
 			if err != nil {
 				return errorToolResult("city_not_found", "cost-of-living city not found"), nil
 			}
+
 			city = colCity{
 				ID: row.ID, ContentID: row.ContentID, Title: row.Title,
 				GeoSpaceID: row.GeoSpaceID, GeoSpaceName: row.GeoSpaceName, GeoSpaceSlug: row.GeoSpaceSlug,
@@ -82,10 +84,12 @@ func COLCityGetHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
 			}
+
 			row, err := deps.COL.GetCityByGeoSpaceID(ctx, id)
 			if err != nil {
 				return errorToolResult("city_not_found", "no cost-of-living city for that geo space"), nil
 			}
+
 			city = colCity{
 				ID: row.ID, ContentID: row.ContentID, Title: row.Title,
 				GeoSpaceID: row.GeoSpaceID, GeoSpaceName: row.GeoSpaceName, GeoSpaceSlug: row.GeoSpaceSlug,
@@ -112,17 +116,21 @@ func COLCityGetHandler(deps *ToolDeps) ToolHandler {
 		if len(city.IntelCostData) > 0 {
 			_ = json.Unmarshal(city.IntelCostData, &costData)
 		}
+
 		for k, v := range cfv {
 			costData[k] = v
 		}
 
 		dimensions := make([]map[string]any, 0, len(valueRows))
+
 		for _, v := range valueRows {
 			var rating any
+
 			if v.ValueRating.Valid {
 				f, _ := v.ValueRating.Float64Value()
 				rating = f.Float64
 			}
+
 			dimensions = append(dimensions, map[string]any{
 				"dimension_id":     uuidString(v.DimensionID),
 				"dimension_label":  v.DimensionLabel,

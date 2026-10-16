@@ -213,6 +213,7 @@ func (s *Service) mergeTestFieldValues(ctx context.Context, dtos []TestDTO) {
 	}
 
 	ids := make([]pgtype.UUID, 0, len(dtos))
+
 	for _, d := range dtos {
 		if d.ID.Valid {
 			ids = append(ids, d.ID)
@@ -314,7 +315,6 @@ func (s *Service) SearchTests(ctx context.Context, query string, limit int32) ([
 // visa category.
 func (s *Service) ListRequirements(ctx context.Context, destSpaceID pgtype.UUID, visaCategory string) ([]RequirementDTO, error) {
 	rows, err := s.store.ListRequirements(ctx, ListRequirementsFilter{
-
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 	})
@@ -426,7 +426,6 @@ func (s *Service) CreateStory(ctx context.Context, userID pgtype.UUID, testSlug 
 	}
 
 	row, err := s.store.CreateStory(ctx, CreateStoryInput{
-
 		UserID:             userID,
 		TestID:             test.ID,
 		StartingLevel:      startingLevel,
@@ -560,7 +559,6 @@ func (s *Service) CreateRequirement(ctx context.Context, input CreateRequirement
 	}
 
 	row, err := s.store.CreateRequirement(ctx, CreateRequirementInput{
-
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		TestID:             test.ID,
@@ -769,7 +767,6 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateRequirementRe
 	}
 
 	row, err := s.store.CreateRequirement(ctx, CreateRequirementInput{
-
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		TestID:             test.ID,
@@ -870,7 +867,6 @@ func (s *Service) AdminListRequirements(ctx context.Context, destSpaceID pgtype.
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminListRequirements(ctx, AdminListRequirementsFilter{
-
 		Status:             status,
 		DestinationSpaceID: destSpaceID,
 		Q:                  q,

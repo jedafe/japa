@@ -51,12 +51,14 @@ func main() {
 	}
 
 	var sources []sourceRow
+
 	for rows.Next() {
 		var s sourceRow
 		if err := rows.Scan(&s.ID); err != nil {
 			slog.Warn("skipping row: scan error", "error", err)
 			continue
 		}
+
 		sources = append(sources, s)
 	}
 
@@ -84,7 +86,9 @@ func main() {
 		})
 		if err != nil {
 			slog.Warn("skipping: failed to marshal payload", "source_id", s.ID.String(), "error", err)
+
 			skipped++
+
 			continue
 		}
 
@@ -93,7 +97,9 @@ func main() {
 		info, err := client.Enqueue(task, asynq.Queue("default"))
 		if err != nil {
 			slog.Warn("skipping: failed to enqueue", "source_id", s.ID.String(), "error", err)
+
 			skipped++
+
 			continue
 		}
 
@@ -131,7 +137,9 @@ func resolveDatabaseURL() string {
 	}
 
 	url := fmt.Sprintf("postgres://japa:%s@localhost:5432/japa?sslmode=disable", password)
+
 	slog.Info("constructed DATABASE_URL from .env", "host", "localhost", "db", "japa")
+
 	return url
 }
 

@@ -88,6 +88,7 @@ func HandleIntelHarvestOutbound(ctx context.Context, t *asynq.Task) error {
 		slog.Info("task:intel:harvest_outbound: intel.enabled=false, skipping")
 		return nil
 	}
+
 	if appSettings != nil && !appSettings.GetBoolOr(ctx, "intel.discovery.enabled", true) {
 		slog.Info("task:intel:harvest_outbound: intel.discovery.enabled=false, skipping")
 		return nil
@@ -108,6 +109,7 @@ func HandleIntelHarvestOutbound(ctx context.Context, t *asynq.Task) error {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil // doc pruned between enqueue and handling
 		}
+
 		return fmt.Errorf("task:intel:harvest_outbound: load raw doc: %w", err)
 	}
 
@@ -116,6 +118,7 @@ func HandleIntelHarvestOutbound(ctx context.Context, t *asynq.Task) error {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
+
 		return fmt.Errorf("task:intel:harvest_outbound: load source: %w", err)
 	}
 
@@ -126,6 +129,7 @@ func HandleIntelHarvestOutbound(ctx context.Context, t *asynq.Task) error {
 	if appSettings != nil {
 		maxTrust = appSettings.GetIntOr(ctx, "intel.discovery.max_trust_level", 2)
 	}
+
 	if int(src.TrustLevel) > maxTrust {
 		return nil
 	}
@@ -139,6 +143,7 @@ func HandleIntelHarvestOutbound(ctx context.Context, t *asynq.Task) error {
 	if appSettings != nil {
 		maxPerCrawl = appSettings.GetIntOr(ctx, "intel.discovery.max_per_crawl", 10)
 	}
+
 	if maxPerCrawl <= 0 {
 		return nil
 	}
@@ -151,11 +156,13 @@ func HandleIntelHarvestOutbound(ctx context.Context, t *asynq.Task) error {
 		if created >= maxPerCrawl {
 			break
 		}
+
 		if !intelDiscoveryCandidateOK(ctx, candidate, src, rawDoc) {
 			continue
 		}
 
 		proposed++
+
 		_, ok, err := svc.ProposeDiscovered(ctx, sources.DiscoveredSourceInput{
 			URL:          candidate,
 			Categories:   categories,
@@ -166,6 +173,7 @@ func HandleIntelHarvestOutbound(ctx context.Context, t *asynq.Task) error {
 			slog.Warn("task:intel:harvest_outbound: propose failed", "raw_doc_id", rawDoc.ID.String(), "candidate", candidate, "error", err)
 			continue
 		}
+
 		if ok {
 			created++
 		}
@@ -194,6 +202,7 @@ func intelOutboundCandidates(rawDoc gen.IntelRawDocument) []string {
 	if rawDoc.ContentType != nil {
 		ct = *rawDoc.ContentType
 	}
+
 	if !strings.Contains(ct, "html") {
 		return nil
 	}
@@ -221,6 +230,7 @@ func intelDiscoveryCandidateOK(ctx context.Context, candidate string, src gen.In
 	if du, derr := url.Parse(rawDoc.Url); derr == nil && strings.EqualFold(du.Hostname(), host) {
 		return false
 	}
+
 	if d := strings.ToLower(strings.TrimSpace(src.Domain)); d != "" && (host == d || strings.HasSuffix(host, "."+d)) {
 		return false
 	}
@@ -233,8 +243,10 @@ func intelDiscoveryCandidateOK(ctx context.Context, candidate string, src gen.In
 // blocking facebook.com also blocks www.facebook.com.
 func intelDiscoveryBlocked(ctx context.Context, host string) bool {
 	blocked := intelDiscoveryDenylist
+
 	if appSettings != nil {
 		var extra []string
+
 		raw := appSettings.GetStringOr(ctx, "intel.discovery.domain_blocklist", "[]")
 		if err := json.Unmarshal([]byte(raw), &extra); err == nil {
 			for _, d := range extra {

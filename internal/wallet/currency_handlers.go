@@ -53,7 +53,6 @@ func (h *Handlers) ListCurrencies(w http.ResponseWriter, r *http.Request) {
 // ListCreditPacks handles GET /api/v1/wallet/credit-packs.
 // Returns all active credit packs for the platform.
 func (h *Handlers) ListCreditPacks(w http.ResponseWriter, r *http.Request) {
-
 	packs, err := h.Service.listActiveCreditPacks(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -298,7 +297,6 @@ func (h *Handlers) ControlDeleteCurrency(w http.ResponseWriter, r *http.Request)
 
 // AdminListCreditPacks handles GET /api/v1/admin/wallet/credit-packs.
 func (h *Handlers) AdminListCreditPacks(w http.ResponseWriter, r *http.Request) {
-
 	packs, err := h.Service.listAllCreditPacks(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -310,7 +308,6 @@ func (h *Handlers) AdminListCreditPacks(w http.ResponseWriter, r *http.Request) 
 
 // AdminCreateCreditPack handles POST /api/v1/admin/wallet/credit-packs.
 func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Name         string `json:"name"`
 		Description  string `json:"description"`
@@ -346,7 +343,6 @@ func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request)
 	}
 
 	pack, err := h.Service.createCreditPack(r.Context(), gen.CreateCreditPackParams{
-
 		Name:         input.Name,
 		Description:  description,
 		CreditAmount: int32(input.CreditAmount), // #nosec
@@ -364,7 +360,6 @@ func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request)
 
 // AdminUpdateCreditPack handles PATCH /api/v1/admin/wallet/credit-packs/{id}.
 func (h *Handlers) AdminUpdateCreditPack(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid credit pack ID")
@@ -423,7 +418,6 @@ func (h *Handlers) AdminUpdateCreditPack(w http.ResponseWriter, r *http.Request)
 // AdminDeleteCreditPack handles DELETE /api/v1/admin/wallet/credit-packs/{id}.
 // Soft-deletes by setting is_active=false.
 func (h *Handlers) AdminDeleteCreditPack(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid credit pack ID")
@@ -444,7 +438,6 @@ func (h *Handlers) AdminDeleteCreditPack(w http.ResponseWriter, r *http.Request)
 
 // AdminListCreditPurchases handles GET /api/v1/admin/wallet/purchases.
 func (h *Handlers) AdminListCreditPurchases(w http.ResponseWriter, r *http.Request) {
-
 	q := r.URL.Query()
 
 	var params gen.ListCreditPurchasesParams

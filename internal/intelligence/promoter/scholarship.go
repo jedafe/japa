@@ -313,7 +313,6 @@ func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxS
 	}
 
 	contentParams := gen.CreateContentParams{
-
 		AuthorID:        resolveAuthorID(ctx, p.store, source, p.authorID),
 		ContentType:     "guide",
 		Title:           title,
@@ -520,7 +519,6 @@ func (p *ScholarshipPromoter) createGuideOnApprove(ctx context.Context, tx TxSto
 	}
 
 	contentParams := gen.CreateContentParams{
-
 		AuthorID:        resolveAuthorID(ctx, p.store, source, p.authorID),
 		ContentType:     "guide",
 		Title:           params.Title,

@@ -266,9 +266,11 @@ func TestAPIFetcher_FetchPOST_StringBody(t *testing.T) {
 			t.Errorf("read request body: %v", err)
 			return
 		}
+
 		if string(got) != "q=visa&page=2" {
 			t.Errorf("request body = %q, want unquoted q=visa&page=2", got)
 		}
+
 		if ct := r.Header.Get("Content-Type"); ct != "application/x-www-form-urlencoded" {
 			t.Errorf("Content-Type = %q, want application/x-www-form-urlencoded", ct)
 		}
@@ -295,9 +297,11 @@ func TestAPIFetcher_FetchPOST_StringBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
+
 	if string(res.Body) != "plain result, not json" {
 		t.Errorf("body = %q, want verbatim non-JSON response", res.Body)
 	}
+
 	if res.ContentType != "text/plain" {
 		t.Errorf("ContentType = %q, want text/plain", res.ContentType)
 	}
@@ -313,9 +317,11 @@ func TestAPIFetcher_FetchPOST_JSONBodyUnchanged(t *testing.T) {
 		if string(got) != `{"status":"posted"}` {
 			t.Errorf("request body = %q, want verbatim JSON", got)
 		}
+
 		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
 			t.Errorf("Content-Type = %q, want application/json default", ct)
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))

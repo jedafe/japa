@@ -285,7 +285,6 @@ func parseInt(sv string) (int, error) {
 func (s *Settings) InvalidateSettings(ctx context.Context) {
 	// Ref: .jeos/sections/04-multi-tenancy.md (historical; settings are global).
 	// ID is kept in the public signature for Phase 1 compatibility and is ignored.
-
 	s.mu.Lock()
 	s.cache = make(map[string]cachedSetting)
 	s.mu.Unlock()

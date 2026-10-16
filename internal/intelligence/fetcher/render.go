@@ -82,6 +82,7 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	if f.settings != nil {
 		serviceURL = strings.TrimRight(f.settings.GetStringOr(ctx, "intel.render.service_url", ""), "/")
 	}
+
 	if serviceURL == "" || f.client == nil {
 		return FetchResult{}, fmt.Errorf("%w: intel.render.service_url unset", ErrAdapterDisabled)
 	}
@@ -103,10 +104,12 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	var cfg map[string]any
 	_ = json.Unmarshal(src.ProviderConfig, &cfg)
 	a11y, _ := cfg["a11y"].(bool)
+
 	timeoutMs := intFromCfg(cfg, "timeout_ms", 0)
 	if timeoutMs <= 0 && f.settings != nil {
 		timeoutMs = f.settings.GetIntOr(ctx, "intel.render.timeout_ms", 30000)
 	}
+
 	if timeoutMs <= 0 {
 		timeoutMs = 30000
 	}
@@ -128,7 +131,9 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("fetcher: render request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
+
 	if token := stringFromCfg(cfg, "auth_token"); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -150,6 +155,7 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 		f.recordServiceFailure(ctx)
 		return FetchResult{}, fmt.Errorf("fetcher: render service: status %d", resp.StatusCode)
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		return FetchResult{}, fmt.Errorf("fetcher: render service: status %d", resp.StatusCode)
 	}
@@ -161,10 +167,12 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 
 	content := out.HTML
 	contentType := "text/html"
+
 	if a11y && out.A11yText != "" {
 		content = out.A11yText
 		contentType = "text/plain"
 	}
+
 	if content == "" {
 		return FetchResult{}, errors.New("fetcher: render service returned empty body")
 	}
@@ -187,7 +195,9 @@ func (f *RenderFetcher) circuitOpen(ctx context.Context) bool {
 	if f.rdb == nil {
 		return false
 	}
+
 	ok, err := f.rdb.Exists(ctx, renderCircuitKey).Result()
+
 	return err == nil && ok > 0
 }
 
@@ -216,6 +226,7 @@ func (f *RenderFetcher) recordServiceFailure(ctx context.Context) {
 	if err != nil {
 		return
 	}
+
 	if n, ok := count.(int64); ok && n >= renderCircuitThreshold {
 		_ = f.rdb.Set(ctx, renderCircuitKey, "1", renderCircuitTTL).Err()
 		_ = f.rdb.Del(ctx, renderCircuitFailures).Err()
@@ -228,6 +239,7 @@ func (f *RenderFetcher) resetServiceFailures(ctx context.Context) {
 	if f.rdb == nil {
 		return
 	}
+
 	_ = f.rdb.Del(ctx, renderCircuitFailures).Err()
 }
 
@@ -244,6 +256,7 @@ func intFromCfg(cfg map[string]any, key string, fallback int) int {
 			return n
 		}
 	}
+
 	return fallback
 }
 
@@ -251,6 +264,7 @@ func stringFromCfg(cfg map[string]any, key string) string {
 	if s, ok := cfg[key].(string); ok {
 		return s
 	}
+
 	return ""
 }
 
@@ -261,14 +275,17 @@ func stringFromCfg(cfg map[string]any, key string) string {
 func validateRenderTarget(target string) error {
 	u, err := url.Parse(strings.TrimSpace(target))
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return fmt.Errorf("fetcher: render target must be an http(s) URL")
+		return errors.New("fetcher: render target must be an http(s) URL")
 	}
+
 	if u.User != nil {
-		return fmt.Errorf("fetcher: render target must not embed credentials")
+		return errors.New("fetcher: render target must not embed credentials")
 	}
+
 	host := u.Hostname()
 	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
-		return fmt.Errorf("fetcher: render target must not be a private address")
+		return errors.New("fetcher: render target must not be a private address")
 	}
+
 	return nil
 }

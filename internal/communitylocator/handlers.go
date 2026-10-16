@@ -129,7 +129,6 @@ func parsePageParams(r *http.Request, maxLimit int32) (page, limit int32) {
 // organisations with filters. Query params:
 // ?dest=&city=&origin=&type=&lat=&lng=&radius=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
@@ -202,7 +201,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // of hardcoding the options. Public/anonymous (the list itself is not
 // sensitive); feature-flagged with the rest of the routes.
 func (h *Handlers) HandleOrgTypes(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
@@ -217,7 +215,6 @@ func (h *Handlers) HandleOrgTypes(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /community-locator/:slug — single published
 // community organisation.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return

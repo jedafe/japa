@@ -70,6 +70,7 @@ func channelIDFromURL(rawURL string) string {
 		if i := strings.IndexByte(rest, '/'); i >= 0 {
 			rest = rest[:i]
 		}
+
 		if strings.HasPrefix(rest, "UC") {
 			return rest
 		}
@@ -95,6 +96,7 @@ func resolveYouTubeChannelID(ctx context.Context, client *http.Client, channelUR
 	if err != nil {
 		return "", fmt.Errorf("video: channel resolve: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect-VideoSync/1.0 (+https://japaconnect.com)")
 	req.Header.Set("Accept-Language", "en")
 	// YouTube redirects EU-region requests through consent.youtube.com;
@@ -105,6 +107,7 @@ func resolveYouTubeChannelID(ctx context.Context, client *http.Client, channelUR
 	if err != nil {
 		return "", fmt.Errorf("video: channel resolve: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
@@ -141,6 +144,7 @@ func fetchChannelVideoIDs(ctx context.Context, client *http.Client, feedURL stri
 	if err != nil {
 		return nil, fmt.Errorf("video: channel feed: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect-VideoSync/1.0 (+https://japaconnect.com)")
 	req.Header.Set("Accept", "application/atom+xml, application/xml, text/xml")
 
@@ -148,6 +152,7 @@ func fetchChannelVideoIDs(ctx context.Context, client *http.Client, feedURL stri
 	if err != nil {
 		return nil, fmt.Errorf("video: channel feed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
@@ -166,14 +171,18 @@ func fetchChannelVideoIDs(ctx context.Context, client *http.Client, feedURL stri
 
 	ids := make([]string, 0, len(feed.Entries))
 	seen := make(map[string]struct{}, len(feed.Entries))
+
 	for _, e := range feed.Entries {
 		if e.VideoID == "" {
 			continue
 		}
+
 		if _, dup := seen[e.VideoID]; dup {
 			continue
 		}
+
 		seen[e.VideoID] = struct{}{}
+
 		ids = append(ids, e.VideoID)
 	}
 

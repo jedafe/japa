@@ -62,6 +62,7 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
+
 	if h.bookmarks == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
@@ -75,6 +76,7 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if items == nil {
 		items = []PublicBookmarkItem{}
 	}
@@ -92,6 +94,7 @@ func (h *Handlers) PutMyBookmark(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
+
 	if h.bookmarks == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
@@ -138,6 +141,7 @@ func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
+
 	if h.bookmarks == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return

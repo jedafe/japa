@@ -78,7 +78,6 @@ func (s *Store) CreateGroup(ctx context.Context, name, slug, description string)
 	}
 
 	id, err := s.write.CreateUserGroup(ctx, gen.CreateUserGroupParams{
-
 		Name:        name,
 		Slug:        slug,
 		Description: descPtr,
@@ -165,7 +164,6 @@ func (s *Store) DeleteGroupByID(ctx context.Context, groupID pgtype.UUID) error 
 // AddUserToGroup adds a user to a group and invalidates the user's cache.
 func (s *Store) AddUserToGroup(ctx context.Context, userID, groupID pgtype.UUID) error {
 	if err := s.write.AddUserToGroup(ctx, gen.AddUserToGroupParams{
-
 		UserID:  userID,
 		GroupID: groupID,
 	}); err != nil {
@@ -180,7 +178,6 @@ func (s *Store) AddUserToGroup(ctx context.Context, userID, groupID pgtype.UUID)
 // RemoveUserFromGroup removes a user from a group and invalidates the user's cache.
 func (s *Store) RemoveUserFromGroup(ctx context.Context, userID, groupID pgtype.UUID) error {
 	if err := s.write.RemoveUserFromGroup(ctx, gen.RemoveUserFromGroupParams{
-
 		UserID:  userID,
 		GroupID: groupID,
 	}); err != nil {
@@ -209,6 +206,7 @@ func (s *Store) RegisterPermission(ctx context.Context, key, description string)
 // for every user in groups that hold this role.
 func (s *Store) AssignPermissionToRole(ctx context.Context, roleID pgtype.UUID, permKey string) error {
 	s.auditWildcardGrant(ctx, roleID, permKey)
+
 	if err := s.write.AssignPermissionToRole(ctx, gen.AssignPermissionToRoleParams{
 		RoleID:  roleID,
 		PermKey: permKey,
@@ -326,6 +324,7 @@ func (s *Store) ListGroupsPaged(ctx context.Context, search, sortKey, sortDir st
 	if !groupSortKeys[sortKey] {
 		sortKey = "name"
 	}
+
 	if sortDir != "desc" {
 		sortDir = "asc"
 	}
@@ -486,12 +485,12 @@ func (s *Store) ListRolesPaginated(ctx context.Context, search, sortKey, sortDir
 	if !roleSortKeys[sortKey] {
 		sortKey = "name"
 	}
+
 	if sortDir != "desc" {
 		sortDir = "asc"
 	}
 
 	rows, err := s.read.ListRolesPaginated(ctx, gen.ListRolesPaginatedParams{
-
 		Search:     search,
 		SortKey:    sortKey,
 		SortDir:    sortDir,
@@ -543,7 +542,6 @@ func (s *Store) ListRolesPaginated(ctx context.Context, search, sortKey, sortDir
 // CreateRole creates a new role and returns its ID.
 func (s *Store) CreateRole(ctx context.Context, name string) (pgtype.UUID, error) {
 	id, err := s.write.CreateUserRole(ctx, gen.CreateUserRoleParams{
-
 		Name: name,
 		Slug: slugify(name),
 	})
@@ -828,9 +826,11 @@ func (s *Store) auditWildcardGrant(ctx context.Context, roleID pgtype.UUID, perm
 				"role_id", roleID.String(), "group_id", groupID.String(), "error", err)
 			continue
 		}
+
 		if g.Slug == SystemGroupSuperAdmin {
 			continue
 		}
+
 		slog.Warn("rbac: system wildcard permission granted to non-super_admin group",
 			"role_id", roleID.String(),
 			"group_id", groupID.String(),

@@ -9,6 +9,7 @@
 package comparison
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"log/slog"
@@ -33,7 +34,7 @@ import (
 // space-backed alias so no comparison cache survives a type mismatch.
 func (s *Service) BustCachesForItemRef(ctx context.Context, entityType, entityID string) error {
 	if entityType == "" || entityID == "" {
-		return fmt.Errorf("comparison: bust caches: entity_type and entity_id are required")
+		return errors.New("comparison: bust caches: entity_type and entity_id are required")
 	}
 
 	seen := map[pgtype.UUID]bool{}
@@ -51,7 +52,9 @@ func (s *Service) BustCachesForItemRef(ctx context.Context, entityType, entityID
 			}
 
 			seen[contentID] = true
+
 			s.DeleteJCEComparisonCaches(ctx, contentID)
+
 			total++
 		}
 	}

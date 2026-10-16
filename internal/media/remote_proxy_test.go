@@ -1,7 +1,6 @@
 package media
 
 import (
-	"context"
 	"net"
 	"strings"
 	"testing"
@@ -52,6 +51,7 @@ func TestIsPublicIP(t *testing.T) {
 		if ip == nil {
 			t.Fatalf("bad test ip %q", tc.ip)
 		}
+
 		if got := isPublicIP(ip); got != tc.want {
 			t.Errorf("isPublicIP(%s) [%s] = %v, want %v", tc.ip, tc.label, got, tc.want)
 		}
@@ -66,6 +66,7 @@ func TestStoreFromURLRejectsBadTargets(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{}
+
 	var uid pgtype.UUID
 	_ = uid.Scan("00000000-0000-0000-0000-000000000001")
 
@@ -90,7 +91,7 @@ func TestStoreFromURLRejectsBadTargets(t *testing.T) {
 		// These must all fail before a successful fetch — validation or
 		// the guarded dial. None require network access: literal IPs are
 		// checked without resolution, and localhost resolves via hosts.
-		if _, err := svc.StoreFromURL(context.Background(), uid, tc.url, "f.bin"); err == nil {
+		if _, err := svc.StoreFromURL(t.Context(), uid, tc.url, "f.bin"); err == nil {
 			t.Errorf("StoreFromURL(%q) [%s] succeeded, want rejection", tc.url, tc.label)
 		}
 	}
@@ -106,9 +107,11 @@ func TestReadLimited(t *testing.T) {
 	if got, err := readLimited(strings.NewReader("hello"), 5); err != nil || string(got) != "hello" {
 		t.Errorf("exact-limit read = %q, %v", got, err)
 	}
+
 	if got, err := readLimited(strings.NewReader("hello"), 10); err != nil || string(got) != "hello" {
 		t.Errorf("under-limit read = %q, %v", got, err)
 	}
+
 	if _, err := readLimited(strings.NewReader("hello!"), 5); err == nil {
 		t.Error("over-limit read succeeded, want error (no silent truncation)")
 	}

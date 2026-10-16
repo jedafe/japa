@@ -446,6 +446,7 @@ func uuidString(u pgtype.UUID) string {
 	buf := make([]byte, 36)
 
 	j := 0
+
 	for i, c := range b {
 		if i == 4 || i == 6 || i == 8 || i == 10 {
 			buf[j] = '-'

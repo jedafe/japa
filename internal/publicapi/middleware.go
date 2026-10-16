@@ -50,10 +50,13 @@ func APIKeyMiddleware(service *Service, resolveBearer BearerTokenResolver) func(
 							errpkg.WriteError(w, http.StatusUnauthorized, "invalid_bearer_token", "Invalid or expired bearer token")
 							return
 						}
+
 						r = r.WithContext(context.WithValue(r.Context(), apiKeyContextKey, keyCtx))
 					}
 				}
+
 				next.ServeHTTP(w, r)
+
 				return
 			}
 
@@ -77,12 +80,15 @@ func APIKeyMiddleware(service *Service, resolveBearer BearerTokenResolver) func(
 				if err != nil {
 					slog.Error("api key: IP restriction check failed", "error", err)
 					errpkg.WriteError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
+
 					return
 				}
+
 				if restricted {
 					slog.Warn("api key: empty client IP, denying allowlisted key",
 						"key_id", keyCtx.KeyID.String())
 					errpkg.WriteError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
+
 					return
 				}
 			} else {
@@ -117,10 +123,12 @@ func bearerToken(r *http.Request) string {
 	if ah == "" {
 		return ""
 	}
+
 	parts := strings.SplitN(ah, " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return ""
 	}
+
 	return parts[1]
 }
 
@@ -174,7 +182,9 @@ func OptionalScope(scope string, anonNames ...string) func(http.Handler) http.Ha
 						return
 					}
 				}
+
 				errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "An X-API-Key header or OAuth Bearer access token is required")
+
 				return
 			}
 
@@ -196,11 +206,13 @@ func OptionalScope(scope string, anonNames ...string) func(http.Handler) http.Ha
 func AnonymousRateLimit(inner func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		limited := inner(next)
+
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if APIKeyFromContext(r.Context()) == nil {
 				limited.ServeHTTP(w, r)
 				return
 			}
+
 			next.ServeHTTP(w, r)
 		})
 	}

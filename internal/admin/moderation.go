@@ -757,12 +757,9 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// If scheduled for later, validate the schedule time and return an
-	// error instead of silently dropping the broadcast content (BUG-008).
-	// The admin_broadcasts table has no status/scheduled_at column, so
-	// scheduled delivery is not yet supported via this endpoint. The
-	// separate POST /admin/broadcasts/{id}/send endpoint handles sending
-	// an already-created broadcast. Ref: §35 L128.
+	// Scheduled broadcast (§35): persist a pending row; the
+	// broadcast:dispatch_scheduled Asynq sweep (every minute) delivers it
+	// when scheduled_at is due and stamps sent_at + recipient_count.
 	if req.Schedule != "" {
 		scheduledAt, parseErr := time.Parse(time.RFC3339, req.Schedule)
 		if parseErr != nil {
@@ -775,8 +772,41 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		errpkg.WriteError(w, http.StatusNotImplemented, "scheduled_broadcast_unsupported",
-			"Scheduled broadcasts are not yet supported. Use POST /admin/broadcasts/{id}/send to send an existing broadcast.")
+		target := req.Target
+		if target == "" {
+			target = "all"
+		}
+
+		var targetID pgtype.UUID
+		if req.TargetID != "" {
+			if scanErr := targetID.Scan(req.TargetID); scanErr != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_target_id", "target_id must be a UUID")
+				return
+			}
+		}
+
+		row, schedErr := h.Queries.CreateScheduledBroadcast(ctx, gen.CreateScheduledBroadcastParams{
+			Title:       req.Subject,
+			Body:        req.Body,
+			SentBy:      user.UserID,
+			ScheduledAt: pgtype.Timestamptz{Time: scheduledAt, Valid: true},
+			Target:      target,
+			TargetID:    targetID,
+		})
+		if schedErr != nil {
+			slog.Error("broadcast: failed to schedule", "error", schedErr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "broadcast_error", "Failed to schedule broadcast")
+
+			return
+		}
+
+		errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
+			"data": map[string]any{
+				"id":           row.ID.String(),
+				"scheduled":    true,
+				"scheduled_at": scheduledAt.Format(time.RFC3339),
+			},
+		})
 
 		return
 	}
@@ -919,6 +949,7 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
+
 	if curStatus == "deleted" {
 		errpkg.WriteError(w, http.StatusConflict, "invalid_status_transition",
 			"Cannot ban a deleted user")
@@ -974,11 +1005,13 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	// Restore users.status — 'restricted' when operation bans from a prior
 	// restriction are still active, otherwise 'active'.
 	newStatus := "active"
+
 	if remaining, cerr := h.Queries.CountActiveOperationBans(r.Context(), uid); cerr != nil {
 		slog.Error("unban: failed to count active operation bans", "error", cerr, "user_id", uid.String())
 	} else if remaining > 0 {
 		newStatus = "restricted"
 	}
+
 	if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
 		Status: newStatus,
 		ID:     uid,
@@ -1390,15 +1423,19 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 		if a.SubjectLabel != nil {
 			entry["subject_label"] = *a.SubjectLabel
 		}
+
 		if a.TicketID.Valid {
 			entry["ticket_id"] = a.TicketID.String()
 		}
+
 		if a.TicketNumber != nil {
 			entry["ticket_number"] = *a.TicketNumber
 		}
+
 		if a.ResolutionNote != nil {
 			entry["resolution_note"] = *a.ResolutionNote
 		}
+
 		if a.Username != nil {
 			entry["username"] = *a.Username
 		}
@@ -1437,21 +1474,27 @@ func (h *Handlers) GetAppeal(w http.ResponseWriter, r *http.Request) {
 	if a.SubjectLabel != nil {
 		out["subject_label"] = *a.SubjectLabel
 	}
+
 	if a.TicketID.Valid {
 		out["ticket_id"] = a.TicketID.String()
 	}
+
 	if a.TicketNumber != nil {
 		out["ticket_number"] = *a.TicketNumber
 	}
+
 	if a.ResolutionNote != nil {
 		out["resolution_note"] = *a.ResolutionNote
 	}
+
 	if a.ReviewedBy.Valid {
 		out["reviewed_by"] = a.ReviewedBy.String()
 	}
+
 	if a.ResolvedAt.Valid {
 		out["resolved_at"] = a.ResolvedAt.Time.Format(time.RFC3339)
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
@@ -1506,6 +1549,7 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 			slog.Error("appeal resolution failed", "id", id, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update appeal")
 		}
+
 		return
 	}
 
@@ -1665,10 +1709,13 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 			slog.Error("moderation: tool review failed", "item_id", id, "action", input.Action, "error", toolErr)
 			errpkg.WriteError(w, http.StatusBadGateway, "tool_review_failed",
 				fmt.Sprintf("The tool %s step failed: %v. The item status has not been changed", input.Action, toolErr))
+
 			return
 		}
+
 		if toolHandled {
 			newStatus = appliedStatus
+
 			slog.Info("moderation: tool review processed", "item_id", id, "action", input.Action, "reviewer", user.UserID.String())
 		}
 	}
@@ -1952,8 +1999,8 @@ func (h *Handlers) callStudioHook(ctx context.Context, id, reviewerID pgtype.UUI
 // ?deleted=only|all ("" = live only) plus type/status/q filters. Kept
 // separate so deleted rows can never leak to the public route.
 func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
-
 	limit := int32(50)
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= 200 {
 			limit = int32(parsed) //nolint:gosec // G115: bounded by 200 check
@@ -1961,6 +2008,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var offset int32
+
 	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
 			offset = int32(parsed) //nolint:gosec // G115: bounded above
@@ -2015,7 +2063,6 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 // ?force=true permanently removes an already-soft-deleted row, gated by
 // admin.hard_delete via rbac.RequireForceDelete.
 func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
-
 	id := chi.URLParam(r, "id")
 
 	var cid pgtype.UUID
@@ -2032,23 +2079,31 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusConflict, "in_use", "Content is referenced by other records and cannot be permanently deleted")
 				return
 			}
+
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete content")
+
 			return
 		}
+
 		if affected == 0 {
 			exists, err := h.Queries.ContentExistsAny(r.Context(), cid)
 			if err != nil {
 				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete content")
 				return
 			}
+
 			if !exists {
 				errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 				return
 			}
+
 			errpkg.WriteError(w, http.StatusConflict, "not_deleted", "Content must be removed (soft-deleted) before it can be permanently deleted")
+
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
+
 		return
 	}
 
@@ -2065,7 +2120,6 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 
 // RestoreContent handles POST /admin/content/:id/restore.
 func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
-
 	id := chi.URLParam(r, "id")
 
 	var cid pgtype.UUID
@@ -2090,7 +2144,6 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 // Returns soft-deleted and removed content items for the admin deletions audit view.
 // Ref: sections/19-gdpr-ndpr-compliance.md, Rule 11 (soft deletes only for user content).
 func (h *Handlers) ListDeletedContents(w http.ResponseWriter, r *http.Request) {
-
 	limit := int32(100)
 
 	if v := r.URL.Query().Get("page_size"); v != "" {
@@ -2116,7 +2169,6 @@ func (h *Handlers) ListDeletedContents(w http.ResponseWriter, r *http.Request) {
 
 // ListBroadcasts handles GET /admin/broadcasts.
 func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
-
 	rows, err := h.Queries.ListAdminBroadcasts(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list broadcasts")

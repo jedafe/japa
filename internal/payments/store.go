@@ -52,7 +52,6 @@ func (s *Store) listPaymentsByUser(ctx context.Context, userID pgtype.UUID, limi
 	}
 
 	rows, err := s.read.ListPaymentsByUser(ctx, gen.ListPaymentsByUserParams{
-
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -70,7 +69,6 @@ func (s *Store) listPaymentsByStatus(ctx context.Context, status string, limit, 
 	}
 
 	rows, err := s.read.ListPaymentsByStatus(ctx, gen.ListPaymentsByStatusParams{
-
 		Status:     status,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -132,7 +130,6 @@ func (s *Store) insertWebhookEventIfNew(ctx context.Context, p gen.InsertWebhook
 
 func (s *Store) isWebhookEventProcessed(ctx context.Context, provider, eventID string) (bool, error) {
 	processed, err := s.read.IsWebhookEventProcessed(ctx, gen.IsWebhookEventProcessedParams{
-
 		Provider: provider,
 		EventID:  eventID,
 	})
@@ -145,7 +142,6 @@ func (s *Store) isWebhookEventProcessed(ctx context.Context, provider, eventID s
 
 func (s *Store) markWebhookEventProcessed(ctx context.Context, provider, eventID string) error {
 	if err := s.write.MarkWebhookEventProcessed(ctx, gen.MarkWebhookEventProcessedParams{
-
 		Provider: provider,
 		EventID:  eventID,
 	}); err != nil {
@@ -245,7 +241,6 @@ func (s *Store) listSubscriptionsByUser(ctx context.Context, userID pgtype.UUID,
 	}
 
 	rows, err := s.read.ListSubscriptionsByUser(ctx, gen.ListSubscriptionsByUserParams{
-
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -264,7 +259,6 @@ func (s *Store) listActiveSubscriptions(ctx context.Context, limit, offset int32
 	}
 
 	rows, err := s.read.ListActiveSubscriptions(ctx, gen.ListActiveSubscriptionsParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -323,6 +317,7 @@ func (s *Store) getSubscriptionByProviderSubID(ctx context.Context, subID string
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("getting subscription by provider_sub_id: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -335,6 +330,7 @@ func (s *Store) renewSubscriptionPeriod(ctx context.Context, id pgtype.UUID, sta
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("renewing subscription period: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -343,6 +339,7 @@ func (s *Store) markSubscriptionPastDue(ctx context.Context, id pgtype.UUID) (ge
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("marking subscription past_due: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -354,6 +351,7 @@ func (s *Store) setSubscriptionCancelAtPeriodEnd(ctx context.Context, id pgtype.
 	if err != nil {
 		return fmt.Errorf("setting cancel_at_period_end: %w", err)
 	}
+
 	return nil
 }
 
@@ -367,6 +365,7 @@ func (s *Store) updateSubscriptionPeriodBounds(ctx context.Context, id pgtype.UU
 	if err != nil {
 		return fmt.Errorf("updating subscription bounds: %w", err)
 	}
+
 	return nil
 }
 
@@ -375,6 +374,7 @@ func (s *Store) expireSubscription(ctx context.Context, id pgtype.UUID) (gen.Sub
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("expiring subscription: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -386,6 +386,7 @@ func (s *Store) listSubscriptionsDueForExpiry(ctx context.Context, graceCutoff t
 	if err != nil {
 		return nil, fmt.Errorf("listing subscriptions due for expiry: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -448,7 +449,6 @@ func (s *Store) listDiscountCodes(ctx context.Context, limit, offset int32) ([]g
 	}
 
 	rows, err := s.read.ListDiscountCodes(ctx, gen.ListDiscountCodesParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

@@ -59,10 +59,12 @@ func PersonaVoicesListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		out := make([]PersonaVoiceItem, 0, len(voices))
+
 		for _, v := range voices {
 			if !a.IncludePrompts {
 				v.VoicePrompt = ""
 			}
+
 			out = append(out, v)
 		}
 
@@ -106,10 +108,12 @@ func PersonaVoicesReadHandler(deps *ToolDeps) ToolHandler {
 			if scanErr != nil {
 				return errorToolResult("invalid_voice_id", "id is not a valid UUID"), nil
 			}
+
 			voice, err = deps.PersonaVoices.GetPersonaVoice(ctx, id)
 		} else {
 			voice, err = deps.PersonaVoices.GetPersonaVoiceBySlug(ctx, a.Slug)
 		}
+
 		if err != nil {
 			return errorToolResult("persona_voice_not_found", fmt.Sprintf("voice not found: %v", err)), nil
 		}
@@ -150,6 +154,7 @@ func PersonasListHandler(deps *ToolDeps) ToolHandler {
 		default:
 			sort = "created_at"
 		}
+
 		if sort == "" {
 			sort = "created_at"
 		}

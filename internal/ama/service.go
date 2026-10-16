@@ -242,7 +242,6 @@ func (s *Service) CreateAMA(ctx context.Context, authorUserID pgtype.UUID, in Cr
 	}
 
 	thread, err := s.store.CreateAMA(ctx, CreateAMAParams{
-
 		AuthorUserID:      authorUserID,
 		SpaceID:           in.SpaceID,
 		Title:             in.Title,

@@ -28,6 +28,7 @@ func errCode(t *testing.T, rec *httptest.ResponseRecorder) string {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode error envelope: %v", err)
 	}
@@ -61,6 +62,7 @@ func TestWriteMyBookingError_Uniform404(t *testing.T) {
 			if rec.Code != tc.wantCode {
 				t.Fatalf("status = %d, want %d (body %s)", rec.Code, tc.wantCode, rec.Body.String())
 			}
+
 			if got := errCode(t, rec); got != tc.wantBody {
 				t.Fatalf("code = %q, want %q", got, tc.wantBody)
 			}
@@ -75,6 +77,7 @@ func TestMentorshipBookingPreferredDatesRejected(t *testing.T) {
 	svc := &Service{checker: fakeFlags{"mentorship.enabled": true}}
 
 	var bookerID, providerID, contentID pgtype.UUID
+
 	bookerID.Scan("11111111-1111-1111-1111-111111111111")
 	providerID.Scan("22222222-2222-2222-2222-222222222222")
 	contentID.Scan("33333333-3333-3333-3333-333333333333")
@@ -97,6 +100,7 @@ func TestPrivilegedBookingTextCaps(t *testing.T) {
 	svc := &Service{checker: fakeFlags{"service_packages.enabled": true}}
 
 	var orgID, bookingID, userID pgtype.UUID
+
 	orgID.Scan("11111111-1111-1111-1111-111111111111")
 	bookingID.Scan("22222222-2222-2222-2222-222222222222")
 	userID.Scan("33333333-3333-3333-3333-333333333333")
@@ -144,6 +148,7 @@ func TestCategoriesCompositeGate(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", rec.Code)
 		}
+
 		if got := errCode(t, rec); got != "service_directory_disabled" {
 			t.Fatalf("code = %q, want service_directory_disabled", got)
 		}
@@ -165,9 +170,11 @@ func TestCategoriesCompositeGate(t *testing.T) {
 		var body struct {
 			Data []Option `json:"data"`
 		}
+
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
+
 		for _, o := range body.Data {
 			if o.AppliesTo != "mentorship" && o.AppliesTo != "both" {
 				t.Fatalf("category %q has applies_to %q, want mentorship|both only", o.Value, o.AppliesTo)
@@ -188,6 +195,7 @@ func TestReviewsCompositeGate(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
+
 	if got := errCode(t, rec); got != "service_directory_disabled" {
 		t.Fatalf("code = %q, want service_directory_disabled", got)
 	}
@@ -198,11 +206,17 @@ func TestReviewsCompositeGate(t *testing.T) {
 // reachable only out of disputed (the fee worker owns the actual refund).
 func TestAdminAllowedTransitions(t *testing.T) {
 	allowed := [][2]string{
-		{"pending", "confirmed"}, {"pending", "declined"}, {"pending", "cancelled"},
-		{"confirmed", "fulfilled"}, {"confirmed", "cancelled"}, {"confirmed", "disputed"},
+		{"pending", "confirmed"},
+		{"pending", "declined"},
+		{"pending", "cancelled"},
+		{"confirmed", "fulfilled"},
+		{"confirmed", "cancelled"},
+		{"confirmed", "disputed"},
 		{"fulfilled", "disputed"},
-		{"disputed", "refunded"}, {"disputed", "confirmed"},
-		{"disputed", "fulfilled"}, {"disputed", "cancelled"},
+		{"disputed", "refunded"},
+		{"disputed", "confirmed"},
+		{"disputed", "fulfilled"},
+		{"disputed", "cancelled"},
 	}
 	for _, tc := range allowed {
 		if !adminAllowedTransitions[tc[0]][tc[1]] {
@@ -211,12 +225,23 @@ func TestAdminAllowedTransitions(t *testing.T) {
 	}
 
 	denied := [][2]string{
-		{"pending", "fulfilled"}, {"pending", "disputed"}, {"pending", "refunded"},
-		{"confirmed", "refunded"}, {"confirmed", "declined"}, {"confirmed", "pending"},
-		{"fulfilled", "confirmed"}, {"fulfilled", "refunded"}, {"fulfilled", "cancelled"},
-		{"disputed", "pending"}, {"disputed", "declined"},
-		{"cancelled", "pending"}, {"cancelled", "confirmed"}, {"declined", "pending"},
-		{"refunded", "pending"}, {"refunded", "confirmed"}, {"refunded", "disputed"},
+		{"pending", "fulfilled"},
+		{"pending", "disputed"},
+		{"pending", "refunded"},
+		{"confirmed", "refunded"},
+		{"confirmed", "declined"},
+		{"confirmed", "pending"},
+		{"fulfilled", "confirmed"},
+		{"fulfilled", "refunded"},
+		{"fulfilled", "cancelled"},
+		{"disputed", "pending"},
+		{"disputed", "declined"},
+		{"cancelled", "pending"},
+		{"cancelled", "confirmed"},
+		{"declined", "pending"},
+		{"refunded", "pending"},
+		{"refunded", "confirmed"},
+		{"refunded", "disputed"},
 	}
 	for _, tc := range denied {
 		if adminAllowedTransitions[tc[0]][tc[1]] {
@@ -230,9 +255,11 @@ func TestAdminAllowedTransitions(t *testing.T) {
 func TestWriteServiceError_PartySize(t *testing.T) {
 	rec := httptest.NewRecorder()
 	writeServiceError(rec, ErrInvalidPartySize, "x", "y")
+
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
+
 	if got := errCode(t, rec); got != "invalid_party_size" {
 		t.Fatalf("code = %q, want invalid_party_size", got)
 	}
@@ -245,6 +272,7 @@ func TestApplyDiscount_ZeroIsNoop(t *testing.T) {
 	if got := applyDiscount(100_000, "free_shipping", 10); got != 100_000 {
 		t.Fatalf("unknown type should be a no-op, got %d", got)
 	}
+
 	if got := applyDiscount(100_000, "percent", 0); got != 100_000 {
 		t.Fatalf("zero percent should be a no-op, got %d", got)
 	}

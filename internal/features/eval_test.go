@@ -401,6 +401,7 @@ func TestEvalFlag_DefaultSurfaces(t *testing.T) {
 			"docs":  "disabled",
 		},
 	})
+
 	t.Cleanup(func() { Registry = Registry[:len(Registry)-1] })
 
 	c := newEvalTestChecker()
@@ -410,9 +411,11 @@ func TestEvalFlag_DefaultSurfaces(t *testing.T) {
 	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "admin"}); got != (EvalResult{Enabled: true, Visible: false}) {
 		t.Errorf("admin scope (no row) = %+v, want {true false} — default hidden", got)
 	}
+
 	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "docs"}); got != (EvalResult{}) {
 		t.Errorf("docs scope (no row) = %+v, want {false false} — default disabled", got)
 	}
+
 	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "main"}); got != (EvalResult{Enabled: true, Visible: true}) {
 		t.Errorf("main scope (no row) = %+v, want {true true} — no default rule", got)
 	}
@@ -421,9 +424,11 @@ func TestEvalFlag_DefaultSurfaces(t *testing.T) {
 	c.cacheSet(key, true, surfacesConfig(t, map[string]SurfaceRule{
 		"admin": {State: "visible"},
 	}))
+
 	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "admin"}); got != (EvalResult{Enabled: true, Visible: true}) {
 		t.Errorf("admin scope (stored override) = %+v, want {true true} — stored wins", got)
 	}
+
 	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "docs"}); got != (EvalResult{}) {
 		t.Errorf("docs scope (stored row) = %+v, want {false false} — default still applies", got)
 	}

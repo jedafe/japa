@@ -284,7 +284,6 @@ func (s *Store) listThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cur
 	}
 
 	rows, err := s.read.ListForumThreadsBySpace(ctx, gen.ListForumThreadsBySpaceParams{
-
 		SpaceID:         spaceID,
 		CursorCreatedAt: cursorCreatedAt,
 		PageLimit:       limit,
@@ -308,7 +307,6 @@ func (s *Store) listThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUI
 	}
 
 	rows, err := s.read.ListForumThreadsByAuthor(ctx, gen.ListForumThreadsByAuthorParams{
-
 		AuthorUserID:    authorUserID,
 		CursorCreatedAt: cursorCreatedAt,
 		PageLimit:       limit,
@@ -332,7 +330,6 @@ func (s *Store) listThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtyp
 	}
 
 	rows, err := s.read.ListForumThreads(ctx, gen.ListForumThreadsParams{
-
 		CursorCreatedAt: cursorCreatedAt,
 		PageLimit:       limit,
 	})
@@ -355,7 +352,6 @@ func (s *Store) listThreadsByTag(ctx context.Context, tagID pgtype.UUID, cursorC
 	}
 
 	rows, err := s.read.ListForumThreadsByTag(ctx, gen.ListForumThreadsByTagParams{
-
 		TagID:           tagID,
 		CursorCreatedAt: cursorCreatedAt,
 		PageLimit:       limit,
@@ -549,7 +545,6 @@ func (s *Store) deleteVote(ctx context.Context, userID pgtype.UUID, entityType s
 // and all of its replies.
 func (s *Store) getUserVotesForThread(ctx context.Context, threadID, userID pgtype.UUID) ([]gen.ListUserVotesForThreadRow, error) {
 	rows, err := s.read.ListUserVotesForThread(ctx, gen.ListUserVotesForThreadParams{
-
 		UserID:   userID,
 		ThreadID: threadID,
 	})
@@ -669,7 +664,6 @@ func (s *Store) addBookmark(ctx context.Context, p gen.AddForumBookmarkParams) (
 // removeBookmark deletes a bookmark from the unified bookmarks table.
 func (s *Store) removeBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.RemoveForumBookmark(ctx, gen.RemoveForumBookmarkParams{
-
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -714,7 +708,6 @@ func (s *Store) listBookmarksByUser(ctx context.Context, userID pgtype.UUID, lim
 	}
 
 	rows, err := s.read.ListForumBookmarksByUser(ctx, gen.ListForumBookmarksByUserParams{
-
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -790,6 +783,7 @@ func (s *Store) firstModerators(ctx context.Context, tagIDs []pgtype.UUID) map[p
 	if err != nil {
 		return out
 	}
+
 	for _, r := range rows {
 		out[r.TagID] = r.UserID
 	}
@@ -884,6 +878,7 @@ func (s *Store) listTags(ctx context.Context, limit, offset int32) ([]gen.ForumT
 	for _, t := range rows {
 		ids = append(ids, t.ID)
 	}
+
 	mods := s.firstModerators(ctx, ids)
 
 	out := make([]gen.ForumTag, 0, len(rows))
@@ -1200,7 +1195,6 @@ func (s *Store) listThreadsByPlatformWithDetails(ctx context.Context, solved *bo
 	}
 
 	rows, err := s.read.ListForumThreadsWithDetails(ctx, gen.ListForumThreadsWithDetailsParams{
-
 		Solved:          solved,
 		SortBy:          sortBy,
 		CursorVoteScore: cursorVoteScore,
@@ -1222,7 +1216,6 @@ func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, spaceID pgtyp
 	}
 
 	rows, err := s.read.ListForumThreadsBySpaceWithDetails(ctx, gen.ListForumThreadsBySpaceWithDetailsParams{
-
 		SpaceID:         spaceID,
 		Solved:          solved,
 		SortBy:          sortBy,
@@ -1245,7 +1238,6 @@ func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, authorUserID
 	}
 
 	rows, err := s.read.ListForumThreadsByAuthorWithDetails(ctx, gen.ListForumThreadsByAuthorWithDetailsParams{
-
 		AuthorUserID:    authorUserID,
 		Solved:          solved,
 		SortBy:          sortBy,
@@ -1268,7 +1260,6 @@ func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tagID pgtype.UU
 	}
 
 	rows, err := s.read.ListForumThreadsByTagWithDetails(ctx, gen.ListForumThreadsByTagWithDetailsParams{
-
 		TagID:           tagID,
 		Solved:          solved,
 		SortBy:          sortBy,

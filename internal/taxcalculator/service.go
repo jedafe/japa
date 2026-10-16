@@ -175,7 +175,6 @@ func (s *Service) List(ctx context.Context, destSpaceID, originSpaceID pgtype.UU
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListGuides(ctx, ListGuidesFilter{
-
 		DestinationSpaceID: destSpaceID,
 		OriginSpaceID:      originSpaceID,
 		EmploymentStatus:   employmentStatus,
@@ -237,7 +236,6 @@ func (s *Service) CreateGuide(ctx context.Context, req CreateGuideRequest) (Guid
 	}
 
 	in := CreateGuideInput{
-
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
 		EmploymentStatus:   req.EmploymentStatus,
@@ -382,7 +380,6 @@ func (s *Service) GenerateGuide(ctx context.Context, req GenerateGuideRequest) (
 	aiModel := "content_agent_v1"
 
 	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
-
 		OriginSpaceID:        originSpaceID,
 		DestinationSpaceID:   destSpaceID,
 		EmploymentStatus:     req.EmploymentStatus,
@@ -426,7 +423,6 @@ func (s *Service) UpsertTreaty(ctx context.Context, req UpsertTreatyRequest) (Tr
 	}
 
 	in := TreatyUpsertInput{
-
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
 		TreatyExists:       req.TreatyExists,
@@ -461,7 +457,6 @@ func (s *Service) AdminList(ctx context.Context, status, employmentStatus, q str
 	offset := (page - 1) * limit
 
 	guides, treaties, total, err := s.store.AdminList(ctx, AdminListFilter{
-
 		Status:             status,
 		EmploymentStatus:   employmentStatus,
 		DestinationSpaceID: destSpaceID,

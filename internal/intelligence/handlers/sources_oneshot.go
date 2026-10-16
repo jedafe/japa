@@ -92,10 +92,12 @@ func (h *Handlers) HandleOneshotSource(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to build task payload")
 		return
 	}
+
 	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelFetchChannel, payload),
 		worker.TaskOpts(worker.TypeIntelFetchChannel)...); err != nil {
 		slog.Error("intel: oneshot fetch enqueue failed", "channel_id", ch.ID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue fetch task")
+
 		return
 	}
 

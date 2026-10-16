@@ -42,6 +42,7 @@ func (s *Service) applyComputedFields(ctx context.Context, dtos []EntityFieldDTO
 		if canManage {
 			return true
 		}
+
 		return visibleSet != nil && visibleSet[id.String()]
 	}
 
@@ -49,12 +50,15 @@ func (s *Service) applyComputedFields(ctx context.Context, dtos []EntityFieldDTO
 		if !dtos[i].Visible {
 			continue
 		}
+
 		if !customfields.ComputedEligibleField(dtos[i].FieldType, dtos[i].Options) {
 			continue // computed is opt-in per aggregate-eligible type
 		}
+
 		spec := customfields.ComputedSpecFromOptions(dtos[i].Options)
 
 		scalars := []float64{}
+
 		for _, src := range spec.Sources {
 			gid, ok := groupIDs[src.Group]
 			if !ok {
@@ -62,19 +66,25 @@ func (s *Service) applyComputedFields(ctx context.Context, dtos []EntityFieldDTO
 				if err != nil {
 					slog.Warn("wiki: computed field: source group unresolved",
 						"group", src.Group, "error", err)
+
 					groupIDs[src.Group] = pgtype.UUID{}
+
 					continue
 				}
+
 				gid = g.ID
 				groupIDs[src.Group] = gid
 			}
+
 			if !gid.Valid {
 				continue
 			}
+
 			v, ok := bySource[gid.String()+"/"+src.Key]
 			if !ok || !sourceVisible(v.FieldID) {
 				continue
 			}
+
 			if f, ok := customfields.ComputedScalarFromValue(v.FieldType, v.FieldOptions, v.ValueJson, v.ValueNumber); ok {
 				scalars = append(scalars, f)
 			}
@@ -82,10 +92,12 @@ func (s *Service) applyComputedFields(ctx context.Context, dtos []EntityFieldDTO
 
 		dtos[i].Computed = true
 		dtos[i].CanEdit = false
+
 		if len(scalars) == 0 {
 			dtos[i].Value = nil
 			continue
 		}
+
 		dtos[i].Value = computedValueJSON(dtos[i].FieldType, dtos[i].Options, customfields.FoldComputedMetric(spec.Metric, scalars))
 	}
 }
@@ -98,9 +110,11 @@ func computedValueJSON(fieldType string, options []byte, v float64) json.RawMess
 	if dv == nil {
 		return nil
 	}
+
 	b, err := json.Marshal(dv)
 	if err != nil {
 		return nil
 	}
+
 	return b
 }

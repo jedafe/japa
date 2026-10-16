@@ -160,7 +160,7 @@ func searchCacheKey(query, typeFilter, geoCountry string, limit, offset int, sor
 // SearchResultItem holds the type-specific fields for a search result. Per
 // §54, each result type exposes its own field set. Fields are optional — only
 // the fields relevant to the type are populated.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type SearchResultItem struct {
 	ID           string `json:"id"`
 	Title        string `json:"title,omitempty"`
@@ -723,7 +723,6 @@ type AutocompleteResponse struct {
 // // Returns lightweight suggestions across users, spaces, tags, and content.
 // Maximum 8 results. NOT logged to search analytics per Section 54.
 func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
-
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
@@ -958,7 +957,6 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filters := []FilterExpr{
-
 		Eq{Field: "space_id", Value: spaceID},
 		// The posts index is upserted on every content create/update —
 		// drafts and scheduled rows are indexed too, so status must be
@@ -1013,12 +1011,14 @@ func (h *Handlers) filterContentHits(r *http.Request, hits []Hit) []Hit {
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := visibility.VisibilityFilterFromRequest(r).Params()
 
 	ids := make([]pgtype.UUID, 0, len(hits))
+
 	for _, hit := range hits {
 		var id pgtype.UUID
 		if err := id.Scan(stringField(hit, "id")); err == nil {
 			ids = append(ids, id)
 		}
 	}
+
 	if len(ids) == 0 {
 		return hits
 	}
@@ -1042,11 +1042,13 @@ func (h *Handlers) filterContentHits(r *http.Request, hits []Hit) []Hit {
 	}
 
 	filtered := hits[:0]
+
 	for _, hit := range hits {
 		if _, ok := allowed[stringField(hit, "id")]; ok {
 			filtered = append(filtered, hit)
 		}
 	}
+
 	return filtered
 }
 
@@ -1120,7 +1122,6 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 // // Returns search analytics: top queries, zero-result queries, and daily volume.
 // Requires admin.analytics.search RBAC permission (enforced at router level).
 func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) {
-
 	if h.queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "analytics_unavailable", "Analytics not configured")
 		return
@@ -1179,7 +1180,8 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 
 	limit := int32(20)
 
-	topQueries, err := h.queries.GetSearchAnalyticsSummary(r.Context(), gen.GetSearchAnalyticsSummaryParams{Column1: pgtype.Timestamptz{Time: since, Valid: sinceValid}, Column2: pgtype.Timestamptz{Time: until, Valid: untilValid}, Limit: limit,
+	topQueries, err := h.queries.GetSearchAnalyticsSummary(r.Context(), gen.GetSearchAnalyticsSummaryParams{
+		Column1: pgtype.Timestamptz{Time: since, Valid: sinceValid}, Column2: pgtype.Timestamptz{Time: until, Valid: untilValid}, Limit: limit,
 		Offset: 0,
 	})
 	if err != nil {
@@ -1189,7 +1191,8 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	zeroResultQueries, err := h.queries.GetZeroResultQueries(r.Context(), gen.GetZeroResultQueriesParams{Column1: pgtype.Timestamptz{Time: since, Valid: sinceValid}, Column2: pgtype.Timestamptz{Time: until, Valid: untilValid}, Limit: limit,
+	zeroResultQueries, err := h.queries.GetZeroResultQueries(r.Context(), gen.GetZeroResultQueriesParams{
+		Column1: pgtype.Timestamptz{Time: since, Valid: sinceValid}, Column2: pgtype.Timestamptz{Time: until, Valid: untilValid}, Limit: limit,
 		Offset: 0,
 	})
 	if err != nil {
@@ -1234,7 +1237,6 @@ func (h *Handlers) logSearchAsync(ctx context.Context, query string, resultsCoun
 		defer cancel()
 
 		if err := h.queries.LogSearchQuery(bgCtx, gen.LogSearchQueryParams{
-
 			Query:        query,
 			ResultsCount: int32(resultsCount), // #nosec G115 -- search result count, bounded by page size
 			UserID:       userID,

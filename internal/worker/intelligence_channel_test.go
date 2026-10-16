@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -98,6 +97,7 @@ func TestResolveChannelEntityTypes(t *testing.T) {
 			if len(got) != len(tt.want) {
 				t.Fatalf("resolveChannelEntityTypes = %v, want %v", got, tt.want)
 			}
+
 			for i := range got {
 				if got[i] != tt.want[i] {
 					t.Fatalf("resolveChannelEntityTypes[%d] = %q, want %q (got %v)", i, got[i], tt.want[i], got)
@@ -112,10 +112,11 @@ func TestResolveChannelEntityTypes(t *testing.T) {
 func TestHandleIntelFetchChannel_NotWired(t *testing.T) {
 	oldFetcher, oldStores, oldSrcStore := intelFetcher, intelStores, intelSourcesStore
 	intelFetcher, intelStores, intelSourcesStore = nil, nil, nil
+
 	t.Cleanup(func() { intelFetcher, intelStores, intelSourcesStore = oldFetcher, oldStores, oldSrcStore })
 
 	task := asynq.NewTask(TypeIntelFetchChannel, []byte(`{"version":"v1","channel_id":"11111111-1111-4111-8111-111111111111","source_id":"22222222-2222-4222-8222-222222222222"}`))
-	if err := HandleIntelFetchChannel(context.Background(), task); err != nil {
+	if err := HandleIntelFetchChannel(t.Context(), task); err != nil {
 		t.Fatalf("unwired handler returned error: %v", err)
 	}
 }
@@ -137,18 +138,20 @@ func wireIntelChannelDeps(t *testing.T) (*db.DB, *sources.Store, *stores.Store, 
 		t.Skip("JC_TEST_DATABASE_URL not set — skipping live Postgres test")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	database, err := db.New(ctx, dsn)
 	if err != nil {
 		t.Skipf("test database unreachable: %v", err)
 	}
+
 	t.Cleanup(func() { database.Close() })
 
 	mr, err := miniredis.Run()
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
+
 	t.Cleanup(mr.Close)
 
 	vk, err := valkey.NewClient(valkey.ClientOption{
@@ -158,12 +161,17 @@ func wireIntelChannelDeps(t *testing.T) (*db.DB, *sources.Store, *stores.Store, 
 	if err != nil {
 		t.Fatalf("valkey.NewClient: %v", err)
 	}
+
 	t.Cleanup(func() { vk.Close() })
+
 	adapter := valkeycompat.NewAdapter(vk)
 
 	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: mr.Addr()})
+
 	t.Cleanup(func() { _ = asynqClient.Close() })
+
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: mr.Addr()})
+
 	t.Cleanup(func() { _ = inspector.Close() })
 
 	srcStore := sources.NewStore(database)
@@ -213,11 +221,12 @@ func mkIntelTestSource(t *testing.T, srcStore *sources.Store, name string, mutat
 		mutate(&arg)
 	}
 
-	src, err := srcStore.Create(context.Background(), arg)
+	src, err := srcStore.Create(t.Context(), arg)
 	if err != nil {
 		t.Fatalf("create source %s: %v", name, err)
 	}
-	t.Cleanup(func() { _ = srcStore.Delete(context.Background(), src.ID) })
+
+	t.Cleanup(func() { _ = srcStore.Delete(t.Context(), src.ID) })
 
 	return src
 }
@@ -245,7 +254,7 @@ func mkIntelTestChannel(t *testing.T, srcStore *sources.Store, src gen.IntelSour
 		mutate(&arg)
 	}
 
-	ch, err := srcStore.CreateChannel(context.Background(), arg)
+	ch, err := srcStore.CreateChannel(t.Context(), arg)
 	if err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
@@ -259,7 +268,7 @@ func countChannelRawDocs(t *testing.T, database *db.DB, channelID pgtype.UUID) i
 	t.Helper()
 
 	var n int
-	if err := database.Writer.QueryRow(context.Background(),
+	if err := database.Writer.QueryRow(t.Context(),
 		`SELECT count(*) FROM intel_raw_documents WHERE channel_id = $1`, channelID).Scan(&n); err != nil {
 		t.Fatalf("count raw docs: %v", err)
 	}
@@ -274,14 +283,17 @@ func pendingTasks(t *testing.T, inspector *asynq.Inspector, taskType string) []*
 	t.Helper()
 
 	var out []*asynq.TaskInfo
+
 	for _, q := range []string{QueueCritical, QueueDefault, QueueLow} {
 		infos, err := inspector.ListPendingTasks(q, asynq.PageSize(100))
 		if err != nil {
 			if errors.Is(err, asynq.ErrQueueNotFound) {
 				continue
 			}
+
 			t.Fatalf("inspect queue %s: %v", q, err)
 		}
+
 		for _, info := range infos {
 			if info.Type == taskType {
 				out = append(out, info)
@@ -299,14 +311,17 @@ func scheduledTasks(t *testing.T, inspector *asynq.Inspector, taskType string) [
 	t.Helper()
 
 	var out []*asynq.TaskInfo
+
 	for _, q := range []string{QueueCritical, QueueDefault, QueueLow} {
 		infos, err := inspector.ListScheduledTasks(q, asynq.PageSize(100))
 		if err != nil {
 			if errors.Is(err, asynq.ErrQueueNotFound) {
 				continue
 			}
+
 			t.Fatalf("inspect queue %s scheduled: %v", q, err)
 		}
+
 		for _, info := range infos {
 			if info.Type == taskType {
 				out = append(out, info)
@@ -349,7 +364,7 @@ func TestHandleIntelFetchChannel_LiveDB(t *testing.T) {
 		SourceID:  src.ID.String(),
 	})
 
-	if err := HandleIntelFetchChannel(context.Background(), asynq.NewTask(TypeIntelFetchChannel, payload)); err != nil {
+	if err := HandleIntelFetchChannel(t.Context(), asynq.NewTask(TypeIntelFetchChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelFetchChannel: %v", err)
 	}
 
@@ -358,18 +373,21 @@ func TestHandleIntelFetchChannel_LiveDB(t *testing.T) {
 	if docChannelID != ch.ID.String() {
 		t.Errorf("raw doc channel_id = %q, want %q", docChannelID, ch.ID.String())
 	}
+
 	if docURL != srv.URL+"/page" {
 		t.Errorf("raw doc url = %q, want channel entry_url", docURL)
 	}
 
 	// Channel crawl status stamped.
-	got, err := srcStore.GetChannel(context.Background(), ch.ID)
+	got, err := srcStore.GetChannel(t.Context(), ch.ID)
 	if err != nil {
 		t.Fatalf("reload channel: %v", err)
 	}
+
 	if !got.LastSuccessAt.Valid {
 		t.Error("channel last_success_at not stamped")
 	}
+
 	if got.ConsecutiveFailures != 0 {
 		t.Errorf("consecutive_failures = %d, want 0", got.ConsecutiveFailures)
 	}
@@ -379,13 +397,16 @@ func TestHandleIntelFetchChannel_LiveDB(t *testing.T) {
 	if len(infos) == 0 {
 		t.Fatal("no intel:detect_changes task enqueued")
 	}
+
 	var dc intelDetectChangesPayload
 	if err := json.Unmarshal(infos[0].Payload, &dc); err != nil {
 		t.Fatalf("detect_changes payload: %v", err)
 	}
+
 	if dc.ChannelID != ch.ID.String() {
 		t.Errorf("detect_changes channel_id = %q, want %q", dc.ChannelID, ch.ID.String())
 	}
+
 	if dc.RawDocID != docID.String() {
 		t.Errorf("detect_changes raw_doc_id = %q, want %q", dc.RawDocID, docID.String())
 	}
@@ -397,7 +418,7 @@ func TestHandleIntelFetchChannel_LiveDB(t *testing.T) {
 func latestChannelRawDoc(t *testing.T, database *db.DB, src gen.IntelSource, ch gen.IntelSourceChannel) (docID pgtype.UUID, docChannelID, docURL string) {
 	t.Helper()
 
-	row := database.Writer.QueryRow(context.Background(),
+	row := database.Writer.QueryRow(t.Context(),
 		`SELECT id, channel_id::text, url FROM intel_raw_documents
 		 WHERE source_id = $1 AND channel_id = $2
 		 ORDER BY retrieved_at DESC LIMIT 1`, src.ID, ch.ID)
@@ -465,7 +486,7 @@ func TestHandleIntelFetchChannel_SkipPaths(t *testing.T) {
 			Version:   intelPayloadVersion,
 			ChannelID: tc.channelID.String(),
 		})
-		if err := HandleIntelFetchChannel(context.Background(), asynq.NewTask(TypeIntelFetchChannel, payload)); err != nil {
+		if err := HandleIntelFetchChannel(t.Context(), asynq.NewTask(TypeIntelFetchChannel, payload)); err != nil {
 			t.Errorf("%s: returned error %v", tc.name, err)
 		}
 	}
@@ -474,7 +495,8 @@ func TestHandleIntelFetchChannel_SkipPaths(t *testing.T) {
 		if n := countChannelRawDocs(t, database, ch.ID); n != 0 {
 			t.Errorf("channel %s produced %d raw docs, want 0", ch.Label, n)
 		}
-		if got, err := srcStore.GetChannel(context.Background(), ch.ID); err == nil && got.ConsecutiveFailures != 0 {
+
+		if got, err := srcStore.GetChannel(t.Context(), ch.ID); err == nil && got.ConsecutiveFailures != 0 {
 			t.Errorf("channel %s consecutive_failures = %d, want 0 (skip paths must not trip the breaker)", ch.Label, got.ConsecutiveFailures)
 		}
 	}
@@ -493,7 +515,7 @@ func TestHandleIntelFetchSource_Delegates(t *testing.T) {
 	})
 
 	payload, _ := json.Marshal(intelSourcePayload{Version: intelPayloadVersion, SourceID: src.ID.String()})
-	if err := HandleIntelFetchSource(context.Background(), asynq.NewTask(TypeIntelFetchSource, payload)); err != nil {
+	if err := HandleIntelFetchSource(t.Context(), asynq.NewTask(TypeIntelFetchSource, payload)); err != nil {
 		t.Fatalf("HandleIntelFetchSource: %v", err)
 	}
 
@@ -507,8 +529,10 @@ func TestHandleIntelFetchSource_Delegates(t *testing.T) {
 	if len(infos) == 0 {
 		t.Fatal("no detect_changes enqueued")
 	}
+
 	var dc intelDetectChangesPayload
 	_ = json.Unmarshal(infos[0].Payload, &dc)
+
 	if dc.ChannelID != ch.ID.String() {
 		t.Errorf("detect_changes channel_id = %q, want %q", dc.ChannelID, ch.ID.String())
 	}
@@ -523,7 +547,7 @@ func TestHandleIntelScheduleCrawls_EnqueuesChannels(t *testing.T) {
 	src := mkIntelTestSource(t, srcStore, "sched-src", nil)
 	ch := mkIntelTestChannel(t, srcStore, src, nil) // last_crawled_at NULL → due
 
-	if err := HandleIntelScheduleCrawls(context.Background(), asynq.NewTask(TypeIntelScheduleCrawls, []byte("{}"))); err != nil {
+	if err := HandleIntelScheduleCrawls(t.Context(), asynq.NewTask(TypeIntelScheduleCrawls, []byte("{}"))); err != nil {
 		t.Fatalf("HandleIntelScheduleCrawls: %v", err)
 	}
 
@@ -533,18 +557,22 @@ func TestHandleIntelScheduleCrawls_EnqueuesChannels(t *testing.T) {
 	}
 
 	var found bool
+
 	for _, info := range infos {
 		var p intelChannelPayload
 		if err := json.Unmarshal(info.Payload, &p); err != nil {
 			t.Fatalf("fetch_channel payload: %v", err)
 		}
+
 		if p.ChannelID == ch.ID.String() {
 			found = true
+
 			if p.SourceID != src.ID.String() {
 				t.Errorf("payload source_id = %q, want %q", p.SourceID, src.ID.String())
 			}
 		}
 	}
+
 	if !found {
 		t.Errorf("no fetch_channel task for channel %s", ch.ID.String())
 	}
@@ -563,7 +591,7 @@ func TestHandleIntelDetectChanges_PropagatesChannel(t *testing.T) {
 	src := mkIntelTestSource(t, srcStore, "dc-src", nil)
 	ch := mkIntelTestChannel(t, srcStore, src, nil)
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -584,7 +612,7 @@ func TestHandleIntelDetectChanges_PropagatesChannel(t *testing.T) {
 		PriorHash: "", // empty → DecisionFirstCrawl → extract enqueued
 	})
 
-	if err := HandleIntelDetectChanges(context.Background(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
+	if err := HandleIntelDetectChanges(t.Context(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
 		t.Fatalf("HandleIntelDetectChanges: %v", err)
 	}
 
@@ -592,10 +620,12 @@ func TestHandleIntelDetectChanges_PropagatesChannel(t *testing.T) {
 	if len(infos) == 0 {
 		t.Fatal("no intel:extract task enqueued")
 	}
+
 	var ep intelExtractPayload
 	if err := json.Unmarshal(infos[0].Payload, &ep); err != nil {
 		t.Fatalf("extract payload: %v", err)
 	}
+
 	if ep.ChannelID != ch.ID.String() {
 		t.Errorf("extract channel_id = %q, want %q", ep.ChannelID, ch.ID.String())
 	}

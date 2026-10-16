@@ -69,6 +69,7 @@ func planTier(plan string) string {
 	if strings.HasPrefix(plan, "business_") {
 		return "business"
 	}
+
 	return "pro"
 }
 
@@ -79,6 +80,7 @@ func isValidSubscriptionPlan(plan string) bool {
 		PlanBusinessMonthly, PlanBusinessYearly:
 		return true
 	}
+
 	return false
 }
 
@@ -92,6 +94,7 @@ func planBillingCycle(plan string) (slug, cycle string, ok bool) {
 	} else {
 		return "", "", false
 	}
+
 	switch {
 	case strings.HasSuffix(plan, "_monthly"):
 		cycle = "monthly"
@@ -100,6 +103,7 @@ func planBillingCycle(plan string) (slug, cycle string, ok bool) {
 	default:
 		return "", "", false
 	}
+
 	return slug, cycle, true
 }
 
@@ -110,6 +114,7 @@ func priceSettingsKey(provider, plan string) string {
 	if provider == ProviderStripe {
 		kind = "price"
 	}
+
 	return fmt.Sprintf("payments.%s.%s.%s", provider, kind, plan)
 }
 
@@ -117,10 +122,13 @@ func priceSettingsKey(provider, plan string) string {
 // JSON-encoded string ("\"PLN_x\""); bare tokens pass through unchanged.
 func settingString(v string) string {
 	v = strings.TrimSpace(v)
+
 	var s string
+
 	if err := json.Unmarshal([]byte(v), &s); err == nil {
 		return strings.TrimSpace(s)
 	}
+
 	return v
 }
 
@@ -130,10 +138,12 @@ func (s *Service) providerPriceCode(ctx context.Context, provider, plan string) 
 	if s.settings == nil {
 		return ""
 	}
+
 	v, err := s.settings.GetSetting(ctx, priceSettingsKey(provider, plan))
 	if err != nil {
 		return ""
 	}
+
 	return settingString(v)
 }
 
@@ -145,6 +155,7 @@ func planPeriodBounds(plan string, now time.Time) (start, end time.Time) {
 	if cycle == "yearly" {
 		return now, now.AddDate(1, 0, 0)
 	}
+
 	return now, now.AddDate(0, 1, 0)
 }
 
@@ -160,6 +171,7 @@ func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, in
 	if input.Plan == "" {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: plan", errpkg.ErrRequired)
 	}
+
 	if input.Provider == "" {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: provider", errpkg.ErrRequired)
 	}
@@ -168,6 +180,7 @@ func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, in
 	if input.Provider != ProviderStripe && input.Provider != ProviderPaystack {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: provider %s cannot do recurring billing", errpkg.ErrInvalid, input.Provider)
 	}
+
 	if !isValidSubscriptionPlan(input.Plan) {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: plan %s", errpkg.ErrInvalid, input.Plan)
 	}
@@ -186,19 +199,25 @@ func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, in
 
 	// Amount comes from subscription_plans (Rule 3 — no hardcoded prices).
 	slug, cycle, _ := planBillingCycle(input.Plan)
+
 	var amount int64
+
 	var currency string
+
 	if planRow, err := s.store.getSubscriptionPlanBySlug(ctx, slug); err == nil {
 		if cycle == "yearly" {
 			amount = planRow.YearlyAmount
 		} else {
 			amount = planRow.MonthlyAmount
 		}
+
 		currency = planRow.Currency
 	}
+
 	if amount <= 0 {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: subscription_plans row for %s", ErrPlanNotConfigured, slug)
 	}
+
 	if currency == "" && s.settings != nil {
 		if v, err := s.settings.GetSetting(ctx, "payment.currency"); err == nil {
 			currency = settingString(v)
@@ -217,6 +236,7 @@ func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, in
 	}
 
 	returnURL := strings.TrimRight(s.siteURL, "/") + "/settings/subscription"
+
 	resp, err := subProvider.CreateSubscriptionCheckout(ctx, SubscriptionRequest{
 		UserID:    userID.String(),
 		Email:     email,
@@ -228,8 +248,9 @@ func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, in
 		Metadata:  map[string]interface{}{"user_id": userID.String(), "plan": input.Plan},
 	})
 	if err != nil {
-		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: %v", ErrProviderFailure, err)
+		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: %w", ErrProviderFailure, err)
 	}
+
 	if resp.CheckoutURL == "" {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: empty checkout URL", ErrProviderFailure)
 	}
@@ -249,13 +270,16 @@ func (s *Service) ProcessSubscriptionEvent(ctx context.Context, provider, eventT
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return fmt.Errorf("subscription webhook: bad payload: %w", err)
 	}
+
 	event := WebhookEvent{Provider: provider, EventID: eventID, EventType: eventType, Payload: payload, RawPayload: raw}
 	if provider == ProviderStripe {
 		return s.processStripeSubscriptionEvent(ctx, event)
 	}
+
 	if provider == ProviderPaystack {
 		return s.processPaystackSubscriptionEvent(ctx, event)
 	}
+
 	return fmt.Errorf("unsupported subscription provider: %s", provider)
 }
 
@@ -263,6 +287,7 @@ func (s *Service) ProcessSubscriptionEvent(ctx context.Context, provider, eventT
 
 func (s *Service) processStripeSubscriptionEvent(ctx context.Context, event WebhookEvent) error {
 	data, _ := event.Payload["data"].(map[string]interface{})
+
 	obj, _ := data["object"].(map[string]interface{})
 	if obj == nil {
 		slog.Warn("subscription webhook: stripe event missing data.object", "event_type", event.EventType)
@@ -296,10 +321,13 @@ func (s *Service) stripeActivate(ctx context.Context, obj map[string]interface{}
 	if subID == "" {
 		subID = str(obj, "id") // subscription object itself
 	}
+
 	if subID == "" || !strings.HasPrefix(subID, "sub_") {
 		return nil // payment-mode session or malformed event — not ours
 	}
+
 	meta, _ := obj["metadata"].(map[string]interface{})
+
 	userID, plan := str(meta, "user_id"), str(meta, "plan")
 	if userID == "" || plan == "" {
 		// checkout.session.completed can also carry it under
@@ -309,15 +337,18 @@ func (s *Service) stripeActivate(ctx context.Context, obj map[string]interface{}
 			if userID == "" {
 				userID = str(sm, "user_id")
 			}
+
 			if plan == "" {
 				plan = str(sm, "plan")
 			}
 		}
 	}
+
 	if userID == "" || plan == "" {
 		slog.Warn("subscription webhook: stripe activation missing metadata", "sub", subID)
 		return nil
 	}
+
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		return fmt.Errorf("subscription webhook: bad user_id %q: %w", userID, err)
@@ -329,6 +360,7 @@ func (s *Service) stripeActivate(ctx context.Context, obj map[string]interface{}
 	if ps := unixTs(obj, "current_period_start"); !ps.IsZero() {
 		start = ps
 	}
+
 	if pe := unixTs(obj, "current_period_end"); !pe.IsZero() {
 		end = pe
 	}
@@ -342,6 +374,7 @@ func (s *Service) stripeActivate(ctx context.Context, obj map[string]interface{}
 	if err != nil {
 		return err
 	}
+
 	return s.grantPlanTier(ctx, sub.UserID, sub.Plan)
 }
 
@@ -352,6 +385,7 @@ func (s *Service) stripeInvoicePaid(ctx context.Context, obj map[string]interfac
 	if subID == "" {
 		return nil // one-off invoice — handled by payment_webhook_process
 	}
+
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
 		slog.Warn("subscription webhook: invoice.paid for unknown sub", "sub", subID)
@@ -360,6 +394,7 @@ func (s *Service) stripeInvoicePaid(ctx context.Context, obj map[string]interfac
 	// Renewal period bounds: invoice line item period → fallback to plan cycle.
 	now := time.Now()
 	_, end := planPeriodBounds(sub.Plan, now)
+
 	linesMap, _ := obj["lines"].(map[string]interface{})
 	if lines, ok := linesMap["data"].([]interface{}); ok && len(lines) > 0 {
 		if line, ok := lines[0].(map[string]interface{}); ok {
@@ -370,10 +405,13 @@ func (s *Service) stripeInvoicePaid(ctx context.Context, obj map[string]interfac
 			}
 		}
 	}
+
 	if _, err := s.store.renewSubscriptionPeriod(ctx, sub.ID, now, end); err != nil {
 		return err
 	}
+
 	s.recordRenewalPayment(ctx, sub, str(obj, "id"), int64From(obj, "amount_paid"), str(obj, "currency"))
+
 	return s.grantPlanTier(ctx, sub.UserID, sub.Plan)
 }
 
@@ -381,11 +419,14 @@ func (s *Service) stripeInvoicePaid(ctx context.Context, obj map[string]interfac
 // the pending-cancel flag; status changes arrive via their own events.
 func (s *Service) stripeSyncSubscription(ctx context.Context, obj map[string]interface{}) error {
 	subID := str(obj, "id")
+
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
 		return nil // unknown sub — nothing to sync
 	}
+
 	start, end := unixTs(obj, "current_period_start"), unixTs(obj, "current_period_end")
+
 	return s.store.updateSubscriptionPeriodBounds(ctx, sub.ID, start, end, boolFrom(obj, "cancel_at_period_end"))
 }
 
@@ -394,13 +435,16 @@ func (s *Service) stripeSyncSubscription(ctx context.Context, obj map[string]int
 // cancel). Local row → canceled, tier downgraded if we granted it.
 func (s *Service) stripeCancelNow(ctx context.Context, obj map[string]interface{}) error {
 	subID := str(obj, "id")
+
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
 		return nil
 	}
+
 	if _, err := s.store.updateSubscriptionStatus(ctx, sub.ID, SubscriptionStatusCanceled); err != nil {
 		return err
 	}
+
 	return s.revokePlanTier(ctx, sub.UserID, sub.Plan)
 }
 
@@ -424,15 +468,18 @@ func (s *Service) processPaystackSubscriptionEvent(ctx context.Context, event We
 		if event.EventType == "invoice.payment_failed" {
 			return s.markSubPastDueByRef(ctx, str(data, "subscription_code"))
 		}
+
 		return nil
 	case "charge.success":
 		// A charge carrying a subscription code is a recurring renewal.
 		if code := str(data, "subscription_code"); code != "" {
 			return s.paystackRenewal(ctx, code, data)
 		}
+
 		if sub, ok := data["subscription"].(map[string]interface{}); ok {
 			return s.paystackRenewal(ctx, str(sub, "subscription_code"), data)
 		}
+
 		return nil // one-time charge — payment_webhook_process owns it
 	default:
 		return nil
@@ -447,9 +494,11 @@ func (s *Service) paystackActivate(ctx context.Context, data map[string]interfac
 	if subCode == "" {
 		return nil
 	}
+
 	customer, _ := data["customer"].(map[string]interface{})
 	email := str(customer, "email")
 	planObj, _ := data["plan"].(map[string]interface{})
+
 	planCode := str(planObj, "plan_code")
 	if email == "" || planCode == "" {
 		slog.Warn("subscription webhook: paystack subscription.create missing email/plan", "sub", subCode)
@@ -461,6 +510,7 @@ func (s *Service) paystackActivate(ctx context.Context, data map[string]interfac
 		slog.Warn("subscription webhook: paystack subscription for unknown email", "sub", subCode)
 		return nil
 	}
+
 	plan := s.planFromPaystackCode(ctx, planCode)
 	if plan == "" {
 		slog.Warn("subscription webhook: paystack plan_code not in settings", "plan_code", planCode)
@@ -469,6 +519,7 @@ func (s *Service) paystackActivate(ctx context.Context, data map[string]interfac
 
 	now := time.Now()
 	start, end := planPeriodBounds(plan, now)
+
 	if npd := str(data, "next_payment_date"); npd != "" {
 		if t, err := time.Parse(time.RFC3339, npd); err == nil {
 			end = t
@@ -479,6 +530,7 @@ func (s *Service) paystackActivate(ctx context.Context, data map[string]interfac
 	if err != nil {
 		return err
 	}
+
 	return s.grantPlanTier(ctx, sub.UserID, sub.Plan)
 }
 
@@ -487,21 +539,27 @@ func (s *Service) paystackRenewal(ctx context.Context, subCode string, data map[
 	if subCode == "" {
 		return nil
 	}
+
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subCode)
 	if err != nil {
 		return nil // may be the first charge before subscription.create landed
 	}
+
 	now := time.Now()
 	_, end := planPeriodBounds(sub.Plan, now)
+
 	if npd := str(data, "next_payment_date"); npd != "" {
 		if t, err := time.Parse(time.RFC3339, npd); err == nil {
 			end = t
 		}
 	}
+
 	if _, err := s.store.renewSubscriptionPeriod(ctx, sub.ID, now, end); err != nil {
 		return err
 	}
+
 	s.recordRenewalPayment(ctx, sub, str(data, "reference"), int64From(data, "amount"), str(data, "currency"))
+
 	return s.grantPlanTier(ctx, sub.UserID, sub.Plan)
 }
 
@@ -517,11 +575,13 @@ func (s *Service) planFromPaystackCode(ctx context.Context, planCode string) str
 	if s.settings == nil {
 		return ""
 	}
+
 	for _, plan := range []string{PlanProMonthly, PlanProYearly, "pro_annual", PlanBusinessMonthly, PlanBusinessYearly} {
 		if s.providerPriceCode(ctx, ProviderPaystack, plan) == planCode {
 			return plan
 		}
 	}
+
 	return ""
 }
 
@@ -537,6 +597,7 @@ func (s *Service) upsertSubscriptionByRef(ctx context.Context, userID pgtype.UUI
 		_ = s.store.updateSubscriptionPeriodBounds(ctx, existing.ID, start, end, cancelAtEnd)
 		return s.store.updateSubscriptionStatus(ctx, existing.ID, status)
 	}
+
 	return s.store.createSubscription(ctx, gen.CreateSubscriptionParams{
 		UserID:             userID,
 		Plan:               plan,
@@ -554,9 +615,11 @@ func (s *Service) recordRenewalPayment(ctx context.Context, sub gen.Subscription
 	if providerRef == "" || amount <= 0 {
 		return
 	}
+
 	if currency == "" {
 		currency = "NGN"
 	}
+
 	subID := sub.ID
 	if _, err := s.store.createPayment(ctx, gen.CreatePaymentParams{
 		UserID:         sub.UserID,
@@ -580,9 +643,11 @@ func (s *Service) grantPlanTier(ctx context.Context, userID pgtype.UUID, plan st
 		slog.Warn("subscription: no tier manager — tier not granted", "plan", plan)
 		return nil
 	}
+
 	if err := s.tierManager.SetUserTier(ctx, userID, planTier(plan)); err != nil {
 		return fmt.Errorf("granting %s tier: %w", planTier(plan), err)
 	}
+
 	return nil
 }
 
@@ -593,16 +658,20 @@ func (s *Service) revokePlanTier(ctx context.Context, userID pgtype.UUID, plan s
 	if s.tierManager == nil {
 		return nil
 	}
+
 	current, err := s.tierManager.ResolveUserTier(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("resolving tier before revoke: %w", err)
 	}
+
 	if current != planTier(plan) {
 		return nil // user holds a different (e.g. admin-granted) tier — leave it
 	}
+
 	if err := s.tierManager.SetUserTier(ctx, userID, "regular"); err != nil {
 		return fmt.Errorf("revoking tier: %w", err)
 	}
+
 	return nil
 }
 
@@ -610,11 +679,14 @@ func (s *Service) markSubPastDueByRef(ctx context.Context, subID string) error {
 	if subID == "" {
 		return nil
 	}
+
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
 		return nil
 	}
+
 	_, err = s.store.markSubscriptionPastDue(ctx, sub.ID)
+
 	return err
 }
 
@@ -622,10 +694,12 @@ func (s *Service) setSubCancelFlagByRef(ctx context.Context, subID string, flag 
 	if subID == "" {
 		return nil
 	}
+
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
 		return nil
 	}
+
 	return s.store.setSubscriptionCancelAtPeriodEnd(ctx, sub.ID, flag)
 }
 
@@ -640,11 +714,13 @@ func (s *Service) CancelSubscription(ctx context.Context, id pgtype.UUID) (gen.S
 	if err != nil {
 		return gen.Subscription{}, err
 	}
+
 	if sp, ok := s.providers[sub.Provider].(SubscriptionProvider); ok && sub.ProviderSubID != nil {
 		if err := sp.CancelSubscription(ctx, *sub.ProviderSubID); err != nil {
-			return gen.Subscription{}, fmt.Errorf("%w: %v", ErrProviderFailure, err)
+			return gen.Subscription{}, fmt.Errorf("%w: %w", ErrProviderFailure, err)
 		}
 	}
+
 	return s.store.cancelSubscription(ctx, id)
 }
 
@@ -657,7 +733,9 @@ func (s *Service) ReactivateSubscription(ctx context.Context, userID pgtype.UUID
 	if err != nil {
 		return gen.Subscription{}, err
 	}
+
 	var target *gen.Subscription
+
 	for i := range subs {
 		s := subs[i]
 		if s.Status == SubscriptionStatusCanceled || (s.Status == SubscriptionStatusActive && s.CancelAtPeriodEnd) {
@@ -665,14 +743,17 @@ func (s *Service) ReactivateSubscription(ctx context.Context, userID pgtype.UUID
 			break
 		}
 	}
+
 	if target == nil {
 		return gen.Subscription{}, errpkg.ErrNotFound
 	}
+
 	if sp, ok := s.providers[target.Provider].(SubscriptionProvider); ok && target.ProviderSubID != nil {
 		if err := sp.ReactivateSubscription(ctx, *target.ProviderSubID); err != nil {
-			return gen.Subscription{}, fmt.Errorf("%w: %v", ErrProviderFailure, err)
+			return gen.Subscription{}, fmt.Errorf("%w: %w", ErrProviderFailure, err)
 		}
 	}
+
 	return s.store.reactivateSubscription(ctx, userID)
 }
 
@@ -687,6 +768,7 @@ func (s *Service) ReactivateSubscription(ctx context.Context, userID pgtype.UUID
 func (s *Service) RunExpirySweep(ctx context.Context) (int, error) {
 	graceHours := int64(72)
 	sweepLimit := int32(100)
+
 	if s.settings != nil {
 		if v, err := s.settings.GetSetting(ctx, "subscription.past_due_grace_hours"); err == nil && v != "" {
 			if n, err := strconv.ParseInt(settingString(v), 10, 64); err == nil && n > 0 {
@@ -694,26 +776,31 @@ func (s *Service) RunExpirySweep(ctx context.Context) (int, error) {
 			}
 		}
 	}
+
 	cutoff := time.Now().Add(-time.Duration(graceHours) * time.Hour)
 
 	rows, err := s.store.listSubscriptionsDueForExpiry(ctx, cutoff, sweepLimit)
 	if err != nil {
 		return 0, err
 	}
+
 	for _, sub := range rows {
 		if _, err := s.store.expireSubscription(ctx, sub.ID); err != nil {
 			slog.Error("subscription sweep: expire failed", "id", sub.ID, "error", err)
 			continue
 		}
+
 		if err := s.revokePlanTier(ctx, sub.UserID, sub.Plan); err != nil {
 			slog.Error("subscription sweep: tier revoke failed", "id", sub.ID, "error", err)
 		}
+
 		s.emitWebhook(ctx, "subscription.expired", map[string]any{
 			"subscription_id": sub.ID.String(),
 			"user_id":         sub.UserID.String(),
 			"plan":            sub.Plan,
 		})
 	}
+
 	return len(rows), nil
 }
 
@@ -725,9 +812,11 @@ func str(m map[string]interface{}, key string) string {
 	if m == nil {
 		return ""
 	}
+
 	if v, ok := m[key].(string); ok {
 		return v
 	}
+
 	return ""
 }
 
@@ -745,6 +834,7 @@ func unixTs(m map[string]interface{}, key string) time.Time {
 			return time.Unix(n, 0)
 		}
 	}
+
 	return time.Time{}
 }
 
@@ -756,6 +846,7 @@ func int64From(m map[string]interface{}, key string) int64 {
 		n, _ := strconv.ParseInt(v, 10, 64)
 		return n
 	}
+
 	return 0
 }
 
@@ -768,6 +859,7 @@ func int64From(m map[string]interface{}, key string) int64 {
 func isSubscriptionLifecycleEvent(provider, eventType string, payload map[string]interface{}) bool {
 	data, _ := payload["data"].(map[string]interface{})
 	obj, _ := data["object"].(map[string]interface{})
+
 	if obj == nil {
 		obj = data // Paystack nests fields directly under data
 	}
@@ -792,5 +884,6 @@ func isSubscriptionLifecycleEvent(provider, eventType string, payload map[string
 			return str(obj, "subscription_code") != "" || obj["subscription"] != nil
 		}
 	}
+
 	return false
 }

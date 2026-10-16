@@ -105,7 +105,6 @@ func (s *Service) SetUserTier(ctx context.Context, userID pgtype.UUID, tier stri
 	}
 
 	if err := txStore.write.AddUserToTierGroup(ctx, gen.AddUserToTierGroupParams{
-
 		UserID:  userID,
 		GroupID: baseID,
 	}); err != nil {
@@ -123,7 +122,6 @@ func (s *Service) SetUserTier(ctx context.Context, userID pgtype.UUID, tier stri
 		}
 
 		if err := txStore.write.AddUserToTierGroup(ctx, gen.AddUserToTierGroupParams{
-
 			UserID:  userID,
 			GroupID: targetID,
 		}); err != nil {
@@ -132,7 +130,6 @@ func (s *Service) SetUserTier(ctx context.Context, userID pgtype.UUID, tier stri
 	}
 
 	if err := txStore.write.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
-
 		ID:          userID,
 		ProfileType: tier,
 	}); err != nil {

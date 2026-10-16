@@ -152,9 +152,11 @@ func (f *fakeFieldReader) CreateFieldGroup(_ context.Context, name, slug string,
 	}
 
 	g := gen.CustomFieldGroup{ID: id, Name: name, Slug: slug, Description: description, IsSystem: isSystem}
+
 	if f.groups == nil {
 		f.groups = map[string]gen.CustomFieldGroup{}
 	}
+
 	f.groups[id.String()] = g
 	f.createdGroups = append(f.createdGroups, g)
 
@@ -461,6 +463,7 @@ func TestEntityClassesFor(t *testing.T) {
 		if len(got) != len(tc.want) {
 			t.Fatalf("entityClassesFor(%q) = %v, want %v", tc.entityType, got, tc.want)
 		}
+
 		for i := range got {
 			if got[i] != tc.want[i] {
 				t.Fatalf("entityClassesFor(%q) = %v, want %v", tc.entityType, got, tc.want)
@@ -992,12 +995,14 @@ func TestGetEntityFields(t *testing.T) {
 	// or per-type groups — locate the fixture group rather than asserting a
 	// total count.
 	var g EntityFieldGroupDTO
+
 	found := false
 
 	for _, grp := range dto.Groups {
 		if grp.ID == ff.groupID.String() {
 			g = grp
 			found = true
+
 			break
 		}
 	}
@@ -1342,6 +1347,7 @@ func TestCheckOpsPermissions_DeleteField(t *testing.T) {
 			if tc.wantErr && !errors.Is(err, ErrOpNotPermitted) {
 				t.Fatalf("expected ErrOpNotPermitted, got %v", err)
 			}
+
 			if !tc.wantErr && err != nil {
 				t.Fatalf("expected nil, got %v", err)
 			}
@@ -1372,6 +1378,7 @@ func TestCheckSchemaOpTargets_DeleteField(t *testing.T) {
 				groupID.String(): {liveField, sysField},
 			},
 		})
+
 		return svc
 	}
 
@@ -1431,6 +1438,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 			fakePermChecker: fakePermChecker{granted: map[string]bool{PermFieldsManage: true}},
 			super:           super,
 		})
+
 		return svc, enq
 	}
 
@@ -1439,6 +1447,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 		ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeNumber)
 
 		svc, _ := newSvc(false)
+
 		_, _, err := svc.SubmitFieldOps(ctx, fx.userID, pgtype.UUID{}, "university", fx.spaceID, nil, []FieldOp{{
 			Op: OpDeleteField, EntityType: "university", EntityID: fx.spaceID.String(),
 			GroupSlug: ff.slug, FieldKey: ff.key,
@@ -1452,6 +1461,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 			`SELECT EXISTS(SELECT 1 FROM custom_fields WHERE id = $1)`, ff.fieldID).Scan(&stillThere); err != nil {
 			t.Fatalf("check field: %v", err)
 		}
+
 		if !stillThere {
 			t.Fatal("field must survive a rejected delete_field")
 		}
@@ -1465,6 +1475,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetSpaceTypeRef: %v", err)
 		}
+
 		assignFixtureGroup(t, ctx, database, ff.groupID, "space_type:"+spaceTypeID.String())
 
 		// A stored value — the field delete must cascade it away.
@@ -1475,6 +1486,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 		}
 
 		svc, enq := newSvc(true)
+
 		revID, autoApproved, err := svc.SubmitFieldOps(ctx, fx.userID, pgtype.UUID{}, "university", fx.spaceID, nil, []FieldOp{{
 			Op: OpDeleteField, EntityType: "university", EntityID: fx.spaceID.String(),
 			GroupSlug: ff.slug, FieldKey: ff.key,
@@ -1482,6 +1494,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SubmitFieldOps: %v", err)
 		}
+
 		if !autoApproved {
 			t.Fatal("expected autoApproved=true for super_admin delete_field")
 		}
@@ -1490,6 +1503,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetRevision: %v", err)
 		}
+
 		if rev.Status != "approved" {
 			t.Fatalf("expected approved revision, got %q", rev.Status)
 		}
@@ -1499,6 +1513,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 			`SELECT NOT EXISTS(SELECT 1 FROM custom_fields WHERE id = $1)`, ff.fieldID).Scan(&fieldGone); err != nil {
 			t.Fatalf("check field: %v", err)
 		}
+
 		if !fieldGone {
 			t.Fatal("field row must be hard-deleted")
 		}
@@ -1508,6 +1523,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 			`SELECT NOT EXISTS(SELECT 1 FROM custom_field_values WHERE field_id = $1)`, ff.fieldID).Scan(&cfvGone); err != nil {
 			t.Fatalf("check cfv: %v", err)
 		}
+
 		if !cfvGone {
 			t.Fatal("cfv rows must cascade with the field")
 		}
@@ -1550,6 +1566,7 @@ func TestSubmitRevision_SuperAdminDirectPublish(t *testing.T) {
 			fakePermChecker: fakePermChecker{granted: map[string]bool{}},
 			super:           super,
 		})
+
 		return svc
 	}
 
@@ -1563,6 +1580,7 @@ func TestSubmitRevision_SuperAdminDirectPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitRevision: %v", err)
 	}
+
 	if !autoApproved || pageID != fx.pageID {
 		t.Fatalf("expected direct publish on %s, got auto=%v page=%s", fx.pageID, autoApproved, pageID)
 	}
@@ -1571,6 +1589,7 @@ func TestSubmitRevision_SuperAdminDirectPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRevision: %v", err)
 	}
+
 	if rev.Status != "approved" {
 		t.Fatalf("expected approved revision, got %q", rev.Status)
 	}

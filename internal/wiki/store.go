@@ -59,7 +59,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // WikiPage represents a single wiki page row.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type WikiPage struct {
 	ID pgtype.UUID
 
@@ -86,7 +86,7 @@ type WikiPage struct {
 }
 
 // WikiPageWithSpace includes the space slug/name for the wiki index listing.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type WikiPageWithSpace struct {
 	WikiPage
 	SpaceSlug string
@@ -118,7 +118,7 @@ type AdminWikiPageWithSpace struct {
 // Region is set on country-level spaces and mirrors the spaces.region value
 // (Africa, Americas, Asia, Europe, Oceania). LogoMediaID + Description feed
 // the §80 Reader UX card fields (logo_url resolved via the media service).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type WikiDestination struct {
 	SpaceID     pgtype.UUID
 	Slug        string
@@ -132,7 +132,7 @@ type WikiDestination struct {
 }
 
 // WikiRevision represents a single revision row.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type WikiRevision struct {
 	ID pgtype.UUID
 
@@ -179,6 +179,7 @@ func strPtrOrNil(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -285,6 +286,7 @@ func revisionFromApprovedRow(r gen.GetApprovedWikiRevisionRow) WikiRevision {
 		r.AiPromptHash, r.HitlReviewedBy, r.HitlReviewedAt, r.HitlReviewNotes,
 		r.CreatedAt, r.SubmittedByName, "")
 	rev.SubmittedByAvatarURL = r.SubmittedByAvatarUrl
+
 	return rev
 }
 
@@ -319,6 +321,7 @@ func revisionFromAdminRow(r gen.AdminListWikiRevisionsRow) WikiRevision {
 		r.AiPromptHash, r.HitlReviewedBy, r.HitlReviewedAt, r.HitlReviewNotes,
 		r.CreatedAt, r.SubmittedByName, r.ReviewedByName)
 	rev.DeletedAt = r.DeletedAt
+
 	return rev
 }
 
@@ -376,6 +379,7 @@ func (s *Store) PageIndexState(ctx context.Context, pageID pgtype.UUID) (indexab
 	// generated column — assert both.
 	deleted, _ := r.IsDeleted.(bool)
 	indexed := r.IsJapabotIndexed != nil && *r.IsJapabotIndexed
+
 	return indexed && !deleted, nil
 }
 
@@ -532,6 +536,7 @@ func (s *Store) GetPageFeedbackCounts(ctx context.Context, pageID, viewerID pgty
 	}
 
 	out := WikiPageFeedbackCounts{Up: row.UpCount, Down: row.DownCount}
+
 	if viewerID.Valid {
 		if vote, verr := s.GetPageViewerVote(ctx, pageID, viewerID); verr == nil {
 			out.MyVote = vote
@@ -611,7 +616,7 @@ var ErrPageExists = errors.New("wiki page already exists")
 // Appending the ops bytes keeps idx_wiki_revisions_page_hash deduping
 // identical submissions while preventing fields-only revisions (empty prose)
 // from all colliding on the hash of an empty document.
-// Ref: japaconnect-engineering/AGENTS.md Rule 12
+// Ref: japaconnect-engineering/AGENTS.md Rule 12.
 func revisionContentHash(body, ops []byte) string {
 	// Normalize here (not just in insertRevision) so every caller hashes the
 	// same input whether ops arrives as nil or []byte("[]").
@@ -1096,9 +1101,11 @@ func (s *Store) HardDeleteWikiPage(ctx context.Context, pageID pgtype.UUID) erro
 		if err != nil {
 			return fmt.Errorf("wiki: check page exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		return ErrPageNotDeleted
 	}
 
@@ -1122,9 +1129,11 @@ func (s *Store) DeleteWikiRevision(ctx context.Context, revID pgtype.UUID) error
 	if err != nil {
 		return fmt.Errorf("wiki: soft delete revision: %w", err)
 	}
+
 	if affected == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -1142,9 +1151,11 @@ func (s *Store) HardDeleteWikiRevision(ctx context.Context, revID pgtype.UUID) e
 		if err != nil {
 			return fmt.Errorf("wiki: check revision exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		return ErrRevisionNotDeleted
 	}
 
@@ -1181,6 +1192,7 @@ func (s *Store) ResolveSpaceCurrencyCode(ctx context.Context, spaceID pgtype.UUI
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return "", fmt.Errorf("wiki: space currency: ancestor walk: %w", err)
 	}
+
 	if code != nil && *code != "" {
 		return *code, nil
 	}
@@ -1192,21 +1204,27 @@ func (s *Store) ResolveSpaceCurrencyCode(ctx context.Context, spaceID pgtype.UUI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
 		}
+
 		return "", fmt.Errorf("wiki: space currency: get space: %w", err)
 	}
+
 	if space.GeoCode == nil || *space.GeoCode == "" {
 		return "", nil
 	}
+
 	country, err := s.read.GetSpaceByGeoCode(ctx, space.GeoCode)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
 		}
+
 		return "", fmt.Errorf("wiki: space currency: geo lookup: %w", err)
 	}
+
 	if country.CurrencyCode == nil {
 		return "", nil
 	}
+
 	return *country.CurrencyCode, nil
 }
 
@@ -1218,6 +1236,7 @@ func (s *Store) CurrencyDisplayName(ctx context.Context, code string) string {
 	if err != nil || c.Name == "" {
 		return ""
 	}
+
 	return c.Name
 }
 
@@ -1409,6 +1428,7 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 	}
 
 	out := make([]AdminWikiPageWithSpace, 0, len(rows))
+
 	for _, r := range rows {
 		p := AdminWikiPageWithSpace{
 			WikiPageWithSpace: mapWikiPage(
@@ -1422,6 +1442,7 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 		if r.LatestRevisionID.Valid {
 			p.LatestRevisionID = &r.LatestRevisionID
 		}
+
 		p.LatestRevisionStatus = strPtrOrNil(r.LatestRevisionStatus)
 		p.Excerpt = strPtrOrNil(r.Excerpt)
 		p.LatestRevisionAiGenerated = r.LatestRevisionAiGenerated

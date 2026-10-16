@@ -78,7 +78,9 @@ func (s *dataSourceStore) create(ctx context.Context, userID pgtype.UUID, in Dat
 		if in.TrustLevel < 0 || in.TrustLevel > math.MaxInt32 {
 			return DataSource{}, errors.New("jce: trust_level out of int32 range")
 		}
+
 		trust := int32(in.TrustLevel)
+
 		src, sErr := s.sourceRegistry.CreateAutoForComparison(ctx, userID, &in.SourceName, in.SourceURL, trust)
 		if sErr == nil {
 			params.SourceID = src.ID
@@ -97,7 +99,6 @@ func (s *dataSourceStore) create(ctx context.Context, userID pgtype.UUID, in Dat
 	// source's item feed can surface the comparison.
 	if row.SourceID.Valid && row.EntityID.Valid && row.EntityType != nil && *row.EntityType == "content" {
 		if err := s.write.UpdateContentIntelSourceID(ctx, gen.UpdateContentIntelSourceIDParams{
-
 			ID:            row.EntityID,
 			IntelSourceID: row.SourceID,
 		}); err != nil {
@@ -117,7 +118,6 @@ func (s *dataSourceStore) list(ctx context.Context, entityType *string, entityID
 	}
 
 	rows, err := s.read.ListDataSources(ctx, gen.ListDataSourcesParams{
-
 		EntityType: entityType,
 		EntityID:   eid,
 		PageLimit:  limit,
@@ -139,7 +139,6 @@ func (s *dataSourceStore) list(ctx context.Context, entityType *string, entityID
 	}
 
 	total, err := s.read.CountDataSources(ctx, gen.CountDataSourcesParams{
-
 		EntityType: entityType,
 		EntityID:   eid,
 	})
@@ -255,7 +254,6 @@ func buildMatchPasses(sourceName string, entityType *string, entityID *pgtype.UU
 	passes := make([]gen.MatchDataSourceParams, 0, 8)
 	add := func(et *string, e pgtype.UUID, d *string) {
 		passes = append(passes, gen.MatchDataSourceParams{
-
 			SourceName:    sourceName,
 			EntityType:    et,
 			EntityID:      e,
@@ -467,7 +465,6 @@ func dataSourceCreateParams(in DataSourceInput) (gen.CreateDataSourceParams, err
 	}
 
 	return gen.CreateDataSourceParams{
-
 		EntityType:    m.entityType,
 		EntityID:      m.entityID,
 		DimensionSlug: m.dimensionSlug,

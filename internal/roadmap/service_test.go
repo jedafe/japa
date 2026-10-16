@@ -132,15 +132,18 @@ func TestShadowContentHashDistinguished(t *testing.T) {
 	t.Parallel()
 
 	var a, b gen.RoadmapItem
+
 	a.ID.Scan("00000000-0000-0000-0000-000000000001")
 	b.ID.Scan("00000000-0000-0000-0000-000000000002")
 
 	if shadowContentHash(a, "") == content.ComputeContentHash("") {
 		t.Error("empty-body hash must be distinguished from the global empty hash")
 	}
+
 	if shadowContentHash(a, "same body") == shadowContentHash(b, "same body") {
 		t.Error("identical bodies on different items must not share a hash")
 	}
+
 	if shadowContentHash(a, "x") != shadowContentHash(a, "x") {
 		t.Error("hash must be deterministic for the same item + body")
 	}

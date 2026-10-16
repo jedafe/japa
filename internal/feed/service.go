@@ -36,7 +36,9 @@ func CleanExcerpt(raw, title string) string {
 	if strings.HasPrefix(raw, "{") && !json.Valid([]byte(raw)) {
 		return ""
 	}
+
 	text := rag.ExtractPlainText(raw)
+
 	return stripTitlePrefix(text, title)
 }
 
@@ -47,9 +49,11 @@ func CleanExcerpt(raw, title string) string {
 func stripTitlePrefix(text, title string) string {
 	titleWords := strings.Fields(title)
 	textWords := strings.Fields(text)
+
 	if len(titleWords) == 0 || len(textWords) < len(titleWords) {
 		return text
 	}
+
 	trimWord := func(w string) string {
 		return strings.TrimRight(strings.ToLower(w), ".,:;!?—–-·\"'")
 	}
@@ -58,12 +62,13 @@ func stripTitlePrefix(text, title string) string {
 			return text
 		}
 	}
+
 	return strings.Join(textWords[len(titleWords):], " ")
 }
 
 // FeedItem represents a single item in a feed response, normalized across
 // all feed types (explore, primary, space, profile) for the daily card.
-// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
+// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
 type FeedItem struct { //nolint:revive // stuttering type name preserved for API compatibility
 	ID                 string   `json:"id"`
 	Title              string   `json:"title"`
@@ -110,7 +115,7 @@ type FeedItem struct { //nolint:revive // stuttering type name preserved for API
 
 // OrgRef is the lean org badge surfaced on daily feed cards when a post was
 // published on behalf of an organization.
-// Ref: japaconnect-engineering/sections/07-organization-profiles.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles.md.
 type OrgRef struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
@@ -120,7 +125,7 @@ type OrgRef struct {
 
 // SourceRef is the source attribution badge surfaced on daily feed cards when
 // a post was promoted from the intelligence spine.
-// Ref: docs/superpowers/specs/2026-09-11-sources-directory-design.md
+// Ref: docs/superpowers/specs/2026-09-11-sources-directory-design.md.
 type SourceRef struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
@@ -195,6 +200,7 @@ func (s *Service) GetFeed(ctx context.Context, timeline string, userID, spaceID,
 	}
 
 	var items []FeedItem
+
 	var err error
 
 	switch timeline {
@@ -257,6 +263,7 @@ func (s *Service) attachSources(ctx context.Context, items []FeedItem) ([]FeedIt
 	}
 
 	contentIDs := make([]pgtype.UUID, 0, len(items))
+
 	for _, it := range items {
 		if it.ID == "" {
 			continue
@@ -300,9 +307,10 @@ func (s *Service) attachSources(ctx context.Context, items []FeedItem) ([]FeedIt
 // explicit cover media, using the first image embedded in the thread body
 // (TipTap jsonb). The lookup is batched by backing content id and is
 // best-effort: failures log and return the feed unmodified.
-// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md.
 func (s *Service) attachForumCovers(ctx context.Context, items []FeedItem) ([]FeedItem, error) {
 	contentIDs := make([]pgtype.UUID, 0, len(items))
+
 	for _, it := range items {
 		if it.CoverImageURL != "" || it.ID == "" || !isForumContentType(it.ContentType) {
 			continue
@@ -615,9 +623,11 @@ func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string) *Or
 	if name != nil {
 		ref.Name = *name
 	}
+
 	if slug != nil {
 		ref.Slug = *slug
 	}
+
 	ref.LogoURL = mediaURLFromPtr(logoBucket, logoPath)
 
 	return ref
@@ -811,13 +821,13 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, requesterID pgt
 
 	// Apply the original pagination window.
 	start := offset
-	// nolint:gosec // G115: bounded
+	//nolint:gosec // G115: bounded
 	if start >= int32(len(out)) { // #nosec //nolint:gosec // G115: bounded
 		return []FeedItem{}, nil
 	}
 
 	end := start + limit
-	// nolint:gosec // G115: bounded
+	//nolint:gosec // G115: bounded
 	if end > int32(len(out)) { // #nosec //nolint:gosec // G115: bounded
 		end = int32(len(out)) // #nosec
 	}
@@ -1283,7 +1293,6 @@ func (s *Service) GetForYouFeed(
 		visitorRegion := contentRegion
 
 		rows, err := s.store.getForYouCandidates(ctx, gen.GetForYouCandidatesParams{
-
 			WindowStart:        windowStart,
 			ExcludeAuthorID:    userID,
 			AuthorIds:          authorIDs,

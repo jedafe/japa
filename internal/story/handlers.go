@@ -160,7 +160,6 @@ func parsePageParams(r *http.Request) (pageSize, pageOffset int32) {
 // HandleList handles GET /stories — list published stories with filters.
 // Query params: ?origin=&dest=&visa=&profession=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
@@ -211,7 +210,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetBySlug handles GET /stories/:slug — single published story.
 func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
@@ -590,11 +588,14 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
+
 		if err != nil {
 			errpkg.HandleServiceError(w, err)
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
+
 		return
 	}
 

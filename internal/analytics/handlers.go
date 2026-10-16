@@ -132,7 +132,6 @@ func parseDays(r *http.Request, defaultDays int) int32 {
 
 // TrackEvent handles POST /api/v1/analytics/events.
 func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -181,7 +180,6 @@ func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
 // Supports period presets (24h, 7d, 30d, 90d), explicit from/to dates,
 // and the legacy days query parameter.
 func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -211,7 +209,6 @@ func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 // TTL. The cache key includes the platform and time period so different windows
 // don't collide. Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
-
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
@@ -305,7 +302,6 @@ func parseFlexibleTime(s string) (time.Time, error) {
 
 // ListEvents handles GET /api/v1/admin/analytics/events.
 func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
-
 	filter := EventFilter{
 		EventType:  r.URL.Query().Get("event_type"),
 		UserID:     r.URL.Query().Get("user_id"),
@@ -337,7 +333,6 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 
 // ListSecurityScanResults handles GET /api/v1/admin/analytics/security.
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
-
 	filter := SecurityScanFilter{
 		Severity:   r.URL.Query().Get("severity"),
 		Unresolved: r.URL.Query().Get("unresolved") == "true",
@@ -356,7 +351,6 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 
 // ResolveSecurityScanResult handles POST /api/v1/admin/analytics/security/{id}/resolve.
 func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid scan result ID")
@@ -375,7 +369,6 @@ func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Requ
 // Permanently removes a scan finding (typically a resolved one) from the
 // control panel audit view. Platform-scoped.
 func (h *Handlers) DeleteSecurityScanResult(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid scan result ID")
@@ -392,7 +385,6 @@ func (h *Handlers) DeleteSecurityScanResult(w http.ResponseWriter, r *http.Reque
 
 // RefreshViews handles POST /api/v1/admin/analytics/refresh.
 func (h *Handlers) RefreshViews(w http.ResponseWriter, r *http.Request) {
-
 	if err := h.Service.EnqueueRefreshViews(r.Context()); err != nil {
 		handleServiceError(w, err)
 		return
@@ -403,7 +395,6 @@ func (h *Handlers) RefreshViews(w http.ResponseWriter, r *http.Request) {
 
 // RunSecurityScan handles POST /api/v1/admin/analytics/security/scan.
 func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
-
 	if err := h.Service.EnqueueSecurityScan(r.Context()); err != nil {
 		handleServiceError(w, err)
 		return
@@ -464,7 +455,6 @@ func parseTimeParam(s string) (time.Time, error) {
 
 // GetRevenueAnalytics handles GET /admin/analytics/revenue (P5.6).
 func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
-
 	from, to, err := resolveWindow(r, 90)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
@@ -505,7 +495,6 @@ func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
 // Uses read-through Valkey cache (jc:cache:analytics:*, BUG-010) with a 5-min
 // TTL. Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
-
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
@@ -560,7 +549,6 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 
 // GetSpaceAnalytics handles GET /admin/analytics/spaces (P5.6).
 func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
-
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
@@ -610,7 +598,6 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 
 // GetUserAnalytics handles GET /admin/analytics/users (P5.6).
 func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
-
 	ua, err := h.Service.GetUserAnalytics(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -626,7 +613,6 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 // Access is restricted to the content owner or admins holding analytics.admin
 // (Ref: api-routes-catalog.md — owner and admin only).
 func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -698,7 +684,6 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 
 // GetAdminContentAnalytics handles GET /admin/analytics/content.
 func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Request) {
-
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())

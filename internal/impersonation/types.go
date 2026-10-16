@@ -54,9 +54,11 @@ func ResolveEffectiveUserID(ctx context.Context) (effectiveID, adminID pgtype.UU
 	if ic := ImpersonatedFromContext(ctx); ic != nil {
 		return ic.ImpersonatedID, ic.AdminID, true
 	}
+
 	if user := auth.FromContext(ctx); user != nil && user.UserID.Valid {
 		return user.UserID, user.UserID, false
 	}
+
 	return pgtype.UUID{}, pgtype.UUID{}, false
 }
 

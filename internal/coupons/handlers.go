@@ -130,6 +130,7 @@ func parseQueryBool(r *http.Request, key string) (*bool, error) {
 	if raw == nil {
 		return nil, nil
 	}
+
 	switch *raw {
 	case "true", "1":
 		t := true
@@ -138,6 +139,7 @@ func parseQueryBool(r *http.Request, key string) (*bool, error) {
 		f := false
 		return &f, nil
 	}
+
 	return nil, errors.New("must be 'true' or 'false'")
 }
 
@@ -176,8 +178,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListPublicCoupons handles GET /api/v1/coupons.
 func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
-
 	providerID := parseQueryUUID(r, "provider_id")
+
 	couponType := parseQueryString(r, "coupon_type")
 	if couponType == nil {
 		// `type` is the spec-documented alias (§55).
@@ -188,6 +190,7 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 	if search == nil {
 		search = parseQueryString(r, "search")
 	}
+
 	sort := r.URL.Query().Get("sort")
 
 	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
@@ -198,6 +201,7 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if coupons == nil {
 		coupons = []gen.ListActiveCouponsRow{}
 	}
@@ -209,7 +213,6 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 
 // GetCoupon handles GET /api/v1/coupons/:id.
 func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
@@ -236,7 +239,6 @@ func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
 
 // RecordCouponClick handles POST /api/v1/coupons/:id/click.
 func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
@@ -291,6 +293,7 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 // MaxPageSize) — the query applies LIMIT directly.
 func (h *Handlers) ListDealPartners(w http.ResponseWriter, r *http.Request) {
 	pageSize := int32(parseQueryInt(r, "page_size", MaxPageSize)) // #nosec
+
 	partners, err := h.Service.ListDealPartners(r.Context(), pageSize)
 	if err != nil {
 		handleServiceError(w, err)
@@ -305,7 +308,6 @@ func (h *Handlers) ListDealPartners(w http.ResponseWriter, r *http.Request) {
 // GetDealPartner handles GET /api/v1/deals/partners/{slug} — the provider
 // profile plus its active coupons for the /deal/{provider} landing page.
 func (h *Handlers) GetDealPartner(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 
 	partner, err := h.Service.GetDealPartner(r.Context(), slug)
@@ -324,7 +326,6 @@ func (h *Handlers) GetDealPartner(w http.ResponseWriter, r *http.Request) {
 // provider_slug fields let the frontend 301 to the canonical
 // /deal/{provider}/{slug} URL.
 func (h *Handlers) GetDealBySlug(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 
 	coupon, err := h.Service.ResolveCouponBySlug(r.Context(), slug)
@@ -343,7 +344,6 @@ func (h *Handlers) GetDealBySlug(w http.ResponseWriter, r *http.Request) {
 // the resolved click-through target (referral_url, or the provider base_url
 // for expired/untargeted deals).
 func (h *Handlers) DealGo(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 
 	target, coupon, err := h.Service.ResolveDealClick(r.Context(), slug)
@@ -356,6 +356,7 @@ func (h *Handlers) DealGo(w http.ResponseWriter, r *http.Request) {
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
 		userID = &user.UserID
 	}
+
 	if err := h.Service.RecordCouponEvent(r.Context(), coupon.ID, "click", userID, nil); err != nil {
 		slog.Warn("deals: failed to record go click", "slug", slug, "error", err)
 	}
@@ -369,7 +370,6 @@ func (h *Handlers) DealGo(w http.ResponseWriter, r *http.Request) {
 // filters on affiliate_providers.is_active; absent lists all providers —
 // inactive org providers must stay visible for moderation (§55).
 func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
-
 	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
 	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 
@@ -392,7 +392,6 @@ func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 
 // CreateProvider handles POST /api/v1/admin/affiliate-providers.
 func (h *Handlers) CreateProvider(w http.ResponseWriter, r *http.Request) {
-
 	var input CreateProviderInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -426,7 +425,6 @@ func (h *Handlers) CreateProvider(w http.ResponseWriter, r *http.Request) {
 
 // GetProvider handles GET /api/v1/admin/affiliate-providers/:id.
 func (h *Handlers) GetProvider(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
@@ -444,7 +442,6 @@ func (h *Handlers) GetProvider(w http.ResponseWriter, r *http.Request) {
 
 // UpdateProvider handles PATCH /api/v1/admin/affiliate-providers/:id.
 func (h *Handlers) UpdateProvider(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
@@ -473,7 +470,6 @@ func (h *Handlers) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 
 // DeleteProvider handles DELETE /api/v1/admin/affiliate-providers/:id.
 func (h *Handlers) DeleteProvider(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
@@ -492,7 +488,6 @@ func (h *Handlers) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 
 // ListCouponsAdmin handles GET /api/v1/admin/coupons.
 func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
-
 	status := parseQueryString(r, "status")
 	couponType := parseQueryString(r, "coupon_type")
 	// Accept both `q` (spec §55 documented param) and `search` (legacy alias).
@@ -509,6 +504,7 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if coupons == nil {
 		coupons = []gen.ListCouponsRow{}
 	}
@@ -530,7 +526,6 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 
 // CreateCouponAdmin handles POST /api/v1/admin/coupons.
 func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -567,7 +562,6 @@ func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 // GetCouponAdmin handles GET /api/v1/admin/coupons/:id.
 func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
@@ -587,7 +581,6 @@ func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 // UpdateCouponAdmin handles PATCH /api/v1/admin/coupons/:id.
 func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
@@ -617,7 +610,6 @@ func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 // DeleteCouponAdmin handles DELETE /api/v1/admin/coupons/:id.
 func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
@@ -638,7 +630,6 @@ func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
 // BE-LOW-001: platform-scoped — the platform context from the request ensures
 // a render request cannot resolve a coupon from another platform.
 func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
@@ -660,7 +651,6 @@ func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 // BE-LOW-001: platform-scoped — the platform context from the request ensures
 // a render request cannot resolve a provider from another platform.
 func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
-
 	providerIDStr := r.URL.Query().Get("provider_id")
 	originalURL := r.URL.Query().Get("url")
 
@@ -706,13 +696,11 @@ func parseQueryUUID(r *http.Request, key string) *pgtype.UUID {
 // ListAffiliateScanResults handles GET /admin/affiliate/scan-results
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Request) {
-
 	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
 	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 	limit, offset := paginate(page, pageSize)
 
 	rows, err := h.Service.store.listAffiliateScanResults(r.Context(), gen.ListAffiliateScanResultsParams{
-
 		Domain:      parseQueryString(r, "domain"),
 		ActionTaken: parseQueryString(r, "action"),
 		PageLimit:   limit,
@@ -740,7 +728,6 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 // ReviewAffiliateScanResult handles PATCH /admin/affiliate/scan-results/{id}
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -790,7 +777,6 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 // ListAffiliateCommissions handles GET /admin/affiliate/commissions
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Request) {
-
 	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
 	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 	limit, offset := paginate(page, pageSize)
@@ -813,7 +799,6 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 	}
 
 	rows, err := h.Service.store.listAffiliateCommissions(r.Context(), gen.ListAffiliateCommissionsParams{
-
 		Credited:   creditedFilter,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -846,7 +831,6 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 // UpdateProviderAuthorCommission handles PATCH /admin/affiliate/providers/{id}/author-commission
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
@@ -897,7 +881,6 @@ func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http
 // affiliate_content_commissions and the enqueue trigger for the
 // affiliate:credit_author_commission task.
 func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		ProviderID         string  `json:"provider_id"`
 		ContentID          string  `json:"content_id"`
@@ -969,9 +952,11 @@ func (h *Handlers) ListCouponFeeds(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if feeds == nil {
 		feeds = []FeedSourceView{}
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": feeds})
 }
 
@@ -982,10 +967,12 @@ func (h *Handlers) CreateCouponFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if strings.TrimSpace(input.Name) == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name is required")
 		return
 	}
+
 	if strings.TrimSpace(input.EndpointURL) == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "endpoint_url is required")
 		return
@@ -996,6 +983,7 @@ func (h *Handlers) CreateCouponFeed(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": feed})
 }
 
@@ -1006,11 +994,13 @@ func (h *Handlers) GetCouponFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid feed ID")
 		return
 	}
+
 	feed, err := h.Service.GetFeedSource(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": feed})
 }
 
@@ -1021,15 +1011,18 @@ func (h *Handlers) UpdateCouponFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid feed ID")
 		return
 	}
+
 	var input FeedSourceInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if strings.TrimSpace(input.Name) == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name is required")
 		return
 	}
+
 	if strings.TrimSpace(input.EndpointURL) == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "endpoint_url is required")
 		return
@@ -1040,6 +1033,7 @@ func (h *Handlers) UpdateCouponFeed(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": feed})
 }
 
@@ -1051,10 +1045,12 @@ func (h *Handlers) DeleteCouponFeed(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid feed ID")
 		return
 	}
+
 	if err := h.Service.DeleteFeedSource(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
@@ -1066,10 +1062,12 @@ func (h *Handlers) SyncCouponFeedNow(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid feed ID")
 		return
 	}
+
 	if err := h.Service.EnqueueFeedSync(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]bool{"queued": true}})
 }
 
@@ -1083,10 +1081,12 @@ func (h *Handlers) requireOrgEditor(w http.ResponseWriter, r *http.Request) (gen
 	if !ok {
 		return gen.Organization{}, nil, false
 	}
+
 	if h.orgs == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "feature_unavailable", "Organization deals are not available")
 		return gen.Organization{}, nil, false
 	}
+
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -1099,10 +1099,12 @@ func (h *Handlers) requireOrgEditor(w http.ResponseWriter, r *http.Request) (gen
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve organization")
 		return gen.Organization{}, nil, false
 	}
+
 	if !exists {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
 		return gen.Organization{}, nil, false
 	}
+
 	org, err := h.orgs.GetOrganization(r.Context(), orgID)
 	if err != nil {
 		// Only a genuinely missing row is a 404 — a degraded DB must not
@@ -1112,8 +1114,10 @@ func (h *Handlers) requireOrgEditor(w http.ResponseWriter, r *http.Request) (gen
 		} else {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load organization")
 		}
+
 		return gen.Organization{}, nil, false
 	}
+
 	role, err := h.orgs.MemberRole(r.Context(), orgID, user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1123,12 +1127,15 @@ func (h *Handlers) requireOrgEditor(w http.ResponseWriter, r *http.Request) (gen
 			// A real DB failure must not masquerade as a permission denial.
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization membership")
 		}
+
 		return gen.Organization{}, nil, false
 	}
+
 	if role != "owner" && role != "admin" && role != "editor" {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Organization deal management requires an editor role")
 		return gen.Organization{}, nil, false
 	}
+
 	return org, user, true
 }
 
@@ -1139,21 +1146,25 @@ func (h *Handlers) SubmitOrgDeal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var input SubmitDealInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	input.Title = strings.TrimSpace(input.Title)
 	if input.Title == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
 		return
 	}
+
 	coupon, err := h.Service.SubmitOrgDeal(r.Context(), org, user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": coupon})
 }
 
@@ -1164,13 +1175,16 @@ func (h *Handlers) ListOrgDeals(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
 	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
+
 	coupons, err := h.Service.ListOrgDeals(r.Context(), org.ID, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	h.resolveLiterals(r, &coupons)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons, "page": page, "page_size": pageSize})
 }
@@ -1188,16 +1202,20 @@ func (h *Handlers) ListOrgCoupons(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
 	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
+
 	coupons, err := h.Service.ListOrgCoupons(r.Context(), org.ID, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	if coupons == nil {
 		coupons = []gen.ListOrgCouponsRow{}
 	}
+
 	h.resolveLiterals(r, &coupons)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons, "page": page, "page_size": pageSize})
 }
@@ -1209,16 +1227,19 @@ func (h *Handlers) CreateOrgCoupon(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var input OrgCouponInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	coupon, err := h.Service.CreateOrgCoupon(r.Context(), org.ID, user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": coupon})
 }
 
@@ -1229,21 +1250,25 @@ func (h *Handlers) UpdateOrgCoupon(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	cid, err := parseUUIDParam(r, "cid")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
+
 	var input OrgCouponInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	coupon, err := h.Service.UpdateOrgCoupon(r.Context(), org.ID, cid, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupon})
 }
 
@@ -1255,14 +1280,17 @@ func (h *Handlers) DeleteOrgCoupon(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	cid, err := parseUUIDParam(r, "cid")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
+
 	if err := h.Service.DeleteOrgCoupon(r.Context(), org.ID, cid); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

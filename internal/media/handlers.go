@@ -29,7 +29,7 @@ import (
 )
 
 // MediaResponse is the API response shape for media items, matching frontend expectations.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type MediaResponse struct {
 	ID           string   `json:"id"`
 	Filename     string   `json:"filename"`
@@ -113,11 +113,13 @@ func toMediaResponses(items []gen.Medium, svc *Service) []MediaResponse {
 	result := make([]MediaResponse, len(items))
 
 	cfg := loadMediaURLConfig()
+
 	for i := range items {
 		url := ServeURL(items[i].StorageBucket, items[i].StoragePath)
 		if isProxyableImageMIME(items[i].MimeType) {
 			url = mediaURLWithConfig(items[i].StorageBucket, items[i].StoragePath, ImageProxyOpts{}, cfg)
 		}
+
 		result[i] = toMediaResponse(&items[i], url)
 	}
 
@@ -415,6 +417,7 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		default:
 			errpkg.WriteError(w, http.StatusInternalServerError, "confirm_error", "Failed to confirm upload")
 		}
+
 		return
 	}
 
@@ -665,11 +668,14 @@ func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Media not found")
 			return
 		}
+
 		if err != nil {
 			errpkg.HandleServiceError(w, err)
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
+
 		return
 	}
 
@@ -812,7 +818,6 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 
 // ListByUser handles GET /users/{id}/media — the public profile Media tab.
 func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
-
 	var uploaderID pgtype.UUID
 	if err := uploaderID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
@@ -837,7 +842,6 @@ func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
 // ListByOrganization handles GET /organizations/{id}/media — the org profile
 // Media tab. Non-active orgs are already 404'd by the requireActiveOrgByID gate.
 func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
-
 	var orgID pgtype.UUID
 	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_org_id", "Invalid organization ID format")
@@ -1004,6 +1008,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	// content.allowed_upload_types restricts this endpoint too.
 	sniffBuf := make([]byte, 512)
 	n, _ := io.ReadFull(file, sniffBuf)
+
 	contentType := DetectStorageMIME(sniffBuf[:n], header.Filename)
 	if !h.service.isAllowedMIME(r.Context(), contentType, UploadContextMedia) {
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_media_type", "File type is not allowed for upload")
@@ -1015,11 +1020,13 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "seek_error", "Failed to read file")
 		return
 	}
+
 	body, err := io.ReadAll(file)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "read_error", "Failed to read file")
 		return
 	}
+
 	body, contentType = optimizeImage(body, contentType)
 
 	ext := extensionFromMIME(contentType)
@@ -1096,24 +1103,29 @@ func (h *Handlers) AdminReoptimize(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireUser(w, r); !ok {
 		return
 	}
+
 	if h.AsynqClient == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "queue_unavailable", "Background task queue is not configured")
 		return
 	}
 
 	limit := int32(500)
+
 	if r.ContentLength > 0 {
 		var input struct {
 			Limit int32 `json:"limit"`
 		}
+
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 			return
 		}
+
 		if input.Limit > 0 {
 			limit = input.Limit
 		}
 	}
+
 	if limit > 1000 {
 		limit = 1000
 	}
@@ -1128,6 +1140,7 @@ func (h *Handlers) AdminReoptimize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	enqueued := 0
+
 	for _, row := range rows {
 		payload, _ := json.Marshal(map[string]string{
 			"media_id":  row.ID.String(),
@@ -1140,6 +1153,7 @@ func (h *Handlers) AdminReoptimize(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("media: failed to enqueue reoptimize task", "media_id", row.ID.String(), "error", err)
 			continue
 		}
+
 		enqueued++
 	}
 
@@ -1261,6 +1275,7 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+
 	ctype := contentType
 	// Never serve SVG inline: browsers execute embedded script on the API
 	// origin (stored XSS). Force a download with a sandboxed CSP.
@@ -1271,8 +1286,10 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 		http.ServeFile(w, r, localPath)
+
 		return
 	}
+
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
@@ -1290,6 +1307,7 @@ func sniffStoredContentType(localPath string) (string, error) {
 	defer f.Close()
 
 	head := make([]byte, 512)
+
 	n, err := f.Read(head)
 	if err != nil && n == 0 {
 		return "", err
@@ -1321,11 +1339,13 @@ func SetMediaRoot(dir string) {
 	if dir == "" {
 		return
 	}
+
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		slog.Warn("media: ignoring invalid JC_MEDIA_ROOT", "dir", dir, "error", err)
 		return
 	}
+
 	mediaRoot = abs
 	slog.Info("media: local storage root configured", "dir", mediaRoot)
 }
@@ -1409,6 +1429,7 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	if err != nil || pending.UploaderUserID == (pgtype.UUID{}) {
 		slog.Warn("seaweedfs upload: no pending upload row for path", "path", localPath)
 		errpkg.WriteError(w, http.StatusNotFound, "upload_not_initiated", "No pending upload found for this path — initiate the upload first")
+
 		return
 	}
 
@@ -1416,6 +1437,7 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	if user := auth.FromContext(r.Context()); user == nil || user.UserID != pending.UploaderUserID {
 		slog.Warn("seaweedfs upload: owner mismatch", "path", localPath)
 		errpkg.WriteError(w, http.StatusNotFound, "upload_not_initiated", "No pending upload found for this path — initiate the upload first")
+
 		return
 	}
 
@@ -1453,7 +1475,9 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	if sniffErr := h.verifyPendingUploadBytes(localPath, pending.OriginalFilename, pending.MimeType); sniffErr != nil {
 		slog.Warn("seaweedfs upload: content failed MIME gates", "path", localPath, "error", sniffErr)
 		_ = os.Remove(localPath)
+
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_media_type", "Uploaded content failed file-type validation")
+
 		return
 	}
 
@@ -1485,6 +1509,7 @@ func (h *Handlers) verifyPendingUploadBytes(localPath, filename, declaredMIME st
 	n, _ := io.ReadFull(f, head)
 	sniffed := DetectStorageMIME(head[:n], filename)
 	allowed := false
+
 	for _, ctx := range []UploadContext{UploadContextMedia, UploadContextAvatar, UploadContextDocument} {
 		if h.service.isAllowedMIME(context.Background(), declaredMIME, ctx) &&
 			h.service.isAllowedMIME(context.Background(), sniffed, ctx) {
@@ -1492,12 +1517,15 @@ func (h *Handlers) verifyPendingUploadBytes(localPath, filename, declaredMIME st
 			break
 		}
 	}
+
 	if !allowed {
 		return errors.New("media: sniffed type not allowed for upload")
 	}
+
 	if _, matches, verr := VerifyMIMEType(head[:n], declaredMIME); verr != nil || !matches {
 		return errors.New("media: content does not match declared MIME type")
 	}
+
 	return nil
 }
 
@@ -1525,6 +1553,7 @@ func (h *Handlers) ProxyRemoteMedia(w http.ResponseWriter, r *http.Request) {
 		slog.Info("media proxy: fetch failed", "ip", clientip.FromRequest(r),
 			"url_sha256", hex.EncodeToString(sum[:]), "error", err)
 		writePlaceholderSVG(w)
+
 		return
 	}
 
@@ -1533,6 +1562,7 @@ func (h *Handlers) ProxyRemoteMedia(w http.ResponseWriter, r *http.Request) {
 	// script cannot run on this origin.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+
 	if CanonicalMIMEType(res.ContentType) == "image/svg+xml" {
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.Header().Set("Content-Disposition", `attachment; filename="proxy.svg"`)
@@ -1540,8 +1570,10 @@ func (h *Handlers) ProxyRemoteMedia(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", strconv.Itoa(len(res.Body)))
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(res.Body)
+
 		return
 	}
+
 	w.Header().Set("Content-Type", res.ContentType)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Header().Set("Content-Length", strconv.Itoa(len(res.Body)))

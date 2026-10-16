@@ -255,7 +255,6 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 
 // GetUserByUsername handles GET /api/v1/users/{username}.
 func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
-
 	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
@@ -435,9 +434,8 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 // filter: regular/pro/business), page_size (default 20, max 100),
 // page_offset (default 0). Returns {data: items, meta: {total, page, total_pages}}.
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
-// //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+// //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out).
 func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
@@ -474,7 +472,7 @@ func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
 // durations so the admin frontend does not need to hardcode them
 // (BUG-017 through BUG-021).
 // Ref: japaconnect-engineering/sections/03-rbac.md (user statuses)
-// //	japaconnect-engineering/sections/46-impersonation.md (moderation)
+// //	japaconnect-engineering/sections/46-impersonation.md (moderation).
 type UserModerationConfig struct {
 	Statuses             []ConfigOption   `json:"statuses"`
 	ProfileTypes         []ConfigOption   `json:"profile_types"`
@@ -500,9 +498,8 @@ type ConfigDuration struct {
 // types, restriction operations, and restriction durations so the admin
 // frontend does not hardcode them (BUG-017 through BUG-021).
 // Ref: japaconnect-engineering/sections/03-rbac.md (user statuses/profile types)
-// //	japaconnect-engineering/sections/46-impersonation.md (moderation)
+// //	japaconnect-engineering/sections/46-impersonation.md (moderation).
 func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Request) {
-
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -520,7 +517,6 @@ func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Reques
 // ListUserSessions handles GET /api/v1/admin/users/{id}/sessions.
 // Admin-scoped variant of /me/sessions that lists sessions for any user.
 func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
-
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -545,7 +541,6 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 // GetAdminUser handles GET /api/v1/admin/users/{id}.
 // Resolves the user by UUID (not username) for admin detail views.
 func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
-
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
@@ -564,7 +559,6 @@ func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
 // ListUserActivity handles GET /api/v1/admin/users/{id}/activity.
 // Merged feed of the user's authored content and comments, newest first.
 func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
-
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -601,7 +595,6 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 // Soft-deletes the user (status = 'deleted') to comply with the GDPR erasure
 // model — the row is retained and only a confirmed erasure request may hard-delete.
 func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
-
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -637,7 +630,6 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 // UpdateProfileType handles PATCH /api/v1/admin/users/{id}/profile-type.
 // Allows admins to change a user's profile_type to regular, pro, or business.
 func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
-
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -959,7 +951,7 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 // route (404 for banned/suspended/deleted). Returns aggregate stats for the
 // {id} user's published+public content plus follower/following counts.
 // // Ref: japaconnect-engineering/sections/33-professional-profiles.md
-// //	japaconnect-engineering/conventions/api-routes-catalog.md §342
+// //	japaconnect-engineering/conventions/api-routes-catalog.md §342.
 func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

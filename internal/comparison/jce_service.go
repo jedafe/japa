@@ -260,7 +260,7 @@ var defaultDailyComparisonLimits = map[string]int{
 
 // dailyComparisonCountKey returns the Valkey counter key tracking how many JCE
 // comparisons a user has created today.
-// Ref: conventions/valkey-keys-catalog.md — jc:jce:comparisons:created:{user_id}:{date}
+// Ref: conventions/valkey-keys-catalog.md — jc:jce:comparisons:created:{user_id}:{date}.
 func dailyComparisonCountKey(userID pgtype.UUID) string {
 	return fmt.Sprintf("jc:jce:comparisons:created:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
 }
@@ -465,12 +465,14 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 				if f.Key == "" {
 					continue
 				}
+
 				dimType := fieldToDimensionType(f.FieldType, f.Options)
 				if dimType == "" {
 					// Non-comparable composite (§80 Wiki Topic Pages — a
 					// price_parts field with no usable primary_part).
 					continue
 				}
+
 				_, derr := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
 					ContentID: contentRow.ID,
 
@@ -653,7 +655,6 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 	}
 
 	items, err := s.store.listComparisonsWithFilters(ctx, gen.ListComparisonsWithFiltersParams{
-
 		Deleted:    deleted,
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
@@ -672,7 +673,6 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 	}
 
 	total, err := s.store.countComparisonsWithFilters(ctx, gen.CountComparisonsWithFiltersParams{
-
 		Deleted:    deleted,
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
@@ -1174,6 +1174,7 @@ func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, userID pgtyp
 		if terr != nil {
 			return JCEComparisonResult{}, fmt.Errorf("resolving comparison type: %w", terr)
 		}
+
 		if payload.TypeSlug != "" && td.Slug != payload.TypeSlug {
 			return JCEComparisonResult{}, fmt.Errorf("%w: selection token is for type %q", errpkg.ErrInvalid, payload.TypeSlug)
 		}
@@ -1299,6 +1300,7 @@ func jceComparisonResponse(cmp JCEComparison) map[string]any {
 	if cmp.Content.FeaturedStorageBucket != nil && cmp.Content.FeaturedStoragePath != nil {
 		contentMap["featured_image_url"] = media.MediaURL(*cmp.Content.FeaturedStorageBucket, *cmp.Content.FeaturedStoragePath, media.ImageProxyOpts{})
 	}
+
 	if cmp.Content.HeaderStorageBucket != nil && cmp.Content.HeaderStoragePath != nil {
 		contentMap["header_image_url"] = media.MediaURL(*cmp.Content.HeaderStorageBucket, *cmp.Content.HeaderStoragePath, media.ImageProxyOpts{})
 	}

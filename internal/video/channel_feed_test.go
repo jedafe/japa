@@ -47,6 +47,7 @@ func TestResolveYouTubeChannelID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+
 		if id != "UCu5J84CUcdoPBFy4LIZrBEQ" {
 			t.Fatalf("got %q", id)
 		}
@@ -65,6 +66,7 @@ func TestResolveYouTubeChannelID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+
 		if id != "UCu5J84CUcdoPBFy4LIZrBEQ" {
 			t.Fatalf("got %q", id)
 		}
@@ -83,6 +85,7 @@ func TestResolveYouTubeChannelID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+
 		if id != "UCu5J84CUcdoPBFy4LIZrBEQ" {
 			t.Fatalf("got %q", id)
 		}
@@ -131,6 +134,7 @@ func TestFetchChannelVideoIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if len(ids) != 2 || ids[0] != "AAAAAAAAAAA" || ids[1] != "BBBBBBBBBBB" {
 		t.Fatalf("got %v", ids)
 	}

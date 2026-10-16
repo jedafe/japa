@@ -33,7 +33,6 @@ func isAllowedCategory(category string) bool {
 // admin panel DataTable search and filter. The public member-facing endpoint
 // can pass selectable=true to hide geo (country/state/city) types.
 func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
-
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	categoryFilter := strings.TrimSpace(r.URL.Query().Get("category"))
 	selectableOnly := strings.TrimSpace(r.URL.Query().Get("selectable")) == "true"
@@ -61,7 +60,6 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 
 // ListSpaceTypeCategories handles GET /api/v1/admin/space-type-categories.
 func (h *Handlers) ListSpaceTypeCategories(w http.ResponseWriter, r *http.Request) {
-
 	categories, err := h.Service.ListSpaceTypeCategories(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -127,7 +125,6 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 	category := strings.ToLower(strings.TrimSpace(req.Category))
 
 	st, err := h.Service.CreateSpaceType(r.Context(), gen.CreateSpaceTypeParams{
-
 		Name:         req.Name,
 		Slug:         req.Slug,
 		Description:  req.Description,

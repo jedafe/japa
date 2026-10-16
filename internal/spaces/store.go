@@ -83,14 +83,17 @@ func (s *Service) ListSpaceTypeCategories(ctx context.Context) ([]SpaceTypeCateg
 	defer rows.Close()
 
 	var categories []SpaceTypeCategory
+
 	for rows.Next() {
 		var value string
 		if err := rows.Scan(&value); err != nil {
 			return nil, fmt.Errorf("scanning space type category: %w", err)
 		}
+
 		if value == "" {
 			continue
 		}
+
 		categories = append(categories, SpaceTypeCategory{
 			Value:      value,
 			Selectable: isAllowedCategory(value),
@@ -121,7 +124,6 @@ func (s *Service) ListSpaceTypes(ctx context.Context) ([]gen.SpaceType, error) {
 // to skip filters.
 func (s *Service) ListSpaceTypesFiltered(ctx context.Context, search, categoryFilter string, selectableOnly bool) ([]gen.SpaceType, error) {
 	types, err := s.read.ListSpaceTypesFiltered(ctx, gen.ListSpaceTypesFilteredParams{
-
 		Search:         search,
 		CategoryFilter: categoryFilter,
 		SelectableOnly: selectableOnly,
@@ -235,7 +237,6 @@ func (s *Service) ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]g
 // default (no type/parent filter) branch.
 func (s *Service) ListSpacesPaginated(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, sort string, spaceTypeID pgtype.UUID, joinedOnly bool, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
 	spaces, err := s.read.ListSpacesPaginated(ctx, gen.ListSpacesPaginatedParams{
-
 		ViewerUserID: viewerUserID,
 		Search:       search,
 		GeoCode:      geoCode,
@@ -259,7 +260,6 @@ func (s *Service) ListSpacesPaginated(ctx context.Context, viewerUserID pgtype.U
 // discovery filters (SPACES-009).
 func (s *Service) CountSpaces(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion string, spaceTypeID pgtype.UUID, joinedOnly bool) (int64, error) {
 	total, err := s.read.CountSpaces(ctx, gen.CountSpacesParams{
-
 		ViewerUserID: viewerUserID,
 		Search:       search,
 		GeoCode:      geoCode,
@@ -287,8 +287,8 @@ func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibilit
 	if !spaceTypeID.Valid {
 		spaceTypeID = pgtype.UUID{Valid: true}
 	}
-	rows, err := s.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
 
+	rows, err := s.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
 		Search:      search,
 		Status:      status,
 		Visibility:  visibility,
@@ -313,8 +313,8 @@ func (s *Service) AdminListSpacesCount(ctx context.Context, search, status, visi
 	if !spaceTypeID.Valid {
 		spaceTypeID = pgtype.UUID{Valid: true}
 	}
-	count, err := s.read.AdminListSpacesCount(ctx, gen.AdminListSpacesCountParams{
 
+	count, err := s.read.AdminListSpacesCount(ctx, gen.AdminListSpacesCountParams{
 		Search:      search,
 		Status:      status,
 		Visibility:  visibility,
@@ -376,7 +376,6 @@ func (s *Service) ListAllSpacesForAdmin(ctx context.Context, userID pgtype.UUID,
 // for the given platform. Used to gate admin-only space listing.
 func (s *Service) IsSuperAdmin(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	return s.read.IsUserInGroup(ctx, gen.IsUserInGroupParams{
-
 		UserID:    userID,
 		GroupSlug: "super_admin",
 	})
@@ -494,7 +493,6 @@ func (s *Service) ListCitiesByState(ctx context.Context, stateID pgtype.UUID) ([
 // members/private spaces they belong to (SPACES-001, Section 05 line 272).
 func (s *Service) ListSpacesByLevel(ctx context.Context, viewerUserID pgtype.UUID, level string) ([]gen.ListSpacesByLevelRow, error) {
 	spaces, err := s.read.ListSpacesByLevel(ctx, gen.ListSpacesByLevelParams{
-
 		Level:        level,
 		ViewerUserID: viewerUserID,
 	})
@@ -533,6 +531,7 @@ func (s *Service) ResolveCountryCurrencyCode(ctx context.Context, spaceID pgtype
 	if err == nil && code != nil && *code != "" {
 		return *code
 	}
+
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.Warn("spaces: country currency walk failed", "space_id", spaceID.String(), "error", err)
 	}
@@ -540,10 +539,12 @@ func (s *Service) ResolveCountryCurrencyCode(ctx context.Context, spaceID pgtype
 	if geoCode == nil || *geoCode == "" {
 		return ""
 	}
+
 	country, err := s.read.GetSpaceByGeoCode(ctx, geoCode)
 	if err != nil || country.CurrencyCode == nil {
 		return ""
 	}
+
 	return *country.CurrencyCode
 }
 
@@ -566,7 +567,6 @@ func (s *Service) FindCitySpaceByName(ctx context.Context, cityName string) (gen
 // newest first. The viewerUserID filters by visibility (SPACES-001).
 func (s *Service) ListSpacesByType(ctx context.Context, viewerUserID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error) {
 	spaces, err := s.read.ListSpacesByType(ctx, gen.ListSpacesByTypeParams{
-
 		SpaceTypeID:  spaceTypeID,
 		ViewerUserID: viewerUserID,
 	})
@@ -585,7 +585,6 @@ func (s *Service) ListSpacesByType(ctx context.Context, viewerUserID, spaceTypeI
 // spaces.parent_id, including descendants of the target.
 func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
-
 		SpaceTypeID: spaceTypeID,
 		Search:      search,
 		GeoCode:     geoCode,
@@ -608,7 +607,6 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgt
 // within filters as ListSpacesByTypePaginated.
 func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string) (int64, error) {
 	total, err := s.read.CountSpacesByType(ctx, gen.CountSpacesByTypeParams{
-
 		SpaceTypeID: spaceTypeID,
 		Search:      search,
 		GeoCode:     geoCode,
@@ -690,7 +688,6 @@ func (s *Service) ListViewerSpaceRelations(ctx context.Context, viewerUserID pgt
 	}
 
 	rows, err := s.read.ListViewerSpaceRelations(ctx, gen.ListViewerSpaceRelationsParams{
-
 		ViewerUserID: viewerUserID,
 		SpaceIds:     spaceIDs,
 	})
@@ -729,7 +726,6 @@ func (s *Service) ListChildSpaces(ctx context.Context, viewerUserID, parentID pg
 // canonical space_parent_spaces junction.
 func (s *Service) ListSpacesByParentAndLevel(ctx context.Context, viewerUserID, parentID pgtype.UUID, level string) ([]gen.ListSpacesByParentAndLevelRow, error) {
 	return s.read.ListSpacesByParentAndLevel(ctx, gen.ListSpacesByParentAndLevelParams{
-
 		ParentID:     parentID,
 		Level:        level,
 		ViewerUserID: viewerUserID,
@@ -740,7 +736,6 @@ func (s *Service) ListSpacesByParentAndLevel(ctx context.Context, viewerUserID, 
 // to an ancestor via space_parent_spaces.
 func (s *Service) ListSpacesByAncestorAndType(ctx context.Context, spaceTypeID, ancestorID pgtype.UUID, search, sort string, limit, offset int32) ([]gen.ListSpacesByAncestorAndTypeRow, error) {
 	return s.read.ListSpacesByAncestorAndType(ctx, gen.ListSpacesByAncestorAndTypeParams{
-
 		SpaceTypeID:     spaceTypeID,
 		AncestorSpaceID: ancestorID,
 		Search:          search,
@@ -754,7 +749,6 @@ func (s *Service) ListSpacesByAncestorAndType(ctx context.Context, spaceTypeID, 
 // linked to an ancestor via space_parent_spaces.
 func (s *Service) CountSpacesByAncestorAndType(ctx context.Context, spaceTypeID, ancestorID pgtype.UUID, search string) (int64, error) {
 	return s.read.CountSpacesByAncestorAndType(ctx, gen.CountSpacesByAncestorAndTypeParams{
-
 		SpaceTypeID:     spaceTypeID,
 		AncestorSpaceID: ancestorID,
 		Search:          search,
@@ -887,6 +881,7 @@ func (s *Service) CreateSpaceWithOwner(
 	}
 
 	s.maybeCreateSourceForSpace(ctx, space, creatorUserID)
+
 	return space, nil
 }
 
@@ -927,7 +922,6 @@ func (s *Service) maybeCreateSourceForSpace(ctx context.Context, space gen.Creat
 	}
 
 	if err := s.write.UpdateSpaceSourceID(ctx, gen.UpdateSpaceSourceIDParams{
-
 		ID:       space.ID,
 		SourceID: source.ID,
 	}); err != nil {
@@ -974,7 +968,6 @@ func (s *Service) CreateCity(ctx context.Context, stateID pgtype.UUID, name stri
 
 	axes := DefaultPermAxes()
 	params := gen.CreateSpaceParams{
-
 		ParentID:       stateID,
 		SpaceTypeID:    cityType.ID,
 		Name:           strings.TrimSpace(name),
@@ -1022,6 +1015,7 @@ func (s *Service) LinkSpaceToPrimarySpaces(ctx context.Context, spaceID pgtype.U
 	if geoCode == "" {
 		return s.linkByKeywords(ctx, name)
 	}
+
 	return s.linkGeoScoped(ctx, name, geoCode)
 }
 
@@ -1080,11 +1074,13 @@ func (s *Service) linkGeoScoped(ctx context.Context, name, geoCode string) (pgty
 	}
 
 	inCountry := map[pgtype.UUID]bool{country.ID: true}
+
 	if len(candidateIDs) > 0 {
 		ancRows, err := s.read.GetSpaceCountryAncestorIDs(ctx, candidateIDs)
 		if err != nil {
 			return pgtype.UUID{}, nil, fmt.Errorf("resolving candidate country ancestors: %w", err)
 		}
+
 		for _, r := range ancRows {
 			if r.CountryID == country.ID {
 				inCountry[r.SpaceID] = true
@@ -1094,18 +1090,22 @@ func (s *Service) linkGeoScoped(ctx context.Context, name, geoCode string) (pgty
 
 	parentIDs := []pgtype.UUID{country.ID}
 	primary := country.ID
+
 	for _, m := range matches {
 		// Skip non-geo candidates outright (education/custom spaces are not
 		// geo ancestors) and anything outside the geo_code country subtree.
 		if m.ID == country.ID {
 			continue
 		}
+
 		if m.Level != "state" && m.Level != "city" {
 			continue
 		}
+
 		if !inCountry[m.ID] {
 			continue
 		}
+
 		parentIDs = append(parentIDs, m.ID)
 		// The first in-country state/city keyword hit is the most specific
 		// match — a better primary parent than the country.
@@ -1279,16 +1279,20 @@ func (s *Service) HardDeleteSpace(ctx context.Context, id pgtype.UUID) error {
 		if err != nil {
 			return fmt.Errorf("check space exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		hasChildren, err := s.read.SpaceHasChildSpaces(ctx, id)
 		if err != nil {
 			return fmt.Errorf("check space children: %w", err)
 		}
+
 		if hasChildren {
 			return errpkg.ErrInUse
 		}
+
 		return errpkg.ErrNotDeleted
 	}
 

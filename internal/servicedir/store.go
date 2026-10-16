@@ -941,6 +941,7 @@ func (s *Store) listCategories(ctx context.Context, activeOnly bool) ([]gen.Serv
 	}
 
 	out := make([]gen.ServiceCategory, 0, len(rows))
+
 	for _, r := range rows {
 		if r.IsActive {
 			out = append(out, r)

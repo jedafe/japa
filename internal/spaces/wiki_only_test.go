@@ -5,7 +5,7 @@ package spaces
 // IsWikiOnlyType, axis coercion, and post denial.
 
 import (
-	"context"
+	"strconv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,7 +49,7 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 	ctx := t.Context()
 	// t.Context() is cancelled before Cleanup funcs run — teardown
 	// deletes need a live context or they silently no-op.
-	bg := context.Background()
+	bg := t.Context()
 	q := gen.New(database.Writer)
 
 	st, err := q.CreateSpaceType(ctx, gen.CreateSpaceTypeParams{
@@ -60,11 +60,13 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create space type: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_, _ = database.Writer.Exec(bg, `DELETE FROM space_types WHERE id = $1`, st.ID)
 	})
 
 	wikiOnly := true
+
 	st, err = q.UpdateSpaceType(ctx, gen.UpdateSpaceTypeParams{
 		Name:     st.Name,
 		WikiOnly: &wikiOnly,
@@ -73,6 +75,7 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set wiki_only: %v", err)
 	}
+
 	if !st.WikiOnly {
 		t.Fatal("space type should be wiki_only after update")
 	}
@@ -80,12 +83,14 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 	if !svc.IsWikiOnlyType(ctx, st.ID) {
 		t.Fatal("IsWikiOnlyType must return true for a wiki-only type")
 	}
+
 	if svc.IsWikiOnlyType(ctx, pgtype.UUID{}) {
 		t.Fatal("IsWikiOnlyType must return false for an invalid type id")
 	}
 
 	// A creator user is required by CreateSpaceWithOwner.
 	hash := "x"
+
 	creatorID, err := q.CreateUser(ctx, gen.CreateUserParams{
 		Email:        "wiki-only-test@example.invalid",
 		Username:     "wiki-only-test",
@@ -94,6 +99,7 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_, _ = database.Writer.Exec(bg, `DELETE FROM users WHERE id = $1`, creatorID)
 	})
@@ -113,6 +119,7 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create space: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_, _ = database.Writer.Exec(bg, `DELETE FROM spaces WHERE id = $1`, space.ID)
 	})
@@ -127,12 +134,15 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get space: %v", err)
 	}
+
 	if svc.CanPostInSpace(ctx, full, creatorID, nil, nil) {
 		t.Fatal("CanPostInSpace must deny posts to a wiki-only space")
 	}
+
 	if svc.CanCommentInSpace(ctx, full, creatorID, nil, nil) {
 		t.Fatal("CanCommentInSpace must deny comments on a wiki-only space")
 	}
+
 	if svc.CanReplyInSpace(ctx, full, creatorID, nil, nil) {
 		t.Fatal("CanReplyInSpace must deny replies on a wiki-only space")
 	}
@@ -151,6 +161,7 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update space: %v", err)
 	}
+
 	if updated.PostingPerm != PermAdmins || updated.JoiningPerm != JoiningInvite {
 		t.Fatalf("update did not coerce axes: posting=%s joining=%s",
 			updated.PostingPerm, updated.JoiningPerm)
@@ -190,10 +201,12 @@ func TestMarshalWikiContentWithQID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	if m["wikidata_id"] != "Q38324" || m["title"] != "Victoria Falls" {
 		t.Fatalf("merged map wrong: %v", m)
 	}
@@ -203,10 +216,12 @@ func TestMarshalWikiContentWithQID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal no qid: %v", err)
 	}
+
 	var m2 map[string]any
 	if err := json.Unmarshal(raw, &m2); err != nil {
 		t.Fatalf("unmarshal no qid: %v", err)
 	}
+
 	if _, ok := m2["wikidata_id"]; ok {
 		t.Fatal("wikidata_id must not appear when no QID is known")
 	}
@@ -216,18 +231,19 @@ func TestAttractionSeededQID_WikiContentFallback(t *testing.T) {
 	a := &ProcessorAdapter{} // no customFields — exercises the wiki_content arm
 
 	var space gen.GetSpaceByIDRow
+
 	space.WikiContent = []byte(`{"wikidata_id":"Q38324","title":"Victoria Falls"}`)
-	if got := a.attractionSeededQID(context.Background(), &space); got != "Q38324" {
+	if got := a.attractionSeededQID(t.Context(), &space); got != "Q38324" {
 		t.Fatalf("got %q want Q38324", got)
 	}
 
 	space.WikiContent = []byte(`{"title":"no qid"}`)
-	if got := a.attractionSeededQID(context.Background(), &space); got != "" {
+	if got := a.attractionSeededQID(t.Context(), &space); got != "" {
 		t.Fatalf("got %q want empty", got)
 	}
 
 	space.WikiContent = nil
-	if got := a.attractionSeededQID(context.Background(), &space); got != "" {
+	if got := a.attractionSeededQID(t.Context(), &space); got != "" {
 		t.Fatalf("nil wiki_content: got %q want empty", got)
 	}
 }
@@ -236,9 +252,11 @@ func TestClampAttractionSeedLimit(t *testing.T) {
 	if got := clampAttractionSeedLimit(0); got != attractionSeedDefaultLimit {
 		t.Fatalf("0 → %d, want %d", got, attractionSeedDefaultLimit)
 	}
+
 	if got := clampAttractionSeedLimit(9999); got != attractionSeedMaxLimit {
 		t.Fatalf("9999 → %d, want %d", got, attractionSeedMaxLimit)
 	}
+
 	if got := clampAttractionSeedLimit(42); got != 42 {
 		t.Fatalf("42 → %d", got)
 	}
@@ -249,6 +267,7 @@ func TestFetchAttractionCandidates_ParsesBindings(t *testing.T) {
 		if r.URL.Query().Get("format") != "json" {
 			t.Errorf("missing format=json")
 		}
+
 		w.Header().Set("Content-Type", "application/sparql-results+json")
 		fmt.Fprint(w, `{"results":{"bindings":[
 			{"item":{"value":"http://www.wikidata.org/entity/Q38324"},
@@ -275,15 +294,18 @@ func TestFetchAttractionCandidates_ParsesBindings(t *testing.T) {
 
 	old := wikidataSPARQLEndpoint
 	wikidataSPARQLEndpoint = srv.URL
+
 	defer func() { wikidataSPARQLEndpoint = old }()
 
-	got, err := fetchAttractionCandidates(context.Background(), "Q1000", 50)
+	got, err := fetchAttractionCandidates(t.Context(), "Q1000", 50)
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
+
 	if len(got) != 2 {
 		t.Fatalf("got %d candidates, want 2 (dedup + unlabeled drop): %+v", len(got), got)
 	}
+
 	if got[0].QID != "Q38324" || got[0].Name != "Victoria Falls" {
 		t.Fatalf("candidate[0] wrong: %+v", got[0])
 	}
@@ -292,6 +314,7 @@ func TestFetchAttractionCandidates_ParsesBindings(t *testing.T) {
 	if !slices.Equal(got[0].LocatedIn, []string{"Q1111", "Q2222"}) {
 		t.Fatalf("LocatedIn wrong: %+v", got[0].LocatedIn)
 	}
+
 	if len(got[1].LocatedIn) != 0 {
 		t.Fatalf("no-loc candidate must have empty LocatedIn: %+v", got[1].LocatedIn)
 	}
@@ -306,7 +329,7 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 	ctx := t.Context()
 	// t.Context() is cancelled before Cleanup funcs run — teardown
 	// deletes need a live context or they silently no-op.
-	bg := context.Background()
+	bg := t.Context()
 	q := gen.New(database.Writer)
 	a := NewProcessorAdapter(svc)
 
@@ -314,12 +337,14 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("country type: %v", err)
 	}
+
 	attractionType, err := q.GetSpaceTypeBySlug(ctx, "attraction")
 	if err != nil {
 		t.Fatalf("attraction type: %v", err)
 	}
 
 	hash := "x"
+
 	creatorID, err := q.CreateUser(ctx, gen.CreateUserParams{
 		Email:        "p131-test@example.invalid",
 		Username:     "p131-test",
@@ -328,16 +353,19 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_, _ = database.Writer.Exec(bg, `DELETE FROM users WHERE id = $1`, creatorID)
 	})
 
 	mkSpace := func(name, slug string, typeID pgtype.UUID, qid string, parents []pgtype.UUID) gen.CreateSpaceRow {
 		t.Helper()
+
 		var wc []byte
 		if qid != "" {
 			wc, _ = json.Marshal(map[string]string{"wikidata_id": qid})
 		}
+
 		sp, err := svc.CreateSpaceWithOwner(ctx, gen.CreateSpaceParams{
 			SpaceTypeID: typeID,
 			Name:        name,
@@ -351,15 +379,17 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
+
 		t.Cleanup(func() {
 			_, _ = database.Writer.Exec(bg, `DELETE FROM spaces WHERE id = $1`, sp.ID)
 		})
+
 		return sp
 	}
 
 	// Unique QIDs/slugs per run — rows left by an earlier failed run must
 	// never collide with this one's fixtures.
-	uniq := fmt.Sprintf("%d", time.Now().UnixNano()%100000)
+	uniq := strconv.FormatInt(time.Now().UnixNano()%100000, 10)
 	zambia := mkSpace("P131 Zambia", "p131-zambia-"+uniq, countryType.ID, "QTP111"+uniq, nil)
 	zimbabwe := mkSpace("P131 Zimbabwe", "p131-zimbabwe-"+uniq, countryType.ID, "QTP222"+uniq, nil)
 
@@ -368,9 +398,11 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SpaceIDsByWikidataIDs: %v", err)
 	}
+
 	if len(matches) != 2 {
 		t.Fatalf("got %d matches, want 2: %+v", len(matches), matches)
 	}
+
 	for _, m := range matches {
 		if m.TypeSlug != "country" || m.Qid == "" {
 			t.Fatalf("bad match row: %+v", m)
@@ -393,13 +425,16 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parents: %v", err)
 	}
+
 	have := map[pgtype.UUID]bool{}
 	for _, p := range parents {
 		have[p.ID] = true
 	}
+
 	if !have[zambia.ID] || !have[zimbabwe.ID] {
 		t.Fatalf("want both geo parents linked, got %+v", parents)
 	}
+
 	if len(parents) != 2 {
 		t.Fatalf("re-run duplicated a parent link: %+v", parents)
 	}

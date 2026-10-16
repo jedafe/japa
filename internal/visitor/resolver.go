@@ -609,6 +609,7 @@ func (res *Resolver) geoConfigFingerprint(ctx context.Context) string {
 	}
 
 	h := fnv.New32a()
+
 	for _, key := range []string{
 		"geo_personalization.origin_markets",
 		"geo_personalization.destination_markets",
@@ -619,6 +620,7 @@ func (res *Resolver) geoConfigFingerprint(ctx context.Context) string {
 		if err != nil {
 			v = "?"
 		}
+
 		_, _ = h.Write([]byte(v))
 	}
 

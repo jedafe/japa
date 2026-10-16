@@ -194,14 +194,16 @@ func TestPreflightCheck_RateLimitRejectedNoConsume(t *testing.T) {
 		if err := p.Check(t.Context(), src); err != nil {
 			t.Fatalf("check %d: %v", i, err)
 		}
+
 		p.ReleaseCrawlLock(t.Context(), src.ID.String())
 	}
 
 	// Three rejected attempts — the counter must stay at the limit, not grow.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := p.Check(t.Context(), src); !errors.Is(err, ErrRateLimited) {
 			t.Fatalf("rejected check %d: got %v, want ErrRateLimited", i, err)
 		}
+
 		p.ReleaseCrawlLock(t.Context(), src.ID.String())
 	}
 
@@ -209,6 +211,7 @@ func TestPreflightCheck_RateLimitRejectedNoConsume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rate-limit key missing: %v", err)
 	}
+
 	if got != "2" {
 		t.Errorf("counter after rejections: got %q, want %q", got, "2")
 	}
@@ -302,6 +305,7 @@ func TestPreflightCheckChannel_RateLimitEntryHost(t *testing.T) {
 	if err := p.CheckChannel(t.Context(), src, chSource); err != nil {
 		t.Errorf("check different host: got %v, want nil", err)
 	}
+
 	p.ReleaseChannelCrawlLock(t.Context(), chSource.ID.String())
 	p.ReleaseChannelCrawlLock(t.Context(), chOther.ID.String())
 }

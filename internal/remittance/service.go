@@ -283,9 +283,11 @@ func sourceAttributionFromRow(src gen.ListSourcesByRecordIDsRow) SourceAttributi
 	if src.Slug != nil {
 		a.Slug = *src.Slug
 	}
+
 	if src.LogoUrl != nil {
 		a.LogoURL = *src.LogoUrl
 	}
+
 	return a
 }
 
@@ -428,6 +430,7 @@ func (s *Service) GetRates(ctx context.Context, sendCurrency, receiveCurrency st
 	}
 
 	recordIDs := make([]pgtype.UUID, 0, len(rows))
+
 	for _, r := range rows {
 		if r.IntelRecordID.Valid {
 			recordIDs = append(recordIDs, r.IntelRecordID)
@@ -435,6 +438,7 @@ func (s *Service) GetRates(ctx context.Context, sendCurrency, receiveCurrency st
 	}
 
 	sources := make(map[string]gen.ListSourcesByRecordIDsRow)
+
 	if len(recordIDs) > 0 {
 		if srcMap, err := s.store.MapSourcesByRecordIDs(ctx, recordIDs); err == nil {
 			sources = srcMap
@@ -444,6 +448,7 @@ func (s *Service) GetRates(ctx context.Context, sendCurrency, receiveCurrency st
 	}
 
 	rates := make([]RateInfo, 0, len(rows))
+
 	for _, r := range rows {
 		info := RateInfo{
 			ID:              r.ID.String(),
@@ -788,7 +793,6 @@ func (s *Service) CreateAlert(ctx context.Context, userID pgtype.UUID, sendCurre
 	}
 
 	alert, err := s.store.CreateAlert(ctx, gen.CreateRateAlertParams{
-
 		UserID:          userID,
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
@@ -814,7 +818,6 @@ func (s *Service) UpdateAlert(ctx context.Context, userID, alertID pgtype.UUID, 
 	}
 
 	arg := gen.UpdateRateAlertParams{
-
 		ID:     alertID,
 		UserID: userID,
 	}
@@ -928,7 +931,6 @@ func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 // corridor's rate cache.
 func (s *Service) InsertManualRate(ctx context.Context, providerID pgtype.UUID, sendCurrency, receiveCurrency string, rate, feeFlat, feePct float64, transferTime, sourceURL *string) (gen.RemittanceRate, error) {
 	arg := gen.InsertRemittanceRateParams{
-
 		ProviderID:      providerID,
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
@@ -994,7 +996,6 @@ func (s *Service) CreateRate(ctx context.Context, input CreateRateInput) (RateIn
 	}
 
 	arg := gen.InsertRemittanceRateParams{
-
 		ProviderID:      input.ProviderID,
 		SendCurrency:    input.SendCurrency,
 		ReceiveCurrency: input.ReceiveCurrency,
@@ -1193,7 +1194,6 @@ func (s *Service) TriggerFetch(ctx context.Context, providerID pgtype.UUID) erro
 	}
 
 	payload, err := json.Marshal(map[string]string{
-
 		"provider_id": providerID.String(),
 	})
 	if err != nil {
@@ -1262,7 +1262,6 @@ func (s *Service) FetchProviderRates(ctx context.Context, providerID pgtype.UUID
 	// corridor cache. ADR-075 §3: rate history is append-only — never UPDATE.
 	for _, snap := range snapshots {
 		arg := gen.InsertRemittanceRateParams{
-
 			ProviderID:      providerID,
 			SendCurrency:    snap.SendCurrency,
 			ReceiveCurrency: snap.ReceiveCurrency,

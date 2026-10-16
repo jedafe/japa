@@ -121,7 +121,9 @@ func FillContext(ctx context.Context, rc *RenderContext) {
 	if srcCode == "" {
 		srcCode = geo.CountryCode
 	}
+
 	rc.SourceCode = srcCode
+
 	if srcCode != "" {
 		if srcCode == geo.CountryCode && geo.IsValid {
 			rc.SourceCountry = geo.CountryName

@@ -214,9 +214,8 @@ var featureSlugs = map[string]bool{
 // users (profile-enriched). Results are cached in Valkey for a configurable
 // TTL (default 15 minutes).
 // // Query params:
-// //	limit — max number of tools/features to return (default 10, max configurable)
+// //	limit — max number of tools/features to return (default 10, max configurable).
 func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
-
 	vc := visitor.FromContext(r.Context())
 
 	limit := h.resolveLimit(r.Context(), r.URL.Query().Get("limit"))
@@ -619,9 +618,11 @@ func (h *Handlers) resolveToolSlugs(ctx context.Context, vc visitor.VisitorConte
 	if vc.JapaIntent != "" {
 		keys = append(keys, vc.JapaIntent+":"+stage, vc.JapaIntent+":*")
 	}
+
 	if vc.Archetype != "" {
 		keys = append(keys, vc.Archetype+":"+stage, vc.Archetype+":*")
 	}
+
 	keys = append(keys, "*:"+stage, "*:*")
 
 	seen := make(map[string]bool)

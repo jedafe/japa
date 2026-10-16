@@ -41,6 +41,7 @@ func (a *publicCommentAdapter) CreateComment(ctx context.Context, userID, conten
 	if err != nil {
 		return publicapi.PublicComment{}, fmt.Errorf("check content visibility: %w", err)
 	}
+
 	if !visible {
 		return publicapi.PublicComment{}, fmt.Errorf("%w: content", errpkg.ErrNotFound)
 	}
@@ -74,6 +75,7 @@ func (a *publicCommentAdapter) CreateComment(ctx context.Context, userID, conten
 			} else {
 				allowed, err = a.space.CanCommentInSpace(ctx, spaceID, userID)
 			}
+
 			if err != nil {
 				slog.Warn("public comment: space perm check failed", "space_id", spaceID.String(), "error", err)
 			} else if !allowed {
@@ -112,7 +114,9 @@ func (a *publicCommentAdapter) CreateComment(ctx context.Context, userID, conten
 	if a.spam != nil {
 		a.spam.RecordContentCreation(ctx, userID)
 	}
+
 	a.comments.DispatchCommentNotifications(ctx, comment, a.notifier)
+
 	if a.onCreate != nil {
 		a.onCreate("content", contentID, "comment", 1)
 	}
@@ -125,8 +129,10 @@ func (a *publicCommentAdapter) CreateComment(ctx context.Context, userID, conten
 	if comment.ParentID.Valid {
 		out.ParentID = comment.ParentID.String()
 	}
+
 	if comment.CreatedAt.Valid {
 		out.CreatedAt = comment.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z")
 	}
+
 	return out, nil
 }

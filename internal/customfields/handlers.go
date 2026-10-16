@@ -156,6 +156,7 @@ func parseIPPrefix(s string) (netip.Prefix, error) {
 	if addr.Is4() {
 		bits = 32
 	}
+
 	return addr.Prefix(bits)
 }
 
@@ -338,7 +339,6 @@ func (h *Handlers) enrichFieldGroups(
 // applied post-enrichment so they work with the derived/simplified values
 // the frontend uses (Section 06).
 func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
-
 	entityClass := r.URL.Query().Get("entity_class")
 	entityType := r.URL.Query().Get("entity_type")
 	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
@@ -684,19 +684,24 @@ func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": group})
+
 		return
 	}
 
 	resp := map[string]any{"data": group}
+
 	if assignments, err := h.Service.ListAllAssignmentsByPlatform(r.Context()); err == nil {
 		assigned := false
+
 		for _, a := range assignments {
 			if a.GroupID == group.ID {
 				assigned = true
 				break
 			}
 		}
+
 		if !assigned {
 			resp["assignment_hint"] = "Group has no entity assignment — send entity_type to attach it (e.g. via /entity-types)."
 		}
@@ -762,6 +767,7 @@ func marshalOptions(opts json.RawMessage) ([]byte, error) {
 	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return nil, nil
 	}
+
 	if !json.Valid(trimmed) {
 		return nil, errors.New("options are not valid JSON")
 	}
@@ -781,9 +787,11 @@ func optionsAbsent(raw json.RawMessage) bool {
 	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return true
 	}
+
 	if string(trimmed) == "[]" || string(trimmed) == "{}" {
 		return true
 	}
+
 	return false
 }
 
@@ -944,6 +952,7 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 	if req.Section != nil {
 		section = *req.Section
 	}
+
 	if !ValidSectionToken(section) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_section", "Section must match ^[a-z0-9_]+$")
 		return
@@ -1037,6 +1046,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 		// group-scoped, so an ID from another group (or a system field)
 		// would no-op per row; fail the reorder instead of half-applying.
 		known := map[string]bool{}
+
 		if fields, err := h.Service.ListFieldsByGroup(r.Context(), groupID); err == nil {
 			for _, f := range fields {
 				known[f.ID.String()] = true
@@ -1044,18 +1054,20 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 		} else {
 			slog.Warn("customfields: reorder pre-check failed", "group_id", groupID.String(), "error", err)
 		}
+
 		for i, idStr := range req.OrderedFieldIDs {
 			var fieldID pgtype.UUID
 			if err := fieldID.Scan(idStr); err != nil {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+idStr)
 				return
 			}
+
 			if len(known) > 0 && !known[fieldID.String()] {
 				errpkg.WriteError(w, http.StatusBadRequest, "unknown_field_id", "Field "+idStr+" is not in this group (system or foreign fields cannot be reordered)")
 				return
 			}
 
-			// nolint:gosec // G115: bounded
+			//nolint:gosec // G115: bounded
 			if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, int32(i)); err != nil { // #nosec //nolint:gosec // G115: bounded
 				handleServiceError(w, err)
 				return
@@ -1069,6 +1081,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 
 	// Legacy shape: fields with explicit positions.
 	legacyKnown := map[string]bool{}
+
 	if len(req.Fields) > 0 {
 		if fields, err := h.Service.ListFieldsByGroup(r.Context(), groupID); err == nil {
 			for _, f := range fields {
@@ -1076,12 +1089,14 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
 	for _, f := range req.Fields {
 		var fieldID pgtype.UUID
 		if err := fieldID.Scan(f.ID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+f.ID)
 			return
 		}
+
 		if len(legacyKnown) > 0 && !legacyKnown[fieldID.String()] {
 			errpkg.WriteError(w, http.StatusBadRequest, "unknown_field_id", "Field "+f.ID+" is not in this group (system or foreign fields cannot be reordered)")
 			return
@@ -1295,7 +1310,9 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	// its option value at write, so readers only ever see values.
 	if req.ValueJson != nil && (field.FieldType == FieldTypeSelect || field.FieldType == FieldTypeMultiselect) {
 		jsonBytes = CanonicalizeSelectJSON(field.FieldType, field.Options, jsonBytes)
+
 		var vj map[string]any
+
 		if err := json.Unmarshal(jsonBytes, &vj); err == nil {
 			fd := fieldDef{Label: field.Label, Key: field.Key, FieldType: field.FieldType, Options: field.Options, IsRequired: field.IsRequired}
 			if msg, ok := validateSelectValue(fd, vj); !ok {
@@ -1455,7 +1472,6 @@ func (h *Handlers) DeleteFieldPermission(w http.ResponseWriter, r *http.Request)
 
 // ListForms handles GET /api/v1/forms.
 func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
-
 	// When space_id is provided, filter forms to that space and include
 	// submission counts. The space-scoped forms builder UI relies on this.
 	if spaceIDStr := r.URL.Query().Get("space_id"); spaceIDStr != "" {
@@ -1693,7 +1709,6 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	form, err := h.Service.CreateForm(r.Context(), gen.CreateFormParams{
-
 		Name:           req.Name,
 		Slug:           req.Slug,
 		Description:    req.Description,
@@ -1715,6 +1730,7 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	if err := h.Service.EnsureFormGroup(r.Context(), form.ID, req.Name, req.Slug); err != nil {
 		slog.Error("customfields: provisioning form field group", "form_id", form.ID, "error", err)
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -1960,6 +1976,7 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusConflict, "field_group_missing", "This form has no backing field group; retry the request")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"field_group_id": fieldGroupID,
@@ -1998,10 +2015,12 @@ func filterGuestViewableFields(ctx context.Context, svc *Service, fields []gen.L
 	}
 
 	out := fields[:0]
+
 	for _, f := range fields {
 		if !f.ShowInFrontend || !visible[f.ID.String()] {
 			continue
 		}
+
 		out = append(out, f)
 	}
 
@@ -2009,7 +2028,6 @@ func filterGuestViewableFields(ctx context.Context, svc *Service, fields []gen.L
 }
 
 func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
@@ -2035,10 +2053,12 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 		fields = nil
 	}
+
 	if form.Status != "published" {
 		errpkg.WriteError(w, http.StatusNotFound, "form_not_published", "This form is not published")
 		return
 	}
+
 	fields = filterGuestViewableFields(r.Context(), h.Service, fields)
 
 	type fieldJSON struct {
@@ -2490,6 +2510,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID pgtype.UUI
 				fieldValues[rawKey] = rawVal
 			}
 		}
+
 		if f.FieldType == FieldTypeMultiselect {
 			switch v := rawVal.(type) {
 			case string:
@@ -2499,6 +2520,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID pgtype.UUI
 				}
 			case []any:
 				norm := make([]any, len(v))
+
 				for i, item := range v {
 					if s, isStr := item.(string); isStr {
 						norm[i] = NormalizeChoiceValue(f.Options, s)
@@ -2506,6 +2528,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID pgtype.UUI
 						norm[i] = item
 					}
 				}
+
 				fieldValues[rawKey] = norm
 				rawVal = norm
 			case []string:
@@ -2513,6 +2536,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID pgtype.UUI
 				for i, item := range v {
 					norm[i] = NormalizeChoiceValue(f.Options, item)
 				}
+
 				fieldValues[rawKey] = norm
 				rawVal = norm
 			}
@@ -2626,6 +2650,7 @@ func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
 		if strVal == "" {
 			return "", true
 		}
+
 		if !valueInOptions(f.Options, NormalizeChoiceValue(f.Options, strVal)) {
 			return fmt.Sprintf("Field %q value is not one of the allowed options", f.Label), false
 		}
@@ -3106,6 +3131,7 @@ func validateTriggerConfig(triggerType string, raw json.RawMessage) (string, boo
 		if strings.TrimSpace(u) == "" {
 			return "send_webhook requires config.url", false
 		}
+
 		parsed, err := neturl.Parse(u)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 			return "send_webhook config.url must be an http(s) URL", false
@@ -3381,7 +3407,6 @@ func (h *Handlers) ListFieldTypes(w http.ResponseWriter, r *http.Request) {
 // table (platform-scoped). Falls back to a hardcoded list if the table is
 // empty (e.g. before the seed migration runs).
 func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
-
 	types, err := h.Service.ListEntityTypes(r.Context())
 	if err != nil || len(types) == 0 {
 		// Fallback to the hardcoded list if the table is empty or the
@@ -3422,9 +3447,8 @@ func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 // - q: case-insensitive search on value and label
 // - sort: "key:dir" e.g. "label:asc", "sort_order:desc"
 // - page: 1-based page number (default 1)
-// - page_size: page size (default 25, max 100)
+// - page_size: page size (default 25, max 100).
 func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) {
-
 	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	sortParam := r.URL.Query().Get("sort")
 
@@ -3540,7 +3564,6 @@ func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) 
 
 // CreateEntityType handles POST /admin/custom-field-entity-types.
 func (h *Handlers) CreateEntityType(w http.ResponseWriter, r *http.Request) {
-
 	var req struct {
 		Value     string `json:"value"`
 		Label     string `json:"label"`
@@ -3558,7 +3581,6 @@ func (h *Handlers) CreateEntityType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	et, err := h.Service.CreateEntityType(r.Context(), gen.CreateCustomFieldEntityTypeParams{
-
 		Value:     req.Value,
 		Label:     req.Label,
 		SortOrder: req.SortOrder,
@@ -3631,7 +3653,6 @@ func (h *Handlers) DeleteEntityType(w http.ResponseWriter, r *http.Request) {
 
 // ListGuideCategoriesAdmin handles GET /admin/guide-categories.
 func (h *Handlers) ListGuideCategoriesAdmin(w http.ResponseWriter, r *http.Request) {
-
 	cats, err := h.Service.ListGuideCategories(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -3646,7 +3667,6 @@ func (h *Handlers) ListGuideCategoriesAdmin(w http.ResponseWriter, r *http.Reque
 // transaction. After creation, the admin can add fields to the group via the
 // existing custom field group editor (/custom-fields/{groupId}).
 func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Request) {
-
 	var req struct {
 		Slug  string `json:"slug"`
 		Label string `json:"label"`
@@ -3677,7 +3697,6 @@ func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 // DeleteGuideCategoryAdmin handles DELETE /admin/guide-categories/{slug}.
 // System categories (seeded) cannot be deleted.
 func (h *Handlers) DeleteGuideCategoryAdmin(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", "Slug is required")

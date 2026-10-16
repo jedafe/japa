@@ -41,7 +41,6 @@ func NewStore(database *db.DB) *Store {
 // returns the full record. The source_url may be nil for ZIP uploads.
 func (s *Store) Create(ctx context.Context, userID pgtype.UUID, sourceType string, sourceURL *string) (gen.ContentImport, error) {
 	imp, err := s.writeQueries.CreateContentImport(ctx, gen.CreateContentImportParams{
-
 		UserID:     userID,
 		SourceType: sourceType,
 		SourceUrl:  sourceURL,
@@ -69,7 +68,6 @@ func (s *Store) GetByID(ctx context.Context, importID pgtype.UUID) (gen.ContentI
 // ListUserImports returns a page of a user's import history, newest first.
 func (s *Store) ListUserImports(ctx context.Context, userID pgtype.UUID, offset, limit int32) ([]gen.ContentImport, error) {
 	rows, err := s.queries.ListUserContentImports(ctx, gen.ListUserContentImportsParams{
-
 		UserID:     userID,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -98,7 +96,6 @@ func (s *Store) CountUserImports(ctx context.Context, userID pgtype.UUID) (int64
 // filtered by status. An empty status string returns all statuses.
 func (s *Store) AdminListImports(ctx context.Context, status string, offset, limit int32) ([]gen.AdminListContentImportsRow, error) {
 	rows, err := s.queries.AdminListContentImports(ctx, gen.AdminListContentImportsParams{
-
 		Status:     status,
 		PageOffset: offset,
 		PageLimit:  limit,

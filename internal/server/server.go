@@ -700,6 +700,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the Asynq client into customfields so SubmitForm can enqueue
 	// form:fire_submission_triggers tasks (Section 06, BUG-002).
 	cfHandlers.SetAsynqClient(asynqClient)
+
 	authHandlers.Policy = auth.PasswordPolicyFromSettings(context.Background(), settingsService)
 	// Wire link preview blacklist fallback from system_settings (AUDIT-BE-010,
 	// BE-037, BUG-001). The blacklist is a JSON array of domains stored under
@@ -774,7 +775,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	comparisonService := comparison.NewService(database)
 	comparisonService.SetSettings(settingsService)
 	comparisonService.SetContentService(contentService)
-	comparisonService.SetTierResolver(tierService) // jce.comparisons.max_per_day.{tier} quota
+	comparisonService.SetTierResolver(tierService)      // jce.comparisons.max_per_day.{tier} quota
 	comparisonService.SetFeatureChecker(featureChecker) // feature.jce.nested_items / feature.jce.ai_quick
 
 	comparisonService.SetValkey(vkClient.Redis())
@@ -2153,6 +2154,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	agentDeps.DocsOrganize = func(ctx context.Context, entries []ai.DocsOrganizeEntry) error {
 		for _, e := range entries {
 			req := docs.UpdateDocPageRequest{Position: &e.Position}
+
 			if e.ParentID != nil {
 				s := e.ParentID.String()
 				req.ParentID = &s
@@ -2385,6 +2387,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelSourcesService.SetProbeQueue(func(ctx context.Context, sourceID sources.SourceID) error {
 		return taskEnqueuer.EnqueueIntelProbeVerify(sourceID.String())
 	})
+
 	agentDeps.IntelSourceManager = intelSourcesService
 	jceService.SetSourceRegistry(intelSourcesService)
 	orgService.SetSourceManager(intelSourcesService)
@@ -2393,6 +2396,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceService.SetSettings(settingsService)
 	authHandlers.SetSourceManager(intelSourcesService)
 	oauthHandlers.SetSourceManager(intelSourcesService)
+
 	intelSchedulerSourceLister := &intelSchedulerSourceAdapter{store: intelSourcesStore}
 	intelScheduler := scheduler.NewScheduler(intelSchedulerSourceLister, intelSchedulerSourceLister, vkClient.Redis())
 	intelDedupService := dedup.NewService(intelStores)
@@ -2650,6 +2654,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	if mcpOAuthSecret == "" {
 		mcpOAuthSecret = cfg.JWTSecret
 	}
+
 	mcpOAuthService := mcp.NewOAuthService(mcp.NewOAuthStore(database.Writer), settingsService, vkClient.Redis())
 	mcpOAuthHandlers := mcp.NewOAuthHandlers(mcpOAuthService, cfg.MCPPublicURL, cfg.SiteURL, cfg.SiteName, kr, vkClient.Redis(), mcpOAuthSecret)
 	mcpOAuthHandlers.SetPermissionResolver(rbacResolver) // §120 v1.4: agent.use grants require the user's RBAC node
@@ -2750,6 +2755,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		queries:  gen.New(database.Reader),
 		onCreate: commentsHandlers.EnqueueEngagementUpdate,
 	})
+
 	usersHandlers := users.NewHandlers(usersService, contentService)
 	// Wire the RBAC resolver so GetMyContent can fall back to a
 	// platform-scoped (non-author-scoped) fetch for super-admins and users
@@ -2824,6 +2830,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		if err := claimID.Scan(a.EntityID); err != nil {
 			return err
 		}
+
 		return orgService.ReviewOwnershipClaim(ctx, claimID, reviewedBy, organizations.ReviewClaimInput{
 			Status:         organizations.ClaimStatusApproved,
 			ResolutionNote: "Appeal overturned — claim approved",
@@ -2836,7 +2843,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		if err := claimID.Scan(a.EntityID); err != nil {
 			return err
 		}
+
 		_, err := videoService.ReviewClaim(ctx, reviewedBy, claimID, "approved", "Appeal overturned — claim approved")
+
 		return err
 	})
 	// withdrawal overturn → wallet.ReopenWithdrawalOnAppeal re-reserves the
@@ -2847,10 +2856,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		if err := withdrawalID.Scan(a.EntityID); err != nil {
 			return err
 		}
+
 		err := walletService.ReopenWithdrawalOnAppeal(ctx, withdrawalID)
 		if errors.Is(err, wallet.ErrInsufficientCredits) {
-			return fmt.Errorf("%w: %v", appeals.ErrReversalBlocked, err)
+			return fmt.Errorf("%w: %w", appeals.ErrReversalBlocked, err)
 		}
+
 		return err
 	})
 	// ad_campaign overturn → adsselfserve.ReopenCampaignOnAppeal re-escrows
@@ -2862,10 +2873,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		if err := campaignID.Scan(a.EntityID); err != nil {
 			return err
 		}
+
 		err := adsSelfServeService.ReopenCampaignOnAppeal(ctx, campaignID)
 		if errors.Is(err, adsselfserve.ErrInsufficientBalance) {
-			return fmt.Errorf("%w: %v", appeals.ErrReversalBlocked, err)
+			return fmt.Errorf("%w: %w", appeals.ErrReversalBlocked, err)
 		}
+
 		return err
 	})
 	adminHandlers.SetAppealResolver(appealsService)
@@ -2950,6 +2963,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// ADR-128: PUT /me/journey purpose/japa_status edits promote into the
 	// canonical journey columns so both vocabularies stay aligned.
 	usersService.SetJourneyClassWriter(japaStageService)
+
 	onboardingHandlers := onboarding.NewHandlers(onboardingService)
 	onboardingHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in onboarding responses
 
@@ -4493,7 +4507,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/jce/comparisons/{id}/refresh", jceHandlers.HandleRefreshComparison)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh"), rbac.RequirePermission(rbacResolver, "jce.ingestion_job.view")).
 					Get("/jce/comparisons/{id}/ingestion-jobs", jceHandlers.HandleListIngestionJobs)
-
 			})
 
 			// Organization routes (Section 07 — Organization Profiles & Claim Ownership)
@@ -7445,6 +7458,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/me/service-bookings/{id}/dispute", serviceDirHandlers.HandleMyBookingDispute)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage")).
 					Get("/org/{org_id}/service-bookings", serviceDirHandlers.HandleOrgBookings)
+				// §111 — org's package listings. Public: published only;
+				// org members see all statuses (OptionalAuth viewer).
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+					Get("/org/{org_id}/packages", serviceDirHandlers.HandleOrgPackages)
+				// §111 — ALL departures (open/past/full/cancelled) for
+				// editors: author / owning-org member / service.edit_any.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "service.edit_own", "service.edit_any")).
+					Get("/services/{id}/departures", serviceDirHandlers.HandleListDepartures)
 				// Org transition — state change + fee-settle enqueue, so the
 				// same Rule 9 replay guarantee as the booker mutations.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage"),
@@ -8692,7 +8713,7 @@ func (a guideCategoryListerAdapter) ListGuideCategories(ctx context.Context) ([]
 // (type follow.received, Section 35) are fire-and-forget per Rule 8 — the
 // adapter discards both the DispatchResult and any error.
 // Ref: japaconnect-engineering/sections/31-follow-system.md
-// //	japaconnect-engineering/sections/35-notification-system.md
+// //	japaconnect-engineering/sections/35-notification-system.md.
 type followNotificationAdapter struct {
 	svc *notifications.Service
 }
@@ -9239,7 +9260,6 @@ type intelRecordStatusStore interface {
 
 func (a *studioIntelStatusAdapter) UpdateIntelRecordStatus(ctx context.Context, id pgtype.UUID, status string) error {
 	return a.store.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
-
 		ID:     id,
 		Status: status,
 	})
@@ -9269,8 +9289,10 @@ func (a pofFXAdapter) Calculate(ctx context.Context, sendAmount float64, sendCur
 	if err != nil {
 		return nil, err
 	}
+
 	if res == nil {
 		return nil, nil
 	}
+
 	return &pofcalculator.CalculateResult{BestReceiveAmount: res.BestReceiveAmount}, nil
 }

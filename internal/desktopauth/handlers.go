@@ -101,6 +101,7 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
 			return
 		}
+
 		if restricted {
 			errpkg.WriteError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
 			return
@@ -155,7 +156,6 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Queries.CreateRefreshToken(ctx, gen.CreateRefreshTokenParams{
-
 		UserID:    keyCtx.UserID,
 		TokenHash: refreshHash,
 		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},

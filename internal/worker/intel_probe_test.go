@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -41,6 +40,7 @@ func TestVerifySkipSource(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := verifySkipSource(tt.src); got != tt.want {
 				t.Errorf("verifySkipSource(%+v) = %v, want %v", tt.src, got, tt.want)
 			}
@@ -75,6 +75,7 @@ func TestProposalInputs(t *testing.T) {
 	if in.Label != "News feed" || in.CrawlMethod != "rss" || in.Confidence != 0.95 {
 		t.Errorf("input fields = %+v", in)
 	}
+
 	if !slices.Equal(in.EntityTypes, []string{"news"}) || !slices.Equal(in.RelevanceTopics, []string{"migration"}) {
 		t.Errorf("slices not carried: %+v", in)
 	}
@@ -111,10 +112,11 @@ func TestDetectedMethodNames(t *testing.T) {
 func TestHandleIntelProbeVerify_NotWired(t *testing.T) {
 	oldProber, oldStore := intelProber, intelSourcesStore
 	intelProber, intelSourcesStore = nil, nil
+
 	t.Cleanup(func() { intelProber, intelSourcesStore = oldProber, oldStore })
 
 	task := asynq.NewTask(TypeIntelProbeVerify, []byte(`{"version":"v1","source_id":"11111111-1111-4111-8111-111111111111"}`))
-	if err := HandleIntelProbeVerify(context.Background(), task); err != nil {
+	if err := HandleIntelProbeVerify(t.Context(), task); err != nil {
 		t.Fatalf("unwired handler returned error: %v", err)
 	}
 }
@@ -169,7 +171,7 @@ func TestHandleIntelProbeVerify_LiveDB(t *testing.T) {
 		t.Skip("JC_TEST_DATABASE_URL not set — skipping live Postgres test")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	database, err := db.New(ctx, dsn)
 	if err != nil {
@@ -204,11 +206,13 @@ func TestHandleIntelProbeVerify_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create source: %v", err)
 	}
+
 	defer func() { _ = srcStore.Delete(ctx, src.ID) }()
 
 	oldProber, oldStore := intelProber, intelSourcesStore
 	intelProber = probe.NewProber(srv.Client(), probe.DefaultVerifyMaxRequests)
 	intelSourcesStore = srcStore
+
 	t.Cleanup(func() { intelProber, intelSourcesStore = oldProber, oldStore })
 
 	payload, _ := json.Marshal(intelSourcePayload{Version: intelPayloadVersion, SourceID: src.ID.String()})
@@ -222,12 +226,15 @@ func TestHandleIntelProbeVerify_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload source: %v", err)
 	}
+
 	if len(got.DetectedMethods) == 0 {
 		t.Error("detected_methods empty after verify")
 	}
+
 	if !got.LastProbedAt.Valid {
 		t.Error("last_probed_at not stamped")
 	}
+
 	if len(got.ProbeReport) == 0 || string(got.ProbeReport) == "{}" {
 		t.Error("probe_report not written")
 	}
@@ -236,9 +243,11 @@ func TestHandleIntelProbeVerify_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list channels: %v", err)
 	}
+
 	if len(channels) == 0 {
 		t.Fatal("verify materialized no channels")
 	}
+
 	for _, ch := range channels {
 		if ch.Origin != "probe" {
 			t.Errorf("channel %s origin = %q, want probe", ch.Label, ch.Origin)
@@ -246,11 +255,13 @@ func TestHandleIntelProbeVerify_LiveDB(t *testing.T) {
 	}
 
 	var feedFound bool
+
 	for _, ch := range channels {
 		if ch.CrawlMethod == "rss" {
 			feedFound = true
 		}
 	}
+
 	if !feedFound {
 		t.Error("no rss channel materialized")
 	}
@@ -260,10 +271,12 @@ func TestHandleIntelProbeVerify_LiveDB(t *testing.T) {
 	if err := HandleIntelProbeVerify(ctx, task); err != nil {
 		t.Fatalf("HandleIntelProbeVerify re-run: %v", err)
 	}
+
 	after, err := srcStore.ListChannels(ctx, src.ID)
 	if err != nil {
 		t.Fatalf("list channels after re-run: %v", err)
 	}
+
 	if len(after) != len(channels) {
 		t.Errorf("re-run changed channel count %d → %d, want idempotent", len(channels), len(after))
 	}
@@ -277,7 +290,7 @@ func TestHandleIntelProbeVerify_SkipPaths(t *testing.T) {
 		t.Skip("JC_TEST_DATABASE_URL not set — skipping live Postgres test")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	database, err := db.New(ctx, dsn)
 	if err != nil {
@@ -303,6 +316,7 @@ func TestHandleIntelProbeVerify_SkipPaths(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
+
 		t.Cleanup(func() { _ = srcStore.Delete(ctx, src.ID) })
 
 		return src
@@ -315,6 +329,7 @@ func TestHandleIntelProbeVerify_SkipPaths(t *testing.T) {
 	oldProber, oldStore := intelProber, intelSourcesStore
 	intelProber = probe.NewProber(http.DefaultClient, probe.DefaultVerifyMaxRequests)
 	intelSourcesStore = srcStore
+
 	t.Cleanup(func() { intelProber, intelSourcesStore = oldProber, oldStore })
 
 	for _, src := range []gen.IntelSource{disabled, proposed, video} {
@@ -327,6 +342,7 @@ func TestHandleIntelProbeVerify_SkipPaths(t *testing.T) {
 		if err != nil {
 			t.Fatalf("list channels %s: %v", src.Name, err)
 		}
+
 		if len(channels) != 0 {
 			t.Errorf("skip path %s materialized %d channels", src.Name, len(channels))
 		}
@@ -338,6 +354,7 @@ func TestHandleIntelProbeVerify_SkipPaths(t *testing.T) {
 	if err := missing.Scan("99999999-9999-4999-8999-999999999999"); err != nil {
 		t.Fatal(err)
 	}
+
 	payload, _ := json.Marshal(intelSourcePayload{Version: intelPayloadVersion, SourceID: missing.String()})
 	if err := HandleIntelProbeVerify(ctx, asynq.NewTask(TypeIntelProbeVerify, payload)); err != nil {
 		t.Errorf("missing source returned error: %v", err)

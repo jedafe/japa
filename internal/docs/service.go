@@ -617,7 +617,7 @@ func (s *Service) validateParent(ctx context.Context, pageID, parentID pgtype.UU
 	// Walk the ancestor chain — if we reach pageID, this assignment would
 	// create a cycle.
 	ancestor := parent
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		if !ancestor.ParentID.Valid {
 			return nil
 		}
@@ -646,6 +646,7 @@ func docContentEqual(a, b []byte) bool {
 	if json.Unmarshal(a, &va) != nil || json.Unmarshal(b, &vb) != nil {
 		return bytes.Equal(bytes.TrimSpace(a), bytes.TrimSpace(b))
 	}
+
 	return reflect.DeepEqual(va, vb)
 }
 
@@ -724,7 +725,6 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 	}
 
 	id, err := s.store.create(ctx, gen.CreateDocPageParams{
-
 		Title:        req.Title,
 		Slug:         req.Slug,
 		Audience:     req.Audience,
@@ -761,6 +761,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 	// Status: absent preserves the stored status (§44 amendment 2 — an absent
 	// status silently resetting to draft was the unpublish bug).
 	status := existing.ReviewStatus
+
 	if req.ReviewStatus != "" {
 		if !ValidReviewStatuses[req.ReviewStatus] {
 			return fmt.Errorf("%w: review_status %q", errpkg.ErrInvalid, req.ReviewStatus)
@@ -793,6 +794,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 	// Audience: absent preserves; a move re-validates and invalidates both
 	// audience caches.
 	audience := existing.Audience
+
 	if req.Audience != nil && *req.Audience != "" && *req.Audience != existing.Audience {
 		if !ValidAudiences[*req.Audience] {
 			return fmt.Errorf("%w: audience %q", errpkg.ErrInvalid, *req.Audience)
@@ -804,6 +806,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 	// Slug: absent preserves; a rename is re-validated (including the
 	// reserved list) against the target audience.
 	slug := existing.Slug
+
 	if req.Slug != nil && *req.Slug != "" && *req.Slug != existing.Slug {
 		if err := validateDocSlug(audience, *req.Slug); err != nil {
 			return err
@@ -834,6 +837,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 
 	// Optimistic lock: expected_updated_at must still match the stored row.
 	var expectedUpdatedAt pgtype.Timestamptz
+
 	if req.ExpectedUpdatedAt != nil && *req.ExpectedUpdatedAt != "" {
 		t, err := time.Parse(time.RFC3339, *req.ExpectedUpdatedAt)
 		if err != nil {
@@ -850,11 +854,13 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 	// (slug/category/parent/position/audience) don't demote. Published pages
 	// are unaffected — published edits go live by design.
 	clearReview := false
+
 	if existing.ReviewStatus == "approved" &&
 		(title != existing.Title || !docContentEqual(contentBytes, existing.Content)) {
 		if status == "approved" {
 			status = "in_review"
 		}
+
 		clearReview = true
 	}
 
@@ -862,6 +868,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 	// amendment). Subcategory is independent of category — a page may move to
 	// a different category while keeping or clearing its subcategory.
 	category := existing.Category
+
 	if req.Category != nil {
 		if category, err = normalizeTaxonomy(req.Category); err != nil {
 			return err
@@ -869,6 +876,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 	}
 
 	subcategory := existing.Subcategory
+
 	if req.Subcategory != nil {
 		if subcategory, err = normalizeTaxonomy(req.Subcategory); err != nil {
 			return err
@@ -907,6 +915,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 	// Invalidate nav + the page caches at both the old and new coordinates
 	// (BUG-016 fix extended to slug/audience moves).
 	s.invalidateCache(ctx, existing.Audience, existing.Slug)
+
 	if audience != existing.Audience || slug != existing.Slug {
 		s.invalidateCache(ctx, audience, slug)
 	}
@@ -1161,6 +1170,7 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 	if err != nil {
 		return GenerateDraftResponse{}, err
 	}
+
 	subcategory, err := normalizeTaxonomy(&input.Subcategory)
 	if err != nil {
 		return GenerateDraftResponse{}, err
@@ -1168,7 +1178,6 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 
 	// Create the doc page with ai_generated=true, review_status='draft'.
 	id, err := s.store.create(ctx, gen.CreateDocPageParams{
-
 		Title:        input.Title,
 		Slug:         slug,
 		Audience:     audience,

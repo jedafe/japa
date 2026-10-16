@@ -41,6 +41,7 @@ func InternalGuard(expectedToken string) func(http.Handler) http.Handler {
 				_ = json.NewEncoder(w).Encode(map[string]any{
 					"error": map[string]string{"code": "forbidden", "message": "Access to this endpoint is restricted to internal callers"},
 				})
+
 				return
 			}
 

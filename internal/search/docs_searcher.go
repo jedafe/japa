@@ -41,7 +41,6 @@ func (a *DocPagesSearchAdapter) SearchDocPages(ctx context.Context, query string
 	}
 
 	filters := []FilterExpr{
-
 		Eq{Field: "review_status", Value: "published"},
 	}
 

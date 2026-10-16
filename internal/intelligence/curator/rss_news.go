@@ -118,6 +118,7 @@ func curateAtom(body []byte, ch sources.Channel) ([]Record, error) {
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, fmt.Errorf("curator: rss: parse atom feed: %w", err)
 	}
+
 	if len(feed.Entries) == 0 {
 		return nil, errors.New("curator: rss: atom feed has no entries")
 	}
@@ -129,27 +130,35 @@ func curateAtom(body []byte, ch sources.Channel) ([]Record, error) {
 		ext := make(extractor.Extraction)
 
 		field(ext, "title", e.Title, e.Title)
+
 		if summary := stripHTMLTags(firstNonEmpty(e.Summary, e.Content)); summary != "" {
 			field(ext, "summary", summary, firstNonEmpty(e.Summary, e.Content))
 		}
+
 		if body := stripHTMLTags(e.Content); body != "" {
 			field(ext, "body", body, e.Content)
 		}
+
 		if iso := parseFeedDate(firstNonEmpty(e.Published, e.Updated)); iso != "" {
 			field(ext, "published_date", iso, firstNonEmpty(e.Published, e.Updated))
 		}
+
 		if link := atomEntryLink(e); link != "" {
 			field(ext, "article_url", link, link)
 		}
+
 		if e.Author.Name != "" {
 			field(ext, "author", e.Author.Name, e.Author.Name)
 		}
+
 		var topics []string
+
 		for _, c := range e.Categories {
 			if c.Term != "" {
 				topics = append(topics, c.Term)
 			}
 		}
+
 		if len(topics) > 0 {
 			field(ext, "topics", topics, strings.Join(topics, ", "))
 		}
@@ -158,6 +167,7 @@ func curateAtom(body []byte, ch sources.Channel) ([]Record, error) {
 		if key == "" {
 			key = atomEntryLink(e)
 		}
+
 		if key == "" {
 			key = "hash:" + hashKey(e.Title, e.Published, e.Updated)
 		}
@@ -175,13 +185,16 @@ func curateAtom(body []byte, ch sources.Channel) ([]Record, error) {
 // atomEntryLink returns the entry's rel=alternate (or first) link href.
 func atomEntryLink(e atomEntry) string {
 	fallback := ""
+
 	for _, l := range e.Links {
 		if l.Href == "" {
 			continue
 		}
+
 		if l.Rel == "alternate" || l.Rel == "" {
 			return l.Href
 		}
+
 		fallback = l.Href
 	}
 
@@ -217,11 +230,13 @@ func rssItemToExtraction(it rssItem) extractor.Extraction {
 	}
 
 	var topics []string
+
 	for _, c := range it.Categories {
 		if c = strings.TrimSpace(c); c != "" {
 			topics = append(topics, c)
 		}
 	}
+
 	if len(topics) > 0 {
 		field(ext, "topics", topics, strings.Join(topics, ", "))
 	}
@@ -236,6 +251,7 @@ func rssItemKey(it rssItem) string {
 	if s := strings.TrimSpace(it.GUID); s != "" {
 		return s
 	}
+
 	if s := strings.TrimSpace(it.Link); s != "" {
 		return s
 	}
@@ -294,15 +310,18 @@ func parseRelativeFeedDate(s string) (time.Time, bool) {
 	}
 
 	n := 1 // "a day ago" / "an hour ago"
+
 	if unit := strings.ToLower(m[1]); unit != "a" && unit != "an" {
 		v, err := strconv.Atoi(m[1])
 		if err != nil || v <= 0 {
 			return time.Time{}, false
 		}
+
 		n = v
 	}
 
 	var d time.Duration
+
 	switch strings.ToLower(m[2]) {
 	case "second":
 		d = time.Duration(n) * time.Second
@@ -338,6 +357,7 @@ func stripHTMLTags(s string) string {
 			inTag = true
 		case r == '>':
 			inTag = false
+
 			result.WriteRune(' ')
 		case !inTag:
 			result.WriteRune(r)

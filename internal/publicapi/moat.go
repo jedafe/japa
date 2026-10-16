@@ -123,6 +123,7 @@ func (s *Service) ListVisaRoutes(ctx context.Context, destSpaceID pgtype.UUID, p
 	if s.moat == nil || s.moat.VisaRoutes == nil {
 		return nil, 0, ErrReaderUnconfigured
 	}
+
 	return s.moat.VisaRoutes.List(ctx, destSpaceID, profession, education, experienceYears, page, limit)
 }
 
@@ -130,6 +131,7 @@ func (s *Service) GetVisaRoute(ctx context.Context, id pgtype.UUID) (visaroutes.
 	if s.moat == nil || s.moat.VisaRoutes == nil {
 		return visaroutes.RouteDTO{}, ErrReaderUnconfigured
 	}
+
 	return s.moat.VisaRoutes.GetByID(ctx, id)
 }
 
@@ -137,6 +139,7 @@ func (s *Service) CompareVisaRoutes(ctx context.Context, ids []pgtype.UUID) ([]v
 	if s.moat == nil || s.moat.VisaRoutes == nil {
 		return nil, ErrReaderUnconfigured
 	}
+
 	return s.moat.VisaRoutes.Compare(ctx, ids)
 }
 
@@ -144,6 +147,7 @@ func (s *Service) GetVisaTimelineStats(ctx context.Context, originSpaceID, destS
 	if s.moat == nil || s.moat.VisaTimeline == nil {
 		return nil, ErrReaderUnconfigured
 	}
+
 	return s.moat.VisaTimeline.GetStats(ctx, originSpaceID, destSpaceID, visaCategory, consulate, months)
 }
 
@@ -151,6 +155,7 @@ func (s *Service) GetVisaTimelineTrend(ctx context.Context, destSpaceID pgtype.U
 	if s.moat == nil || s.moat.VisaTimeline == nil {
 		return nil, ErrReaderUnconfigured
 	}
+
 	return s.moat.VisaTimeline.GetTrend(ctx, destSpaceID, visaCategory, consulate, months)
 }
 
@@ -158,6 +163,7 @@ func (s *Service) ListCredentialProfessions(ctx context.Context) ([]credentialch
 	if s.moat == nil || s.moat.Credentials == nil {
 		return nil, ErrReaderUnconfigured
 	}
+
 	return s.moat.Credentials.ListProfessions(ctx)
 }
 
@@ -165,6 +171,7 @@ func (s *Service) ListCredentialPathways(ctx context.Context, destSpaceID, issui
 	if s.moat == nil || s.moat.Credentials == nil {
 		return nil, 0, ErrReaderUnconfigured
 	}
+
 	return s.moat.Credentials.ListPathways(ctx, destSpaceID, issuingSpaceID, professionID, page, limit)
 }
 
@@ -172,6 +179,7 @@ func (s *Service) GetCredentialPathway(ctx context.Context, id pgtype.UUID) (cre
 	if s.moat == nil || s.moat.Credentials == nil {
 		return credentialchecker.PathwayDetailDTO{}, ErrReaderUnconfigured
 	}
+
 	return s.moat.Credentials.GetPathway(ctx, id)
 }
 
@@ -179,6 +187,7 @@ func (s *Service) ListLanguageTests(ctx context.Context) ([]languagetesthub.Test
 	if s.moat == nil || s.moat.LanguageTests == nil {
 		return nil, ErrReaderUnconfigured
 	}
+
 	return s.moat.LanguageTests.ListTests(ctx)
 }
 
@@ -186,6 +195,7 @@ func (s *Service) GetLanguageTest(ctx context.Context, slug string) (languagetes
 	if s.moat == nil || s.moat.LanguageTests == nil {
 		return languagetesthub.TestDTO{}, ErrReaderUnconfigured
 	}
+
 	return s.moat.LanguageTests.GetTestBySlug(ctx, slug)
 }
 
@@ -193,6 +203,7 @@ func (s *Service) ListLanguageTestRequirements(ctx context.Context, destSpaceID 
 	if s.moat == nil || s.moat.LanguageTests == nil {
 		return nil, ErrReaderUnconfigured
 	}
+
 	return s.moat.LanguageTests.ListRequirements(ctx, destSpaceID, visaCategory)
 }
 
@@ -200,6 +211,7 @@ func (s *Service) FindScholarships(ctx context.Context, filters scholarships.Sch
 	if s.moat == nil || s.moat.Scholarships == nil {
 		return nil, 0, ErrReaderUnconfigured
 	}
+
 	return s.moat.Scholarships.FindScholarships(ctx, filters)
 }
 
@@ -207,6 +219,7 @@ func (s *Service) GetScholarship(ctx context.Context, guideID pgtype.UUID) (scho
 	if s.moat == nil || s.moat.Scholarships == nil {
 		return scholarships.ScholarshipResult{}, ErrReaderUnconfigured
 	}
+
 	return s.moat.Scholarships.GetScholarshipDetail(ctx, guideID)
 }
 
@@ -214,6 +227,7 @@ func (s *Service) ScholarshipStatuses() ([]scholarships.Option, error) {
 	if s.moat == nil || s.moat.Scholarships == nil {
 		return nil, ErrReaderUnconfigured
 	}
+
 	return s.moat.Scholarships.Statuses(), nil
 }
 
@@ -221,6 +235,7 @@ func (s *Service) ScholarshipLevels(ctx context.Context) ([]scholarships.Option,
 	if s.moat == nil || s.moat.Scholarships == nil {
 		return nil, ErrReaderUnconfigured
 	}
+
 	return s.moat.Scholarships.ListLevels(ctx)
 }
 
@@ -228,18 +243,22 @@ func (s *Service) ListUniversities(ctx context.Context, search, country, sort st
 	if s.moat == nil || s.moat.Spaces == nil {
 		return nil, 0, ErrReaderUnconfigured
 	}
+
 	st, err := s.moat.Spaces.GetSpaceTypeBySlug(ctx, universitySpaceTypeSlug)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	items, err := s.moat.Spaces.ListSpacesByTypePaginated(ctx, st.ID, search, country, "", "", "", sort, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.moat.Spaces.CountSpacesByType(ctx, st.ID, search, country, "", "", "")
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return items, total, nil
 }
 
@@ -247,6 +266,7 @@ func (s *Service) GetUniversity(ctx context.Context, slug string) (gen.GetPublic
 	if s.moat == nil || s.moat.Spaces == nil {
 		return gen.GetPublicSpaceBySlugRow{}, ErrReaderUnconfigured
 	}
+
 	st, err := s.moat.Spaces.GetSpaceTypeBySlug(ctx, universitySpaceTypeSlug)
 	if err != nil {
 		return gen.GetPublicSpaceBySlugRow{}, err
@@ -257,8 +277,10 @@ func (s *Service) GetUniversity(ctx context.Context, slug string) (gen.GetPublic
 	if err != nil {
 		return gen.GetPublicSpaceBySlugRow{}, err
 	}
+
 	if space.SpaceTypeID != st.ID {
 		return gen.GetPublicSpaceBySlugRow{}, ErrDestinationNotFound
 	}
+
 	return space, nil
 }

@@ -114,7 +114,6 @@ func safeInt32(v int) int32 {
 // CreateKnownBot adds a new bot to the registry for the given platform.
 func (s *Service) CreateKnownBot(ctx context.Context, input CreateKnownBotInput) (BotResponse, error) {
 	bot, err := s.store.createKnownBot(ctx, gen.CreateKnownBotParams{
-
 		Name:             input.Name,
 		UserAgentPattern: input.UserAgentPattern,
 		BotType:          string(input.BotType),

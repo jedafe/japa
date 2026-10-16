@@ -121,7 +121,6 @@ func (s *Service) CreateReport(ctx context.Context, reporterUserID pgtype.UUID, 
 	}
 
 	report, err := s.write.CreateReport(ctx, gen.CreateReportParams{
-
 		ReporterUserID: reporterUserID,
 		EntityType:     input.EntityType,
 		EntityID:       input.EntityID,
@@ -149,7 +148,6 @@ func (s *Service) CreateReport(ctx context.Context, reporterUserID pgtype.UUID, 
 // ListMyReports returns the caller's own submitted reports, newest first.
 func (s *Service) ListMyReports(ctx context.Context, reporterUserID pgtype.UUID, limit, offset int32) ([]gen.ContentReport, error) {
 	reports, err := s.read.ListReportsByReporter(ctx, gen.ListReportsByReporterParams{
-
 		ReporterUserID: reporterUserID,
 		PageLimit:      limit,
 		PageOffset:     offset,
@@ -198,7 +196,6 @@ func (s *Service) CountReports(ctx context.Context, status, entityType, q *strin
 // filtered by status and/or entity_type.
 func (s *Service) ListReports(ctx context.Context, status, entityType, q *string, limit, offset int32) ([]gen.ListReportsRow, error) {
 	reports, err := s.read.ListReports(ctx, gen.ListReportsParams{
-
 		Status:     status,
 		EntityType: entityType,
 		Q:          q,

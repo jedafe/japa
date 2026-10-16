@@ -885,9 +885,14 @@ func TestBuildSearchScholarshipsParams(t *testing.T) {
 			in   string
 			want string
 		}{
-			{"true", "true"}, {"1", "true"}, {"yes", "true"},
-			{"false", "false"}, {"0", "false"}, {"no", "false"},
-			{"", ""}, {"bogus", ""},
+			{"true", "true"},
+			{"1", "true"},
+			{"yes", "true"},
+			{"false", "false"},
+			{"0", "false"},
+			{"no", "false"},
+			{"", ""},
+			{"bogus", ""},
 		} {
 			p := buildSearchScholarshipsParams(url.Values{"funding_tuition": {tc.in}}, 20, 0)
 			if p.Column9 != tc.want {

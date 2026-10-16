@@ -52,7 +52,6 @@ func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (gen.PlatformDataIm
 // List returns paginated imports for a platform, optionally filtered by status.
 func (s *Store) List(ctx context.Context, status string, limit, offset int32) ([]gen.PlatformDataImport, error) {
 	return s.queries.ListPlatformDataImports(ctx, gen.ListPlatformDataImportsParams{
-
 		Status:    status,
 		LimitVal:  limit,
 		OffsetVal: offset,

@@ -55,13 +55,16 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 
 	out := make([]literalListItem, 0, len(lits))
+
 	for _, lit := range lits {
 		if !lit.IsActive {
 			continue
 		}
+
 		if q != "" && !literalMatches(lit, q) {
 			continue
 		}
+
 		out = append(out, literalListItem{
 			Key:         lit.Key,
 			Kind:        lit.Kind,
@@ -79,8 +82,10 @@ func literalMatches(lit TemplateLiteral, q string) bool {
 	if strings.Contains(strings.ToLower(lit.Key), q) {
 		return true
 	}
+
 	if lit.Label != nil && strings.Contains(strings.ToLower(*lit.Label), q) {
 		return true
 	}
+
 	return false
 }

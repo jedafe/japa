@@ -214,6 +214,7 @@ func (p *PaystackProvider) CreateSubscriptionCheckout(ctx context.Context, req S
 	if p.secretKey == "" {
 		return PaymentResponse{}, errors.New("paystack secret key not configured")
 	}
+
 	if req.PriceCode == "" {
 		return PaymentResponse{}, errors.New("paystack plan code is required")
 	}
@@ -292,12 +293,14 @@ func (p *PaystackProvider) paystackEmailToken(ctx context.Context, code string) 
 	if err != nil {
 		return "", fmt.Errorf("creating paystack request: %w", err)
 	}
+
 	httpReq.Header.Set("Authorization", "Bearer "+p.secretKey)
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("paystack fetch subscription: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -309,12 +312,15 @@ func (p *PaystackProvider) paystackEmailToken(ctx context.Context, code string) 
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
 		return "", fmt.Errorf("parsing paystack response: %w", err)
 	}
+
 	if !apiResp.Status {
 		return "", fmt.Errorf("paystack error: %s", apiResp.Message)
 	}
+
 	if apiResp.Data.EmailToken == "" {
 		return "", errors.New("paystack subscription has no email_token")
 	}
+
 	return apiResp.Data.EmailToken, nil
 }
 
@@ -335,6 +341,7 @@ func (p *PaystackProvider) paystackSubscriptionAction(ctx context.Context, code,
 	if err != nil {
 		return fmt.Errorf("creating paystack request: %w", err)
 	}
+
 	httpReq.Header.Set("Authorization", "Bearer "+p.secretKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -342,6 +349,7 @@ func (p *PaystackProvider) paystackSubscriptionAction(ctx context.Context, code,
 	if err != nil {
 		return fmt.Errorf("paystack %s: %w", action, err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -353,12 +361,15 @@ func (p *PaystackProvider) paystackSubscriptionAction(ctx context.Context, code,
 		Status  bool   `json:"status"`
 		Message string `json:"message"`
 	}
+
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
 		return fmt.Errorf("parsing paystack response: %w", err)
 	}
+
 	if !apiResp.Status {
 		return fmt.Errorf("paystack error: %s", apiResp.Message)
 	}
+
 	return nil
 }
 
@@ -560,6 +571,7 @@ func (p *StripeProvider) CreateSubscriptionCheckout(ctx context.Context, req Sub
 	if p.secretKey == "" {
 		return PaymentResponse{}, errors.New("stripe secret key not configured")
 	}
+
 	if req.PriceCode == "" {
 		return PaymentResponse{}, errors.New("stripe price ID is required")
 	}
@@ -581,6 +593,7 @@ func (p *StripeProvider) CreateSubscriptionCheckout(ctx context.Context, req Sub
 	if req.Email != "" {
 		form += "&customer_email=" + url.QueryEscape(req.Email)
 	}
+
 	if req.ReturnURL != "" {
 		form += "&success_url=" + url.QueryEscape(req.ReturnURL+"?subscribed=1")
 		form += "&cancel_url=" + url.QueryEscape(req.ReturnURL)
@@ -590,6 +603,7 @@ func (p *StripeProvider) CreateSubscriptionCheckout(ctx context.Context, req Sub
 	if err != nil {
 		return PaymentResponse{}, fmt.Errorf("creating stripe request: %w", err)
 	}
+
 	httpReq.SetBasicAuth(p.secretKey, "")
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -597,12 +611,14 @@ func (p *StripeProvider) CreateSubscriptionCheckout(ctx context.Context, req Sub
 	if err != nil {
 		return PaymentResponse{}, fmt.Errorf("stripe checkout: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return PaymentResponse{}, fmt.Errorf("reading stripe response: %w", err)
 	}
+
 	if resp.StatusCode >= 400 {
 		return PaymentResponse{}, fmt.Errorf("stripe error (status %d): %s", resp.StatusCode, string(respBody))
 	}
@@ -628,10 +644,12 @@ func (p *StripeProvider) stripeSetCancelAtPeriodEnd(ctx context.Context, subID s
 	}
 
 	body := fmt.Sprintf("cancel_at_period_end=%t", cancel)
+
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.stripe.com/v1/subscriptions/"+subID, strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("creating stripe request: %w", err)
 	}
+
 	httpReq.SetBasicAuth(p.secretKey, "")
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -639,15 +657,18 @@ func (p *StripeProvider) stripeSetCancelAtPeriodEnd(ctx context.Context, subID s
 	if err != nil {
 		return fmt.Errorf("stripe subscription update: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("reading stripe response: %w", err)
 	}
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("stripe error (status %d): %s", resp.StatusCode, string(respBody))
 	}
+
 	return nil
 }
 

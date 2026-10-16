@@ -27,8 +27,10 @@ func (a *publicWebhookAdapter) CreateUserEndpoint(ctx context.Context, ownerID p
 	if err != nil {
 		return publicapi.PublicWebhookEndpoint{}, err
 	}
+
 	out := toPublicWebhookEndpoint(ep)
 	out.Secret = ep.Secret // plaintext, once — §12 "secret shown once"
+
 	return out, nil
 }
 
@@ -37,6 +39,7 @@ func (a *publicWebhookAdapter) ListUserEndpoints(ctx context.Context, ownerID pg
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]publicapi.PublicWebhookEndpoint, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, publicapi.PublicWebhookEndpoint{
@@ -50,6 +53,7 @@ func (a *publicWebhookAdapter) ListUserEndpoints(ctx context.Context, ownerID pg
 			CreatedAt:  r.CreatedAt,
 		})
 	}
+
 	return out, nil
 }
 
@@ -70,6 +74,7 @@ func (a *publicWebhookAdapter) ListUserDeliveries(ctx context.Context, ownerID, 
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]publicapi.PublicWebhookDelivery, 0, len(rows))
 	for _, d := range rows {
 		out = append(out, publicapi.PublicWebhookDelivery{
@@ -85,6 +90,7 @@ func (a *publicWebhookAdapter) ListUserDeliveries(ctx context.Context, ownerID, 
 			CreatedAt:        d.CreatedAt,
 		})
 	}
+
 	return out, nil
 }
 
@@ -98,10 +104,12 @@ func toPublicWebhookEndpoint(ep webhooks.WebhookEndpointWithSecret) publicapi.Pu
 		IsActive:   ep.IsActive,
 		CreatedAt:  ep.CreatedAt.Time,
 	}
+
 	if ep.VerifiedAt.Valid {
 		t := ep.VerifiedAt.Time
 		out.VerifiedAt = &t
 	}
+
 	return out
 }
 

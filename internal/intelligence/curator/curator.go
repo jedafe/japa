@@ -133,14 +133,17 @@ func field(ext extractor.Extraction, name string, value any, evidence string) {
 		}
 	case []string:
 		arr := make([]any, 0, len(v))
+
 		for _, s := range v {
 			if strings.TrimSpace(s) != "" {
 				arr = append(arr, s)
 			}
 		}
+
 		if len(arr) == 0 {
 			return
 		}
+
 		value = arr
 	}
 

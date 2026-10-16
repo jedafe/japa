@@ -270,11 +270,13 @@ func (h *Handlers) indexThreadRAG(ctx context.Context, threadID, spaceID, author
 		// Threads inherit their parent space's visibility (§69 scoped
 		// retrieval); a missing space fails closed to private.
 		visibility := "private"
+
 		if spaceID.Valid {
 			if space, err := h.Service.store.read.GetSpaceByID(bgCtx, spaceID); err == nil {
 				visibility = space.Visibility
 			}
 		}
+
 		if err := h.ragIndexer.IndexEntity(bgCtx, "forum_thread", threadID, visibility, spaceID, authorID, text, language); err != nil {
 			slog.Warn("forum: RAG index failed for thread", "thread_id", threadID.String(), "error", err)
 		}
@@ -569,6 +571,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		needsReview := spaceID.Valid && !h.isThreadModerator(r.Context(), user.UserID, spaceID)
 
 		status := content.StatusDraft
+
 		if spaceID.Valid {
 			if needsReview {
 				// Moderation-hold state is "in_review" per the contents
@@ -660,7 +663,6 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 // ?sort=latest|top and ?solved=true|false.
 // Public: when no user is present, lists all public threads for the platform.
 func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	cursor := parseCursorCreatedAt(r)
 	cursorID := parseCursorID(r)
@@ -809,7 +811,6 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 // GetThread handles GET /api/v1/forum/{slug}.
 func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
@@ -1342,7 +1343,6 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 
 // ListReplies handles GET /api/v1/forum/{id}/replies.
 func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
-
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
@@ -1878,6 +1878,7 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 		for _, v := range votes {
 			optionIDs = append(optionIDs, v.OptionID.String())
 		}
+
 		data["user_votes"] = optionIDs
 	}
 
@@ -2001,7 +2002,6 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 
 // ListTags handles GET /api/v1/forum/tags.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
@@ -2016,7 +2016,6 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 
 // GetTagBySlug handles GET /api/v1/forum/tags/{slug}.
 func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")

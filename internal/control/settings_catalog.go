@@ -136,16 +136,16 @@ var settingsCatalog = map[string]settingMeta{
 	"ads.frequency_cap_per_day": {Type: "int", DefaultValue: "3", Description: "Max ad impressions per user per day (global default).", Panel: "admin"},
 	"ads.min_campaign_budget":   {Type: "float", DefaultValue: "10", Description: "Minimum campaign budget in credits.", Panel: "admin"},
 	// AI
-	"ai.monthly_budget_usd":      {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap).", Panel: "admin"},
-	"ai.japabot_enabled":         {Type: "bool", DefaultValue: "true", Description: "DEPRECATED — managed via feature_flags/feature.japabot. Global JapaBot toggle.", Panel: "admin"},
-	"ai.content_assist_enabled":  {Type: "bool", DefaultValue: "true", Description: "DEPRECATED — managed via feature_flags/feature.ai_content_gen. In-editor AI assist toggle.", Panel: "admin"},
-	"ai.daily_cost_limit_usd":    {Type: "float", DefaultValue: "0", Description: "Per-user daily AI spend hard cap in USD (UTC) shared across JapaBot chat, in-editor assist, and the AI agent. 0 = disabled.", Panel: "control"},
-	"ai.cost_per_1k_tokens_usd":  {Type: "float", DefaultValue: "0.002", Description: "Default USD cost per 1,000 tokens for AI usage monitoring and cost limits.", Panel: "control"},
-	"ai.cache_enabled":           {Type: "bool", DefaultValue: "false", Description: "Enable Valkey semantic cache for repeated AI prompts (generate, chat, assist).", Panel: "control"},
-	"ai.cache_ttl_seconds":       {Type: "int", DefaultValue: "300", Description: "TTL for cached AI responses (seconds).", Panel: "control"},
-	"ai.history_window":          {Type: "int", DefaultValue: "20", Description: "Max prior messages loaded into the unified chat prompt (ADR-130).", Panel: "control"},
+	"ai.monthly_budget_usd":        {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap).", Panel: "admin"},
+	"ai.japabot_enabled":           {Type: "bool", DefaultValue: "true", Description: "DEPRECATED — managed via feature_flags/feature.japabot. Global JapaBot toggle.", Panel: "admin"},
+	"ai.content_assist_enabled":    {Type: "bool", DefaultValue: "true", Description: "DEPRECATED — managed via feature_flags/feature.ai_content_gen. In-editor AI assist toggle.", Panel: "admin"},
+	"ai.daily_cost_limit_usd":      {Type: "float", DefaultValue: "0", Description: "Per-user daily AI spend hard cap in USD (UTC) shared across JapaBot chat, in-editor assist, and the AI agent. 0 = disabled.", Panel: "control"},
+	"ai.cost_per_1k_tokens_usd":    {Type: "float", DefaultValue: "0.002", Description: "Default USD cost per 1,000 tokens for AI usage monitoring and cost limits.", Panel: "control"},
+	"ai.cache_enabled":             {Type: "bool", DefaultValue: "false", Description: "Enable Valkey semantic cache for repeated AI prompts (generate, chat, assist).", Panel: "control"},
+	"ai.cache_ttl_seconds":         {Type: "int", DefaultValue: "300", Description: "TTL for cached AI responses (seconds).", Panel: "control"},
+	"ai.history_window":            {Type: "int", DefaultValue: "20", Description: "Max prior messages loaded into the unified chat prompt (ADR-130).", Panel: "control"},
 	"ai.conversation_title_length": {Type: "int", DefaultValue: "80", Description: "Chars of first user message used as auto-title for a new ai_conversations row (ADR-130).", Panel: "control"},
-	"ai.provider_cost_overrides": {Type: "json", DefaultValue: "{}", Description: `Per-provider/model price overrides. Keys are "provider" or "provider.model" (e.g. "xiaomi.mimo-v2-flash"), values are USD per 1,000 tokens.`, Panel: "control"},
+	"ai.provider_cost_overrides":   {Type: "json", DefaultValue: "{}", Description: `Per-provider/model price overrides. Keys are "provider" or "provider.model" (e.g. "xiaomi.mimo-v2-flash"), values are USD per 1,000 tokens.`, Panel: "control"},
 	// AI Humanization — injects natural-language style instructions into every
 	// AI generation surface (generate, chat, assist, persona/studio drafts).
 	// Gated by the ai.humanize.manage RBAC node for the admin toggle; users
@@ -449,7 +449,7 @@ var settingsCatalog = map[string]settingMeta{
 	"calendar.enabled": {Type: "bool", DefaultValue: "false", Description: "Global community calendar toggle.", Panel: "control"},
 
 	// Japa Stage Progress Profiles (§87, ADR-095)
-	"japa_stage.enabled": {Type: "bool", DefaultValue: "false", Description: "Global japa stage profiles toggle.", Panel: "control"},
+	"japa_stage.enabled":      {Type: "bool", DefaultValue: "false", Description: "Global japa stage profiles toggle.", Panel: "control"},
 	"japa_stage.max_journeys": {Type: "int", DefaultValue: "10", Description: "Max live user_journeys rows (planned|active, non-deleted) a member may hold; POST /me/japa-stage/journeys returns journey_limit_reached at the cap (ADR-129).", Panel: "control"},
 
 	// Ask an Expat AMA (§88, ADR-096)

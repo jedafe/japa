@@ -42,9 +42,11 @@ func TestSubmitOneshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitOneshot: %v", err)
 	}
+
 	if !created {
 		t.Fatal("first submission: created = false, want true")
 	}
+
 	if ch1.CrawlMethod != string(CrawlMethodOneshot) || ch1.Origin != string(ChannelOriginUser) || !ch1.Enabled {
 		t.Errorf("channel = method %q origin %q enabled %v, want oneshot/user/enabled",
 			ch1.CrawlMethod, ch1.Origin, ch1.Enabled)
@@ -54,11 +56,13 @@ func TestSubmitOneshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get oneshot source after submit: %v", err)
 	}
+
 	defer func() { _ = store.Delete(ctx, src.ID) }()
 
 	if ch1.SourceID != src.ID {
 		t.Errorf("channel source = %s, want shared source %s", ch1.SourceID, src.ID)
 	}
+
 	if src.SourceType != "system" || src.Slug == nil || *src.Slug != oneshotSourceSlug {
 		t.Errorf("system source = type %q slug %v, want system/%s", src.SourceType, src.Slug, oneshotSourceSlug)
 	}
@@ -68,6 +72,7 @@ func TestSubmitOneshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitOneshot resubmit: %v", err)
 	}
+
 	if created || ch2.ID != ch1.ID {
 		t.Fatalf("resubmit created=%v id=%s, want dedupe to %s", created, ch2.ID, ch1.ID)
 	}
@@ -77,6 +82,7 @@ func TestSubmitOneshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitOneshot scheme-less: %v", err)
 	}
+
 	if created || ch3.ID != ch1.ID {
 		t.Fatalf("scheme-less resubmit created=%v id=%s, want dedupe to %s", created, ch3.ID, ch1.ID)
 	}
@@ -87,10 +93,12 @@ func TestSubmitOneshot(t *testing.T) {
 	if err := store.UpdateChannelEnabled(ctx, ch1.ID, false); err != nil {
 		t.Fatalf("disable channel: %v", err)
 	}
+
 	ch4, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
 	if err != nil {
 		t.Fatalf("SubmitOneshot after disable: %v", err)
 	}
+
 	if created || ch4.ID != ch1.ID || !ch4.Enabled {
 		t.Fatalf("resubmit-after-disable created=%v enabled=%v id=%s, want re-armed %s",
 			created, ch4.Enabled, ch4.ID, ch1.ID)
@@ -103,9 +111,11 @@ func TestSubmitOneshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitOneshot entity_hint: %v", err)
 	}
+
 	if !created {
 		t.Fatal("hinted submission: created = false, want true (distinct entity_types → distinct channel)")
 	}
+
 	if len(ch5.EntityTypes) == 0 || ch5.EntityTypes[0] != "article" {
 		t.Errorf("entity_types = %v, want article first", ch5.EntityTypes)
 	}

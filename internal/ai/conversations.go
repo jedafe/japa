@@ -70,8 +70,10 @@ func (s *ConversationService) Get(ctx context.Context, userID, convID pgtype.UUI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.AiConversation{}, ErrConversationNotFound
 		}
+
 		return gen.AiConversation{}, fmt.Errorf("loading conversation: %w", err)
 	}
+
 	return conv, nil
 }
 
@@ -81,7 +83,7 @@ func (s *ConversationService) Get(ctx context.Context, userID, convID pgtype.UUI
 // table (ADR-130). title is stored only on create. projectID (when valid)
 // is stamped on the newly created row only — existing threads keep their
 // membership; reassignment goes through the PUT …/project endpoint.
-func (s *ConversationService) Resolve(ctx context.Context, userID pgtype.UUID, conversationID *pgtype.UUID, projectID *pgtype.UUID, title string) (gen.AiConversation, error) {
+func (s *ConversationService) Resolve(ctx context.Context, userID pgtype.UUID, conversationID, projectID *pgtype.UUID, title string) (gen.AiConversation, error) {
 	if conversationID != nil && conversationID.Valid {
 		conv, err := s.store.GetAIConversationForUser(ctx, gen.GetAIConversationForUserParams{
 			ID:     *conversationID,
@@ -90,15 +92,18 @@ func (s *ConversationService) Resolve(ctx context.Context, userID pgtype.UUID, c
 		if err == nil {
 			return conv, nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return gen.AiConversation{}, fmt.Errorf("resolving conversation: %w", err)
 		}
 		// Unknown or foreign → fall through to create.
 	}
+
 	var pid pgtype.UUID
 	if projectID != nil && projectID.Valid {
 		pid = *projectID
 	}
+
 	return s.store.CreateAIConversation(ctx, gen.CreateAIConversationParams{
 		UserID:    userID,
 		Title:     title,
@@ -122,13 +127,16 @@ func (s *ConversationService) AppendAssistantMessage(ctx context.Context, convID
 	if model != "" {
 		modelArg = &model
 	}
+
 	if voiceID != "" {
 		voiceArg = &voiceID
 	}
+
 	var sess pgtype.UUID
 	if sessionID != nil {
 		sess = *sessionID
 	}
+
 	return s.store.InsertAIMessage(ctx, gen.InsertAIMessageParams{
 		ConversationID: convID,
 		Role:           "assistant",
@@ -151,10 +159,12 @@ func (s *ConversationService) History(ctx context.Context, convID pgtype.UUID, l
 	if err != nil {
 		return nil, fmt.Errorf("loading conversation history: %w", err)
 	}
+
 	out := make([]ChatMessage, 0, len(rows))
 	for _, m := range rows {
 		out = append(out, ChatMessage{Role: m.Role, Content: m.Content})
 	}
+
 	return out, nil
 }
 
@@ -174,10 +184,12 @@ func (s *ConversationService) List(ctx context.Context, userID pgtype.UUID, limi
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing conversations: %w", err)
 	}
+
 	total, err := s.store.CountAIConversationsForUser(ctx, userID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting conversations: %w", err)
 	}
+
 	return rows, total, nil
 }
 
@@ -191,8 +203,10 @@ func (s *ConversationService) Detail(ctx context.Context, userID, convID pgtype.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.AiConversation{}, nil, ErrConversationNotFound
 		}
+
 		return gen.AiConversation{}, nil, fmt.Errorf("loading conversation: %w", err)
 	}
+
 	msgs, err := s.store.ListAIConversationMessages(ctx, gen.ListAIConversationMessagesParams{
 		ConversationID: convID,
 		PageLimit:      limit,
@@ -201,6 +215,7 @@ func (s *ConversationService) Detail(ctx context.Context, userID, convID pgtype.
 	if err != nil {
 		return gen.AiConversation{}, nil, fmt.Errorf("listing messages: %w", err)
 	}
+
 	return conv, msgs, nil
 }
 
@@ -218,14 +233,19 @@ func (s *ConversationService) Delete(ctx context.Context, userID, convID pgtype.
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrConversationNotFound
 			}
+
 			return fmt.Errorf("deleting conversation: %w", err)
 		}
+
 		_ = deleted
+
 		return st.UnlinkAgentSessionsForConversation(ctx, convID)
 	}
+
 	if s.pool != nil {
 		return db.WithTx(ctx, s.pool, func(q *gen.Queries) error { return do(q) })
 	}
+
 	return do(s.store)
 }
 
@@ -260,6 +280,7 @@ func (s *ConversationService) RunningSessionID(ctx context.Context, convID, user
 	if errors.Is(err, pgx.ErrNoRows) {
 		return pgtype.UUID{}, nil
 	}
+
 	return id, err
 }
 
@@ -281,10 +302,12 @@ func (s *ConversationService) MigratedLegacyRefs(ctx context.Context, userID pgt
 	if err != nil {
 		return nil, fmt.Errorf("listing legacy refs: %w", err)
 	}
+
 	out := make(map[string]bool, len(refs))
 	for _, r := range refs {
 		out[r] = true
 	}
+
 	return out, nil
 }
 
@@ -300,8 +323,10 @@ func (s *ConversationService) LookupByLegacyRef(ctx context.Context, userID pgty
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.AiConversation{}, ErrConversationNotFound
 		}
+
 		return gen.AiConversation{}, fmt.Errorf("looking up legacy ref: %w", err)
 	}
+
 	return conv, nil
 }
 
@@ -323,8 +348,10 @@ func (s *ConversationService) Prefs(ctx context.Context, userID pgtype.UUID) (AI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AIPrefs{}, nil
 		}
+
 		return AIPrefs{}, fmt.Errorf("loading ai prefs: %w", err)
 	}
+
 	return ParseAIPrefs(raw), nil
 }
 
@@ -333,6 +360,7 @@ func (s *ConversationService) SavePrefs(ctx context.Context, userID pgtype.UUID,
 	if err != nil {
 		return fmt.Errorf("encoding ai prefs: %w", err)
 	}
+
 	return s.store.UpsertAIPreferences(ctx, gen.UpsertAIPreferencesParams{
 		UserID:  userID,
 		AiPrefs: raw,

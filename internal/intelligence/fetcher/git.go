@@ -65,6 +65,7 @@ func (f *GitFetcher) Fetch(ctx context.Context, src sources.Source) (FetchResult
 	if repoURL == "" {
 		repoURL = strings.TrimSpace(src.SourceUrl)
 	}
+
 	if err := validateGitRemote(repoURL); err != nil {
 		return FetchResult{}, err
 	}
@@ -75,13 +76,16 @@ func (f *GitFetcher) Fetch(ctx context.Context, src sources.Source) (FetchResult
 		// without a tag has no git identity anyway. The releases API is
 		// out of Phase-2 scope.
 		slog.Warn("fetcher: git: via=releases not supported, falling back to tags", "repo", repoURL)
+
 		via = "tags"
 	}
+
 	if via == "" {
 		via = "files"
 	}
 
 	var body []byte
+
 	var err error
 	switch via {
 	case "tags":
@@ -91,6 +95,7 @@ func (f *GitFetcher) Fetch(ctx context.Context, src sources.Source) (FetchResult
 	default:
 		err = fmt.Errorf("fetcher: git: unknown via %q", via)
 	}
+
 	if err != nil {
 		return FetchResult{}, err
 	}
@@ -116,13 +121,16 @@ func validateGitRemote(repoURL string) error {
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return fmt.Errorf("fetcher: git: repo %q must be an http(s) URL", repoURL)
 	}
+
 	if u.User != nil {
-		return fmt.Errorf("fetcher: git: repo URL must not embed credentials")
+		return errors.New("fetcher: git: repo URL must not embed credentials")
 	}
+
 	host := u.Hostname()
 	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
 		return fmt.Errorf("fetcher: git: repo host %q is a private IP", host)
 	}
+
 	return nil
 }
 
@@ -133,6 +141,7 @@ func isNumericIPPrivate(host string) bool {
 	if ip == nil {
 		return false
 	}
+
 	return sources.IsPrivateIP(ip)
 }
 
@@ -153,6 +162,7 @@ func parseNumericIPv4(host string) net.IP {
 		if s == "" {
 			return 0, false
 		}
+
 		base := 10
 		if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
 			base = 16
@@ -161,13 +171,16 @@ func parseNumericIPv4(host string) net.IP {
 			base = 8
 			s = s[1:]
 		}
+
 		if s == "" {
 			return 0, false
 		}
+
 		n, err := strconv.ParseUint(s, base, bits)
 		if err != nil {
 			return 0, false
 		}
+
 		return n, true
 	}
 
@@ -176,17 +189,21 @@ func parseNumericIPv4(host string) net.IP {
 		if !ok {
 			return nil
 		}
+
 		return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
 	}
 
 	var b [4]byte
+
 	for i, p := range parts {
 		n, ok := parsePart(p, 8)
 		if !ok {
 			return nil
 		}
+
 		b[i] = byte(n)
 	}
+
 	return net.IPv4(b[0], b[1], b[2], b[3])
 }
 
@@ -200,12 +217,15 @@ func (f *GitFetcher) fetchTags(ctx context.Context, repoURL string) ([]byte, err
 	}
 
 	var lines []string
+
 	for _, ref := range refs {
 		if !ref.Name().IsTag() {
 			continue
 		}
+
 		lines = append(lines, fmt.Sprintf("%s\t%s", ref.Name().Short(), ref.Hash().String()))
 	}
+
 	sort.Strings(lines)
 
 	return []byte(strings.Join(lines, "\n") + "\n"), nil
@@ -239,10 +259,12 @@ func (f *GitFetcher) fetchFiles(ctx context.Context, repoURL string, cfg map[str
 	if err != nil {
 		return nil, fmt.Errorf("fetcher: git head: %w", err)
 	}
+
 	commit, err := repo.CommitObject(head.Hash())
 	if err != nil {
 		return nil, fmt.Errorf("fetcher: git commit: %w", err)
 	}
+
 	tree, err := commit.Tree()
 	if err != nil {
 		return nil, fmt.Errorf("fetcher: git tree: %w", err)
@@ -252,21 +274,27 @@ func (f *GitFetcher) fetchFiles(ctx context.Context, repoURL string, cfg map[str
 	maxFileBytes64 := int64(maxFileBytes)
 
 	var b strings.Builder
+
 	count := 0
+
 	err = tree.Files().ForEach(func(file *gitobject.File) error {
 		if count >= maxFiles {
 			return errGitStopWalk
 		}
+
 		if len(paths) > 0 && !gitPathMatch(file.Name, paths) {
 			return nil
 		}
+
 		if file.Size > maxFileBytes64 {
 			return nil
 		}
+
 		content, rerr := file.Contents()
 		if rerr != nil {
 			return nil // unreadable blob is not fatal
 		}
+
 		sum := sha256.Sum256([]byte(content))
 		line, _ := json.Marshal(map[string]any{
 			"path":    file.Name,
@@ -275,7 +303,9 @@ func (f *GitFetcher) fetchFiles(ctx context.Context, repoURL string, cfg map[str
 		})
 		b.Write(line)
 		b.WriteByte('\n')
+
 		count++
+
 		return nil
 	})
 	if err != nil && !errors.Is(err, errGitStopWalk) {
@@ -285,7 +315,7 @@ func (f *GitFetcher) fetchFiles(ctx context.Context, repoURL string, cfg map[str
 	return []byte(b.String()), nil
 }
 
-var errGitStopWalk = fmt.Errorf("git: file cap reached")
+var errGitStopWalk = errors.New("git: file cap reached")
 
 // gitPathMatch reports whether name is under any configured path prefix
 // (directory prefix or exact file match).
@@ -295,10 +325,12 @@ func gitPathMatch(name string, prefixes []string) bool {
 		if p == "" {
 			continue
 		}
+
 		if name == p || strings.HasPrefix(name, strings.TrimSuffix(p, "/")+"/") {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -308,11 +340,14 @@ func stringSliceCfg(cfg map[string]any, key string) []string {
 	if !ok {
 		return nil
 	}
+
 	out := make([]string, 0, len(raw))
+
 	for _, v := range raw {
 		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
 			out = append(out, s)
 		}
 	}
+
 	return out
 }

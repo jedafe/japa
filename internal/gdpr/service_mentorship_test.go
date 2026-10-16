@@ -7,7 +7,6 @@
 package gdpr
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -66,7 +65,7 @@ func insertGDPRTestUser(t *testing.T, database *db.DB, username string) pgtype.U
 	}
 
 	t.Cleanup(func() {
-		ctx := context.Background()
+		ctx := t.Context()
 		database.Writer.Exec(ctx,
 			`DELETE FROM service_bookings WHERE booker_user_id = $1 OR provider_user_id = $1`, id)
 		database.Writer.Exec(ctx,
@@ -84,6 +83,7 @@ func insertGDPRTestUser(t *testing.T, database *db.DB, username string) pgtype.U
 // to 'mentorship'; pass another kind for a non-mentorship control row.
 func insertShadowListing(t *testing.T, database *db.DB, authorID pgtype.UUID, kind, slug string) (contentID, metaID pgtype.UUID) {
 	t.Helper()
+
 	if kind == "" {
 		kind = "mentorship"
 	}
@@ -157,6 +157,7 @@ func TestAnonymizeMentorshipShadowListings_LiveDB(t *testing.T) {
 		tombID); err != nil {
 		t.Fatalf("soft-delete tombstone shadow: %v", err)
 	}
+
 	var tombDeletedAt pgtype.Timestamptz
 	if err := database.Writer.QueryRow(ctx,
 		`SELECT deleted_at FROM contents WHERE id = $1`, tombID).
@@ -175,15 +176,19 @@ func TestAnonymizeMentorshipShadowListings_LiveDB(t *testing.T) {
 	if !got.DeletedAt.Valid {
 		t.Error("shadow listing deleted_at not set — still live")
 	}
+
 	if got.Status != "archived" {
 		t.Errorf("status = %q, want archived", got.Status)
 	}
+
 	if got.Title != "" || got.Body != "" || got.BodyHTML != "" {
 		t.Errorf("PII columns not scrubbed: title=%q body=%q body_html=%q", got.Title, got.Body, got.BodyHTML)
 	}
+
 	if got.Slug != wantSlug {
 		t.Errorf("slug = %q, want %q", got.Slug, wantSlug)
 	}
+
 	wantHashHex := hex.EncodeToString(wantHash[:])
 	if got.ContentHash == nil || *got.ContentHash != wantHashHex {
 		t.Errorf("content_hash = %v, want %q", got.ContentHash, wantHashHex)
@@ -198,12 +203,15 @@ func TestAnonymizeMentorshipShadowListings_LiveDB(t *testing.T) {
 		t.Errorf("tombstone deleted_at rewritten: got %v, want %v",
 			tomb.DeletedAt.Time, tombDeletedAt.Time)
 	}
+
 	if tomb.Title != "" || tomb.Body != "" || tomb.BodyHTML != "" {
 		t.Errorf("tombstone PII not scrubbed: title=%q body=%q", tomb.Title, tomb.Body)
 	}
+
 	if tomb.Slug != "mentor-deleted-"+tombID.String() {
 		t.Errorf("tombstone slug = %q, want mentor-deleted-%s", tomb.Slug, tombID.String())
 	}
+
 	if tomb.Status != "archived" {
 		t.Errorf("tombstone status = %q, want archived", tomb.Status)
 	}
@@ -230,10 +238,12 @@ func TestAnonymizeMentorshipShadowListings_LiveDB(t *testing.T) {
 	if err := q.AnonymizeMentorshipShadowListings(ctx, mentorID); err != nil {
 		t.Fatalf("second AnonymizeMentorshipShadowListings: %v", err)
 	}
+
 	again := readShadowState(t, database, shadowID)
 	if !again.DeletedAt.Valid || again.Title != "" || again.Slug != wantSlug {
 		t.Error("second run mutated the tombstone row")
 	}
+
 	againTomb := readShadowState(t, database, tombID)
 	if !againTomb.DeletedAt.Time.Equal(tombDeletedAt.Time) {
 		t.Error("second run rewrote the opt-out tombstone timestamp")

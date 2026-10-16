@@ -288,7 +288,6 @@ type universityDetail struct {
 // never loads in full on a single SSR render (Section 39 line 149, ADR-039).
 // [public].
 func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
-
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
@@ -316,6 +315,7 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	if within == "" {
 		within = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("state")))
 	}
+
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
 	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", within, sort, limit32, offset)
@@ -346,6 +346,7 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 
 	ids := make([]pgtype.UUID, 0, len(universities))
 	items := make([]map[string]any, 0, len(universities))
+
 	for _, uni := range universities {
 		ids = append(ids, uni.ID)
 		m := universityRowToMap(uni)
@@ -400,7 +401,6 @@ func universityRowToMap[T any](row T) map[string]any {
 // Supports ?page=&limit=&q=&country= query params. Returns {data, meta} with
 // pagination metadata for the admin DataTable. [admin: admin.settings].
 func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request) {
-
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
@@ -429,6 +429,7 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 	if within == "" {
 		within = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("state")))
 	}
+
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
 	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", within, sort, limit32, offset)
@@ -464,7 +465,6 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 // GetUniversity handles GET /api/v1/universities/{slug} — a single university
 // space together with its custom field values. [public].
 func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "University slug is required")
@@ -528,6 +528,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 
 	// Viewer-scoped relation flags for the detail page CTA (Join/Follow).
 	isMember, isPending, isFollowing := false, false, false
+
 	if u := auth.FromContext(r.Context()); u != nil {
 		if rels, relErr := h.spaces.ListViewerSpaceRelations(r.Context(), u.UserID, []pgtype.UUID{space.ID}); relErr == nil {
 			if rel, ok := rels[space.ID.String()]; ok {
@@ -724,7 +725,6 @@ func slugify(s string) string {
 
 // CreateUniversity handles POST /admin/universities — creates a University-type space.
 func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Name     string `json:"name"`
 		Slug     string `json:"slug"`
@@ -760,7 +760,6 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	space, err := h.spaces.CreateSpace(r.Context(), gen.CreateSpaceParams{
-
 		SpaceTypeID:    spaceType.ID,
 		Name:           strings.TrimSpace(input.Name),
 		Slug:           slug,
@@ -861,7 +860,6 @@ func (h *Handlers) resolveInitials(ctx context.Context, displayFields []universi
 
 // UpdateUniversity handles PATCH /admin/universities/:id.
 func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
@@ -960,7 +958,6 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 
 // DeleteUniversity handles DELETE /admin/universities/:id.
 func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
@@ -981,7 +978,6 @@ func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
 
 // VerifyUniversity handles POST /admin/universities/:id/verify.
 func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
@@ -1019,7 +1015,6 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 // a prior verify by setting status back to "pending" (consistent with
 // CreateUniversity's unverified status). Ref: Section 39, audit finding U-1.
 func (h *Handlers) UnverifyUniversity(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
@@ -1066,7 +1061,6 @@ var allowedUniversityStatuses = map[string]bool{
 // the space status to one of {active, pending, suspended}. Ref: Section 39,
 // audit finding U-1.
 func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
@@ -1132,7 +1126,6 @@ func isDuplicateSlugError(err error) bool {
 // from Wikidata P1813. Returns a summary of created / skipped / failed counts.
 // Ref: Section 39, audit finding U-1.
 func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request) {
-
 	// 10 MB upload cap — matches media.max_upload_mb default for a CSV.
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	// #nosec G120 // total body size is bounded by MaxBytesReader above.
@@ -1227,7 +1220,6 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 		}
 
 		space, err := h.spaces.CreateSpace(r.Context(), gen.CreateSpaceParams{
-
 			SpaceTypeID:    spaceType.ID,
 			Name:           name,
 			Slug:           slug,
@@ -1248,6 +1240,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 			} else {
 				failed++
 			}
+
 			continue
 		}
 
@@ -1285,7 +1278,6 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 // pre-selected as Item 1 (Section 39 line 152: "comparison matrix link
 // (redirects to /comparisons/universities)"). Ref: audit finding U-5.
 func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "University slug is required")

@@ -33,6 +33,7 @@ func (r *intelDigestReader) ListRecentForSpace(ctx context.Context, viewerID, sp
 	if limit <= 0 {
 		limit = 3
 	}
+
 	ids := []pgtype.UUID{spaceID}
 
 	routes, err := r.q.ListVisaRoutesBySpaces(ctx, gen.ListVisaRoutesBySpacesParams{
@@ -41,6 +42,7 @@ func (r *intelDigestReader) ListRecentForSpace(ctx context.Context, viewerID, sp
 	if err != nil {
 		return nil, err
 	}
+
 	jobs, err := r.q.ListIntelJobsBySpaces(ctx, gen.ListIntelJobsBySpacesParams{
 		Column1: ids, Limit: limit,
 	})
@@ -52,10 +54,12 @@ func (r *intelDigestReader) ListRecentForSpace(ctx context.Context, viewerID, sp
 	// recordIDByIndex aligns each output item with its intel_record_id so
 	// the blocked-source filter can resolve attribution.
 	recordIDs := make([]pgtype.UUID, 0, len(routes)+len(jobs))
+
 	for _, v := range routes {
 		if !v.IsActive {
 			continue
 		}
+
 		item := publicapi.IntelDigestItem{
 			ID:        v.ID.String(),
 			Kind:      "visa_route",
@@ -65,9 +69,11 @@ func (r *intelDigestReader) ListRecentForSpace(ctx context.Context, viewerID, sp
 		if v.EligibilitySummary != nil {
 			item.Summary = *v.EligibilitySummary
 		}
+
 		out = append(out, item)
 		recordIDs = append(recordIDs, v.IntelRecordID)
 	}
+
 	for _, j := range jobs {
 		item := publicapi.IntelDigestItem{
 			ID:        j.ID.String(),
@@ -78,6 +84,7 @@ func (r *intelDigestReader) ListRecentForSpace(ctx context.Context, viewerID, sp
 		if j.Employer != nil {
 			item.Summary = *j.Employer
 		}
+
 		out = append(out, item)
 		recordIDs = append(recordIDs, j.IntelRecordID)
 	}
@@ -85,9 +92,11 @@ func (r *intelDigestReader) ListRecentForSpace(ctx context.Context, viewerID, sp
 	out = r.filterBlockedSources(ctx, viewerID, out, recordIDs)
 
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt > out[j].CreatedAt })
+
 	if len(out) > int(limit) {
 		out = out[:limit]
 	}
+
 	return out, nil
 }
 
@@ -98,11 +107,14 @@ func (r *intelDigestReader) filterBlockedSources(ctx context.Context, viewerID p
 	if !viewerID.Valid || r.intelSources == nil || r.intelStores == nil || len(items) == 0 {
 		return items
 	}
+
 	blocked, err := r.intelSources.ListBlockedSourceIDs(ctx, viewerID)
 	if err != nil || len(blocked) == 0 {
 		return items
 	}
+
 	blockedSet := make(map[string]struct{}, len(blocked))
+
 	for _, id := range blocked {
 		if id.Valid {
 			blockedSet[id.String()] = struct{}{}
@@ -110,27 +122,33 @@ func (r *intelDigestReader) filterBlockedSources(ctx context.Context, viewerID p
 	}
 
 	valid := make([]pgtype.UUID, 0, len(recordIDs))
+
 	for _, rid := range recordIDs {
 		if rid.Valid {
 			valid = append(valid, rid)
 		}
 	}
+
 	if len(valid) == 0 {
 		return items
 	}
+
 	sourceMap, err := r.intelStores.MapSourcesByRecordIDs(ctx, valid)
 	if err != nil {
 		return items
 	}
 
 	filtered := make([]publicapi.IntelDigestItem, 0, len(items))
+
 	for i, it := range items {
 		if attr, ok := sourceMap[recordIDs[i].String()]; ok {
 			if _, isBlocked := blockedSet[attr.SourceID]; isBlocked {
 				continue
 			}
 		}
+
 		filtered = append(filtered, it)
 	}
+
 	return filtered
 }

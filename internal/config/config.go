@@ -269,6 +269,7 @@ func applyDefaults(cfg *Config) error {
 		paystackOK := cfg.PaystackSecretKey != ""
 		stripeOK := cfg.StripeSecretKey != "" && cfg.StripeWebhookSecret != ""
 		nowOK := cfg.NOWPaymentsAPIKey != "" && cfg.NOWPaymentsIPNSecret != ""
+
 		if cfg.StripeSecretKey != "" && cfg.StripeWebhookSecret == "" {
 			return errors.New("JC_STRIPE_WEBHOOK_SECRET must be set in production when JC_STRIPE_SECRET_KEY is set (webhooks cannot go unverified)")
 		}

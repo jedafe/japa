@@ -744,6 +744,7 @@ func exploreFeedPath() map[string]any {
 	// Feeds an unauthenticated caller may request (IP rate-limited). Only
 	// "popular" — the browser extension's anonymous new-tab feed.
 	op["x-anonymous-feeds"] = []any{"popular"}
+
 	return map[string]any{"get": op}
 }
 
@@ -908,6 +909,7 @@ func digestPath() map[string]any {
 
 func extensionTokensPath() map[string]any {
 	sessionAuth := []any{map[string]any{"bearerAuth": []any{}}}
+
 	return map[string]any{
 		"get": map[string]any{
 			"operationId": "listExtensionTokens",
@@ -967,6 +969,7 @@ func myBookmarksPath() map[string]any {
 
 func myBookmarkByContentPath() map[string]any {
 	params := []any{uuidPathParam("content_id", "Content ID")}
+
 	return map[string]any{
 		"put": map[string]any{
 			"operationId":      "addMyBookmark",
@@ -1173,6 +1176,7 @@ func monthsParam(defaultVal int, description string) map[string]any {
 	if defaultVal > 0 {
 		schema["default"] = defaultVal
 	}
+
 	return map[string]any{
 		"name":        "months",
 		"in":          "query",

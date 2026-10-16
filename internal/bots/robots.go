@@ -89,7 +89,6 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 // cached in Valkey with a 24-hour TTL to avoid regenerating on every request.
 func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		// Try cache first
 		cacheKey := robotsCacheKey
 		if rdb != nil {

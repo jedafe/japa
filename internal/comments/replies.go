@@ -19,7 +19,6 @@ import (
 // content and soft-deleted comments are excluded by the query.
 func (s *Service) ListByAuthor(ctx context.Context, authorID pgtype.UUID, limit, offset int32) ([]gen.ListCommentsByAuthorRow, int32, error) {
 	rows, err := s.read.ListCommentsByAuthor(ctx, gen.ListCommentsByAuthorParams{
-
 		AuthorUserID: authorID,
 		PageLimit:    limit,
 		PageOffset:   offset,
@@ -43,7 +42,6 @@ func (s *Service) ListByAuthor(ctx context.Context, authorID pgtype.UUID, limit,
 // Public-safe: only replies on published+public content; non-active users are
 // already 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
-
 	var authorID pgtype.UUID
 	if err := authorID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")

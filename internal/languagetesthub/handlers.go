@@ -158,7 +158,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleListTests handles GET /language-tests — list all language tests.
 func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
@@ -181,7 +180,6 @@ func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
 // required tests + minimum scores for a destination/visa combination.
 // Query params: ?dest=&visa=.
 func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
@@ -214,7 +212,6 @@ func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request
 // returning the test details plus a summary of resources and score
 // stories.
 func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
@@ -273,7 +270,6 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 // HandleListResources handles GET /language-tests/:test_slug/resources —
 // list prep resources for a test.
 func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
@@ -322,7 +318,6 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 // HandleListStories handles GET /language-tests/:test_slug/stories — list
 // published score stories for a test. Query params: ?dest=&page=&limit=.
 func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return

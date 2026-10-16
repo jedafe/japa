@@ -162,16 +162,19 @@ func (h *Handlers) CreateKey(w http.ResponseWriter, r *http.Request) {
 	// callers attempting the override are rejected with
 	// scope_requires_admin (same error as admin-only scopes).
 	ownerID := user.UserID
+
 	if input.UserID != "" {
 		var target pgtype.UUID
 		if err := target.Scan(input.UserID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "user_id must be a UUID")
 			return
 		}
+
 		if target != user.UserID && !h.Service.CallerCanManageKeys(r.Context(), user.UserID) {
 			errpkg.WriteError(w, http.StatusForbidden, "scope_requires_admin", "Minting a key for another user requires admin approval")
 			return
 		}
+
 		ownerID = target
 	}
 
@@ -790,7 +793,6 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	sort := r.URL.Query().Get("sort")
 
 	tags, err := h.Queries.ListTagsPaginated(r.Context(), gen.ListTagsPaginatedParams{
-
 		Q:          q,
 		Sort:       sort,
 		PageLimit:  limit,
@@ -1000,7 +1002,6 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	offset := parseOffset(r)
 
 	users, err := h.Queries.ListPublicUsers(r.Context(), gen.ListPublicUsersParams{
-
 		Search:      search,
 		ProfileType: profileType,
 		PageOffset:  offset,
@@ -1087,7 +1088,6 @@ func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Requ
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingContent(r.Context(), gen.GetTrendingContentParams{
-
 		Window: window, Column2: geoCode, Limit: limit,
 	})
 	if err != nil {
@@ -1120,7 +1120,6 @@ func (h *Handlers) GetTrendingTagsHandler(w http.ResponseWriter, r *http.Request
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingTags(r.Context(), gen.GetTrendingTagsParams{
-
 		Window: window, Column2: geoCode, Limit: limit,
 	})
 	if err != nil {
@@ -1153,7 +1152,6 @@ func (h *Handlers) GetTrendingSpacesHandler(w http.ResponseWriter, r *http.Reque
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingSpaces(r.Context(), gen.GetTrendingSpacesParams{
-
 		Window: window, Column2: geoCode, Limit: limit,
 	})
 	if err != nil {
@@ -1186,7 +1184,6 @@ func (h *Handlers) GetTrendingUsersHandler(w http.ResponseWriter, r *http.Reques
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingUsers(r.Context(), gen.GetTrendingUsersParams{
-
 		Window: window, Column2: geoCode, Limit: limit,
 	})
 	if err != nil {

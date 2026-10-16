@@ -16,6 +16,7 @@ func TestCurateOnlyEntityTypes(t *testing.T) {
 		if _, ok := ForEntityType(et); !ok {
 			t.Errorf("entity type %q not registered", et)
 		}
+
 		if !IsCurateOnly(et) {
 			t.Errorf("IsCurateOnly(%q) = false, want true", et)
 		}

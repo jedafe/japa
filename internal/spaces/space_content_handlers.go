@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -54,6 +53,7 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var cursor pgtype.Timestamptz
+
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
 		// Accept RFC3339 (the format this endpoint itself returns in
 		// created_at fields) first, then fall back to Postgres text format
@@ -161,6 +161,7 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 		default:
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
 		}
+
 		return
 	}
 

@@ -244,6 +244,7 @@ func CFVSetHandler(deps *ToolDeps) ToolHandler {
 			if err := t.Scan(*a.ValueDate); err != nil {
 				return errorToolResult("invalid_value_date", "value_date is not a valid timestamp"), nil
 			}
+
 			params.ValueDate = t
 		}
 
@@ -411,6 +412,7 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 
 					continue
 				}
+
 				params.ValueDate = t
 			}
 

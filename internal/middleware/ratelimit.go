@@ -85,6 +85,7 @@ func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Ha
 					"tier", tier)
 				w.Header().Set("X-RateLimit-Degraded", "true")
 				next.ServeHTTP(w, r)
+
 				return
 			}
 
@@ -127,6 +128,7 @@ func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Ha
 					"tier", tier, "identifier", identifier, "error", err)
 				w.Header().Set("X-RateLimit-Degraded", "true")
 				next.ServeHTTP(w, r)
+
 				return
 			}
 

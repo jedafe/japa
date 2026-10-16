@@ -12,15 +12,18 @@ func testUUID(b byte) pgtype.UUID { return pgtype.UUID{Valid: true, Bytes: [16]b
 
 func numericVal(t *testing.T, s string) pgtype.Numeric {
 	t.Helper()
+
 	var n pgtype.Numeric
 	if err := n.Scan(s); err != nil {
 		t.Fatalf("scan numeric: %v", err)
 	}
+
 	return n
 }
 
 func TestComputedEligibleField(t *testing.T) {
 	spec := []byte(`{"computed":{"metric":"avg","sources":[{"group":"g","key":"k"}]}}`)
+
 	cases := []struct {
 		name     string
 		typ      string
@@ -45,6 +48,7 @@ func TestComputedEligibleField(t *testing.T) {
 
 func TestComputedScalarFromValue(t *testing.T) {
 	ppOpts := []byte(`{"primary_part":"price","parts":[{"key":"price","kind":"money"},{"key":"details"}]}`)
+
 	cases := []struct {
 		name    string
 		typ     string
@@ -75,12 +79,15 @@ func TestFoldComputedMetric(t *testing.T) {
 	if got := FoldComputedMetric("avg", xs); got != 20 {
 		t.Errorf("avg: got %v", got)
 	}
+
 	if got := FoldComputedMetric("sum", xs); got != 60 {
 		t.Errorf("sum: got %v", got)
 	}
+
 	if got := FoldComputedMetric("min", xs); got != 10 {
 		t.Errorf("min: got %v", got)
 	}
+
 	if got := FoldComputedMetric("max", xs); got != 30 {
 		t.Errorf("max: got %v", got)
 	}
@@ -121,12 +128,15 @@ func TestComputedOverlayApply(t *testing.T) {
 	if got, ok := values["exp_food"].(float64); !ok || got < 6.93 || got > 6.95 {
 		t.Errorf("exp_food: got %v want ~6.94 (sum of avgs)", values["exp_food"])
 	}
+
 	if got := values["exp_net"]; got != 69.0 {
 		t.Errorf("exp_net: got %v want 69 (avg)", got)
 	}
+
 	if _, ok := values["exp_none"]; ok {
 		t.Error("exp_none: stale stored value must be deleted when no source resolves")
 	}
+
 	if values["other"] != "keep" {
 		t.Error("non-computed key must survive")
 	}
@@ -136,10 +146,12 @@ func TestComputedDisplayValue(t *testing.T) {
 	if got := ComputedDisplayValue(FieldTypeCurrency, nil, 5.0); got != 5.0 {
 		t.Errorf("scalar: got %v", got)
 	}
+
 	pr := ComputedDisplayValue(FieldTypePriceRange, nil, 5.0).(map[string]any)
 	if pr["avg"] != 5.0 {
 		t.Errorf("price_range: got %v", pr)
 	}
+
 	pp := ComputedDisplayValue(FieldTypePriceParts, []byte(`{"primary_part":"price","parts":[{"key":"price","kind":"money"}]}`), 5.0).(map[string]any)
 	if pp["parts"].(map[string]any)["price"] != 5.0 {
 		t.Errorf("price_parts: got %v", pp)

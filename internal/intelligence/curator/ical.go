@@ -48,6 +48,7 @@ func (ICal) Curate(_ context.Context, body []byte, _ string, ch sources.Channel)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(events) == 0 {
 		return nil, errors.New("curator: ical: no VEVENT blocks found")
 	}
@@ -83,11 +84,14 @@ func parseICalEvents(body []byte) ([]icalEvent, error) {
 	}
 
 	var events []icalEvent
+
 	var cur icalEvent
+
 	inEvent := false
 
 	for _, line := range lines {
 		upper := strings.ToUpper(line)
+
 		switch {
 		case upper == "BEGIN:VEVENT":
 			cur = icalEvent{}
@@ -96,12 +100,14 @@ func parseICalEvents(body []byte) ([]icalEvent, error) {
 			if inEvent {
 				events = append(events, cur)
 			}
+
 			inEvent = false
 		case inEvent:
 			name, prop := parseICalProp(line)
 			if name == "" {
 				continue
 			}
+
 			cur[name] = append(cur[name], prop)
 		}
 	}
@@ -116,14 +122,17 @@ func unfoldICalLines(s string) []string {
 	s = strings.ReplaceAll(s, "\r", "\n")
 
 	var lines []string
+
 	for _, raw := range strings.Split(s, "\n") {
 		if raw == "" {
 			continue
 		}
+
 		if (raw[0] == ' ' || raw[0] == '\t') && len(lines) > 0 {
 			lines[len(lines)-1] += raw[1:]
 			continue
 		}
+
 		lines = append(lines, raw)
 	}
 
@@ -144,6 +153,7 @@ func parseICalProp(line string) (string, icalProp) {
 	prop := icalProp{value: unescapeICalValue(value)}
 
 	parts := strings.Split(head, ";")
+
 	name := strings.ToUpper(strings.TrimSpace(parts[0]))
 	if name == "" {
 		return "", icalProp{}
@@ -154,9 +164,11 @@ func parseICalProp(line string) (string, icalProp) {
 		if !ok {
 			continue
 		}
+
 		if prop.params == nil {
 			prop.params = map[string]string{}
 		}
+
 		prop.params[strings.ToUpper(strings.TrimSpace(k))] = strings.Trim(strings.TrimSpace(v), `"`)
 	}
 
@@ -194,6 +206,7 @@ func icalEventToExtraction(ev icalEvent) extractor.Extraction {
 	if s := icalValue(ev, "SUMMARY"); s != "" {
 		field(ext, "title", s, s)
 	}
+
 	if s := icalValue(ev, "DESCRIPTION"); s != "" {
 		field(ext, "description", s, s)
 	}
@@ -203,17 +216,21 @@ func icalEventToExtraction(ev icalEvent) extractor.Extraction {
 			field(ext, "starts_at", iso, raw)
 		}
 	}
+
 	if prop, ok := icalPropFor(ev, "DTEND"); ok {
 		if raw, iso := prop.value, icalDateTime(prop); iso != "" {
 			field(ext, "ends_at", iso, raw)
 		}
 	}
+
 	if s := icalValue(ev, "LOCATION"); s != "" {
 		field(ext, "location", s, s)
 	}
+
 	if s := icalValue(ev, "URL"); s != "" {
 		field(ext, "url", s, s)
 	}
+
 	if s := icalOrganizer(ev); s != "" {
 		field(ext, "organizer", s, s)
 	}
@@ -240,6 +257,7 @@ func icalOrganizer(ev icalEvent) string {
 	if !ok {
 		return ""
 	}
+
 	if cn := prop.params["CN"]; cn != "" {
 		return cn
 	}
@@ -279,6 +297,7 @@ func parseICalTime(prop icalProp) (time.Time, bool) {
 	layouts := []string{"20060102T150405Z", "20060102T150405", "20060102T1504"}
 
 	loc := time.UTC
+
 	if tzid := prop.params["TZID"]; tzid != "" && !strings.HasSuffix(v, "Z") {
 		if l, err := time.LoadLocation(tzid); err == nil {
 			loc = l
@@ -289,6 +308,7 @@ func parseICalTime(prop icalProp) (time.Time, bool) {
 		if strings.HasSuffix(v, "Z") && !strings.HasSuffix(layout, "Z") {
 			continue
 		}
+
 		if t, err := time.ParseInLocation(layout, v, loc); err == nil {
 			return t, true
 		}
@@ -304,6 +324,7 @@ func icalDateTime(prop icalProp) string {
 	if !ok {
 		return ""
 	}
+
 	if len(strings.TrimSpace(prop.value)) == 8 && !strings.Contains(prop.value, "T") {
 		return t.Format("2006-01-02")
 	}
@@ -323,6 +344,7 @@ func expandRRule(rrule string, dtstart time.Time) []string {
 		if !ok {
 			continue
 		}
+
 		parts[strings.ToUpper(strings.TrimSpace(k))] = strings.ToUpper(strings.TrimSpace(v))
 	}
 
@@ -337,6 +359,7 @@ func expandRRule(rrule string, dtstart time.Time) []string {
 	}
 
 	interval := 1
+
 	if s := parts["INTERVAL"]; s != "" {
 		if n, err := strconv.Atoi(s); err == nil && n > 0 {
 			interval = n
@@ -344,6 +367,7 @@ func expandRRule(rrule string, dtstart time.Time) []string {
 	}
 
 	count := recurrenceMax
+
 	if s := parts["COUNT"]; s != "" {
 		if n, err := strconv.Atoi(s); err == nil && n > 0 {
 			count = n
@@ -351,6 +375,7 @@ func expandRRule(rrule string, dtstart time.Time) []string {
 	}
 
 	var until time.Time
+
 	if s := parts["UNTIL"]; s != "" {
 		if t, ok := parseICalTime(icalProp{value: s}); ok {
 			until = t
@@ -360,6 +385,7 @@ func expandRRule(rrule string, dtstart time.Time) []string {
 	horizon := dtstart.Add(recurrenceHorizon)
 
 	var step func(time.Time, int) time.Time
+
 	switch parts["FREQ"] {
 	case "DAILY":
 		step = func(t time.Time, i int) time.Time { return t.AddDate(0, 0, interval*i) }
@@ -380,9 +406,11 @@ func expandRRule(rrule string, dtstart time.Time) []string {
 		if occ.After(horizon) {
 			break
 		}
+
 		if !until.IsZero() && occ.After(until) {
 			break
 		}
+
 		out = append(out, occ.UTC().Format(time.RFC3339))
 	}
 

@@ -1301,6 +1301,7 @@ func (s *Service) AdminCreateCategory(ctx context.Context, in CategoryInput) (ge
 	if slug == "" {
 		slug = in.Name
 	}
+
 	slug = content.Slugify(slug)
 	if slug == "" {
 		return gen.RoadmapCategory{}, fmt.Errorf("%w: slug is required (could not be slugified)", errpkg.ErrRequired)
@@ -1348,6 +1349,7 @@ func (s *Service) AdminUpdateCategory(ctx context.Context, id pgtype.UUID, in Ca
 	}
 
 	slug := current.Slug
+
 	if in.Slug != "" {
 		if candidate := content.Slugify(in.Slug); candidate != "" && candidate != current.Slug {
 			slug = candidate

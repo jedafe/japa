@@ -134,6 +134,7 @@ func TestProposeSourceRequest_NewFields(t *testing.T) {
 	t.Parallel()
 
 	var req proposeSourceRequest
+
 	body := `{
 		"name": "Example",
 		"source_url": "https://example.com",
@@ -148,9 +149,11 @@ func TestProposeSourceRequest_NewFields(t *testing.T) {
 	if len(req.Categories) != 2 || req.Categories[0] != "news" || req.Categories[1] != "job" {
 		t.Errorf("categories = %v, want [news job]", req.Categories)
 	}
+
 	if req.SourceKind != "aggregator" {
 		t.Errorf("source_kind = %q, want aggregator", req.SourceKind)
 	}
+
 	if len(req.ProbeSnapshot) == 0 {
 		t.Error("probe_snapshot was not bound")
 	}
@@ -159,6 +162,7 @@ func TestProposeSourceRequest_NewFields(t *testing.T) {
 	if err := json.Unmarshal(req.ProbeSnapshot, &snapshot); err != nil {
 		t.Fatalf("probe_snapshot is not a JSON object: %v", err)
 	}
+
 	if _, ok := snapshot["final_url"]; !ok {
 		t.Errorf("probe_snapshot missing final_url: %s", req.ProbeSnapshot)
 	}

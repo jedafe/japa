@@ -28,7 +28,7 @@ const ancestorDepth = 3
 
 // WikiSpaceRefDTO is one node in an ancestor chain or rollup row — the
 // minimal space identity a breadcrumb or table cell needs.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiSpaceRefDTO struct {
 	// ID enables compare-preselect deep links on rollup rows (§80 Reader
 	// UX); omitted when unknown.
@@ -44,7 +44,7 @@ type WikiSpaceRefDTO struct {
 }
 
 // WikiSiblingDTO is one sibling page in a category's Prev/Next ordering.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiSiblingDTO struct {
 	Slug     string `json:"slug"`
 	Title    string `json:"title"`
@@ -59,7 +59,7 @@ type WikiSiblingDTO struct {
 // falls back to defaultRollupRowsLimit.
 // Mode "directory" switches the category page from metric aggregation to a
 // child-space list (§80).
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiRollupConfig struct {
 	Enabled      bool     `json:"enabled"`
 	Mode         string   `json:"mode,omitempty"`
@@ -99,7 +99,7 @@ const defaultRollupRowsLimit = 50
 
 // WikiRollupMetricDTO carries the requested aggregates for one field —
 // nil members are metrics the config didn't request.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiRollupMetricDTO struct {
 	Min *float64 `json:"min,omitempty"`
 	Avg *float64 `json:"avg,omitempty"`
@@ -109,7 +109,7 @@ type WikiRollupMetricDTO struct {
 // WikiRollupFieldDTO is one aggregated field: for scalar numeric fields
 // min/avg/max are over the stored values; for price_range fields min is the
 // minimum of mins, avg the mean of avgs, max the maximum of maxes.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiRollupFieldDTO struct {
 	Key       string `json:"key"`
 	Label     string `json:"label"`
@@ -133,7 +133,7 @@ type WikiRollupFieldDTO struct {
 // WikiRollupPageRefDTO identifies a sub-page rollup row — the
 // /wiki/{space}/{slug} link target plus its display title
 // (section_label when set, else the {name}-substituted label).
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiRollupPageRefDTO struct {
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
@@ -143,7 +143,7 @@ type WikiRollupPageRefDTO struct {
 // the "Cost of Living by City" table rows on a country page. In pages
 // mode Page names the sub-page the row aggregates and Space is the host
 // space for shape stability.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiRollupRowDTO struct {
 	Space  WikiSpaceRefDTO       `json:"space"`
 	Page   *WikiRollupPageRefDTO `json:"page,omitempty"`
@@ -155,7 +155,7 @@ type WikiRollupRowDTO struct {
 // Scope is "pages" for page-mode payloads (empty for the legacy
 // descendant axis) so the frontend picks row labels/links without
 // sniffing rows.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiRollupDTO struct {
 	Scope  string               `json:"scope,omitempty"`
 	Fields []WikiRollupFieldDTO `json:"fields"`
@@ -167,7 +167,7 @@ type WikiRollupDTO struct {
 // space's identity plus geo_code and its active wiki page count. ImageURL,
 // Blurb, and Kind carry the richer card surface added by §80 (attraction
 // directory grids); they are empty when the child has no media/fields.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiDirectoryChildDTO struct {
 	Slug      string  `json:"slug"`
 	Name      string  `json:"name"`
@@ -188,7 +188,7 @@ type WikiDirectoryChildDTO struct {
 // Levels lists the distinct child type slugs across the full (pre-cap)
 // listing, so type filters stay complete even when the cap truncates
 // Children.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiDirectoryDTO struct {
 	Levels   []string                `json:"levels"`
 	Children []WikiDirectoryChildDTO `json:"children"`
@@ -215,6 +215,7 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 		slog.Warn("wiki: directory: type scope failed", "error", err)
 		return nil
 	}
+
 	if len(typeIDs) == 0 {
 		return nil
 	}
@@ -225,11 +226,13 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 			"space_id", spaceID.String(), "error", err)
 		return nil
 	}
+
 	if len(children) == 0 {
 		return nil
 	}
 
 	limit := defaultDirectoryLimit
+
 	if s.settings != nil {
 		if n := s.settings.GetIntOr(ctx, "wiki.directory_default_limit", defaultDirectoryLimit); n > 0 {
 			limit = n
@@ -241,21 +244,26 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 	// filter chip because scoped search (?within=&level=) reaches it.
 	seen := make(map[string]bool, 4)
 	levels := make([]string, 0, 4)
+
 	for _, c := range children {
 		if c.SpaceTypeSlug == "" || seen[c.SpaceTypeSlug] {
 			continue
 		}
+
 		seen[c.SpaceTypeSlug] = true
+
 		levels = append(levels, c.SpaceTypeSlug)
 	}
 
 	// §80 directory cards: sort+cap first so image/field batch resolution
 	// only touches the children actually rendered — not the full listing.
 	sortDirectoryChildren(children)
+
 	n := len(children)
 	if limit > 0 && n > limit {
 		n = limit
 	}
+
 	capped := children[:n]
 
 	imageURLs := s.directoryChildImages(ctx, capped)
@@ -276,9 +284,11 @@ func sortDirectoryChildren(children []WikiDirectoryChild) {
 		if children[i].Depth != children[j].Depth {
 			return children[i].Depth < children[j].Depth
 		}
+
 		if children[i].Name != children[j].Name {
 			return children[i].Name < children[j].Name
 		}
+
 		return children[i].Slug < children[j].Slug
 	})
 }
@@ -291,6 +301,7 @@ func directoryChildDTOs(
 	kinds map[pgtype.UUID]string,
 ) []WikiDirectoryChildDTO {
 	out := make([]WikiDirectoryChildDTO, 0, len(children))
+
 	for _, c := range children {
 		dto := WikiDirectoryChildDTO{
 			Slug: c.Slug, Name: c.Name, Level: c.Level,
@@ -301,11 +312,14 @@ func directoryChildDTOs(
 		if url := imageURLs[c.ID]; url != "" {
 			dto.ImageURL = url
 		}
+
 		if kind := kinds[c.ID]; kind != "" {
 			dto.Kind = kind
 		}
+
 		out = append(out, dto)
 	}
+
 	return out
 }
 
@@ -320,16 +334,19 @@ func (s *Service) directoryChildImages(ctx context.Context, children []WikiDirec
 
 	seen := make(map[pgtype.UUID]struct{}, len(children))
 	ids := make([]pgtype.UUID, 0, len(children)*2)
+
 	for _, c := range children {
 		for _, mid := range []pgtype.UUID{c.HeaderImageID, c.LogoMediaID} {
 			if mid.Valid {
 				if _, dup := seen[mid]; !dup {
 					seen[mid] = struct{}{}
+
 					ids = append(ids, mid)
 				}
 			}
 		}
 	}
+
 	if len(ids) == 0 {
 		return nil
 	}
@@ -341,25 +358,31 @@ func (s *Service) directoryChildImages(ctx context.Context, children []WikiDirec
 	}
 
 	byID := make(map[pgtype.UUID]*gen.Medium, len(mediaRows))
+
 	for i := range mediaRows {
 		m := mediaRows[i]
 		byID[m.ID] = &m
 	}
 
 	out := make(map[pgtype.UUID]string, len(children))
+
 	for _, c := range children {
 		var m *gen.Medium
+
 		switch {
 		case c.HeaderImageID.Valid:
 			m = byID[c.HeaderImageID]
 		case c.LogoMediaID.Valid:
 			m = byID[c.LogoMediaID]
 		}
+
 		if m == nil {
 			continue
 		}
+
 		out[c.ID] = s.media.GetMediaURL(m, media.ImageProxyOpts{Width: 640, Height: 360, Format: "webp"})
 	}
+
 	return out
 }
 
@@ -385,6 +408,7 @@ func selectValueJSON(raw []byte) string {
 		if s, ok := t["value"].(string); ok {
 			return s
 		}
+
 		if arr, ok := t["values"].([]any); ok && len(arr) > 0 {
 			if s, ok := arr[0].(string); ok {
 				return s
@@ -415,14 +439,17 @@ func (s *Service) directoryChildKinds(ctx context.Context, children []WikiDirect
 	}
 
 	out := make(map[pgtype.UUID]string, len(children))
+
 	for _, v := range vals {
 		if v.FieldKey != "kind" {
 			continue
 		}
+
 		if kind := selectValueJSON(v.ValueJson); kind != "" {
 			out[v.EntityID] = kind
 		}
 	}
+
 	return out
 }
 
@@ -457,17 +484,18 @@ func parseRollupConfig(raw []byte) *WikiRollupConfig {
 // when no declared edge applies — and every non-picked parent is returned
 // as an alternate ("also under X" per §6 of the §80 amendment). Returns
 // the chain root-first plus the alternates.
-func (s *Service) getAncestors(ctx context.Context, spaceID, spaceTypeID pgtype.UUID) (chain []WikiSpaceRefDTO, alternates []WikiSpaceRefDTO) {
+func (s *Service) getAncestors(ctx context.Context, spaceID, spaceTypeID pgtype.UUID) (chain, alternates []WikiSpaceRefDTO) {
 	visited := map[pgtype.UUID]bool{spaceID: true}
 
 	curID, curTypeID := spaceID, spaceTypeID
-	for depth := 0; depth < ancestorDepth; depth++ {
+	for range ancestorDepth {
 		parents, err := s.store.ListSpaceParentLinks(ctx, curID)
 		if err != nil {
 			slog.Warn("wiki: ancestors: parent links failed",
 				"space_id", curID.String(), "error", err)
 			break
 		}
+
 		if len(parents) == 0 {
 			break
 		}
@@ -476,11 +504,13 @@ func (s *Service) getAncestors(ctx context.Context, spaceID, spaceTypeID pgtype.
 		for _, r := range rest {
 			alternates = append(alternates, spaceRefFromLink(r))
 		}
+
 		if pick == nil {
 			break
 		}
 
 		visited[pick.ID] = true
+
 		chain = append([]WikiSpaceRefDTO{spaceRefFromLink(*pick)}, chain...)
 
 		curID, curTypeID = pick.ID, pick.SpaceTypeID
@@ -496,13 +526,17 @@ func (s *Service) getAncestors(ctx context.Context, spaceID, spaceTypeID pgtype.
 		for _, a := range chain {
 			seen[a.ID] = true
 		}
+
 		out := make([]WikiSpaceRefDTO, 0, len(alternates))
+
 		for _, a := range alternates {
 			if !seen[a.ID] {
 				seen[a.ID] = true
+
 				out = append(out, a)
 			}
 		}
+
 		alternates = out
 	}
 
@@ -526,17 +560,20 @@ func spaceRefFromLink(p WikiParentLink) WikiSpaceRefDTO {
 // parents — the ancestors_alt set.
 func (s *Service) pickAncestor(ctx context.Context, parents []WikiParentLink, curTypeID pgtype.UUID, visited map[pgtype.UUID]bool) (*WikiParentLink, []WikiParentLink) {
 	candidates := make([]WikiParentLink, 0, len(parents))
+
 	for _, p := range parents {
 		if !visited[p.ID] {
 			candidates = append(candidates, p)
 		}
 	}
+
 	if len(candidates) == 0 {
 		return nil, nil
 	}
 
 	// Declared parent types of the current node's type.
 	declared := map[pgtype.UUID]bool{}
+
 	if curTypeID.Valid {
 		if ids, err := s.store.ListTypeParentIDs(ctx, curTypeID); err == nil {
 			for _, id := range ids {
@@ -567,15 +604,18 @@ func (s *Service) pickAncestor(ctx context.Context, parents []WikiParentLink, cu
 	// country). Drops the "higher" candidate each comparison.
 	if len(pool) > 1 {
 		childOf := map[pgtype.UUID]bool{}
+
 		for _, p := range pool {
 			kids, err := s.store.ListTypeChildIDs(ctx, p.SpaceTypeID)
 			if err != nil {
 				continue
 			}
+
 			for _, k := range kids {
 				childOf[k] = true
 			}
 		}
+
 		if deep := filterLinks(pool, func(p WikiParentLink) bool {
 			return childOf[p.SpaceTypeID]
 		}); len(deep) > 0 {
@@ -593,6 +633,7 @@ func (s *Service) pickAncestor(ctx context.Context, parents []WikiParentLink, cu
 
 	pick := pool[0]
 	rest := make([]WikiParentLink, 0, len(candidates)-1)
+
 	for _, p := range candidates {
 		if p.ID != pick.ID {
 			rest = append(rest, p)
@@ -604,11 +645,13 @@ func (s *Service) pickAncestor(ctx context.Context, parents []WikiParentLink, cu
 
 func filterLinks(in []WikiParentLink, keep func(WikiParentLink) bool) []WikiParentLink {
 	out := make([]WikiParentLink, 0, len(in))
+
 	for _, p := range in {
 		if keep(p) {
 			out = append(out, p)
 		}
 	}
+
 	return out
 }
 
@@ -634,10 +677,12 @@ func (s *Service) getSiblings(ctx context.Context, spaceID pgtype.UUID, spaceNam
 
 	if parentTemplateID.Valid {
 		out := make([]WikiSiblingDTO, 0, 4)
+
 		for _, t := range templates {
 			if t.ParentTemplateID != parentTemplateID {
 				continue
 			}
+
 			out = append(out, WikiSiblingDTO{
 				Slug:     t.Slug,
 				Title:    substituteTemplateLabel(t.Label, spaceName),
@@ -651,6 +696,7 @@ func (s *Service) getSiblings(ctx context.Context, spaceID pgtype.UUID, spaceNam
 			if out[i].Position != out[j].Position {
 				return out[i].Position < out[j].Position
 			}
+
 			return out[i].Slug < out[j].Slug
 		})
 
@@ -676,9 +722,11 @@ func (s *Service) getSiblings(ctx context.Context, spaceID pgtype.UUID, spaceNam
 	templateSlugs := make(map[string]bool, len(templates))
 	for _, t := range templates {
 		templateSlugs[t.Slug] = true
+
 		if t.ParentTemplateID.Valid {
 			continue // nested topics sibling only within their parent scope
 		}
+
 		refs = append(refs, siblingRef{
 			dto: WikiSiblingDTO{
 				Slug:     t.Slug,
@@ -698,6 +746,7 @@ func (s *Service) getSiblings(ctx context.Context, spaceID pgtype.UUID, spaceNam
 			if r.Slug == cat.Slug || templateSlugs[r.Slug] {
 				continue
 			}
+
 			refs = append(refs, siblingRef{
 				dto: WikiSiblingDTO{
 					Slug:     r.Slug,
@@ -717,9 +766,11 @@ func (s *Service) getSiblings(ctx context.Context, spaceID pgtype.UUID, spaceNam
 		if refs[i].dto.Position != refs[j].dto.Position {
 			return refs[i].dto.Position < refs[j].dto.Position
 		}
+
 		if refs[i].createdAt.Valid != refs[j].createdAt.Valid {
 			return refs[j].createdAt.Valid // stub's null time sorts first
 		}
+
 		if refs[i].createdAt != refs[j].createdAt {
 			return refs[i].createdAt.Time.Before(refs[j].createdAt.Time)
 		}
@@ -780,23 +831,27 @@ func (s *Service) pageParents(ctx context.Context, cat *WikiCategory, tmpl *Wiki
 	// parent so the emitted chain matches its documented order.
 	if tmpl != nil {
 		var ancestors []WikiPageParentDTO
+
 		visited := map[pgtype.UUID]bool{tmpl.ID: true}
 		for pid := tmpl.ParentTemplateID; pid.Valid; {
 			if visited[pid] {
 				break
 			}
+
 			visited[pid] = true
 
 			p, err := s.store.GetPageTemplate(ctx, pid)
 			if err != nil {
 				break
 			}
+
 			ancestors = append(ancestors, WikiPageParentDTO{
 				Slug:  p.Slug,
 				Title: substituteTemplateLabel(p.Label, spaceName),
 			})
 			pid = p.ParentTemplateID
 		}
+
 		for i := len(ancestors) - 1; i >= 0; i-- {
 			out = append(out, ancestors[i])
 		}
@@ -814,6 +869,7 @@ func childTemplates(templates []WikiPageTemplate, parentID pgtype.UUID) []WikiPa
 	}
 
 	out := make([]WikiPageTemplate, 0, 4)
+
 	for _, t := range templates {
 		if t.ParentTemplateID == parentID {
 			out = append(out, t)
@@ -830,11 +886,13 @@ func childTemplates(templates []WikiPageTemplate, parentID pgtype.UUID) []WikiPa
 // but means "the whole top level" for the category page.
 func topLevelTemplates(templates []WikiPageTemplate) []WikiPageTemplate {
 	out := make([]WikiPageTemplate, 0, len(templates))
+
 	for _, t := range templates {
 		if !t.ParentTemplateID.Valid {
 			out = append(out, t)
 		}
 	}
+
 	return out
 }
 
@@ -859,13 +917,16 @@ func (s *Service) compositeSections(ctx context.Context, userID, spaceID pgtype.
 		}
 
 		fields := []EntityFieldDTO{}
+
 		if grp, err := s.GetPageFields(ctx, userID, spaceID, child.FieldGroupID); err == nil && grp != nil {
 			for _, f := range grp.Fields {
 				if !f.Visible {
 					continue
 				}
+
 				fields = append(fields, f)
 			}
+
 			if child.PreviewLimit > 0 && int32(len(fields)) > child.PreviewLimit {
 				fields = fields[:child.PreviewLimit]
 			}
@@ -903,6 +964,7 @@ func (s *Service) attachCompositeSections(ctx context.Context, userID, spaceID p
 		if groupID.Valid {
 			grp.ID = groupID.String()
 			grp.Slug = dto.FieldGroupSlug
+
 			if s.fields != nil {
 				if g, err := s.fields.GetFieldGroup(ctx, groupID); err == nil {
 					grp.Name = g.Name
@@ -910,6 +972,7 @@ func (s *Service) attachCompositeSections(ctx context.Context, userID, spaceID p
 				}
 			}
 		}
+
 		dto.Fields = grp
 	}
 
@@ -948,6 +1011,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 		slog.Warn("wiki: rollup: type scope failed", "error", err)
 		return nil
 	}
+
 	if len(typeIDs) == 0 {
 		return nil
 	}
@@ -958,6 +1022,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 			"space_id", spaceID.String(), "error", err)
 		return nil
 	}
+
 	if len(descendants) == 0 {
 		return nil
 	}
@@ -980,6 +1045,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 		if canManage {
 			return true
 		}
+
 		return visibleSet != nil && visibleSet[id.String()]
 	}
 
@@ -989,10 +1055,12 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 
 	typeSeen := map[pgtype.UUID]bool{}
 	groupSeen := map[pgtype.UUID]bool{}
+
 	for _, d := range descendants {
 		if typeSeen[d.SpaceTypeID] || s.fields == nil {
 			continue
 		}
+
 		typeSeen[d.SpaceTypeID] = true
 
 		cat, cerr := s.store.ResolveCategoryToken(ctx, d.SpaceTypeID, categoryToken)
@@ -1004,6 +1072,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 		if cat.FieldGroupID.Valid {
 			groupIDs = append(groupIDs, cat.FieldGroupID)
 		}
+
 		if templates, terr := s.store.ListPageTemplates(ctx, cat.ID); terr == nil {
 			for _, t := range templates {
 				if t.FieldGroupID.Valid {
@@ -1016,6 +1085,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 			if groupSeen[groupID] {
 				continue
 			}
+
 			groupSeen[groupID] = true
 
 			fields, ferr := s.fields.ListFieldsByGroup(ctx, groupID)
@@ -1032,6 +1102,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 				if f.Section != nil && *f.Section == SectionQuickFacts {
 					continue
 				}
+
 				if !fieldVisible(f.ID) {
 					continue
 				}
@@ -1040,6 +1111,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 				if f.Section != nil {
 					def.section = *f.Section
 				}
+
 				def.currency = customfields.CurrencyCodeFromOptions(f.Options)
 				if def.typ == customfields.FieldTypePriceParts {
 					def.primaryPart = customfields.PrimaryPartFromOptions(f.Options)
@@ -1059,19 +1131,23 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 				// descendants query orders by id/depth so that choice is
 				// deterministic.
 				defsByID[f.ID] = def
+
 				if _, seen := defsByKey[f.Key]; !seen {
 					defsByKey[f.Key] = def
+
 					fieldOrder = append(fieldOrder, f.Key)
 				}
 			}
 		}
 	}
+
 	if len(defsByID) == 0 {
 		return nil
 	}
 
 	ids := make([]pgtype.UUID, 0, len(descendants))
 	bySpace := map[pgtype.UUID]WikiDescendant{}
+
 	for _, d := range descendants {
 		ids = append(ids, d.ID)
 		bySpace[d.ID] = d
@@ -1088,6 +1164,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 	for _, m := range cfg.Metrics {
 		metrics[m] = true
 	}
+
 	if len(metrics) == 0 {
 		metrics = map[string]bool{"min": true, "avg": true, "max": true}
 	}
@@ -1104,6 +1181,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 			rowsLimit = s.settings.GetIntOr(ctx, "wiki.rollup_default_rows_limit", defaultRollupRowsLimit)
 		}
 	}
+
 	if rowsLimit <= 0 {
 		rowsLimit = defaultRollupRowsLimit
 	}
@@ -1116,6 +1194,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 		if descendants[i].Depth != descendants[j].Depth {
 			return descendants[i].Depth < descendants[j].Depth
 		}
+
 		return descendants[i].Name < descendants[j].Name
 	})
 
@@ -1124,10 +1203,12 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 		if len(rowsOut) >= rowsLimit {
 			break
 		}
+
 		vals, ok := rowsBySpace[d.ID]
 		if !ok || len(vals) == 0 {
 			continue
 		}
+
 		rowsOut = append(rowsOut, WikiRollupRowDTO{
 			Space: WikiSpaceRefDTO{
 				ID:       d.ID.String(),
@@ -1159,11 +1240,13 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 	}
 
 	sources := make([]WikiPageTemplate, 0, len(templates))
+
 	if len(cfg.Pages) > 0 {
 		bySlug := make(map[string]WikiPageTemplate, len(templates))
 		for _, t := range templates {
 			bySlug[t.Slug] = t
 		}
+
 		for _, slug := range cfg.Pages {
 			if t, ok := bySlug[slug]; ok {
 				sources = append(sources, t)
@@ -1174,6 +1257,7 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 	} else {
 		sources = templates
 	}
+
 	if len(sources) == 0 {
 		return nil
 	}
@@ -1202,6 +1286,7 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 		if canManage {
 			return true
 		}
+
 		return visibleSet != nil && visibleSet[id.String()]
 	}
 
@@ -1215,6 +1300,7 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 		if !t.FieldGroupID.Valid || groupSeen[t.FieldGroupID] {
 			continue // two templates sharing a group → fields attach to the first
 		}
+
 		groupSeen[t.FieldGroupID] = true
 
 		fields, err := s.fields.ListFieldsByGroup(ctx, t.FieldGroupID)
@@ -1222,13 +1308,16 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 			slog.Warn("wiki: page rollup: fields failed", "group_id", t.FieldGroupID.String(), "error", err)
 			continue
 		}
+
 		for _, f := range fields {
 			if !rollupFieldTypes[f.FieldType] {
 				continue
 			}
+
 			if f.Section != nil && *f.Section == SectionQuickFacts {
 				continue
 			}
+
 			if !fieldVisible(f.ID) {
 				continue
 			}
@@ -1237,8 +1326,10 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 			if f.Section != nil {
 				def.section = *f.Section
 			}
+
 			def.options = f.Options
 			def.currency = customfields.CurrencyCodeFromOptions(f.Options)
+
 			if def.typ == customfields.FieldTypePriceParts {
 				def.primaryPart = customfields.PrimaryPartFromOptions(f.Options)
 				if pp := customfields.PricePartsOptionsFromJSON(f.Options); pp != nil {
@@ -1248,14 +1339,18 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 					}
 				}
 			}
+
 			defsByID[f.ID] = def
 			fieldSource[f.ID] = i
+
 			if _, seen := defsByKey[f.Key]; !seen {
 				defsByKey[f.Key] = def
+
 				fieldOrder = append(fieldOrder, f.Key)
 			}
 		}
 	}
+
 	if len(defsByID) == 0 {
 		return nil
 	}
@@ -1270,6 +1365,7 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 	for _, m := range cfg.Metrics {
 		metrics[m] = true
 	}
+
 	if len(metrics) == 0 {
 		metrics = map[string]bool{"min": true, "avg": true, "max": true}
 	}
@@ -1283,17 +1379,21 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 	for _, v := range vals {
 		byCoord[v.FieldGroupID.String()+"/"+v.FieldKey] = v
 	}
+
 	groupIDs := map[string]pgtype.UUID{} // slug → id memo
 	resolveGroup := func(slug string) pgtype.UUID {
 		if gid, ok := groupIDs[slug]; ok {
 			return gid
 		}
+
 		g, err := s.fields.GetFieldGroupBySlug(ctx, slug)
 		if err != nil {
 			groupIDs[slug] = pgtype.UUID{}
 			return pgtype.UUID{}
 		}
+
 		groupIDs[slug] = g.ID
+
 		return g.ID
 	}
 	computedCell := func(def rollupFieldDef) (any, bool) {
@@ -1301,40 +1401,50 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 		if spec == nil {
 			return nil, false
 		}
+
 		scalars := make([]float64, 0, len(spec.Sources))
+
 		for _, src := range spec.Sources {
 			gid := resolveGroup(src.Group)
 			if !gid.Valid {
 				continue
 			}
+
 			sv, ok := byCoord[gid.String()+"/"+src.Key]
 			if !ok || !fieldVisible(sv.FieldID) {
 				continue
 			}
+
 			if f, ok := customfields.ComputedScalarFromValue(sv.FieldType, sv.FieldOptions, sv.ValueJson, sv.ValueNumber); ok {
 				scalars = append(scalars, f)
 			}
 		}
+
 		if len(scalars) == 0 {
 			return nil, false
 		}
+
 		return customfields.ComputedDisplayValue(def.typ, def.options, customfields.FoldComputedMetric(spec.Metric, scalars)), true
 	}
 
 	foldVals := make([]gen.ListCustomFieldValuesWithDefsForEntitiesRow, 0, len(vals))
 	computedCells := map[pgtype.UUID]any{} // field id → folded display value
+
 	for _, v := range vals {
 		def, ok := defsByID[v.FieldID]
 		if !ok {
 			foldVals = append(foldVals, v)
 			continue
 		}
+
 		if !customfields.ComputedEligibleField(def.typ, def.options) {
 			foldVals = append(foldVals, v)
 			continue
 		}
+
 		if cell, ok := computedCell(def); ok {
 			computedCells[v.FieldID] = cell
+
 			if syn, ok := rollupSyntheticRow(v, def, cell); ok {
 				foldVals = append(foldVals, syn)
 			}
@@ -1346,11 +1456,14 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 		if !customfields.ComputedEligibleField(def.typ, def.options) {
 			continue
 		}
+
 		if _, done := computedCells[id]; done {
 			continue
 		}
+
 		if cell, ok := computedCell(def); ok {
 			computedCells[id] = cell
+
 			if syn, ok := rollupSyntheticRow(
 				gen.ListCustomFieldValuesWithDefsForEntitiesRow{FieldID: id, EntityID: spaceID, FieldType: def.typ},
 				def, cell); ok {
@@ -1365,36 +1478,46 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 	// is the single host space, so the fold's rowsByEntity map cannot
 	// split pages; fieldSource carries the per-field ownership.
 	pageValues := make([]map[string]any, len(sources))
+
 	for _, v := range vals {
 		def, ok := defsByID[v.FieldID]
 		if !ok {
 			continue
 		}
+
 		i, ok := fieldSource[v.FieldID]
 		if !ok {
 			continue
 		}
+
 		if _, computed := computedCells[v.FieldID]; computed {
 			continue // written from the folded value below
 		}
+
 		if customfields.ComputedEligibleField(def.typ, def.options) {
 			continue // spec'd but unfolded (no usable sources) — no stored fallback
 		}
+
 		if pageValues[i] == nil {
 			pageValues[i] = map[string]any{}
 		}
+
 		pageValues[i][def.key] = customfields.FieldValueFromDefRow(
 			v.ValueText, v.ValueNumber, v.ValueBool, v.ValueDate, v.ValueJson, v.FieldType)
 	}
+
 	for id, cell := range computedCells {
 		def := defsByID[id]
+
 		i, ok := fieldSource[id]
 		if !ok {
 			continue
 		}
+
 		if pageValues[i] == nil {
 			pageValues[i] = map[string]any{}
 		}
+
 		pageValues[i][def.key] = cell
 	}
 
@@ -1403,17 +1526,20 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 	// that contributed at least one value.
 	contrib := 0
 	rows := make([]WikiRollupRowDTO, 0, len(sources))
+
 	for i, t := range sources {
 		title := substituteTemplateLabel(t.Label, spaceName)
 		if t.SectionLabel != nil && strings.TrimSpace(*t.SectionLabel) != "" {
 			title = *t.SectionLabel
 		}
+
 		pv := pageValues[i]
 		if pv == nil {
 			pv = map[string]any{}
 		} else {
 			contrib++
 		}
+
 		rows = append(rows, WikiRollupRowDTO{
 			Space:  WikiSpaceRefDTO{Slug: spaceSlug, Name: spaceName},
 			Page:   &WikiRollupPageRefDTO{Slug: t.Slug, Title: title},
@@ -1433,24 +1559,29 @@ func rollupSyntheticRow(v gen.ListCustomFieldValuesWithDefsForEntitiesRow, def r
 	out.ValueText, out.ValueBool, out.ValueJson = nil, nil, nil
 	out.ValueDate = pgtype.Timestamptz{}
 	out.ValueNumber = pgtype.Numeric{}
+
 	switch def.typ {
 	case customfields.FieldTypePriceRange, customfields.FieldTypePriceParts:
 		b, err := json.Marshal(cell)
 		if err != nil {
 			return out, false
 		}
+
 		out.ValueJson = b
 	default:
 		f, ok := cell.(float64)
 		if !ok {
 			return out, false
 		}
+
 		var n pgtype.Numeric
 		if err := n.Scan(strconv.FormatFloat(f, 'f', -1, 64)); err != nil {
 			return out, false
 		}
+
 		out.ValueNumber = n
 	}
+
 	return out, true
 }
 
@@ -1498,6 +1629,7 @@ func aggregateRollupValues(
 		// lacking a value for a key are excluded from that key's n").
 		priceN, scalarN int
 	}
+
 	accByKey := map[string]*accum{}
 	rowsBySpace := map[pgtype.UUID]map[string]any{}
 
@@ -1510,6 +1642,7 @@ func aggregateRollupValues(
 		if rowsBySpace[v.EntityID] == nil {
 			rowsBySpace[v.EntityID] = map[string]any{}
 		}
+
 		rowsBySpace[v.EntityID][def.key] = customfields.FieldValueFromDefRow(
 			v.ValueText, v.ValueNumber, v.ValueBool, v.ValueDate, v.ValueJson, v.FieldType)
 
@@ -1529,18 +1662,23 @@ func aggregateRollupValues(
 				Min *float64 `json:"min"`
 				Max *float64 `json:"max"`
 			}
+
 			if json.Unmarshal(v.ValueJson, &pr) != nil {
 				continue
 			}
+
 			contributed := false
+
 			if pr.Min != nil && finite(*pr.Min) {
 				a.mins = append(a.mins, *pr.Min)
 				contributed = true
 			}
+
 			if pr.Avg != nil && finite(*pr.Avg) {
 				a.avgs = append(a.avgs, *pr.Avg)
 				contributed = true
 			}
+
 			if pr.Max != nil && finite(*pr.Max) {
 				a.maxs = append(a.maxs, *pr.Max)
 				contributed = true
@@ -1552,9 +1690,11 @@ func aggregateRollupValues(
 			if pr.Min == nil && pr.Avg != nil && finite(*pr.Avg) {
 				a.mins = append(a.mins, *pr.Avg)
 			}
+
 			if pr.Max == nil && pr.Avg != nil && finite(*pr.Avg) {
 				a.maxs = append(a.maxs, *pr.Avg)
 			}
+
 			if contributed {
 				a.priceN++
 			}
@@ -1564,20 +1704,25 @@ func aggregateRollupValues(
 			if def.primaryPart == "" {
 				continue
 			}
+
 			var pp struct {
 				Parts map[string]json.RawMessage `json:"parts"`
 			}
+
 			if json.Unmarshal(v.ValueJson, &pp) != nil {
 				continue
 			}
+
 			raw, ok := pp.Parts[def.primaryPart]
 			if !ok {
 				continue
 			}
+
 			var f float64
 			if json.Unmarshal(raw, &f) != nil || !finite(f) {
 				continue
 			}
+
 			a.scalars = append(a.scalars, f)
 			a.scalarN++
 		} else if f, ok := cfvNumeric(v.ValueNumber); ok && finite(f) {
@@ -1589,16 +1734,20 @@ func aggregateRollupValues(
 	}
 
 	fieldsOut := make([]WikiRollupFieldDTO, 0, len(fieldOrder))
+
 	for _, key := range fieldOrder {
 		def := defsByKey[key]
+
 		a := accByKey[key]
 		if a == nil {
 			continue
 		}
+
 		samples := a.scalarN
 		if def.typ == customfields.FieldTypePriceRange {
 			samples = a.priceN
 		}
+
 		if samples == 0 {
 			continue
 		}
@@ -1607,13 +1756,16 @@ func aggregateRollupValues(
 		// contributed — a {min,max} price_range yields min/max and no
 		// avg; empty slices are guarded, never indexed.
 		var m WikiRollupMetricDTO
+
 		if def.typ == customfields.FieldTypePriceRange {
 			if metrics["min"] && len(a.mins) > 0 {
 				m.Min = f64ptr(minOf(a.mins))
 			}
+
 			if metrics["avg"] && len(a.avgs) > 0 {
 				m.Avg = f64ptr(avgOf(a.avgs))
 			}
+
 			if metrics["max"] && len(a.maxs) > 0 {
 				m.Max = f64ptr(maxOf(a.maxs))
 			}
@@ -1621,9 +1773,11 @@ func aggregateRollupValues(
 			if metrics["min"] && len(a.scalars) > 0 {
 				m.Min = f64ptr(minOf(a.scalars))
 			}
+
 			if metrics["avg"] && len(a.scalars) > 0 {
 				m.Avg = f64ptr(avgOf(a.scalars))
 			}
+
 			if metrics["max"] && len(a.scalars) > 0 {
 				m.Max = f64ptr(maxOf(a.scalars))
 			}
@@ -1645,32 +1799,40 @@ func aggregateRollupValues(
 func (s *Service) rollupTypeIDs(ctx context.Context, spaceTypeID pgtype.UUID, levels []string) ([]pgtype.UUID, error) {
 	if len(levels) > 0 {
 		ids := make([]pgtype.UUID, 0, len(levels))
+
 		for _, lvl := range levels {
 			id, err := s.store.SpaceTypeIDBySlug(ctx, lvl)
 			if err != nil {
 				continue // unknown level slugs are ignored, not fatal
 			}
+
 			ids = append(ids, id)
 		}
+
 		return ids, nil
 	}
 
 	seen := map[pgtype.UUID]bool{}
+
 	frontier := []pgtype.UUID{spaceTypeID}
 	for depth := 0; depth < 3 && len(frontier) > 0; depth++ {
 		next := []pgtype.UUID{}
+
 		for _, tid := range frontier {
 			kids, err := s.store.ListTypeChildIDs(ctx, tid)
 			if err != nil {
 				return nil, err
 			}
+
 			for _, k := range kids {
 				if !seen[k] && k != spaceTypeID {
 					seen[k] = true
+
 					next = append(next, k)
 				}
 			}
 		}
+
 		frontier = next
 	}
 
@@ -1691,6 +1853,7 @@ func minOf(v []float64) float64 {
 			m = x
 		}
 	}
+
 	return m
 }
 
@@ -1701,6 +1864,7 @@ func maxOf(v []float64) float64 {
 			m = x
 		}
 	}
+
 	return m
 }
 
@@ -1709,6 +1873,7 @@ func avgOf(v []float64) float64 {
 	for _, x := range v {
 		sum += x
 	}
+
 	return sum / float64(len(v))
 }
 
@@ -1721,8 +1886,10 @@ func cfvNumeric(n pgtype.Numeric) (float64, bool) {
 	if !n.Valid {
 		return 0, false
 	}
+
 	if f, err := n.Float64Value(); err == nil && f.Valid {
 		return f.Float64, true
 	}
+
 	return 0, false
 }

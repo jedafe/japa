@@ -87,6 +87,7 @@ func (a *toolReviewAdapter) HandleToolReview(ctx context.Context, id, reviewerID
 		if approve {
 			status = "approved"
 		}
+
 		if err := a.eca.ModerateUpdate(ctx, id, reviewerID, status); err == nil {
 			return true, status, nil
 		} else if !errors.Is(err, pgx.ErrNoRows) {

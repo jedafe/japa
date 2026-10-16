@@ -271,3 +271,20 @@ SELECT $1, unnest($2::uuid[]), 'system_announcement', 'system', $3, $4, $5, now(
 -- name: CreateAdminBroadcastRecord :exec
 INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at) VALUES ($1, $2, $3, $4, now())
 ;
+
+-- §35 scheduled broadcasts (000870)
+-- name: CreateScheduledBroadcast :one
+INSERT INTO admin_broadcasts (title, body, sent_by, scheduled_at, target, target_id)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING *;
+
+-- name: ListDueScheduledBroadcasts :many
+SELECT * FROM admin_broadcasts
+WHERE scheduled_at IS NOT NULL AND sent_at IS NULL AND scheduled_at <= now()
+ORDER BY scheduled_at
+LIMIT 50;
+
+-- name: MarkBroadcastSent :exec
+UPDATE admin_broadcasts
+SET sent_at = now(), recipient_count = $2
+WHERE id = $1;

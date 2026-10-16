@@ -42,7 +42,6 @@ func (s *Service) loadTemplateLiterals(ctx context.Context) ([]literals.Template
 	active := true
 
 	rows, err := s.read.ListTemplateLiterals(ctx, gen.ListTemplateLiteralsParams{
-
 		Search:     "",
 		IsActive:   &active,
 		Kind:       "",

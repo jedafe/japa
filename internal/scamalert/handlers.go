@@ -78,6 +78,7 @@ func redactReportForCaller(report *ScamReportDTO, callerID string) {
 		report.IsReporter = true
 		return
 	}
+
 	report.ReporterID = ""
 	report.ReporterName = ""
 	report.ReviewedBy = ""
@@ -152,7 +153,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /scam-alerts — list confirmed scam reports.
 // Query params: ?dest=&scam_type=&page=&limit= (also accepts ?destination_space_id= as legacy alias).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
@@ -187,6 +187,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if u := auth.FromContext(r.Context()); u != nil && u.UserID.Valid {
 		callerID = u.UserID.String()
 	}
+
 	for i := range reports {
 		redactReportForCaller(&reports[i], callerID)
 	}
@@ -206,7 +207,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleSchema handles GET /scam-alerts/schema — returns the canonical
 // scam_type and platform option lists (Rule 16).
 func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
@@ -218,7 +218,6 @@ func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /scam-alerts/:id — single confirmed scam report.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
@@ -233,7 +232,9 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	// (debunked/duplicate) — the §22 appeal surface on the detail page needs
 	// the reporter to reach them; everyone else gets confirmed-only.
 	var callerUUID pgtype.UUID
+
 	var callerID string
+
 	if u := auth.FromContext(r.Context()); u != nil && u.UserID.Valid {
 		callerUUID = u.UserID
 		callerID = u.UserID.String()
@@ -260,6 +261,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			report.IsSubscribed, _ = h.service.IsSubscribed(r.Context(), callerUUID, destSpaceID)
 		}
 	}
+
 	redactReportForCaller(&report, callerID)
 
 	h.resolveLiterals(r, &report)
@@ -275,13 +277,13 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // optional: authenticated users have their reporter_id stamped; anonymous
 // reports are accepted when scam_alert.anonymous_reports is enabled.
 func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
 
 	var input SubmitReportInput
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -380,6 +382,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input UpdateReportInput
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")

@@ -87,7 +87,7 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source) err
 		sourceID = source.ID.String()
 	}
 
-	lockKey := fmt.Sprintf("jc:intel:crawllock::%s", sourceID)
+	lockKey := "jc:intel:crawllock::" + sourceID
 
 	return p.check(ctx, lockKey, source.Domain, source.SourceUrl, source)
 }
@@ -106,7 +106,7 @@ func (p *PreflightChecker) CheckChannel(ctx context.Context, src sources.Source,
 		channelID = ch.ID.String()
 	}
 
-	lockKey := fmt.Sprintf("jc:intel:channel_lock:%s", channelID)
+	lockKey := "jc:intel:channel_lock:" + channelID
 
 	domain := src.Domain
 	if u, err := url.Parse(ch.EntryUrl); err == nil && u.Host != "" {
@@ -210,7 +210,7 @@ func (p *PreflightChecker) check(ctx context.Context, lockKey, domain, checkURL 
 // crash after INCR leaves the key without a TTL, permanently blocking the
 // domain). The lock is released on any failure.
 func (p *PreflightChecker) checkRateLimit(ctx context.Context, domain string, rateLimitPerMin int, releaseLock func()) error {
-	rateKey := fmt.Sprintf("jc:intel:ratelimit::%s", domain)
+	rateKey := "jc:intel:ratelimit::" + domain
 
 	result, err := p.rdb.Eval(ctx, rateLimitScript, []string{rateKey}, 60, rateLimitPerMin).Result()
 	if err != nil {
@@ -276,11 +276,11 @@ func (p *PreflightChecker) checkRobots(ctx context.Context, checkURL string, rel
 // ReleaseCrawlLock removes the crawl lock. Called after fetch completes
 // (success or failure) to allow immediate retry if needed.
 func (p *PreflightChecker) ReleaseCrawlLock(ctx context.Context, sourceID string) {
-	p.rdb.Del(ctx, fmt.Sprintf("jc:intel:crawllock::%s", sourceID))
+	p.rdb.Del(ctx, "jc:intel:crawllock::"+sourceID)
 }
 
 // ReleaseChannelCrawlLock removes a channel-scoped crawl lock acquired by
 // CheckChannel (jc:intel:channel_lock:{channel_id}).
 func (p *PreflightChecker) ReleaseChannelCrawlLock(ctx context.Context, channelID string) {
-	p.rdb.Del(ctx, fmt.Sprintf("jc:intel:channel_lock:%s", channelID))
+	p.rdb.Del(ctx, "jc:intel:channel_lock:"+channelID)
 }

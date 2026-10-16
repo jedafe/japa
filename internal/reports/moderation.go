@@ -63,6 +63,7 @@ func scopedIDs(entities []ScopedEntity) []pgtype.UUID {
 	for i, e := range entities {
 		ids[i] = e.ID
 	}
+
 	return ids
 }
 
@@ -91,6 +92,7 @@ func (s *Service) resolveScopeEntities(ctx context.Context, userID pgtype.UUID) 
 	if err != nil {
 		return nil, fmt.Errorf("listing moderated spaces: %w", err)
 	}
+
 	for _, sp := range spaces {
 		scope.ModeratedSpaces = append(scope.ModeratedSpaces, ScopedEntity{ID: sp.ID, Name: sp.Name, Slug: sp.Slug})
 	}
@@ -99,6 +101,7 @@ func (s *Service) resolveScopeEntities(ctx context.Context, userID pgtype.UUID) 
 	if err != nil {
 		return nil, fmt.Errorf("listing moderated tags: %w", err)
 	}
+
 	for _, tg := range tags {
 		scope.ModeratedTags = append(scope.ModeratedTags, ScopedEntity{ID: tg.ID, Name: tg.Name, Slug: tg.Slug})
 	}
@@ -117,6 +120,7 @@ func (s *Service) ResolveModerationScope(ctx context.Context, userID pgtype.UUID
 	if err != nil {
 		return nil, fmt.Errorf("counting assigned reports: %w", err)
 	}
+
 	scope.AssignedCount = assigned
 
 	// Short-circuit: callers with no scope see an empty queue — skip the
@@ -135,6 +139,7 @@ func (s *Service) ResolveModerationScope(ctx context.Context, userID pgtype.UUID
 	if err != nil {
 		return nil, fmt.Errorf("counting open moderation items: %w", err)
 	}
+
 	scope.OpenCount = open
 
 	return scope, nil
@@ -181,6 +186,7 @@ func (s *Service) queueParams(scope *ModerationScope, caller pgtype.UUID, f Mode
 		SpaceIds:      list.SpaceIds,
 		TagIds:        list.TagIds,
 	}
+
 	return list, count
 }
 
@@ -199,16 +205,19 @@ func (s *Service) ListModerationQueue(ctx context.Context, scope *ModerationScop
 	if rows == nil {
 		rows = []gen.ListModerationQueueRow{}
 	}
+
 	return rows, nil
 }
 
 // CountModerationQueue returns the scoped total for pagination.
 func (s *Service) CountModerationQueue(ctx context.Context, scope *ModerationScope, caller pgtype.UUID, f ModerationQueueFilter) (int32, error) {
 	_, count := s.queueParams(scope, caller, f)
+
 	total, err := s.read.CountModerationQueue(ctx, count)
 	if err != nil {
 		return 0, fmt.Errorf("counting moderation queue: %w", err)
 	}
+
 	return total, nil
 }
 
@@ -224,12 +233,15 @@ func (s *Service) GetModerationQueueItem(ctx context.Context, scope *ModerationS
 	if errors.Is(err, pgx.ErrNoRows) {
 		return row, errpkg.ErrNotFound
 	}
+
 	if err != nil {
 		return row, fmt.Errorf("getting moderation item: %w", err)
 	}
+
 	if !scope.PlatformModerator && !row.ScopeAssigned && !row.ScopeSpace && !row.ScopeTag {
 		return row, errpkg.ErrNotFound
 	}
+
 	return row, nil
 }
 
@@ -288,6 +300,7 @@ func (s *Service) ActionModerationItem(ctx context.Context, caller, id pgtype.UU
 	if errors.Is(err, pgx.ErrNoRows) {
 		return gen.ContentReport{}, ErrAlreadyResolved
 	}
+
 	if err != nil {
 		return gen.ContentReport{}, fmt.Errorf("resolving report: %w", err)
 	}
@@ -314,6 +327,7 @@ func (s *Service) applyActionSideEffects(ctx context.Context, action, entityType
 	if err != nil {
 		return fmt.Errorf("resolve %s target: %w", action, err)
 	}
+
 	if !found {
 		return nil
 	}
@@ -322,10 +336,13 @@ func (s *Service) applyActionSideEffects(ctx context.Context, action, entityType
 		if err := s.WarnUser(ctx, target, reason); err != nil {
 			return fmt.Errorf("warn user: %w", err)
 		}
+
 		return nil
 	}
+
 	if err := s.BanUser(ctx, target, reason); err != nil {
 		return fmt.Errorf("ban user: %w", err)
 	}
+
 	return nil
 }

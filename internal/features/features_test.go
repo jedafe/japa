@@ -133,21 +133,25 @@ func TestRegistryCoversAllGatedKeys(t *testing.T) {
 	t.Parallel()
 
 	fset := token.NewFileSet()
+
 	f, err := parser.ParseFile(fset, "../server/server.go", nil, 0)
 	if err != nil {
 		t.Fatalf("parse server.go: %v", err)
 	}
 
 	var gated []string
+
 	ast.Inspect(f, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
+
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok || (sel.Sel.Name != "Gate" && sel.Sel.Name != "GateAny") {
 			return true
 		}
+
 		if len(call.Args) < 2 {
 			return true
 		}
@@ -157,6 +161,7 @@ func TestRegistryCoversAllGatedKeys(t *testing.T) {
 				gated = append(gated, strings.Trim(lit.Value, `"`))
 			}
 		}
+
 		return true
 	})
 
@@ -186,6 +191,7 @@ func TestGateAny(t *testing.T) {
 		for k, v := range seeded {
 			c.cacheSet(k, v, nil)
 		}
+
 		return c
 	}
 
@@ -197,11 +203,13 @@ func TestGateAny(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/x", nil)
 		rec := httptest.NewRecorder()
 		GateAny(c, keys...)(next).ServeHTTP(rec, req)
+
 		return rec
 	}
 
 	t.Run("second key enabled passes", func(t *testing.T) {
 		t.Parallel()
+
 		c := newChecker(map[string]bool{"mentorship.enabled": true})
 		if rec := serve(c, "service_directory.enabled", "mentorship.enabled"); rec.Code != http.StatusNoContent {
 			t.Fatalf("got %d, want 204", rec.Code)
@@ -210,6 +218,7 @@ func TestGateAny(t *testing.T) {
 
 	t.Run("first key enabled passes", func(t *testing.T) {
 		t.Parallel()
+
 		c := newChecker(map[string]bool{"service_directory.enabled": true})
 		if rec := serve(c, "service_directory.enabled", "mentorship.enabled"); rec.Code != http.StatusNoContent {
 			t.Fatalf("got %d, want 204", rec.Code)
@@ -218,11 +227,14 @@ func TestGateAny(t *testing.T) {
 
 	t.Run("all disabled returns 404 feature_disabled", func(t *testing.T) {
 		t.Parallel()
+
 		c := newChecker(nil)
+
 		rec := serve(c, "service_directory.enabled", "mentorship.enabled")
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("got %d, want 404", rec.Code)
 		}
+
 		if !strings.Contains(rec.Body.String(), "feature_disabled") {
 			t.Fatalf("body missing feature_disabled: %s", rec.Body.String())
 		}
@@ -230,6 +242,7 @@ func TestGateAny(t *testing.T) {
 
 	t.Run("explicitly seeded-off key still 404s alongside an off default", func(t *testing.T) {
 		t.Parallel()
+
 		c := newChecker(map[string]bool{"service_directory.enabled": false})
 		if rec := serve(c, "service_directory.enabled", "mentorship.enabled"); rec.Code != http.StatusNotFound {
 			t.Fatalf("got %d, want 404", rec.Code)
@@ -238,6 +251,7 @@ func TestGateAny(t *testing.T) {
 
 	t.Run("empty keys list always 404s", func(t *testing.T) {
 		t.Parallel()
+
 		c := newChecker(map[string]bool{"service_directory.enabled": true})
 		if rec := serve(c); rec.Code != http.StatusNotFound {
 			t.Fatalf("got %d, want 404", rec.Code)

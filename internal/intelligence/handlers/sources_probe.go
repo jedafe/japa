@@ -49,11 +49,14 @@ return count
 // guard is independent of the quota).
 func (h *Handlers) incrProbeQuota(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	key := "jc:intel:probe_quota:" + userID.String()
+
 	res, err := h.rdb.Eval(ctx, probeQuotaScript, []string{key}, int64(probeQuotaWindow/time.Second)).Result()
 	if err != nil {
 		return 0, err
 	}
+
 	count, _ := res.(int64)
+
 	return count, nil
 }
 
@@ -95,6 +98,7 @@ func (h *Handlers) HandleProbeSource(w http.ResponseWriter, r *http.Request) {
 	if rawURL == "" {
 		rawURL = strings.TrimSpace(req.SourceURL)
 	}
+
 	if rawURL == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_url", "url is required")
 		return
@@ -110,6 +114,7 @@ func (h *Handlers) HandleProbeSource(w http.ResponseWriter, r *http.Request) {
 		default:
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_url", "url must be a valid http/https URL")
 		}
+
 		return
 	}
 
@@ -142,6 +147,7 @@ func (h *Handlers) HandleProbeSource(w http.ResponseWriter, r *http.Request) {
 			slog.Error("intel: source probe failed", "error", err)
 			errpkg.WriteError(w, http.StatusBadGateway, "probe_failed", "Could not reach the candidate URL")
 		}
+
 		return
 	}
 

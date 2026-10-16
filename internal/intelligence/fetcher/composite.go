@@ -142,6 +142,7 @@ func (c *Composite) Fetch(ctx context.Context, src sources.Source, ch sources.Ch
 	if err == nil {
 		return result, nil
 	}
+
 	if errors.Is(err, ErrMethodNotImplemented) {
 		return FetchResult{}, err
 	}
@@ -153,22 +154,27 @@ func (c *Composite) Fetch(ctx context.Context, src sources.Source, ch sources.Ch
 	// error is returned, preserving its ErrAdapterDisabled benign-skip
 	// semantics.
 	seen := map[string]bool{ch.CrawlMethod: true}
+
 	hops := 0
 	for _, m := range fallbackMethods(eff.ProviderConfig) {
 		if hops >= 3 {
 			break
 		}
+
 		if seen[m] {
 			continue
 		}
+
 		seen[m] = true
 		hops++
 
 		eff.CrawlMethod = m
+
 		result, ferr := c.fetchMethod(ctx, eff, sources.CrawlMethod(m))
 		if ferr == nil {
 			return result, nil
 		}
+
 		if errors.Is(ferr, ErrAdapterDisabled) {
 			continue // config-gated hop — try the next one
 		}
@@ -221,16 +227,19 @@ func fallbackMethods(providerConfig []byte) []string {
 	var cfg struct {
 		FallbackMethods []string `json:"fallback_methods"`
 	}
+
 	if err := json.Unmarshal(providerConfig, &cfg); err != nil {
 		return nil
 	}
 
 	out := cfg.FallbackMethods[:0]
+
 	for _, m := range cfg.FallbackMethods {
 		method := sources.CrawlMethod(m)
 		if !method.IsValid() || !fetchableMethod(method) {
 			continue
 		}
+
 		out = append(out, m)
 	}
 
@@ -257,6 +266,7 @@ func waybackInPlay(primary string, providerConfig []byte) bool {
 	if sources.CrawlMethod(primary) == sources.CrawlMethodWayback {
 		return true
 	}
+
 	for _, m := range fallbackMethods(providerConfig) {
 		if m == string(sources.CrawlMethodWayback) {
 			return true
@@ -273,9 +283,11 @@ func injectWaybackSince(providerConfig []byte, t time.Time) []byte {
 	if err := json.Unmarshal(providerConfig, &m); err != nil || m == nil {
 		m = map[string]any{}
 	}
+
 	if _, ok := m["since"]; ok {
 		return providerConfig
 	}
+
 	m["since"] = t.UTC().Format("20060102150405")
 
 	b, err := json.Marshal(m)

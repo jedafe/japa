@@ -60,6 +60,7 @@ func filterIntentItems(items []MenuItem, rule visitor.IntentRule) []MenuItem {
 // "/tools" matches "/tools" and "/tools/x" but not "/toolsmith".
 func pathMatchesAny(url string, prefixes []string) bool {
 	u := strings.TrimSpace(url)
+
 	for _, p := range prefixes {
 		p = strings.TrimSpace(p)
 		if p != "" && (u == p || strings.HasPrefix(u, p+"/")) {

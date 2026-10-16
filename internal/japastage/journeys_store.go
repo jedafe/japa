@@ -10,6 +10,7 @@
 package japastage
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"time"
@@ -167,8 +168,9 @@ RETURNING id, user_id, intent, stage, destination_space_id, label,
 	defer row.Close()
 
 	var r JourneyRow
+
 	if !row.Next() {
-		return JourneyRow{}, fmt.Errorf("japastage: create journey: no row returned")
+		return JourneyRow{}, errors.New("japastage: create journey: no row returned")
 	}
 
 	if err := row.Scan(&r.ID, &r.UserID, &r.Intent, &r.Stage, &r.DestSpaceID, &r.Label,

@@ -37,7 +37,6 @@ func safeInt32(n int) int32 {
 
 // ListJCEComparisons — listJCEComparisons handles GET /api/v1/jce/comparisons.
 func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
-
 	user := auth.FromContext(r.Context())
 
 	q := r.URL.Query()
@@ -178,6 +177,7 @@ func (h *Handlers) ListJCEComparisonsAdmin(w http.ResponseWriter, r *http.Reques
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
 		return
 	}
+
 	filter.Deleted = deleted
 
 	comparisons, err := h.Service.ListComparisonsAdmin(r.Context(), filter)
@@ -244,7 +244,6 @@ func marshalItemRef(ref any) []byte {
 
 // CreateJCEComparison handles POST /api/v1/jce/comparisons.
 func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -334,16 +333,19 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Your group cannot create comparisons of this type")
 			return
 		}
+
 		if errors.Is(err, ErrNestedNotAllowed) {
 			errpkg.WriteError(w, http.StatusBadRequest, "nested_not_allowed", err.Error())
 			return
 		}
+
 		if errors.Is(err, errpkg.ErrRateLimited) {
 			errpkg.WriteError(w, http.StatusTooManyRequests, "daily_limit", "Daily comparison limit reached — try again tomorrow")
 			return
 		}
 
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -352,7 +354,6 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 
 // GetJCEComparison handles GET /api/v1/jce/comparisons/{id|slug}.
 func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
-
 	idOrSlug := chi.URLParam(r, "idOrSlug")
 	if idOrSlug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID or slug")
@@ -417,7 +418,6 @@ func canAccessJCEComparison(cmp JCEComparison, user *auth.AuthenticatedUser, byp
 
 // UpdateJCEComparison handles PATCH /api/v1/jce/comparisons/{id}.
 func (h *Handlers) UpdateJCEComparison(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -475,7 +475,6 @@ type updateJCEComparisonBody struct {
 
 // DeleteJCEComparison handles DELETE /api/v1/jce/comparisons/{id}.
 func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -497,11 +496,14 @@ func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 			return
 		}
+
 		if err != nil {
 			errpkg.HandleServiceError(w, err)
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
+
 		return
 	}
 
@@ -521,7 +523,6 @@ func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
 
 // PromoteJCEComparison handles POST /api/v1/jce/comparisons/{id}/promote.
 func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -552,7 +553,6 @@ func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) 
 
 // GetJCEComparisonMatrix handles GET /api/v1/jce/comparisons/{id|slug}/matrix.
 func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request) {
-
 	idOrSlug := chi.URLParam(r, "id")
 	if idOrSlug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID or slug")
@@ -591,7 +591,6 @@ func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request
 
 // SearchJCEEntities handles GET /api/v1/jce/entities/{type}.
 func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
-
 	entityType := chi.URLParam(r, "type")
 	if entityType == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "Entity type is required")
@@ -673,7 +672,6 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 
 // ResolveJCEEntity handles GET /api/v1/jce/entities/{type}/{id}.
 func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
-
 	entityType := chi.URLParam(r, "type")
 	idOrSlug := chi.URLParam(r, "id")
 
@@ -693,7 +691,6 @@ func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
 
 // CreateSelectionToken handles POST /api/v1/jce/selections.
 func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) {
-
 	var req struct {
 		TypeSlug string           `json:"type_slug"`
 		ItemRefs []map[string]any `json:"item_refs"`
@@ -710,7 +707,6 @@ func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) 
 	}
 
 	token, err := h.Service.CreateSelectionToken(r.Context(), CreateSelectionTokenInput{
-
 		TypeSlug: req.TypeSlug,
 		ItemRefs: req.ItemRefs,
 	})
@@ -724,7 +720,6 @@ func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) 
 
 // CreateJCEComparisonFromToken handles POST /api/v1/jce/comparisons/from-token.
 func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.Request) {
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")

@@ -28,7 +28,9 @@ func selectOptionIndex(options []byte) (values map[string]bool, labelToValue map
 		if o.Value == "" {
 			continue
 		}
+
 		values[o.Value] = true
+
 		if o.Label != "" {
 			if _, taken := labelToValue[o.Label]; !taken {
 				labelToValue[o.Label] = o.Value
@@ -47,9 +49,11 @@ func NormalizeChoiceValue(options []byte, input string) string {
 	if values[input] {
 		return input
 	}
+
 	if v, ok := byLabel[input]; ok {
 		return v
 	}
+
 	return input
 }
 
@@ -76,11 +80,13 @@ func ChoiceStrings(raw json.RawMessage) []string {
 
 	collect := func(arr []any) []string {
 		out := make([]string, 0, len(arr))
+
 		for _, el := range arr {
 			if s, ok := el.(string); ok {
 				out = append(out, s)
 			}
 		}
+
 		return out
 	}
 
@@ -112,6 +118,7 @@ func CanonicalizeSelectJSON(fieldType string, options []byte, raw json.RawMessag
 			return NormalizeChoiceValue(options, t)
 		case []any:
 			out := make([]any, len(t))
+
 			for i, el := range t {
 				if s, ok := el.(string); ok {
 					out[i] = NormalizeChoiceValue(options, s)
@@ -119,6 +126,7 @@ func CanonicalizeSelectJSON(fieldType string, options []byte, raw json.RawMessag
 					out[i] = el
 				}
 			}
+
 			return out
 		default:
 			return v
@@ -136,6 +144,7 @@ func CanonicalizeSelectJSON(fieldType string, options []byte, raw json.RawMessag
 		} else if inner, exists := t["value"]; exists {
 			t["value"] = mapStrings(inner)
 		}
+
 		probe = t
 	default:
 		return raw
@@ -144,6 +153,7 @@ func CanonicalizeSelectJSON(fieldType string, options []byte, raw json.RawMessag
 	if out, err := json.Marshal(probe); err == nil {
 		return out
 	}
+
 	return raw
 }
 
@@ -158,11 +168,13 @@ func sanitizeValueStrings(v any, sanitize func(string) string) any {
 		for i, el := range t {
 			t[i] = sanitizeValueStrings(el, sanitize)
 		}
+
 		return t
 	case map[string]any:
 		for k, el := range t {
 			t[k] = sanitizeValueStrings(el, sanitize)
 		}
+
 		return t
 	default:
 		return v
@@ -185,5 +197,6 @@ func SanitizeRichTextJSON(raw []byte, sanitize func(string) string) []byte {
 	if out, err := json.Marshal(sanitizeValueStrings(probe, sanitize)); err == nil {
 		return out
 	}
+
 	return raw
 }

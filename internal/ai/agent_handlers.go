@@ -228,24 +228,30 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	if h.agent.registry != nil {
 		catByName = h.agent.registry.Categories()
 	}
+
 	catIdx := map[string]int{}
 	categories := make([]map[string]any, 0, 8)
+
 	for _, tc := range tools {
 		cat := catByName[tc.FunctionName]
 		if cat == "" {
 			cat = "other"
 		}
+
 		i, ok := catIdx[cat]
 		if !ok {
 			i = len(categories)
 			catIdx[cat] = i
+
 			categories = append(categories, map[string]any{"name": cat, "tools": []map[string]any{}})
 		}
+
 		categories[i]["tools"] = append(categories[i]["tools"].([]map[string]any), map[string]any{
 			"name":        tc.FunctionName,
 			"description": tc.Description,
 		})
 	}
+
 	sort.Slice(categories, func(i, j int) bool { return categories[i]["name"].(string) < categories[j]["name"].(string) })
 
 	// Resolve geo context for the response. The agent handler's
@@ -279,7 +285,6 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 	offset := parsePageOffset(r)
 
 	sessions, err := h.sessions.ListAgentSessionsByUser(r.Context(), gen.ListAgentSessionsByUserParams{
-
 		UserID:     user.UserID,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -834,13 +839,11 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 // HandleAdminListSessions returns all agent sessions for the platform,
 // paginated, with an optional status filter (?status=running|completed|...).
 func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 	statusFilter := r.URL.Query().Get("status")
 
 	sessions, err := h.sessions.ListAgentSessionsForAdmin(r.Context(), gen.ListAgentSessionsForAdminParams{
-
 		StatusFilter: statusFilter,
 		PageOffset:   offset,
 		PageLimit:    limit,
@@ -874,7 +877,6 @@ func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *ht
 // HandleAdminGetSession returns any session in the platform (not just the
 // caller's) plus its full tool call audit trail. Admin-only.
 func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http.Request) {
-
 	sessionID, ok := parseURLUUID(w, r, "id")
 	if !ok {
 		return
@@ -913,14 +915,12 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 // success rate, average latency) for the platform, optionally filtered by
 // date range (?from=YYYY-MM-DD&to=YYYY-MM-DD).
 func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.Request) {
-
 	fromDate, toDate, ok := parseDateRange(w, r)
 	if !ok {
 		return
 	}
 
 	stats, err := h.sessions.GetAgentToolStats(r.Context(), gen.GetAgentToolStatsParams{
-
 		FromDate: fromDate,
 		ToDate:   toDate,
 	})
@@ -937,14 +937,12 @@ func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.
 // HandleAdminCostReport returns a cost breakdown by user for the platform,
 // optionally filtered by date range.
 func (h *AgentHTTPHandlers) HandleAdminCostReport(w http.ResponseWriter, r *http.Request) {
-
 	fromDate, toDate, ok := parseDateRange(w, r)
 	if !ok {
 		return
 	}
 
 	report, err := h.sessions.GetAgentCostReport(r.Context(), gen.GetAgentCostReportParams{
-
 		FromDate: fromDate,
 		ToDate:   toDate,
 	})

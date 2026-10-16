@@ -14,7 +14,6 @@ import (
 
 // ListSharePlatforms handles GET /api/v1/share-platforms (admin: all platforms).
 func (h *Handlers) ListSharePlatforms(w http.ResponseWriter, r *http.Request) {
-
 	platforms, err := h.Service.ListSharePlatforms(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -27,7 +26,6 @@ func (h *Handlers) ListSharePlatforms(w http.ResponseWriter, r *http.Request) {
 // ListEnabledSharePlatforms handles GET /api/v1/share-platforms/enabled (public).
 // Returns only enabled platforms for the share dropdown.
 func (h *Handlers) ListEnabledSharePlatforms(w http.ResponseWriter, r *http.Request) {
-
 	platforms, err := h.Service.ListEnabledSharePlatforms(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -39,7 +37,6 @@ func (h *Handlers) ListEnabledSharePlatforms(w http.ResponseWriter, r *http.Requ
 
 // CreateSharePlatform handles POST /api/v1/share-platforms.
 func (h *Handlers) CreateSharePlatform(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Key         string `json:"key"`
 		Label       string `json:"label"`
@@ -81,7 +78,6 @@ func (h *Handlers) CreateSharePlatform(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSharePlatform handles PATCH /api/v1/share-platforms/{key}.
 func (h *Handlers) UpdateSharePlatform(w http.ResponseWriter, r *http.Request) {
-
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
@@ -123,7 +119,6 @@ func (h *Handlers) UpdateSharePlatform(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSharePlatform handles DELETE /api/v1/share-platforms/{key}.
 func (h *Handlers) DeleteSharePlatform(w http.ResponseWriter, r *http.Request) {
-
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")

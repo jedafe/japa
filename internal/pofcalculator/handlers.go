@@ -51,6 +51,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -60,35 +61,42 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func scanDestParam(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	var id pgtype.UUID
+
 	v := r.URL.Query().Get("dest")
 	if v == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_dest", "dest query param is required")
 		return id, false
 	}
+
 	if err := id.Scan(v); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
 		return id, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page, limit = 1, 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -115,6 +123,7 @@ func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("pofcalculator: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list requirements")
+
 		return
 	}
 
@@ -138,6 +147,7 @@ func (h *Handlers) HandleVisaTypes(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("pofcalculator: visa types failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list visa types")
+
 		return
 	}
 
@@ -156,6 +166,7 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	visaType := r.URL.Query().Get("visa_type")
 	if visaType == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_visa_type", "visa_type query param is required")
@@ -163,11 +174,13 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	members, dependants := 1, 0
+
 	if v := r.URL.Query().Get("members"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			members = n
 		}
 	}
+
 	if v := r.URL.Query().Get("dependants"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			dependants = n
@@ -188,6 +201,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -207,17 +221,20 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("order"); v != "" {
 		sortDir = v
 	}
+
 	if v := r.URL.Query().Get("dir"); v != "" {
 		sortDir = v
 	}
 
 	page, limit := parsePageParams(r)
+
 	reqs, total, err := h.service.AdminListRequirements(r.Context(), destSpaceID,
 		r.URL.Query().Get("visa_type"), r.URL.Query().Get("status"), r.URL.Query().Get("q"),
 		sortKey, sortDir, page, limit)
 	if err != nil {
 		slog.Error("pofcalculator: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list requirements")
+
 		return
 	}
 
@@ -232,6 +249,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -260,6 +278,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -274,6 +293,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"status": "queued"}})
 }
 
@@ -282,6 +302,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -303,12 +324,15 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
 			return
 		}
+
 		if errors.Is(err, errInvalidInput) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 			return
 		}
+
 		slog.Error("pofcalculator: update failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update requirement")
+
 		return
 	}
 
@@ -322,6 +346,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -340,8 +365,10 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
 			return
 		}
+
 		slog.Error("pofcalculator: approve failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve requirement")
+
 		return
 	}
 
@@ -354,6 +381,7 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -370,10 +398,13 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
 			return
 		}
+
 		slog.Error("pofcalculator: get failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to load requirement")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": req})
 }
 
@@ -383,6 +414,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -398,10 +430,13 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found or is published")
 			return
 		}
+
 		slog.Error("pofcalculator: delete failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete requirement")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -412,6 +447,7 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -430,9 +466,12 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
 			return
 		}
+
 		slog.Error("pofcalculator: reject failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject requirement")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
 }

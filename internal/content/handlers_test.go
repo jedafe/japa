@@ -53,7 +53,7 @@ func (e errDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error
 }
 
 func (e errDBTX) QueryRow(context.Context, string, ...interface{}) pgx.Row {
-	return errRow{err: e.err}
+	return errRow(e)
 }
 
 func (e errDBTX) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
@@ -78,7 +78,7 @@ func (d rowDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error
 }
 
 func (d rowDBTX) QueryRow(context.Context, string, ...interface{}) pgx.Row {
-	return structRow{src: d.src}
+	return structRow(d)
 }
 
 func (d rowDBTX) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
@@ -92,12 +92,15 @@ func (r structRow) Scan(dest ...any) error {
 	if sv.Kind() == reflect.Pointer {
 		sv = sv.Elem()
 	}
+
 	if sv.NumField() < len(dest) {
 		return fmt.Errorf("canned row has %d fields, scan wants %d", sv.NumField(), len(dest))
 	}
+
 	for i := range dest {
 		reflect.ValueOf(dest[i]).Elem().Set(sv.Field(i))
 	}
+
 	return nil
 }
 
@@ -119,12 +122,14 @@ func newListTestResolver(t *testing.T, userID pgtype.UUID, perms map[string]bool
 	if err != nil {
 		t.Fatalf("pgxpool.New: %v", err)
 	}
+
 	t.Cleanup(pool.Close)
 
 	mr, err := miniredis.Run()
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
+
 	t.Cleanup(mr.Close)
 
 	vk, err := valkey.NewClient(valkey.ClientOption{
@@ -134,6 +139,7 @@ func newListTestResolver(t *testing.T, userID pgtype.UUID, perms map[string]bool
 	if err != nil {
 		t.Fatalf("valkey.NewClient: %v", err)
 	}
+
 	t.Cleanup(func() { vk.Close() })
 
 	compat := valkeycompat.NewAdapter(vk)
@@ -143,6 +149,7 @@ func newListTestResolver(t *testing.T, userID pgtype.UUID, perms map[string]bool
 		if err != nil {
 			t.Fatalf("marshal user context: %v", err)
 		}
+
 		if err := compat.Set(t.Context(), "jc:perm:"+userID.String(), data, 0).Err(); err != nil {
 			t.Fatalf("seed permission cache: %v", err)
 		}
@@ -157,30 +164,37 @@ func listRequest(t *testing.T, method, target, body string, userID pgtype.UUID, 
 	t.Helper()
 
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
+
 	ctx := context.WithValue(req.Context(), auth.UserContextKey, &auth.AuthenticatedUser{UserID: userID})
 	if resolver != nil {
 		ctx = context.WithValue(ctx, rbac.ResolverKey, resolver)
 	}
+
 	if len(urlParams) > 0 {
 		rctx := chi.NewRouteContext()
 		for k, v := range urlParams {
 			rctx.URLParams.Add(k, v)
 		}
+
 		ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 	}
+
 	return req.WithContext(ctx)
 }
 
 func responseErrorCode(t *testing.T, rr *httptest.ResponseRecorder) string {
 	t.Helper()
+
 	var body struct {
 		Error struct {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatalf("response is not an error envelope: %v (body=%s)", err, rr.Body.String())
 	}
+
 	return body.Error.Code
 }
 
@@ -208,6 +222,7 @@ func TestCreateContentListPermissionDenied(t *testing.T) {
 		if rr.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403 (body=%s)", rr.Code, rr.Body.String())
 		}
+
 		if code := responseErrorCode(t, rr); code != "list_permission_required" {
 			t.Fatalf("error code = %q, want list_permission_required", code)
 		}
@@ -222,6 +237,7 @@ func TestCreateContentListPermissionDenied(t *testing.T) {
 		if rr.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403 (body=%s)", rr.Code, rr.Body.String())
 		}
+
 		if code := responseErrorCode(t, rr); code != "list_permission_required" {
 			t.Fatalf("error code = %q, want list_permission_required", code)
 		}
@@ -247,6 +263,7 @@ func TestCreateContentListPermissionGranted(t *testing.T) {
 	if rr.Code == http.StatusForbidden {
 		t.Fatalf("granted caller was denied: status = 403 (body=%s)", rr.Body.String())
 	}
+
 	if code := responseErrorCode(t, rr); code == "list_permission_required" || code == "list_feature_disabled" {
 		t.Fatalf("gate error code %q for a granted caller", code)
 	}
@@ -266,6 +283,7 @@ func TestCreateContentListInvalidMode(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	if code := responseErrorCode(t, rr); code != "invalid_list_mode" {
 		t.Fatalf("error code = %q, want invalid_list_mode", code)
 	}
@@ -297,6 +315,7 @@ func TestUpdateContentListTooManyItems(t *testing.T) {
 	for i := range items {
 		items[i] = map[string]string{"heading": fmt.Sprintf("item %d", i+1)}
 	}
+
 	payload, err := json.Marshal(map[string]any{
 		"field_values": map[string]any{"list_mode": "numbered", "items": items},
 	})
@@ -312,6 +331,7 @@ func TestUpdateContentListTooManyItems(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	if code := responseErrorCode(t, rr); code != "too_many_items" {
 		t.Fatalf("error code = %q, want too_many_items", code)
 	}
@@ -369,28 +389,34 @@ const (
 
 func argStringPtr(t *testing.T, args []any, i int) *string {
 	t.Helper()
+
 	v, ok := args[i].(*string)
 	if !ok {
 		t.Fatalf("arg %d is %T, want *string", i, args[i])
 	}
+
 	return v
 }
 
 func argUUID(t *testing.T, args []any, i int) pgtype.UUID {
 	t.Helper()
+
 	v, ok := args[i].(pgtype.UUID)
 	if !ok {
 		t.Fatalf("arg %d is %T, want pgtype.UUID", i, args[i])
 	}
+
 	return v
 }
 
 func argTimestamptz(t *testing.T, args []any, i int) pgtype.Timestamptz {
 	t.Helper()
+
 	v, ok := args[i].(pgtype.Timestamptz)
 	if !ok {
 		t.Fatalf("arg %d is %T, want pgtype.Timestamptz", i, args[i])
 	}
+
 	return v
 }
 
@@ -446,6 +472,7 @@ func TestUpdateContentExplicitNullClears(t *testing.T) {
 
 	patch := func(t *testing.T, write *captureUpdateDBTX, body string) *httptest.ResponseRecorder {
 		t.Helper()
+
 		h := &Handlers{Service: &Service{
 			read:  gen.New(rowDBTX{src: &prev}),
 			write: gen.New(write),
@@ -458,9 +485,11 @@ func TestUpdateContentExplicitNullClears(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 		}
+
 		if len(write.updateArgs) == 0 {
 			t.Fatal("UpdateContent write was not reached")
 		}
+
 		return rr
 	}
 
@@ -471,24 +500,31 @@ func TestUpdateContentExplicitNullClears(t *testing.T) {
 		if v := argStringPtr(t, write.updateArgs, argCanonicalUrl); v != nil {
 			t.Errorf("canonical_url arg = %q, want nil (NULL write)", *v)
 		}
+
 		if v := argStringPtr(t, write.updateArgs, argMetaTitle); v != nil {
 			t.Errorf("meta_title arg = %q, want nil (NULL write)", *v)
 		}
+
 		if v := argStringPtr(t, write.updateArgs, argMetaDescription); v != nil {
 			t.Errorf("meta_description arg = %q, want nil (NULL write)", *v)
 		}
+
 		if v := argStringPtr(t, write.updateArgs, argOgImageUrl); v != nil {
 			t.Errorf("og_image_url arg = %q, want nil (NULL write)", *v)
 		}
+
 		if v := argUUID(t, write.updateArgs, argFeaturedImageID); v.Valid {
 			t.Errorf("featured_image_id arg = %v, want invalid (NULL write)", v)
 		}
+
 		if v := argUUID(t, write.updateArgs, argHeaderImageID); v.Valid {
 			t.Errorf("header_image_id arg = %v, want invalid (NULL write)", v)
 		}
+
 		if v := argUUID(t, write.updateArgs, argOrganizationID); v.Valid {
 			t.Errorf("organization_id arg = %v, want invalid (NULL write)", v)
 		}
+
 		if v := argTimestamptz(t, write.updateArgs, argPublishAt); v.Valid {
 			t.Errorf("publish_at arg = %v, want invalid (NULL write)", v)
 		}
@@ -501,24 +537,31 @@ func TestUpdateContentExplicitNullClears(t *testing.T) {
 		if v := argStringPtr(t, write.updateArgs, argCanonicalUrl); v != storedCanonical {
 			t.Errorf("canonical_url arg = %v, want stored %q", v, *storedCanonical)
 		}
+
 		if v := argStringPtr(t, write.updateArgs, argMetaTitle); v != storedMetaTitle {
 			t.Errorf("meta_title arg = %v, want stored %q", v, *storedMetaTitle)
 		}
+
 		if v := argStringPtr(t, write.updateArgs, argMetaDescription); v != storedMetaDesc {
 			t.Errorf("meta_description arg = %v, want stored %q", v, *storedMetaDesc)
 		}
+
 		if v := argStringPtr(t, write.updateArgs, argOgImageUrl); v != storedOgImage {
 			t.Errorf("og_image_url arg = %v, want stored %q", v, *storedOgImage)
 		}
+
 		if v := argUUID(t, write.updateArgs, argFeaturedImageID); v != featuredID {
 			t.Errorf("featured_image_id arg = %v, want stored %v", v, featuredID)
 		}
+
 		if v := argUUID(t, write.updateArgs, argHeaderImageID); v != headerID {
 			t.Errorf("header_image_id arg = %v, want stored %v", v, headerID)
 		}
+
 		if v := argUUID(t, write.updateArgs, argOrganizationID); v != orgID {
 			t.Errorf("organization_id arg = %v, want stored %v", v, orgID)
 		}
+
 		if v := argTimestamptz(t, write.updateArgs, argPublishAt); v != storedPublishAt {
 			t.Errorf("publish_at arg = %v, want stored %v", v, storedPublishAt)
 		}
@@ -531,9 +574,11 @@ func TestUpdateContentExplicitNullClears(t *testing.T) {
 		if v := argUUID(t, write.updateArgs, argFeaturedImageID); v.Valid {
 			t.Errorf("featured_image_id arg = %v, want invalid for empty-string clear", v)
 		}
+
 		if v := argUUID(t, write.updateArgs, argOrganizationID); v.Valid {
 			t.Errorf("organization_id arg = %v, want invalid for empty-string clear", v)
 		}
+
 		if v := argTimestamptz(t, write.updateArgs, argPublishAt); v.Valid {
 			t.Errorf("publish_at arg = %v, want invalid for empty-string clear", v)
 		}
@@ -569,6 +614,7 @@ func TestUpdateContentNonListSkipsListValidation(t *testing.T) {
 	for i := range items {
 		items[i] = map[string]string{"heading": fmt.Sprintf("item %d", i+1)}
 	}
+
 	payload, err := json.Marshal(map[string]any{
 		"field_values": map[string]any{"items": items},
 	})

@@ -53,7 +53,6 @@ func (s *Store) ListBadgeDefinitions(ctx context.Context, activeOnly bool) ([]ge
 // total count for pagination metadata.
 func (s *Store) ListBadgeDefinitionsPaginated(ctx context.Context, activeOnly bool, limit, offset int32) ([]gen.BadgeDefinition, int64, error) {
 	rows, err := s.queries.ListBadgeDefinitionsPaginated(ctx, gen.ListBadgeDefinitionsPaginatedParams{
-
 		ActiveOnly: activeOnly,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -112,7 +111,6 @@ func (s *Store) AwardBadge(ctx context.Context, arg gen.AwardBadgeParams) (gen.U
 // GetUserBadge fetches a single user_badge row, if it exists.
 func (s *Store) GetUserBadge(ctx context.Context, userID, badgeID pgtype.UUID) (gen.UserBadge, error) {
 	return s.queries.GetUserBadge(ctx, gen.GetUserBadgeParams{
-
 		UserID:  userID,
 		BadgeID: badgeID,
 	})
@@ -147,7 +145,6 @@ func (s *Store) ListActiveChallenges(ctx context.Context) ([]gen.ChallengeDefini
 // ListAllChallenges lists all challenges for a platform (admin view), paginated.
 func (s *Store) ListAllChallenges(ctx context.Context, limit, offset int32) ([]gen.ChallengeDefinition, int64, error) {
 	rows, err := s.queries.ListAllChallenges(ctx, gen.ListAllChallengesParams{
-
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -209,7 +206,6 @@ func (s *Store) UpsertChallengeProgress(ctx context.Context, arg gen.UpsertChall
 // GetChallengeProgress fetches a user's progress on a specific challenge.
 func (s *Store) GetChallengeProgress(ctx context.Context, userID, challengeID pgtype.UUID) (gen.UserChallengeProgress, error) {
 	return s.queries.GetChallengeProgress(ctx, gen.GetChallengeProgressParams{
-
 		UserID:      userID,
 		ChallengeID: challengeID,
 	})
@@ -238,7 +234,6 @@ func (s *Store) MarkChallengeRewardClaimed(ctx context.Context, id pgtype.UUID) 
 // space are ranked (per-space scope, Section 64).
 func (s *Store) LeaderboardAllTime(ctx context.Context, spaceID pgtype.UUID, topN int32) ([]gen.LeaderboardAllTimeRow, error) {
 	return s.queries.LeaderboardAllTime(ctx, gen.LeaderboardAllTimeParams{
-
 		SpaceID: spaceID,
 		TopN:    topN,
 	})
@@ -249,7 +244,6 @@ func (s *Store) LeaderboardAllTime(ctx context.Context, spaceID pgtype.UUID, top
 // only members of that space are ranked.
 func (s *Store) LeaderboardByPeriod(ctx context.Context, spaceID pgtype.UUID, fromDate pgtype.Timestamptz, topN int32) ([]gen.LeaderboardByPeriodRow, error) {
 	return s.queries.LeaderboardByPeriod(ctx, gen.LeaderboardByPeriodParams{
-
 		SpaceID:  spaceID,
 		FromDate: fromDate,
 		TopN:     topN,
@@ -278,7 +272,6 @@ func (s *Store) GetBadgesByPointsTrigger(ctx context.Context) ([]gen.BadgeDefini
 // activity_key (non-synthetic only).
 func (s *Store) CountUserActivityByKey(ctx context.Context, userID pgtype.UUID, activityKey string) (int64, error) {
 	return s.queries.CountUserActivityByKey(ctx, gen.CountUserActivityByKeyParams{
-
 		UserID:      userID,
 		ActivityKey: activityKey,
 	})

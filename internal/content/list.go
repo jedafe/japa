@@ -74,9 +74,11 @@ func validateListFieldValues(raw json.RawMessage, maxItems int) (json.RawMessage
 	if items == nil {
 		items = []listItem{}
 	}
+
 	if len(items) > maxItems {
 		return nil, &listValidationError{"too_many_items", fmt.Sprintf("list supports at most %d items", maxItems)}
 	}
+
 	for i := range items {
 		if err := validateListItem(&items[i]); err != nil {
 			return nil, err
@@ -87,10 +89,12 @@ func validateListFieldValues(raw json.RawMessage, maxItems int) (json.RawMessage
 	if enc, err := json.Marshal(items); err == nil {
 		fv["items"] = enc
 	}
+
 	out, err := json.Marshal(fv)
 	if err != nil {
 		return nil, &listValidationError{"invalid_list_items", err.Error()}
 	}
+
 	return out, nil
 }
 
@@ -105,6 +109,7 @@ func validateListItem(it *listItem) *listValidationError {
 	if len(it.Heading) > 300 {
 		return invalid("item heading exceeds 300 characters")
 	}
+
 	if len(it.Credit) > 300 {
 		return invalid("item credit exceeds 300 characters")
 	}
@@ -154,6 +159,7 @@ func validateListItemEmbed(e *listItemEmbed) *listValidationError {
 		if _, err := uuid.Parse(e.ContentID); err != nil {
 			return invalid("embed.content_id must be a valid UUID")
 		}
+
 		if e.ContentSlug == "" {
 			return invalid("embed.content_slug is required for content embeds")
 		}
@@ -161,20 +167,25 @@ func validateListItemEmbed(e *listItemEmbed) *listValidationError {
 		if e.URL == "" {
 			return invalid("embed.url is required for url embeds")
 		}
+
 		if !isHTTPURL(e.URL) {
 			return invalid("embed.url must be an http(s) URL")
 		}
+
 		if len(e.Resolved) > 0 {
 			var resolved struct {
 				EmbedURL string `json:"embed_url"`
 				URL      string `json:"url"`
 			}
+
 			if err := json.Unmarshal(e.Resolved, &resolved); err != nil {
 				return invalid("embed.resolved must be an object")
 			}
+
 			if resolved.EmbedURL != "" && !isHTTPURL(resolved.EmbedURL) {
 				return invalid("embed.resolved.embed_url must be an http(s) URL")
 			}
+
 			if resolved.URL != "" && !isHTTPURL(resolved.URL) {
 				return invalid("embed.resolved.url must be an http(s) URL")
 			}
@@ -196,6 +207,7 @@ func isHTTPURL(s string) bool {
 	if err != nil {
 		return false
 	}
+
 	return u.Scheme == "http" || u.Scheme == "https"
 }
 
@@ -209,20 +221,25 @@ func injectListItemListElements(jsonLd []byte, fv json.RawMessage) []byte {
 	if err := json.Unmarshal(jsonLd, &doc); err != nil {
 		return jsonLd
 	}
+
 	var parsed struct {
 		ListMode string     `json:"list_mode"`
 		Items    []listItem `json:"items"`
 	}
+
 	if err := json.Unmarshal(fv, &parsed); err != nil || len(parsed.Items) == 0 {
 		return jsonLd
 	}
+
 	type element struct {
 		Type     string `json:"@type"`
 		Position int    `json:"position"`
 		Name     string `json:"name,omitempty"`
 		URL      string `json:"url,omitempty"`
 	}
+
 	els := make([]element, 0, len(parsed.Items))
+
 	for i := range parsed.Items {
 		it := parsed.Items[i]
 		if parsed.ListMode == "countdown" {
@@ -231,13 +248,17 @@ func injectListItemListElements(jsonLd []byte, fv json.RawMessage) []byte {
 			// items[len-p] — the position matches the displayed number.
 			it = parsed.Items[len(parsed.Items)-1-i]
 		}
+
 		els = append(els, element{Type: "ListItem", Position: i + 1, Name: it.Heading})
 	}
+
 	doc["itemListElement"] = els
 	doc["numberOfItems"] = len(parsed.Items)
+
 	out, err := json.Marshal(doc)
 	if err != nil {
 		return jsonLd
 	}
+
 	return out
 }

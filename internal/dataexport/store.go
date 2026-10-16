@@ -53,7 +53,6 @@ func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (gen.PlatformDataEx
 // List returns paginated exports for a platform, optionally filtered by status.
 func (s *Store) List(ctx context.Context, status string, limit, offset int32) ([]gen.PlatformDataExport, error) {
 	return s.queries.ListPlatformDataExports(ctx, gen.ListPlatformDataExportsParams{
-
 		Status:    status,
 		LimitVal:  limit,
 		OffsetVal: offset,

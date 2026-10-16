@@ -290,7 +290,6 @@ func (s *Service) GetOrCreateCode(ctx context.Context, userID pgtype.UUID) (gen.
 	}
 
 	code, err = s.writeQueries.CreateReferralCode(ctx, gen.CreateReferralCodeParams{
-
 		UserID: userID,
 		Code:   newCode,
 	})
@@ -309,7 +308,6 @@ func (s *Service) GetReferralStats(ctx context.Context, userID pgtype.UUID) (map
 	}
 
 	total, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
-
 		ReferrerID: userID,
 		Status:     "",
 	})
@@ -318,7 +316,6 @@ func (s *Service) GetReferralStats(ctx context.Context, userID pgtype.UUID) (map
 	}
 
 	credited, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
-
 		ReferrerID: userID,
 		Status:     StatusCredited,
 	})
@@ -327,7 +324,6 @@ func (s *Service) GetReferralStats(ctx context.Context, userID pgtype.UUID) (map
 	}
 
 	pending, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
-
 		ReferrerID: userID,
 		Status:     StatusPending,
 	})
@@ -409,7 +405,6 @@ func (s *Service) GetAttribution(ctx context.Context, sessionID string) (string,
 // CreateReferral creates a pending referral record linking referrer to referee.
 func (s *Service) CreateReferral(ctx context.Context, referrerID, refereeID pgtype.UUID, code string) (gen.Referral, error) {
 	referral, err := s.writeQueries.CreateReferral(ctx, gen.CreateReferralParams{
-
 		ReferrerID:   referrerID,
 		RefereeID:    refereeID,
 		ReferralCode: code,
@@ -486,7 +481,6 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 	periodStart := time.Now().AddDate(0, -1, 0)
 
 	creditedThisPeriod, err := s.queries.CountCreditedReferralsByReferrerThisPeriod(ctx, gen.CountCreditedReferralsByReferrerThisPeriodParams{
-
 		ReferrerID:  referral.ReferrerID,
 		PeriodStart: pgtype.Timestamptz{Time: periodStart, Valid: true},
 	})
@@ -516,7 +510,6 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 	qtx := s.queries.WithTx(tx)
 
 	if _, err = qtx.QualifyReferral(ctx, gen.QualifyReferralParams{
-
 		ID:                 referral.ID,
 		QualifiedPaymentID: paymentID,
 	}); err != nil {
@@ -524,7 +517,6 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 	}
 
 	if _, err = qtx.CreditReferral(ctx, gen.CreditReferralParams{
-
 		ID:           referral.ID,
 		RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
 	}); err != nil {
@@ -538,7 +530,6 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 	// Award credits to referrer wallet (fire-and-forget per Rule 8).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
-
 			"user_id":     referral.ReferrerID.String(),
 			"amount":      rewardCredits,
 			"ledger_type": "credits",
@@ -566,7 +557,6 @@ func (s *Service) flagReferral(ctx context.Context, refereeID pgtype.UUID, reaso
 
 func (s *Service) flagReferralByID(ctx context.Context, referralID pgtype.UUID, reason string) error {
 	_, err := s.writeQueries.FlagReferral(ctx, gen.FlagReferralParams{
-
 		ID:            referralID,
 		FlaggedReason: &reason,
 	})
@@ -587,7 +577,6 @@ func (s *Service) ListReferralHistory(ctx context.Context, referrerID pgtype.UUI
 	offset := int32((page - 1) * limit) // #nosec
 
 	rows, err := s.queries.ListReferralsByReferrer(ctx, gen.ListReferralsByReferrerParams{
-
 		ReferrerID: referrerID,
 		Status:     status,
 		PageLimit:  int32(limit), // #nosec
@@ -598,7 +587,6 @@ func (s *Service) ListReferralHistory(ctx context.Context, referrerID pgtype.UUI
 	}
 
 	total, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
-
 		ReferrerID: referrerID,
 		Status:     status,
 	})
@@ -622,7 +610,6 @@ func (s *Service) AdminListReferrals(ctx context.Context, status string, page, l
 	offset := int32((page - 1) * limit) // #nosec
 
 	rows, err := s.queries.AdminListReferrals(ctx, gen.AdminListReferralsParams{
-
 		Status:     status,
 		PageLimit:  int32(limit), // #nosec
 		PageOffset: offset,
@@ -655,7 +642,6 @@ func (s *Service) AdminResolveFlagged(ctx context.Context, referralID pgtype.UUI
 		}
 
 		_, err := s.writeQueries.CreditFlaggedReferral(ctx, gen.CreditFlaggedReferralParams{
-
 			ID:           referralID,
 			RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
 		})
@@ -689,7 +675,6 @@ func (s *Service) AdminListFlagged(ctx context.Context, page, limit int) ([]gen.
 	offset := int32((page - 1) * limit) // #nosec
 
 	rows, err := s.queries.AdminListFlaggedReferrals(ctx, gen.AdminListFlaggedReferralsParams{
-
 		PageLimit:  int32(limit), // #nosec
 		PageOffset: offset,
 	})

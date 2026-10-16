@@ -64,6 +64,7 @@ func TestSanitizeVisaGovURL(t *testing.T) {
 			t.Errorf("sanitizeVisaGovURL(%q) rejected a valid URL", v)
 		}
 	}
+
 	invalid := []string{"", "javascript:alert(1)", "data:text/html,x", "//evil.example.com/x", "example.com", "ftp://example.com/x", "https://", "https:///path"}
 	for _, v := range invalid {
 		if _, ok := sanitizeVisaGovURL(v); ok {

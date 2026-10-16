@@ -46,7 +46,7 @@ type Extractor struct {
 }
 
 // ExtractorOption configures an Extractor.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type ExtractorOption func(*Extractor)
 
 // WithModel sets the LLM model identifier passed in the request.

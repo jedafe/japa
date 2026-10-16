@@ -350,7 +350,6 @@ func (s *Service) List(ctx context.Context, destSpaceID, issuingSpaceID pgtype.U
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListPathways(ctx, ListPathwaysFilter{
-
 		DestinationSpaceID: destSpaceID,
 		DocumentType:       documentType,
 		IssuingSpaceID:     issuingSpaceID,
@@ -425,7 +424,6 @@ func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (Pathway
 	}
 
 	p := Pathway{
-
 		DocumentType:       input.DocumentType,
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -566,7 +564,6 @@ func (s *Service) GenerateDraft(ctx context.Context, input GeneratePathwayInput)
 	}
 
 	p := Pathway{
-
 		DocumentType:       input.DocumentType,
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -746,7 +743,6 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, status
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-
 		Status:             status,
 		DocumentType:       documentType,
 		DestinationSpaceID: destSpaceID,
@@ -787,7 +783,6 @@ func (s *Service) AdminListUpdates(ctx context.Context, status string, page, lim
 	}
 
 	rows, total, err := s.store.ListCommunityUpdates(ctx, ListCommunityUpdatesFilter{
-
 		Status: status,
 		Limit:  limit,
 		Offset: offset,

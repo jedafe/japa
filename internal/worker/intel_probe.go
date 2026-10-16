@@ -56,6 +56,7 @@ func sourceVerifyCategories(src gen.IntelSource) []string {
 	if len(src.Categories) > 0 {
 		return src.Categories
 	}
+
 	if src.Category != "" {
 		return []string{src.Category}
 	}
@@ -187,13 +188,16 @@ func HandleIntelProbeVerify(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var inputs []sources.ChannelProposalInput
+
 	pending := 0
+
 	for _, in := range proposalInputs(report.Channels) {
 		if fetcher.PendingFetchMethod(in.CrawlMethod) ||
 			(in.CrawlMethod == string(sources.CrawlMethodRender) && !renderConfigured) {
 			pending++
 			continue
 		}
+
 		inputs = append(inputs, in)
 	}
 

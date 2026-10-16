@@ -64,36 +64,47 @@ func TestBuildUpdateContentParams_PreservesOmittedFields(t *testing.T) {
 		if params.OrganizationID != orgID {
 			t.Errorf("OrganizationID = %v, want stored %v", params.OrganizationID, orgID)
 		}
+
 		if params.HeaderImageID != headerID {
 			t.Errorf("HeaderImageID = %v, want stored %v", params.HeaderImageID, headerID)
 		}
+
 		if params.FeaturedImageID != featuredID {
 			t.Errorf("FeaturedImageID = %v, want stored %v", params.FeaturedImageID, featuredID)
 		}
+
 		if params.CanonicalUrl != storedCanonical {
 			t.Errorf("CanonicalUrl = %v, want stored %v", params.CanonicalUrl, storedCanonical)
 		}
+
 		if params.MetaTitle != storedMetaTitle {
 			t.Errorf("MetaTitle = %v, want stored %v", params.MetaTitle, storedMetaTitle)
 		}
+
 		if params.MetaDescription != storedMetaDesc {
 			t.Errorf("MetaDescription = %v, want stored %v", params.MetaDescription, storedMetaDesc)
 		}
+
 		if params.OgImageUrl != storedOgImage {
 			t.Errorf("OgImageUrl = %v, want stored %v", params.OgImageUrl, storedOgImage)
 		}
+
 		if params.PublishAt != storedPublishAt {
 			t.Errorf("PublishAt = %v, want stored %v", params.PublishAt, storedPublishAt)
 		}
+
 		if params.PublishedAt != storedPublishedAt {
 			t.Errorf("PublishedAt = %v, want stored %v", params.PublishedAt, storedPublishedAt)
 		}
+
 		if !params.IsLocked {
 			t.Error("IsLocked = false, want stored true")
 		}
+
 		if !params.IsPinned {
 			t.Error("IsPinned = false, want stored true")
 		}
+
 		if string(params.FieldValues) != string(storedFieldValues) {
 			t.Errorf("FieldValues = %s, want stored %s", params.FieldValues, storedFieldValues)
 		}
@@ -129,36 +140,47 @@ func TestBuildUpdateContentParams_PreservesOmittedFields(t *testing.T) {
 		if params.OrganizationID != newOrg {
 			t.Errorf("OrganizationID = %v, want %v", params.OrganizationID, newOrg)
 		}
+
 		if params.HeaderImageID != newHeader {
 			t.Errorf("HeaderImageID = %v, want %v", params.HeaderImageID, newHeader)
 		}
+
 		if params.FeaturedImageID != newFeatured {
 			t.Errorf("FeaturedImageID = %v, want %v", params.FeaturedImageID, newFeatured)
 		}
+
 		if params.CanonicalUrl == nil || *params.CanonicalUrl != "https://example.com/new-canonical" {
 			t.Errorf("CanonicalUrl = %v, want new canonical", params.CanonicalUrl)
 		}
+
 		if params.MetaTitle == nil || *params.MetaTitle != "new meta title" {
 			t.Errorf("MetaTitle = %v, want new meta title", params.MetaTitle)
 		}
+
 		if params.MetaDescription == nil || *params.MetaDescription != "new meta description" {
 			t.Errorf("MetaDescription = %v, want new meta description", params.MetaDescription)
 		}
+
 		if params.OgImageUrl == nil || *params.OgImageUrl != "https://example.com/new-og.png" {
 			t.Errorf("OgImageUrl = %v, want new og image", params.OgImageUrl)
 		}
+
 		if params.PublishAt != newPublishAt {
 			t.Errorf("PublishAt = %v, want %v", params.PublishAt, newPublishAt)
 		}
+
 		if params.PublishedAt != storedPublishedAt {
 			t.Errorf("PublishedAt = %v, must stay %v (stamped by UpdateContentStatus only)", params.PublishedAt, storedPublishedAt)
 		}
+
 		if params.IsLocked {
 			t.Error("IsLocked = true, want explicit false")
 		}
+
 		if params.IsPinned {
 			t.Error("IsPinned = true, want explicit false")
 		}
+
 		if string(params.FieldValues) != `{"a":1}` {
 			t.Errorf("FieldValues = %s, want explicit payload", params.FieldValues)
 		}
@@ -179,9 +201,11 @@ func TestBuildUpdateContentParams_PreservesOmittedFields(t *testing.T) {
 		if params.PublishAt.Valid {
 			t.Errorf("PublishAt = %v, want NULL after ClearPublishAt", params.PublishAt)
 		}
+
 		if params.HeaderImageID.Valid {
 			t.Errorf("HeaderImageID = %v, want NULL after ClearHeaderImageID", params.HeaderImageID)
 		}
+
 		if params.FeaturedImageID.Valid {
 			t.Errorf("FeaturedImageID = %v, want NULL after ClearFeaturedImageID", params.FeaturedImageID)
 		}
@@ -189,6 +213,7 @@ func TestBuildUpdateContentParams_PreservesOmittedFields(t *testing.T) {
 		if params.PublishedAt != storedPublishedAt {
 			t.Errorf("PublishedAt = %v, want stored %v", params.PublishedAt, storedPublishedAt)
 		}
+
 		if params.OrganizationID != orgID {
 			t.Errorf("OrganizationID = %v, want stored %v", params.OrganizationID, orgID)
 		}
@@ -213,6 +238,7 @@ func TestBuildUpdateContentParams_PreservesOmittedFields(t *testing.T) {
 		if params.FeaturedImageID != newFeatured {
 			t.Errorf("FeaturedImageID = %v, want explicit %v (set wins over clear)", params.FeaturedImageID, newFeatured)
 		}
+
 		if params.PublishAt != newPublishAt {
 			t.Errorf("PublishAt = %v, want explicit %v (set wins over clear)", params.PublishAt, newPublishAt)
 		}
@@ -235,15 +261,19 @@ func TestBuildUpdateContentParams_PreservesOmittedFields(t *testing.T) {
 		if params.OrganizationID.Valid {
 			t.Errorf("OrganizationID = %v, want NULL after ClearOrganizationID", params.OrganizationID)
 		}
+
 		if params.CanonicalUrl != nil {
 			t.Errorf("CanonicalUrl = %v, want NULL after ClearCanonicalUrl", params.CanonicalUrl)
 		}
+
 		if params.MetaTitle != nil {
 			t.Errorf("MetaTitle = %v, want NULL after ClearMetaTitle", params.MetaTitle)
 		}
+
 		if params.MetaDescription != nil {
 			t.Errorf("MetaDescription = %v, want NULL after ClearMetaDescription", params.MetaDescription)
 		}
+
 		if params.OgImageUrl != nil {
 			t.Errorf("OgImageUrl = %v, want NULL after ClearOgImageUrl", params.OgImageUrl)
 		}
@@ -251,6 +281,7 @@ func TestBuildUpdateContentParams_PreservesOmittedFields(t *testing.T) {
 		if params.HeaderImageID != headerID {
 			t.Errorf("HeaderImageID = %v, want stored %v", params.HeaderImageID, headerID)
 		}
+
 		if params.PublishAt != storedPublishAt {
 			t.Errorf("PublishAt = %v, want stored %v", params.PublishAt, storedPublishAt)
 		}
@@ -313,29 +344,37 @@ func TestApplyExplicitNullClears(t *testing.T) {
 	}
 
 	var input UpdateContentInput
+
 	ApplyExplicitNullClears(raw, &input)
 
 	if !input.ClearFeaturedImageID {
 		t.Error("ClearFeaturedImageID = false, want true for featured_image_id:null")
 	}
+
 	if !input.ClearHeaderImageID {
 		t.Error("ClearHeaderImageID = false, want true for header_image_id:null")
 	}
+
 	if !input.ClearOrganizationID {
 		t.Error("ClearOrganizationID = false, want true for organization_id:null")
 	}
+
 	if !input.ClearPublishAt {
 		t.Error("ClearPublishAt = false, want true for publish_at:null")
 	}
+
 	if !input.ClearCanonicalUrl {
 		t.Error("ClearCanonicalUrl = false, want true for canonical_url:null")
 	}
+
 	if !input.ClearMetaTitle {
 		t.Error("ClearMetaTitle = false, want true for meta_title:null")
 	}
+
 	if !input.ClearMetaDescription {
 		t.Error("ClearMetaDescription = false, want true for meta_description:null")
 	}
+
 	if !input.ClearOgImageUrl {
 		t.Error("ClearOgImageUrl = false, want true for og_image_url:null")
 	}
@@ -349,6 +388,7 @@ func TestApplyExplicitNullClears(t *testing.T) {
 		}
 
 		var in UpdateContentInput
+
 		ApplyExplicitNullClears(sparse, &in)
 
 		if in.ClearFeaturedImageID || in.ClearHeaderImageID || in.ClearOrganizationID ||
@@ -362,6 +402,7 @@ func TestApplyExplicitNullClears(t *testing.T) {
 		t.Parallel()
 
 		var in UpdateContentInput
+
 		ApplyExplicitNullClears(nil, &in)
 
 		if in.ClearPublishAt || in.ClearFeaturedImageID || in.ClearCanonicalUrl {

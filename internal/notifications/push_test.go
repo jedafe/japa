@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
@@ -62,10 +61,11 @@ func TestSend410WrapsErrExpired(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := p.Send(context.Background(), srv.URL, p256dh, auth, []byte(`{"title":"t"}`))
+	err := p.Send(t.Context(), srv.URL, p256dh, auth, []byte(`{"title":"t"}`))
 	if err == nil {
 		t.Fatal("expected error for 410 response")
 	}
+
 	if !errors.Is(err, errpkg.ErrExpired) {
 		t.Fatalf("expected error to wrap ErrExpired, got: %v", err)
 	}
@@ -82,10 +82,11 @@ func TestSend500DoesNotWrapErrExpired(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := p.Send(context.Background(), srv.URL, p256dh, auth, []byte(`{"title":"t"}`))
+	err := p.Send(t.Context(), srv.URL, p256dh, auth, []byte(`{"title":"t"}`))
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
+
 	if errors.Is(err, errpkg.ErrExpired) {
 		t.Fatalf("500 must not be treated as expired subscription, got: %v", err)
 	}
@@ -97,7 +98,8 @@ func TestSendDisabledIsNoop(t *testing.T) {
 	if p.IsEnabled() {
 		t.Fatal("expected push delivery to be disabled without keys")
 	}
-	if err := p.Send(context.Background(), "https://example.invalid", "k", "a", nil); err != nil {
+
+	if err := p.Send(t.Context(), "https://example.invalid", "k", "a", nil); err != nil {
 		t.Fatalf("disabled send should be nil, got: %v", err)
 	}
 }

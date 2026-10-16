@@ -105,6 +105,7 @@ func (s *Service) Digest(ctx context.Context, viewerID pgtype.UUID) (*PublicDige
 	}
 
 	limit := int32(8)
+
 	if s.settingsReader != nil {
 		if v := s.settingsReader.GetIntOr(ctx, "api.digest.section_limit", 8); v > 0 {
 			limit = int32(v)
@@ -119,6 +120,7 @@ func (s *Service) Digest(ctx context.Context, viewerID pgtype.UUID) (*PublicDige
 	if err != nil {
 		return nil, err
 	}
+
 	digest.ForYou = DigestFeedSection{Items: mapFeedItems(items), Source: "for_you"}
 
 	// community.popular — the explore-popular slice.
@@ -126,6 +128,7 @@ func (s *Service) Digest(ctx context.Context, viewerID pgtype.UUID) (*PublicDige
 	if err != nil {
 		return nil, err
 	}
+
 	digest.Community = DigestCommunity{Popular: mapFeedItems(popular)}
 
 	// destination — degrades to null when the owner has no resolvable
@@ -135,11 +138,13 @@ func (s *Service) Digest(ctx context.Context, viewerID pgtype.UUID) (*PublicDige
 
 	if s.cache != nil {
 		ttl := 120
+
 		if s.settingsReader != nil {
 			if v := s.settingsReader.GetIntOr(ctx, "api.digest.cache_ttl_seconds", 120); v > 0 {
 				ttl = v
 			}
 		}
+
 		if raw, err := json.Marshal(digest); err == nil {
 			_ = s.cache.Set(ctx, cacheKey, raw, time.Duration(ttl)*time.Second).Err()
 		}
@@ -161,6 +166,7 @@ func (s *Service) digestDestination(ctx context.Context, viewerID pgtype.UUID) *
 	if err != nil {
 		return nil
 	}
+
 	code := visitor.NormalizeCountry(fields.DestinationCountry)
 	if code == "" {
 		return nil

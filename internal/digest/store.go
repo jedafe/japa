@@ -36,7 +36,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // DigestEdition represents a single digest_editions row.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type DigestEdition struct {
 	ID pgtype.UUID
 
@@ -222,6 +222,7 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 		conditions = append(conditions, fmt.Sprintf(
 			"(cadence ILIKE $%d OR status ILIKE $%d OR generated_by ILIKE $%d)",
 			argIdx, argIdx, argIdx))
+
 		args = append(args, "%"+q+"%")
 		argIdx++
 	}
@@ -543,7 +544,7 @@ WHERE id = $1 AND status = 'published'
 // story, poll. UnmarshalJSON additionally accepts the legacy key spellings
 // (upcoming_events, featured_story) so editions stored before the contract
 // fix still render.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type DigestContent struct {
 	TopThreads     []DigestThread `json:"top_threads"`
 	NewMembers     []DigestMember `json:"new_members"`
@@ -556,25 +557,31 @@ type DigestContent struct {
 // upcoming_events/featured_story keys onto the §84 events/story contract.
 func (c *DigestContent) UnmarshalJSON(data []byte) error {
 	type plain DigestContent
+
 	var aux struct {
 		plain
 		LegacyEvents []DigestEvent  `json:"upcoming_events"`
 		LegacyStory  *DigestStory   `json:"featured_story"`
 		Members      []DigestMember `json:"members"`
 	}
+
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
+
 	*c = DigestContent(aux.plain)
 	if len(c.UpcomingEvents) == 0 && len(aux.LegacyEvents) > 0 {
 		c.UpcomingEvents = aux.LegacyEvents
 	}
+
 	if c.FeaturedStory == nil && aux.LegacyStory != nil {
 		c.FeaturedStory = aux.LegacyStory
 	}
+
 	if len(c.NewMembers) == 0 && len(aux.Members) > 0 {
 		c.NewMembers = aux.Members
 	}
+
 	return nil
 }
 
@@ -586,37 +593,45 @@ func NormalizeContent(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
 		return raw
 	}
+
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
 		return raw
 	}
+
 	moved := false
 	rename := func(from, to string) {
 		v, ok := m[from]
 		if !ok {
 			return
 		}
+
 		if _, exists := m[to]; !exists {
 			m[to] = v
 		}
+
 		delete(m, from)
+
 		moved = true
 	}
 	rename("upcoming_events", "events")
 	rename("featured_story", "story")
 	rename("members", "new_members")
+
 	if !moved {
 		return raw
 	}
+
 	out, err := json.Marshal(m)
 	if err != nil {
 		return raw
 	}
+
 	return out
 }
 
 // DigestThread is a top forum thread summary.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type DigestThread struct {
 	Title      string `json:"title"`
 	Slug       string `json:"slug"`
@@ -625,14 +640,14 @@ type DigestThread struct {
 }
 
 // DigestMember is a new-member summary (display_name only — no PII leak).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type DigestMember struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name,omitempty"`
 }
 
 // DigestEvent is an upcoming event summary.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type DigestEvent struct {
 	Title    string `json:"title"`
 	Slug     string `json:"slug"`
@@ -640,7 +655,7 @@ type DigestEvent struct {
 }
 
 // DigestStory is the featured story summary.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type DigestStory struct {
 	Title string `json:"title"`
 	Slug  string `json:"slug"`
@@ -648,7 +663,7 @@ type DigestStory struct {
 
 // DigestPoll is the community poll section (§84 item 5 — admin-seeded or
 // auto-suggested poll question; reserved for the poll generation phase).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type DigestPoll struct {
 	Question string `json:"question"`
 	URL      string `json:"url,omitempty"`
@@ -775,11 +790,13 @@ WHERE c.content_type = 'event'
 
 	for erows.Next() {
 		var e DigestEvent
+
 		var startsAt pgtype.Timestamptz
 		if err := erows.Scan(&e.Title, &e.Slug, &startsAt); err != nil {
 			erows.Close()
 			return nil, fmt.Errorf("digest: assemble: scan event: %w", err)
 		}
+
 		if startsAt.Valid {
 			e.StartsAt = startsAt.Time.UTC().Format(time.RFC3339)
 		}
@@ -852,7 +869,6 @@ func (s *Store) GetDigestSubscriberEmails(ctx context.Context) ([]string, error)
 
 	for {
 		rows, err := q.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
-
 			PageOffset: (page - 1) * pageSize,
 			PageLimit:  pageSize,
 		})

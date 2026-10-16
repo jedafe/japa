@@ -32,16 +32,19 @@ func NewHandlers(service *Service) *Handlers {
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -80,6 +83,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		EntityID   string `json:"entity_id"`
 		Reason     string `json:"reason"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -103,6 +107,7 @@ func (h *Handlers) HandleListMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePageParams(r)
+
 	appeals, err := h.service.ListMine(r.Context(), user.UserID, limit, (page-1)*limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list appeals")
@@ -129,6 +134,7 @@ func (h *Handlers) HandleListEligible(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list appealable decisions")
 		return
 	}
+
 	if items == nil {
 		items = []EligibleItem{}
 	}

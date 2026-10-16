@@ -176,11 +176,13 @@ func TestParsePageParams_LegacyLimit(t *testing.T) {
 }
 
 func TestParsePageParams_PageOffset(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/calendar?page_offset=5&page_size=15", nil)
+	// api-response-format.md: page_offset is a record offset, not a page
+	// number. offset 30 with size 15 => third page (records 30-44).
+	req := httptest.NewRequest(http.MethodGet, "/calendar?page_offset=30&page_size=15", nil)
 
 	page, limit := parsePageParams(req)
-	if page != 5 {
-		t.Errorf("page = %d, want 5", page)
+	if page != 3 {
+		t.Errorf("page = %d, want 3", page)
 	}
 
 	if limit != 15 {

@@ -187,6 +187,7 @@ func (s *Service) CreatePollForThread(ctx context.Context, threadID, userID pgty
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.ForumPoll{}, errpkg.ErrNotFound
 		}
+
 		return gen.ForumPoll{}, fmt.Errorf("getting thread for poll: %w", err)
 	}
 
@@ -195,6 +196,7 @@ func (s *Service) CreatePollForThread(ctx context.Context, threadID, userID pgty
 	if err == nil {
 		return gen.ForumPoll{}, fmt.Errorf("%w: thread already has a poll", errpkg.ErrAlreadyExists)
 	}
+
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return gen.ForumPoll{}, fmt.Errorf("checking existing poll: %w", err)
 	}
@@ -220,6 +222,7 @@ func (s *Service) CreatePollForThread(ctx context.Context, threadID, userID pgty
 			if pos == 0 {
 				pos = int32(i) //nolint:gosec // options count is bounded
 			}
+
 			if _, err := q.AddForumPollOption(ctx, gen.AddForumPollOptionParams{
 				PollID:   p.ID,
 				Label:    opt.Label,

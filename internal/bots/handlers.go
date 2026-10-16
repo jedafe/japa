@@ -84,7 +84,6 @@ func parseOffset(r *http.Request) int32 {
 // ListKnownBots returns all known bots for the platform, optionally filtered by bot_type.
 // GET /api/v1/admin/bots?bot_type=search_engine.
 func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
-
 	botType := r.URL.Query().Get("bot_type")
 	if botType != "" && !IsBotType(botType) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_bot_type", "Invalid bot type")
@@ -107,7 +106,6 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 // GetKnownBot returns a single known bot by ID.
 // GET /api/v1/admin/bots/{id}.
 func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")
@@ -126,7 +124,6 @@ func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
 // CreateKnownBot creates a new known bot entry.
 // POST /api/v1/admin/bots.
 func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Name             string `json:"name"`
 		UserAgentPattern string `json:"user_agent_pattern"`
@@ -189,7 +186,6 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 // UpdateKnownBot updates an existing known bot entry.
 // PUT /api/v1/admin/bots/:id.
 func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
-
 	botID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")
@@ -247,7 +243,6 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 // DeleteKnownBot removes a known bot entry.
 // DELETE /api/v1/admin/bots/:id.
 func (h *Handlers) DeleteKnownBot(w http.ResponseWriter, r *http.Request) {
-
 	botID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")

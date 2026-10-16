@@ -10,6 +10,7 @@ func TestParseAIPrefs(t *testing.T) {
 	if p := ParseAIPrefs([]byte("{nope")); p.DefaultMode != "" {
 		t.Fatalf("malformed prefs should degrade, got %+v", p)
 	}
+
 	p := ParseAIPrefs([]byte(`{"default_mode":"agent","disabled_categories":["forum"],"disabled_tools":["content.delete"],"enabled_tools":["content.search"]}`))
 	if p.DefaultMode != "agent" || len(p.DisabledCategories) != 1 || len(p.DisabledTools) != 1 || len(p.EnabledTools) != 1 {
 		t.Fatalf("prefs parse wrong: %+v", p)
@@ -22,8 +23,10 @@ func TestFilterCatalog_PrefsAndOverride(t *testing.T) {
 		"forum.threads.create": "forum", "crs.calculate": "calculators",
 	}
 	tools := []ToolConfig{
-		{FunctionName: "content.search"}, {FunctionName: "content.delete"},
-		{FunctionName: "forum.threads.create"}, {FunctionName: "crs.calculate"},
+		{FunctionName: "content.search"},
+		{FunctionName: "content.delete"},
+		{FunctionName: "forum.threads.create"},
+		{FunctionName: "crs.calculate"},
 	}
 	prefs := AIPrefs{
 		DisabledCategories: []string{"forum"},
@@ -40,10 +43,12 @@ func TestFilterCatalog_PrefsAndOverride(t *testing.T) {
 	// content.search + forum.threads.create + crs.calculate (content.delete
 	// remains excluded).
 	prefs2 := AIPrefs{DisabledCategories: []string{"content"}, EnabledTools: []string{"content.search"}}
+
 	got = FilterCatalog(tools, cat, prefs2, nil)
 	if len(got) != 3 {
 		t.Fatalf("exception filter wrong: %+v", got)
 	}
+
 	for _, tc := range got {
 		if tc.FunctionName == "content.delete" {
 			t.Fatalf("disabled tool leaked: %+v", got)
@@ -52,6 +57,7 @@ func TestFilterCatalog_PrefsAndOverride(t *testing.T) {
 
 	// Message override disables everything.
 	off := false
+
 	got = FilterCatalog(tools, cat, prefs, &ToolSelection{Enabled: &off})
 	if len(got) != 0 {
 		t.Fatalf("enabled:false should empty catalog, got %+v", got)
@@ -59,10 +65,12 @@ func TestFilterCatalog_PrefsAndOverride(t *testing.T) {
 
 	// Override whitelist narrows further.
 	on := true
+
 	got = FilterCatalog(tools, cat, AIPrefs{}, &ToolSelection{Enabled: &on, Categories: []string{"content"}})
 	if len(got) != 2 {
 		t.Fatalf("category override wrong: %+v", got)
 	}
+
 	for _, tc := range got {
 		if cat[tc.FunctionName] != "content" {
 			t.Fatalf("override leaked tool %s", tc.FunctionName)
@@ -88,6 +96,7 @@ func TestFilterCatalog_PrefsAndOverride(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("empty tools whitelist should empty catalog, got %+v", got)
 	}
+
 	got = FilterCatalog(tools, cat, AIPrefs{}, &ToolSelection{Enabled: &on, Categories: []string{}})
 	if len(got) != 0 {
 		t.Fatalf("empty categories whitelist should empty catalog, got %+v", got)

@@ -41,9 +41,11 @@ func TestPlanTier(t *testing.T) {
 	if got := planTier("pro_monthly"); got != "pro" {
 		t.Errorf("planTier(pro_monthly) = %q", got)
 	}
+
 	if got := planTier("business_yearly"); got != "business" {
 		t.Errorf("planTier(business_yearly) = %q", got)
 	}
+
 	if got := planTier("pro_annual"); got != "pro" {
 		t.Errorf("planTier(pro_annual) = %q", got)
 	}
@@ -55,6 +57,7 @@ func TestIsValidSubscriptionPlan(t *testing.T) {
 			t.Errorf("expected %q to be valid", p)
 		}
 	}
+
 	for _, p := range []string{"", "free", "pro_weekly", "enterprise"} {
 		if isValidSubscriptionPlan(p) {
 			t.Errorf("expected %q to be invalid", p)
@@ -66,6 +69,7 @@ func TestPriceSettingsKey(t *testing.T) {
 	if got := priceSettingsKey(ProviderStripe, "pro_monthly"); got != "payments.stripe.price.pro_monthly" {
 		t.Errorf("unexpected stripe key %q", got)
 	}
+
 	if got := priceSettingsKey(ProviderPaystack, "business_yearly"); got != "payments.paystack.plan.business_yearly" {
 		t.Errorf("unexpected paystack key %q", got)
 	}
@@ -145,8 +149,10 @@ func (f *fakeTierManager) SetUserTier(_ context.Context, _ pgtype.UUID, tier str
 	if f.failErr != nil {
 		return f.failErr
 	}
+
 	f.tier = tier
 	f.setTo = append(f.setTo, tier)
+
 	return nil
 }
 
@@ -156,24 +162,29 @@ func (f *fakeTierManager) ResolveUserTier(_ context.Context, _ pgtype.UUID) (str
 
 func TestRevokePlanTier_OnlyRevokesGrantedTier(t *testing.T) {
 	var uid pgtype.UUID
+
 	uid.Scan("11111111-1111-1111-1111-111111111111")
 
 	// User still holds the tier the plan granted → revoked to regular.
 	tm := &fakeTierManager{tier: "pro"}
+
 	s := &Service{tierManager: tm}
-	if err := s.revokePlanTier(context.Background(), uid, "pro_monthly"); err != nil {
+	if err := s.revokePlanTier(t.Context(), uid, "pro_monthly"); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
+
 	if tm.tier != "regular" {
 		t.Errorf("expected downgrade to regular, tier=%q", tm.tier)
 	}
 
 	// User holds a different tier (e.g. admin-granted business) → untouched.
 	tm2 := &fakeTierManager{tier: "business"}
+
 	s2 := &Service{tierManager: tm2}
-	if err := s2.revokePlanTier(context.Background(), uid, "pro_yearly"); err != nil {
+	if err := s2.revokePlanTier(t.Context(), uid, "pro_yearly"); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
+
 	if len(tm2.setTo) != 0 {
 		t.Errorf("admin-granted tier was clobbered: %v", tm2.setTo)
 	}
@@ -194,15 +205,19 @@ func TestPayloadHelpers(t *testing.T) {
 	if str(m, "id") != "sub_1" {
 		t.Error("str failed")
 	}
+
 	if !boolFrom(m, "cancel_at_period_end") {
 		t.Error("boolFrom failed")
 	}
+
 	if unixTs(m, "current_period_end").Unix() != 1800000000 {
 		t.Error("unixTs failed")
 	}
+
 	if int64From(m, "amount_paid") != 500000 || int64From(m, "amount_str") != 2500 {
 		t.Error("int64From failed")
 	}
+
 	if str(nil, "x") != "" || boolFrom(nil, "x") || !unixTs(nil, "x").IsZero() {
 		t.Error("nil-map helpers must be safe")
 	}

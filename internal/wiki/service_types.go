@@ -46,7 +46,7 @@ var ErrFieldGroupNotFound = errors.New("field group not found")
 var ErrInvalidInput = errors.New("invalid input")
 
 // WikiTypeDTO is the public/admin representation of a wiki type.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiTypeDTO struct {
 	SpaceTypeID   string   `json:"space_type_id"`
 	SpaceTypeSlug string   `json:"space_type_slug"`
@@ -63,7 +63,7 @@ type WikiTypeDTO struct {
 // admin editor share the shape. field_group_* identify the bound group
 // (always present — the group is the page's schema; a prose-only page has
 // a group with no fields).
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiCategoryDTO struct {
 	ID             string `json:"id,omitempty"`
 	Slug           string `json:"slug"`
@@ -108,18 +108,23 @@ func wikiCategoryToDTO(c WikiCategory) WikiCategoryDTO {
 	if c.ID.Valid {
 		d.ID = c.ID.String()
 	}
+
 	if c.FieldGroupID.Valid {
 		d.FieldGroupID = c.FieldGroupID.String()
 	}
+
 	if c.FieldGroupSlug != nil {
 		d.FieldGroupSlug = *c.FieldGroupSlug
 	}
+
 	if c.FieldGroupName != nil {
 		d.FieldGroupName = *c.FieldGroupName
 	}
+
 	if len(c.Rollup) > 0 {
 		d.Rollup = json.RawMessage(c.Rollup)
 	}
+
 	d.Icon = c.Icon
 
 	return d
@@ -157,7 +162,7 @@ func (s *Service) AdminListWikiTypes(ctx context.Context) ([]WikiTypeDTO, error)
 }
 
 // UpsertWikiTypeRequest is the admin create/enable payload.
-// //nolint:revive // exported: request DTO naming follows package convention
+// //nolint:revive // exported: request DTO naming follows package convention.
 type UpsertWikiTypeRequest struct {
 	SpaceTypeID   string   `json:"space_type_id"`
 	SpaceTypeSlug string   `json:"space_type_slug"` // alternative to space_type_id
@@ -176,6 +181,7 @@ func (s *Service) resolveSpaceTypeID(ctx context.Context, idStr, slug string) (p
 		if err := id.Scan(idStr); err != nil || !id.Valid {
 			return pgtype.UUID{}, ErrInvalidInput
 		}
+
 		return id, nil
 	}
 
@@ -185,8 +191,10 @@ func (s *Service) resolveSpaceTypeID(ctx context.Context, idStr, slug string) (p
 			if errors.Is(err, pgx.ErrNoRows) {
 				return pgtype.UUID{}, ErrInvalidInput
 			}
+
 			return pgtype.UUID{}, err
 		}
+
 		return id, nil
 	}
 
@@ -200,20 +208,25 @@ func (s *Service) resolveSpaceTypeID(ctx context.Context, idStr, slug string) (p
 // rollup type closure, and landing drill-down.
 func (s *Service) resolveParentIDs(ctx context.Context, spaceTypeID pgtype.UUID, raw []string) ([]pgtype.UUID, error) {
 	ids := make([]pgtype.UUID, 0, len(raw))
+
 	for _, p := range raw {
 		var id pgtype.UUID
 		if err := id.Scan(p); err != nil || !id.Valid {
 			return nil, ErrInvalidInput
 		}
+
 		if id == spaceTypeID {
 			return nil, fmt.Errorf("%w: parent cycle", ErrInvalidInput)
 		}
+
 		if _, err := s.store.GetWikiType(ctx, id); err != nil {
 			if errors.Is(err, ErrWikiTypeNotFound) {
 				return nil, fmt.Errorf("%w: parent %s is not a wiki type", ErrInvalidInput, p)
 			}
+
 			return nil, err
 		}
+
 		ids = append(ids, id)
 	}
 
@@ -225,6 +238,7 @@ func (s *Service) resolveParentIDs(ctx context.Context, spaceTypeID pgtype.UUID,
 		if err != nil {
 			return nil, err
 		}
+
 		if cycle {
 			return nil, fmt.Errorf("%w: parent cycle", ErrInvalidInput)
 		}
@@ -237,24 +251,30 @@ func (s *Service) resolveParentIDs(ctx context.Context, spaceTypeID pgtype.UUID,
 // reaches target within maxDepth hops (visited-guarded, cycle-safe).
 func (s *Service) parentChainReaches(ctx context.Context, start, target pgtype.UUID, maxDepth int) (bool, error) {
 	visited := map[pgtype.UUID]bool{start: true}
+
 	frontier := []pgtype.UUID{start}
 	for depth := 0; depth < maxDepth && len(frontier) > 0; depth++ {
 		next := []pgtype.UUID{}
+
 		for _, tid := range frontier {
 			parents, err := s.store.ListTypeParentIDs(ctx, tid)
 			if err != nil {
 				return false, err
 			}
+
 			for _, p := range parents {
 				if p == target {
 					return true, nil
 				}
+
 				if !visited[p] {
 					visited[p] = true
+
 					next = append(next, p)
 				}
 			}
 		}
+
 		frontier = next
 	}
 
@@ -288,7 +308,7 @@ func (s *Service) UpsertWikiType(ctx context.Context, req UpsertWikiTypeRequest)
 
 // UpdateWikiTypeRequest is the admin patch payload; nil fields are left
 // unchanged. parent_type_ids replaces the edge set when non-nil.
-// //nolint:revive // exported: request DTO naming follows package convention
+// //nolint:revive // exported: request DTO naming follows package convention.
 type UpdateWikiTypeRequest struct {
 	Enabled       *bool    `json:"enabled"`
 	Label         *string  `json:"label"`
@@ -307,11 +327,13 @@ func (s *Service) UpdateWikiType(ctx context.Context, spaceTypeIDStr string, req
 	}
 
 	var parentIDs []pgtype.UUID
+
 	if req.ParentTypeIDs != nil {
 		ids, err := s.resolveParentIDs(ctx, spaceTypeID, req.ParentTypeIDs)
 		if err != nil {
 			return err
 		}
+
 		parentIDs = ids
 	}
 
@@ -330,6 +352,7 @@ func (s *Service) DeleteWikiType(ctx context.Context, spaceTypeIDStr string) err
 	if err != nil {
 		return err
 	}
+
 	if n > 0 {
 		return ErrWikiTypeInUse
 	}
@@ -371,18 +394,22 @@ func (s *Service) ListCategoriesForSpace(ctx context.Context, spaceSlug string) 
 		if rcfg == nil || rcfg.Mode != rollupModeDirectory {
 			continue
 		}
+
 		typeIDs, terr := s.rollupTypeIDs(ctx, typeID, rcfg.Levels)
 		if terr != nil {
 			continue
 		}
+
 		if len(typeIDs) == 0 {
 			cats[i].Empty = true
 			continue
 		}
+
 		has, herr := s.store.HasDirectoryChildren(ctx, spaceID, typeIDs)
 		if herr != nil {
 			continue
 		}
+
 		cats[i].Empty = !has
 	}
 
@@ -433,6 +460,7 @@ func (s *Service) ListWikiTypeCategories(ctx context.Context, spaceTypeIDStr str
 	if err != nil {
 		return nil, err
 	}
+
 	if !spaceTypeID.Valid {
 		return nil, ErrWikiTypeNotFound
 	}
@@ -466,10 +494,12 @@ func validateIconName(icon *string) (*string, error) {
 	if icon == nil {
 		return nil, nil
 	}
+
 	v := strings.TrimSpace(strings.ToLower(*icon))
 	if v == "" {
 		return nil, nil
 	}
+
 	if !wikiSlugPattern.MatchString(v) {
 		return nil, fmt.Errorf("%w: invalid icon name", ErrInvalidInput)
 	}
@@ -483,7 +513,7 @@ func validateIconName(icon *string) (*string, error) {
 var wikiCategoryPattern = regexp.MustCompile(`^[a-z0-9]+(_[a-z0-9]+)*$`)
 
 // CreateWikiCategoryRequest is the admin add-category payload.
-// //nolint:revive // exported: request DTO naming follows package convention
+// //nolint:revive // exported: request DTO naming follows package convention.
 type CreateWikiCategoryRequest struct {
 	Slug         string `json:"slug"`
 	Category     string `json:"category"`
@@ -524,6 +554,7 @@ func (s *Service) CreateWikiTypeCategory(ctx context.Context, spaceTypeIDStr str
 	if category == "" {
 		category = strings.ReplaceAll(slug, "-", "_")
 	}
+
 	if !wikiCategoryPattern.MatchString(category) {
 		return WikiCategoryDTO{}, fmt.Errorf("%w: invalid category token", ErrInvalidInput)
 	}
@@ -539,6 +570,7 @@ func (s *Service) CreateWikiTypeCategory(ctx context.Context, spaceTypeIDStr str
 	} else {
 		fgID, err = s.validateFieldGroup(ctx, req.FieldGroupID)
 	}
+
 	if err != nil {
 		return WikiCategoryDTO{}, err
 	}
@@ -581,11 +613,13 @@ func (s *Service) provisionCategoryGroup(ctx context.Context, typeSlug, category
 	}
 
 	groupSlug := "wiki_" + typeSlug + "_" + category
+
 	group, err := s.fieldProvisioner.GetFieldGroupBySlug(ctx, groupSlug)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, err
 		}
+
 		group, err = s.fieldProvisioner.CreateFieldGroup(ctx, label+" ("+typeSlug+")", groupSlug, nil, false)
 		if err != nil {
 			// A concurrent create (or a read replica that shadowed an
@@ -598,17 +632,21 @@ func (s *Service) provisionCategoryGroup(ctx context.Context, typeSlug, category
 	}
 
 	entityClass := "space_type:" + typeSlug
+
 	assignments, err := s.fields.ListAssignmentsByEntityClass(ctx, entityClass)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	assigned := false
+
 	for _, a := range assignments {
 		if a.GroupID == group.ID && !a.EntityID.Valid {
 			assigned = true
 			break
 		}
 	}
+
 	if !assigned {
 		if _, err := s.fieldProvisioner.CreateAssignment(ctx, gen.CreateAssignmentParams{
 			GroupID:     group.ID,
@@ -625,11 +663,13 @@ func (s *Service) provisionCategoryGroup(ctx context.Context, typeSlug, category
 			if rerr != nil {
 				return pgtype.UUID{}, fmt.Errorf("wiki: provision category group: %w", rerr)
 			}
+
 			for _, a := range retry {
 				if a.GroupID == group.ID && !a.EntityID.Valid {
 					return group.ID, nil
 				}
 			}
+
 			return pgtype.UUID{}, fmt.Errorf("wiki: provision category group assignment: %w", err)
 		}
 	}
@@ -643,17 +683,21 @@ func (s *Service) provisionCategoryGroup(ctx context.Context, typeSlug, category
 // instead.
 func (s *Service) validateFieldGroup(ctx context.Context, idStr string) (pgtype.UUID, error) {
 	var id pgtype.UUID
+
 	if strings.TrimSpace(idStr) == "" {
 		return pgtype.UUID{}, fmt.Errorf("%w: field_group_id required", ErrInvalidInput)
 	}
+
 	if err := id.Scan(idStr); err != nil || !id.Valid {
 		return pgtype.UUID{}, ErrFieldGroupNotFound
 	}
+
 	if s.fields != nil {
 		if _, err := s.fields.GetFieldGroup(ctx, id); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return pgtype.UUID{}, ErrFieldGroupNotFound
 			}
+
 			return pgtype.UUID{}, err
 		}
 	}
@@ -665,7 +709,7 @@ func (s *Service) validateFieldGroup(ctx context.Context, idStr string) (pgtype.
 // unchanged. field_group_id participates via a pointer: an explicit value
 // rebinds to an existing group. The binding is mandatory — an empty string
 // is rejected (a category cannot exist without a group).
-// //nolint:revive // exported: request DTO naming follows package convention
+// //nolint:revive // exported: request DTO naming follows package convention.
 type UpdateWikiCategoryRequest struct {
 	Label        *string `json:"label"`
 	FieldGroupID *string `json:"field_group_id"`
@@ -694,40 +738,50 @@ func (s *Service) UpdateWikiTypeCategory(ctx context.Context, idStr string, req 
 	}
 
 	updateFG := req.FieldGroupID != nil
+
 	var fgID pgtype.UUID
+
 	if updateFG {
 		v, err := s.validateFieldGroup(ctx, *req.FieldGroupID)
 		if err != nil {
 			return err
 		}
+
 		fgID = v
 	}
 
 	var rollup []byte
+
 	updateRollup := len(req.Rollup) > 0
 	if updateRollup {
 		v, err := validateRollupInput(req.Rollup)
 		if err != nil {
 			return err
 		}
+
 		rollup = v
 	}
 
 	var icon *string
+
 	updateIcon := len(req.Icon) > 0
 	if updateIcon {
 		var v *string
+
 		if strings.TrimSpace(string(req.Icon)) != "null" {
 			var s string
 			if err := json.Unmarshal(req.Icon, &s); err != nil {
 				return fmt.Errorf("%w: invalid icon", ErrInvalidInput)
 			}
+
 			v = &s
 		}
+
 		v, err := validateIconName(v)
 		if err != nil {
 			return err
 		}
+
 		icon = v
 	}
 
@@ -748,6 +802,7 @@ func (s *Service) DeleteWikiTypeCategory(ctx context.Context, idStr string) erro
 	if err != nil {
 		return err
 	}
+
 	if cat.IsSystem {
 		return ErrWikiCategoryProtected
 	}
@@ -756,6 +811,7 @@ func (s *Service) DeleteWikiTypeCategory(ctx context.Context, idStr string) erro
 	if err != nil {
 		return err
 	}
+
 	if n > 0 {
 		return ErrWikiCategoryInUse
 	}
@@ -792,21 +848,25 @@ func validateRollupInput(raw json.RawMessage) ([]byte, error) {
 	if cfg.Mode != "" && cfg.Mode != rollupModeDirectory && cfg.Mode != rollupModePages {
 		return nil, fmt.Errorf("%w: unknown rollup mode %q", ErrInvalidInput, cfg.Mode)
 	}
+
 	for _, m := range cfg.Metrics {
 		if !validRollupMetrics[m] {
 			return nil, fmt.Errorf("%w: unknown rollup metric %q", ErrInvalidInput, m)
 		}
 	}
+
 	for _, l := range cfg.Levels {
 		if !wikiCategoryPattern.MatchString(l) && !wikiSlugPattern.MatchString(l) {
 			return nil, fmt.Errorf("%w: invalid rollup level %q", ErrInvalidInput, l)
 		}
 	}
+
 	for _, p := range cfg.Pages {
 		if !wikiSlugPattern.MatchString(p) {
 			return nil, fmt.Errorf("%w: invalid rollup page %q", ErrInvalidInput, p)
 		}
 	}
+
 	if cfg.SectionLimit < 0 {
 		return nil, fmt.Errorf("%w: rollup section_limit must be >= 0", ErrInvalidInput)
 	}
@@ -818,7 +878,7 @@ func validateRollupInput(raw json.RawMessage) ([]byte, error) {
 // parent_template_id nests the template under a same-category top-level
 // template (§80 Wiki Topic Pages); section_label/preview_limit configure
 // the composite section the child contributes to the parent's page.
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiPageTemplateDTO struct {
 	ID               string  `json:"id,omitempty"`
 	CategoryID       string  `json:"category_id"`
@@ -848,12 +908,15 @@ func wikiPageTemplateToDTO(t WikiPageTemplate) WikiPageTemplateDTO {
 	if t.FieldGroupID.Valid {
 		d.FieldGroupID = t.FieldGroupID.String()
 	}
+
 	if t.FieldGroupSlug != nil {
 		d.FieldGroupSlug = *t.FieldGroupSlug
 	}
+
 	if t.FieldGroupName != nil {
 		d.FieldGroupName = *t.FieldGroupName
 	}
+
 	if t.ParentTemplateID.Valid {
 		pid := t.ParentTemplateID.String()
 		d.ParentTemplateID = &pid
@@ -868,6 +931,7 @@ func (s *Service) ListPageTemplates(ctx context.Context, categoryIDStr string) (
 	if err := categoryID.Scan(categoryIDStr); err != nil || !categoryID.Valid {
 		return nil, ErrWikiCategoryNotFound
 	}
+
 	if _, err := s.store.GetWikiTypeCategory(ctx, categoryID); err != nil {
 		return nil, err
 	}
@@ -903,6 +967,7 @@ func (s *Service) resolveTemplateParent(ctx context.Context, categoryID, selfID 
 	if err := parentID.Scan(idStr); err != nil || !parentID.Valid {
 		return pgtype.UUID{}, fmt.Errorf("%w: parent_template_id is not a uuid", ErrInvalidParentTemplate)
 	}
+
 	if parentID == selfID {
 		return pgtype.UUID{}, fmt.Errorf("%w: a template cannot parent itself", ErrInvalidParentTemplate)
 	}
@@ -912,11 +977,14 @@ func (s *Service) resolveTemplateParent(ctx context.Context, categoryID, selfID 
 		if errors.Is(err, ErrWikiPageTemplateNotFound) {
 			return pgtype.UUID{}, fmt.Errorf("%w: not found", ErrInvalidParentTemplate)
 		}
+
 		return pgtype.UUID{}, err
 	}
+
 	if parent.CategoryID != categoryID {
 		return pgtype.UUID{}, fmt.Errorf("%w: parent must belong to the same category", ErrInvalidParentTemplate)
 	}
+
 	if parent.ParentTemplateID.Valid {
 		return pgtype.UUID{}, fmt.Errorf("%w: parent must be a top-level template", ErrInvalidParentTemplate)
 	}
@@ -925,7 +993,7 @@ func (s *Service) resolveTemplateParent(ctx context.Context, categoryID, selfID 
 }
 
 // CreateWikiPageTemplateRequest is the admin add-template payload.
-// //nolint:revive // exported: request DTO naming follows package convention
+// //nolint:revive // exported: request DTO naming follows package convention.
 type CreateWikiPageTemplateRequest struct {
 	Slug         string `json:"slug"`
 	Label        string `json:"label"`
@@ -978,6 +1046,7 @@ func (s *Service) CreateWikiPageTemplate(ctx context.Context, categoryIDStr stri
 	} else {
 		fgID, err = s.validateFieldGroup(ctx, req.FieldGroupID)
 	}
+
 	if err != nil {
 		return WikiPageTemplateDTO{}, err
 	}
@@ -1018,11 +1087,13 @@ func (s *Service) provisionPageTemplateGroup(ctx context.Context, typeSlug, page
 	}
 
 	groupSlug := "wiki_" + typeSlug + "_page_" + strings.ReplaceAll(pageSlug, "-", "_")
+
 	group, err := s.fieldProvisioner.GetFieldGroupBySlug(ctx, groupSlug)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, err
 		}
+
 		group, err = s.fieldProvisioner.CreateFieldGroup(ctx, label+" ("+typeSlug+")", groupSlug, nil, false)
 		if err != nil {
 			group, err = s.fieldProvisioner.GetFieldGroupBySlug(ctx, groupSlug)
@@ -1033,17 +1104,21 @@ func (s *Service) provisionPageTemplateGroup(ctx context.Context, typeSlug, page
 	}
 
 	entityClass := "space_type:" + typeSlug
+
 	assignments, err := s.fields.ListAssignmentsByEntityClass(ctx, entityClass)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	assigned := false
+
 	for _, a := range assignments {
 		if a.GroupID == group.ID && !a.EntityID.Valid {
 			assigned = true
 			break
 		}
 	}
+
 	if !assigned {
 		if _, err := s.fieldProvisioner.CreateAssignment(ctx, gen.CreateAssignmentParams{
 			GroupID:     group.ID,
@@ -1054,11 +1129,13 @@ func (s *Service) provisionPageTemplateGroup(ctx context.Context, typeSlug, page
 			if rerr != nil {
 				return pgtype.UUID{}, fmt.Errorf("wiki: provision template group: %w", rerr)
 			}
+
 			for _, a := range retry {
 				if a.GroupID == group.ID && !a.EntityID.Valid {
 					return group.ID, nil
 				}
 			}
+
 			return pgtype.UUID{}, fmt.Errorf("wiki: provision template group assignment: %w", err)
 		}
 	}
@@ -1071,7 +1148,7 @@ func (s *Service) provisionPageTemplateGroup(ctx context.Context, typeSlug, page
 // an explicit value must resolve to a real group. parent_template_id and
 // section_label are three-state: absent leaves them, explicit null clears
 // them (top-level / no section-label override), a value validates/sets.
-// //nolint:revive // exported: request DTO naming follows package convention
+// //nolint:revive // exported: request DTO naming follows package convention.
 type UpdateWikiPageTemplateRequest struct {
 	Label        *string `json:"label"`
 	FieldGroupID *string `json:"field_group_id"`
@@ -1103,26 +1180,34 @@ func (s *Service) UpdateWikiPageTemplate(ctx context.Context, idStr string, req 
 	}
 
 	updateFG := req.FieldGroupID != nil
+
 	var fgID pgtype.UUID
+
 	if updateFG {
 		v, err := s.validateFieldGroup(ctx, *req.FieldGroupID)
 		if err != nil {
 			return err
 		}
+
 		fgID = v
 	}
 
 	updateParent := len(req.ParentTemplateID) > 0
+
 	var parentID pgtype.UUID
+
 	if updateParent {
 		var pid *string
+
 		if strings.TrimSpace(string(req.ParentTemplateID)) != "null" {
 			var s string
 			if err := json.Unmarshal(req.ParentTemplateID, &s); err != nil {
 				return fmt.Errorf("%w: parent_template_id must be a uuid string or null", ErrInvalidInput)
 			}
+
 			pid = &s
 		}
+
 		if pid != nil {
 			// resolveTemplateParent needs the template's category — fetch
 			// the row once to check same-category parentage.
@@ -1137,11 +1222,13 @@ func (s *Service) UpdateWikiPageTemplate(ctx context.Context, idStr string, req 
 			if err != nil {
 				return err
 			}
+
 			for _, sib := range siblings {
 				if sib.ParentTemplateID == id {
 					return fmt.Errorf("%w: template has child topics and cannot be nested", ErrInvalidParentTemplate)
 				}
 			}
+
 			parentID, err = s.resolveTemplateParent(ctx, t.CategoryID, id, *pid)
 			if err != nil {
 				return err
@@ -1150,13 +1237,16 @@ func (s *Service) UpdateWikiPageTemplate(ctx context.Context, idStr string, req 
 	}
 
 	updateSectionLabel := len(req.SectionLabel) > 0
+
 	var sectionLabel *string
+
 	if updateSectionLabel {
 		if strings.TrimSpace(string(req.SectionLabel)) != "null" {
 			var s string
 			if err := json.Unmarshal(req.SectionLabel, &s); err != nil {
 				return fmt.Errorf("%w: section_label must be a string or null", ErrInvalidInput)
 			}
+
 			s = strings.TrimSpace(s)
 			if s == "" {
 				sectionLabel = nil
@@ -1186,6 +1276,7 @@ func (s *Service) DeleteWikiPageTemplate(ctx context.Context, idStr string) erro
 	if err != nil {
 		return err
 	}
+
 	if t.IsSystem {
 		return ErrWikiPageTemplateProtected
 	}
@@ -1194,6 +1285,7 @@ func (s *Service) DeleteWikiPageTemplate(ctx context.Context, idStr string) erro
 	if err != nil {
 		return err
 	}
+
 	if n > 0 {
 		return ErrWikiPageTemplateInUse
 	}

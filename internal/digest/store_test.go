@@ -1,6 +1,7 @@
 package digest
 
 import (
+	"net/http"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
@@ -70,11 +71,15 @@ func TestNormalizeContent(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			out := NormalizeContent(json.RawMessage(tc.in))
+
 			var m map[string]json.RawMessage
+
 			if err := json.Unmarshal(out, &m); err != nil {
 				t.Fatalf("normalized output is not a JSON object: %v", err)
 			}
+
 			tc.check(t, m)
 		})
 	}
@@ -118,12 +123,15 @@ func TestDigestContentUnmarshalLegacyKeys(t *testing.T) {
 	if len(c.TopThreads) != 1 || c.TopThreads[0].Title != "T1" {
 		t.Errorf("top_threads not decoded: %+v", c.TopThreads)
 	}
+
 	if len(c.NewMembers) != 1 || c.NewMembers[0].Username != "u1" {
 		t.Errorf("members→new_members mapping failed: %+v", c.NewMembers)
 	}
+
 	if len(c.UpcomingEvents) != 1 || c.UpcomingEvents[0].Title != "E1" {
 		t.Errorf("upcoming_events→events mapping failed: %+v", c.UpcomingEvents)
 	}
+
 	if c.FeaturedStory == nil || c.FeaturedStory.Title != "S1" {
 		t.Errorf("featured_story→story mapping failed: %+v", c.FeaturedStory)
 	}
@@ -142,6 +150,7 @@ func TestDigestContentCanonicalKeysWin(t *testing.T) {
 	if len(c.UpcomingEvents) != 1 || c.UpcomingEvents[0].Title != "canon" {
 		t.Errorf("canonical events lost to legacy: %+v", c.UpcomingEvents)
 	}
+
 	if c.FeaturedStory == nil || c.FeaturedStory.Title != "S" {
 		t.Errorf("canonical story lost to legacy: %+v", c.FeaturedStory)
 	}
@@ -159,12 +168,14 @@ func TestDigestContentMarshalCanonicalKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
+
 	s := string(out)
 	for _, key := range []string{`"events"`, `"story"`, `"starts_at"`} {
 		if !strings.Contains(s, key) {
 			t.Errorf("marshal output missing %s: %s", key, s)
 		}
 	}
+
 	for _, legacy := range []string{"upcoming_events", "featured_story"} {
 		if strings.Contains(s, legacy) {
 			t.Errorf("marshal output contains legacy key %s: %s", legacy, s)
@@ -196,7 +207,9 @@ func TestParsePageParams(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			r := httptest.NewRequest("GET", "/admin/digest"+tc.query, nil)
+
+			r := httptest.NewRequest(http.MethodGet, "/admin/digest"+tc.query, nil)
+
 			page, limit := parsePageParams(r)
 			if page != tc.wantPage || limit != tc.wantLimit {
 				t.Errorf("parsePageParams(%q) = (%d, %d), want (%d, %d)",
@@ -219,6 +232,7 @@ func TestRenderDigestEmailLegacyContent(t *testing.T) {
 	if !strings.Contains(html, "E1") {
 		t.Error("legacy upcoming_events section not rendered")
 	}
+
 	if !strings.Contains(html, "S1") {
 		t.Error("legacy featured_story section not rendered")
 	}
@@ -231,6 +245,7 @@ func TestAppendUnsubscribeLink(t *testing.T) {
 	if !strings.Contains(html, "https://example.com/unsub?token=abc") {
 		t.Error("unsubscribe URL missing")
 	}
+
 	if !strings.Contains(html, "<div>body</div>") {
 		t.Error("original body not preserved")
 	}
@@ -249,6 +264,7 @@ func TestAllowedSortColumns(t *testing.T) {
 			t.Errorf("sort column %q missing from whitelist", col)
 		}
 	}
+
 	if _, ok := allowedSortColumns["content"]; ok {
 		t.Error("content must not be sortable (JSONB)")
 	}

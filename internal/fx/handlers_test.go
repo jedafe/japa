@@ -60,6 +60,7 @@ func errCode(t *testing.T, rr *httptest.ResponseRecorder) string {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("response body is not the error envelope: %v (body: %s)", err, rr.Body.String())
 	}
@@ -95,6 +96,7 @@ func TestHandleConvert_Validation(t *testing.T) {
 			if rr.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d (body: %s)", rr.Code, http.StatusBadRequest, rr.Body.String())
 			}
+
 			if got := errCode(t, rr); got != tc.wantCode {
 				t.Fatalf("error code = %q, want %q", got, tc.wantCode)
 			}
@@ -119,9 +121,11 @@ func TestHandleConvert_Success(t *testing.T) {
 	var body struct {
 		Data ConvertResult `json:"data"`
 	}
+
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
+
 	if body.Data.Converted != 160000 || body.Data.From != "USD" || body.Data.To != "NGN" {
 		t.Fatalf("unexpected convert payload: %+v", body.Data)
 	}
@@ -151,6 +155,7 @@ func TestHandleConvert_ServiceErrors(t *testing.T) {
 			if rr.Code != tc.wantStatus {
 				t.Fatalf("status = %d, want %d (body: %s)", rr.Code, tc.wantStatus, rr.Body.String())
 			}
+
 			if got := errCode(t, rr); got != tc.wantCode {
 				t.Fatalf("error code = %q, want %q", got, tc.wantCode)
 			}
@@ -181,9 +186,11 @@ func TestHandleGetRates_DefaultBase(t *testing.T) {
 			Stale     bool               `json:"stale"`
 		} `json:"data"`
 	}
+
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
+
 	if body.Data.Base != "USD" || body.Data.Rates["NGN"] != 1600 {
 		t.Fatalf("unexpected rates payload: %+v", body.Data)
 	}
@@ -198,6 +205,7 @@ func TestHandleGetRates_EmptyMatrix(t *testing.T) {
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
 	}
+
 	if got := errCode(t, rr); got != "fx_unavailable" {
 		t.Fatalf("error code = %q, want fx_unavailable", got)
 	}
@@ -212,6 +220,7 @@ func TestHandleGetRates_UnsupportedBase(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
+
 	if got := errCode(t, rr); got != "unsupported_currency" {
 		t.Fatalf("error code = %q, want unsupported_currency", got)
 	}
@@ -234,9 +243,11 @@ func TestHandleListCurrencies(t *testing.T) {
 	var body struct {
 		Data []gen.ListFxCurrenciesRow `json:"data"`
 	}
+
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
+
 	if len(body.Data) != 2 || body.Data[0].Code != "USD" {
 		t.Fatalf("unexpected currencies payload: %+v", body.Data)
 	}
@@ -264,6 +275,7 @@ func TestHandlers_NilService(t *testing.T) {
 			if rr.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
 			}
+
 			if got := errCode(t, rr); got != "fx_unavailable" {
 				t.Fatalf("error code = %q, want fx_unavailable", got)
 			}

@@ -50,7 +50,7 @@ type CreateCampaignInput struct {
 }
 
 // CampaignListFilter holds optional filters and pagination for ListCampaigns.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type CampaignListFilter struct {
 	Status string
 	Limit  int32
@@ -79,7 +79,7 @@ type Campaign struct {
 }
 
 // CampaignItem is the API-facing content_campaign_item row.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type CampaignItem struct {
 	ID            string   `json:"id"`
 	CampaignID    string   `json:"campaign_id"`
@@ -100,7 +100,7 @@ type CampaignItem struct {
 }
 
 // CampaignItemPlan is a single item in the AI-generated content plan.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type CampaignItemPlan struct {
 	PersonaID     string   `json:"persona_id"`
 	ContentType   string   `json:"content_type"`
@@ -124,7 +124,7 @@ type PersonaSpec struct {
 // CampaignPlanResult is the output of Planner.PlanContent.
 // NewPersonas is populated by PlanPersonas and included here for the response
 // envelope; PlanContent itself only returns Items.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type CampaignPlanResult struct {
 	NewPersonas []PersonaSpec      `json:"new_personas,omitempty"`
 	Items       []CampaignItemPlan `json:"items"`

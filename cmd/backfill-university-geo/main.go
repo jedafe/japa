@@ -86,14 +86,17 @@ func main() {
 	}
 
 	var unis []uni
+
 	for rows.Next() {
 		var u uni
 		if err := rows.Scan(&u.id, &u.name, &u.geoCode); err != nil {
 			slog.Warn("skipping row: scan error", "error", err)
 			continue
 		}
+
 		unis = append(unis, u)
 	}
+
 	rows.Close()
 
 	if err := rows.Err(); err != nil {
@@ -107,21 +110,27 @@ func main() {
 	// share a handful of codes.
 	countryByCode := map[string]pgtype.UUID{}
 	uniCountry := map[pgtype.UUID]pgtype.UUID{}
+
 	for _, u := range unis {
 		if u.geoCode == "" {
 			continue
 		}
+
 		countryID, ok := countryByCode[u.geoCode]
 		if !ok {
 			c, err := q.GetSpaceByGeoCode(ctx, &u.geoCode)
 			if err != nil || !c.ID.Valid {
 				slog.Warn("geo_code has no country space", "space", u.name, "geo_code", u.geoCode)
+
 				countryByCode[u.geoCode] = pgtype.UUID{}
+
 				continue
 			}
+
 			countryID = c.ID
 			countryByCode[u.geoCode] = countryID
 		}
+
 		if countryID.Valid {
 			uniCountry[u.id] = countryID
 		}
@@ -133,7 +142,9 @@ func main() {
 		spaceID  pgtype.UUID
 		parentID pgtype.UUID
 	}
+
 	var candidates []link
+
 	parentIDs := map[pgtype.UUID]struct{}{}
 	matched, errors := 0, 0
 
@@ -141,19 +152,25 @@ func main() {
 		_, parentIDsForSpace, err := svc.LinkSpaceToPrimarySpaces(ctx, u.id, u.name, u.geoCode)
 		if err != nil {
 			slog.Warn("matcher failed", "space", u.name, "error", err)
+
 			errors++
+
 			continue
 		}
+
 		for _, pid := range parentIDsForSpace {
 			if !pid.Valid || pid == u.id {
 				continue
 			}
+
 			candidates = append(candidates, link{spaceID: u.id, parentID: pid})
 			parentIDs[pid] = struct{}{}
 		}
+
 		if len(parentIDsForSpace) > 0 {
 			matched++
 		}
+
 		if (i+1)%500 == 0 {
 			slog.Info("matcher progress", "done", i+1, "of", len(unis))
 		}
@@ -171,20 +188,25 @@ func main() {
 
 	geoLevels := map[string]bool{"country": true, "state": true, "city": true}
 	geoParent := map[pgtype.UUID]bool{}
+
 	if len(uniqueParents) > 0 {
 		lvlRows, err := database.Reader.Query(ctx, `SELECT id, level FROM spaces WHERE id = ANY($1)`, uniqueParents)
 		if err != nil {
 			slog.Error("failed to resolve parent levels", "error", err)
 			os.Exit(1)
 		}
+
 		for lvlRows.Next() {
 			var id pgtype.UUID
+
 			var level string
 			if err := lvlRows.Scan(&id, &level); err != nil {
 				continue
 			}
+
 			geoParent[id] = geoLevels[level]
 		}
+
 		lvlRows.Close()
 	}
 
@@ -202,6 +224,7 @@ func main() {
 				skipped++
 				continue
 			}
+
 			inserted++
 			linkedUnis[c.spaceID] = struct{}{}
 		}
@@ -212,15 +235,18 @@ func main() {
 					skipped++
 					continue
 				}
+
 				if err := q.AddParentSpace(ctx, gen.AddParentSpaceParams{
 					SpaceID:       c.spaceID,
 					ParentSpaceID: c.parentID,
 				}); err != nil {
 					return fmt.Errorf("inserting link %s -> %s: %w", c.spaceID, c.parentID, err)
 				}
+
 				inserted++
 				linkedUnis[c.spaceID] = struct{}{}
 			}
+
 			return nil
 		})
 		if err != nil {
@@ -254,16 +280,21 @@ func main() {
 		slog.Error("failed to query existing geo edges", "error", err)
 		os.Exit(1)
 	}
+
 	var edges []link
+
 	parentSet := map[pgtype.UUID]struct{}{}
+
 	for edgeRows.Next() {
 		var e link
 		if err := edgeRows.Scan(&e.spaceID, &e.parentID); err != nil {
 			continue
 		}
+
 		edges = append(edges, e)
 		parentSet[e.parentID] = struct{}{}
 	}
+
 	edgeRows.Close()
 
 	parentIDsAll := make([]pgtype.UUID, 0, len(parentSet))
@@ -274,26 +305,31 @@ func main() {
 	// Resolve each parent space's country ancestor (a country resolves to
 	// itself).
 	parentCountry := map[pgtype.UUID]pgtype.UUID{}
+
 	if len(parentIDsAll) > 0 {
 		anc, err := q.GetSpaceCountryAncestorIDs(ctx, parentIDsAll)
 		if err != nil {
 			slog.Error("failed to resolve parent country ancestors", "error", err)
 			os.Exit(1)
 		}
+
 		for _, r := range anc {
 			parentCountry[r.SpaceID] = r.CountryID
 		}
 	}
 
 	var stale []link
+
 	for _, e := range edges {
 		uc, anchored := uniCountry[e.spaceID]
 		if !anchored {
 			continue // no geo anchor — conservative keep
 		}
+
 		if parentCountry[e.parentID] == uc {
 			continue // in-country ancestry
 		}
+
 		stale = append(stale, e)
 	}
 
@@ -309,6 +345,7 @@ func main() {
 					return fmt.Errorf("removing link %s -> %s: %w", e.spaceID, e.parentID, err)
 				}
 			}
+
 			return nil
 		})
 		if err != nil {

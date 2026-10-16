@@ -128,10 +128,12 @@ func PricePartsOptionsFromJSON(options []byte) *PricePartsOptions {
 	if len(options) == 0 {
 		return nil
 	}
+
 	var o PricePartsOptions
 	if err := json.Unmarshal(options, &o); err != nil || len(o.Parts) == 0 {
 		return nil
 	}
+
 	return &o
 }
 
@@ -142,6 +144,7 @@ func PrimaryPartFromOptions(options []byte) string {
 	if o := PricePartsOptionsFromJSON(options); o != nil {
 		return o.PrimaryPart
 	}
+
 	return ""
 }
 
@@ -155,6 +158,7 @@ func (o *PricePartsOptions) PricePartKind(key string) string {
 			}
 		}
 	}
+
 	return PricePartKindNumber
 }
 
@@ -166,12 +170,15 @@ func CurrencyCodeFromOptions(options []byte) string {
 	if len(options) == 0 {
 		return ""
 	}
+
 	var o struct {
 		CurrencyCode string `json:"currency_code"`
 	}
+
 	if err := json.Unmarshal(options, &o); err != nil {
 		return ""
 	}
+
 	return o.CurrencyCode
 }
 
@@ -184,12 +191,15 @@ func DefaultSourceFromOptions(options []byte) string {
 	if len(options) == 0 {
 		return ""
 	}
+
 	var o struct {
 		DefaultSource string `json:"default_source"`
 	}
+
 	if err := json.Unmarshal(options, &o); err != nil {
 		return ""
 	}
+
 	return o.DefaultSource
 }
 
@@ -221,24 +231,30 @@ func ComputedSpecFromOptions(options []byte) *ComputedFieldSpec {
 	if len(options) == 0 {
 		return nil
 	}
+
 	var o struct {
 		Computed *ComputedFieldSpec `json:"computed"`
 	}
+
 	if err := json.Unmarshal(options, &o); err != nil || o.Computed == nil || len(o.Computed.Sources) == 0 {
 		return nil
 	}
+
 	spec := o.Computed
 	if spec.Metric == "" {
 		spec.Metric = "avg"
 	}
+
 	if !validComputedMetrics[spec.Metric] {
 		return nil
 	}
+
 	for _, s := range spec.Sources {
 		if s.Group == "" || s.Key == "" {
 			return nil
 		}
 	}
+
 	return spec
 }
 
@@ -382,10 +398,12 @@ func ValidOptionsShape(fieldType string, opts json.RawMessage) (msg string, ok b
 		if empty {
 			return "Select and multiselect fields require at least one option", false
 		}
+
 		var list []FieldOption
 		if err := json.Unmarshal(opts, &list); err != nil {
 			return "Options must be an array of {value, label}", false
 		}
+
 		if len(list) == 0 {
 			return "Select and multiselect fields require at least one option", false
 		}
@@ -432,31 +450,38 @@ func validPricePartsOptions(raw json.RawMessage) (string, bool) {
 	if err := json.Unmarshal(raw, &o); err != nil {
 		return "price_parts options must be an object with a parts array", false
 	}
+
 	if len(o.Parts) == 0 {
 		return "price_parts requires at least one part in options.parts", false
 	}
 
 	seen := make(map[string]bool, len(o.Parts))
 	kinds := make(map[string]string, len(o.Parts))
+
 	for _, p := range o.Parts {
 		if !SectionTokenPattern.MatchString(p.Key) {
 			return "Each part key must match ^[a-z0-9_]+$", false
 		}
+
 		if p.Label == "" {
 			return "Each part must have both key and label", false
 		}
+
 		if seen[p.Key] {
 			return "Part keys must be unique", false
 		}
+
 		seen[p.Key] = true
 
 		kind := p.Kind
 		if kind == "" {
 			kind = PricePartKindNumber
 		}
+
 		if kind != PricePartKindMoney && kind != PricePartKindNumber && kind != PricePartKindText {
 			return "Part kind must be money, number, or text", false
 		}
+
 		kinds[p.Key] = kind
 	}
 
@@ -465,6 +490,7 @@ func validPricePartsOptions(raw json.RawMessage) (string, bool) {
 		if !declared {
 			return "primary_part must name a declared part", false
 		}
+
 		if kind == PricePartKindText {
 			return "primary_part must name a money or number part — text is not comparable", false
 		}
@@ -687,7 +713,6 @@ func (s *Service) CreateGuideCategory(ctx context.Context, input CreateGuideCate
 	value := "guide_category:" + input.Slug
 
 	_, err = q.CreateCustomFieldEntityType(ctx, gen.CreateCustomFieldEntityTypeParams{
-
 		Value:     value,
 		Label:     input.Label,
 		SortOrder: 0,
@@ -699,7 +724,6 @@ func (s *Service) CreateGuideCategory(ctx context.Context, input CreateGuideCate
 	groupSlug := "guide_" + input.Slug + "_fields"
 
 	group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-
 		Name:        input.Label + " Fields",
 		Slug:        groupSlug,
 		Description: ptr("Custom fields for " + input.Label),

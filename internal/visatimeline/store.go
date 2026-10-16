@@ -314,6 +314,7 @@ DELETE FROM visa_timelines WHERE id = $1 AND deleted_at IS NOT NULL
 		if errpkg.IsFKViolation(err) {
 			return errpkg.ErrInUse
 		}
+
 		return fmt.Errorf("visatimeline: hard delete timeline: %w", err)
 	}
 
@@ -324,9 +325,11 @@ DELETE FROM visa_timelines WHERE id = $1 AND deleted_at IS NOT NULL
 		).Scan(&exists); err != nil {
 			return fmt.Errorf("visatimeline: check timeline exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		return errpkg.ErrNotDeleted
 	}
 

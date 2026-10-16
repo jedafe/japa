@@ -29,11 +29,13 @@ func (m *recordingProvider) VerifyWebhookSignature([]byte, string) error { retur
 func (m *recordingProvider) Send(context.Context, Request) (Response, error) {
 	return Response{}, errors.New("mock: Send not supported")
 }
+
 func (m *recordingProvider) ChatWithTools(_ context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
 	m.reqs = append(m.reqs, req)
 	if m.failErr != nil {
 		return ChatWithToolsResponse{}, m.failErr
 	}
+
 	return ChatWithToolsResponse{
 		Content:      m.reply,
 		FinishReason: "stop",
@@ -57,6 +59,7 @@ func (p *gatedProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequ
 	case <-ctx.Done():
 		return ChatWithToolsResponse{}, ctx.Err()
 	}
+
 	return ChatWithToolsResponse{
 		Content:      p.reply,
 		FinishReason: "stop",
@@ -79,6 +82,7 @@ func (s *countingRateLimiter) Incr(_ context.Context, key string) (int64, error)
 	s.incrKeys[key]++
 	return s.incrKeys[key], nil
 }
+
 func (s *countingRateLimiter) IncrByFloat(_ context.Context, key string, v float64) (float64, error) {
 	s.floatKeys[key] += v
 	return s.floatKeys[key], nil
@@ -123,6 +127,7 @@ func newUnifiedHandler(t *testing.T, provider Provider, perms *stubPerms, opts .
 	h := NewAgentHandler(disp, exec, reg, &stubPreSearcher{res: &PreSearchResult{Level: PreSearchNone}}, all...)
 
 	st := convos.store.(*stubConvoStore)
+
 	return h, st, limiter
 }
 
@@ -132,17 +137,20 @@ func agentRateKeyCount(l *countingRateLimiter) int64 {
 			return v
 		}
 	}
+
 	return 0
 }
 
 // floatKeyTotal sums IncrByFloat values across keys containing substr.
 func floatKeyTotal(l *countingRateLimiter, substr string) float64 {
 	var total float64
+
 	for k, v := range l.floatKeys {
 		if containsStr(k, substr) {
 			total += v
 		}
 	}
+
 	return total
 }
 
@@ -166,28 +174,35 @@ func TestUnifiedChat_MultiTurnHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	events := collectEvents(t, ev1)
+
 	convEvent := findEvent(events, EventConversation)
 	if convEvent == nil || convEvent.ConversationID == "" {
 		t.Fatal("expected conversation event with conversation_id")
 	}
+
 	final := findEvent(events, EventFinalResponse)
 	if final == nil || final.MessageID == "" {
 		t.Fatal("expected final_response with message_id")
 	}
+
 	convID, _ := scanUUID(convEvent.ConversationID)
 
 	// Second turn on the same thread — provider must see turn 1 in history.
 	provider.reply = "second answer"
+
 	ev2, err := h.HandleUnifiedChat(t.Context(), uid, UnifiedChatRequest{Prompt: "follow-up", ConversationID: &convID})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	collectEvents(t, ev2)
 
 	if len(provider.reqs) != 2 {
 		t.Fatalf("expected 2 LLM calls, got %d", len(provider.reqs))
 	}
+
 	msgs := provider.reqs[1].Messages
 	// system + user1 + assistant1 + user2
 	if len(msgs) != 4 || msgs[1].Content != "hello" || msgs[2].Content != "first answer" || msgs[3].Content != "follow-up" {
@@ -208,6 +223,7 @@ func TestUnifiedChat_ToolsDisabledSkipsAgentCounters(t *testing.T) {
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
 	off := false
+
 	ev, err := h.HandleUnifiedChat(t.Context(), uid, UnifiedChatRequest{
 		Prompt: "just chat",
 		Tools:  &ToolSelection{Enabled: &off},
@@ -215,14 +231,17 @@ func TestUnifiedChat_ToolsDisabledSkipsAgentCounters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	collectEvents(t, ev)
 
 	if len(provider.reqs) != 1 {
 		t.Fatalf("expected 1 LLM call, got %d", len(provider.reqs))
 	}
+
 	if len(provider.reqs[0].Tools) != 0 {
 		t.Fatalf("expected empty tool defs, got %+v", provider.reqs[0].Tools)
 	}
+
 	if got := agentRateKeyCount(limiter); got != 0 {
 		t.Fatalf("jc:agent:rate must not increment on pure-chat turns, got %d", got)
 	}
@@ -236,11 +255,13 @@ func TestUnifiedChat_ToolEnabledTurnRunsAgentCounters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	collectEvents(t, ev)
 
 	if len(provider.reqs) == 0 || len(provider.reqs[0].Tools) != 1 {
 		t.Fatalf("expected 1 tool def, got %+v", provider.reqs)
 	}
+
 	if got := agentRateKeyCount(limiter); got != 1 {
 		t.Fatalf("expected jc:agent:rate increment, got %d", got)
 	}
@@ -260,6 +281,7 @@ func TestUnifiedChat_SourcesBeforeFinal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	events := collectEvents(t, ev)
 
 	srcIdx, finIdx := -1, -1
@@ -267,13 +289,16 @@ func TestUnifiedChat_SourcesBeforeFinal(t *testing.T) {
 		if e.Type == EventSources && srcIdx == -1 {
 			srcIdx = i
 		}
+
 		if e.Type == EventFinalResponse {
 			finIdx = i
 		}
 	}
+
 	if srcIdx == -1 || finIdx == -1 || srcIdx > finIdx {
 		t.Fatalf("sources must precede final_response: %+v", events)
 	}
+
 	src := events[srcIdx]
 	if len(src.Sources) != 1 || src.Sources[0].URL != "/wiki/visa" {
 		t.Fatalf("bad sources payload: %+v", src.Sources)
@@ -286,29 +311,36 @@ func TestUnifiedChat_PermissionOrGate(t *testing.T) {
 	// agent.use-only user (no ai.context.use) is admitted — legacy /ai/agent
 	// only required agent.use.
 	h, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"agent.use": true}})
+
 	ev, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("agent-only user must be admitted: %v", err)
 	}
+
 	collectEvents(t, ev)
 
 	// ai.context.use-only user (no agent.use) — chat allowed, tools empty.
 	provider2 := &recordingProvider{name: "mock", reply: "ok"}
 	h2, _, limiter := newUnifiedHandler(t, provider2, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
+
 	ev2, err := h2.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{2}, Valid: true}, UnifiedChatRequest{Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("chat-only user must be admitted: %v", err)
 	}
+
 	collectEvents(t, ev2)
+
 	if len(provider2.reqs) == 0 || len(provider2.reqs[0].Tools) != 0 {
 		t.Fatal("chat-only user must get an empty catalog")
 	}
+
 	if agentRateKeyCount(limiter) != 0 {
 		t.Fatal("chat-only turn must not consume jc:agent:rate")
 	}
 
 	// Neither permission → denied.
 	h3, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{}})
+
 	_, err = h3.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{3}, Valid: true}, UnifiedChatRequest{Prompt: "hi"})
 	if !errors.Is(err, errAINoPermission) {
 		t.Fatalf("expected errAINoPermission, got %v", err)
@@ -326,6 +358,7 @@ func TestUnifiedChat_DeniedDoesNotConsumeQueries(t *testing.T) {
 	if !errors.Is(err, errAINoPermission) {
 		t.Fatalf("expected errAINoPermission, got %v", err)
 	}
+
 	for k := range limiter.incrKeys {
 		if containsStr(k, "ai:queries:") {
 			t.Fatalf("denied request consumed shared query quota: %s", k)
@@ -349,6 +382,7 @@ func TestUnifiedChat_ConversationBusy(t *testing.T) {
 	if !errors.Is(err, errConversationBusy) {
 		t.Fatalf("expected errConversationBusy, got %v", err)
 	}
+
 	for k := range limiter.incrKeys {
 		if containsStr(k, "ai:queries:") {
 			t.Fatalf("busy rejection consumed shared query quota: %s", k)
@@ -387,6 +421,7 @@ func TestUnifiedChat_SessionCreateSweepsStaleRunningRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stale-running sweep should let the send proceed, got %v", err)
 	}
+
 	if !hasEventType(collectEvents(t, ev), EventFinalResponse) {
 		t.Fatal("expected final_response after stale sweep + retry")
 	}
@@ -404,6 +439,7 @@ func TestUnifiedChat_TurnCountEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	st.InsertAIMessage(t.Context(), gen.InsertAIMessageParams{ConversationID: conv.ID, Role: "user", Content: "u1"})
 	st.InsertAIMessage(t.Context(), gen.InsertAIMessageParams{ConversationID: conv.ID, Role: "assistant", Content: "a1"})
 
@@ -411,9 +447,11 @@ func TestUnifiedChat_TurnCountEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	events := collectEvents(t, ev)
 
 	var convEv, finalEv *AgentEvent
+
 	for i := range events {
 		switch events[i].Type {
 		case EventConversation:
@@ -422,9 +460,11 @@ func TestUnifiedChat_TurnCountEvents(t *testing.T) {
 			finalEv = &events[i]
 		}
 	}
+
 	if convEv == nil || convEv.TurnCount != 3 {
 		t.Fatalf("conversation event turn_count should be history(2)+user(1)=3, got %+v", convEv)
 	}
+
 	if finalEv == nil || finalEv.TurnCount != 4 {
 		t.Fatalf("final_response turn_count should be 4, got %+v", finalEv)
 	}
@@ -436,6 +476,7 @@ func TestUnifiedChat_NilRegistryDegrade(t *testing.T) {
 	provider := &recordingProvider{name: "mock", reply: "ok"}
 	disp := NewDispatcher()
 	disp.RegisterProvider("chat", provider)
+
 	exec := NewExecutor(NewToolHandlerRegistry())
 
 	h := NewAgentHandler(disp, exec, nil, &stubPreSearcher{res: &PreSearchResult{Level: PreSearchNone}},
@@ -447,10 +488,12 @@ func TestUnifiedChat_NilRegistryDegrade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("nil registry should degrade to chat, got %v", err)
 	}
+
 	events := collectEvents(t, ev)
 	if !hasEventType(events, EventFinalResponse) {
 		t.Fatalf("expected final_response, got %+v", events)
 	}
+
 	if len(provider.reqs) == 0 || len(provider.reqs[0].Tools) != 0 {
 		t.Fatal("nil registry must produce an empty catalog")
 	}
@@ -465,10 +508,13 @@ func TestUnifiedChat_GlobalToolsKillSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("feature.ai_agent off must still allow chat: %v", err)
 	}
+
 	collectEvents(t, ev)
+
 	if len(provider.reqs) == 0 || len(provider.reqs[0].Tools) != 0 {
 		t.Fatal("kill-switch must empty the catalog")
 	}
+
 	if agentRateKeyCount(limiter) != 0 {
 		t.Fatal("no tools → no agent counter")
 	}
@@ -483,6 +529,7 @@ func TestUnifiedChat_PureChatRecordsSharedCostOnly(t *testing.T) {
 	h.preflight = NewPreflight(nil, nil, nil, limiter, nil)
 
 	off := false
+
 	ev, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{
 		Prompt: "just chat",
 		Tools:  &ToolSelection{Enabled: &off},
@@ -490,11 +537,13 @@ func TestUnifiedChat_PureChatRecordsSharedCostOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	collectEvents(t, ev)
 
 	if got := floatKeyTotal(limiter, "agent:cost:"); got != 0 {
 		t.Fatalf("pure chat must not write jc:agent:cost, got %.4f", got)
 	}
+
 	if got := floatKeyTotal(limiter, "ai:cost:"); got <= 0 {
 		t.Fatalf("pure chat must record shared jc:ai:cost, got %.4f", got)
 	}
@@ -509,11 +558,13 @@ func TestUnifiedChat_ToolTurnRecordsAgentAndSharedCost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	collectEvents(t, ev)
 
 	if got := floatKeyTotal(limiter, "agent:cost:"); got <= 0 {
 		t.Fatalf("tool-enabled turn must write jc:agent:cost, got %.4f", got)
 	}
+
 	if got := floatKeyTotal(limiter, "ai:cost:"); got <= 0 {
 		t.Fatalf("tool-enabled turn must record shared jc:ai:cost, got %.4f", got)
 	}
@@ -530,12 +581,16 @@ func TestUnifiedChat_PersistsVoiceID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	events := collectEvents(t, ev)
+
 	final := findEvent(events, EventFinalResponse)
 	if final == nil || final.MessageID == "" {
 		t.Fatal("expected persisted assistant message")
 	}
+
 	var found *string
+
 	for _, msgs := range st.msgs {
 		for i := range msgs {
 			if msgs[i].ID.String() == final.MessageID {
@@ -543,6 +598,7 @@ func TestUnifiedChat_PersistsVoiceID(t *testing.T) {
 			}
 		}
 	}
+
 	if found == nil || *found != "voice-abc" {
 		t.Fatalf("voice_id not persisted: %+v", found)
 	}
@@ -567,7 +623,8 @@ func TestUnifiedChat_DetachedTurnCompletesAfterCancel(t *testing.T) {
 	h, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"agent.use": true}})
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
+
 	events, err := h.HandleUnifiedChat(ctx, uid, UnifiedChatRequest{Prompt: "run a task"})
 	if err != nil {
 		t.Fatal(err)
@@ -577,15 +634,18 @@ func TestUnifiedChat_DetachedTurnCompletesAfterCancel(t *testing.T) {
 	if first := <-events; first.Type != EventSessionStart {
 		t.Fatalf("expected session_start first, got %v", first.Type)
 	}
+
 	cancel()                // client disconnects
 	close(provider.release) // the (detached) LLM call can now return
 
 	got := []AgentEvent{}
 	done := make(chan struct{})
+
 	go func() {
 		for ev := range events {
 			got = append(got, ev)
 		}
+
 		close(done)
 	}()
 	select {
@@ -593,6 +653,7 @@ func TestUnifiedChat_DetachedTurnCompletesAfterCancel(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("detached loop stalled")
 	}
+
 	if findEvent(got, EventFinalResponse) == nil {
 		t.Fatalf("expected final_response after disconnect, got %+v", got)
 	}
@@ -606,11 +667,13 @@ func TestUnifiedChat_ChatTurnStillAbortsOnCancel(t *testing.T) {
 	h, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
+
 	events, err := h.HandleUnifiedChat(ctx, uid, UnifiedChatRequest{Prompt: "hi"})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	<-events // session_start — loop is parked on the gated call
 	cancel()
 	close(provider.release) // provider sees ctx.Done and fails the call
@@ -619,6 +682,7 @@ func TestUnifiedChat_ChatTurnStillAbortsOnCancel(t *testing.T) {
 	for ev := range events {
 		got = append(got, ev)
 	}
+
 	if findEvent(got, EventFinalResponse) != nil {
 		t.Fatal("attached chat turn must not complete after disconnect")
 	}
@@ -636,23 +700,29 @@ func TestUnifiedChat_DetachedFailurePersistsNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	got := collectEvents(t, events)
 
 	convEv := findEvent(got, EventConversation)
 	if convEv == nil || convEv.ConversationID == "" {
 		t.Fatalf("expected conversation event, got %+v", got)
 	}
+
 	var convID pgtype.UUID
 	if err := convID.Scan(convEv.ConversationID); err != nil {
 		t.Fatal(err)
 	}
+
 	msgs := st.msgs[uuidStr(convID)]
+
 	var notice string
+
 	for _, m := range msgs {
 		if m.Role == "assistant" {
 			notice = m.Content
 		}
 	}
+
 	if !containsStr(notice, "agent task failed") {
 		t.Fatalf("expected persisted failure notice, msgs=%+v", msgs)
 	}
@@ -667,16 +737,19 @@ func TestUnifiedChat_AttachedFailureWritesNoNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	got := collectEvents(t, events)
 
 	convEv := findEvent(got, EventConversation)
 	if convEv == nil || convEv.ConversationID == "" {
 		t.Fatalf("expected conversation event, got %+v", got)
 	}
+
 	var convID pgtype.UUID
 	if err := convID.Scan(convEv.ConversationID); err != nil {
 		t.Fatal(err)
 	}
+
 	for _, m := range st.msgs[uuidStr(convID)] {
 		if m.Role == "assistant" && containsStr(m.Content, "agent task failed") {
 			t.Fatalf("attached turn must not persist a failure notice, got %+v", m.Content)

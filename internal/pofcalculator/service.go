@@ -128,10 +128,12 @@ func (s *Service) ListRequirements(ctx context.Context, destSpaceID pgtype.UUID,
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]RequirementDTO, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, requirementDTO(r))
 	}
+
 	return out, nil
 }
 
@@ -146,9 +148,11 @@ func (s *Service) Calculate(ctx context.Context, destSpaceID pgtype.UUID, visaTy
 	if members < 1 {
 		return nil, errors.New("members must be >= 1")
 	}
+
 	if members+dependants > 50 {
 		return nil, errors.New("household size out of range")
 	}
+
 	household := members + dependants
 
 	rows, err := s.store.ListRequirements(ctx, destSpaceID, visaType)
@@ -157,11 +161,13 @@ func (s *Service) Calculate(ctx context.Context, destSpaceID pgtype.UUID, visaTy
 	}
 
 	out := make([]CalculateResultDTO, 0, len(rows))
+
 	for _, r := range rows {
 		amount, err := resolveSchedule(r.AmountSchedule, household)
 		if err != nil {
 			continue // malformed schedule — skip rather than 500 the whole call
 		}
+
 		dto := CalculateResultDTO{
 			RequirementID:     uuidStr(r.ID),
 			ProgramLabel:      r.ProgramLabel,
@@ -174,15 +180,19 @@ func (s *Service) Calculate(ctx context.Context, destSpaceID pgtype.UUID, visaTy
 		if len(r.AcceptedProof) > 0 {
 			dto.AcceptedProof = json.RawMessage(r.AcceptedProof)
 		}
+
 		if r.Notes != nil {
 			dto.Notes = *r.Notes
 		}
+
 		if r.SourceURL != nil {
 			dto.SourceURL = *r.SourceURL
 		}
+
 		s.convert(ctx, &dto)
 		out = append(out, dto)
 	}
+
 	return out, nil
 }
 
@@ -193,14 +203,17 @@ func (s *Service) convert(ctx context.Context, dto *CalculateResultDTO) {
 	if s.fx == nil {
 		return
 	}
+
 	for _, target := range []string{"NGN", "USD"} {
 		if dto.Currency == target {
 			continue
 		}
+
 		res, err := s.fx.Calculate(ctx, dto.Amount, dto.Currency, target)
 		if err != nil || res == nil || res.BestReceiveAmount <= 0 {
 			continue
 		}
+
 		amt := res.BestReceiveAmount
 		switch target {
 		case "NGN":
@@ -217,10 +230,12 @@ func (s *Service) AdminListRequirements(ctx context.Context, destSpaceID pgtype.
 	if err != nil {
 		return nil, 0, err
 	}
+
 	out := make([]RequirementDTO, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, requirementDTO(r))
 	}
+
 	return out, total, nil
 }
 
@@ -233,12 +248,14 @@ func (s *Service) CreateRequirement(ctx context.Context, in RequirementRequest) 
 
 	var dest pgtype.UUID
 	if err := dest.Scan(in.DestinationSpaceID); err != nil {
-		return nil, fmt.Errorf("invalid destination_space_id")
+		return nil, errors.New("invalid destination_space_id")
 	}
+
 	var eff pgtype.Date
 	if err := eff.Scan(in.EffectiveDate); err != nil {
-		return nil, fmt.Errorf("invalid effective_date")
+		return nil, errors.New("invalid effective_date")
 	}
+
 	if _, err := resolveSchedule(*in.AmountSchedule, 1); err != nil {
 		return nil, fmt.Errorf("invalid amount_schedule: %w", err)
 	}
@@ -253,6 +270,7 @@ func (s *Service) CreateRequirement(ctx context.Context, in RequirementRequest) 
 	if status != StatusDraft && status != StatusPending {
 		return nil, errors.New("status must be draft or pending; review transitions use the approve/reject endpoints")
 	}
+
 	row := RequirementRow{
 		DestinationSpaceID: dest,
 		VisaType:           in.VisaType,
@@ -269,6 +287,7 @@ func (s *Service) CreateRequirement(ctx context.Context, in RequirementRequest) 
 	} else {
 		row.FundsMustBeLiquid = pgtype.Bool{Bool: true, Valid: true}
 	}
+
 	if in.AcceptedProof != nil {
 		row.AcceptedProof = *in.AcceptedProof
 	}
@@ -277,8 +296,10 @@ func (s *Service) CreateRequirement(ctx context.Context, in RequirementRequest) 
 	if err != nil {
 		return nil, err
 	}
+
 	dto := requirementDTO(row)
 	dto.ID = uuidStr(id)
+
 	return &dto, nil
 }
 
@@ -297,10 +318,12 @@ func (s *Service) UpdateRequirement(ctx context.Context, id pgtype.UUID, in Requ
 		if err != nil {
 			return err
 		}
+
 		if cur.Status == StatusPublished {
 			return fmt.Errorf("%w: published requirements cannot change status via PATCH; deactivate instead", errInvalidInput)
 		}
 	}
+
 	row := RequirementRow{
 		VisaType:     in.VisaType,
 		ProgramLabel: in.ProgramLabel,
@@ -309,35 +332,45 @@ func (s *Service) UpdateRequirement(ctx context.Context, id pgtype.UUID, in Requ
 		SourceURL:    in.SourceURL,
 		Status:       in.Status,
 	}
+
 	if in.DestinationSpaceID != "" {
 		var dest pgtype.UUID
 		if err := dest.Scan(in.DestinationSpaceID); err != nil {
 			return fmt.Errorf("%w: invalid destination_space_id", errInvalidInput)
 		}
+
 		row.DestinationSpaceID = dest
 	}
+
 	if in.AmountSchedule != nil {
 		if _, err := resolveSchedule(*in.AmountSchedule, 1); err != nil {
 			return fmt.Errorf("%w: invalid amount_schedule: %w", errInvalidInput, err)
 		}
+
 		row.AmountSchedule = *in.AmountSchedule
 	}
+
 	if in.AcceptedProof != nil {
 		row.AcceptedProof = *in.AcceptedProof
 	}
+
 	if in.FundsMustBeLiquid != nil {
 		row.FundsMustBeLiquid = pgtype.Bool{Bool: *in.FundsMustBeLiquid, Valid: true}
 	}
+
 	if in.IsActive != nil {
 		row.IsActive = pgtype.Bool{Bool: *in.IsActive, Valid: true}
 	}
+
 	if in.EffectiveDate != "" {
 		var eff pgtype.Date
 		if err := eff.Scan(in.EffectiveDate); err != nil {
 			return fmt.Errorf("%w: invalid effective_date", errInvalidInput)
 		}
+
 		row.EffectiveDate = eff
 	}
+
 	return s.store.UpdateRequirement(ctx, id, row)
 }
 
@@ -347,7 +380,9 @@ func (s *Service) ApproveRequirement(ctx context.Context, id, reviewerID pgtype.
 	if err := s.store.ApproveRequirement(ctx, id, reviewerID, notes); err != nil {
 		return err
 	}
+
 	s.enqueueIndex(id)
+
 	return nil
 }
 
@@ -388,13 +423,16 @@ func resolveSchedule(raw []byte, household int) (float64, error) {
 				best = &entries[i]
 			}
 		}
+
 		if best == nil {
 			return 0, errors.New("household below smallest schedule band")
 		}
+
 		amt := best.Amount
 		if household > best.Members && best.PerAdditional > 0 {
 			amt += float64(household-best.Members) * best.PerAdditional
 		}
+
 		return amt, nil
 	}
 
@@ -403,6 +441,7 @@ func resolveSchedule(raw []byte, household int) (float64, error) {
 		if household <= f.BaseMembers {
 			return f.Base, nil
 		}
+
 		return f.Base + float64(household-f.BaseMembers)*f.PerAdditional, nil
 	}
 
@@ -428,39 +467,51 @@ func requirementDTO(r RequirementRow) RequirementDTO {
 	if r.FundsMustBeLiquid.Valid {
 		d.FundsMustBeLiquid = r.FundsMustBeLiquid.Bool
 	}
+
 	if r.IsActive.Valid {
 		d.IsActive = r.IsActive.Bool
 	}
+
 	if r.DestinationSpaceName != nil {
 		d.DestinationSpaceName = *r.DestinationSpaceName
 	}
+
 	if r.DestinationSpaceCode != nil {
 		d.DestinationSpaceCode = *r.DestinationSpaceCode
 	}
+
 	if len(r.AcceptedProof) > 0 {
 		d.AcceptedProof = json.RawMessage(r.AcceptedProof)
 	}
+
 	if r.Notes != nil {
 		d.Notes = *r.Notes
 	}
+
 	if r.EffectiveDate.Valid {
 		d.EffectiveDate = r.EffectiveDate.Time.Format("2006-01-02")
 	}
+
 	if r.SourceURL != nil {
 		d.SourceURL = *r.SourceURL
 	}
+
 	if r.SourceURLLastChecked.Valid {
 		d.SourceURLLastChecked = r.SourceURLLastChecked.Time.Format("2006-01-02")
 	}
+
 	if r.HITLReviewedAt.Valid {
 		d.HITLReviewedAt = r.HITLReviewedAt.Time.Format(time.RFC3339)
 	}
+
 	if r.CreatedAt.Valid {
 		d.CreatedAt = r.CreatedAt.Time.Format(time.RFC3339)
 	}
+
 	if r.UpdatedAt.Valid {
 		d.UpdatedAt = r.UpdatedAt.Time.Format(time.RFC3339)
 	}
+
 	return d
 }
 
@@ -468,7 +519,9 @@ func uuidStr(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
+
 	b := u.Bytes
+
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
@@ -485,6 +538,7 @@ func (s *Service) GetRequirement(ctx context.Context, id pgtype.UUID) (Requireme
 	if err != nil {
 		return RequirementDTO{}, err
 	}
+
 	return requirementDTO(row), nil
 }
 
@@ -533,20 +587,25 @@ func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string)
 	if s.enqueuer == nil {
 		return errors.New("pofcalculator: task enqueuer not configured")
 	}
+
 	if params["destination_space_id"] == "" {
 		return errors.New("destination_space_id is required")
 	}
+
 	if _, err := uuidParam(params, "destination_space_id"); err != nil {
 		return err
 	}
+
 	payload := map[string]string{"entity_type": "pof_requirement"}
 	for k, v := range params {
 		payload[k] = v
 	}
+
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
+
 	return s.enqueuer.Enqueue("tool:generate_draft", raw)
 }
 
@@ -559,6 +618,7 @@ func (s *Service) GenerateRequirementDraft(ctx context.Context, params map[strin
 	if s.aiDispatcher == nil {
 		return errors.New("pofcalculator: no AI dispatcher configured")
 	}
+
 	dest, err := uuidParam(params, "destination_space_id")
 	if err != nil {
 		return err
@@ -591,19 +651,23 @@ func (s *Service) GenerateRequirementDraft(ctx context.Context, params map[strin
 		EffectiveDate     string           `json:"effective_date"`
 		SourceURL         *string          `json:"source_url"`
 	}
+
 	if err := json.Unmarshal(extractJSON(resp.Text), &out); err != nil {
 		return fmt.Errorf("pofcalculator: generate draft: unparseable AI output: %w", err)
 	}
+
 	if out.VisaType == "" || out.ProgramLabel == "" || out.Currency == "" ||
 		out.AmountSchedule == nil || out.EffectiveDate == "" {
 		return errors.New("pofcalculator: generate draft: AI output missing required fields")
 	}
+
 	if _, err := resolveSchedule(*out.AmountSchedule, 1); err != nil {
 		return fmt.Errorf("pofcalculator: generate draft: invalid amount_schedule: %w", err)
 	}
+
 	var eff pgtype.Date
 	if err := eff.Scan(out.EffectiveDate); err != nil {
-		return fmt.Errorf("pofcalculator: generate draft: invalid effective_date")
+		return errors.New("pofcalculator: generate draft: invalid effective_date")
 	}
 
 	row := RequirementRow{
@@ -623,23 +687,29 @@ func (s *Service) GenerateRequirementDraft(ctx context.Context, params map[strin
 	} else {
 		row.FundsMustBeLiquid = pgtype.Bool{Bool: true, Valid: true}
 	}
+
 	if out.AcceptedProof != nil {
 		row.AcceptedProof = *out.AcceptedProof
 	}
+
 	_, err = s.store.CreateRequirement(ctx, row)
+
 	return err
 }
 
 // uuidParam parses a required UUID param.
 func uuidParam(params map[string]string, key string) (pgtype.UUID, error) {
 	var id pgtype.UUID
+
 	v := params[key]
 	if v == "" {
 		return id, fmt.Errorf("pofcalculator: %s param is required", key)
 	}
+
 	if err := id.Scan(v); err != nil {
 		return id, fmt.Errorf("pofcalculator: invalid %s", key)
 	}
+
 	return id, nil
 }
 
@@ -651,14 +721,17 @@ func extractJSON(s string) []byte {
 		if j := strings.Index(s, "\n"); j >= 0 {
 			s = s[j+1:]
 		}
+
 		if k := strings.LastIndex(s, "```"); k >= 0 {
 			s = s[:k]
 		}
 	}
+
 	start := strings.IndexAny(s, "{[")
 	if start < 0 {
 		return []byte(s)
 	}
+
 	return []byte(s[start:])
 }
 
@@ -667,11 +740,15 @@ func formatParams(params map[string]string) string {
 	if len(params) == 0 {
 		return "Generate the requirement."
 	}
+
 	var b strings.Builder
+
 	b.WriteString("Generate a proof-of-funds requirement with these hints:\n")
+
 	for k, v := range params {
 		fmt.Fprintf(&b, "- %s: %s\n", k, v)
 	}
+
 	return b.String()
 }
 
@@ -681,6 +758,7 @@ func (s *Service) enqueueIndex(id pgtype.UUID) {
 	if s.enqueuer == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"entity_type": "pof_requirement",
 		"entity_id":   id.String(),
@@ -689,6 +767,7 @@ func (s *Service) enqueueIndex(id pgtype.UUID) {
 		slog.Error("pofcalculator: marshal index payload", "error", err)
 		return
 	}
+
 	if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
 		slog.Error("pofcalculator: enqueue index task", "id", id.String(), "error", err)
 	}

@@ -46,6 +46,7 @@ func (h *Handlers) canManageOrAdmin(w http.ResponseWriter, r *http.Request, spac
 
 	errpkg.WriteError(w, http.StatusForbidden, "not_space_admin",
 		"Only the space owner, an assigned moderator, or a platform admin can manage this space")
+
 	return false
 }
 
@@ -163,7 +164,6 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 // SPACES-003: returns primary spaces (country/state/city) eligible to be
 // parents of a custom space, filtered by the optional ?q= search param.
 func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
-
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 
 	rows, err := h.Service.read.SuggestParentSpaces(r.Context(),

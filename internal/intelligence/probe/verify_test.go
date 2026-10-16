@@ -181,6 +181,7 @@ func TestVerify_RecheckTransportErrorKeepsFeed(t *testing.T) {
 
 			return
 		}
+
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(srv.Close)
@@ -399,11 +400,13 @@ func TestVerify_SkipsPrivateIPLiteralDiscoveredURLs(t *testing.T) {
 
 	// The same-host loc was fetched and produced its channel.
 	var jobsProp *ChannelProposal
+
 	for i := range report.Channels {
 		if report.Channels[i].EntryURL == srvURL+"/jobs" {
 			jobsProp = &report.Channels[i]
 		}
 	}
+
 	if jobsProp == nil {
 		t.Fatalf("channels missing same-host /jobs proposal: %+v", report.Channels)
 	}
@@ -423,6 +426,7 @@ func TestVerify_SkipsPrivateIPLiteralDiscoveredURLs(t *testing.T) {
 			t.Errorf("private feed survived recheck: %v", report.FeedURLs)
 		}
 	}
+
 	for _, ch := range report.Channels {
 		if ch.CrawlMethod == "rss" {
 			t.Errorf("private feed kept an rss channel proposal: %+v", ch)

@@ -153,6 +153,7 @@ func filterTuned[T any](s *Scheduler, ctx context.Context, rows []T, batchSize i
 		eff, err := s.EffectiveIntervalMins(ctx, id, baseMins)
 		if err != nil {
 			slog.Warn("scheduler: effective interval lookup failed, keeping row", "id", id, "error", err)
+
 			due = append(due, row)
 
 			continue
@@ -337,7 +338,7 @@ func (s *Scheduler) setInterval(ctx context.Context, intervalKey string, mins in
 }
 
 func intervalKey(sourceID string) string {
-	return fmt.Sprintf("jc:intel:effective_interval::%s", sourceID)
+	return "jc:intel:effective_interval::" + sourceID
 }
 
 func unchangedCountKey(sourceID string) string {

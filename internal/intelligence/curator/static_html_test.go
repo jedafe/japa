@@ -1,7 +1,6 @@
 package curator
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -30,10 +29,11 @@ func TestStaticHTML_SelelectorsPopulateRecord(t *testing.T) {
 		"country": ".host"
 	}}`)
 
-	recs, err := (StaticHTML{method: string(sources.CrawlMethodStatic)}).Curate(context.Background(), body, "text/html", ch)
+	recs, err := (StaticHTML{method: string(sources.CrawlMethodStatic)}).Curate(t.Context(), body, "text/html", ch)
 	if err != nil {
 		t.Fatalf("curate: %v", err)
 	}
+
 	if len(recs) != 1 {
 		t.Fatalf("records = %d, want 1", len(recs))
 	}
@@ -42,12 +42,15 @@ func TestStaticHTML_SelelectorsPopulateRecord(t *testing.T) {
 	if got := fieldString(t, ext, "title"); got != "DAAD Regional Scholarship" {
 		t.Fatalf("title = %q", got)
 	}
+
 	if got := fieldString(t, ext, "deadline"); got != "2026-12-31" {
 		t.Fatalf("deadline = %q", got)
 	}
+
 	if got := fieldStrings(t, ext, "country"); len(got) != 1 || got[0] != "Germany" {
 		t.Fatalf("country = %v", got)
 	}
+
 	if recs[0].EntityType != "scholarship" {
 		t.Fatalf("entity type = %q", recs[0].EntityType)
 	}
@@ -61,19 +64,23 @@ func TestStaticHTML_LdjsonNodeProducesRecord(t *testing.T) {
 		</script>
 		</head><body><p>Some page</p></body></html>`)
 
-	recs, err := (StaticHTML{method: "static"}).Curate(context.Background(), body, "text/html", staticChannel([]string{"job"}, "{}"))
+	recs, err := (StaticHTML{method: "static"}).Curate(t.Context(), body, "text/html", staticChannel([]string{"job"}, "{}"))
 	if err != nil {
 		t.Fatalf("curate: %v", err)
 	}
+
 	if len(recs) != 1 {
 		t.Fatalf("records = %d, want 1", len(recs))
 	}
+
 	if recs[0].EntityType != "job" {
 		t.Fatalf("entity type = %q", recs[0].EntityType)
 	}
+
 	if got := fieldString(t, recs[0].Extraction, "title"); got != "Junior DevOps Engineer" {
 		t.Fatalf("title = %q", got)
 	}
+
 	if got := fieldString(t, recs[0].Extraction, "employer"); got != "ACME" {
 		t.Fatalf("employer = %q", got)
 	}
@@ -86,10 +93,11 @@ func TestStaticHTML_MetaAndHeuristicDeadline(t *testing.T) {
 		<link rel="canonical" href="https://example.org/swiss-2026"/>
 	</head><body><p>Applications close on December 15, 2026. Open to all fields.</p></body></html>`)
 
-	recs, err := (StaticHTML{method: "static"}).Curate(context.Background(), body, "text/html", staticChannel([]string{"scholarship"}, "{}"))
+	recs, err := (StaticHTML{method: "static"}).Curate(t.Context(), body, "text/html", staticChannel([]string{"scholarship"}, "{}"))
 	if err != nil {
 		t.Fatalf("curate: %v", err)
 	}
+
 	if len(recs) != 1 {
 		t.Fatalf("records = %d, want 1", len(recs))
 	}
@@ -98,15 +106,19 @@ func TestStaticHTML_MetaAndHeuristicDeadline(t *testing.T) {
 	if got := fieldString(t, ext, "title"); got != "Swiss Excellence Scholarship 2026" {
 		t.Fatalf("title = %q", got)
 	}
+
 	if got := fieldString(t, ext, "description_summary"); got != "Fully funded research scholarship" {
 		t.Fatalf("description_summary = %q", got)
 	}
+
 	if got := fieldString(t, ext, "application_url"); got != "https://example.org/swiss-2026" {
 		t.Fatalf("application_url = %q", got)
 	}
+
 	if got := fieldString(t, ext, "deadline"); got != "2026-12-15" {
 		t.Fatalf("deadline = %q", got)
 	}
+
 	if f := ext["deadline"]; f.Confidence != heuristicFieldConfidence {
 		t.Fatalf("deadline confidence = %v, want %v", f.Confidence, heuristicFieldConfidence)
 	}
@@ -118,14 +130,14 @@ func TestStaticHTML_ThinPageFallsBackToExtract(t *testing.T) {
 	// record.
 	body := []byte(`<html><head><title>Index</title></head><body><nav>Home | About</nav></body></html>`)
 
-	_, err := (StaticHTML{method: "static"}).Curate(context.Background(), body, "text/html", staticChannel([]string{"scholarship"}, "{}"))
+	_, err := (StaticHTML{method: "static"}).Curate(t.Context(), body, "text/html", staticChannel([]string{"scholarship"}, "{}"))
 	if !errors.Is(err, ErrNoCurator) {
 		t.Fatalf("err = %v, want ErrNoCurator", err)
 	}
 }
 
 func TestStaticHTML_NonHTMLFallsBackToExtract(t *testing.T) {
-	_, err := (StaticHTML{method: "static"}).Curate(context.Background(), []byte(`{"a":1}`), "application/json", staticChannel(nil, "{}"))
+	_, err := (StaticHTML{method: "static"}).Curate(t.Context(), []byte(`{"a":1}`), "application/json", staticChannel(nil, "{}"))
 	if !errors.Is(err, ErrNoCurator) {
 		t.Fatalf("err = %v, want ErrNoCurator", err)
 	}
@@ -140,16 +152,19 @@ func TestStaticHTML_LdjsonFilteredByChannelEntityTypes(t *testing.T) {
 		<meta property="og:description" content="Scholarships for engineers"/>
 	</head><body></body></html>`)
 
-	recs, err := (StaticHTML{method: "static"}).Curate(context.Background(), body, "text/html", staticChannel([]string{"scholarship"}, "{}"))
+	recs, err := (StaticHTML{method: "static"}).Curate(t.Context(), body, "text/html", staticChannel([]string{"scholarship"}, "{}"))
 	if err != nil {
 		t.Fatalf("curate: %v", err)
 	}
+
 	if len(recs) != 1 {
 		t.Fatalf("records = %d, want 1", len(recs))
 	}
+
 	if recs[0].EntityType != "scholarship" {
 		t.Fatalf("entity type = %q, want scholarship (job node must be skipped)", recs[0].EntityType)
 	}
+
 	if got := fieldString(t, recs[0].Extraction, "title"); got != "Scholarship listing" {
 		t.Fatalf("title = %q", got)
 	}

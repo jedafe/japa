@@ -90,14 +90,17 @@ var dmRequestSortWhitelist = map[string]bool{
 // erroring — the list still returns its canonical order.
 func parseDMQuery(r *http.Request) (q, filter, sort string) {
 	q = strings.TrimSpace(r.URL.Query().Get("q"))
+
 	filter = strings.TrimSpace(r.URL.Query().Get("filter"))
 	if filter != "unread" {
 		filter = ""
 	}
+
 	sort = strings.TrimSpace(r.URL.Query().Get("sort"))
 	if !dmSortWhitelist[sort] {
 		sort = ""
 	}
+
 	return q, filter, sort
 }
 
@@ -114,6 +117,7 @@ func nextCursorJSON(next string) any {
 	if next == "" {
 		return nil
 	}
+
 	return next
 }
 
@@ -603,6 +607,7 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 	cursor := parseDMCursor(r)
 
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 	if !dmRequestSortWhitelist[sort] {
 		sort = ""

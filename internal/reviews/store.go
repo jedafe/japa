@@ -48,7 +48,6 @@ func (s *Store) listReviewsByEntity(ctx context.Context, entityType string, enti
 	}
 
 	params := gen.ListReviewsByEntityParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 		PageLimit:  limit,
@@ -58,7 +57,6 @@ func (s *Store) listReviewsByEntity(ctx context.Context, entityType string, enti
 	switch sort {
 	case "highest":
 		rows, err := s.read.ListReviewsByEntityHighestRating(ctx, gen.ListReviewsByEntityHighestRatingParams{
-
 			EntityType: entityType,
 			EntityID:   entityID,
 			PageLimit:  limit,
@@ -71,7 +69,6 @@ func (s *Store) listReviewsByEntity(ctx context.Context, entityType string, enti
 		return rows, nil
 	case "lowest":
 		rows, err := s.read.ListReviewsByEntityLowestRating(ctx, gen.ListReviewsByEntityLowestRatingParams{
-
 			EntityType: entityType,
 			EntityID:   entityID,
 			PageLimit:  limit,
@@ -98,7 +95,6 @@ func (s *Store) listReviewsByReviewer(ctx context.Context, reviewerUserID pgtype
 	}
 
 	rows, err := s.read.ListReviewsByReviewer(ctx, gen.ListReviewsByReviewerParams{
-
 		ReviewerUserID: reviewerUserID,
 		PageLimit:      limit,
 		PageOffset:     offset,
@@ -119,7 +115,6 @@ func (s *Store) listReviewsByEntityWithAuthor(ctx context.Context, entityType st
 	}
 
 	rows, err := s.read.ListReviewsByEntityWithAuthor(ctx, gen.ListReviewsByEntityWithAuthorParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 		PageLimit:  limit,
@@ -142,7 +137,6 @@ func (s *Store) listReviews(ctx context.Context, limit, offset int32) ([]gen.Rev
 	}
 
 	rows, err := s.read.ListReviews(ctx, gen.ListReviewsParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -161,7 +155,6 @@ func (s *Store) listAdminReviews(ctx context.Context, limit, offset int32) ([]ge
 	}
 
 	rows, err := s.read.ListAdminReviews(ctx, gen.ListAdminReviewsParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -179,7 +172,6 @@ func (s *Store) listAdminReviewsFiltered(ctx context.Context, status, entityType
 	}
 
 	rows, err := s.read.ListAdminReviewsFiltered(ctx, gen.ListAdminReviewsFilteredParams{
-
 		Status:     status,
 		EntityType: entityType,
 		PageLimit:  limit,
@@ -200,7 +192,6 @@ func (s *Store) countAdminReviews(ctx context.Context) (int32, error) {
 // countAdminReviewsFiltered returns the filtered count of reviews.
 func (s *Store) countAdminReviewsFiltered(ctx context.Context, status, entityType string) (int32, error) {
 	return s.read.CountAdminReviewsFiltered(ctx, gen.CountAdminReviewsFilteredParams{
-
 		Status:     status,
 		EntityType: entityType,
 	})
@@ -243,7 +234,6 @@ func (s *Store) deleteReview(ctx context.Context, id pgtype.UUID) error {
 
 func (s *Store) hasUserReviewedEntity(ctx context.Context, entityType string, entityID, reviewerUserID pgtype.UUID) (bool, error) {
 	exists, err := s.read.HasUserReviewedEntity(ctx, gen.HasUserReviewedEntityParams{
-
 		EntityType:     entityType,
 		EntityID:       entityID,
 		ReviewerUserID: reviewerUserID,
@@ -270,7 +260,6 @@ func (s *Store) upsertReviewAggregate(ctx context.Context, p gen.UpsertReviewAgg
 
 func (s *Store) getReviewAggregate(ctx context.Context, entityType string, entityID pgtype.UUID) (gen.ReviewAggregate, error) {
 	row, err := s.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -283,7 +272,6 @@ func (s *Store) getReviewAggregate(ctx context.Context, entityType string, entit
 
 func (s *Store) recalculateReviewAggregate(ctx context.Context, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.RecalculateReviewAggregate(ctx, gen.RecalculateReviewAggregateParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 	}); err != nil {

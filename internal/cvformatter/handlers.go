@@ -98,7 +98,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // when the feature flag is off. Accepts ?dest= to filter by destination
 // space ID (geo-aware tool pattern: ?dest= is the primary filter).
 func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
@@ -139,7 +138,6 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 // HandleGetStandard handles GET /cv-formatter/standards/:dest — single
 // destination CV standard. Public; :dest is the destination_space_id.
 func (h *Handlers) HandleGetStandard(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return

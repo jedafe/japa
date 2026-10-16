@@ -63,17 +63,22 @@ func (s *Server) aliasDescriptors(ctx context.Context, user *auth.AuthenticatedU
 	for name := range chatGPTAliasTools {
 		names = append(names, name)
 	}
+
 	sort.Strings(names)
 
 	var out []mcpTool
+
 	for _, name := range names {
 		alias := chatGPTAliasTools[name]
+
 		if s.toolDeniedWithTier(ctx, user, name, tier) != "" {
 			continue
 		}
+
 		if !s.toolInCatalog(ctx, user, alias.underlying) {
 			continue
 		}
+
 		title := humanizeToolName(name)
 		out = append(out, mcpTool{
 			Name:        name,
@@ -106,6 +111,7 @@ func (s *Server) handleAliasCall(ctx context.Context, user *auth.AuthenticatedUs
 	}
 
 	var mapped []byte
+
 	var err error
 
 	switch callReq.Name {
@@ -114,16 +120,19 @@ func (s *Server) handleAliasCall(ctx context.Context, user *auth.AuthenticatedUs
 		if strings.TrimSpace(q) == "" {
 			return s.errorResp(req.ID, -32602, "Invalid params", "query is required"), false
 		}
+
 		mapped, err = json.Marshal(map[string]any{"query": q, "limit": 10})
 	case "fetch":
 		id, _ := args["id"].(string)
 		if strings.TrimSpace(id) == "" {
 			return s.errorResp(req.ID, -32602, "Invalid params", "id is required"), false
 		}
+
 		mapped, err = json.Marshal(map[string]any{"content_id": id})
 	default:
 		return s.errorResp(req.ID, -32602, "Invalid params", fmt.Sprintf("tool %q is not available", callReq.Name)), false
 	}
+
 	if err != nil {
 		return s.errorResp(req.ID, -32602, "Invalid params", err.Error()), false
 	}
@@ -145,10 +154,12 @@ func (s *Server) handleAliasCall(ctx context.Context, user *auth.AuthenticatedUs
 
 	text := ""
 	isError := true
+
 	if res != nil {
 		text = res.Content
 		isError = execErr != nil || (res.Status != ai.ToolCallStatusSuccess && res.Status != ai.ToolCallStatusHITLQueued)
 	}
+
 	if text == "" {
 		text = `{"error":"tool execution failed"}`
 	}
@@ -180,22 +191,27 @@ func (s *Server) reshapeAliasResult(name, content string) string {
 				Slug  string `json:"slug"`
 			} `json:"results"`
 		}
+
 		if err := json.Unmarshal([]byte(content), &payload); err != nil {
 			return content
 		}
+
 		type item struct {
 			ID    string `json:"id"`
 			Title string `json:"title"`
 			URL   string `json:"url"`
 		}
+
 		out := make([]item, 0, len(payload.Results))
 		for _, r := range payload.Results {
 			out = append(out, item{ID: r.ID, Title: r.Title, URL: s.contentURL(r.ID, r.Slug)})
 		}
+
 		b, err := json.Marshal(map[string]any{"results": out})
 		if err != nil {
 			return content
 		}
+
 		return string(b)
 
 	case "fetch":
@@ -210,9 +226,11 @@ func (s *Server) reshapeAliasResult(name, content string) string {
 				AuthorID    string `json:"author_id"`
 			} `json:"content"`
 		}
+
 		if err := json.Unmarshal([]byte(content), &payload); err != nil {
 			return content
 		}
+
 		b, err := json.Marshal(map[string]any{
 			"id":    payload.Content.ID,
 			"title": payload.Content.Title,
@@ -227,6 +245,7 @@ func (s *Server) reshapeAliasResult(name, content string) string {
 		if err != nil {
 			return content
 		}
+
 		return string(b)
 	}
 
@@ -241,5 +260,6 @@ func (s *Server) contentURL(id, slug string) string {
 	if slug != "" {
 		return base + "/content/" + slug
 	}
+
 	return base + "/api/v1/public/content/" + id
 }

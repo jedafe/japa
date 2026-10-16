@@ -124,7 +124,6 @@ const maxDeletionReasonLen = 2000
 
 // RecordConsent handles POST /api/v1/consent.
 func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -186,7 +185,6 @@ func (h *Handlers) GetUserConsents(w http.ResponseWriter, r *http.Request) {
 // version so the frontend does not need to hardcode them (BUG-015, BUG-016).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
 func (h *Handlers) GetConsentConfig(w http.ResponseWriter, r *http.Request) {
-
 	cfg, err := h.Service.GetConsentConfig(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -198,7 +196,6 @@ func (h *Handlers) GetConsentConfig(w http.ResponseWriter, r *http.Request) {
 
 // RevokeConsent handles DELETE /api/v1/consent/:type.
 func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -228,7 +225,6 @@ func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 
 // RequestDataExport handles POST /api/v1/account/export.
 func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -245,7 +241,6 @@ func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 
 // GetMyDataExportStatus handles GET /api/v1/me/data-export/status.
 func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -268,7 +263,6 @@ func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request)
 // CancelMyDataExport handles DELETE /api/v1/me/data-export.
 // Cancels the caller's most recent pending/processing data export request.
 func (h *Handlers) CancelMyDataExport(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -297,7 +291,6 @@ func (h *Handlers) CancelMyDataExport(w http.ResponseWriter, r *http.Request) {
 // GetMyDataExportDownload handles GET /api/v1/me/data-export/download.
 // Redirects to the signed download URL once the export has completed.
 func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -342,9 +335,11 @@ func isAllowedDownloadRedirect(r *http.Request, dest string) bool {
 	if err != nil || !u.IsAbs() {
 		return false
 	}
+
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return false
 	}
+
 	host := strings.ToLower(u.Hostname())
 	if host == "" {
 		return false
@@ -354,9 +349,11 @@ func isAllowedDownloadRedirect(r *http.Request, dest string) bool {
 	if h, _, splitErr := netSplitHostPort(reqHost); splitErr == nil {
 		reqHost = h
 	}
+
 	if host == reqHost {
 		return true
 	}
+
 	return allowedDownloadHosts[host]
 }
 
@@ -368,7 +365,6 @@ func netSplitHostPort(hostport string) (string, string, error) {
 
 // RequestAccountDeletion handles POST /api/v1/account/delete.
 func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -407,7 +403,6 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 
 // ListAuditLogs handles GET /api/v1/admin/audit-logs.
 func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
-
 	actionType := r.URL.Query().Get("action_type")
 	targetType := r.URL.Query().Get("target_type")
 
@@ -451,7 +446,6 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 // ListConsents handles GET /api/v1/admin/consents.
 func (h *Handlers) ListConsents(w http.ResponseWriter, r *http.Request) {
-
 	consentType := r.URL.Query().Get("type")
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
@@ -467,7 +461,6 @@ func (h *Handlers) ListConsents(w http.ResponseWriter, r *http.Request) {
 
 // DeleteConsent handles DELETE /api/v1/admin/consents/{id}.
 func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid consent ID")
@@ -485,7 +478,6 @@ func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
 
 // ListPendingDataExports handles GET /api/v1/admin/data-exports.
 func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 
 	requests, err := h.Service.ListPendingDataExportRequests(r.Context(), limit)
@@ -499,7 +491,6 @@ func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request
 
 // ListPendingDeletions handles GET /api/v1/admin/deletions.
 func (h *Handlers) ListPendingDeletions(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 
 	requests, err := h.Service.ListPendingDeletionRequests(r.Context(), limit)
@@ -555,7 +546,6 @@ func (s *Service) ListAuditLogsWithQuery(ctx context.Context, actorUserID pgtype
 	}
 
 	return s.store.listAuditLogs(ctx, gen.ListAuditLogsParams{
-
 		ActorUserID: actorFilter,
 		ActionType:  actionType,
 		TargetType:  targetTypePtr,
@@ -579,7 +569,6 @@ func strPtr(s string) *string {
 
 // ExecuteDeletion handles POST /admin/gdpr/deletion-requests/:id/execute (P5.6).
 func (h *Handlers) ExecuteDeletion(w http.ResponseWriter, r *http.Request) {
-
 	var requestID pgtype.UUID
 	if err := requestID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid deletion request ID")

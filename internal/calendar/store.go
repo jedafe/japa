@@ -46,7 +46,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // CalendarEntry represents a single calendar_entries row.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type CalendarEntry struct {
 	ID pgtype.UUID
 
@@ -109,7 +109,6 @@ func fromSavedRow(r gen.CalendarListSavedEntriesRow) CalendarEntry {
 // CreateEntry inserts a new calendar entry with status='pending'.
 func (s *Store) CreateEntry(ctx context.Context, entry CalendarEntry) (pgtype.UUID, error) {
 	id, err := s.write.CalendarCreateEntry(ctx, gen.CalendarCreateEntryParams{
-
 		Title:              entry.Title,
 		Description:        entry.Description,
 		Category:           entry.Category,
@@ -279,7 +278,6 @@ func (s *Store) SubscribersForEntry(ctx context.Context, entry CalendarEntry) ([
 	}
 
 	users, err := s.read.CalendarSubscribersForEntry(ctx, gen.CalendarSubscribersForEntryParams{
-
 		DestinationSpaceID: entry.DestinationSpaceID,
 		Category:           catPtr,
 	})
@@ -316,6 +314,7 @@ func (s *Store) GetEntryAnyStatus(ctx context.Context, id pgtype.UUID) (Calendar
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntry{}, pgx.ErrNoRows
 		}
+
 		return CalendarEntry{}, fmt.Errorf("calendar: get entry any status: %w", err)
 	}
 
@@ -346,6 +345,7 @@ func (s *Store) SavedEntryIDs(ctx context.Context, userID pgtype.UUID, entryIDs 
 	if err != nil {
 		return nil, fmt.Errorf("calendar: saved entry ids: %w", err)
 	}
+
 	for _, id := range ids {
 		saved[id.String()] = true
 	}
@@ -389,10 +389,12 @@ func (s *Store) SpaceNames(ctx context.Context, ids []pgtype.UUID) (map[string]s
 
 	for rows.Next() {
 		var id pgtype.UUID
+
 		var name string
 		if err := rows.Scan(&id, &name); err != nil {
 			return nil, fmt.Errorf("calendar: scan space name: %w", err)
 		}
+
 		names[id.String()] = name
 	}
 
@@ -676,6 +678,7 @@ func (s *Store) Subscribe(ctx context.Context, userID, destSpaceID pgtype.UUID, 
 	if category != "" {
 		catPtr = &category
 	}
+
 	if err := s.write.CalendarSubscribe(ctx, gen.CalendarSubscribeParams{
 		UserID: userID,
 
@@ -693,6 +696,7 @@ func (s *Store) Unsubscribe(ctx context.Context, userID, destSpaceID pgtype.UUID
 	if category != "" {
 		catPtr = &category
 	}
+
 	if err := s.write.CalendarUnsubscribe(ctx, gen.CalendarUnsubscribeParams{
 		UserID: userID,
 
@@ -926,9 +930,11 @@ func (s *Store) AdminHardDeleteEntry(ctx context.Context, id pgtype.UUID) error 
 		if err != nil {
 			return fmt.Errorf("calendar: check entry exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		return errpkg.ErrNotDeleted
 	}
 

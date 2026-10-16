@@ -48,6 +48,7 @@ func (s *Service) ProposeDiscovered(ctx context.Context, in DiscoveredSourceInpu
 	if rawURL == "" {
 		return Source{}, false, fmt.Errorf("%w: url", errpkg.ErrRequired)
 	}
+
 	if !strings.Contains(rawURL, "://") {
 		rawURL = "https://" + rawURL
 	}
@@ -108,6 +109,7 @@ func (s *Service) ProposeDiscovered(ctx context.Context, in DiscoveredSourceInpu
 	if errors.Is(err, errpkg.ErrAlreadyExists) {
 		return Source{}, false, nil
 	}
+
 	if err != nil {
 		return Source{}, false, err
 	}

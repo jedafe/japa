@@ -151,7 +151,7 @@ LIMIT 1
 // records the effective intent+stage pair after the update so the log stays
 // self-describing (ADR-122). The destination is stored as a `spaces` row
 // (country-level space per ADR-053) because no `geo_countries` table exists.
-func (s *Store) UpdateStage(ctx context.Context, userID pgtype.UUID, stage *string, intent *string, destSpaceID pgtype.UUID, isPublic *bool) error {
+func (s *Store) UpdateStage(ctx context.Context, userID pgtype.UUID, stage, intent *string, destSpaceID pgtype.UUID, isPublic *bool) error {
 	const q = `
 INSERT INTO user_profiles (user_id, japa_stage, japa_intent, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history)
 VALUES (
@@ -360,6 +360,7 @@ WHERE %s
 ORDER BY up.japa_stage_updated_at DESC NULLS LAST, up.user_id
 LIMIT $%d OFFSET $%d
 `, strings.Join(listPredicates, "\n  AND "), len(listArgs)+1, len(listArgs)+2)
+
 	listArgs = append(listArgs, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, listArgs...)
@@ -374,7 +375,7 @@ LIMIT $%d OFFSET $%d
 		return nil, 0, err
 	}
 
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM user_profiles\nWHERE %s", strings.Join(countPredicates, "\n  AND "))
+	countQuery := "SELECT COUNT(*) FROM user_profiles\nWHERE " + strings.Join(countPredicates, "\n  AND ")
 
 	var total int64
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {

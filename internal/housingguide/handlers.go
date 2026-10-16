@@ -121,7 +121,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /housing-guide — list published housing guides
 // with filters. Query params: ?dest=&city=&type=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
@@ -169,7 +168,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /housing-guide/:id — single published housing
 // guide detail.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return

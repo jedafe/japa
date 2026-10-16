@@ -34,7 +34,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // AchievementMeta holds the structured fields for a single achievement.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type AchievementMeta struct {
 	ID pgtype.UUID
 
@@ -48,7 +48,7 @@ type AchievementMeta struct {
 
 // AchievementRow is the joined result of contents + achievement_meta + spaces
 // + users, returned by list and get-by-slug queries.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type AchievementRow struct {
 	ID pgtype.UUID
 

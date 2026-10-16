@@ -181,6 +181,7 @@ func TestEnqueueGenerateSummary_Payload(t *testing.T) {
 	svc := NewService(nil, nil, nil, nil)
 	svc.SetEnqueuer(enq)
 	svc.SetSettings(&fakeSettingsForGenerate{})
+
 	_ = pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	userID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 	sourceID := pgtype.UUID{Bytes: [16]byte{3}, Valid: true}

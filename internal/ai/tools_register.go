@@ -217,12 +217,15 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 			if ops["create"] {
 				registry.RegisterHandler(toolType+".create", UseCaseCreateHandler(deps, toolType))
 			}
+
 			if ops["update"] {
 				registry.RegisterHandler(toolType+".update", UseCaseUpdateHandler(deps, toolType))
 			}
+
 			if ops["delete"] {
 				registry.RegisterHandler(toolType+".delete", UseCaseDeleteHandler(deps, toolType))
 			}
+
 			if ops["assign_geo"] {
 				registry.RegisterHandler(toolType+".assign_geo", UseCaseAssignGeoHandler(deps, toolType))
 			}

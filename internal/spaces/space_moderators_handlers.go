@@ -108,7 +108,6 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Service.AssignModerator(r.Context(), gen.AssignSpaceModeratorParams{
-
 		SpaceID:          space.ID,
 		UserID:           targetUserID,
 		AssignedBy:       assignedBy,
@@ -179,7 +178,6 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 
 // AdminListModerators handles GET /api/v1/admin/spaces/{id}/moderators.
 func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
-
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
@@ -205,7 +203,6 @@ func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
 // Admin-scoped variant of the space moderator assignment that resolves the
 // space by ID (not slug) and accepts either a user_id or username.
 func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) {
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -254,7 +251,6 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.Service.AssignModerator(r.Context(), gen.AssignSpaceModeratorParams{
-
 		SpaceID:          space.ID,
 		UserID:           targetUserID,
 		AssignedBy:       "site_admin",
@@ -277,7 +273,6 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 
 // AdminRemoveModerator handles DELETE /api/v1/admin/spaces/{id}/moderators/{userId}.
 func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) {
-
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return

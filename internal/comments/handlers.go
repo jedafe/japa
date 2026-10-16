@@ -256,6 +256,7 @@ func viewerIDFromRequest(r *http.Request) pgtype.UUID {
 	if user := auth.FromContext(r.Context()); user != nil {
 		return user.UserID
 	}
+
 	return pgtype.UUID{}
 }
 
@@ -281,7 +282,6 @@ func redactAnonymousComments[T any](
 
 // ListComments handles GET /api/v1/content/{id}/comments.
 func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
-
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -310,6 +310,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 
 	parentIDStr := r.URL.Query().Get("parent_id")
 	viewerID := viewerIDFromRequest(r)
+
 	if parentIDStr != "" {
 		var parentID pgtype.UUID
 		if err := parentID.Scan(parentIDStr); err != nil {
@@ -322,6 +323,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		if replies == nil {
 			replies = []gen.ListRepliesByParentRow{}
 		}
@@ -348,6 +350,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if comments == nil {
 		comments = []gen.ListCommentsByContentRow{}
 	}
@@ -389,7 +392,6 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 
 // GetComment handles GET /api/v1/comments/{id}.
 func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
-
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
@@ -524,6 +526,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 						"This space is wiki-only")
 					return
 				}
+
 				slog.Warn("comments: space perm check failed", "space_id", spaceID.String(), "error", err)
 			} else if !allowed {
 				errpkg.WriteError(w, http.StatusForbidden, "space_permission_denied",

@@ -148,6 +148,7 @@ func (Or) isFilterExpr()      {}
 // remain so callers can treat "no conditions" and "no filter" identically.
 func andAll(exprs ...FilterExpr) FilterExpr {
 	parts := make([]FilterExpr, 0, len(exprs))
+
 	for _, e := range exprs {
 		if e != nil {
 			parts = append(parts, e)
@@ -167,6 +168,7 @@ func andAll(exprs ...FilterExpr) FilterExpr {
 // orAny builds an Or from non-nil children. Returns nil when empty.
 func orAny(exprs ...FilterExpr) FilterExpr {
 	parts := make([]FilterExpr, 0, len(exprs))
+
 	for _, e := range exprs {
 		if e != nil {
 			parts = append(parts, e)

@@ -77,7 +77,9 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var timestamp, token, signature string
+
 	var rawMIME []byte
+
 	var formOK bool
 
 	ct := r.Header.Get("Content-Type")
@@ -87,6 +89,7 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Could not read delivery body")
 			return
 		}
+
 		timestamp = r.Header.Get("X-Intel-Email-Timestamp")
 		token = r.Header.Get("X-Intel-Email-Token")
 		signature = r.Header.Get("X-Intel-Email-Signature")
@@ -101,6 +104,7 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
 		timestamp = r.FormValue("timestamp")
 		token = r.FormValue("token")
 		signature = r.FormValue("signature")
@@ -115,7 +119,9 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 	// Normalize the delivery to the shared email envelope. Form posts
 	// (Mailgun) carry parsed fields; raw MIME carries the message bytes.
 	var payload []byte
+
 	var sender, recipient, subject, messageID, bodyText, bodyHTML string
+
 	var eventCT string
 
 	if formOK {
@@ -133,16 +139,20 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 			// form omits routing fields, fall back to the MIME headers.
 			payload = []byte(mimeBody)
 			eventCT = "message/rfc822"
+
 			if msg, merr := inboundMIMEHeaders(payload); merr == nil {
 				if sender == "" {
 					sender = msg.Get("From")
 				}
+
 				if recipient == "" {
 					recipient = msg.Get("To")
 				}
+
 				if subject == "" {
 					subject = msg.Get("Subject")
 				}
+
 				if messageID == "" {
 					messageID = msg.Get("Message-Id")
 				}
@@ -167,6 +177,7 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_mime", "Could not parse MIME message")
 			return
 		}
+
 		sender = msg.Get("From")
 		recipient = msg.Get("To")
 		subject = msg.Get("Subject")
@@ -179,6 +190,7 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 			"data": map[string]interface{}{"received": false, "reason": "missing_recipient"},
 		})
+
 		return
 	}
 
@@ -188,10 +200,13 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 				"data": map[string]interface{}{"received": false, "reason": "unknown_recipient"},
 			})
+
 			return
 		}
+
 		slog.Error("intel: inbound email channel lookup failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "inbound_failed", "Delivery routing failed")
+
 		return
 	}
 
@@ -203,15 +218,18 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 	if idemBasis == "" {
 		idemBasis = messageID
 	}
+
 	if idemBasis == "" {
 		sum := sha256.Sum256(payload)
 		idemBasis = hex.EncodeToString(sum[:])
 	}
+
 	idemKey, dup := h.claimInbound(r, "email:"+ch.ID.String()+":"+idemBasis)
 	if dup {
 		errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 			"data": map[string]interface{}{"received": true, "duplicate": true},
 		})
+
 		return
 	}
 
@@ -225,6 +243,7 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 			"subject": inboundHeaderCap(subject),
 		})
 		rejectSum := sha256.Sum256(payload)
+
 		if ev, evErr := h.intelSources.CreateInboundEvent(r.Context(), gen.CreateIntelInboundEventParams{
 			ChannelID:   ch.ID,
 			Payload:     payload,
@@ -234,9 +253,11 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 		}); evErr == nil {
 			_ = h.intelSources.MarkInboundEvent(r.Context(), gen.MarkIntelInboundEventParams{ID: ev.ID, Status: "ignored"})
 		}
+
 		errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 			"data": map[string]interface{}{"received": false, "reason": "sender_not_allowed"},
 		})
+
 		return
 	}
 
@@ -259,6 +280,7 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 		h.releaseInbound(r, idemKey)
 		slog.Error("intel: inbound email event persist failed", "channel_id", ch.ID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "inbound_failed", "Could not record the delivery")
+
 		return
 	}
 
@@ -275,6 +297,7 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 		h.releaseInbound(r, idemKey)
 		slog.Error("intel: inbound email enqueue failed", "event_id", event.ID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Could not queue delivery processing")
+
 		return
 	}
 
@@ -312,12 +335,14 @@ func (h *Handlers) HandleWebSubVerify(w http.ResponseWriter, r *http.Request) {
 
 	cfg := channelProviderConfig(ch.ProviderConfig)
 	topic := r.URL.Query().Get("hub.topic")
+
 	if topic == "" || topic != inboundCfgString(cfg, "topic") {
 		errpkg.WriteError(w, http.StatusNotFound, "topic_mismatch", "hub.topic does not match this channel")
 		return
 	}
 
 	mode := r.URL.Query().Get("hub.mode")
+
 	challenge := r.URL.Query().Get("hub.challenge")
 	if challenge == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_challenge", "hub.challenge is required")
@@ -325,12 +350,14 @@ func (h *Handlers) HandleWebSubVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	leaseKey := "jc:intel:websub:lease:" + ch.ID.String()
+
 	switch mode {
 	case "subscribe":
 		leaseSecs, _ := strconv.ParseInt(r.URL.Query().Get("hub.lease_seconds"), 10, 64)
 		if leaseSecs <= 0 {
 			leaseSecs = 864000 // hub-omitted lease: treat as the common 10-day term
 		}
+
 		lease := webSubLease{
 			Hub:       inboundCfgString(cfg, "hub"),
 			Topic:     topic,
@@ -355,19 +382,23 @@ func (h *Handlers) HandleWebSubVerify(w http.ResponseWriter, r *http.Request) {
 		if h.rdb != nil {
 			_ = h.rdb.Del(r.Context(), leaseKey).Err()
 		}
+
 		if mode == "denied" {
 			// Surface the refusal on the channel row (last_error_message)
 			// so an operator sees "hub denied subscription" instead of a
 			// silently dead subscription.
 			reason := r.URL.Query().Get("hub.reason")
 			msg := "websub: hub denied subscription"
+
 			if reason != "" {
 				msg += " — " + inboundHeaderCap(reason)
 			}
+
 			_ = h.intelSources.NoteChannelError(r.Context(), gen.NoteIntelChannelErrorParams{
 				ID:               ch.ID,
 				LastErrorMessage: &msg,
 			})
+
 			slog.Warn("intel: websub subscription denied by hub", "channel_id", ch.ID.String(), "reason", reason)
 		}
 	default:
@@ -391,17 +422,21 @@ func (h *Handlers) armWebSubRenew(r *http.Request, channelID string, leaseSecs i
 	if h.asynqClient == nil {
 		return
 	}
+
 	margin := leaseSecs / 10
 	if max := int64(24 * 3600); margin > max {
 		margin = max
 	}
+
 	if margin < 60 {
 		margin = 60
 	}
+
 	delay := time.Duration(leaseSecs-margin) * time.Second
 	if delay < time.Minute {
 		delay = time.Minute
 	}
+
 	payload, _ := json.Marshal(map[string]string{
 		"version":    "v1",
 		"channel_id": channelID,
@@ -413,6 +448,7 @@ func (h *Handlers) armWebSubRenew(r *http.Request, channelID string, leaseSecs i
 		if errors.Is(err, asynq.ErrDuplicateTask) {
 			return // a sibling verification callback already armed this renewal
 		}
+
 		slog.Warn("intel: websub renew arm failed", "channel_id", channelID, "error", err)
 	}
 }
@@ -433,6 +469,7 @@ func (h *Handlers) HandleWebSubPush(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	cfg := channelProviderConfig(ch.ProviderConfig)
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, inboundMaxBody))
@@ -460,16 +497,19 @@ func (h *Handlers) HandleWebSubPush(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 				"data": map[string]interface{}{"received": false, "reason": "topic_mismatch"},
 			})
+
 			return
 		}
 	}
 
 	deliveryHash := sha256.Sum256(body)
+
 	idemKey, dup := h.claimInbound(r, "websub:"+ch.ID.String()+":"+hex.EncodeToString(deliveryHash[:]))
 	if dup {
 		errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 			"data": map[string]interface{}{"received": true, "duplicate": true},
 		})
+
 		return
 	}
 
@@ -491,20 +531,25 @@ func (h *Handlers) HandleWebSubPush(w http.ResponseWriter, r *http.Request) {
 		h.releaseInbound(r, idemKey)
 		slog.Error("intel: websub event persist failed", "channel_id", ch.ID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "inbound_failed", "Could not record the delivery")
+
 		return
 	}
 
 	rawDocID, perr := h.processWebSubDelivery(r.Context(), ch, event)
 	if perr != nil {
 		h.releaseInbound(r, idemKey)
+
 		if errors.Is(perr, errInboundDropped) {
 			errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 				"data": map[string]interface{}{"received": false, "reason": "source_disabled"},
 			})
+
 			return
 		}
+
 		slog.Error("intel: websub delivery processing failed", "channel_id", ch.ID.String(), "event_id", event.ID.String(), "error", perr)
 		errpkg.WriteError(w, http.StatusInternalServerError, "inbound_failed", "Could not persist the delivery")
+
 		return
 	}
 
@@ -534,6 +579,7 @@ func (h *Handlers) processWebSubDelivery(ctx context.Context, ch gen.IntelSource
 		mark("failed")
 		return "", fmt.Errorf("load source: %w", err)
 	}
+
 	if !src.Enabled || src.Status != "active" {
 		mark("ignored")
 		return "", fmt.Errorf("%w: source disabled or inactive", errInboundDropped)
@@ -547,6 +593,7 @@ func (h *Handlers) processWebSubDelivery(ctx context.Context, ch gen.IntelSource
 	if len(hashSuffix) > 16 {
 		hashSuffix = hashSuffix[:16]
 	}
+
 	docURL := "websub:" + ch.ID.String() + ":" + hashSuffix
 	// Idempotent re-materialization: the deterministic doc URL means a
 	// redrive after a crash-between-insert-and-mark (or any second run of
@@ -556,6 +603,7 @@ func (h *Handlers) processWebSubDelivery(ctx context.Context, ch gen.IntelSource
 		mark("failed")
 		return "", fmt.Errorf("lookup existing raw doc: %w", err)
 	}
+
 	if !found {
 		rawDoc, err := h.intelStores.CreateIntelRawDocument(ctx, gen.CreateIntelRawDocumentParams{
 			SourceID:    src.ID,
@@ -571,6 +619,7 @@ func (h *Handlers) processWebSubDelivery(ctx context.Context, ch gen.IntelSource
 			mark("failed")
 			return "", fmt.Errorf("persist raw doc: %w", err)
 		}
+
 		rawDocID = rawDoc.ID
 	} else {
 		// Re-materialization: the existing doc is already this channel's
@@ -595,6 +644,7 @@ func (h *Handlers) processWebSubDelivery(ctx context.Context, ch gen.IntelSource
 	}
 
 	mark("processed")
+
 	return rawDocID.String(), nil
 }
 
@@ -616,9 +666,11 @@ func (h *Handlers) HandleAdminRedriveInboundEvent(w http.ResponseWriter, r *http
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "inbound_unavailable", "Inbound events are not configured")
 		return
 	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	eventID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -629,11 +681,13 @@ func (h *Handlers) HandleAdminRedriveInboundEvent(w http.ResponseWriter, r *http
 		errpkg.WriteError(w, http.StatusNotFound, "event_not_found", "Inbound event not found")
 		return
 	}
+
 	ch, err := h.intelSources.GetChannel(r.Context(), event.ChannelID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "channel_not_found", "Channel not found")
 		return
 	}
+
 	if ch.CrawlMethod != "email" && ch.CrawlMethod != "webhook" {
 		errpkg.WriteError(w, http.StatusUnprocessableEntity, "event_not_redrivable", "Only email/webhook inbound events can be redriven")
 		return
@@ -647,12 +701,15 @@ func (h *Handlers) HandleAdminRedriveInboundEvent(w http.ResponseWriter, r *http
 	if err != nil {
 		slog.Error("intel: inbound event redrive failed", "event_id", eventID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "redrive_failed", "Could not redrive the delivery")
+
 		return
 	}
+
 	if !ok {
 		errpkg.WriteError(w, http.StatusConflict, "event_not_redrivable", "Event is processed or still in flight")
 		return
 	}
+
 	event.Status = "received"
 
 	switch ch.CrawlMethod {
@@ -666,8 +723,10 @@ func (h *Handlers) HandleAdminRedriveInboundEvent(w http.ResponseWriter, r *http
 			_ = h.intelSources.MarkInboundEvent(r.Context(), gen.MarkIntelInboundEventParams{ID: event.ID, Status: "failed"})
 			slog.Error("intel: redrive enqueue failed", "event_id", event.ID.String(), "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Could not queue delivery processing")
+
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 			"data": map[string]interface{}{"redriven": true, "event_id": event.ID.String()},
 		})
@@ -676,16 +735,20 @@ func (h *Handlers) HandleAdminRedriveInboundEvent(w http.ResponseWriter, r *http
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "inbound_unavailable", "WebSub is not configured")
 			return
 		}
+
 		rawDocID, perr := h.processWebSubDelivery(r.Context(), ch, event)
 		if perr != nil {
 			if errors.Is(perr, errInboundDropped) {
 				errpkg.WriteError(w, http.StatusUnprocessableEntity, "source_disabled", "The parent source is disabled or inactive")
 				return
 			}
+
 			slog.Error("intel: redrive websub delivery failed", "event_id", event.ID.String(), "error", perr)
 			errpkg.WriteError(w, http.StatusInternalServerError, "inbound_failed", "Could not reprocess the delivery")
+
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 			"data": map[string]interface{}{"redriven": true, "event_id": event.ID.String(), "raw_doc_id": rawDocID},
 		})
@@ -703,11 +766,13 @@ func (h *Handlers) webSubChannel(w http.ResponseWriter, r *http.Request) (gen.In
 	if !ok {
 		return gen.IntelSourceChannel{}, false
 	}
+
 	ch, err := h.intelSources.GetChannel(r.Context(), channelID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "channel_not_found", "Channel not found")
 		return gen.IntelSourceChannel{}, false
 	}
+
 	if ch.CrawlMethod != "webhook" || !ch.Enabled {
 		errpkg.WriteError(w, http.StatusNotFound, "channel_not_found", "Channel not found")
 		return gen.IntelSourceChannel{}, false
@@ -724,8 +789,10 @@ func (h *Handlers) claimInbound(r *http.Request, basis string) (key string, dup 
 	if h.rdb == nil {
 		return "", false
 	}
+
 	sum := sha256.Sum256([]byte(basis))
 	key = "jc:intel:inbound:idem:" + hex.EncodeToString(sum[:])
+
 	set, err := h.rdb.SetNX(r.Context(), key, "1", inboundIdemTTL).Result()
 	if err != nil {
 		slog.Warn("intel: inbound idempotency check failed; accepting", "error", err)
@@ -742,6 +809,7 @@ func (h *Handlers) releaseInbound(r *http.Request, key string) {
 	if h.rdb == nil || key == "" {
 		return
 	}
+
 	_ = h.rdb.Del(r.Context(), key).Err()
 }
 
@@ -753,6 +821,7 @@ func inboundHeaderCap(s string) string {
 	if len(s) > max {
 		return s[:max]
 	}
+
 	return s
 }
 
@@ -763,10 +832,12 @@ func verifyInboundSignature(key, timestamp, token, signature string) bool {
 	if key == "" || timestamp == "" || token == "" || signature == "" {
 		return false
 	}
+
 	ts, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
 		return false
 	}
+
 	if skew := time.Since(time.Unix(ts, 0)); skew > inboundSigSkew || skew < -inboundSigSkew {
 		return false
 	}
@@ -796,11 +867,13 @@ func webSubSelfLink(vals []string) string {
 			if !webSubSelfRelRe.MatchString(part) {
 				continue
 			}
+
 			if m := webSubLinkTargetRe.FindStringSubmatch(part); m != nil {
 				return strings.TrimSpace(m[1])
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -811,6 +884,7 @@ func verifyWebSubSignature(secret, sigHeader string, body []byte) bool {
 	if !ok || sig == "" {
 		return false
 	}
+
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 
@@ -852,6 +926,7 @@ func inboundMIMEHeaders(raw []byte) (mail.Header, error) {
 func channelProviderConfig(raw []byte) map[string]any {
 	var m map[string]any
 	_ = json.Unmarshal(raw, &m)
+
 	return m
 }
 
@@ -859,6 +934,7 @@ func inboundCfgString(cfg map[string]any, key string) string {
 	if v, ok := cfg[key].(string); ok {
 		return v
 	}
+
 	return ""
 }
 
@@ -868,6 +944,7 @@ func firstNonEmpty(vals ...string) string {
 			return strings.TrimSpace(v)
 		}
 	}
+
 	return ""
 }
 
@@ -882,10 +959,12 @@ func firstAddress(s string) string {
 	if addrs, err := mail.ParseAddressList(s); err == nil && len(addrs) > 0 {
 		return strings.ToLower(strings.TrimSpace(addrs[0].Address))
 	}
+
 	if i := strings.LastIndex(s, "<"); i >= 0 {
 		s = strings.TrimPrefix(s[i:], "<")
 		s = strings.TrimSuffix(s, ">")
 	}
+
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
@@ -900,25 +979,32 @@ func inboundSenderAllowed(ctx context.Context, settings SettingsReader, provider
 	}
 
 	cfg := channelProviderConfig(providerConfig)
+
 	allowed := inboundCfgStringSlice(cfg, "allowed_senders")
 	if len(allowed) == 0 && settings != nil {
 		raw := settings.GetStringOr(ctx, "intel.email.allowed_senders", "[]")
+
 		var platform []string
+
 		if err := json.Unmarshal([]byte(raw), &platform); err == nil {
 			allowed = platform
 		}
 	}
+
 	if len(allowed) == 0 {
 		return true
 	}
 
 	at := strings.LastIndex(sender, "@")
 	senderDomain := ""
+
 	if at >= 0 {
 		senderDomain = sender[at:]
 	}
+
 	for _, rule := range allowed {
 		rule = strings.ToLower(strings.TrimSpace(rule))
+
 		switch {
 		case rule == "":
 			continue
@@ -939,7 +1025,9 @@ func inboundCfgStringSlice(cfg map[string]any, key string) []string {
 	if !ok {
 		return nil
 	}
+
 	out := make([]string, 0, len(raw))
+
 	for _, v := range raw {
 		if s, ok := v.(string); ok && s != "" {
 			out = append(out, s)

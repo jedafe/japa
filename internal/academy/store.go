@@ -264,7 +264,6 @@ func (s *Store) GetTrackByID(ctx context.Context, id pgtype.UUID) (*Track, error
 // CreateTrack creates a new learning track.
 func (s *Store) CreateTrack(ctx context.Context, input CreateTrackInput) (*Track, error) {
 	r, err := s.write.CreateAcademyTrack(ctx, gen.CreateAcademyTrackParams{
-
 		Title:                input.Title,
 		Slug:                 input.Slug,
 		Description:          input.Description,
@@ -287,7 +286,6 @@ func (s *Store) CreateTrack(ctx context.Context, input CreateTrackInput) (*Track
 // UpdateTrack updates an existing learning track.
 func (s *Store) UpdateTrack(ctx context.Context, id pgtype.UUID, input UpdateTrackInput) (*Track, error) {
 	r, err := s.write.UpdateAcademyTrack(ctx, gen.UpdateAcademyTrackParams{
-
 		ID:                   id,
 		Title:                input.Title,
 		Description:          input.Description,
@@ -685,7 +683,6 @@ func formatTrackDuration(totalMinutes int) (label, iso string) {
 // GetModuleBySlug retrieves a module by its slug.
 func (s *Store) GetModuleBySlug(ctx context.Context, trackID pgtype.UUID, slug string) (*Module, error) {
 	r, err := s.read.GetAcademyModuleBySlug(ctx, gen.GetAcademyModuleBySlugParams{
-
 		TrackID: trackID,
 		Slug:    slug,
 	})
@@ -716,7 +713,6 @@ func (s *Store) GetModuleByID(ctx context.Context, id pgtype.UUID) (*Module, err
 // CreateModule creates a new module in a track.
 func (s *Store) CreateModule(ctx context.Context, trackID pgtype.UUID, input CreateModuleInput) (*Module, error) {
 	r, err := s.write.CreateAcademyModule(ctx, gen.CreateAcademyModuleParams{
-
 		TrackID:     trackID,
 		Title:       input.Title,
 		Slug:        input.Slug,
@@ -735,7 +731,6 @@ func (s *Store) CreateModule(ctx context.Context, trackID pgtype.UUID, input Cre
 // UpdateModule updates an existing module.
 func (s *Store) UpdateModule(ctx context.Context, id pgtype.UUID, input UpdateModuleInput) (*Module, error) {
 	r, err := s.write.UpdateAcademyModule(ctx, gen.UpdateAcademyModuleParams{
-
 		ID:          id,
 		Title:       input.Title,
 		Description: input.Description,
@@ -958,7 +953,6 @@ func (s *Store) ListLessonsByModule(ctx context.Context, moduleID pgtype.UUID) (
 // GetLessonBySlug retrieves a lesson by its slug.
 func (s *Store) GetLessonBySlug(ctx context.Context, moduleID pgtype.UUID, slug string) (*Lesson, error) {
 	r, err := s.read.GetAcademyLessonBySlug(ctx, gen.GetAcademyLessonBySlugParams{
-
 		ModuleID: moduleID,
 		Slug:     slug,
 	})
@@ -1022,7 +1016,6 @@ type LessonDetail struct {
 // lesson player can show the "Completed" state on SSR render.
 func (s *Store) GetLessonDetail(ctx context.Context, moduleID pgtype.UUID, slug string, userID ...pgtype.UUID) (*LessonDetail, error) {
 	r, err := s.read.GetAcademyLessonDetailBySlug(ctx, gen.GetAcademyLessonDetailBySlugParams{
-
 		ModuleID: moduleID,
 		Slug:     slug,
 	})
@@ -1065,11 +1058,13 @@ func (s *Store) GetLessonDetail(ctx context.Context, moduleID pgtype.UUID, slug 
 	// (document, screencast, audio). ExternalURL surfaces a URL stored in the
 	// content column for link/embed lesson types.
 	detail.MediaURL = detail.VideoURL
+
 	if r.Content != nil {
 		if url := strings.TrimSpace(*r.Content); isExternalURL(url) && r.LessonType != "article" && r.LessonType != "checklist" {
 			detail.ExternalURL = &url
 		}
 	}
+
 	if r.LessonType == "checklist" {
 		detail.Checklist = parseChecklistContent(r.Content)
 	}
@@ -1169,47 +1164,59 @@ func parseChecklistContent(content *string) []ChecklistItem {
 		Label string `json:"label"`
 		Text  string `json:"text"`
 	}
+
 	if err := json.Unmarshal([]byte(raw), &objects); err == nil {
 		out := make([]ChecklistItem, 0, len(objects))
+
 		for i, o := range objects {
 			label := o.Label
 			if label == "" {
 				label = o.Text
 			}
+
 			if label == "" {
 				continue
 			}
+
 			id := o.ID
 			if id == "" {
 				id = fmt.Sprintf("item-%d", i+1)
 			}
+
 			out = append(out, ChecklistItem{ID: id, Label: label})
 		}
+
 		return out
 	}
 
 	var labels []string
 	if err := json.Unmarshal([]byte(raw), &labels); err == nil {
 		out := make([]ChecklistItem, 0, len(labels))
+
 		for i, label := range labels {
 			if label == "" {
 				continue
 			}
+
 			out = append(out, ChecklistItem{ID: fmt.Sprintf("item-%d", i+1), Label: label})
 		}
+
 		return out
 	}
 
 	// Fallback: newline-separated plain text.
 	lines := strings.Split(raw, "\n")
 	out := make([]ChecklistItem, 0, len(lines))
+
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
+
 		out = append(out, ChecklistItem{ID: fmt.Sprintf("item-%d", i+1), Label: line})
 	}
+
 	return out
 }
 
@@ -1231,7 +1238,6 @@ func (s *Store) GetLessonByID(ctx context.Context, id pgtype.UUID) (*Lesson, err
 // CreateLesson creates a new lesson in a module.
 func (s *Store) CreateLesson(ctx context.Context, moduleID pgtype.UUID, input CreateLessonInput) (*Lesson, error) {
 	r, err := s.write.CreateAcademyLesson(ctx, gen.CreateAcademyLessonParams{
-
 		ModuleID:        moduleID,
 		Title:           input.Title,
 		Slug:            input.Slug,
@@ -1255,7 +1261,6 @@ func (s *Store) CreateLesson(ctx context.Context, moduleID pgtype.UUID, input Cr
 // UpdateLesson updates an existing lesson.
 func (s *Store) UpdateLesson(ctx context.Context, id pgtype.UUID, input UpdateLessonInput) (*Lesson, error) {
 	r, err := s.write.UpdateAcademyLesson(ctx, gen.UpdateAcademyLessonParams{
-
 		ID:              id,
 		Title:           input.Title,
 		LessonType:      input.LessonType,
@@ -1354,7 +1359,6 @@ func (s *Store) UpsertProgress(ctx context.Context, userID, lessonID pgtype.UUID
 	}
 
 	r, err := s.write.UpsertLessonProgress(ctx, gen.UpsertLessonProgressParams{
-
 		UserID:       userID,
 		LessonID:     lessonID,
 		Status:       input.Status,
@@ -1490,7 +1494,6 @@ func (s *Store) GetCertificate(ctx context.Context, userID, trackID pgtype.UUID)
 // IssueCertificate issues a certificate for a completed track.
 func (s *Store) IssueCertificate(ctx context.Context, userID, trackID pgtype.UUID, certificateNumber string) (*Certificate, error) {
 	r, err := s.write.IssueAcademyCertificate(ctx, gen.IssueAcademyCertificateParams{
-
 		UserID:            userID,
 		TrackID:           trackID,
 		CertificateNumber: certificateNumber,
@@ -1605,7 +1608,6 @@ type Enrollment struct {
 // 500 db_error.
 func (s *Store) EnrollUser(ctx context.Context, userID, trackID pgtype.UUID, accessType string) (*Enrollment, error) {
 	r, err := s.write.CreateEnrollment(ctx, gen.CreateEnrollmentParams{
-
 		UserID:     userID,
 		TrackID:    trackID,
 		AccessType: accessType,
@@ -1617,6 +1619,7 @@ func (s *Store) EnrollUser(ctx context.Context, userID, trackID pgtype.UUID, acc
 			// now-visible row and treat the call as already-enrolled.
 			return s.GetEnrollment(ctx, userID, trackID)
 		}
+
 		return nil, fmt.Errorf("enroll user: %w", err)
 	}
 
@@ -1760,7 +1763,6 @@ type EnrollmentRow struct {
 // ListEnrollmentsByTrack returns paginated academy_enrollments for a track with user info.
 func (s *Store) ListEnrollmentsByTrack(ctx context.Context, trackID pgtype.UUID, limit, offset int32) ([]EnrollmentRow, error) {
 	rows, err := s.read.ListEnrollmentsByTrackID(ctx, gen.ListEnrollmentsByTrackIDParams{
-
 		TrackID:    trackID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -1852,30 +1854,38 @@ func parseQuizOptions(raw string) []QuizOption {
 		Text  string `json:"text"`
 		Label string `json:"label"`
 	}
+
 	if err := json.Unmarshal([]byte(trimmed), &objects); err == nil {
 		out := make([]QuizOption, 0, len(objects))
+
 		for _, o := range objects {
 			label := o.Text
 			if label == "" {
 				label = o.Label
 			}
+
 			if label == "" {
 				continue
 			}
+
 			out = append(out, QuizOption{ID: label, Label: label})
 		}
+
 		return out
 	}
 
 	var labels []string
 	if err := json.Unmarshal([]byte(trimmed), &labels); err == nil {
 		out := make([]QuizOption, 0, len(labels))
+
 		for _, label := range labels {
 			if label == "" {
 				continue
 			}
+
 			out = append(out, QuizOption{ID: label, Label: label})
 		}
+
 		return out
 	}
 
@@ -1986,7 +1996,6 @@ type TrackReviewAggregate struct {
 // review_aggregates rollup (Section 29). AUDIT-BE-ROUTE-040: entity_type=academy_track.
 func (s *Store) CreateTrackReview(ctx context.Context, trackID, reviewerID pgtype.UUID, rating int16, title, body *string) (TrackReview, error) {
 	row, err := s.write.CreateReview(ctx, gen.CreateReviewParams{
-
 		EntityType:     "academy_track",
 		EntityID:       trackID,
 		ReviewerUserID: reviewerID,
@@ -2001,7 +2010,6 @@ func (s *Store) CreateTrackReview(ctx context.Context, trackID, reviewerID pgtyp
 	// Maintain the review_aggregates rollup so GetTrackReviewAggregate can
 	// read the precomputed count/avg instead of scanning all review rows.
 	if _, aggErr := s.write.UpsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-
 		EntityType: "academy_track",
 		EntityID:   trackID,
 	}); aggErr != nil {
@@ -2018,7 +2026,6 @@ func (s *Store) CreateTrackReview(ctx context.Context, trackID, reviewerID pgtyp
 // for the Reviews tab (ADR-060). Ref: Section 29 polymorphic reviews.
 func (s *Store) ListTrackReviews(ctx context.Context, trackID pgtype.UUID, limit, offset int32) ([]TrackReview, error) {
 	rows, err := s.read.ListReviewsByEntityWithAuthor(ctx, gen.ListReviewsByEntityWithAuthorParams{
-
 		EntityType: "academy_track",
 		EntityID:   trackID,
 		PageLimit:  limit,
@@ -2041,7 +2048,6 @@ func (s *Store) ListTrackReviews(ctx context.Context, trackID pgtype.UUID, limit
 // Falls back to zeros when no aggregate row exists yet (no reviews posted).
 func (s *Store) GetTrackReviewAggregate(ctx context.Context, trackID pgtype.UUID) (TrackReviewAggregate, error) {
 	agg, err := s.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
-
 		EntityType: "academy_track",
 		EntityID:   trackID,
 	})

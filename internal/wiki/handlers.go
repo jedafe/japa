@@ -180,6 +180,7 @@ func (h *Handlers) isSuperAdmin(ctx context.Context, userID pgtype.UUID) bool {
 	if c, ok := h.perms.(superAdminChecker); ok {
 		return c.IsSuperAdmin(ctx, userID)
 	}
+
 	return false
 }
 
@@ -291,6 +292,7 @@ func (h *Handlers) indexApprovedContent(r *http.Request, pageID pgtype.UUID, con
 				"page_id", pageID.String(), "error", err)
 			return
 		}
+
 		if !indexable {
 			return
 		}
@@ -301,6 +303,7 @@ func (h *Handlers) indexApprovedContent(r *http.Request, pageID pgtype.UUID, con
 		if err != nil {
 			slog.Warn("wiki: RAG index failed on approval",
 				"page_id", pageID.String(), "error", err)
+
 			if recErr := h.rag.RecordIndexFailure(ctx, "wiki_page", pageID, "index", err); recErr != nil {
 				slog.Warn("wiki: RAG index failure record failed",
 					"page_id", pageID.String(), "error", recErr)
@@ -317,7 +320,6 @@ func (h *Handlers) indexApprovedContent(r *http.Request, pageID pgtype.UUID, con
 // Also accepts ?dest= (destination space ID) as a geo-aware alternative to
 // the URL path :space_slug parameter (ADR-086 geo-aware pattern).
 func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
-
 	// ?dest= takes precedence over :space_slug when provided.
 	if destParam := r.URL.Query().Get("dest"); destParam != "" {
 		var destSpaceID pgtype.UUID
@@ -435,15 +437,19 @@ func categoryItem(c WikiCategory) wikiCategoryItem {
 	if c.ID.Valid {
 		item.ID = c.ID.String()
 	}
+
 	if c.Icon != nil {
 		item.Icon = *c.Icon
 	}
+
 	if c.FieldGroupID.Valid {
 		item.FieldGroupID = c.FieldGroupID.String()
 	}
+
 	if c.FieldGroupSlug != nil {
 		item.FieldGroupSlug = *c.FieldGroupSlug
 	}
+
 	if rcfg := parseRollupConfig(c.Rollup); rcfg != nil && rcfg.Mode == rollupModeDirectory {
 		item.Directory = true
 		item.Empty = c.Empty
@@ -468,6 +474,7 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 	)
 
 	var templatesByCat map[pgtype.UUID][]wikiPageTemplateItem
+
 	if spaceSlug := strings.TrimSpace(r.URL.Query().Get("space")); spaceSlug != "" {
 		cats, scope, err = h.service.ListCategoriesForSpace(r.Context(), spaceSlug)
 		// §80 lazy template pages: surface each category's declared
@@ -476,11 +483,13 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			if tmpls, terr := h.service.ListPageTemplatesForSpace(r.Context(), spaceSlug); terr == nil {
 				templatesByCat = make(map[pgtype.UUID][]wikiPageTemplateItem, len(tmpls))
+
 				for _, tm := range tmpls {
 					item := wikiPageTemplateItem{Slug: tm.Slug, Label: tm.Label, Position: tm.Position}
 					if tm.ParentTemplateID.Valid {
 						item.ParentTemplateID = tm.ParentTemplateID.String()
 					}
+
 					templatesByCat[tm.CategoryID] = append(templatesByCat[tm.CategoryID], item)
 				}
 			} else {
@@ -490,6 +499,7 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 	} else {
 		cats, err = h.service.ListAllCategories(r.Context())
 	}
+
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
@@ -508,11 +518,13 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 	// "Universities" directory on both country and state) each keep their
 	// own tab/card instead of one shadowing the other.
 	seen := make(map[string]bool, len(cats))
+
 	for _, c := range cats {
 		key := c.SpaceTypeSlug + "\x00" + c.Category
 		if seen[key] {
 			continue
 		}
+
 		seen[key] = true
 		item := categoryItem(c)
 		item.PageTemplates = templatesByCat[c.ID]
@@ -529,12 +541,14 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleGetFieldTypes(w http.ResponseWriter, r *http.Request) {
 	types := customfields.ProposableFieldTypes()
 	out := make([]map[string]string, 0, len(types))
+
 	for _, ft := range types {
 		out = append(out, map[string]string{
 			"value": ft,
 			"label": strings.ReplaceAll(ft, "_", " "),
 		})
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
@@ -558,7 +572,6 @@ func (h *Handlers) HandleGetFieldTypes(w http.ResponseWriter, r *http.Request) {
 // §80 Reader UX — paginated responses carry the standard sidecar:
 // {data, pagination:{page, limit, total}}.
 func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request) {
-
 	q := r.URL.Query()
 	level := strings.ToLower(q.Get("level"))
 	parentSlug := strings.ToLower(q.Get("parent"))
@@ -573,12 +586,15 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 	// legacy callers pass neither and get the full list. A page request
 	// without an explicit limit uses wiki.destinations_page_limit.
 	paginate := q.Has("page") || q.Has("limit")
+
 	var page, limit int32 = 1, 0
+
 	if v := q.Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = int32(n) // #nosec
 		}
 	}
+
 	if v := q.Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = int32(n) // #nosec
@@ -608,6 +624,7 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 			"total": total,
 		}
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -633,6 +650,7 @@ func (h *Handlers) HandlePageFeedback(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Vote string `json:"vote"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
 		return
@@ -657,6 +675,7 @@ func (h *Handlers) HandlePageFeedback(w http.ResponseWriter, r *http.Request) {
 
 		slog.Error("wiki: feedback failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "feedback_failed", "Failed to record feedback")
+
 		return
 	}
 
@@ -666,7 +685,6 @@ func (h *Handlers) HandlePageFeedback(w http.ResponseWriter, r *http.Request) {
 // HandleGetPage handles GET /wiki/:space_slug/:page_slug — single wiki page
 // with its current approved revision content.
 func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
-
 	spaceSlug := chi.URLParam(r, "space_slug")
 	pageSlug := chi.URLParam(r, "page_slug")
 
@@ -711,7 +729,6 @@ func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
 // HandleGetHistory handles GET /wiki/:space_slug/:page_slug/history —
 // revision history for a wiki page.
 func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
-
 	spaceSlug := chi.URLParam(r, "space_slug")
 	pageSlug := chi.URLParam(r, "page_slug")
 
@@ -726,9 +743,12 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	// and to users holding wiki.review/wiki.manage. Anonymous/other viewers
 	// see the pending row redacted (service-side).
 	var viewerID pgtype.UUID
+
 	canReview := false
+
 	if u := auth.FromContext(r.Context()); u != nil {
 		viewerID = u.UserID
+
 		if h.perms != nil {
 			canReview = h.perms.HasPermission(r.Context(), u.UserID, "wiki.review") ||
 				h.perms.HasPermission(r.Context(), u.UserID, "wiki.manage")
@@ -827,9 +847,12 @@ func (h *Handlers) HandleGetEntityRevisions(w http.ResponseWriter, r *http.Reque
 	// Pending revision bodies are unmoderated — redact them unless the viewer
 	// is the submitter or a reviewer (same rule as page history).
 	var viewerID pgtype.UUID
+
 	canReview := false
+
 	if u := auth.FromContext(r.Context()); u != nil {
 		viewerID = u.UserID
+
 		if h.perms != nil {
 			canReview = h.perms.HasPermission(r.Context(), u.UserID, "wiki.review") ||
 				h.perms.HasPermission(r.Context(), u.UserID, "wiki.manage")
@@ -934,6 +957,7 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 	status := "pending"
 	if autoApproved {
 		status = "approved"
+
 		var pid pgtype.UUID
 		if serr := pid.Scan(pageID); serr == nil {
 			h.indexApprovedContent(r, pid, input.Content)
@@ -1034,6 +1058,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 			default:
 				writeFieldOpsError(w, err)
 			}
+
 			return
 		}
 
@@ -1097,6 +1122,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 	status := "pending"
 	if autoApproved {
 		status = "approved"
+
 		h.indexApprovedContent(r, pageID, input.Content)
 	}
 
@@ -1505,6 +1531,7 @@ func (h *Handlers) HandleDeleteWikiRevision(w http.ResponseWriter, r *http.Reque
 			slog.Error("wiki: delete revision failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete revision")
 		}
+
 		return
 	}
 
@@ -1585,6 +1612,7 @@ func (h *Handlers) HandleDeletePage(w http.ResponseWriter, r *http.Request) {
 			slog.Error("wiki: delete page failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete wiki page")
 		}
+
 		return
 	}
 
@@ -1671,6 +1699,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	// The admin UI's destination autocomplete sends ?dest= with the space UUID
 	// (GeoCountry.id); accept a slug too so the param works for either shape.
 	var destSlug string
+
 	if v := r.URL.Query().Get("dest"); v != "" {
 		var destID pgtype.UUID
 		if err := destID.Scan(v); err == nil && destID.Valid {
@@ -1678,6 +1707,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "conflicting space_id and dest filters")
 				return
 			}
+
 			spaceID = destID
 		} else {
 			destSlug = v

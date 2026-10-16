@@ -283,13 +283,13 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, err := h.Queries.CreateUser(r.Context(), gen.CreateUserParams{
-
 		Email:        req.Email,
 		Username:     req.Username,
 		PasswordHash: &passwordHash,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
+
 		isDuplicate := errors.Is(err, errpkg.ErrDuplicate) || (errors.As(err, &pgErr) && pgErr.Code == "23505")
 		if isDuplicate {
 			// The users table has unique constraints on ( email)
@@ -298,7 +298,9 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusConflict, "username_exists", "Username already in use")
 				return
 			}
+
 			errpkg.WriteError(w, http.StatusConflict, "email_exists", "Email or username already in use")
+
 			return
 		}
 
@@ -320,7 +322,6 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Record the initial password in history so it cannot be reused later.
 	if err := h.Queries.InsertPasswordHistory(r.Context(), gen.InsertPasswordHistoryParams{
-
 		UserID:       userID,
 		PasswordHash: passwordHash,
 	}); err != nil {
@@ -384,7 +385,6 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -515,7 +515,6 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	// Super admins bypass email verification — they are platform operators.
 	if EmailVerifyRequired(r.Context(), h.Settings) && !user.EmailVerifiedAt.Valid {
 		isSuperAdmin, err := h.DB.IsUserInGroup(r.Context(), gen.IsUserInGroupParams{
-
 			UserID:    user.ID,
 			GroupSlug: "super_admin",
 		})
@@ -593,7 +592,6 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-
 		UserID:     user.ID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -636,6 +634,7 @@ const refreshReuseLeeway = 15 * time.Second
 // body instead of the HttpOnly cookie used by the web SPA.
 func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	var refreshToken string
+
 	var stored *RefreshToken
 
 	if isMobileClient(r) {
@@ -655,16 +654,20 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
 			return
 		}
+
 		stored = row
 		if stored.RevokedAt.Valid {
 			if time.Since(stored.RevokedAt.Time) >= refreshReuseLeeway {
 				_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
 					stored.UserID,
 				)
+
 				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
+
 				return
 			}
 		}
+
 		if time.Now().After(stored.ExpiresAt) {
 			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has expired")
 			return
@@ -678,23 +681,28 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		// token across ALL presented values instead of trusting the first.
 		// Ref: §02 (jc_refresh intentionally shared for SSO across apps).
 		var cookies []*http.Cookie
+
 		for _, c := range r.Cookies() {
 			if c.Name == "jc_refresh" && c.Value != "" {
 				cookies = append(cookies, c)
 			}
 		}
+
 		if len(cookies) == 0 {
 			errpkg.WriteError(w, http.StatusUnauthorized, "no_refresh_token", "Refresh token cookie is required")
 			return
 		}
 
 		var theftCandidate *RefreshToken
+
 		var sawExpired bool
+
 		for _, c := range cookies {
 			row, err := h.DB.GetRefreshToken(r.Context(), HashRefreshToken(c.Value))
 			if err != nil || row == nil {
 				continue
 			}
+
 			if row.RevokedAt.Valid {
 				// ANY revoked-beyond-leeway reuse revokes the whole family,
 				// even when a live sibling cookie is also present. A stale
@@ -705,18 +713,23 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 				if time.Since(row.RevokedAt.Time) >= refreshReuseLeeway {
 					slog.Warn("refresh: revoked token reuse detected, revoking session family",
 						"user_id", row.UserID.String())
+
 					_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
 						row.UserID,
 					)
+
 					errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
+
 					return
 				}
 				// Within leeway: rotation race — usable, stays revoked.
 				if stored == nil {
 					refreshToken, stored = c.Value, row
 				}
+
 				continue
 			}
+
 			if time.Now().After(row.ExpiresAt) {
 				sawExpired = true
 				continue
@@ -726,6 +739,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 			// reaching here means no theft signal was present among the
 			// presented values.
 			refreshToken, stored = c.Value, row
+
 			break
 		}
 
@@ -736,17 +750,23 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 				// case the loop above is ever restructured.
 				slog.Warn("refresh: revoked token reuse detected, revoking session family",
 					"user_id", theftCandidate.UserID.String())
+
 				_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
 					theftCandidate.UserID,
 				)
+
 				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
+
 				return
 			}
+
 			if sawExpired {
 				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has expired")
 				return
 			}
+
 			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
+
 			return
 		}
 	}
@@ -818,7 +838,6 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	newExpiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-
 		UserID:     stored.UserID,
 		TokenHash:  newTokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: newExpiresAt, Valid: true},
@@ -872,6 +891,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	}
 
 	var ()
+
 	if err := (error)(nil); err != nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
@@ -950,7 +970,6 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -997,6 +1016,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	}
 
 	var ()
+
 	if err := (error)(nil); err != nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
@@ -1072,7 +1092,6 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -1115,6 +1134,7 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 			if c.Name != "jc_refresh" || c.Value == "" {
 				continue
 			}
+
 			tokenHash := HashRefreshToken(c.Value)
 			if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
 				slog.Error("revoke refresh token", "error", err)
@@ -1273,7 +1293,6 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 
 	expiresAt := time.Now().Add(ResetTokenTTL)
 	if err := h.Queries.CreatePasswordResetToken(r.Context(), gen.CreatePasswordResetTokenParams{
-
 		UserID:    user.ID,
 		TokenHash: hash,
 		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -1472,7 +1491,6 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 
 	// Record the new password in history to prevent reuse.
 	if err := h.Queries.InsertPasswordHistory(r.Context(), gen.InsertPasswordHistoryParams{
-
 		UserID:       rec.UserID,
 		PasswordHash: passwordHash,
 	}); err != nil {
@@ -1629,7 +1647,6 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 
 	expiresAt := time.Now().Add(VerificationTokenTTL)
 	if err := h.Queries.CreateEmailVerification(r.Context(), gen.CreateEmailVerificationParams{
-
 		UserID:    user.ID,
 		Email:     user.Email,
 		TokenHash: hash,

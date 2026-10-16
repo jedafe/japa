@@ -80,12 +80,15 @@ func IntentRuleFor(ctx context.Context, settings StringGetter, intent string) In
 func mergeUnique(a, b []string) []string {
 	seen := make(map[string]bool, len(a)+len(b))
 	out := make([]string, 0, len(a)+len(b))
+
 	for _, s := range append(a, b...) {
 		s = strings.TrimSpace(s)
 		if s == "" || seen[s] {
 			continue
 		}
+
 		seen[s] = true
+
 		out = append(out, s)
 	}
 

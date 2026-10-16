@@ -5,6 +5,7 @@
 package coupons
 
 import (
+	"strconv"
 	"context"
 	"encoding/json"
 	"errors"
@@ -149,14 +150,17 @@ func feedSourceToView(src gen.CouponFeedSource, couponCount *int64) FeedSourceVi
 		CreatedAt:   src.CreatedAt.Time.Format(time.RFC3339),
 		UpdatedAt:   src.UpdatedAt.Time.Format(time.RFC3339),
 	}
+
 	if src.DefaultProviderID.Valid {
 		s := src.DefaultProviderID.String()
 		v.DefaultProviderID = &s
 	}
+
 	if src.LastSyncedAt.Valid {
 		s := src.LastSyncedAt.Time.Format(time.RFC3339)
 		v.LastSyncedAt = &s
 	}
+
 	return v
 }
 
@@ -168,6 +172,7 @@ func (s *Service) ListFeedSources(ctx context.Context) ([]FeedSourceView, error)
 	}
 
 	views := make([]FeedSourceView, 0, len(rows))
+
 	for i := range rows {
 		r := rows[i]
 		count := r.CouponCount
@@ -178,6 +183,7 @@ func (s *Service) ListFeedSources(ctx context.Context) ([]FeedSourceView, error)
 			LastError: r.LastError, Stats: r.Stats, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}, &count))
 	}
+
 	return views, nil
 }
 
@@ -188,8 +194,10 @@ func (s *Service) GetFeedSource(ctx context.Context, id pgtype.UUID) (FeedSource
 		if isNoRows(err) {
 			return FeedSourceView{}, ErrFeedSourceNotFound
 		}
+
 		return FeedSourceView{}, fmt.Errorf("getting feed source: %w", err)
 	}
+
 	return feedSourceToView(src, nil), nil
 }
 
@@ -199,16 +207,19 @@ func (s *Service) CreateFeedSource(ctx context.Context, input FeedSourceInput) (
 	if !validSourceType(input.SourceType) {
 		return FeedSourceView{}, fmt.Errorf("%w: source_type must be couponapi or generic", ErrInvalidFeedSource)
 	}
+
 	if !validFeedURL(input.EndpointURL) {
 		return FeedSourceView{}, fmt.Errorf("%w: endpoint_url must be an http(s) URL", ErrInvalidFeedSource)
 	}
 
 	var encKey *string
+
 	if input.APIKey != nil && *input.APIKey != "" {
 		enc, err := crypto.Encrypt(*input.APIKey)
 		if err != nil {
 			return FeedSourceView{}, fmt.Errorf("encrypting api key: %w", err)
 		}
+
 		encKey = &enc
 	}
 
@@ -223,6 +234,7 @@ func (s *Service) CreateFeedSource(ctx context.Context, input FeedSourceInput) (
 	if err != nil {
 		return FeedSourceView{}, fmt.Errorf("creating feed source: %w", err)
 	}
+
 	return feedSourceToView(src, nil), nil
 }
 
@@ -232,19 +244,23 @@ func (s *Service) UpdateFeedSource(ctx context.Context, id pgtype.UUID, input Fe
 	if _, err := s.GetFeedSource(ctx, id); err != nil {
 		return FeedSourceView{}, err
 	}
+
 	if !validSourceType(input.SourceType) {
 		return FeedSourceView{}, fmt.Errorf("%w: source_type must be couponapi or generic", ErrInvalidFeedSource)
 	}
+
 	if !validFeedURL(input.EndpointURL) {
 		return FeedSourceView{}, fmt.Errorf("%w: endpoint_url must be an http(s) URL", ErrInvalidFeedSource)
 	}
 
 	var encKey *string
+
 	if input.APIKey != nil && *input.APIKey != "" {
 		enc, err := crypto.Encrypt(*input.APIKey)
 		if err != nil {
 			return FeedSourceView{}, fmt.Errorf("encrypting api key: %w", err)
 		}
+
 		encKey = &enc
 	}
 
@@ -260,6 +276,7 @@ func (s *Service) UpdateFeedSource(ctx context.Context, id pgtype.UUID, input Fe
 	if err != nil {
 		return FeedSourceView{}, fmt.Errorf("updating feed source: %w", err)
 	}
+
 	return feedSourceToView(src, nil), nil
 }
 
@@ -269,6 +286,7 @@ func (s *Service) DeleteFeedSource(ctx context.Context, id pgtype.UUID) error {
 	if _, err := s.GetFeedSource(ctx, id); err != nil {
 		return err
 	}
+
 	return s.store.deleteFeedSource(ctx, id)
 }
 
@@ -280,8 +298,10 @@ func (s *Service) EnqueueFeedSync(ctx context.Context, id pgtype.UUID) error {
 		if isNoRows(err) {
 			return ErrFeedSourceNotFound
 		}
+
 		return fmt.Errorf("getting feed source: %w", err)
 	}
+
 	if !src.Enabled {
 		return fmt.Errorf("%w: feed source is disabled", ErrInvalidFeedSource)
 	}
@@ -290,6 +310,7 @@ func (s *Service) EnqueueFeedSync(ctx context.Context, id pgtype.UUID) error {
 	if err := s.enqueuer.Enqueue(worker.TypeCouponImportFeed, payload); err != nil {
 		return fmt.Errorf("enqueueing %s: %w", worker.TypeCouponImportFeed, err)
 	}
+
 	return nil
 }
 
@@ -307,6 +328,7 @@ func (s *Service) SyncEnabledFeeds(ctx context.Context) error {
 			slog.Error("coupon:sync_feeds: enqueue failed", "feed_id", f.ID.String(), "error", err)
 		}
 	}
+
 	return nil
 }
 
@@ -318,8 +340,10 @@ func (s *Service) SyncFeedSource(ctx context.Context, feedID pgtype.UUID) error 
 		if isNoRows(err) {
 			return ErrFeedSourceNotFound
 		}
+
 		return fmt.Errorf("getting feed source: %w", err)
 	}
+
 	if !src.Enabled {
 		slog.Info("coupon:import_feed: source disabled, skipping", "feed_id", feedID.String())
 		return nil
@@ -345,12 +369,15 @@ func (s *Service) SyncFeedSource(ctx context.Context, feedID pgtype.UUID) error 
 	stats, syncErr := s.runFeedSync(ctx, src)
 
 	status := "ok"
+
 	var lastErr *string
+
 	if syncErr != nil {
 		status = "error"
 		msg := syncErr.Error()
 		lastErr = &msg
 	}
+
 	statsJSON, _ := json.Marshal(stats)
 	if uerr := s.store.updateFeedSourceSyncStatus(ctx, gen.UpdateCouponFeedSourceSyncStatusParams{
 		ID: feedID, LastStatus: &status, LastError: lastErr, Stats: statsJSON,
@@ -374,8 +401,9 @@ func (s *Service) runFeedSync(ctx context.Context, src gen.CouponFeedSource) (Fe
 
 	offers, err := decodeFeed(src.SourceType, body)
 	if err != nil {
-		return stats, fmt.Errorf("%w: %v", ErrFeedFetch, err)
+		return stats, fmt.Errorf("%w: %w", ErrFeedFetch, err)
 	}
+
 	stats.Seen = len(offers)
 
 	// seen external IDs — the absence sweep only applies to full-snapshot feeds.
@@ -387,6 +415,7 @@ func (s *Service) runFeedSync(ctx context.Context, src gen.CouponFeedSource) (Fe
 			stats.Skipped++
 			continue
 		}
+
 		seen = append(seen, o.ExternalID)
 
 		inserted, err := s.upsertOffer(ctx, src, o)
@@ -399,17 +428,22 @@ func (s *Service) runFeedSync(ctx context.Context, src gen.CouponFeedSource) (Fe
 				retry.Code = dedupeCode(o.Code, src.ID.String())
 				inserted, err = s.upsertOffer(ctx, src, retry)
 			}
+
 			if err != nil {
 				slog.Warn("coupon:import_feed: upsert failed", "feed_id", src.ID.String(), "external_id", o.ExternalID, "error", err)
+
 				stats.Skipped++
+
 				continue
 			}
 		}
+
 		if inserted {
 			stats.Created++
 		} else {
 			stats.Updated++
 		}
+
 		if strings.EqualFold(o.Status, "suspended") {
 			stats.Suspended++
 		}
@@ -421,6 +455,7 @@ func (s *Service) runFeedSync(ctx context.Context, src gen.CouponFeedSource) (Fe
 		if serr != nil {
 			return stats, fmt.Errorf("absence sweep: %w", serr)
 		}
+
 		stats.Expired = int(expired)
 	}
 
@@ -437,11 +472,13 @@ func (s *Service) runFeedSync(ctx context.Context, src gen.CouponFeedSource) (Fe
 // uses an Authorization bearer header when a key is configured.
 func (s *Service) fetchFeed(ctx context.Context, src gen.CouponFeedSource) ([]byte, error) {
 	var apiKey string
+
 	if src.ApiKeyEncrypted != nil && *src.ApiKeyEncrypted != "" {
 		key, err := crypto.Decrypt(*src.ApiKeyEncrypted)
 		if err != nil {
-			return nil, fmt.Errorf("%w: decrypting api key: %v", ErrFeedFetch, err)
+			return nil, fmt.Errorf("%w: decrypting api key: %w", ErrFeedFetch, err)
 		}
+
 		apiKey = key
 	}
 
@@ -449,16 +486,20 @@ func (s *Service) fetchFeed(ctx context.Context, src gen.CouponFeedSource) ([]by
 	if src.SourceType == FeedSourceCouponAPI {
 		u, err := url.Parse(endpoint)
 		if err != nil {
-			return nil, fmt.Errorf("%w: bad endpoint_url: %v", ErrFeedFetch, err)
+			return nil, fmt.Errorf("%w: bad endpoint_url: %w", ErrFeedFetch, err)
 		}
+
 		q := u.Query()
 		if apiKey != "" {
 			q.Set("API_KEY", apiKey)
 		}
+
 		q.Set("format", "json")
+
 		if src.LastSyncedAt.Valid {
-			q.Set("last_extract", fmt.Sprintf("%d", src.LastSyncedAt.Time.Unix()))
+			q.Set("last_extract", strconv.FormatInt(src.LastSyncedAt.Time.Unix(), 10))
 		}
+
 		u.RawQuery = q.Encode()
 		endpoint = u.String()
 	}
@@ -468,17 +509,19 @@ func (s *Service) fetchFeed(ctx context.Context, src gen.CouponFeedSource) ([]by
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFeedFetch, err)
+		return nil, fmt.Errorf("%w: %w", ErrFeedFetch, err)
 	}
+
 	if src.SourceType == FeedSourceGeneric && apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
+
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "JapaConnect-DealFeed/1.0")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFeedFetch, err)
+		return nil, fmt.Errorf("%w: %w", ErrFeedFetch, err)
 	}
 	defer resp.Body.Close()
 
@@ -488,8 +531,9 @@ func (s *Service) fetchFeed(ctx context.Context, src gen.CouponFeedSource) ([]by
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, feedMaxBody))
 	if err != nil {
-		return nil, fmt.Errorf("%w: reading body: %v", ErrFeedFetch, err)
+		return nil, fmt.Errorf("%w: reading body: %w", ErrFeedFetch, err)
 	}
+
 	return body, nil
 }
 
@@ -501,9 +545,11 @@ func decodeFeed(sourceType string, body []byte) ([]feedOffer, error) {
 			Result bool             `json:"result"`
 			Offers []couponAPIOffer `json:"offers"`
 		}
+
 		if err := json.Unmarshal(body, &res); err != nil {
 			return nil, err
 		}
+
 		out := make([]feedOffer, 0, len(res.Offers))
 		for _, o := range res.Offers {
 			out = append(out, feedOffer{
@@ -513,6 +559,7 @@ func decodeFeed(sourceType string, body []byte) ([]feedOffer, error) {
 				StartDate: o.StartDate, EndDate: o.EndDate, Status: o.Status,
 			})
 		}
+
 		return out, nil
 
 	case FeedSourceGeneric:
@@ -520,18 +567,22 @@ func decodeFeed(sourceType string, body []byte) ([]feedOffer, error) {
 		var wrapped struct {
 			Offers []genericOffer `json:"offers"`
 		}
+
 		var raw []genericOffer
 		if err := json.Unmarshal(body, &wrapped); err == nil && wrapped.Offers != nil {
 			raw = wrapped.Offers
 		} else if err := json.Unmarshal(body, &raw); err != nil {
 			return nil, err
 		}
+
 		out := make([]feedOffer, 0, len(raw))
+
 		for _, o := range raw {
 			id := o.ID
 			if id == "" {
 				id = o.OfferID
 			}
+
 			out = append(out, feedOffer{
 				ExternalID: id, Title: o.Title, Description: o.Description,
 				Code: o.Code, Store: o.Store, MerchantURL: o.MerchantURL,
@@ -539,8 +590,10 @@ func decodeFeed(sourceType string, body []byte) ([]feedOffer, error) {
 				StartDate: o.StartDate, EndDate: o.EndDate, Status: o.Status,
 			})
 		}
+
 		return out, nil
 	}
+
 	return nil, fmt.Errorf("unsupported source_type %q", sourceType)
 }
 
@@ -558,8 +611,10 @@ func (s *Service) upsertOffer(ctx context.Context, src gen.CouponFeedSource, o f
 	} else if !isNoRows(err) {
 		return false, fmt.Errorf("checking existing feed coupon: %w", err)
 	}
+
 	if slug == "" {
 		var err error
+
 		slug, err = s.resolveCouponSlug(ctx, nil, o.Title, pgtype.UUID{})
 		if err != nil {
 			return false, err
@@ -575,6 +630,7 @@ func (s *Service) upsertOffer(ctx context.Context, src gen.CouponFeedSource, o f
 	if strings.EqualFold(o.Status, "suspended") {
 		status = string(CouponStatusSuspended)
 	}
+
 	expiresAt := parseFeedDate(o.EndDate)
 	if expiresAt.Valid && expiresAt.Time.Before(time.Now()) && status == string(CouponStatusActive) {
 		status = string(CouponStatusExpired)
@@ -626,20 +682,23 @@ func (s *Service) resolveOfferProvider(ctx context.Context, src gen.CouponFeedSo
 	if src.DefaultProviderID.Valid {
 		return src.DefaultProviderID, nil
 	}
+
 	if o.Store == "" {
 		return pgtype.UUID{}, nil
 	}
 
 	base := content.Slugify(o.Store)
-	for i := 0; i < maxCouponSlugAttempts; i++ {
+	for i := range maxCouponSlugAttempts {
 		candidate := base
 		if i > 0 {
 			candidate = fmt.Sprintf("%s-%d", base, i+1)
 		}
+
 		id, err := s.store.getProviderIDBySlug(ctx, candidate)
 		if err == nil {
 			return id, nil
 		}
+
 		if !isNoRows(err) {
 			return pgtype.UUID{}, fmt.Errorf("matching provider by slug: %w", err)
 		}
@@ -658,8 +717,10 @@ func (s *Service) resolveOfferProvider(ctx context.Context, src gen.CouponFeedSo
 				// Slug claimed by a concurrent create — retry the next suffix.
 				continue
 			}
+
 			return pgtype.UUID{}, fmt.Errorf("auto-creating provider %q: %w", o.Store, err)
 		}
+
 		return p.ID, nil
 	}
 
@@ -672,11 +733,13 @@ func parseFeedDate(s string) pgtype.Timestamptz {
 	if s == "" {
 		return pgtype.Timestamptz{}
 	}
+
 	for _, layout := range []string{"2006-01-02", time.RFC3339, "2006-01-02T15:04:05"} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return pgtype.Timestamptz{Time: t, Valid: true}
 		}
 	}
+
 	return pgtype.Timestamptz{}
 }
 
@@ -686,10 +749,12 @@ func dedupeCode(code, feedID string) string {
 	if code == "" {
 		return ""
 	}
+
 	suffix := feedID
 	if len(suffix) > 4 {
 		suffix = suffix[:4]
 	}
+
 	return fmt.Sprintf("%s-x%s", code, suffix)
 }
 

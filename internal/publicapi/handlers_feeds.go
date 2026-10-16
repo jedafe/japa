@@ -24,6 +24,7 @@ func parseLimit(r *http.Request, defaultSize, maxSize int32) int32 {
 	if v == "" {
 		v = r.URL.Query().Get("page_size")
 	}
+
 	if v != "" {
 		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
 			if n > int64(maxSize) {
@@ -86,7 +87,9 @@ func (h *Handlers) GetTagFeed(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -120,7 +123,9 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -197,6 +202,7 @@ func (h *Handlers) writeContentMarkdown(w http.ResponseWriter, r *http.Request, 
 	}
 
 	space := ""
+
 	if content.SpaceID.Valid {
 		if s, err := h.Queries.GetSpaceByID(r.Context(), content.SpaceID); err == nil {
 			space = s.Slug
@@ -279,7 +285,9 @@ func (h *Handlers) GetScamAlert(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -298,10 +306,12 @@ func (h *Handlers) SemanticSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
+
 	lang := strings.TrimSpace(q.Get("lang"))
 	if lang == "" {
 		lang = "en"
 	}
+
 	limit := parseLimit(r, defaultPageSize, 50)
 
 	keyCtx := APIKeyFromContext(r.Context())
@@ -313,7 +323,9 @@ func (h *Handlers) SemanticSearch(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 

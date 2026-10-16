@@ -64,7 +64,6 @@ func (s *Service) EvaluateBadges(ctx context.Context, userID pgtype.UUID, activi
 
 			// Award the badge (awarded_by = NULL = system).
 			ub, err := s.store.AwardBadge(ctx, gen.AwardBadgeParams{
-
 				UserID:  userID,
 				BadgeID: b.ID,
 			})
@@ -125,7 +124,6 @@ func (s *Service) incrementChallengeProgress(ctx context.Context, userID pgtype.
 		wasCompleted := priorErr == nil && prior.Completed
 
 		progress, err := s.store.UpsertChallengeProgress(ctx, gen.UpsertChallengeProgressParams{
-
 			UserID:       userID,
 			ChallengeID:  c.ID,
 			CurrentCount: 1,
@@ -174,6 +172,7 @@ func (s *Service) grantChallengeReward(ctx context.Context, userID pgtype.UUID, 
 	if c.RewardBadgeID.Valid {
 		// Skip when the user already holds the reward badge.
 		_, err := s.store.GetUserBadge(ctx, userID, c.RewardBadgeID)
+
 		switch {
 		case err == nil:
 			// already held
@@ -181,7 +180,6 @@ func (s *Service) grantChallengeReward(ctx context.Context, userID pgtype.UUID, 
 			slog.Warn("gamification: check reward badge", "error", err)
 		default:
 			if _, err := s.store.AwardBadge(ctx, gen.AwardBadgeParams{
-
 				UserID:  userID,
 				BadgeID: c.RewardBadgeID,
 			}); err != nil {
@@ -257,7 +255,6 @@ func (s *Service) EvaluatePointsBadges(ctx context.Context, userID pgtype.UUID, 
 		}
 
 		ub, err := s.store.AwardBadge(ctx, gen.AwardBadgeParams{
-
 			UserID:  userID,
 			BadgeID: b.ID,
 		})

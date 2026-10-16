@@ -129,6 +129,7 @@ func sanitizeRichTextValue(s string) string {
 	if wikiRichTextSanitizer == nil {
 		return s
 	}
+
 	return wikiRichTextSanitizer(s)
 }
 
@@ -170,9 +171,11 @@ func (s *Service) isSuperAdmin(ctx context.Context, userID pgtype.UUID) bool {
 	if !userID.Valid {
 		return false
 	}
+
 	if c, ok := s.perms.(superAdminChecker); ok {
 		return c.IsSuperAdmin(ctx, userID)
 	}
+
 	return false
 }
 
@@ -388,6 +391,7 @@ func (s *Service) persistFieldOps(ctx context.Context, userID, pageID pgtype.UUI
 		lockKey := valkey.MustKey("wiki_edit_lock::%s:%s", pageID.String(), userID.String())
 
 		acquired, lerr := s.vk.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
+
 		switch {
 		case lerr != nil:
 			// Fail open — degrade gracefully if Valkey is unreachable.
@@ -494,6 +498,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	}
 
 	var spaceTypeID pgtype.UUID
+
 	var spaceTypeSlug string
 
 	if isSpaceBackedEntityType(entityType) {
@@ -512,6 +517,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	// entity only (§06). Groups are deduped by id — the same group may be
 	// assigned under more than one class token.
 	var assignments []gen.CustomFieldGroupAssignment
+
 	seenGroups := make(map[string]bool)
 
 	for _, class := range entityClasses {
@@ -524,10 +530,13 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 			if a.EntityID.Valid && a.EntityID != entityID {
 				continue
 			}
+
 			if seenGroups[a.GroupID.String()] {
 				continue
 			}
+
 			seenGroups[a.GroupID.String()] = true
+
 			assignments = append(assignments, a)
 		}
 	}
@@ -553,6 +562,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	// empty sets, keeping every field non-visible/non-editable rather than
 	// leaking values on a public route.
 	var editableSet map[string]bool
+
 	visibleSet := s.visibleFieldIDs(ctx, userID, canManage)
 
 	if !canManage && userID.Valid {
@@ -595,6 +605,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 			if !f.ShowInFrontend {
 				continue
 			}
+
 			dto := EntityFieldDTO{
 				ID:        f.ID.String(),
 				Key:       f.Key,
@@ -661,6 +672,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	if len(entityClasses) > 0 {
 		dto.EntityClass = entityClasses[0]
 	}
+
 	dto.EntityCurrencyCode = entityCurrency
 	dto.EntityCurrencyFx = s.currencyFx(ctx, entityCurrency)
 
@@ -675,19 +687,24 @@ func (s *Service) applySpaceCurrencyDefaults(ctx context.Context, dtos []EntityF
 	if currencyCode == "" {
 		return
 	}
+
 	name := ""
 	resolved := false
+
 	for i := range dtos {
 		dto := &dtos[i]
 		if dto.FieldType != "text" || dto.Value != nil || !dto.Visible {
 			continue
 		}
+
 		if customfields.DefaultSourceFromOptions(dto.Options) != "space_currency" {
 			continue
 		}
+
 		if !resolved {
 			name, resolved = s.store.CurrencyDisplayName(ctx, currencyCode), true
 		}
+
 		if name != "" {
 			v, _ := json.Marshal(name)
 			dto.Value = v
@@ -707,6 +724,7 @@ func (s *Service) resolveEntityCurrencyCode(ctx context.Context, entityType stri
 		if s.entityResolver == nil {
 			return ""
 		}
+
 		item, err := s.entityResolver.Resolve(ctx, map[string]any{
 			"type": entityType,
 			"id":   entityID.String(),
@@ -714,10 +732,12 @@ func (s *Service) resolveEntityCurrencyCode(ctx context.Context, entityType stri
 		if err != nil {
 			return ""
 		}
+
 		raw, ok := item.Metadata["geo_space_id"].(string)
 		if !ok || raw == "" {
 			return ""
 		}
+
 		if err := spaceID.Scan(raw); err != nil || !spaceID.Valid {
 			return ""
 		}
@@ -729,6 +749,7 @@ func (s *Service) resolveEntityCurrencyCode(ctx context.Context, entityType stri
 			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
 		return ""
 	}
+
 	return code
 }
 
@@ -816,12 +837,14 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 	}
 
 	dtos := make([]EntityFieldDTO, 0, len(fields))
+
 	for _, f := range fields {
 		// show_in_frontend gates display for every caller — the manage
 		// bypass is edit-only (CanEdit), never a display bypass.
 		if !f.ShowInFrontend {
 			continue
 		}
+
 		dto := EntityFieldDTO{
 			ID:        f.ID.String(),
 			Key:       f.Key,
@@ -885,6 +908,7 @@ func fieldSections(fields []EntityFieldDTO) []EntityFieldSectionDTO {
 		if _, ok := byKey[f.Section]; !ok {
 			order = append(order, f.Section)
 		}
+
 		byKey[f.Section] = append(byKey[f.Section], f)
 	}
 
@@ -895,6 +919,7 @@ func fieldSections(fields []EntityFieldDTO) []EntityFieldSectionDTO {
 			if k == "" {
 				copy(order[1:i+1], order[:i])
 				order[0] = ""
+
 				break
 			}
 		}
@@ -950,6 +975,7 @@ func (s *Service) GetPageEntityTarget(ctx context.Context, userID pgtype.UUID, s
 		if errors.Is(err, pgx.ErrNoRows) {
 			page, err = s.materializeLazyPage(ctx, resolvedSpaceID, spaceSlug, spaceName, userID, pageSlug)
 		}
+
 		if err != nil {
 			return pgtype.UUID{}, pgtype.UUID{}, false, err
 		}
@@ -1018,13 +1044,15 @@ func (s *Service) ListEntityRevisions(ctx context.Context, viewerID pgtype.UUID,
 	}
 
 	dtos := make([]WikiRevisionDTO, 0, len(revs))
+
 	for _, r := range revs {
 		dto := revisionToDTO(r)
-		if r.Status == "pending" && !canReview && !(viewerID.Valid && r.SubmittedBy == viewerID) {
+		if r.Status == "pending" && !canReview && (!viewerID.Valid || r.SubmittedBy != viewerID) {
 			dto.Content = nil
 			dto.Ops = nil
 			dto.Summary = ""
 		}
+
 		dtos = append(dtos, dto)
 	}
 
@@ -1096,6 +1124,7 @@ func (s *Service) approveOpsRevision(ctx context.Context, revID, reviewerID pgty
 	if rev.TargetEntityType != nil {
 		targetType = *rev.TargetEntityType
 	}
+
 	if rev.TargetEntityID.Valid {
 		targetID = rev.TargetEntityID
 	}
@@ -1172,6 +1201,7 @@ func (s *Service) propagateFields(ctx context.Context, rev WikiRevision, ops []F
 		case OpSetValue, OpUpsertField, OpProposeField, OpProposeGroup, OpAssignGroup, OpDeleteField:
 			affectsValues = true
 		}
+
 		if affectsValues {
 			break
 		}
@@ -1330,6 +1360,7 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 			if op.Field != nil && op.Field.Key != "" {
 				proposed[op.Field.Key] = true
 			}
+
 			continue
 		case OpProposeGroup:
 			if op.Group != nil {
@@ -1339,6 +1370,7 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 					}
 				}
 			}
+
 			continue
 		case OpSetValue:
 		default:
@@ -1450,6 +1482,7 @@ func (s *Service) checkSchemaOpTargets(ctx context.Context, ops []FieldOp) error
 					if pending[op.Field.Key] {
 						return fmt.Errorf("wiki: submit fields: ops[%d] field %q is already proposed for group %q", i, op.Field.Key, op.GroupSlug)
 					}
+
 					pending[op.Field.Key] = true
 				}
 
@@ -1515,6 +1548,7 @@ func (s *Service) checkSchemaOpTargets(ctx context.Context, ops []FieldOp) error
 			}
 
 			var target *gen.ListCustomFieldsByGroupRow
+
 			for j := range fields {
 				if fields[j].Key == op.FieldKey {
 					target = &fields[j]
@@ -1636,6 +1670,7 @@ func isChoiceShape(raw json.RawMessage) bool {
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return false
 	}
+
 	switch t := probe.(type) {
 	case string:
 		return true
@@ -1644,6 +1679,7 @@ func isChoiceShape(raw json.RawMessage) bool {
 	case map[string]any:
 		_, hasValue := t["value"]
 		_, hasValues := t["values"]
+
 		return hasValue || hasValues
 	default:
 		return false
@@ -1690,9 +1726,11 @@ func entityClassesFor(entityType string, spaceTypeID pgtype.UUID, spaceTypeSlug 
 		if spaceTypeSlug != "" {
 			classes = append(classes, "space_type:"+spaceTypeSlug)
 		}
+
 		if spaceTypeID.Valid {
 			classes = append(classes, "space_type:"+spaceTypeID.String())
 		}
+
 		return append(classes, "space_type")
 	case entityType == "organization" || entityType == "bank":
 		return []string{"organization"}
@@ -1747,21 +1785,25 @@ func (s *Service) entityFieldValueJSON(ctx context.Context, v gen.ListCustomFiel
 	}
 
 	byID := make(map[pgtype.UUID]*gen.Medium, len(rows))
+
 	for i := range rows {
 		m := rows[i]
 		byID[m.ID] = &m
 	}
 
 	items := make([]mediaFieldItem, 0, len(ids))
+
 	for _, id := range ids {
 		m := byID[id]
 		if m == nil {
 			continue
 		}
+
 		alt := alts[id.String()]
 		if alt == "" && m.AltText != nil {
 			alt = *m.AltText
 		}
+
 		items = append(items, mediaFieldItem{
 			ID:  id.String(),
 			URL: s.media.GetMediaURL(m, media.ImageProxyOpts{Width: 960, Format: "webp"}),
@@ -1770,14 +1812,17 @@ func (s *Service) entityFieldValueJSON(ctx context.Context, v gen.ListCustomFiel
 	}
 
 	var raw []byte
+
 	if v.FieldType == customfields.FieldTypeImageSingle {
 		if len(items) == 0 {
 			return nil
 		}
+
 		raw, err = json.Marshal(items[0])
 	} else {
 		raw, err = json.Marshal(items)
 	}
+
 	if err != nil {
 		return cfvValueJSON(v)
 	}
@@ -1796,6 +1841,7 @@ func (s *Service) entityFieldValueJSON(ctx context.Context, v gen.ListCustomFiel
 //	[{"id": "<uuid>", "alt": "…"}, …] — object array (alt carried through)
 func parseMediaFieldRefs(raw []byte) ([]pgtype.UUID, map[string]string) {
 	alts := map[string]string{}
+
 	var ids []pgtype.UUID
 
 	addID := func(s string) {
@@ -1807,6 +1853,7 @@ func parseMediaFieldRefs(raw []byte) ([]pgtype.UUID, map[string]string) {
 	addObj := func(m map[string]any) {
 		s, _ := m["id"].(string)
 		addID(s)
+
 		if alt, _ := m["alt"].(string); alt != "" && s != "" {
 			alts[s] = alt
 		}
@@ -1897,6 +1944,7 @@ func cfvValueJSON(v gen.ListCustomFieldValuesWithDefsByEntityRow) json.RawMessag
 					return unwrapped
 				}
 			}
+
 			return json.RawMessage(v.ValueJson)
 		}
 	}
@@ -1930,13 +1978,16 @@ func choiceValueJSON(raw []byte, multi bool) json.RawMessage {
 
 	stringSlice := func(arr []any) ([]string, bool) {
 		out := make([]string, 0, len(arr))
+
 		for _, el := range arr {
 			s, ok := el.(string)
 			if !ok {
 				return nil, false
 			}
+
 			out = append(out, s)
 		}
+
 		return out, true
 	}
 
@@ -1955,6 +2006,7 @@ func choiceValueJSON(raw []byte, multi bool) json.RawMessage {
 				}
 			}
 		}
+
 		return nil
 	}
 
@@ -1964,6 +2016,7 @@ func choiceValueJSON(raw []byte, multi bool) json.RawMessage {
 		ss = []string{t}
 	case []any:
 		var ok bool
+
 		ss, ok = stringSlice(t)
 		if !ok {
 			return nil
@@ -1971,6 +2024,7 @@ func choiceValueJSON(raw []byte, multi bool) json.RawMessage {
 	default:
 		return nil
 	}
+
 	if out, err := json.Marshal(ss); err == nil {
 		return out
 	}
@@ -2011,6 +2065,7 @@ func (s *Service) entitySchema(ctx context.Context, entityType string, entityID 
 	}
 
 	var spaceTypeID pgtype.UUID
+
 	var spaceTypeSlug string
 
 	if isSpaceBackedEntityType(entityType) && s.store != nil {
@@ -2040,6 +2095,7 @@ func (s *Service) entitySchemaTx(ctx context.Context, tx pgx.Tx, entityType stri
 	q := gen.New(tx)
 
 	var spaceTypeID pgtype.UUID
+
 	var spaceTypeSlug string
 
 	if isSpaceBackedEntityType(entityType) {
@@ -2064,7 +2120,7 @@ func (s *Service) entitySchemaTx(ctx context.Context, tx pgx.Tx, entityType stri
 // an unrelated group and would check permissions on, or write values to,
 // the wrong row. When a key exists in two assigned groups the first (in
 // assignment order) wins — matching what GetEntityFields displays.
-func entitySchemaFields(ctx context.Context, f schemaFieldReader, entityType string, entityID pgtype.UUID, spaceTypeID pgtype.UUID, spaceTypeSlug string) (map[string]schemaField, error) {
+func entitySchemaFields(ctx context.Context, f schemaFieldReader, entityType string, entityID, spaceTypeID pgtype.UUID, spaceTypeSlug string) (map[string]schemaField, error) {
 	seenGroups := make(map[string]bool)
 	out := make(map[string]schemaField)
 
@@ -2078,9 +2134,11 @@ func entitySchemaFields(ctx context.Context, f schemaFieldReader, entityType str
 			if a.EntityID.Valid && a.EntityID != entityID {
 				continue
 			}
+
 			if seenGroups[a.GroupID.String()] {
 				continue
 			}
+
 			seenGroups[a.GroupID.String()] = true
 
 			fields, err := f.ListFieldsByGroup(ctx, a.GroupID)

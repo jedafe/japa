@@ -82,7 +82,7 @@ func seedOpsFixture(t *testing.T, ctx context.Context, database *db.DB) opsFixtu
 	t.Cleanup(func() {
 		// t.Context() is canceled before cleanups run — use a fresh context
 		// so these deletes actually execute.
-		cctx := context.Background()
+		cctx := t.Context()
 		database.Writer.Exec(cctx, `DELETE FROM wiki_revisions WHERE submitted_by = $1 OR target_entity_id = $2`, fx.userID, fx.target)
 		database.Writer.Exec(cctx, `DELETE FROM wiki_pages WHERE id = $1`, fx.pageID)
 		database.Writer.Exec(cctx, `DELETE FROM spaces WHERE id = $1`, fx.spaceID)
@@ -129,8 +129,9 @@ func TestCreatePage_SoftDeletedSlugReusable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create first page: %v", err)
 	}
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_pages WHERE space_id = $1 AND slug = $2`, fx.spaceID, slug)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_pages WHERE space_id = $1 AND slug = $2`, fx.spaceID, slug)
 	})
 
 	// A second live page with the same slug still conflicts.
@@ -147,6 +148,7 @@ func TestCreatePage_SoftDeletedSlugReusable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recreate after soft delete: %v", err)
 	}
+
 	if newID == pageID {
 		t.Fatal("recreate returned the deleted page id")
 	}
@@ -160,9 +162,10 @@ func TestCreatePage_SoftDeletedSlugReusable(t *testing.T) {
 	spaceTypeID := mustIDF(t, ctx, database, `SELECT id FROM space_types LIMIT 1`)
 	otherSpace := mustIDF(t, ctx, database, `INSERT INTO spaces (id,space_type_id,name,slug,level,visibility,status,created_at,updated_at)
 		VALUES (gen_random_uuid(),$1,'wop_'||gen_random_uuid()::text,'wop-'||replace(gen_random_uuid()::text,'-',''),'custom','public','active',now(),now()) RETURNING id`, spaceTypeID)
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_pages WHERE space_id = $1`, otherSpace)
-		database.Writer.Exec(context.Background(), `DELETE FROM spaces WHERE id = $1`, otherSpace)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_pages WHERE space_id = $1`, otherSpace)
+		database.Writer.Exec(t.Context(), `DELETE FROM spaces WHERE id = $1`, otherSpace)
 	})
 
 	if _, err := store.CreatePage(ctx, otherSpace, fx.userID, slug, "Other Space", "overview"); err != nil {
@@ -269,6 +272,7 @@ func TestAdminListRevisions_KindFilter(t *testing.T) {
 	}
 
 	targetType := "university"
+
 	fieldsRevID, err := store.SubmitRevision(ctx, pgtype.UUID{}, fx.userID, "fields",
 		nil, []byte(`[{"op":"set_value","entity_type":"university","entity_id":"`+fx.target.String()+`","field_key":"tuition_fee","value":13000}]`),
 		"fields edit", &targetType, fx.target)
@@ -464,6 +468,7 @@ func TestDeleteWikiRevision_SoftAndHard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRevisions: %v", err)
 	}
+
 	if total != 0 || len(revs) != 0 {
 		t.Fatalf("deleted revision leaked into page history: total=%d", total)
 	}
@@ -472,6 +477,7 @@ func TestDeleteWikiRevision_SoftAndHard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AdminListRevisions: %v", err)
 	}
+
 	for _, r := range revsAdmin {
 		if r.ID == revID {
 			t.Fatal("deleted revision leaked into default admin queue")
@@ -483,12 +489,15 @@ func TestDeleteWikiRevision_SoftAndHard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AdminListRevisions deleted=only: %v", err)
 	}
+
 	var found *WikiRevision
+
 	for i := range revsAdmin {
 		if revsAdmin[i].ID == revID {
 			found = &revsAdmin[i]
 		}
 	}
+
 	if found == nil || !found.DeletedAt.Valid {
 		t.Fatalf("deleted=only missing the revision or DeletedAt unset: total=%d found=%v", total, found != nil)
 	}
@@ -503,17 +512,20 @@ func TestDeleteWikiRevision_SoftAndHard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resubmit after delete: %v", err)
 	}
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_revisions WHERE id = $1`, rev2)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_revisions WHERE id = $1`, rev2)
 	})
 
 	// Hard delete removes the row for good.
 	if err := store.HardDeleteWikiRevision(ctx, revID); err != nil {
 		t.Fatalf("HardDeleteWikiRevision: %v", err)
 	}
+
 	if _, err := store.GetRevision(ctx, revID); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("hard-deleted revision still readable: %v", err)
 	}
+
 	if err := store.HardDeleteWikiRevision(ctx, revID); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("hard delete of gone row: got %v want pgx.ErrNoRows", err)
 	}

@@ -165,6 +165,7 @@ func (s *Service) boolSetting(ctx context.Context, key string, fallback bool) bo
 	if br, ok := s.settingsReader.(boolSettingGetter); ok {
 		return br.GetBoolOr(ctx, key, fallback)
 	}
+
 	return fallback
 }
 
@@ -220,6 +221,7 @@ func (s *Service) TagFeed(ctx context.Context, tagSlug, cursor string, limit int
 	}
 
 	var cursorCreatedAt pgtype.Timestamptz
+
 	var cursorID pgtype.UUID
 
 	if cursor != "" {
@@ -255,6 +257,7 @@ func (s *Service) TagFeed(ctx context.Context, tagSlug, cursor string, limit int
 	}
 
 	nextCursor := ""
+
 	if int32(len(rows)) == limit && len(rows) > 0 {
 		last := rows[len(rows)-1]
 		nextCursor = encodeTagFeedCursor(last.CreatedAt, last.ID)
@@ -315,6 +318,7 @@ func (s *Service) ListScamAlerts(ctx context.Context, destSpaceID pgtype.UUID, s
 	if limit <= 0 {
 		limit = defaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -390,14 +394,17 @@ func (s *Service) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, quer
 	}
 
 	var geoSpaceID *pgtype.UUID
+
 	if spaceSlug != "" {
 		if s.moat == nil || s.moat.Spaces == nil {
 			return nil, ErrReaderUnconfigured
 		}
+
 		space, err := s.moat.Spaces.GetPublicSpaceBySlug(ctx, spaceSlug)
 		if err != nil {
 			return nil, err // pgx.ErrNoRows → 404 via HandleServiceError
 		}
+
 		geoSpaceID = &space.ID
 	}
 
@@ -411,6 +418,7 @@ func (s *Service) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, quer
 			if json.Unmarshal(raw, &cached) == nil {
 				cached.Cached = true
 				sliceSemanticHits(&cached, limit)
+
 				return &cached, nil
 			}
 		}
@@ -444,12 +452,14 @@ func (s *Service) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, quer
 		if s.settingsReader != nil {
 			ttl = s.settingsReader.GetIntOr(ctx, "api.semantic_search.cache_ttl_seconds", 300)
 		}
+
 		if raw, err := json.Marshal(result); err == nil {
 			_ = s.cache.Set(ctx, cacheKey, raw, time.Duration(ttl)*time.Second).Err()
 		}
 	}
 
 	sliceSemanticHits(result, limit)
+
 	return result, nil
 }
 
@@ -480,33 +490,39 @@ func (s *Service) semanticHit(ctx context.Context, c rag.RetrievedChunk) (Public
 		if s.queries == nil {
 			return hit, false
 		}
+
 		var entityID pgtype.UUID
 		if err := entityID.Scan(c.EntityID); err != nil {
 			return hit, false
 		}
-		if c.EntityType == "space" {
+		switch c.EntityType {
+
+		case "space":
 			space, err := s.queries.GetSpaceByID(ctx, entityID)
 			if err != nil || space.Status != "active" {
 				return hit, false
 			}
+
 			title := space.Name
 			hit.Title = &title
 			href := "/space/" + space.Slug
 			hit.Href = &href
-		} else if c.EntityType == "forum_thread" {
+		case "forum_thread":
 			thread, err := s.queries.GetForumThreadByID(ctx, entityID)
 			if err != nil {
 				return hit, false
 			}
+
 			title := thread.Title
 			hit.Title = &title
 			href := "/forum/" + thread.Slug
 			hit.Href = &href
-		} else {
+		default:
 			row, err := s.queries.GetContentByID(ctx, entityID)
 			if err != nil || row.Status != "published" {
 				return hit, false
 			}
+
 			title := row.Title
 			hit.Title = &title
 			href := "/content/" + row.Slug
@@ -536,6 +552,7 @@ func mapFeedItems(items []feed.FeedItem) []PublicFeedItem {
 	for _, it := range items {
 		out = append(out, feedItemToPublic(it))
 	}
+
 	return out
 }
 
@@ -559,6 +576,7 @@ func feedItemToPublic(it feed.FeedItem) PublicFeedItem {
 	if it.SpaceID != nil {
 		p.SpaceID = *it.SpaceID
 	}
+
 	return p
 }
 
@@ -581,12 +599,14 @@ func tagRowToFeedItem(r gen.ListContentByTagRow) PublicFeedItem {
 	if r.SpaceID.Valid {
 		p.SpaceID = r.SpaceID.String()
 	}
+
 	switch {
 	case r.PublishedAt.Valid:
 		p.PublishedAt = r.PublishedAt.Time.Format(time.RFC3339)
 	case r.CreatedAt.Valid:
 		p.PublishedAt = r.CreatedAt.Time.Format(time.RFC3339)
 	}
+
 	return p
 }
 
@@ -619,6 +639,7 @@ func splitTagList(v any) []string {
 	if !ok || s == "" {
 		return nil
 	}
+
 	return strings.Split(s, ",")
 }
 

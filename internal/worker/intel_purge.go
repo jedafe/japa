@@ -28,6 +28,7 @@ func HandleIntelPruneRejectedRecords(ctx context.Context, t *asynq.Task) error {
 	if appSettings != nil {
 		days = appSettings.GetIntOr(ctx, "intel.rejected_retention_days", 7)
 	}
+
 	if days <= 0 {
 		slog.Info("task:intel:prune_rejected_records: retention disabled (retention_days <= 0), skipping")
 		return nil

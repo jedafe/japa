@@ -253,7 +253,6 @@ func (s *Service) AwardPoints(ctx context.Context, userID pgtype.UUID, points in
 	}
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     userID,
 		LedgerType: LedgerTypePoints,
 	})
@@ -271,7 +270,6 @@ func (s *Service) AwardPoints(ctx context.Context, userID pgtype.UUID, points in
 	idempotencyKey := fmt.Sprintf("gamification_award:%s:%s", userID.String(), reason)
 
 	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           userID,
 		LedgerType:       LedgerTypePoints,
 		Operation:        OperationEarn,

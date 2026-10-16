@@ -73,12 +73,15 @@ func TestCOLCityGetHandler_ByID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success: %s", tr.Status, tr.Content)
 	}
+
 	if !strings.Contains(tr.Content, `"550"`) && !strings.Contains(tr.Content, `550`) {
 		t.Fatalf("expected cfv overlay to override intel_cost_data, got %s", tr.Content)
 	}
+
 	if !strings.Contains(tr.Content, "Rent (1BR)") {
 		t.Fatalf("expected dimension matrix in result, got %s", tr.Content)
 	}
@@ -96,6 +99,7 @@ func TestCOLCityGetHandler_ByGeoSpace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess || !strings.Contains(tr.Content, "Accra") {
 		t.Fatalf("status = %q, want success with Accra: %s", tr.Status, tr.Content)
 	}

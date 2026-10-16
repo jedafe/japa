@@ -7,8 +7,8 @@
 package content
 
 import (
+	"strconv"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -22,7 +22,6 @@ import (
 
 // GetPost handles GET /api/v1/post/{content_type}/{slug}.
 func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
-
 	contentType := chi.URLParam(r, "content_type")
 	if contentType == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_content_type", "Content type is required")
@@ -85,6 +84,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 
 	// GDPR / ADR-029: redact mentions of erased users in body_html.
 	var erasedIDs []string
+
 	if h.mentionCheckers != nil {
 		redactedHTML, ids, redErr := mentions.RedactErasedMentionsInBody(
 			r.Context(),
@@ -177,16 +177,20 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		if content.SeriesTitle != nil {
 			dto["series_title"] = *content.SeriesTitle
 		}
+
 		if content.SeriesSlug != nil {
 			dto["series_slug"] = *content.SeriesSlug
 		}
+
 		if content.SeriesPart != nil {
 			dto["series_part"] = *content.SeriesPart
 		}
+
 		dto["series_total"] = content.SeriesTotal
 		if content.SeriesPrevSlug != "" {
 			dto["series_prev_slug"] = content.SeriesPrevSlug
 		}
+
 		if content.SeriesNextSlug != "" {
 			dto["series_next_slug"] = content.SeriesNextSlug
 		}
@@ -236,6 +240,7 @@ func postContentJSONLDFields(c gen.GetContentDetailBySlugAndTypeRow) map[string]
 	if c.FeaturedStorageBucket != nil && c.FeaturedStoragePath != nil {
 		coverImageURL = media.MediaURL(*c.FeaturedStorageBucket, *c.FeaturedStoragePath, media.ImageProxyOpts{})
 	}
+
 	if coverImageURL == "" && c.VideoThumbnailUrl != nil && *c.VideoThumbnailUrl != "" {
 		coverImageURL = *c.VideoThumbnailUrl
 	}
@@ -247,7 +252,7 @@ func postContentJSONLDFields(c gen.GetContentDetailBySlugAndTypeRow) map[string]
 
 	duration := ""
 	if c.VideoDurationSecs != nil {
-		duration = fmt.Sprintf("%d", *c.VideoDurationSecs)
+		duration = strconv.Itoa(int(*c.VideoDurationSecs))
 	}
 
 	sourceType := ""

@@ -60,6 +60,7 @@ func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, erro
 	if err != nil {
 		return 0, err
 	}
+
 	return int(n), nil
 }
 
@@ -111,6 +112,7 @@ func (a *GamificationAdapter) ExpireChallenges(ctx context.Context) (int, error)
 	if err != nil {
 		return 0, err
 	}
+
 	return int(n), nil
 }
 
@@ -399,6 +401,7 @@ func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
 // downsampling). Ref: ADR-075 §7, Rule 3 (no hardcoded config).
 func (a *RemittanceAdapter) PruneOldRates(ctx context.Context) (int, error) {
 	retentionDays := a.svc.HistoryRetentionDays(ctx)
+
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
 	if err := a.svc.PruneOldRates(ctx, cutoff); err != nil {
 		slog.Warn("task:remittance:prune_old_rates: sweep failed", "error", err)
@@ -484,6 +487,7 @@ func (a *ReferralAdapter) ReviewFlaggedSweep(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	return int(total), nil // #nosec G115 — flagged counts are small
 }
 

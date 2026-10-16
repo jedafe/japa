@@ -188,7 +188,6 @@ func dataSourceInputFromBody(body dataSourceCreateBody) (DataSourceInput, error)
 
 // HandleListDataSources handles GET /api/v1/jce/data-sources.
 func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request) {
-
 	q := r.URL.Query()
 	entityType := q.Get("entity_type")
 
@@ -232,7 +231,6 @@ func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request)
 
 // HandleCreateDataSource handles POST /api/v1/jce/data-sources.
 func (h *Handlers) HandleCreateDataSource(w http.ResponseWriter, r *http.Request) {
-
 	var body dataSourceCreateBody
 	if !decodeBody(w, r, &body) {
 		return
@@ -260,7 +258,6 @@ func (h *Handlers) HandleCreateDataSource(w http.ResponseWriter, r *http.Request
 
 // HandleGetDataSource handles GET /api/v1/jce/data-sources/{id}.
 func (h *Handlers) HandleGetDataSource(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -278,7 +275,6 @@ func (h *Handlers) HandleGetDataSource(w http.ResponseWriter, r *http.Request) {
 
 // HandleUpdateDataSource handles PATCH /api/v1/jce/data-sources/{id}.
 func (h *Handlers) HandleUpdateDataSource(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -312,7 +308,6 @@ func (h *Handlers) HandleUpdateDataSource(w http.ResponseWriter, r *http.Request
 
 // HandleDeleteDataSource handles DELETE /api/v1/jce/data-sources/{id}.
 func (h *Handlers) HandleDeleteDataSource(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
@@ -333,6 +328,7 @@ func (h *Handlers) HandleGetFreshness(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	userID := user.UserID
 
 	contentID, err := parseUUIDParam(r, "id")
@@ -356,6 +352,7 @@ func (h *Handlers) HandleRefreshComparison(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+
 	userID := user.UserID
 
 	contentID, err := parseUUIDParam(r, "id")

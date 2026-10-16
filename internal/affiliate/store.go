@@ -55,7 +55,6 @@ func (s *Store) lookupUsername(ctx context.Context, userID pgtype.UUID) (*string
 
 func (s *Store) listMembers(ctx context.Context, status string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
 	return s.read.ListAffiliateMembers(ctx, gen.ListAffiliateMembersParams{
-
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -99,7 +98,6 @@ func (s *Store) listLinksByUser(ctx context.Context, userID pgtype.UUID, isActiv
 
 func (s *Store) listAllLinks(ctx context.Context, limit, offset int32) ([]gen.UserAffiliateLink, error) {
 	return s.read.ListAllAffiliateLinks(ctx, gen.ListAllAffiliateLinksParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

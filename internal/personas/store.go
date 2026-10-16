@@ -50,7 +50,6 @@ func (s *Store) DB() *db.DB { return s.db }
 // profile and config creation in a single tx.
 func (s *Store) CreatePersonaUser(ctx context.Context, q *gen.Queries, email, username string) (gen.User, error) {
 	row, err := q.CreatePersonaUser(ctx, gen.CreatePersonaUserParams{
-
 		Email:    email,
 		Username: username,
 	})
@@ -89,7 +88,6 @@ func (s *Store) GetAIPersonaByID(ctx context.Context, id pgtype.UUID) (gen.GetAI
 // empty q matches all rows; sort/dir default to created_at DESC.
 func (s *Store) ListAIPersonas(ctx context.Context, status, q, sort, dir string, limit, offset int32) ([]gen.ListAIPersonasRow, error) {
 	return s.read.ListAIPersonas(ctx, gen.ListAIPersonasParams{
-
 		Status:     status,
 		Q:          q,
 		Sort:       sort,
@@ -135,7 +133,6 @@ func (s *Store) GetAIPersonaByUserID(ctx context.Context, userID pgtype.UUID) (g
 // backing user (is_synthetic = true only).
 func (s *Store) ListPersonaActivity(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListPersonaActivityRow, error) {
 	return s.read.ListPersonaActivity(ctx, gen.ListPersonaActivityParams{
-
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -184,7 +181,6 @@ func (s *Store) GetPersonaVoiceBySlug(ctx context.Context, slug string) (gen.Per
 // ListPersonaVoices lists shared voices for a platform with pagination.
 func (s *Store) ListPersonaVoices(ctx context.Context, limit, offset int32) ([]gen.PersonaVoice, error) {
 	return s.read.ListPersonaVoices(ctx, gen.ListPersonaVoicesParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

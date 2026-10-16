@@ -191,11 +191,13 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 			if gs, ok := getterSvcByTool[toolType]; ok && gs != nil {
 				getterSvc = reflect.ValueOf(gs)
 			}
+
 			merged := newMergeUpdateFunc(getterSvc, names.mergeGetter, names.mergeIDKey, v, updateName, names.updateUserArg)
 			if merged == nil {
 				updateFunc, assignGeoFunc = nil, nil
 			} else {
 				updateFunc = merged
+
 				if assignGeoName != "" {
 					assignGeoFunc = merged
 				}
@@ -302,17 +304,20 @@ func newWikiUpdateFunc(m reflect.Value) func(context.Context, pgtype.UUID, strin
 			if !ok || v == nil {
 				return nil
 			}
+
 			b, ok := v.(bool)
 			if !ok {
 				return nil
 			}
+
 			return &b
 		}
 
 		var position *int32
+
 		if v, ok := payload["position"]; ok && v != nil {
 			if f, ok := v.(float64); ok {
-				p := int32(f) //nolint:gosec // position is a small ordinal
+				p := int32(f)
 				position = &p
 			}
 		}
@@ -438,9 +443,11 @@ func resolveWriteMethod(svc reflect.Value, preferred, fallback string) string {
 	if name == "" {
 		name = fallback
 	}
+
 	if name != "" && validWriteSignature(svc, name) {
 		return name
 	}
+
 	return ""
 }
 
@@ -460,16 +467,20 @@ func validWriteSignature(svc reflect.Value, name string) bool {
 	}
 
 	mt := m.Type()
+
 	nIn, nOut := mt.NumIn(), mt.NumOut()
 	if nOut != 1 && nOut != 2 {
 		return false
 	}
+
 	if nIn == 0 || !isContextArg(mt.In(0)) {
 		return false
 	}
 
 	uuidType := reflect.TypeOf(pgtype.UUID{})
+
 	var arityOK bool
+
 	switch {
 	case isCreateMethodName(name):
 		// (ctx, input) or (ctx, userID, input)
@@ -485,9 +496,11 @@ func validWriteSignature(svc reflect.Value, name string) bool {
 	default:
 		return false
 	}
+
 	if !arityOK || !isPayloadInputType(mt.In(nIn-1)) {
 		return false
 	}
+
 	return true
 }
 
@@ -504,9 +517,11 @@ func isPayloadInputType(t reflect.Type) bool {
 	if t == uuidType {
 		return false
 	}
+
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
+
 	return t.Kind() == reflect.Struct || t.Kind() == reflect.Map
 }
 
@@ -520,6 +535,7 @@ func methodLastArgHasGeoField(svc reflect.Value, name string) bool {
 	if !m.IsValid() {
 		return false
 	}
+
 	return typeHasGeoField(m.Type().In(m.Type().NumIn()-1), 0)
 }
 
@@ -527,26 +543,32 @@ func typeHasGeoField(t reflect.Type, depth int) bool {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
+
 	if t.Kind() != reflect.Struct || depth > 3 {
 		return false
 	}
+
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		name := strings.ToLower(f.Name)
 		tag := strings.ToLower(strings.Split(f.Tag.Get("json"), ",")[0])
+
 		if geoFieldName(name) || geoFieldName(tag) {
 			return true
 		}
+
 		ft := f.Type
 		if ft.Kind() == reflect.Ptr {
 			ft = ft.Elem()
 		}
+
 		if (f.Anonymous || ft.Kind() == reflect.Struct) && !strings.HasPrefix(ft.String(), "pgtype.") {
 			if typeHasGeoField(ft, depth+1) {
 				return true
 			}
 		}
 	}
+
 	return false
 }
 
@@ -572,6 +594,7 @@ func validDeleteSignature(svc reflect.Value, name string) bool {
 	}
 
 	uuidType := reflect.TypeOf(pgtype.UUID{})
+
 	switch mt.NumIn() {
 	case 2: // (ctx, id)
 		return mt.In(1) == uuidType
@@ -590,13 +613,16 @@ func resolveDeleteMethod(svc reflect.Value, preferred string) string {
 		if validDeleteSignature(svc, preferred) {
 			return preferred
 		}
+
 		return ""
 	}
+
 	for _, name := range []string{"Delete", "Deactivate", "Archive", "SoftDelete", "DeleteOwn", "DeleteOrg"} {
 		if validDeleteSignature(svc, name) {
 			return name
 		}
 	}
+
 	return ""
 }
 
@@ -640,6 +666,7 @@ func newMergeUpdateFunc(getterSvc reflect.Value, getterName, mergeIDKey string, 
 	if updateName == "" || !g.IsValid() || !updateSvc.MethodByName(updateName).IsValid() {
 		return nil
 	}
+
 	gt := g.Type()
 	if gt.NumIn() != 2 && gt.NumIn() != 3 {
 		return nil
@@ -647,11 +674,13 @@ func newMergeUpdateFunc(getterSvc reflect.Value, getterName, mergeIDKey string, 
 
 	return func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
 		key := id
+
 		if mergeIDKey != "" {
 			s, _ := payload[mergeIDKey].(string)
 			if s == "" {
 				return nil, fmt.Errorf("%s is required for this record's update", mergeIDKey)
 			}
+
 			key = s
 		}
 
@@ -674,6 +703,7 @@ func newMergeUpdateFunc(getterSvc reflect.Value, getterName, mergeIDKey string, 
 		if err != nil {
 			return nil, fmt.Errorf("marshal current row for merge: %w", err)
 		}
+
 		for k, v := range payload {
 			base[k] = v
 		}

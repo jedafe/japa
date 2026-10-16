@@ -18,6 +18,7 @@ func mustUUID(s string) pgtype.UUID {
 	if err := u.Scan(s); err != nil {
 		panic(err)
 	}
+
 	return u
 }
 
@@ -104,6 +105,7 @@ func TestInboundMethod(t *testing.T) {
 			t.Errorf("InboundMethod(%q) = false, want true", m)
 		}
 	}
+
 	for _, m := range []CrawlMethod{
 		CrawlMethodStatic, CrawlMethodRSS, CrawlMethodAPI, CrawlMethodRender,
 		CrawlMethodManual, CrawlMethodOneshot, CrawlMethod(""),
@@ -135,10 +137,12 @@ func TestSourceKindConstants(t *testing.T) {
 		if string(k) != want {
 			t.Errorf("got %q, want %q", k, want)
 		}
+
 		if !k.IsValid() {
 			t.Errorf("SourceKind(%q).IsValid() = false, want true", k)
 		}
 	}
+
 	if SourceKind("bot").IsValid() {
 		t.Error("SourceKind(bot).IsValid() = true, want false")
 	}
@@ -169,6 +173,7 @@ func TestValidateChannelCreate(t *testing.T) {
 
 	t.Run("valid params pass", func(t *testing.T) {
 		t.Parallel()
+
 		if err := validateChannelCreate(validChannelParams(), ""); err != nil {
 			t.Fatalf("validateChannelCreate(valid) = %v, want nil", err)
 		}
@@ -176,9 +181,11 @@ func TestValidateChannelCreate(t *testing.T) {
 
 	t.Run("inbound channel accepts non-http entry", func(t *testing.T) {
 		t.Parallel()
+
 		arg := validChannelParams()
 		arg.CrawlMethod = string(CrawlMethodEmail)
 		arg.EntryUrl = "mailto:intake@example.com"
+
 		if err := validateChannelCreate(arg, ""); err != nil {
 			t.Fatalf("validateChannelCreate(email channel) = %v, want nil", err)
 		}
@@ -226,6 +233,7 @@ func TestValidateChannelCreate(t *testing.T) {
 			if err == nil {
 				t.Fatalf("validateChannelCreate(%s) = nil, want %v", tt.name, tt.sent)
 			}
+
 			if !errors.Is(err, tt.sent) {
 				t.Fatalf("validateChannelCreate(%s) error = %v, want sentinel %v", tt.name, err, tt.sent)
 			}
@@ -234,9 +242,11 @@ func TestValidateChannelCreate(t *testing.T) {
 
 	t.Run("public literal and hostname entry_urls pass", func(t *testing.T) {
 		t.Parallel()
+
 		for _, u := range []string{"http://8.8.8.8/feed", "https://example.com/feed", "https://internal.corp.example/feed"} {
 			arg := validChannelParams()
 			arg.EntryUrl = u
+
 			if err := validateChannelCreate(arg, ""); err != nil {
 				t.Errorf("validateChannelCreate(%s) = %v, want nil (literal check must not reject names)", u, err)
 			}
@@ -253,6 +263,7 @@ func TestValidateChannelUpdate(t *testing.T) {
 
 	t.Run("empty patch passes", func(t *testing.T) {
 		t.Parallel()
+
 		arg := gen.UpdateIntelSourceChannelParams{ID: mustUUID("11111111-1111-4111-8111-111111111111")}
 		if err := validateChannelUpdate(arg, CrawlMethodRSS); err != nil {
 			t.Fatalf("validateChannelUpdate(empty patch) = %v, want nil", err)
@@ -286,6 +297,7 @@ func TestValidateChannelUpdate(t *testing.T) {
 
 	t.Run("valid fields pass and are trimmed", func(t *testing.T) {
 		t.Parallel()
+
 		arg := gen.UpdateIntelSourceChannelParams{
 			ID:          mustUUID("11111111-1111-4111-8111-111111111111"),
 			Label:       strPtr("  New label  "),
@@ -296,6 +308,7 @@ func TestValidateChannelUpdate(t *testing.T) {
 		if err := validateChannelUpdate(arg, CrawlMethodRSS); err != nil {
 			t.Fatalf("validateChannelUpdate(valid patch) = %v, want nil", err)
 		}
+
 		if *arg.Label != "New label" {
 			t.Errorf("label not trimmed: %q", *arg.Label)
 		}
@@ -368,6 +381,7 @@ func TestChannelStore_CreateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create parent source: %v", err)
 	}
+
 	defer func() { _ = store.Delete(ctx, src.ID) }()
 
 	ch, err := store.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
@@ -386,6 +400,7 @@ func TestChannelStore_CreateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
+
 	if ch.SourceID != src.ID {
 		t.Errorf("channel source_id = %v, want %v", ch.SourceID, src.ID)
 	}
@@ -394,6 +409,7 @@ func TestChannelStore_CreateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get channel: %v", err)
 	}
+
 	if got.Label != "Jobs JSON-LD" {
 		t.Errorf("channel label = %q, want %q", got.Label, "Jobs JSON-LD")
 	}
@@ -402,12 +418,15 @@ func TestChannelStore_CreateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list channels: %v", err)
 	}
+
 	found := false
+
 	for _, c := range channels {
 		if c.ID == ch.ID {
 			found = true
 		}
 	}
+
 	if !found {
 		t.Errorf("ListChannels(%v) did not return created channel %v", src.ID, ch.ID)
 	}
@@ -425,9 +444,11 @@ func TestChannelStore_CreateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get channel after status update: %v", err)
 	}
+
 	if got.ConsecutiveFailures != 1 {
 		t.Errorf("consecutive_failures = %d, want 1", got.ConsecutiveFailures)
 	}
+
 	if got.LastErrorMessage == nil || *got.LastErrorMessage != "boom" {
 		t.Errorf("last_error_message = %v, want %q", got.LastErrorMessage, "boom")
 	}
@@ -475,6 +496,7 @@ func TestChannelStore_PurgeInboundEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create parent source: %v", err)
 	}
+
 	defer func() { _ = store.Delete(ctx, src.ID) }()
 
 	ch, err := store.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
@@ -492,6 +514,7 @@ func TestChannelStore_PurgeInboundEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
+
 	defer func() {
 		_, _ = database.Writer.Exec(ctx, "DELETE FROM intel_inbound_events WHERE channel_id=$1", ch.ID)
 	}()
@@ -505,6 +528,7 @@ func TestChannelStore_PurgeInboundEvents(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create inbound event: %v", err)
 		}
+
 		return ev
 	}
 
@@ -522,6 +546,7 @@ func TestChannelStore_PurgeInboundEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("purge: %v", err)
 	}
+
 	if deleted < 1 {
 		t.Fatalf("purge deleted %d rows, want >= 1", deleted)
 	}
@@ -529,6 +554,7 @@ func TestChannelStore_PurgeInboundEvents(t *testing.T) {
 	if _, err := store.GetInboundEvent(ctx, old.ID); err == nil {
 		t.Error("old event still present after purge")
 	}
+
 	if _, err := store.GetInboundEvent(ctx, fresh.ID); err != nil {
 		t.Errorf("fresh event purged: %v", err)
 	}
@@ -540,6 +566,7 @@ func TestChannelStore_PurgeInboundEvents(t *testing.T) {
 		fresh.ID); err != nil {
 		t.Fatalf("re-backdate event: %v", err)
 	}
+
 	if deleted, err := store.PurgeInboundEvents(ctx, 0); err != nil || deleted != 0 {
 		t.Errorf("purge(0) deleted %d rows (err=%v), want 0", deleted, err)
 	}

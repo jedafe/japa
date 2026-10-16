@@ -112,10 +112,12 @@ func (s *Service) GetTagByID(ctx context.Context, id pgtype.UUID) (gen.GetTagByI
 func (s *Service) ResolveTagSlugs(ctx context.Context, slugs []string) ([]gen.GetTagsBySlugsRow, error) {
 	norm := make([]string, 0, len(slugs))
 	seen := make(map[string]bool, len(slugs))
+
 	for _, raw := range slugs {
 		n := content.Slugify(raw)
 		if !seen[n] {
 			seen[n] = true
+
 			norm = append(norm, n)
 		}
 	}
@@ -132,12 +134,14 @@ func (s *Service) ResolveTagSlugs(ctx context.Context, slugs []string) ([]gen.Ge
 // canonical lowercase-slug row when a legacy case-variant row also matches.
 func tagsByNormSlug(rows []gen.GetTagsBySlugsRow) map[string]pgtype.UUID {
 	m := make(map[string]pgtype.UUID, len(rows))
+
 	for _, row := range rows {
 		norm := strings.ToLower(row.Slug)
 		if _, ok := m[norm]; !ok || row.Slug == norm {
 			m[norm] = row.ID
 		}
 	}
+
 	return m
 }
 
@@ -152,6 +156,7 @@ func (s *Service) ResolveTagSlugMap(ctx context.Context, slugs []string) (map[st
 
 	byNorm := tagsByNormSlug(rows)
 	m := make(map[string]pgtype.UUID, len(slugs))
+
 	for _, raw := range slugs {
 		if id, ok := byNorm[content.Slugify(raw)]; ok {
 			m[raw] = id
@@ -187,6 +192,7 @@ func (s *Service) GetOrCreateTagSlugs(ctx context.Context, slugs []string) (map[
 		if _, exists := m[raw]; exists {
 			continue
 		}
+
 		norm := content.Slugify(raw)
 		if id, ok := byNorm[norm]; ok {
 			m[raw] = id
@@ -198,6 +204,7 @@ func (s *Service) GetOrCreateTagSlugs(ctx context.Context, slugs []string) (map[
 		if name == "" {
 			name = norm
 		}
+
 		tag, cerr := s.CreateTag(ctx, CreateTagInput{
 			Name:     name,
 			Slug:     norm,
@@ -211,6 +218,7 @@ func (s *Service) GetOrCreateTagSlugs(ctx context.Context, slugs []string) (map[
 				if id, ok := tagsByNormSlug(retry)[norm]; ok {
 					m[raw] = id
 					byNorm[norm] = id
+
 					continue
 				}
 			}
@@ -256,7 +264,6 @@ func (s *Service) CreateTag(ctx context.Context, input CreateTagInput) (gen.Crea
 	}
 
 	tag, err := s.write.CreateTag(ctx, gen.CreateTagParams{
-
 		Name:         input.Name,
 		Slug:         input.Slug,
 		Description:  input.Description,
@@ -346,7 +353,6 @@ type AddTagModeratorInput struct {
 // Idempotent — re-adding an existing moderator is a no-op refresh.
 func (s *Service) AddTagModerator(ctx context.Context, input AddTagModeratorInput) (gen.TagModerator, error) {
 	row, err := s.write.AddTagModerator(ctx, gen.AddTagModeratorParams{
-
 		TagID:            input.TagID,
 		UserID:           input.UserID,
 		AssignedBy:       input.AssignedBy,
@@ -362,7 +368,6 @@ func (s *Service) AddTagModerator(ctx context.Context, input AddTagModeratorInpu
 // RemoveTagModerator removes a user as a moderator of a tag (Section 49).
 func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID pgtype.UUID) error {
 	if err := s.write.RemoveTagModerator(ctx, gen.RemoveTagModeratorParams{
-
 		TagID:  tagID,
 		UserID: userID,
 	}); err != nil {

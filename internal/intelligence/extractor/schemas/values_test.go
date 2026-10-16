@@ -23,6 +23,7 @@ func TestHasExtractedValues(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := HasExtractedValues([]byte(tc.raw)); got != tc.want {
 				t.Errorf("HasExtractedValues(%s) = %v, want %v", tc.name, got, tc.want)
 			}

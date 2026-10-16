@@ -71,21 +71,26 @@ func (a *VideoProcessorAdapter) ProcessMediaVideo(ctx context.Context, mediaID, 
 				"media_id", mediaID, "storage_path", m.StoragePath)
 			return nil
 		}
+
 		return fmt.Errorf("reading stored object %s/%s: %w", m.StorageBucket, m.StoragePath, err)
 	}
 
 	// ffmpeg works on filesystem paths — stage the object in temp. The
 	// temp dir is inside validateMediaPath's allowlist.
 	ext := filepath.Ext(m.StoragePath)
+
 	in, err := os.CreateTemp("", "jc-video-in-*"+ext)
 	if err != nil {
 		return fmt.Errorf("staging input: %w", err)
 	}
+
 	defer func() { _ = os.Remove(in.Name()) }()
+
 	if _, err := in.Write(data); err != nil {
 		_ = in.Close()
 		return fmt.Errorf("staging input: %w", err)
 	}
+
 	if err := in.Close(); err != nil {
 		return fmt.Errorf("staging input: %w", err)
 	}
@@ -94,7 +99,9 @@ func (a *VideoProcessorAdapter) ProcessMediaVideo(ctx context.Context, mediaID, 
 	if err != nil {
 		return fmt.Errorf("staging output: %w", err)
 	}
+
 	outPath := out.Name()
+
 	defer func() { _ = os.Remove(outPath) }()
 	// ffmpeg needs to open the path itself — close the placeholder.
 	if err := out.Close(); err != nil {
@@ -107,6 +114,7 @@ func (a *VideoProcessorAdapter) ProcessMediaVideo(ctx context.Context, mediaID, 
 	case "compress":
 		err = a.vp.Compress(ctx, in.Name(), outPath)
 	}
+
 	if err != nil {
 		return err
 	}
@@ -121,6 +129,7 @@ func (a *VideoProcessorAdapter) ProcessMediaVideo(ctx context.Context, mediaID, 
 	newPath := strings.TrimSuffix(m.StoragePath, ext) + ".mp4"
 
 	stored := false
+
 	if a.svc.s3 != nil {
 		if err := a.svc.s3.putObject(ctx, m.StorageBucket, newPath, "video/mp4", processed); err != nil {
 			slog.Warn("media:process_video s3 put failed, trying local fallback",
@@ -129,6 +138,7 @@ func (a *VideoProcessorAdapter) ProcessMediaVideo(ctx context.Context, mediaID, 
 			stored = true
 		}
 	}
+
 	if !stored {
 		if err := storeLocalMediaFile(m.StorageBucket, newPath, processed); err != nil {
 			return fmt.Errorf("storing processed object: %w", err)

@@ -25,12 +25,14 @@ func TestAllowedCORSHeadersDefaults(t *testing.T) {
 		"X-JC-Surface",
 	} {
 		found := false
+
 		for _, h := range strings.Split(allowed, ", ") {
 			if strings.EqualFold(h, want) {
 				found = true
 				break
 			}
 		}
+
 		if !found {
 			t.Errorf("AllowedCORSHeaders() missing %q; got %q", want, allowed)
 		}
@@ -49,19 +51,23 @@ func TestAllowedCORSHeadersEnvMerges(t *testing.T) {
 	if !containsHeader(headers, "X-Custom-Thing") {
 		t.Errorf("env header X-Custom-Thing not merged; got %q", allowed)
 	}
+
 	if !containsHeader(headers, "X-JC-Surface") {
 		t.Errorf("default X-JC-Surface lost after env merge; got %q", allowed)
 	}
+
 	if !containsHeader(headers, "Authorization") {
 		t.Errorf("default Authorization lost after env merge; got %q", allowed)
 	}
 
 	count := 0
+
 	for _, h := range headers {
 		if strings.EqualFold(h, "X-JC-Surface") {
 			count++
 		}
 	}
+
 	if count != 1 {
 		t.Errorf("X-JC-Surface appears %d times, want 1; got %q", count, allowed)
 	}
@@ -73,5 +79,6 @@ func containsHeader(headers []string, want string) bool {
 			return true
 		}
 	}
+
 	return false
 }

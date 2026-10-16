@@ -230,7 +230,6 @@ func (s *Store) CreateEndpoint(ctx context.Context, name, url, secret string, ev
 	}
 
 	row, err := s.write.CreateWebhookEndpoint(ctx, gen.CreateWebhookEndpointParams{
-
 		Name:       name,
 		Url:        url,
 		Secret:     encSecret,
@@ -268,7 +267,6 @@ func (s *Store) UpdateEndpoint(ctx context.Context, id pgtype.UUID, name, url, s
 	}
 
 	row, err := s.write.UpdateWebhookEndpoint(ctx, gen.UpdateWebhookEndpointParams{
-
 		ID:         id,
 		Name:       name,
 		Url:        url,
@@ -358,7 +356,6 @@ func (s *Store) GetWebhookEndpoint(ctx context.Context, id pgtype.UUID) (Webhook
 // CreateDelivery records a pending webhook delivery and returns its ID.
 func (s *Store) CreateDelivery(ctx context.Context, endpointID, eventID pgtype.UUID, eventType string, payloadJSON []byte) (pgtype.UUID, error) {
 	id, err := s.write.CreateWebhookDelivery(ctx, gen.CreateWebhookDeliveryParams{
-
 		EndpointID: endpointID,
 		EventID:    eventID,
 		EventType:  eventType,
@@ -394,7 +391,6 @@ func (s *Store) GetDelivery(ctx context.Context, deliveryID pgtype.UUID) (Webhoo
 // ListDeliveries returns delivery records for a specific endpoint, newest first.
 func (s *Store) ListDeliveries(ctx context.Context, endpointID pgtype.UUID, limit, offset int32) ([]WebhookDelivery, error) {
 	rows, err := s.read.ListWebhookDeliveries(ctx, gen.ListWebhookDeliveriesParams{
-
 		EndpointID: endpointID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -499,6 +495,7 @@ func (s *Store) CreateUserEndpoint(ctx context.Context, ownerID pgtype.UUID, nam
 
 	out := endpointFromUserRow(row)
 	out.Secret = secret // return plaintext once for the create response
+
 	return out, nil
 }
 
@@ -523,6 +520,7 @@ func (s *Store) ListUserEndpoints(ctx context.Context, ownerID pgtype.UUID) ([]W
 			UpdatedAt:  row.UpdatedAt.Time,
 		})
 	}
+
 	return out, nil
 }
 
@@ -532,6 +530,7 @@ func (s *Store) CountUserEndpoints(ctx context.Context, ownerID pgtype.UUID) (in
 	if err != nil {
 		return 0, fmt.Errorf("counting user webhook endpoints: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -551,12 +550,14 @@ func (s *Store) GetUserEndpoint(ctx context.Context, ownerID, id pgtype.UUID) (W
 		Scope:     row.Scope,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
+
 	if row.Secret != "" {
 		plain, err := crypto.Decrypt(row.Secret)
 		if err == nil {
 			ep.Secret = plain
 		}
 	}
+
 	return ep, nil
 }
 
@@ -568,6 +569,7 @@ func (s *Store) VerifyUserEndpoint(ctx context.Context, ownerID, id pgtype.UUID)
 	if err != nil {
 		return 0, fmt.Errorf("verifying user webhook endpoint %s: %w", id, err)
 	}
+
 	return n, nil
 }
 
@@ -578,6 +580,7 @@ func (s *Store) DeleteUserEndpoint(ctx context.Context, ownerID, id pgtype.UUID)
 	if err != nil {
 		return 0, fmt.Errorf("deleting user webhook endpoint %s: %w", id, err)
 	}
+
 	return n, nil
 }
 

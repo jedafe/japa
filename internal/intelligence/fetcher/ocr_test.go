@@ -58,7 +58,7 @@ func TestOCRFetcher_ExtractTextNotAvailable(t *testing.T) {
 	}
 }
 
-// TestOCRFetcher_WithCache verifies that
+// TestOCRFetcher_WithCache verifies that.
 func TestOCRFetcher_WithCache(t *testing.T) {
 	t.Parallel()
 

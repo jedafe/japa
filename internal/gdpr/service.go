@@ -152,7 +152,6 @@ func (s *Service) RecordConsent(ctx context.Context, userID pgtype.UUID, input R
 	}
 
 	return s.store.recordConsent(ctx, gen.RecordConsentParams{
-
 		UserID:        userID,
 		ConsentType:   input.ConsentType,
 		Granted:       input.Granted,
@@ -225,7 +224,6 @@ func (s *Service) RevokeConsent(ctx context.Context, userID pgtype.UUID, consent
 	}
 
 	return s.store.revokeConsent(ctx, gen.RevokeConsentParams{
-
 		UserID:        userID,
 		ConsentType:   consentType,
 		PolicyVersion: policyVersion,
@@ -469,7 +467,6 @@ func (s *Service) RequestAccountDeletion(ctx context.Context, userID pgtype.UUID
 	}
 
 	request, err := s.store.createAccountDeletionRequest(ctx, gen.CreateAccountDeletionRequestParams{
-
 		UserID: userID,
 		Reason: reasonPtr,
 	})
@@ -2111,7 +2108,6 @@ func (s *Service) LogAuditEvent(ctx context.Context, params LogAuditParams) erro
 	ipAddress := parseIPAddress(params.IPAddress)
 
 	_, err := s.store.createAuditLog(ctx, gen.CreateAuditLogParams{
-
 		ActorUserID:        params.ActorUserID,
 		ImpersonatedUserID: params.ImpersonatedUserID,
 		ActionType:         params.ActionType,
@@ -2154,7 +2150,6 @@ func (s *Service) ListAuditLogs(ctx context.Context, actorUserID pgtype.UUID, ac
 	}
 
 	return s.store.listAuditLogs(ctx, gen.ListAuditLogsParams{
-
 		ActorUserID: actorFilter,
 		ActionType:  actionType,
 		TargetType:  targetTypePtr,
@@ -2185,7 +2180,9 @@ func parseIPAddress(s *string) *netip.Prefix {
 	if addr.Is4() {
 		bits = 32
 	}
+
 	p, _ := addr.Prefix(bits)
+
 	return &p
 }
 
@@ -3073,6 +3070,7 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		WHERE user_id = $1
 	`, userID); err == nil {
 		collected := []map[string]interface{}{}
+
 		for rows.Next() {
 			var (
 				id            pgtype.UUID
@@ -3087,11 +3085,13 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 				version       int32
 				createdAt     pgtype.Timestamptz
 			)
+
 			if err := rows.Scan(&id, &purpose, &program, &institution, &title,
 				&inputs, &generatedText, &status, &aiModel, &version, &createdAt); err != nil {
 				slog.Warn("failed to scan sop_drafts row for export", "user_id", userID.String(), "error", err)
 				continue
 			}
+
 			m := map[string]interface{}{
 				"id":         id.String(),
 				"purpose":    purpose,
@@ -3103,21 +3103,28 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 			if program != nil {
 				m["program"] = *program
 			}
+
 			if institution != nil {
 				m["institution"] = *institution
 			}
+
 			if title != nil {
 				m["title"] = *title
 			}
+
 			if generatedText != nil {
 				m["generated_text"] = *generatedText
 			}
+
 			if aiModel != nil {
 				m["ai_model"] = *aiModel
 			}
+
 			collected = append(collected, m)
 		}
+
 		rows.Close()
+
 		export.SopDrafts = collected
 	} else {
 		slog.Warn("failed to collect sop_drafts for export", "user_id", userID.String(), "error", err)
@@ -3129,6 +3136,7 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		WHERE user_id = $1
 	`, userID); err == nil {
 		collected := []map[string]interface{}{}
+
 		for rows.Next() {
 			var (
 				id        pgtype.UUID
@@ -3137,10 +3145,12 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 				breakdown []byte
 				createdAt pgtype.Timestamptz
 			)
+
 			if err := rows.Scan(&id, &score, &inputs, &breakdown, &createdAt); err != nil {
 				slog.Warn("failed to scan crs_score_history row for export", "user_id", userID.String(), "error", err)
 				continue
 			}
+
 			collected = append(collected, map[string]interface{}{
 				"id":         id.String(),
 				"score":      score,
@@ -3149,7 +3159,9 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 				"created_at": createdAt.Time,
 			})
 		}
+
 		rows.Close()
+
 		export.CrsScoreHistory = collected
 	} else {
 		slog.Warn("failed to collect crs_score_history for export", "user_id", userID.String(), "error", err)

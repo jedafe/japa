@@ -181,7 +181,6 @@ func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, profession,
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.List(ctx, ListFilter{
-
 		DestinationSpaceID: destSpaceID,
 		Profession:         profession,
 		Education:          education,
@@ -234,7 +233,9 @@ func (s *Service) CompareWithMissing(ctx context.Context, ids []pgtype.UUID) (Co
 	}
 
 	dtos := make([]RouteDTO, 0, len(rows))
+
 	var missing []string
+
 	for _, id := range ids {
 		if r, ok := byID[id.String()]; ok {
 			dtos = append(dtos, rowToDTO(r))
@@ -256,6 +257,7 @@ func (s *Service) Compare(ctx context.Context, ids []pgtype.UUID) ([]RouteDTO, e
 	if err != nil {
 		return nil, err
 	}
+
 	return res.Routes, nil
 }
 
@@ -308,7 +310,6 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, status
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-
 		DestinationSpaceID: destSpaceID,
 		Status:             status,
 		IsActive:           isActive,
@@ -347,14 +348,17 @@ func sanitizeVisaGovURL(raw string) (string, bool) {
 	if v == "" {
 		return "", false
 	}
+
 	lower := strings.ToLower(v)
 	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 		return "", false
 	}
+
 	host := v[strings.Index(v, "://")+3:]
 	if host == "" || strings.HasPrefix(host, "/") {
 		return "", false
 	}
+
 	return v, true
 }
 
@@ -536,6 +540,7 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 		if _, ok := sanitizeVisaGovURL(*input.GovSourceURL); !ok {
 			return RouteDTO{}, ErrInvalidGovSourceURL
 		}
+
 		update.GovSourceURL = input.GovSourceURL
 	}
 
@@ -591,11 +596,14 @@ func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, input
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
 		}
+
 		return RouteDTO{}, fmt.Errorf("visaroutes: approve: read: %w", err)
 	}
+
 	if _, ok := sanitizeVisaGovURL(current.GovSourceURL); !ok {
 		return RouteDTO{}, ErrInvalidGovSourceURL
 	}
+
 	row, err := s.store.Approve(ctx, id, reviewerID, input.Notes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -726,6 +734,7 @@ func (s *Service) mergeRouteFieldValues(ctx context.Context, dtos []RouteDTO) {
 	}
 
 	ids := make([]pgtype.UUID, 0, len(dtos))
+
 	for _, d := range dtos {
 		var id pgtype.UUID
 		if err := id.Scan(d.ID); err == nil && id.Valid {

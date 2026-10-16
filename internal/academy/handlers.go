@@ -220,7 +220,6 @@ func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID pgtype.UUID) {
 
 // ListPublishedTracks returns all published tracks for the current platform.
 func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
-
 	tracks, err := h.store.ListPublishedTracks(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
@@ -238,7 +237,6 @@ func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
 // expects a flat object with a `modules` array where each module carries its
 // `lessons` — NOT the legacy `{track, modules}` envelope.
 func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Track slug is required")
@@ -300,7 +298,6 @@ func trackJSONLDFields(d *TrackDetail) map[string]string {
 
 // GetLesson returns a single lesson by its slug within the track/module hierarchy.
 func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
-
 	trackSlug := chi.URLParam(r, "trackSlug")
 	moduleSlug := chi.URLParam(r, "moduleSlug")
 	lessonSlug := chi.URLParam(r, "lessonSlug")
@@ -352,6 +349,7 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
 		if !enrolled {
 			errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "Enroll in this track to access this lesson")
 			return
@@ -380,20 +378,23 @@ func (h *Handlers) requireEnrollmentOrAdmin(w http.ResponseWriter, r *http.Reque
 	if h.isAcademyAdmin(r.Context(), userID) {
 		return true
 	}
+
 	if _, err := h.store.GetEnrollment(r.Context(), userID, trackID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "Enroll in this track to track your progress")
 			return false
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to check enrollment")
+
 		return false
 	}
+
 	return true
 }
 
 // UpdateProgress records or updates a user's progress on a lesson.
 func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -502,7 +503,6 @@ func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 // certificate badges (social proof). All issued certs are public; non-active
 // users are already 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListCertificatesByUser(w http.ResponseWriter, r *http.Request) {
-
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
@@ -526,7 +526,6 @@ func (h *Handlers) ListCertificatesByUser(w http.ResponseWriter, r *http.Request
 
 // ListAllTracks returns every track for the platform (admin view).
 func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
-
 	tracks, err := h.store.ListAllTracks(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
@@ -540,7 +539,6 @@ func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
 
 // CreateTrack creates a new learning track.
 func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
-
 	var input CreateTrackInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -584,7 +582,6 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTrack updates an existing track.
 func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
-
 	idStr := chi.URLParam(r, "id")
 
 	var id pgtype.UUID
@@ -620,7 +617,6 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTrack removes a track and cascades to its modules and lessons.
 func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
-
 	idStr := chi.URLParam(r, "id")
 
 	var id pgtype.UUID
@@ -644,7 +640,6 @@ func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
 
 // CreateModule adds a module to a track.
 func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
-
 	trackIDStr := chi.URLParam(r, "trackId")
 
 	var trackID pgtype.UUID
@@ -687,7 +682,6 @@ func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 
 // UpdateModule updates an existing module.
 func (h *Handlers) UpdateModule(w http.ResponseWriter, r *http.Request) {
-
 	idStr := chi.URLParam(r, "id")
 
 	var id pgtype.UUID
@@ -714,7 +708,6 @@ func (h *Handlers) UpdateModule(w http.ResponseWriter, r *http.Request) {
 
 // DeleteModule removes a module and cascades to its lessons.
 func (h *Handlers) DeleteModule(w http.ResponseWriter, r *http.Request) {
-
 	idStr := chi.URLParam(r, "id")
 
 	var id pgtype.UUID
@@ -734,7 +727,6 @@ func (h *Handlers) DeleteModule(w http.ResponseWriter, r *http.Request) {
 
 // CreateLesson adds a lesson to a module.
 func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
-
 	moduleIDStr := chi.URLParam(r, "moduleId")
 
 	var moduleID pgtype.UUID
@@ -781,7 +773,6 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 
 // UpdateLesson updates an existing lesson.
 func (h *Handlers) UpdateLesson(w http.ResponseWriter, r *http.Request) {
-
 	idStr := chi.URLParam(r, "id")
 
 	var id pgtype.UUID
@@ -808,7 +799,6 @@ func (h *Handlers) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 
 // DeleteLesson removes a lesson.
 func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
-
 	idStr := chi.URLParam(r, "id")
 
 	var id pgtype.UUID
@@ -883,7 +873,6 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 			// task handles the revenue split with source='pro_stream'.
 			if h.AsynqClient != nil {
 				payload, err := json.Marshal(map[string]string{
-
 					"user_id":  user.UserID.String(),
 					"track_id": trackIDStr,
 					"source":   "pro_stream",
@@ -964,7 +953,6 @@ func (h *Handlers) ListMyEnrollments(w http.ResponseWriter, r *http.Request) {
 
 // GetLessonByID handles GET /academy/lessons/:id.
 func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
-
 	lessonIDStr := chi.URLParam(r, "id")
 
 	var lessonID pgtype.UUID
@@ -986,11 +974,13 @@ func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 	if !lesson.IsPreview {
 		user := auth.FromContext(r.Context())
 		enrolled := user != nil && h.isAcademyAdmin(r.Context(), user.UserID)
+
 		if module, e := h.store.GetModuleByID(r.Context(), lesson.ModuleID); e == nil && !enrolled {
 			if user == nil {
 				errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 				return
 			}
+
 			if _, e := h.store.GetEnrollment(r.Context(), user.UserID, module.TrackID); e == nil {
 				enrolled = true
 			} else if !errors.Is(e, pgx.ErrNoRows) {
@@ -998,6 +988,7 @@ func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
 		if !enrolled {
 			errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "Enroll in this track to access this lesson")
 			return
@@ -1090,7 +1081,6 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 
 // GetQuiz handles GET /academy/quizzes/:id.
 func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
-
 	lessonIDStr := chi.URLParam(r, "id")
 
 	var lessonID pgtype.UUID
@@ -1114,11 +1104,13 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 	if !lesson.IsPreview {
 		user := auth.FromContext(r.Context())
 		enrolled := user != nil && h.isAcademyAdmin(r.Context(), user.UserID)
+
 		if module, e := h.store.GetModuleByID(r.Context(), lesson.ModuleID); e == nil && !enrolled {
 			if user == nil {
 				errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 				return
 			}
+
 			if _, e := h.store.GetEnrollment(r.Context(), user.UserID, module.TrackID); e == nil {
 				enrolled = true
 			} else if !errors.Is(e, pgx.ErrNoRows) {
@@ -1126,6 +1118,7 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
 		if !enrolled {
 			errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "Enroll in this track to access this quiz")
 			return
@@ -1150,7 +1143,6 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 
 // SubmitQuiz handles POST /academy/quizzes/:id/submit.
 func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
-
 	lessonIDStr := chi.URLParam(r, "id")
 
 	var lessonID pgtype.UUID
@@ -1230,10 +1222,12 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		qID := q.ID.String()
 		selected := answers[qID]
 		correctAnswers := parseCorrectAnswers(q.Answer)
+
 		matched := answersMatch(selected, correctAnswers)
 		if matched {
 			correct++
 		}
+
 		results = append(results, questionResult{
 			QuestionID:     qID,
 			Correct:        matched,
@@ -1255,11 +1249,13 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		if _, uerr := h.store.UpsertProgress(r.Context(), user.UserID, lessonID, UpdateProgressInput{Status: "completed"}); uerr != nil {
 			slog.Warn("academy: submit_quiz — lesson progress update failed", "user_id", user.UserID.String(), "lesson_id", lessonID.String(), "error", uerr)
 		}
+
 		if completed, ltotal, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID); perr == nil && ltotal > 0 {
 			if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, calculatePercent(completed, ltotal)); uerr != nil {
 				slog.Warn("academy: submit_quiz — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 			}
 		}
+
 		h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID)
 		h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
 	}
@@ -1296,16 +1292,20 @@ func parseCorrectAnswers(raw string) []string {
 	if trimmed == "" {
 		return nil
 	}
+
 	var arr []string
 	if err := json.Unmarshal([]byte(trimmed), &arr); err == nil {
 		out := make([]string, 0, len(arr))
+
 		for _, a := range arr {
 			if a = strings.TrimSpace(a); a != "" {
 				out = append(out, a)
 			}
 		}
+
 		return out
 	}
+
 	return []string{trimmed}
 }
 
@@ -1315,30 +1315,37 @@ func parseCorrectAnswers(raw string) []string {
 // correct options and NO extras (partial credit is not awarded).
 func answersMatch(selected, correct []string) bool {
 	normSel := make([]string, 0, len(selected))
+
 	for _, s := range selected {
 		if s = normalizeQuizAnswer(s); s != "" {
 			normSel = append(normSel, s)
 		}
 	}
+
 	normCor := make([]string, 0, len(correct))
+
 	for _, c := range correct {
 		if c = normalizeQuizAnswer(c); c != "" {
 			normCor = append(normCor, c)
 		}
 	}
+
 	if len(normSel) != len(normCor) {
 		return false
 	}
+
 	counts := make(map[string]int, len(normCor))
 	for _, c := range normCor {
 		counts[c]++
 	}
+
 	for _, s := range normSel {
 		counts[s]--
 		if counts[s] < 0 {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -1371,14 +1378,17 @@ func parseQuizSubmission(raw json.RawMessage) (map[string][]string, error) {
 		QuestionID string          `json:"question_id"`
 		Answer     json.RawMessage `json:"answer"`
 	}
+
 	if err := json.Unmarshal(raw, &arr); err == nil {
 		for _, item := range arr {
 			vals, err := normalize(item.Answer)
 			if err != nil {
 				return nil, err
 			}
+
 			out[item.QuestionID] = vals
 		}
+
 		return out, nil
 	}
 
@@ -1386,13 +1396,16 @@ func parseQuizSubmission(raw json.RawMessage) (map[string][]string, error) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err
 	}
+
 	for qid, v := range m {
 		vals, err := normalize(v)
 		if err != nil {
 			return nil, err
 		}
+
 		out[qid] = vals
 	}
+
 	return out, nil
 }
 
@@ -1576,7 +1589,6 @@ func parsePageSizeOffset(r *http.Request) int32 {
 
 // ListTrackEnrollments handles GET /admin/academy/tracks/:id/enrollments.
 func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) {
-
 	var trackID pgtype.UUID
 	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
@@ -1612,7 +1624,6 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 
 // ListAllModules handles GET /admin/academy/modules.
 func (h *Handlers) ListAllModules(w http.ResponseWriter, r *http.Request) {
-
 	modules, err := h.store.ListAllModules(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
@@ -1626,7 +1637,6 @@ func (h *Handlers) ListAllModules(w http.ResponseWriter, r *http.Request) {
 
 // ListAllLessons handles GET /admin/academy/lessons.
 func (h *Handlers) ListAllLessons(w http.ResponseWriter, r *http.Request) {
-
 	lessons, err := h.store.ListAllLessons(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list lessons")
@@ -1640,7 +1650,6 @@ func (h *Handlers) ListAllLessons(w http.ResponseWriter, r *http.Request) {
 
 // ListModulesByTrack handles GET /admin/academy/tracks/{trackId}/modules.
 func (h *Handlers) ListModulesByTrack(w http.ResponseWriter, r *http.Request) {
-
 	trackIDStr := chi.URLParam(r, "trackId")
 
 	var trackID pgtype.UUID
@@ -1663,7 +1672,6 @@ func (h *Handlers) ListModulesByTrack(w http.ResponseWriter, r *http.Request) {
 
 // PublishTrack handles POST /admin/academy/tracks/:id/publish.
 func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
-
 	var trackID pgtype.UUID
 	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
@@ -1690,7 +1698,6 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 // published flag — and purges the track from the RAG corpus so unpublished
 // tracks stop being retrievable (same purge as DeleteTrack/UpdateTrack).
 func (h *Handlers) UnpublishTrack(w http.ResponseWriter, r *http.Request) {
-
 	var trackID pgtype.UUID
 	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
@@ -1702,11 +1709,13 @@ func (h *Handlers) UnpublishTrack(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Published *bool `json:"published,omitempty"`
 	}
+
 	if r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 			return
 		}
+
 		if body.Published != nil && *body.Published {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_published", "Use the publish route to publish a track")
 			return
@@ -1782,7 +1791,9 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "You must be enrolled to review this track")
 				return
 			}
+
 			errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to check enrollment")
+
 			return
 		}
 	}
@@ -1801,7 +1812,6 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 // ListTrackReviews handles GET /api/v1/academy/tracks/{id}/reviews.
 // Public — no auth required. Returns reviews + aggregate rating.
 func (h *Handlers) ListTrackReviews(w http.ResponseWriter, r *http.Request) {
-
 	var trackID pgtype.UUID
 	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")

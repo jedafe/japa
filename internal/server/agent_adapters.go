@@ -479,6 +479,7 @@ func (a *agentComparisonAdapter) ListComparisons(ctx context.Context, f ai.Compa
 	}
 
 	items := make([]ai.ComparisonListItem, 0, len(res.Items))
+
 	for _, r := range res.Items {
 		item := ai.ComparisonListItem{
 			ID:           r.ID.String(),
@@ -495,15 +496,19 @@ func (a *agentComparisonAdapter) ListComparisons(ctx context.Context, f ai.Compa
 		if r.SpaceID.Valid {
 			item.SpaceID = r.SpaceID.String()
 		}
+
 		if r.AuthorID.Valid {
 			item.AuthorID = r.AuthorID.String()
 		}
+
 		if r.PromotedFromID.Valid {
 			item.PromotedFromID = r.PromotedFromID.String()
 		}
+
 		if r.PublishedAt.Valid {
 			item.PublishedAt = r.PublishedAt.Time.UTC().Format(time.RFC3339)
 		}
+
 		items = append(items, item)
 	}
 
@@ -624,7 +629,6 @@ func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, con
 // 4. Creates a HITL review with source='agent_draft_request' + the
 // created content_id.
 func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, payload worker.AgentDraftPayload) error {
-
 	var personaID pgtype.UUID
 	if err := personaID.Scan(payload.PersonaID); err != nil {
 		return fmt.Errorf("invalid persona_id: %w", err)
@@ -711,7 +715,6 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	// 6. Create a HITL review with source='agent_draft_request'.
 	if a.aiStore != nil {
 		_, hitlErr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
-
 			ContentID:   row.ID,
 			ContentType: payload.ContentType,
 			AIOutput:    fvJSON,
@@ -1599,6 +1602,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 	if needsHITL && a.perms != nil && actorID.Valid &&
 		a.perms.HasPermission(ctx, actorID, "agent.skip_hitl") {
 		slog.Info("regenerate: in-place update via agent.skip_hitl", "content_id", contentID, "actor_id", actorID, "high_stakes", highStakes, "manual_edit", manual)
+
 		needsHITL = false
 	}
 
@@ -2045,7 +2049,6 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 	}
 
 	review, rerr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
-
 		ContentID:   draftID,
 		ContentType: contentType,
 		AIOutput:    fvJSON,
@@ -2127,7 +2130,6 @@ func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, co
 	}
 
 	_, err := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
-
 		ContentID:   contentID,
 		ContentType: contentType,
 		AIOutput:    fvJSON,
@@ -2207,7 +2209,6 @@ func (a *studioDraftProcessorAdapter) transitionIntelRecordOnPublish(ctx context
 	}
 
 	if err := a.intelStore.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
-
 		ID:     intelRecordID,
 		Status: "published",
 	}); err != nil {
@@ -2607,10 +2608,12 @@ func (a *desktopExchangeAuditor) LogExchangeIssuance(ctx context.Context, userID
 		"key_prefix":  keyPrefix,
 		"device_name": deviceName,
 	})
+
 	var ipArg any
 	if clientIP != "" {
 		ipArg = clientIP
 	}
+
 	_, err := a.db.Writer.Exec(ctx, `
 		INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata, ip_address)
 		VALUES ($1, 'desktop.exchange_issuance', 'api_key', $2, $3::jsonb, $4::inet)
@@ -2618,6 +2621,7 @@ func (a *desktopExchangeAuditor) LogExchangeIssuance(ctx context.Context, userID
 	if err != nil {
 		return fmt.Errorf("desktop exchange audit log: %w", err)
 	}
+
 	return nil
 }
 
@@ -2661,6 +2665,7 @@ func (a *agentDataAdapter) TagFeed(ctx context.Context, tagSlug, cursor string, 
 	if err != nil {
 		return nil, err
 	}
+
 	return map[string]any{"items": items, "next_cursor": nextCursor}, nil
 }
 
@@ -2701,6 +2706,7 @@ func (a *agentForumAdapter) CreateThread(ctx context.Context, authorUserID pgtyp
 		Body:        in.Body,
 		IsAnonymous: in.IsAnonymous,
 	}
+
 	if in.Poll != nil {
 		p := &forum.PollInput{
 			Question:      in.Poll.Question,
@@ -2710,8 +2716,10 @@ func (a *agentForumAdapter) CreateThread(ctx context.Context, authorUserID pgtyp
 		for _, o := range in.Poll.Options {
 			p.Options = append(p.Options, forum.PollOptionInput{Label: o.Label, Position: o.Position})
 		}
+
 		out.Poll = p
 	}
+
 	return a.svc.CreateThread(ctx, authorUserID, out)
 }
 
@@ -2829,6 +2837,7 @@ func (a *agentFXAdapter) Convert(ctx context.Context, amount float64, from, to s
 	if err != nil {
 		return nil, err
 	}
+
 	return &ai.FXConvertResult{
 		Amount:    r.Amount,
 		From:      r.From,
@@ -2847,10 +2856,12 @@ func (a *agentCRSAdapter) Calculate(ctx context.Context, userID *pgtype.UUID, in
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("invalid crs.calculate arguments: %w", err)
 	}
+
 	result, err := a.svc.Calculate(ctx, userID, req)
 	if err != nil {
 		return nil, err
 	}
+
 	return structToMap(result)
 }
 
@@ -2861,18 +2872,23 @@ func (a *agentPOFAdapter) Calculate(ctx context.Context, in ai.POFCalculateInput
 	if err := destID.Scan(in.DestSpaceID); err != nil {
 		return nil, fmt.Errorf("invalid dest_space_id: %w", err)
 	}
+
 	results, err := a.svc.Calculate(ctx, destID, in.VisaType, in.Members, in.Dependants)
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]map[string]any, 0, len(results))
+
 	for _, r := range results {
 		m, err := structToMap(r)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, m)
 	}
+
 	return out, nil
 }
 
@@ -2894,6 +2910,7 @@ func (a *agentWikiAdapter) CreatePageWithRevision(ctx context.Context, userID pg
 		Summary:   in.Summary,
 		Position:  in.Position,
 	})
+
 	return pageID, revID, pageSlug, err
 }
 
@@ -2902,6 +2919,7 @@ func (a *agentWikiAdapter) CreatePageShell(ctx context.Context, spaceID, created
 	if err != nil {
 		return "", err
 	}
+
 	return id.String(), nil
 }
 
@@ -2910,14 +2928,16 @@ func (a *agentWikiAdapter) SubmitRevision(ctx context.Context, userID pgtype.UUI
 		Content: content,
 		Summary: summary,
 	})
+
 	return revID, err
 }
 
-func (a *agentWikiAdapter) SubmitFieldOps(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content json.RawMessage, opsRaw json.RawMessage, summary string, canManage bool) (string, bool, error) {
+func (a *agentWikiAdapter) SubmitFieldOps(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content, opsRaw json.RawMessage, summary string, canManage bool) (string, bool, error) {
 	ops, err := wiki.ParseOps(opsRaw)
 	if err != nil {
 		return "", false, fmt.Errorf("invalid ops: %w", err)
 	}
+
 	return a.svc.SubmitPageFieldOps(ctx, userID, spaceSlug, pageSlug, content, ops, summary, canManage)
 }
 
@@ -2960,6 +2980,7 @@ func (a *agentWikiAdapter) ListPages(ctx context.Context, filter ai.WikiPageList
 	}
 
 	items := make([]ai.WikiPageListItem, 0, len(dtos))
+
 	for _, d := range dtos {
 		item := ai.WikiPageListItem{
 			ID:                   d.ID,
@@ -2984,8 +3005,10 @@ func (a *agentWikiAdapter) ListPages(ctx context.Context, filter ai.WikiPageList
 		if d.DataEntityType != nil {
 			item.DataEntityType = *d.DataEntityType
 		}
+
 		items = append(items, item)
 	}
+
 	return items, total, nil
 }
 
@@ -3016,6 +3039,7 @@ func (a *agentWikiAdapter) GetPageDetail(ctx context.Context, userID pgtype.UUID
 	if d.DataEntityType != nil {
 		detail.DataEntityType = *d.DataEntityType
 	}
+
 	return detail, nil
 }
 
@@ -3044,6 +3068,7 @@ func (a *agentWikiAdapter) GetEntityFields(ctx context.Context, userID pgtype.UU
 	for i := range dto.Groups {
 		groups = append(groups, *wikiFieldGroupToAI(&dto.Groups[i]))
 	}
+
 	return &ai.WikiEntityFields{
 		Groups:             groups,
 		PendingCount:       dto.PendingCount,
@@ -3059,6 +3084,7 @@ func wikiFieldGroupToAI(g *wiki.EntityFieldGroupDTO) *ai.WikiEntityFieldGroup {
 	if g == nil {
 		return nil
 	}
+
 	fields := make([]ai.WikiEntityField, 0, len(g.Fields))
 	for _, f := range g.Fields {
 		fields = append(fields, ai.WikiEntityField{
@@ -3075,6 +3101,7 @@ func wikiFieldGroupToAI(g *wiki.EntityFieldGroupDTO) *ai.WikiEntityFieldGroup {
 			System:    f.System,
 		})
 	}
+
 	return &ai.WikiEntityFieldGroup{
 		ID:     g.ID,
 		Slug:   g.Slug,
@@ -3104,5 +3131,6 @@ func wikiRevisionsToAI(dtos []wiki.WikiRevisionDTO) []ai.WikiRevisionInfo {
 			CreatedAt:        d.CreatedAt,
 		})
 	}
+
 	return revs
 }

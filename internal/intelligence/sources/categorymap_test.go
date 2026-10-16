@@ -43,8 +43,10 @@ func TestResolveCategoryMap(t *testing.T) {
 			wantEntities: []string{"news", "job"},
 			wantMethods:  []string{"rss", "jsonld", "render", "static", "api", "tabular"},
 			wantPipeline: PipelineExtract,
-			wantTopics: []string{"migration", "immigration", "japa", "diaspora", "visa", "relocation", "travel",
-				"job", "hiring", "vacancy", "career", "remote work", "recruitment"},
+			wantTopics: []string{
+				"migration", "immigration", "japa", "diaspora", "visa", "relocation", "travel",
+				"job", "hiring", "vacancy", "career", "remote work", "recruitment",
+			},
 		},
 		{
 			name:         "extract first preserves its ordering",
@@ -52,8 +54,10 @@ func TestResolveCategoryMap(t *testing.T) {
 			wantEntities: []string{"job", "news"},
 			wantMethods:  []string{"jsonld", "api", "tabular", "render", "static", "rss"},
 			wantPipeline: PipelineExtract,
-			wantTopics: []string{"job", "hiring", "vacancy", "career", "remote work", "recruitment",
-				"migration", "immigration", "japa", "diaspora", "visa", "relocation", "travel"},
+			wantTopics: []string{
+				"job", "hiring", "vacancy", "career", "remote work", "recruitment",
+				"migration", "immigration", "japa", "diaspora", "visa", "relocation", "travel",
+			},
 		},
 		{
 			name:       "topic union dedupes shared vocabulary",
@@ -62,8 +66,10 @@ func TestResolveCategoryMap(t *testing.T) {
 			wantEntities: []string{"news", "article"},
 			wantMethods:  []string{"rss", "jsonld", "render", "static"},
 			wantPipeline: PipelineCurate,
-			wantTopics: []string{"migration", "immigration", "japa", "diaspora", "visa", "relocation", "travel",
-				"study abroad", "settlement", "expat"},
+			wantTopics: []string{
+				"migration", "immigration", "japa", "diaspora", "visa", "relocation", "travel",
+				"study abroad", "settlement", "expat",
+			},
 		},
 		{
 			name:         "all curate keeps first-seen pipeline",
@@ -71,8 +77,10 @@ func TestResolveCategoryMap(t *testing.T) {
 			wantEntities: []string{"event", "dataset"},
 			wantMethods:  []string{"ical", "jsonld", "tabular", "git", "api"},
 			wantPipeline: PipelineCurate,
-			wantTopics: []string{"webinar", "fair", "embassy", "orientation", "deadline",
-				"exchange rate", "processing time", "visa fee", "tuition"},
+			wantTopics: []string{
+				"webinar", "fair", "embassy", "orientation", "deadline",
+				"exchange rate", "processing time", "visa fee", "tuition",
+			},
 		},
 		{
 			name:       "video resolves faithfully for caller routing",
@@ -173,27 +181,34 @@ func TestResolveCategoryMap(t *testing.T) {
 			if !slices.Equal(got.EntityTypes, tt.wantEntities) {
 				t.Errorf("EntityTypes = %v, want %v", got.EntityTypes, tt.wantEntities)
 			}
+
 			if !slices.Equal(got.Methods, tt.wantMethods) {
 				t.Errorf("Methods = %v, want %v", got.Methods, tt.wantMethods)
 			}
+
 			if got.Pipeline != tt.wantPipeline {
 				t.Errorf("Pipeline = %q, want %q", got.Pipeline, tt.wantPipeline)
 			}
+
 			if !slices.Equal(got.Topics, tt.wantTopics) {
 				t.Errorf("Topics = %v, want %v", got.Topics, tt.wantTopics)
 			}
+
 			for _, want := range tt.wantWarnings {
 				found := false
+
 				for _, w := range got.Warnings {
 					if strings.Contains(w, want) {
 						found = true
 						break
 					}
 				}
+
 				if !found {
 					t.Errorf("Warnings = %v, want one containing %q", got.Warnings, want)
 				}
 			}
+
 			if len(tt.wantWarnings) == 0 && len(got.Warnings) != 0 {
 				t.Errorf("Warnings = %v, want none", got.Warnings)
 			}
@@ -238,12 +253,15 @@ func TestResolvedMapForMethod(t *testing.T) {
 			if ok != tt.wantOK {
 				t.Fatalf("ForMethod(%q) ok = %v, want %v", tt.method, ok, tt.wantOK)
 			}
+
 			if !ok {
 				return
 			}
+
 			if !slices.Equal(got.EntityTypes, tt.wantEntities) {
 				t.Errorf("EntityTypes = %v, want %v", got.EntityTypes, tt.wantEntities)
 			}
+
 			if got.Pipeline != tt.wantPipeline {
 				t.Errorf("Pipeline = %q, want %q", got.Pipeline, tt.wantPipeline)
 			}
@@ -271,13 +289,16 @@ func TestResolvedMapForMethod_Edges(t *testing.T) {
 	// pipeline contributes its entity types but yields an invalid
 	// pipeline for the caller to default.
 	custom := `{"x":{"entity_types":["news"],"methods":["rss"],"pipeline":"","topics":[]}}`
+
 	m, ok := ResolveCategoryMap([]byte(custom), []string{"x"}).ForMethod("rss")
 	if !ok {
 		t.Fatal("custom category must nominate rss")
 	}
+
 	if m.Pipeline.IsValid() {
 		t.Errorf("Pipeline = %q, want invalid for empty map pipeline", m.Pipeline)
 	}
+
 	if !slices.Equal(m.EntityTypes, []string{"news"}) {
 		t.Errorf("EntityTypes = %v, want [news]", m.EntityTypes)
 	}
@@ -306,6 +327,7 @@ func TestDefaultCategoryMap(t *testing.T) {
 			t.Errorf("embedded map missing category %q", cat)
 		}
 	}
+
 	if len(catMap) != len(want) {
 		t.Errorf("embedded map has %d categories, want %d", len(catMap), len(want))
 	}
@@ -314,9 +336,11 @@ func TestDefaultCategoryMap(t *testing.T) {
 	if catMap["job"].Pipeline != PipelineExtract {
 		t.Errorf("job pipeline = %q, want extract", catMap["job"].Pipeline)
 	}
+
 	if len(catMap["video"].EntityTypes) != 0 {
 		t.Errorf("video entity_types = %v, want empty", catMap["video"].EntityTypes)
 	}
+
 	for cat, m := range catMap {
 		if !m.Pipeline.IsValid() {
 			t.Errorf("category %q pipeline %q fails Pipeline.IsValid", cat, m.Pipeline)
@@ -350,11 +374,14 @@ func TestParseCategoryMap(t *testing.T) {
 				if err == nil {
 					t.Fatalf("ParseCategoryMap(%q) expected error", tt.raw)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("ParseCategoryMap(%q) unexpected error: %v", tt.raw, err)
 			}
+
 			if len(got) != tt.wantLen {
 				t.Fatalf("ParseCategoryMap(%q) len = %d, want %d", tt.raw, len(got), tt.wantLen)
 			}
@@ -387,10 +414,12 @@ func TestSubmittableCategoriesAllMapped(t *testing.T) {
 			t.Errorf("submittable category %q resolves to no methods", entry.Category)
 		}
 	}
+
 	mapped := make(map[string]bool, len(resolved.Entries))
 	for _, entry := range resolved.Entries {
 		mapped[entry.Category] = true
 	}
+
 	for _, cat := range SubmittableCategories() {
 		if !mapped[cat] {
 			t.Errorf("submittable category %q has no category_map entry", cat)

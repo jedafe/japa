@@ -209,7 +209,6 @@ func parseLevelPtr(r *http.Request) *string {
 // GetTrendingContent handles GET /api/v1/trending/content.
 // BUG-007: supports ?type=discussion|blog_post filter (Section 53).
 func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
-
 	window := parseWindow(r)
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
@@ -287,7 +286,6 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 // Uses distributed lock stampede protection (BUG-008/BUG-013) via the
 // shared vkcache.GetOrComputeNative helper.
 func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
-
 	window := parseWindow(r)
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
@@ -342,7 +340,6 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 // GetTrendingSpaces handles GET /api/v1/trending/spaces.
 // BUG-008: supports ?level=country|state|city|custom filter (Section 53).
 func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
-
 	window := parseWindow(r)
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
@@ -430,7 +427,6 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 
 // GetTrendingUsers handles GET /api/v1/trending/users.
 func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
-
 	window := parseWindow(r)
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
@@ -468,7 +464,6 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 // ADR-064 / roadmap task 38.04: defaults ?geo= to the VisitorContext's
 // ContentCountry when omitted; explicit ?geo= (including "all") overrides.
 func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -508,7 +503,6 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 // ADR-064 / roadmap task 38.04: defaults ?geo= to the VisitorContext's
 // ContentCountry when omitted; explicit ?geo= (including "all") overrides.
 func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -552,7 +546,6 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 // GetSuggestedTags handles GET /api/v1/suggestions/tags.
 // ADR-064: accepts ?geo= to re-weight tags from the visitor's geo region.
 func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -581,7 +574,6 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 // ?seed_content_id is provided; falls back to top trending content otherwise.
 // BUG-003: previously wired to GetTrendingContent which ignored the seed.
 func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
-
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return

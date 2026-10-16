@@ -49,7 +49,6 @@ func (s *Store) listAdSlotTypes(ctx context.Context, limit, offset int32) ([]AdS
 	}
 
 	return s.queries.ListAdSlotTypes(ctx, gen.ListAdSlotTypesParams{
-
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -127,7 +126,6 @@ func (s *Store) listAdCampaignsByPlatform(ctx context.Context, limit, offset int
 	}
 
 	return s.queries.ListAdCampaigns(ctx, gen.ListAdCampaignsParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -139,7 +137,6 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, slotTypeID pgtype
 	}
 
 	return s.queries.ListActiveCampaignsBySlot(ctx, gen.ListActiveCampaignsBySlotParams{
-
 		SlotTypeID: slotTypeID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -209,7 +206,6 @@ func (s *Store) listAdNetworks(ctx context.Context, limit, offset int32) ([]AdNe
 	}
 
 	return s.queries.ListAdNetworks(ctx, gen.ListAdNetworksParams{
-
 		PageOffset: offset,
 		PageLimit:  limit,
 	})

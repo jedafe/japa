@@ -33,9 +33,11 @@ func TestParseMIMEMessage_Plain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseMIMEMessage: %v", err)
 	}
+
 	if env.From != "Alice <a@b.example>" || env.Subject != "Visa update" || env.MessageID != "<m1@b>" {
 		t.Errorf("envelope = %+v", env)
 	}
+
 	if !strings.Contains(env.Text, "Slots open Friday.") {
 		t.Errorf("text = %q", env.Text)
 	}
@@ -65,9 +67,11 @@ plain version
 	if err != nil {
 		t.Fatalf("parseMIMEMessage: %v", err)
 	}
+
 	if !strings.Contains(env.Text, "plain version") {
 		t.Errorf("text = %q, want the text/plain part", env.Text)
 	}
+
 	if strings.Contains(env.Text, "<b>") {
 		t.Errorf("text leaked html part: %q", env.Text)
 	}
@@ -108,9 +112,11 @@ Content-Disposition: attachment; filename="doc.pdf"
 	if err != nil {
 		t.Fatalf("parseMIMEMessage: %v", err)
 	}
+
 	if !strings.Contains(env.Text, "nested plain body") {
 		t.Errorf("text = %q, want the nested text/plain part", env.Text)
 	}
+
 	if strings.Contains(env.Text, "--INNER") || strings.Contains(env.Text, "%PDF") {
 		t.Errorf("text leaked raw MIME structure: %q", env.Text)
 	}
@@ -135,6 +141,7 @@ func TestParseMIMEMessage_Base64Part(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseMIMEMessage: %v", err)
 	}
+
 	if !strings.Contains(env.Text, "Slots open Friday at 9.") {
 		t.Errorf("text = %q, want base64-decoded body", env.Text)
 	}
@@ -151,6 +158,7 @@ func TestParseMIMEMessage_OnlyHTMLOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseMIMEMessage: %v", err)
 	}
+
 	if strings.Contains(env.Text, "<b>") || !strings.Contains(env.Text, "Hello") {
 		t.Errorf("text = %q, want stripped html", env.Text)
 	}
@@ -165,6 +173,7 @@ func TestIntelInboundEmailEnvelope_HTMLFallback(t *testing.T) {
 	payload, _ := json.Marshal(map[string]string{
 		"from": "a@b", "subject": "s", "html": "<p>Only <b>html</b> here</p>",
 	})
+
 	env, err := intelInboundEmailEnvelope(gen.IntelInboundEvent{
 		Payload:     payload,
 		ContentType: strPtr("application/x-intel-email"),
@@ -172,6 +181,7 @@ func TestIntelInboundEmailEnvelope_HTMLFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("intelInboundEmailEnvelope: %v", err)
 	}
+
 	if !strings.Contains(env.Text, "Only") || strings.Contains(env.Text, "<b>") {
 		t.Errorf("text = %q, want tag-stripped html", env.Text)
 	}
@@ -194,6 +204,7 @@ func TestHandleIntelInboundEmail(t *testing.T) {
 		"from": "alerts@embassy.example", "to": "intel@inbound.japa.example",
 		"subject": "Slots open", "message_id": "<m9@embassy>", "text": "Book https://embassy.example/s/9",
 	})
+
 	event, err := srcStore.CreateInboundEvent(t.Context(), gen.CreateIntelInboundEventParams{
 		ChannelID:   ch.ID,
 		Payload:     env,
@@ -218,6 +229,7 @@ func TestHandleIntelInboundEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload event: %v", err)
 	}
+
 	if got.Status != "processed" {
 		t.Errorf("event status = %q, want processed", got.Status)
 	}
@@ -230,6 +242,7 @@ func TestHandleIntelInboundEmail(t *testing.T) {
 	if err := HandleIntelInboundEmail(t.Context(), asynq.NewTask(TypeIntelInboundEmail, payload)); err != nil {
 		t.Fatalf("retry HandleIntelInboundEmail: %v", err)
 	}
+
 	if n := countChannelRawDocs(t, database, ch.ID); n != 1 {
 		t.Errorf("raw docs after retry = %d, want 1", n)
 	}
@@ -237,10 +250,12 @@ func TestHandleIntelInboundEmail(t *testing.T) {
 	// Terminal status is immutable: a late mark cannot flip a processed
 	// event back to failed (CAS on status='received').
 	_ = srcStore.MarkInboundEvent(t.Context(), gen.MarkIntelInboundEventParams{ID: event.ID, Status: "failed"})
+
 	got2, err := srcStore.GetInboundEvent(t.Context(), event.ID)
 	if err != nil {
 		t.Fatalf("reload event after late mark: %v", err)
 	}
+
 	if got2.Status != "processed" {
 		t.Errorf("event status after late mark = %q, want processed", got2.Status)
 	}
@@ -263,6 +278,7 @@ func TestHandleIntelInboundEmail_ClaimLoss(t *testing.T) {
 		"from": "a@b.example", "to": "intel@inbound.japa.example",
 		"subject": "s", "message_id": "<claim@b>", "text": "body",
 	})
+
 	event, err := srcStore.CreateInboundEvent(t.Context(), gen.CreateIntelInboundEventParams{
 		ChannelID:   ch.ID,
 		Payload:     env,
@@ -280,6 +296,7 @@ func TestHandleIntelInboundEmail_ClaimLoss(t *testing.T) {
 	if err != nil || !claimed {
 		t.Fatalf("first claim = %v, %v — want true", claimed, err)
 	}
+
 	if claimed2, _ := srcStore.ClaimInboundEvent(t.Context(), event.ID); claimed2 {
 		t.Fatal("second claim won — CAS is not atomic")
 	}
@@ -290,6 +307,7 @@ func TestHandleIntelInboundEmail_ClaimLoss(t *testing.T) {
 	if err := srcStore.ReleaseInboundEvent(t.Context(), event.ID); err != nil {
 		t.Fatalf("release claim: %v", err)
 	}
+
 	if reclaimed, _ := srcStore.ClaimInboundEvent(t.Context(), event.ID); !reclaimed {
 		t.Fatal("released claim not re-claimable — asynq retries could never recover")
 	}
@@ -304,6 +322,7 @@ func TestHandleIntelInboundEmail_ClaimLoss(t *testing.T) {
 	if err := HandleIntelInboundEmail(t.Context(), asynq.NewTask(TypeIntelInboundEmail, payload)); err != nil {
 		t.Fatalf("claimed-out run: %v", err)
 	}
+
 	if n := countChannelRawDocs(t, database, ch.ID); n != 0 {
 		t.Fatalf("raw docs = %d, want 0 (claim held by another run)", n)
 	}
@@ -316,16 +335,20 @@ func TestHandleIntelInboundEmail_ClaimLoss(t *testing.T) {
 		event.ID); err != nil {
 		t.Fatalf("backdate claim: %v", err)
 	}
+
 	redriven, err := srcStore.RedriveInboundEvent(t.Context(), event.ID, 900)
 	if err != nil || !redriven {
 		t.Fatalf("redrive = %v, %v — want true", redriven, err)
 	}
+
 	if err := HandleIntelInboundEmail(t.Context(), asynq.NewTask(TypeIntelInboundEmail, payload)); err != nil {
 		t.Fatalf("post-redrive run: %v", err)
 	}
+
 	if n := countChannelRawDocs(t, database, ch.ID); n != 1 {
 		t.Fatalf("raw docs = %d, want 1", n)
 	}
+
 	got, _ := srcStore.GetInboundEvent(t.Context(), event.ID)
 	if got.Status != "processed" {
 		t.Errorf("event status = %q, want processed", got.Status)
@@ -361,6 +384,7 @@ func TestHandleIntelInboundEmail_Rematerialization(t *testing.T) {
 	sum := sha256.Sum256(envBody)
 	envHash := hex.EncodeToString(sum[:])
 	docURL := "email:" + ch.ID.String() + ":<dup@b>"
+
 	if _, err := intelStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID: src.ID, ChannelID: ch.ID, Url: docURL, HttpStatus: 200,
 		HttpHeaders: []byte(`{}`),
@@ -389,10 +413,12 @@ func TestHandleIntelInboundEmail_Rematerialization(t *testing.T) {
 	if n := countChannelRawDocs(t, database, ch.ID); n != 1 {
 		t.Fatalf("raw docs = %d, want 1 (reuse)", n)
 	}
+
 	got, err := srcStore.GetInboundEvent(t.Context(), event.ID)
 	if err != nil {
 		t.Fatalf("reload event: %v", err)
 	}
+
 	if got.Status != "processed" {
 		t.Errorf("event status = %q, want processed", got.Status)
 	}
@@ -404,10 +430,12 @@ func TestHandleIntelInboundEmail_Rematerialization(t *testing.T) {
 	if len(tasks) != 1 {
 		t.Fatalf("detect_changes tasks = %d, want 1", len(tasks))
 	}
+
 	var dp intelDetectChangesPayload
 	if err := json.Unmarshal(tasks[0].Payload, &dp); err != nil {
 		t.Fatalf("decode detect_changes payload: %v", err)
 	}
+
 	if dp.PriorHash != "" {
 		t.Errorf("prior_hash = %q, want empty (re-materialization must force the pipeline)", dp.PriorHash)
 	}
@@ -426,11 +454,14 @@ func TestIntelWebSubSubscribe(t *testing.T) {
 	_, srcStore, _, inspector := wireIntelChannelDeps(t)
 
 	var gotForm url.Values
+
 	var gotCT string
+
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotCT = r.Header.Get("Content-Type")
 		body, _ := io.ReadAll(r.Body)
 		gotForm, _ = url.ParseQuery(string(body))
+
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer hub.Close()
@@ -450,6 +481,7 @@ func TestIntelWebSubSubscribe(t *testing.T) {
 	// fetcher.NewCompositeWithClient).
 	oldClient := webSubHTTPClient
 	webSubHTTPClient = fetcher.NewSafeClientOpts(30*time.Second, 1<<20, fetcher.SafeClientOpts{AllowPrivate: true})
+
 	t.Cleanup(func() { intelSiteURL = oldSite; webSubHTTPClient = oldClient })
 
 	payload := marshalPayload(intelWebSubPayload{Version: "v1", ChannelID: ch.ID.String()})
@@ -460,19 +492,24 @@ func TestIntelWebSubSubscribe(t *testing.T) {
 	if gotCT != "application/x-www-form-urlencoded" {
 		t.Errorf("content-type = %q", gotCT)
 	}
+
 	if gotForm.Get("hub.mode") != "subscribe" {
 		t.Errorf("hub.mode = %q", gotForm.Get("hub.mode"))
 	}
+
 	if gotForm.Get("hub.topic") != "https://hub.example/feed" {
 		t.Errorf("hub.topic = %q", gotForm.Get("hub.topic"))
 	}
+
 	if gotForm.Get("hub.secret") != "s3" {
 		t.Errorf("hub.secret = %q", gotForm.Get("hub.secret"))
 	}
+
 	wantCB := "https://app.japa.example/api/v1/intel/inbound/websub/" + ch.ID.String()
 	if gotForm.Get("hub.callback") != wantCB {
 		t.Errorf("hub.callback = %q, want %q", gotForm.Get("hub.callback"), wantCB)
 	}
+
 	if gotForm.Get("hub.lease_seconds") != "86400" {
 		t.Errorf("hub.lease_seconds = %q", gotForm.Get("hub.lease_seconds"))
 	}
@@ -492,8 +529,10 @@ func TestIntelWebSubSubscribe_DisabledChannel(t *testing.T) {
 	_, srcStore, _, inspector := wireIntelChannelDeps(t)
 
 	hubCalled := false
+
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hubCalled = true
+
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer hub.Close()
@@ -509,9 +548,11 @@ func TestIntelWebSubSubscribe_DisabledChannel(t *testing.T) {
 	if err := HandleIntelWebSubSubscribe(t.Context(), asynq.NewTask(TypeIntelWebSubSubscribe, payload)); err != nil {
 		t.Fatalf("HandleIntelWebSubSubscribe: %v", err)
 	}
+
 	if hubCalled {
 		t.Error("hub called for a disabled channel")
 	}
+
 	if len(pendingTasks(t, inspector, TypeIntelWebSubRenew)) != 0 ||
 		len(scheduledTasks(t, inspector, TypeIntelWebSubRenew)) != 0 {
 		t.Error("renewal armed for a disabled channel")
@@ -542,9 +583,11 @@ func TestHandleIntelSearchPoll_AdapterDisabled(t *testing.T) {
 	if err := HandleIntelSearchPoll(t.Context(), asynq.NewTask(TypeIntelSearchPoll, payload)); err != nil {
 		t.Fatalf("HandleIntelSearchPoll: %v", err)
 	}
+
 	if n := countChannelRawDocs(t, database, ch.ID); n != 0 {
 		t.Errorf("raw docs = %d, want 0 (adapter disabled)", n)
 	}
+
 	if tasks := pendingTasks(t, inspector, TypeIntelDetectChanges); len(tasks) != 0 {
 		t.Error("detect_changes enqueued for a disabled adapter")
 	}
@@ -569,6 +612,7 @@ func TestHandleIntelFetchChannel_SearchRedirect(t *testing.T) {
 	if err := HandleIntelFetchChannel(t.Context(), asynq.NewTask(TypeIntelFetchChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelFetchChannel: %v", err)
 	}
+
 	if tasks := pendingTasks(t, inspector, TypeIntelSearchPoll); len(tasks) != 1 {
 		t.Fatalf("search_poll tasks = %d, want 1", len(tasks))
 	}

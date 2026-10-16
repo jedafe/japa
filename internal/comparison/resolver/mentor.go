@@ -101,6 +101,7 @@ func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]
 
 	if r.queries != nil && len(page) > 0 {
 		ids := make([]pgtype.UUID, 0, len(page))
+
 		for _, m := range page {
 			if m.UserID.Valid {
 				ids = append(ids, m.UserID)

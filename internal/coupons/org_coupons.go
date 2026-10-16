@@ -66,6 +66,7 @@ func blankToNil(s *string) *string {
 	if s != nil && strings.TrimSpace(*s) == "" {
 		return nil
 	}
+
 	return s
 }
 
@@ -75,6 +76,7 @@ func numericPtr(n pgtype.Numeric) *pgtype.Numeric {
 	if !n.Valid {
 		return nil
 	}
+
 	return &n
 }
 
@@ -83,6 +85,7 @@ func timestamptzPtr(t pgtype.Timestamptz) *pgtype.Timestamptz {
 	if !t.Valid {
 		return nil
 	}
+
 	return &t
 }
 
@@ -94,13 +97,16 @@ func numericToFloat(n *pgtype.Numeric) (float64, error) {
 	if n == nil || !n.Valid {
 		return 0, errors.New("missing numeric value")
 	}
+
 	v, err := n.Float64Value()
 	if err != nil || !v.Valid {
 		return 0, errors.New("invalid numeric value")
 	}
+
 	if math.IsNaN(v.Float64) || math.IsInf(v.Float64, 0) {
 		return 0, errors.New("invalid numeric value")
 	}
+
 	return v.Float64, nil
 }
 
@@ -112,13 +118,16 @@ func validateOrgCouponInput(input OrgCouponInput) error {
 	if strings.TrimSpace(input.Title) == "" {
 		return fmt.Errorf("%w: title is required", ErrInvalidCouponInput)
 	}
+
 	code := normalizeOrgCouponCode(input.Code)
 	if code == "" {
 		return fmt.Errorf("%w: code is required", ErrInvalidCouponInput)
 	}
+
 	if !orgCouponCodeRe.MatchString(code) {
 		return fmt.Errorf("%w: code must be 3-32 characters (A-Z, 0-9, _ or -)", ErrInvalidCouponInput)
 	}
+
 	switch DiscountType(input.DiscountType) {
 	case "":
 		if input.DiscountValue != nil {
@@ -141,19 +150,24 @@ func validateOrgCouponInput(input OrgCouponInput) error {
 	default:
 		return fmt.Errorf("%w: unknown discount_type %q", ErrInvalidCouponInput, input.DiscountType)
 	}
+
 	if input.ValidFrom != nil && input.ExpiresAt != nil &&
 		input.ExpiresAt.Time.Before(input.ValidFrom.Time) {
 		return fmt.Errorf("%w: expires_at must not precede valid_from", ErrInvalidCouponInput)
 	}
+
 	if input.MaxRedemptions != nil && *input.MaxRedemptions < 0 {
 		return fmt.Errorf("%w: max_redemptions must be >= 0", ErrInvalidCouponInput)
 	}
+
 	if input.PerUserLimit != nil && *input.PerUserLimit < 0 {
 		return fmt.Errorf("%w: per_user_limit must be >= 0", ErrInvalidCouponInput)
 	}
+
 	if input.MinSpend != nil && *input.MinSpend < 0 {
 		return fmt.Errorf("%w: min_spend must be >= 0", ErrInvalidCouponInput)
 	}
+
 	if input.AppliesTo != nil && *input.AppliesTo != "" {
 		switch CouponAppliesTo(*input.AppliesTo) {
 		case AppliesToService, AppliesToPackage, AppliesToBoth:
@@ -161,9 +175,11 @@ func validateOrgCouponInput(input OrgCouponInput) error {
 			return fmt.Errorf("%w: applies_to must be 'service', 'package' or 'both'", ErrInvalidCouponInput)
 		}
 	}
+
 	if err := validateOutboundURL("terms_url", input.TermsURL); err != nil {
 		return err
 	}
+
 	return validateOutboundURL("referral_url", input.ReferralURL)
 }
 
@@ -181,6 +197,7 @@ func mapOrgCouponWriteErr(err error) error {
 			return ErrCouponAlreadyExists
 		}
 	}
+
 	return err
 }
 
@@ -194,50 +211,65 @@ func mergeOrgCouponInput(input OrgCouponInput, cur gen.Coupon) OrgCouponInput {
 	if merged.Title = strings.TrimSpace(merged.Title); merged.Title == "" {
 		merged.Title = cur.Title
 	}
+
 	if merged.Code = normalizeOrgCouponCode(merged.Code); merged.Code == "" {
 		merged.Code = derefStr(cur.Code)
 	}
+
 	if merged.Description == nil {
 		merged.Description = cur.Description
 	}
+
 	if merged.DiscountType = strings.TrimSpace(merged.DiscountType); merged.DiscountType == "" {
 		merged.DiscountType = derefStr(cur.DiscountType)
 	}
+
 	if merged.DiscountValue == nil {
 		merged.DiscountValue = numericPtr(cur.DiscountValue)
 	}
+
 	if merged.Currency == nil {
 		merged.Currency = cur.Currency
 	}
+
 	if merged.TermsURL == nil {
 		merged.TermsURL = cur.TermsUrl
 	}
+
 	if merged.ReferralURL == nil {
 		merged.ReferralURL = cur.ReferralUrl
 	}
+
 	if merged.ValidFrom == nil {
 		merged.ValidFrom = timestamptzPtr(cur.ValidFrom)
 	}
+
 	if merged.ExpiresAt == nil {
 		merged.ExpiresAt = timestamptzPtr(cur.ExpiresAt)
 	}
+
 	if merged.MaxRedemptions == nil {
 		merged.MaxRedemptions = cur.MaxRedemptions
 	}
+
 	if merged.PerUserLimit == nil {
 		merged.PerUserLimit = cur.PerUserLimit
 	}
+
 	if merged.MinSpend == nil {
 		merged.MinSpend = cur.MinSpend
 	}
+
 	if merged.FirstTimeOnly == nil {
 		b := cur.FirstTimeOnly
 		merged.FirstTimeOnly = &b
 	}
+
 	if merged.AppliesTo == nil || *merged.AppliesTo == "" {
 		a := cur.AppliesTo
 		merged.AppliesTo = &a
 	}
+
 	return merged
 }
 
@@ -304,6 +336,7 @@ func (s *Service) CreateOrgCoupon(ctx context.Context, orgID, userID pgtype.UUID
 	input.Title = strings.TrimSpace(input.Title)
 	input.Code = normalizeOrgCouponCode(input.Code)
 	input.DiscountType = strings.TrimSpace(input.DiscountType)
+
 	if err := validateOrgCouponInput(input); err != nil {
 		return gen.Coupon{}, err
 	}
@@ -317,6 +350,7 @@ func (s *Service) CreateOrgCoupon(ctx context.Context, orgID, userID pgtype.UUID
 	if input.FirstTimeOnly != nil {
 		firstTimeOnly = *input.FirstTimeOnly
 	}
+
 	var appliesTo any
 	if input.AppliesTo != nil && *input.AppliesTo != "" {
 		appliesTo = *input.AppliesTo
@@ -359,6 +393,7 @@ func (s *Service) UpdateOrgCoupon(ctx context.Context, orgID, couponID pgtype.UU
 		if isNoRows(err) {
 			return gen.Coupon{}, ErrCouponNotFound
 		}
+
 		return gen.Coupon{}, fmt.Errorf("getting org coupon: %w", err)
 	}
 
@@ -378,6 +413,7 @@ func (s *Service) UpdateOrgCoupon(ctx context.Context, orgID, couponID pgtype.UU
 			// The WHERE id+organization_id guard raced a delete/move.
 			return gen.Coupon{}, ErrCouponNotFound
 		}
+
 		return gen.Coupon{}, mapOrgCouponWriteErr(err)
 	}
 
@@ -397,6 +433,7 @@ func (s *Service) DeleteOrgCoupon(ctx context.Context, orgID, couponID pgtype.UU
 		if isNoRows(err) {
 			return ErrCouponNotFound
 		}
+
 		return fmt.Errorf("getting org coupon: %w", err)
 	}
 
@@ -428,9 +465,12 @@ func (s *Service) DeleteOrgCoupon(ctx context.Context, orgID, couponID pgtype.UU
 				// The WHERE id+organization_id guard raced a delete/move.
 				return ErrCouponNotFound
 			}
+
 			return mapOrgCouponWriteErr(err)
 		}
+
 		s.invalidateCouponCaches(ctx, couponID, current.Slug)
+
 		return nil
 	}
 
@@ -438,6 +478,7 @@ func (s *Service) DeleteOrgCoupon(ctx context.Context, orgID, couponID pgtype.UU
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ErrCouponNotFound
 	}

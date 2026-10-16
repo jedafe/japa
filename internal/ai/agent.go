@@ -92,7 +92,7 @@ const (
 	EventFinalResponse  = "final_response"
 	EventError          = "error"
 
-	// ADR-130 unified surface
+	// ADR-130 unified surface.
 	EventConversation = "conversation" // carries conversation_id; emitted with session_start
 	EventSources      = "sources"      // carries pre-search RAG chunks for citation rendering
 )
@@ -474,15 +474,19 @@ func (h *AgentHandler) persistTerminalNotice(ctx context.Context, p loopParams, 
 	if !p.detached || p.unified == nil || !p.unified.hasConv || h.convos == nil {
 		return
 	}
+
 	persistCtx := context.WithoutCancel(ctx)
+
 	msg, err := h.convos.AppendAssistantMessage(persistCtx, p.unified.conv.ID, notice, p.model, p.unified.req.VoiceID, 0, 0, &session.ID)
 	if err != nil {
 		slog.Warn("ai: failed to persist terminal notice", "session_id", session.ID, "error", err)
 		return
 	}
+
 	if err := h.convos.LinkSession(persistCtx, session.ID, p.unified.conv.ID, msg.ID); err != nil {
 		slog.Warn("ai: failed to link terminal notice session", "session_id", session.ID, "error", err)
 	}
+
 	if err := h.convos.Touch(persistCtx, p.unified.conv.ID); err != nil {
 		slog.Warn("ai: failed to touch conversation", "conversation_id", p.unified.conv.ID, "error", err)
 	}
@@ -529,15 +533,18 @@ func (h *AgentHandler) runLoop(
 			return true
 		default:
 		}
+
 		if ev.Type != EventFinalResponse && ev.Type != EventError {
 			return true
 		}
+
 		timer := time.NewTimer(2 * time.Second)
 		defer timer.Stop()
 		select {
 		case events <- ev:
 		case <-timer.C:
 		}
+
 		return true
 	}
 
@@ -550,7 +557,7 @@ func (h *AgentHandler) runLoop(
 			panicErr := fmt.Errorf("agent: internal error: %v", r)
 			slog.Error("ai: panic in agent run loop", "session_id", session.ID, "error", r)
 			h.failSession(context.WithoutCancel(ctx), session, panicErr, 0, 0, 0)
-			h.persistTerminalNotice(ctx, p, session, fmt.Sprintf("The agent task failed: %s", panicErr.Error()))
+			h.persistTerminalNotice(ctx, p, session, "The agent task failed: "+panicErr.Error())
 			sendEvent(AgentEvent{
 				Type:      EventError,
 				SessionID: session.ID.String(),
@@ -606,10 +613,12 @@ func (h *AgentHandler) runLoop(
 		if p.unified.userMsgPersisted {
 			turnCount++
 		}
+
 		var projectID string
 		if p.unified.conv.ProjectID.Valid {
 			projectID = p.unified.conv.ProjectID.String()
 		}
+
 		if !sendEvent(AgentEvent{Type: EventConversation, SessionID: session.ID.String(), ConversationID: convID, ProjectID: projectID, TurnCount: turnCount}) {
 			h.failSession(ctx, session, loopCtx.Err(), 0, 0, 0)
 			return
@@ -635,6 +644,7 @@ func (h *AgentHandler) runLoop(
 	} else {
 		tools = h.buildToolCatalog(loopCtx, userID)
 	}
+
 	toolDefs := configsToToolDefinitions(tools)
 
 	// --- Task 5.07: build system prompt ---
@@ -661,6 +671,7 @@ func (h *AgentHandler) runLoop(
 
 		globalEnabled := h.getBoolSetting(ctx, "ai.humanize.enabled", false)
 		globalLevel := HumanizeLevel(h.getStringSetting(ctx, "ai.humanize.level", "medium"))
+
 		if enabled, level := ResolveHumanize(globalEnabled, globalLevel, p.unified.req.Humanize, p.unified.req.HumanizeLevel); enabled {
 			systemPrompt = ApplyHumanization(systemPrompt, level)
 		}
@@ -702,6 +713,7 @@ func (h *AgentHandler) runLoop(
 		if delta == "" {
 			return
 		}
+
 		sendEvent(AgentEvent{
 			Type:           EventDelta,
 			SessionID:      session.ID.String(),
@@ -870,7 +882,7 @@ func (h *AgentHandler) runLoop(
 	if loopErr != nil {
 		h.failSession(ctx, session, loopErr, toolCallCount, totalTokens, estimatedCost)
 		trackCost()
-		h.persistTerminalNotice(ctx, p, session, fmt.Sprintf("The agent task failed: %s", loopErr.Error()))
+		h.persistTerminalNotice(ctx, p, session, "The agent task failed: "+loopErr.Error())
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -889,9 +901,10 @@ func (h *AgentHandler) runLoop(
 		} else {
 			loopErr = errors.New("agent: model returned an empty response")
 		}
+
 		h.failSession(ctx, session, loopErr, toolCallCount, totalTokens, estimatedCost)
 		trackCost()
-		h.persistTerminalNotice(ctx, p, session, fmt.Sprintf("The agent task failed: %s", loopErr.Error()))
+		h.persistTerminalNotice(ctx, p, session, "The agent task failed: "+loopErr.Error())
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -910,13 +923,16 @@ func (h *AgentHandler) runLoop(
 	// must not eat the answer the user is about to see. WithoutCancel so a
 	// disconnect mid-write doesn't lose the row.
 	messageID := ""
+
 	if p.unified != nil && p.unified.hasConv && h.convos != nil {
 		persistCtx := context.WithoutCancel(ctx)
 		if msg, err := h.convos.AppendAssistantMessage(persistCtx, p.unified.conv.ID, finalResponse, p.model, p.unified.req.VoiceID, totalTokens, estimatedCost, &session.ID); err == nil {
 			messageID = msg.ID.String()
+
 			if err := h.convos.LinkSession(persistCtx, session.ID, p.unified.conv.ID, msg.ID); err != nil {
 				slog.Warn("ai: failed to link agent session to conversation", "session_id", session.ID, "error", err)
 			}
+
 			if err := h.convos.Touch(persistCtx, p.unified.conv.ID); err != nil {
 				slog.Warn("ai: failed to touch conversation", "conversation_id", convID, "error", err)
 			}
@@ -937,6 +953,7 @@ func (h *AgentHandler) runLoop(
 		if p.unified.userMsgPersisted {
 			finalTurnCount++
 		}
+
 		if messageID != "" {
 			finalTurnCount++
 		}
@@ -1196,7 +1213,6 @@ func (h *AgentHandler) createSession(ctx context.Context, userID pgtype.UUID, pr
 	}
 
 	return h.sessions.CreateAgentSession(ctx, gen.CreateAgentSessionParams{
-
 		UserID:         userID,
 		Prompt:         prompt,
 		GeoSpaceID:     geoID,

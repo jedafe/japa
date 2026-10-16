@@ -360,6 +360,7 @@ ON CONFLICT (user_id, destination_space_id) DO NOTHING
 // given destination space.
 func (s *Store) IsSubscribed(ctx context.Context, userID, destSpaceID pgtype.UUID) (bool, error) {
 	var exists bool
+
 	err := s.pool.Reader.QueryRow(ctx, `
 SELECT EXISTS (
     SELECT 1 FROM scam_alert_subscriptions
@@ -369,6 +370,7 @@ SELECT EXISTS (
 	if err != nil {
 		return false, fmt.Errorf("scamalert: is subscribed: %w", err)
 	}
+
 	return exists, nil
 }
 
@@ -474,6 +476,7 @@ func (s *Store) AdminListReports(ctx context.Context, f AdminListReportsFilter) 
 		conditions = append(conditions, fmt.Sprintf(
 			"(sr.description ILIKE $%d OR sr.origin_community ILIKE $%d OR sr.scam_type ILIKE $%d)",
 			argIdx, argIdx, argIdx))
+
 		args = append(args, "%"+q+"%")
 		argIdx++
 	}
@@ -501,6 +504,7 @@ func (s *Store) AdminListReports(ctx context.Context, f AdminListReportsFilter) 
 	// back to the default created_at ordering so user input can never inject
 	// into ORDER BY.
 	sortColumn := "sr.created_at"
+
 	switch f.Sort {
 	case "scam_type":
 		sortColumn = "sr.scam_type"

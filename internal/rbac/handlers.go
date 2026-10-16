@@ -50,7 +50,6 @@ func (h *Handlers) SetFieldPermissionCacheInvalidator(f FieldPermissionCacheInva
 // groups table); without it the full, unpaginated list is returned (used
 // by dropdown option loaders on other admin pages).
 func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
-
 	// Paged mode — the admin groups table drives these params.
 	if r.URL.Query().Get("page_size") != "" {
 		limit := int32(25)
@@ -91,6 +90,7 @@ func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
 			"page":        offset / limit,
 			"total_pages": totalPages,
 		}})
+
 		return
 	}
 
@@ -116,7 +116,6 @@ type CreateGroupInput struct {
 
 // CreateGroup handles POST /api/v1/admin/rbac/groups.
 func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
-
 	var input CreateGroupInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
@@ -180,7 +179,6 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // DELETE query) and by an explicit check here. The filter prevents
 // cross-platform deletion.
 func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
-
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
@@ -195,6 +193,7 @@ func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
+
 	if group.IsSystem {
 		errpkg.WriteError(w, http.StatusConflict, "system_group", "System groups cannot be deleted")
 		return
@@ -210,7 +209,6 @@ func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 
 // ListGroupMembers handles GET /api/v1/admin/rbac/groups/{id}/members.
 func (h *Handlers) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
-
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
@@ -233,7 +231,6 @@ type AddGroupMemberInput struct {
 
 // AddGroupMember handles POST /api/v1/admin/rbac/groups/{id}/members.
 func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
-
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
@@ -273,7 +270,6 @@ func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 
 // RemoveGroupMember handles DELETE /api/v1/admin/rbac/groups/{id}/members/{userId}.
 func (h *Handlers) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
-
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
@@ -344,7 +340,6 @@ func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
 
 // ListRoles handles GET /api/v1/admin/rbac/roles.
 func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
-
 	limit := int32(25)
 	offset := int32(0)
 	search := r.URL.Query().Get("search")
@@ -393,7 +388,6 @@ type CreateRoleInput struct {
 
 // CreateRole handles POST /api/v1/admin/rbac/roles.
 func (h *Handlers) CreateRole(w http.ResponseWriter, r *http.Request) {
-
 	var input CreateRoleInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
@@ -543,7 +537,6 @@ func parseUUID(s string) (pgtype.UUID, error) {
 
 // DeleteRole handles DELETE /admin/roles/:id (P5.6).
 func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
-
 	roleID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
@@ -560,7 +553,6 @@ func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRole handles PATCH /admin/roles/:id (P5.6).
 func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
-
 	roleID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
@@ -635,7 +627,6 @@ func (h *Handlers) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
 // and permission updates on system groups are allowed. The filter
 // prevents cross-platform updates.
 func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
-
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")

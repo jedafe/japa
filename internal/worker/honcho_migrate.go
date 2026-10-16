@@ -64,13 +64,16 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 	if err := parsePayloadOrSkip(t, &p); err != nil {
 		return err
 	}
+
 	userID, err := scanUUID(p.UserID)
 	if err != nil {
 		return fmt.Errorf("ai:migrate_conversations: %w: %w", err, asynq.SkipRetry)
 	}
+
 	if dbPool == nil {
 		return errors.New("worker: db pool not registered")
 	}
+
 	if honchoFetcher == nil {
 		// Honcho not configured — nothing to migrate, mark success.
 		return nil
@@ -85,26 +88,31 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 	// wrote (metadata.unified) must not be migrated. Ungrouped entries form
 	// one-message threads keyed by entry id.
 	groups := map[string][]honcho.ContextEntry{}
+
 	for _, e := range entries {
 		if e.Metadata != nil {
 			if u, ok := e.Metadata["unified"].(bool); ok && u {
 				continue
 			}
 		}
+
 		cid := legacyConversationID(e)
 		groups[cid] = append(groups[cid], e)
 	}
+
 	if len(groups) == 0 {
 		return nil
 	}
 
 	q := gen.New(dbPool.Writer)
+
 	titleLen := 80
 	if appSettings != nil {
 		titleLen = appSettings.GetIntOr(ctx, "ai.conversation_title_length", 80)
 	}
 
 	var migrated, skipped int
+
 	for _, legacyID := range sortedKeys(groups) {
 		ents := groups[legacyID]
 		sort.SliceStable(ents, func(i, j int) bool { return ents[i].CreatedAt.Before(ents[j].CreatedAt) })
@@ -135,12 +143,15 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 		// retries — substitute now() when absent.
 		now := time.Now()
 		first, last := ents[0].CreatedAt, ents[len(ents)-1].CreatedAt
+
 		if first.IsZero() {
 			first = now
 		}
+
 		if last.IsZero() {
 			last = now
 		}
+
 		title := migrateTitle(ents, titleLen)
 
 		txErr := db.WithTx(ctx, dbPool.Writer, func(txq *gen.Queries) error {
@@ -171,6 +182,7 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 				} else if !errors.Is(lerr, pgx.ErrNoRows) {
 					return lerr
 				}
+
 				tombID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 				if _, terr := txq.CreateAIConversationWithLegacyRef(ctx, gen.CreateAIConversationWithLegacyRefParams{
 					ID:        tombID,
@@ -182,19 +194,23 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 				}); terr != nil {
 					return terr
 				}
+
 				if _, derr := txq.SoftDeleteAIConversationForUser(ctx, gen.SoftDeleteAIConversationForUserParams{
 					ID:     tombID,
 					UserID: userID,
 				}); derr != nil {
 					return derr
 				}
+
 				return errLegacyRefTaken
 			}
+
 			for _, e := range ents {
 				createdAt := e.CreatedAt
 				if createdAt.IsZero() {
 					createdAt = now
 				}
+
 				if _, err := txq.InsertAIMessageAt(ctx, gen.InsertAIMessageAtParams{
 					ConversationID: convID,
 					Role:           legacyMessageRole(e),
@@ -204,8 +220,10 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 					return err
 				}
 			}
+
 			return nil
 		})
+
 		switch {
 		case errors.Is(txErr, errLegacyRefTaken):
 			skipped++
@@ -218,6 +236,7 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("ai:migrate_conversations done",
 		"user_id", p.UserID, "migrated", migrated, "skipped", skipped)
+
 	return nil
 }
 
@@ -230,6 +249,7 @@ func legacyConversationID(e honcho.ContextEntry) string {
 			return v
 		}
 	}
+
 	return e.ID
 }
 
@@ -245,6 +265,7 @@ func legacyMessageRole(e honcho.ContextEntry) string {
 			return "user"
 		}
 	}
+
 	return "user"
 }
 
@@ -254,16 +275,20 @@ func migrateTitle(entries []honcho.ContextEntry, titleLen int) string {
 	if titleLen <= 0 {
 		titleLen = 80
 	}
+
 	for _, e := range entries {
 		if legacyMessageRole(e) != "user" {
 			continue
 		}
+
 		runes := []rune(e.Content)
 		if len(runes) > titleLen {
 			return string(runes[:titleLen])
 		}
+
 		return e.Content
 	}
+
 	return ""
 }
 
@@ -272,6 +297,8 @@ func sortedKeys[V any](m map[string]V) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	return keys
 }

@@ -96,9 +96,11 @@ func (s *Service) EmbedderConfigured() bool {
 	if s.embedder == nil {
 		return false
 	}
+
 	if c, ok := s.embedder.(interface{ Configured() bool }); ok {
 		return c.Configured()
 	}
+
 	return true
 }
 
@@ -145,6 +147,7 @@ func scopeHash(scope RetrievalScope) []byte {
 	if scope.ViewerID.Valid {
 		h.Write(scope.ViewerID.Bytes[:])
 	}
+
 	if scope.CanSeePrivate {
 		h.Write([]byte{1})
 	}
@@ -154,6 +157,7 @@ func scopeHash(scope RetrievalScope) []byte {
 	sort.Slice(ids, func(i, j int) bool {
 		return bytes.Compare(ids[i].Bytes[:], ids[j].Bytes[:]) < 0
 	})
+
 	for _, id := range ids {
 		h.Write(id.Bytes[:])
 	}
@@ -214,6 +218,7 @@ func (s *Service) IndexEntity(ctx context.Context, entityType string, entityID p
 	// anyway, and 'private' never leaks a row that should have been hidden.
 	if visibility == "" {
 		slog.Warn("rag: index: entity missing visibility — defaulting to private", "entity_type", entityType, "entity_id", entityID.String())
+
 		visibility = "private"
 	}
 
@@ -273,7 +278,7 @@ func (s *Service) IndexEntity(ctx context.Context, entityType string, entityID p
 	}
 
 	// Delete stale tail chunks from a previous, longer index.
-	// nolint:gosec // G115: bounded
+	//nolint:gosec // G115: bounded
 	if err := s.store.DeleteStaleTail(ctx, ref.Type, ref.ID, int32(len(chunkTexts))); err != nil { // #nosec G115 -- len() of a chunked text slice // #nosec //nolint:gosec // G115: bounded
 		slog.Warn("rag: index: failed to delete stale tail", "entity_id", ref.ID.String(), "error", err)
 	}
@@ -291,6 +296,7 @@ func (s *Service) ReconcileSpaceDelete(ctx context.Context, spaceID pgtype.UUID)
 	if s.store == nil {
 		return nil
 	}
+
 	return s.store.OrphanThreadScopesBySpace(ctx, spaceID)
 }
 
@@ -445,6 +451,7 @@ func (s *Service) RecordIndexFailure(ctx context.Context, entityType string, ent
 	if s == nil || s.store == nil {
 		return nil
 	}
+
 	return s.store.RecordIndexFailure(ctx, entityType, entityID, operation, indexErr)
 }
 
@@ -467,6 +474,7 @@ func (s *Service) RetryFailures(ctx context.Context) (RetryResult, error) {
 	if s.store == nil {
 		return res, errors.New("rag: retry-failures: no store configured")
 	}
+
 	if s.enqueuer == nil {
 		return res, errors.New("rag: retry-failures: no enqueuer configured")
 	}
@@ -483,12 +491,14 @@ func (s *Service) RetryFailures(ctx context.Context) (RetryResult, error) {
 		if err != nil {
 			slog.Warn("rag: retry-failures: marshal payload failed", "content_id", id.String(), "error", err)
 			res.RequeueErrors = append(res.RequeueErrors, id.String())
+
 			continue
 		}
 
 		if err := s.enqueuer.Enqueue(worker.TypeAIGenerateContentEmbedding, payload); err != nil {
 			slog.Warn("rag: retry-failures: enqueue failed", "content_id", id.String(), "error", err)
 			res.RequeueErrors = append(res.RequeueErrors, id.String())
+
 			continue
 		}
 
@@ -496,6 +506,7 @@ func (s *Service) RetryFailures(ctx context.Context) (RetryResult, error) {
 			slog.Warn("rag: retry-failures: clear after requeue failed", "content_id", id.String(), "error", err)
 			continue
 		}
+
 		res.Requeued++
 	}
 
@@ -503,6 +514,7 @@ func (s *Service) RetryFailures(ctx context.Context) (RetryResult, error) {
 	if err != nil {
 		return res, err
 	}
+
 	res.ClearedNonContent = cleared
 
 	if cleared > 0 {

@@ -143,7 +143,6 @@ func (p *RemittancePromoter) remittanceCreatePath(ctx context.Context, record ge
 		}
 
 		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
-
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {

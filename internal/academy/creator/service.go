@@ -151,6 +151,7 @@ func (s *Service) provisionAdminProfile(ctx context.Context, userID pgtype.UUID)
 	displayName, err := s.store.UserDisplayName(ctx, userID)
 	if err != nil || displayName == "" {
 		slog.Warn("creator: provision admin profile: display name fallback", "user_id", userID.String(), "error", err)
+
 		displayName = "Platform Instructor"
 	}
 
@@ -190,6 +191,7 @@ func (s *Service) Apply(ctx context.Context, userID pgtype.UUID, in ApplyInput) 
 	if row.Status == "pending" && s.canSkipApplication(ctx, userID) {
 		if approved, aerr := s.store.Approve(ctx, row.ID, userID, "", nil); aerr == nil {
 			row = approved
+
 			s.invalidateInstructorProfileCache(ctx, userID)
 		}
 	}
@@ -345,8 +347,10 @@ func (s *Service) CreateTrack(ctx context.Context, instructorID pgtype.UUID, in 
 // UpdateTrack updates a creator's own track.
 func (s *Service) UpdateTrack(ctx context.Context, trackID, instructorID pgtype.UUID, in UpdateTrackInput) (gen.UpdateInstructorTrackRow, error) {
 	var reset bool
+
 	row, err := db.WithTxResult(ctx, s.store.db.Writer, func(q *gen.Queries) (gen.UpdateInstructorTrackRow, error) {
 		st := s.store.forTx(q)
+
 		r, err := st.UpdateTrack(ctx, trackID, instructorID, in)
 		if err != nil {
 			return r, err
@@ -357,7 +361,9 @@ func (s *Service) UpdateTrack(ctx context.Context, trackID, instructorID pgtype.
 		if err != nil {
 			return r, err
 		}
+
 		reset = n > 0
+
 		return r, nil
 	})
 	if err != nil {
@@ -369,6 +375,7 @@ func (s *Service) UpdateTrack(ctx context.Context, trackID, instructorID pgtype.
 		row.IsPublished = false
 		row.IsPublishedToAcademy = false
 		row.AcademySubmissionStatus = "draft"
+
 		s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
 			"entity_id":   trackID.String(),
 			"entity_type": "academy_track",
@@ -388,6 +395,7 @@ func (s *Service) validateTrackCurriculum(ctx context.Context, trackID pgtype.UU
 	if err != nil {
 		return fmt.Errorf("creator: submission readiness: %w", err)
 	}
+
 	switch {
 	case r.ModuleCount == 0:
 		return fmt.Errorf("%w: course must contain at least one module", errpkg.ErrInvalid)
@@ -396,6 +404,7 @@ func (s *Service) validateTrackCurriculum(ctx context.Context, trackID pgtype.UU
 	case r.QuizlessQuizCount > 0:
 		return fmt.Errorf("%w: every published quiz lesson must have at least one question", errpkg.ErrInvalid)
 	}
+
 	return nil
 }
 
@@ -407,6 +416,7 @@ func (s *Service) SubmitTrack(ctx context.Context, trackID, instructorID pgtype.
 	if err != nil {
 		return gen.SubmitAcademyTrackRow{}, err
 	}
+
 	if !track.InstructorID.Valid || track.InstructorID != instructorID {
 		return gen.SubmitAcademyTrackRow{}, fmt.Errorf("%w: you do not own this track", errpkg.ErrForbidden)
 	}
@@ -414,6 +424,7 @@ func (s *Service) SubmitTrack(ctx context.Context, trackID, instructorID pgtype.
 	if err := s.validateTrackCurriculum(ctx, trackID); err != nil {
 		return gen.SubmitAcademyTrackRow{}, err
 	}
+
 	return s.store.SubmitTrack(ctx, trackID, instructorID)
 }
 
@@ -446,26 +457,32 @@ func (s *Service) ApproveTrack(ctx context.Context, trackID pgtype.UUID) (gen.Ap
 // commit so the track drops out of marketplace results.
 func (s *Service) withMutationAndReset(ctx context.Context, trackID pgtype.UUID, fn func(q *gen.Queries) error) error {
 	var reset bool
+
 	err := db.WithTx(ctx, s.store.db.Writer, func(q *gen.Queries) error {
 		if err := fn(q); err != nil {
 			return err
 		}
+
 		n, err := q.ResetApprovedAcademyTrackToDraft(ctx, trackID)
 		if err != nil {
 			return err
 		}
+
 		reset = n > 0
+
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+
 	if reset {
 		s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
 			"entity_id":   trackID.String(),
 			"entity_type": "academy_track",
 		})
 	}
+
 	return nil
 }
 
@@ -595,7 +612,6 @@ func (s *Service) ProcessEnrollment(ctx context.Context, userID, trackID, paymen
 	}
 
 	_, err = s.store.InsertRevenueSplit(ctx, gen.InsertRevenueSplitParams{
-
 		InstructorID: track.InstructorID,
 		TrackID:      trackID,
 		EnrollmentID: enrollRef,
@@ -737,7 +753,6 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, periodStart, perio
 		}
 
 		payout, err := s.store.CreatePayout(ctx, gen.CreateInstructorPayoutParams{
-
 			InstructorID:           p.ID,
 			PeriodStart:            ps,
 			PeriodEnd:              pe,

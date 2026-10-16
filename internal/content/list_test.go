@@ -31,6 +31,7 @@ func TestValidateListFieldValues(t *testing.T) {
 		if tc.wantErr == "" && err != nil {
 			t.Errorf("%s: unexpected error %v", tc.name, err)
 		}
+
 		if tc.wantErr != "" && (err == nil || err.Code != tc.wantErr) {
 			t.Errorf("%s: want %s, got %v", tc.name, tc.wantErr, err)
 		}
@@ -42,6 +43,7 @@ func TestValidateListFieldValuesMaxItems(t *testing.T) {
 	if _, err := validateListFieldValues(json.RawMessage(fv), 2); err == nil || err.Code != "too_many_items" {
 		t.Fatalf("want too_many_items, got %v", err)
 	}
+
 	if _, err := validateListFieldValues(json.RawMessage(fv), 3); err != nil {
 		t.Fatalf("3 items at max 3 should pass, got %v", err)
 	}
@@ -49,10 +51,12 @@ func TestValidateListFieldValuesMaxItems(t *testing.T) {
 
 func TestListItemHTMLSanitized(t *testing.T) {
 	fv := `{"items":[{"body_html":"<p onclick='x()'>hi</p><script>bad()</script>"}]}`
+
 	out, err := validateListFieldValues(json.RawMessage(fv), 50)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if bytes.Contains(out, []byte("onclick")) || bytes.Contains(out, []byte("script")) {
 		t.Fatal("item body_html not sanitized")
 	}
@@ -73,12 +77,14 @@ func TestInjectListItemListElements(t *testing.T) {
 		if !ok || len(els) != 3 {
 			t.Fatalf("itemListElement = %v, want 3 elements", doc["itemListElement"])
 		}
+
 		for i, want := range []string{"First", "Second", "Third"} {
 			el := els[i].(map[string]any)
 			if el["position"] != float64(i+1) || el["name"] != want {
 				t.Fatalf("element %d = %v, want position %d name %q", i, el, i+1, want)
 			}
 		}
+
 		if doc["numberOfItems"] != float64(3) {
 			t.Fatalf("numberOfItems = %v, want 3", doc["numberOfItems"])
 		}
@@ -105,6 +111,7 @@ func TestInjectListItemListElements(t *testing.T) {
 
 	t.Run("empty items returns input unchanged", func(t *testing.T) {
 		fv := json.RawMessage(`{"list_mode":"numbered","items":[]}`)
+
 		out := injectListItemListElements(jsonLd, fv)
 		if !bytes.Equal(out, jsonLd) {
 			t.Fatalf("expected unchanged input, got %s", out)
@@ -121,9 +128,11 @@ func TestInjectListItemListElements(t *testing.T) {
 
 func decodeJSONLD(t *testing.T, raw []byte) map[string]any {
 	t.Helper()
+
 	var doc map[string]any
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatalf("injected JSON-LD is not valid JSON: %v (%s)", err, raw)
 	}
+
 	return doc
 }

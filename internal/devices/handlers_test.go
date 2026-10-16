@@ -331,7 +331,6 @@ func TestCompositeDispatcher_UnknownPlatform_ReturnsError(t *testing.T) {
 
 // TestNoopDispatcher_ReturnsErrNoDispatcher verifies the noop sentinel.
 func TestNoopDispatcher_ReturnsErrNoDispatcher(t *testing.T) {
-
 	err := NoopDispatcher{}.Dispatch(t.Context(), PlatformIOS, "tok", PushPayload{})
 	if !errors.Is(err, ErrNoDispatcher) {
 		t.Errorf("expected ErrNoDispatcher, got %v", err)

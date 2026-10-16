@@ -417,9 +417,11 @@ func docsPageToMap(p DocsPage) map[string]any {
 	if p.ParentID != nil {
 		m["parent_id"] = *p.ParentID
 	}
+
 	if p.Category != nil {
 		m["category"] = *p.Category
 	}
+
 	if p.Subcategory != nil {
 		m["subcategory"] = *p.Subcategory
 	}

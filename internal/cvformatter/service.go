@@ -373,7 +373,6 @@ func (s *Service) CreateSession(ctx context.Context, userID pgtype.UUID, input F
 	promptHash := hex.EncodeToString(hash[:])
 
 	row, err := s.store.CreateSession(ctx, SessionInput{
-
 		UserID:             userID,
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,

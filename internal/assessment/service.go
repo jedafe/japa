@@ -160,7 +160,7 @@ type ScoreResult struct {
 
 // AssessmentFormDTO is the active assessment form with its scoring_config and
 // fields, ready for the scoring engine or for public display.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type AssessmentFormDTO struct {
 	ID string `json:"id"`
 
@@ -177,7 +177,7 @@ type AssessmentFormDTO struct {
 // assessmentDimensions returns the distinct readiness dimensions that may be
 // recommended by the active assessment. It is the union of dimensions declared
 // on form fields and the keys of the active/default curated roadmap library.
-// Ref: docs/superpowers/specs/2026-09-09-readiness-roadmap-content-journey-design.md
+// Ref: docs/superpowers/specs/2026-09-09-readiness-roadmap-content-journey-design.md.
 func assessmentDimensions(form *AssessmentFormDTO) []string {
 	seen := make(map[string]bool)
 
@@ -191,6 +191,7 @@ func assessmentDimensions(form *AssessmentFormDTO) []string {
 	if len(library) == 0 {
 		library = curatedRoadmapLibrary()
 	}
+
 	for d := range library {
 		seen[d] = true
 	}
@@ -199,7 +200,9 @@ func assessmentDimensions(form *AssessmentFormDTO) []string {
 	for d := range seen {
 		out = append(out, d)
 	}
+
 	sort.Strings(out)
+
 	return out
 }
 
@@ -207,7 +210,7 @@ func assessmentDimensions(form *AssessmentFormDTO) []string {
 // config resolved from the config JSONB column. Options (for select/multiselect
 // fields) and Placeholder are exposed so the frontend can render the form
 // controls without a second round-trip (Rule 16 — no hardcoded option lists).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type AssessmentField struct {
 	ID          string             `json:"id"`
 	Label       string             `json:"label"`
@@ -560,7 +563,6 @@ func (s *Service) AdminListResults(ctx context.Context, minScore, maxScore, page
 	offset := (page - 1) * limit
 
 	results, total, err := s.store.AdminListAssessmentResults(ctx, AdminListAssessmentResultsFilter{
-
 		MinScore: minScore,
 		MaxScore: maxScore,
 		Offset:   offset,
@@ -1064,7 +1066,7 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 // pickBestRoadmapContent selects the highest-scoring, unused published guide for a
 // roadmap step. It does not restrict candidates to the original step's slug family,
 // so any guide with the same dimension and a better journey match can win.
-// // Ref: docs/superpowers/specs/2026-09-09-readiness-roadmap-content-journey-design.md
+// // Ref: docs/superpowers/specs/2026-09-09-readiness-roadmap-content-journey-design.md.
 func pickBestRoadmapContent(rows []gen.FindRoadmapContentByDimensionRow, base string, used map[string]bool, journeyCtx JourneyContext) (gen.FindRoadmapContentByDimensionRow, int) {
 	best := gen.FindRoadmapContentByDimensionRow{}
 	bestScore := 0
@@ -1081,15 +1083,19 @@ func pickBestRoadmapContent(rows []gen.FindRoadmapContentByDimensionRow, base st
 		if journeyCtx.DestinationCountry != "" && row.TargetCountry != nil && *row.TargetCountry == journeyCtx.DestinationCountry {
 			score += 4
 		}
+
 		if journeyCtx.OriginCountry != "" && row.SourceCountry != nil && *row.SourceCountry == journeyCtx.OriginCountry {
 			score += 1
 		}
+
 		if journeyCtx.JourneyStage != "" && row.JourneyStage != nil && *row.JourneyStage == journeyCtx.JourneyStage {
 			score += 2
 		}
+
 		if journeyCtx.VisaRoute != "" && row.VisaRoute != nil && *row.VisaRoute == journeyCtx.VisaRoute {
 			score += 2
 		}
+
 		if p := stringFromAny(row.Purpose); journeyCtx.Purpose != "" && p != "" && p == journeyCtx.Purpose {
 			score += 1
 		}
@@ -1167,21 +1173,27 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, steps []RoadmapStep
 		if best.Title != "" {
 			steps[i].Title = best.Title
 		}
+
 		if desc := feed.CleanExcerpt(best.Description, best.Title); desc != "" {
 			steps[i].Description = desc
 		}
+
 		if best.TargetCountry != nil && *best.TargetCountry != "" {
 			steps[i].TargetCountry = *best.TargetCountry
 		}
+
 		if best.JourneyStage != nil && *best.JourneyStage != "" {
 			steps[i].JourneyStage = *best.JourneyStage
 		}
+
 		if best.VisaRoute != nil && *best.VisaRoute != "" {
 			steps[i].VisaRoute = *best.VisaRoute
 		}
+
 		if best.SourceCountry != nil && *best.SourceCountry != "" {
 			steps[i].SourceCountry = *best.SourceCountry
 		}
+
 		if p := stringFromAny(best.Purpose); p != "" {
 			steps[i].Purpose = p
 		}

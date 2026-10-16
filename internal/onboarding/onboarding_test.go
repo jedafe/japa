@@ -104,6 +104,7 @@ func TestDismissTourRequestUnmarshal(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"surface":"docs"}`), &req); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	if req.Surface != "docs" {
 		t.Errorf("surface = %q, want docs", req.Surface)
 	}
@@ -113,6 +114,7 @@ func TestDismissTourRequestUnmarshal(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{}`), &empty); err != nil {
 		t.Fatalf("unmarshal empty: %v", err)
 	}
+
 	if empty.Surface != "" {
 		t.Errorf("surface = %q, want empty", empty.Surface)
 	}
@@ -140,6 +142,7 @@ func TestTourDismissalsJSONTags(t *testing.T) {
 	if !ok {
 		t.Fatalf("tour_dismissals = %v, want object", got["tour_dismissals"])
 	}
+
 	if dismissals["docs"] != true {
 		t.Errorf("tour_dismissals[docs] = %v, want true", dismissals["docs"])
 	}
@@ -200,6 +203,7 @@ func TestParseTourDismissals(t *testing.T) {
 	if len(got) != 0 {
 		t.Errorf("parseTourDismissals(nil) = %v, want empty map", got)
 	}
+
 	if got == nil {
 		t.Error("parseTourDismissals(nil) should return a non-nil map")
 	}
@@ -208,6 +212,7 @@ func TestParseTourDismissals(t *testing.T) {
 	if !got["main"] || !got["docs"] {
 		t.Errorf("parseTourDismissals valid = %v, want main+docs", got)
 	}
+
 	if got["academy"] {
 		t.Error("parseTourDismissals valid: academy should be absent")
 	}

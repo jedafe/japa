@@ -22,6 +22,7 @@ func HasExtractedValues(raw []byte) bool {
 				if val != nil {
 					return true
 				}
+
 				continue
 			}
 			// Object leaf without a "value" key (e.g. a nested jsonb_object

@@ -88,7 +88,6 @@ func (s *Store) CreateAssessmentSubmission(ctx context.Context, formID, userID p
 // CreateAssessmentResult stores a scored assessment result.
 func (s *Store) CreateAssessmentResult(ctx context.Context, userID, submissionID pgtype.UUID, totalScore int32, dimensionScores []byte, thresholdLabel string, roadmapContent []byte) (gen.AssessmentResult, error) {
 	result, err := s.writeQueries.CreateAssessmentResult(ctx, gen.CreateAssessmentResultParams{
-
 		UserID:          userID,
 		SubmissionID:    submissionID,
 		TotalScore:      totalScore,
@@ -135,7 +134,6 @@ func (s *Store) GetAssessmentResultBySubmission(ctx context.Context, submissionI
 // paginated by offset/limit, newest first.
 func (s *Store) ListUserAssessmentResults(ctx context.Context, userID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.AssessmentResult, error) {
 	results, err := s.queries.ListUserAssessmentResults(ctx, gen.ListUserAssessmentResultsParams{
-
 		UserID:     userID,
 		PageOffset: pageOffset,
 		PageLimit:  pageLimit,
@@ -165,7 +163,6 @@ func (s *Store) CountUserAssessmentResults(ctx context.Context, userID pgtype.UU
 // per user per form (Section 28).
 func (s *Store) CountAssessmentResultsByUserAndForm(ctx context.Context, userID, formID pgtype.UUID) (int64, error) {
 	count, err := s.queries.CountAssessmentResultsByUserAndForm(ctx, gen.CountAssessmentResultsByUserAndFormParams{
-
 		UserID: userID,
 		FormID: formID,
 	})
@@ -322,6 +319,7 @@ LIMIT $%d OFFSET $%d`,
 
 	// Count query for pagination total.
 	countConditions := conditions[:0]
+
 	var countArgs []any
 
 	if f.MinScore != 0 {
@@ -354,7 +352,6 @@ LIMIT $%d OFFSET $%d`,
 // for the platform, optionally filtered by score range. Admin-only.
 func (s *Store) AdminCountAssessmentResults(ctx context.Context, minScore, maxScore int32) (int64, error) {
 	count, err := s.queries.AdminCountAssessmentResults(ctx, gen.AdminCountAssessmentResultsParams{
-
 		MinScore: minScore,
 		MaxScore: maxScore,
 	})
@@ -475,7 +472,6 @@ func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInp
 	}
 
 	created, err := s.writeQueries.CreateForm(ctx, gen.CreateFormParams{
-
 		SpaceID:              in.SpaceID,
 		Name:                 in.Name,
 		Slug:                 in.Slug,
@@ -676,7 +672,6 @@ func (s *Store) GetSpaceByGeoCode(ctx context.Context, geoCode string) (gen.GetS
 // original step.
 func (s *Store) FindRoadmapContentByDimension(ctx context.Context, dimension, destination, stage, visa, origin, purpose string) ([]gen.FindRoadmapContentByDimensionRow, error) {
 	rows, err := s.queries.FindRoadmapContentByDimension(ctx, gen.FindRoadmapContentByDimensionParams{
-
 		Dimension:          []byte(dimension),
 		DestinationCountry: destination,
 		JourneyStage:       stage,

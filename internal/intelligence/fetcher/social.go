@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,6 +45,7 @@ func NewSocialFetcher(client *http.Client, settings AdapterSettings) *SocialFetc
 	if client == nil {
 		client = NewSafeClient(30*time.Second, defaultMaxBodySize)
 	}
+
 	return &SocialFetcher{client: client, settings: settings}
 }
 
@@ -54,8 +56,9 @@ func (f *SocialFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 
 	provider := strings.ToLower(strings.TrimSpace(stringFromCfg(cfg, "provider")))
 	if provider == "" {
-		return FetchResult{}, fmt.Errorf("fetcher: social: provider_config.provider is empty")
+		return FetchResult{}, errors.New("fetcher: social: provider_config.provider is empty")
 	}
+
 	if !f.providerEnabled(ctx, provider) {
 		return FetchResult{}, fmt.Errorf("%w: social provider %q not in intel.social.enabled_providers", ErrAdapterDisabled, provider)
 	}
@@ -64,9 +67,11 @@ func (f *SocialFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	if fetchURL == "" {
 		handle := strings.Trim(strings.TrimSpace(stringFromCfg(cfg, "handle")), "@/")
 		if handle == "" {
-			return FetchResult{}, fmt.Errorf("fetcher: social: provider_config.handle is empty")
+			return FetchResult{}, errors.New("fetcher: social: provider_config.handle is empty")
 		}
+
 		var err error
+
 		fetchURL, err = socialEndpoint(provider, handle)
 		if err != nil {
 			return FetchResult{}, err
@@ -79,10 +84,12 @@ func (f *SocialFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("fetcher: social request: %w", err)
 	}
+
 	ua := stringFromCfg(cfg, "ua")
 	if ua == "" {
 		ua = "JapaConnect-Intel/1.0 (+https://japaconnect.com)"
 	}
+
 	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Accept", "application/json, text/html;q=0.9")
 
@@ -96,11 +103,13 @@ func (f *SocialFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("fetcher: social read: %w", err)
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		return FetchResult{}, fmt.Errorf("fetcher: social %s: status %d", provider, resp.StatusCode)
 	}
 
 	var items []byte
+
 	switch provider {
 	case "reddit":
 		items, err = normalizeReddit(body)
@@ -109,6 +118,7 @@ func (f *SocialFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	default:
 		err = fmt.Errorf("fetcher: social: unsupported provider %q", provider)
 	}
+
 	if err != nil {
 		return FetchResult{}, err
 	}
@@ -128,17 +138,20 @@ func (f *SocialFetcher) providerEnabled(ctx context.Context, provider string) bo
 	if f.settings == nil {
 		return false
 	}
+
 	raw := f.settings.GetStringOr(ctx, "intel.social.enabled_providers", "[]")
 
 	var providers []string
 	if err := json.Unmarshal([]byte(raw), &providers); err != nil {
 		return false
 	}
+
 	for _, p := range providers {
 		if strings.EqualFold(strings.TrimSpace(p), provider) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -154,9 +167,11 @@ func socialEndpoint(provider, handle string) (string, error) {
 		if strings.HasPrefix(handle, "user/") {
 			return "https://www.reddit.com/" + handle + "/submitted.json?sort=new&limit=50", nil
 		}
+
 		if strings.HasPrefix(handle, "r/") {
 			return "https://www.reddit.com/" + handle + "/new.json?limit=50", nil
 		}
+
 		return "", fmt.Errorf("fetcher: social: reddit handle %q must be r/<sub> or user/<name>", handle)
 	case "telegram":
 		return "https://t.me/s/" + url.PathEscape(handle), nil
@@ -183,24 +198,29 @@ func normalizeReddit(body []byte) ([]byte, error) {
 			} `json:"children"`
 		} `json:"data"`
 	}
+
 	if err := json.Unmarshal(body, &listing); err != nil {
 		return nil, fmt.Errorf("fetcher: reddit parse: %w", err)
 	}
 
 	var b strings.Builder
+
 	for _, child := range listing.Data.Children {
 		d := child.Data
 		if d.ID == "" {
 			continue
 		}
+
 		text := d.Selftext
 		if len(text) > 500 {
 			text = text[:500]
 		}
+
 		link := d.URL
 		if link == "" && d.Permalink != "" {
 			link = "https://www.reddit.com" + d.Permalink
 		}
+
 		line, _ := json.Marshal(map[string]any{
 			"id":      d.ID,
 			"title":   d.Title,
@@ -226,11 +246,13 @@ func normalizeTelegram(body []byte, pageURL string) ([]byte, error) {
 	}
 
 	var b strings.Builder
+
 	doc.Find(".tgme_widget_message").Each(func(_ int, msg *goquery.Selection) {
 		link, _ := msg.Find(".tgme_widget_message_date").Attr("href")
 		if link == "" {
 			link = pageURL
 		}
+
 		text := strings.TrimSpace(msg.Find(".tgme_widget_message_text").Text())
 		author := strings.TrimSpace(msg.Find(".tgme_widget_message_author").Text())
 		date, _ := msg.Find("time").Attr("datetime")
@@ -238,6 +260,7 @@ func normalizeTelegram(body []byte, pageURL string) ([]byte, error) {
 		if text == "" && link == pageURL {
 			return // skip empty chrome rows
 		}
+
 		line, _ := json.Marshal(map[string]any{
 			"id":      link,
 			"url":     link,
@@ -262,14 +285,17 @@ func validateSocialEndpointOverride(endpoint string) error {
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return fmt.Errorf("fetcher: social endpoint_override must be an http(s) URL: %q", endpoint)
 	}
+
 	if u.User != nil {
-		return fmt.Errorf("fetcher: social endpoint_override must not embed credentials")
+		return errors.New("fetcher: social endpoint_override must not embed credentials")
 	}
+
 	host := u.Hostname()
 	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
 		if u.Scheme != "http" || !isLoopbackOrPrivateLiteral(host) {
 			return fmt.Errorf("fetcher: social endpoint_override targets a private address: %q", endpoint)
 		}
 	}
+
 	return nil
 }

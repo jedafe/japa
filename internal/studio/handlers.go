@@ -104,7 +104,6 @@ func (h *Handlers) parsePagination(r *http.Request) (int32, int32) {
 
 // HandleListJobs — GET /api/v1/admin/studio/jobs.
 func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
-
 	limit, offset := h.parsePagination(r)
 	f := JobListFilter{Limit: limit, Offset: offset}
 
@@ -144,7 +143,6 @@ func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 
 // HandleCreateJob — POST /api/v1/admin/studio/jobs.
 func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -175,7 +173,6 @@ func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetJob — GET /api/v1/admin/studio/jobs/:id.
 func (h *Handlers) HandleGetJob(w http.ResponseWriter, r *http.Request) {
-
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -192,7 +189,6 @@ func (h *Handlers) HandleGetJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleRetryJob — POST /api/v1/admin/studio/jobs/:id/retry.
 func (h *Handlers) HandleRetryJob(w http.ResponseWriter, r *http.Request) {
-
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -208,7 +204,6 @@ func (h *Handlers) HandleRetryJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleCancelJob — DELETE /api/v1/admin/studio/jobs/:id.
 func (h *Handlers) HandleCancelJob(w http.ResponseWriter, r *http.Request) {
-
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -230,7 +225,6 @@ func (h *Handlers) HandleCancelJob(w http.ResponseWriter, r *http.Request) {
 
 // HandleListBatches — GET /api/v1/admin/studio/batches.
 func (h *Handlers) HandleListBatches(w http.ResponseWriter, r *http.Request) {
-
 	limit, offset := h.parsePagination(r)
 
 	batches, total, err := h.svc.ListBatches(r.Context(), limit, offset)
@@ -247,7 +241,6 @@ func (h *Handlers) HandleListBatches(w http.ResponseWriter, r *http.Request) {
 
 // HandleCreateBatch — POST /api/v1/admin/studio/batches.
 func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -270,7 +263,6 @@ func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetBatch — GET /api/v1/admin/studio/batches/:id.
 func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
-
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -291,7 +283,6 @@ func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
 // request — batches may contain many failed jobs and retrying them
 // synchronously would time out.
 func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
-
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -307,14 +298,12 @@ func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
 
 // HandleContentTypes — GET /api/v1/admin/studio/content-types.
 func (h *Handlers) HandleContentTypes(w http.ResponseWriter, r *http.Request) {
-
 	resp := h.svc.ListContentTypes(r.Context())
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleStats — GET /api/v1/admin/studio/stats.
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
-
 	stats, err := h.svc.GetStats(r.Context())
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
@@ -328,7 +317,6 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 // Returns active personas in {id, label} format for the create-job dropdown.
 // Delegates to the injected personas service.
 func (h *Handlers) HandlePersonas(w http.ResponseWriter, r *http.Request) {
-
 	if h.personas == nil {
 		h.writeError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
 		return

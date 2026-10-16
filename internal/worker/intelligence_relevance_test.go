@@ -35,6 +35,7 @@ func (f relevanceTestSettings) GetIntOr(_ context.Context, key string, fallback 
 
 	return fallback
 }
+
 func (f relevanceTestSettings) GetFloatOr(_ context.Context, key string, fallback float64) float64 {
 	if v, ok := f.floats[key]; ok {
 		return v
@@ -42,6 +43,7 @@ func (f relevanceTestSettings) GetFloatOr(_ context.Context, key string, fallbac
 
 	return fallback
 }
+
 func (f relevanceTestSettings) GetStringOr(_ context.Context, key, fallback string) string {
 	if v, ok := f.strings[key]; ok {
 		return v
@@ -49,6 +51,7 @@ func (f relevanceTestSettings) GetStringOr(_ context.Context, key, fallback stri
 
 	return fallback
 }
+
 func (f relevanceTestSettings) GetBoolOr(_ context.Context, key string, fallback bool) bool {
 	if v, ok := f.bools[key]; ok {
 		return v
@@ -88,8 +91,10 @@ func (f *fakeIntelExtractor) Extract(_ context.Context, _, _, _, _ string) ([]In
 // one on cleanup.
 func setRelevanceGate(t *testing.T, fn func(ctx context.Context, item relevance.ItemInput, ch sources.Channel, mapTopics []string) (relevance.Verdict, error)) {
 	t.Helper()
+
 	old := intelRelevanceGate
 	intelRelevanceGate = fn
+
 	t.Cleanup(func() { intelRelevanceGate = old })
 }
 
@@ -160,15 +165,18 @@ func TestIntelItemFromExtraction(t *testing.T) {
 // resolves the source's categories, legacy scalar category falls back,
 // and the live system_settings JSON wins over the embedded default.
 func TestIntelRelevanceMapTopics(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	oldSettings := appSettings
+
 	t.Cleanup(func() { appSettings = oldSettings })
+
 	appSettings = relevanceTestSettings{}
 
 	t.Run("custom mode returns nil", func(t *testing.T) {
 		ch := sources.Channel{RelevanceMode: string(sources.RelevanceCustom)}
 		src := gen.IntelSource{Category: "visa"}
+
 		if got := intelRelevanceMapTopics(ctx, ch, src); got != nil {
 			t.Errorf("custom mode topics = %v, want nil", got)
 		}
@@ -177,17 +185,20 @@ func TestIntelRelevanceMapTopics(t *testing.T) {
 	t.Run("filtered resolves embedded category map", func(t *testing.T) {
 		ch := sources.Channel{RelevanceMode: string(sources.RelevanceFiltered)}
 		src := gen.IntelSource{Category: "visa"}
+
 		got := intelRelevanceMapTopics(ctx, ch, src)
 		if len(got) == 0 {
 			t.Fatal("filtered mode returned no topics")
 		}
 		// Embedded map seeds visa → includes "visa".
 		found := false
+
 		for _, tp := range got {
 			if tp == "visa" {
 				found = true
 			}
 		}
+
 		if !found {
 			t.Errorf("visa category topics = %v, want to contain \"visa\"", got)
 		}
@@ -198,11 +209,13 @@ func TestIntelRelevanceMapTopics(t *testing.T) {
 		src := gen.IntelSource{Category: "visa", Categories: []string{"scholarship"}}
 		got := intelRelevanceMapTopics(ctx, ch, src)
 		found := false
+
 		for _, tp := range got {
 			if tp == "scholarship" {
 				found = true
 			}
 		}
+
 		if !found {
 			t.Errorf("categories=[scholarship] topics = %v, want to contain \"scholarship\"", got)
 		}
@@ -216,6 +229,7 @@ func TestIntelRelevanceMapTopics(t *testing.T) {
 
 		ch := sources.Channel{RelevanceMode: string(sources.RelevanceFiltered)}
 		src := gen.IntelSource{Category: "custom_cat"}
+
 		got := intelRelevanceMapTopics(ctx, ch, src)
 		if len(got) != 1 || got[0] != "bespoke-topic" {
 			t.Errorf("live map topics = %v, want [bespoke-topic]", got)
@@ -235,10 +249,12 @@ func TestIntelRelevanceMapTopics(t *testing.T) {
 // classifier port decides the borderline band, and a nil Valkey client
 // disables the cache/counter (classifier skipped — cap unenforceable).
 func TestIntelEvaluateRelevance(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	oldSettings, oldCls, oldRdb := appSettings, intelRelevanceClassifier, rdb
+
 	t.Cleanup(func() { appSettings, intelRelevanceClassifier, rdb = oldSettings, oldCls, oldRdb })
+
 	appSettings = relevanceTestSettings{}
 	rdb = nil
 
@@ -264,6 +280,7 @@ func TestIntelEvaluateRelevance(t *testing.T) {
 
 		cls := &fakeRelevanceClassifier{onTopic: true}
 		intelRelevanceClassifier = cls
+
 		defer func() { intelRelevanceClassifier = nil }()
 
 		// Borderline-scoring item: one summary hit in a longer body.
@@ -271,10 +288,12 @@ func TestIntelEvaluateRelevance(t *testing.T) {
 			Title:   "Weekly ministry roundup",
 			Summary: "New guidance covers permits and the visa bulletin plus routine notices for residents.",
 		}
+
 		v, err := intelEvaluateRelevance(ctx, item, ch, nil)
 		if err != nil || v != relevance.VerdictBorderline {
 			t.Fatalf("verdict = %v, %v; want borderline", v, err)
 		}
+
 		if cls.calls != 0 {
 			t.Fatalf("classifier calls = %d, want 0 (disabled)", cls.calls)
 		}
@@ -298,13 +317,15 @@ func TestIntelEvaluateRelevance(t *testing.T) {
 // nil gate → nil context; wired gate with no channel row → synthetic
 // filtered channel scoped to the source id.
 func TestIntelRelevanceCallFor(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	oldGate, oldSrcStore := intelRelevanceGate, intelSourcesStore
+
 	t.Cleanup(func() { intelRelevanceGate, intelSourcesStore = oldGate, oldSrcStore })
 
 	t.Run("nil gate → nil", func(t *testing.T) {
 		intelRelevanceGate = nil
+
 		if got := intelRelevanceCallFor(ctx, "", gen.IntelRawDocument{}, gen.IntelSource{}); got != nil {
 			t.Fatalf("intelRelevanceCallFor = %+v, want nil", got)
 		}
@@ -318,15 +339,18 @@ func TestIntelRelevanceCallFor(t *testing.T) {
 		if err := srcID.Scan("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"); err != nil {
 			t.Fatal(err)
 		}
+
 		src := gen.IntelSource{ID: srcID, Category: "visa"}
 
 		got := intelRelevanceCallFor(ctx, "", gen.IntelRawDocument{}, src)
 		if got == nil {
 			t.Fatal("intelRelevanceCallFor = nil, want synthetic call")
 		}
+
 		if got.ch.RelevanceMode != string(sources.RelevanceFiltered) {
 			t.Errorf("synthetic channel mode = %q, want filtered", got.ch.RelevanceMode)
 		}
+
 		if got.ch.ID != srcID {
 			t.Errorf("synthetic channel ID = %v, want source id %v", got.ch.ID, srcID)
 		}
@@ -342,6 +366,7 @@ func TestIntelRelevanceCallFor(t *testing.T) {
 // handlers gate items by default.
 func TestRegisterIntelDependencies_InstallsRelevanceGate(t *testing.T) {
 	old := intelRelevanceGate
+
 	t.Cleanup(func() { intelRelevanceGate = old })
 
 	intelRelevanceGate = nil
@@ -374,6 +399,7 @@ func TestHandleIntelCurateChannel_RelevanceGate(t *testing.T) {
 	// nil-settings defaults intelEvaluateRelevance uses.
 	oldSettings := appSettings
 	appSettings = fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 0}}
+
 	t.Cleanup(func() { appSettings = oldSettings })
 
 	// Category "news" seeds map topics (migration, visa, diaspora, …).
@@ -385,7 +411,7 @@ func TestHandleIntelCurateChannel_RelevanceGate(t *testing.T) {
 		a.RelevanceMode = "filtered"
 	})
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -426,11 +452,11 @@ func TestHandleIntelCurateChannel_RelevanceGate(t *testing.T) {
 		RawDocID:  rawDoc.ID.String(),
 	})
 
-	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelCurateChannel: %v", err)
 	}
 
-	rows, err := database.Writer.Query(context.Background(),
+	rows, err := database.Writer.Query(t.Context(),
 		`SELECT external_key, status FROM intel_records WHERE raw_document_id = $1 ORDER BY external_key`, rawDoc.ID)
 	if err != nil {
 		t.Fatalf("query records: %v", err)
@@ -438,17 +464,20 @@ func TestHandleIntelCurateChannel_RelevanceGate(t *testing.T) {
 	defer rows.Close()
 
 	statuses := map[string]string{}
+
 	for rows.Next() {
 		var key, status string
 		if err := rows.Scan(&key, &status); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
+
 		statuses[key] = status
 	}
 
 	if statuses["https://news.example.com/visa-1"] != "extracted" {
 		t.Errorf("topical record status = %q, want extracted", statuses["https://news.example.com/visa-1"])
 	}
+
 	if statuses["https://news.example.com/sport-9"] != "off_topic" {
 		t.Errorf("off-topic record status = %q, want off_topic", statuses["https://news.example.com/sport-9"])
 	}
@@ -460,15 +489,16 @@ func TestHandleIntelCurateChannel_RelevanceGate(t *testing.T) {
 
 	// Re-crawl dedup: a second run re-gates the off-topic item, but its
 	// external_key row already exists → still exactly 2 rows, still 1 dedup.
-	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelCurateChannel re-run: %v", err)
 	}
 
 	var n int
-	if err := database.Writer.QueryRow(context.Background(),
+	if err := database.Writer.QueryRow(t.Context(),
 		`SELECT count(*) FROM intel_records WHERE raw_document_id = $1`, rawDoc.ID).Scan(&n); err != nil {
 		t.Fatalf("count records: %v", err)
 	}
+
 	if n != 2 {
 		t.Errorf("records after re-crawl = %d, want 2 (external_key dedup)", n)
 	}
@@ -497,7 +527,7 @@ func TestHandleIntelExtract_RelevanceGate(t *testing.T) {
 		a.EntityTypes = []string{"news"}
 	})
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -533,6 +563,7 @@ func TestHandleIntelExtract_RelevanceGate(t *testing.T) {
 
 	oldExt := intelExtractor
 	intelExtractor = ext
+
 	t.Cleanup(func() { intelExtractor = oldExt })
 
 	payload, _ := json.Marshal(intelExtractPayload{
@@ -541,11 +572,11 @@ func TestHandleIntelExtract_RelevanceGate(t *testing.T) {
 		ChannelID: ch.ID.String(),
 	})
 
-	if err := HandleIntelExtract(context.Background(), asynq.NewTask(TypeIntelExtract, payload)); err != nil {
+	if err := HandleIntelExtract(t.Context(), asynq.NewTask(TypeIntelExtract, payload)); err != nil {
 		t.Fatalf("HandleIntelExtract: %v", err)
 	}
 
-	rows, err := database.Writer.Query(context.Background(),
+	rows, err := database.Writer.Query(t.Context(),
 		`SELECT external_key, status FROM intel_records WHERE raw_document_id = $1 ORDER BY external_key`, rawDoc.ID)
 	if err != nil {
 		t.Fatalf("query records: %v", err)
@@ -553,17 +584,20 @@ func TestHandleIntelExtract_RelevanceGate(t *testing.T) {
 	defer rows.Close()
 
 	statuses := map[string]string{}
+
 	for rows.Next() {
 		var key, status string
 		if err := rows.Scan(&key, &status); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
+
 		statuses[key] = status
 	}
 
 	if statuses["on-1"] != "extracted" {
 		t.Errorf("on-topic record status = %q, want extracted", statuses["on-1"])
 	}
+
 	if statuses["off-1"] != "off_topic" {
 		t.Errorf("off-topic record status = %q, want off_topic", statuses["off-1"])
 	}
@@ -581,7 +615,7 @@ func TestIntelRelevanceCall_VerdictFailOpen(t *testing.T) {
 	})
 
 	rc := &intelRelevanceCall{ch: sources.Channel{}}
-	if got := rc.verdict(context.Background(), relevance.ItemInput{Title: "x"}, "test"); got != relevance.VerdictOnTopic {
+	if got := rc.verdict(t.Context(), relevance.ItemInput{Title: "x"}, "test"); got != relevance.VerdictOnTopic {
 		t.Fatalf("verdict on error = %v, want on_topic (fail-open)", got)
 	}
 }

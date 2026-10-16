@@ -32,6 +32,7 @@ func TestEntityTypesFromProviderConfig(t *testing.T) {
 			if len(got) != len(tt.want) {
 				t.Fatalf("EntityTypesFromProviderConfig(%q) = %v, want %v", tt.raw, got, tt.want)
 			}
+
 			for i := range got {
 				if got[i] != tt.want[i] {
 					t.Fatalf("EntityTypesFromProviderConfig(%q)[%d] = %q, want %q", tt.raw, i, got[i], tt.want[i])
@@ -59,9 +60,11 @@ func TestSetEntityTypesInProviderConfig(t *testing.T) {
 		if err := json.Unmarshal(out, &doc); err != nil {
 			t.Fatalf("output not JSON: %v", err)
 		}
+
 		if _, ok := doc["endpoint"]; !ok {
 			t.Error("sibling key endpoint was dropped")
 		}
+
 		if _, ok := doc["method"]; !ok {
 			t.Error("sibling key method was dropped")
 		}
@@ -70,6 +73,7 @@ func TestSetEntityTypesInProviderConfig(t *testing.T) {
 		if err := json.Unmarshal(doc["entity_types"], &types); err != nil {
 			t.Fatalf("entity_types not an array: %v", err)
 		}
+
 		if !slices.Equal(types, []string{"scholarship", "job"}) {
 			t.Errorf("entity_types = %v", types)
 		}
@@ -90,9 +94,11 @@ func TestSetEntityTypesInProviderConfig(t *testing.T) {
 		if err := json.Unmarshal(out, &doc); err != nil {
 			t.Fatalf("output not JSON: %v", err)
 		}
+
 		if _, ok := doc["entity_types"]; ok {
 			t.Error("entity_types key should have been removed")
 		}
+
 		if _, ok := doc["endpoint"]; !ok {
 			t.Error("sibling key endpoint was dropped")
 		}
@@ -110,6 +116,7 @@ func TestSetEntityTypesInProviderConfig(t *testing.T) {
 		if err := json.Unmarshal(out, &doc); err != nil {
 			t.Fatalf("output not JSON: %v", err)
 		}
+
 		if _, ok := doc["entity_types"]; !ok {
 			t.Error("entity_types missing")
 		}

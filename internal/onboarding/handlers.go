@@ -201,7 +201,6 @@ func (h *Handlers) GetOptions(w http.ResponseWriter, r *http.Request) {
 
 // ListTemplates handles GET /admin/onboarding/templates.
 func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
-
 	templates, err := h.Service.ListTemplates(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -215,7 +214,6 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 
 // GetTemplate handles GET /admin/onboarding/templates/:id.
 func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
@@ -233,7 +231,6 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 
 // CreateTemplate handles POST /admin/onboarding/templates.
 func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
-
 	var req CreateTemplateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
@@ -256,7 +253,6 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTemplate handles PATCH /admin/onboarding/templates/:id.
 func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
@@ -279,7 +275,6 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTemplate handles DELETE /admin/onboarding/templates/:id.
 func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
@@ -298,7 +293,6 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 // Returns the platform's onboarding configuration (minimum counts + promoted
 // entities). Ref: Section 09 — admin Onboarding Settings surface.
 func (h *Handlers) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
-
 	settings, err := h.Service.GetAdminSettings(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -312,7 +306,6 @@ func (h *Handlers) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
 // Applies a partial update to the onboarding configuration. Only fields
 // present in the request body are written. Ref: Section 09.
 func (h *Handlers) UpdateAdminSettings(w http.ResponseWriter, r *http.Request) {
-
 	var req UpdateOnboardingSettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")

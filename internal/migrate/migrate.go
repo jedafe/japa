@@ -93,6 +93,7 @@ func ApplyMigration(ctx context.Context, pool *pgxpool.Pool, filename, sql strin
 	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = $1)", filename).Scan(&alreadyApplied); err != nil {
 		return fmt.Errorf("checking applied state: %w", err)
 	}
+
 	if alreadyApplied {
 		return nil
 	}

@@ -173,7 +173,6 @@ func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request) (gen.GetTa
 // ListTags handles GET /api/v1/tags — public list with ?q, ?sort, ?page, ?page_size.
 // Also handles GET /api/v1/admin/tags — admin list with pagination.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
-
 	q := r.URL.Query().Get("q")
 
 	sortParam := r.URL.Query().Get("sort")
@@ -198,7 +197,6 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	// Use admin-listing query when filter or sort is specified, otherwise
 	// the admin route also benefits from pagination.
 	tags, err := h.service.AdminListTags(r.Context(), gen.AdminListTagsParams{
-
 		Q:               q,
 		MinContentCount: minContentCount,
 		Sort:            sortParam,
@@ -211,7 +209,6 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	count, err := h.service.AdminCountTags(r.Context(), gen.AdminCountTagsParams{
-
 		Q:               q,
 		MinContentCount: minContentCount,
 	})
@@ -246,7 +243,6 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 
 // GetTag handles GET /api/v1/tags/{slug}. [public].
 func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
-
 	tag, ok := h.resolveTag(w, r)
 	if !ok {
 		return
@@ -288,6 +284,7 @@ func (h *Handlers) tagFieldDefs(ctx context.Context) []tagFieldDef {
 	// CF9: the guest group's can_view grants bound the def list. A lookup
 	// error fails closed to an empty set (no defs leak on outage).
 	guestVisible := map[string]bool{}
+
 	if ids, err := h.fieldDefs.ListVisibleFieldIDsForGroupSlug(ctx, "guest"); err != nil {
 		slog.Warn("tags: failed to load guest-visible field ids", "error", err)
 	} else {
@@ -303,12 +300,14 @@ func (h *Handlers) tagFieldDefs(ctx context.Context) []tagFieldDef {
 	}
 
 	seen := make(map[string]bool)
+
 	for _, g := range groups {
 		fields, err := h.fieldDefs.ListFieldsByGroup(ctx, g.ID)
 		if err != nil {
 			slog.Warn("tags: failed to load tag field group fields", "group_id", g.ID, "error", err)
 			continue
 		}
+
 		for _, f := range fields {
 			if f.Key == "" || seen[f.Key] {
 				continue
@@ -318,7 +317,9 @@ func (h *Handlers) tagFieldDefs(ctx context.Context) []tagFieldDef {
 			if !guestVisible[f.ID.String()] || !f.ShowInFrontend {
 				continue
 			}
+
 			seen[f.Key] = true
+
 			defs = append(defs, tagFieldDef{
 				Key:            f.Key,
 				Label:          f.Label,
@@ -340,7 +341,6 @@ func (h *Handlers) tagFieldDefs(ctx context.Context) []tagFieldDef {
 // The composite (created_at, id) cursor avoids skipping items that share the
 // same created_at timestamp. [public].
 func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
-
 	tag, ok := h.resolveTag(w, r)
 	if !ok {
 		return
@@ -462,7 +462,6 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 
 // ToggleTagFollow handles POST/DELETE /api/v1/tags/{slug}/follow.
 func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -484,7 +483,6 @@ func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
 
 // GetTagFollowers handles GET /api/v1/tags/{slug}/followers.
 func (h *Handlers) GetTagFollowers(w http.ResponseWriter, r *http.Request) {
-
 	tag, ok := h.resolveTag(w, r)
 	if !ok {
 		return
@@ -629,7 +627,6 @@ func splitTagNames(v any) []string {
 
 // CreateTag handles POST /api/v1/admin/tags.
 func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Name         string          `json:"name"`
 		Slug         string          `json:"slug"`
@@ -725,7 +722,6 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTag handles PATCH /api/v1/admin/tags/{id}.
 func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -800,6 +796,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	// otherwise overwritten with {} and is_system with false). The row is
 	// fetched once when either guarded field is absent.
 	var existing gen.GetTagByIDRow
+
 	if input.IsSystem == nil || len(input.FieldValues) == 0 || string(input.FieldValues) == "null" {
 		e, err := h.service.GetTagByID(r.Context(), id)
 		if err != nil {
@@ -860,7 +857,6 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 // DeleteTag handles DELETE /api/v1/admin/tags/{id}.
 // Spec: "delete tag (only if no content tagged)" and system tags cannot be deleted.
 func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -927,7 +923,6 @@ func isValidHexColor(s string) bool {
 // decide whether the tag hub renders its Moderators tab (shown only when at
 // least one moderator is assigned) and to populate that tab's list.
 func (h *Handlers) GetTagModerators(w http.ResponseWriter, r *http.Request) {
-
 	tag, ok := h.resolveTag(w, r)
 	if !ok {
 		return
@@ -955,7 +950,6 @@ func (h *Handlers) GetTagModerators(w http.ResponseWriter, r *http.Request) {
 
 // ListTagModerators handles GET /api/v1/admin/tags/:id/moderators.
 func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
-
 	tagID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
@@ -982,7 +976,6 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 
 // AddTagModerator handles POST /api/v1/admin/tags/:id/moderators (Section 49).
 func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -1055,7 +1048,6 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 
 // RemoveTagModerator handles DELETE /api/v1/admin/tags/:id/moderators/:userId (Section 49).
 func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
-
 	tagID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")

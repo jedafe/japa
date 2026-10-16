@@ -113,6 +113,7 @@ func (h *Handlers) fireOnEnabled(ctx context.Context, flagName string, wasEnable
 	if h.onEnabled == nil || wasEnabled || !nowEnabled {
 		return
 	}
+
 	go h.onEnabled(context.WithoutCancel(ctx), flagName)
 }
 
@@ -124,7 +125,6 @@ func (h *Handlers) fireOnEnabled(ctx context.Context, flagName string, wasEnable
 // OptionalAuth populates identity when a session exists, so signed-in
 // callers still get their audience/geo overlays.
 func (h *Handlers) HandleGetFeatureFlags(w http.ResponseWriter, r *http.Request) {
-
 	sc := h.checker.BuildScope(r, SurfaceFrom(r))
 	flags := h.checker.EvalAll(r.Context(), sc)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": flags})
@@ -151,7 +151,6 @@ type FeatureFlagDetail struct {
 // Registry + DB merge (same merge shape as ListFeatureFlags) with each
 // entry's enabled/visible evaluated for the caller's scope.
 func (h *Handlers) HandleGetFeatureFlagDetails(w http.ResponseWriter, r *http.Request) {
-
 	sc := h.checker.BuildScope(r, SurfaceFrom(r))
 
 	// Seed every registry key with its default, then overlay stored rows via
@@ -199,7 +198,6 @@ func (h *Handlers) HandleGetFeatureFlagDetails(w http.ResponseWriter, r *http.Re
 // neither a registry entry nor a stored feature_flags row 404s — returning
 // the registry-default projection for arbitrary keys would 200 typos.
 func (h *Handlers) HandleGetFeatureFlagDetail(w http.ResponseWriter, r *http.Request) {
-
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Feature flag not found")
@@ -281,7 +279,6 @@ func rolloutFor(cfg FlagConfig) int {
 // Toggles a feature flag's enabled state for the current platform.
 // Protected by RBAC permission "features.manage".
 func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) {
-
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
@@ -354,7 +351,6 @@ type FeatureFlag struct {
 // SPA can render a proper list/table. It merges the static Registry keys with
 // any platform rows (including admin-created keys) so the list is always complete.
 func (h *Handlers) ListFeatureFlags(w http.ResponseWriter, r *http.Request) {
-
 	rows, err := h.checker.ListFlagRows(r.Context())
 	if err != nil {
 		slog.Error("features: list rows failed", "error", err)
@@ -437,7 +433,6 @@ func applyFlagConfig(flag *FeatureFlag, raw []byte) {
 // Creates a platform feature flag (registry key or new admin key) with an initial
 // enabled state and metadata. Gated by admin.feature_flags.manage.
 func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
-
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -455,6 +450,7 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "key is required")
 		return
 	}
+
 	if !ValidFlagKey(key) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_key",
 			"key must be lowercase segments joined by dots, e.g. feature.blog or domain.enabled")
@@ -532,7 +528,6 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 // environment/rollout) into the config jsonb column. Gated by
 // admin.feature_flags.manage.
 func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
-
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
@@ -624,7 +619,6 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 // Removes the platform's override for the flag; afterwards it reverts to its
 // registry Default. Gated by admin.feature_flags.manage.
 func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
-
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
@@ -674,9 +668,11 @@ func flagConfigPatch(cfg FlagConfig, body []byte) []byte {
 		if _, ok := fields["phase"]; ok {
 			patch["phase"] = cfg.Phase
 		}
+
 		if _, ok := fields["showOnRoadmap"]; ok {
 			patch["showOnRoadmap"] = cfg.ShowOnRoadmap
 		}
+
 		if _, ok := fields["surfaces"]; ok {
 			patch["surfaces"] = cfg.Surfaces
 		}

@@ -139,7 +139,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListMenus is an exported method.
 func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 	q := r.URL.Query().Get("q")
@@ -163,7 +162,6 @@ func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
 
 // GetMenu is an exported method.
 func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
@@ -181,7 +179,6 @@ func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
 
 // CreateMenu is an exported method.
 func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Slug      string `json:"slug"`
 		Name      string `json:"name"`
@@ -210,7 +207,6 @@ func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMenu is an exported method.
 func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
@@ -244,7 +240,6 @@ func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMenu is an exported method.
 func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
@@ -263,7 +258,6 @@ func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
 
 // CreateMenuItem is an exported method.
 func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
-
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
@@ -293,7 +287,6 @@ func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMenuItem is an exported method.
 func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
-
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
@@ -334,7 +327,6 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMenuItem is an exported method.
 func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
-
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
@@ -362,7 +354,6 @@ func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 
 // ReorderMenuItems is an exported method.
 func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
-
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
@@ -424,7 +415,6 @@ func (h *Handlers) requireItemInMenu(ctx context.Context, itemID, menuID pgtype.
 
 // GetMenuBySlug is an exported method.
 func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "slug is required")

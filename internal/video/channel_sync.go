@@ -50,6 +50,7 @@ func (s *Service) ProcessChannelSync(ctx context.Context) error {
 	}
 
 	var synced, skipped, failed int
+
 	for _, src := range channels {
 		if err := ctx.Err(); err != nil {
 			// Bail on deadline — channels already synced this run have their
@@ -65,7 +66,9 @@ func (s *Service) ProcessChannelSync(ctx context.Context) error {
 				// Interrupted mid-channel — not a channel failure.
 				return ctx.Err()
 			}
+
 			failed++
+
 			slog.WarnContext(ctx, "video: channel sync failed", "source_id", src.ID.String(), "error", err)
 
 			s.recordChannelSyncResult(ctx, src.ID, false, err.Error())
@@ -217,8 +220,10 @@ func (s *Service) channelFeedURL(ctx context.Context, client *http.Client, src g
 		if err != nil {
 			return "", err
 		}
+
 		cfg.ChannelID = id
 	}
+
 	cfg.FeedURL = youtubeChannelFeedURL(cfg.ChannelID)
 
 	// Merge into the existing provider_config document — keys this sync does
@@ -308,6 +313,7 @@ func (s *Service) recordChannelSyncResult(ctx context.Context, sourceID pgtype.U
 	if !success {
 		arg.LastErrorMessage = &message
 	}
+
 	if err := s.sources.UpdateCrawlStatus(ctx, arg); err != nil {
 		slog.WarnContext(ctx, "video: failed to record channel sync status", "source_id", sourceID.String(), "error", err)
 	}
@@ -317,6 +323,7 @@ func (s *Service) channelSyncEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, "video.channel_sync.enabled", true)
 }
 
@@ -324,6 +331,7 @@ func (s *Service) channelSyncAutoPublish(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, "video.channel_sync.auto_publish", true)
 }
 
@@ -331,9 +339,11 @@ func (s *Service) channelSyncInt(ctx context.Context, key string, fallback int) 
 	if s.settings == nil {
 		return int32(fallback) // #nosec G115 — fallback constants are small
 	}
+
 	v := s.settings.GetIntOr(ctx, key, fallback)
 	if v <= 0 || v > math.MaxInt32 {
 		return int32(fallback) // #nosec G115 — fallback constants are small
 	}
+
 	return int32(v) // #nosec G115 — v is clamped to MaxInt32 above
 }

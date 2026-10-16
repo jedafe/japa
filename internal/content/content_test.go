@@ -105,9 +105,11 @@ func TestComputeContentHashWithDistinguisher(t *testing.T) {
 	if h1 == h2 {
 		t.Errorf("hash should differ when a video_source_id is added")
 	}
+
 	if h2 == h3 {
 		t.Errorf("hashes for different video_source_id values should differ")
 	}
+
 	if ComputeContentHashWithDistinguisher(body, "") != h1 {
 		t.Errorf("empty video_source_id should equal base hash")
 	}
@@ -152,18 +154,23 @@ func TestListContentTypeRegistered(t *testing.T) {
 	if !IsValidContentType(TypeList) {
 		t.Fatal("TypeList not in validContentTypes")
 	}
+
 	if TypeList != "list" {
 		t.Fatalf("TypeList = %q, want list", TypeList)
 	}
+
 	if got := ContentTypeLabels[TypeList]; got != "List" {
 		t.Fatalf("label = %q, want List", got)
 	}
+
 	found := false
+
 	for _, ct := range ContentTypes() {
 		if ct == TypeList {
 			found = true
 		}
 	}
+
 	if !found {
 		t.Fatal("TypeList missing from ContentTypes()")
 	}

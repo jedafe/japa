@@ -52,9 +52,11 @@ func (f fakeSettingsReader) GetIntOr(_ context.Context, key string, fallback int
 
 	return fallback
 }
+
 func (fakeSettingsReader) GetFloatOr(_ context.Context, _ string, fallback float64) float64 {
 	return fallback
 }
+
 func (f fakeSettingsReader) GetStringOr(_ context.Context, key, fallback string) string {
 	if v, ok := f.strings[key]; ok {
 		return v
@@ -62,6 +64,7 @@ func (f fakeSettingsReader) GetStringOr(_ context.Context, key, fallback string)
 
 	return fallback
 }
+
 func (f fakeSettingsReader) GetBoolOr(_ context.Context, key string, fallback bool) bool {
 	if v, ok := f.bools[key]; ok {
 		return v
@@ -74,8 +77,10 @@ func (f fakeSettingsReader) GetBoolOr(_ context.Context, key string, fallback bo
 // one on cleanup.
 func setIntelCurator(t *testing.T, c intelCuratorPort) {
 	t.Helper()
+
 	old := intelCurator
 	intelCurator = c
+
 	t.Cleanup(func() { intelCurator = old })
 }
 
@@ -141,9 +146,10 @@ func TestIntelMissingRequiredFields(t *testing.T) {
 // disables the gate and a raised ceiling widens it.
 func TestIntelCurateAutoPublish(t *testing.T) {
 	// Not parallel: mutates the appSettings package var.
-	ctx := context.Background()
+	ctx := t.Context()
 
 	oldSettings := appSettings
+
 	t.Cleanup(func() { appSettings = oldSettings })
 
 	src := func(trust int16) gen.IntelSource { return gen.IntelSource{TrustLevel: trust} }
@@ -182,10 +188,11 @@ func TestIntelCurateAutoPublish(t *testing.T) {
 func TestHandleIntelCurateChannel_NotWired(t *testing.T) {
 	oldStores, oldSrcStore := intelStores, intelSourcesStore
 	intelStores, intelSourcesStore = nil, nil
+
 	t.Cleanup(func() { intelStores, intelSourcesStore = oldStores, oldSrcStore })
 
 	task := asynq.NewTask(TypeIntelCurateChannel, []byte(`{"version":"v1","source_id":"11111111-1111-4111-8111-111111111111","channel_id":"22222222-2222-4222-8222-222222222222","raw_doc_id":"33333333-3333-4333-8333-333333333333"}`))
-	if err := HandleIntelCurateChannel(context.Background(), task); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), task); err != nil {
 		t.Fatalf("unwired handler returned error: %v", err)
 	}
 }
@@ -216,6 +223,7 @@ func TestIntelNormalizeItemURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := intelNormalizeItemURL(tt.raw); got != tt.want {
 				t.Errorf("intelNormalizeItemURL(%q) = %q, want %q", tt.raw, got, tt.want)
 			}
@@ -229,9 +237,11 @@ func TestIntelNormalizeItemURL(t *testing.T) {
 	if _, ok := set["https://example.com/a"]; !ok {
 		t.Errorf("set missing normalized entry: %v", set)
 	}
+
 	if len(set) != 2 {
 		t.Errorf("set = %v, want 2 usable entries", set)
 	}
+
 	if intelNormalizeItemURLSet(nil) != nil {
 		t.Error("nil input must yield nil (skip check disabled)")
 	}
@@ -265,7 +275,9 @@ func TestHandleIntelDetectChanges_PipelineRouting(t *testing.T) {
 			src := mkIntelTestSource(t, srcStore, "pipe-"+tc.pipeline+tc.name[:4], nil)
 
 			var chID string
+
 			var channelIDForDoc gen.IntelSourceChannel
+
 			hasChannel := tc.pipeline != ""
 
 			if hasChannel {
@@ -280,7 +292,7 @@ func TestHandleIntelDetectChanges_PipelineRouting(t *testing.T) {
 				channelIDForDoc = ch
 			}
 
-			rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+			rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 				SourceID:    src.ID,
 				Url:         src.SourceUrl,
 				HttpStatus:  200,
@@ -291,6 +303,7 @@ func TestHandleIntelDetectChanges_PipelineRouting(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create raw doc: %v", err)
 			}
+
 			_ = channelIDForDoc
 
 			payload, _ := json.Marshal(intelDetectChangesPayload{
@@ -301,7 +314,7 @@ func TestHandleIntelDetectChanges_PipelineRouting(t *testing.T) {
 				PriorHash: "", // first crawl → downstream enqueue
 			})
 
-			if err := HandleIntelDetectChanges(context.Background(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
+			if err := HandleIntelDetectChanges(t.Context(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
 				t.Fatalf("HandleIntelDetectChanges: %v", err)
 			}
 
@@ -309,6 +322,7 @@ func TestHandleIntelDetectChanges_PipelineRouting(t *testing.T) {
 			if len(infos) == 0 {
 				t.Fatalf("no %s task enqueued", tc.wantTask)
 			}
+
 			if n := len(pendingTasks(t, inspector, tc.wantAbsent)); n != 0 {
 				t.Errorf("%d %s tasks enqueued, want 0", n, tc.wantAbsent)
 			}
@@ -318,6 +332,7 @@ func TestHandleIntelDetectChanges_PipelineRouting(t *testing.T) {
 				if err := json.Unmarshal(infos[0].Payload, &cp); err != nil {
 					t.Fatalf("curate payload: %v", err)
 				}
+
 				if cp.ChannelID != chID || cp.RawDocID != rawDoc.ID.String() || cp.SourceID != src.ID.String() {
 					t.Errorf("curate payload = %+v", cp)
 				}
@@ -326,6 +341,7 @@ func TestHandleIntelDetectChanges_PipelineRouting(t *testing.T) {
 				if err := json.Unmarshal(infos[0].Payload, &ep); err != nil {
 					t.Fatalf("extract payload: %v", err)
 				}
+
 				if ep.RawDocID != rawDoc.ID.String() {
 					t.Errorf("extract raw_doc_id = %q, want %q", ep.RawDocID, rawDoc.ID.String())
 				}
@@ -350,6 +366,7 @@ func TestHandleIntelCurateChannel_LiveDB(t *testing.T) {
 	// spec default (2), which trust_level=3 does not clear.
 	oldSettings := appSettings
 	appSettings = fakeSettingsReader{ints: map[string]int{}}
+
 	t.Cleanup(func() { appSettings = oldSettings })
 
 	src := mkIntelTestSource(t, srcStore, "curate-src", func(a *gen.CreateIntelSourceParams) {
@@ -361,7 +378,7 @@ func TestHandleIntelCurateChannel_LiveDB(t *testing.T) {
 		a.EntityTypes = []string{"news"}
 	})
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -397,19 +414,20 @@ func TestHandleIntelCurateChannel_LiveDB(t *testing.T) {
 		RawDocID:  rawDoc.ID.String(),
 	})
 
-	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelCurateChannel: %v", err)
 	}
 
 	if fake.calls != 1 {
 		t.Fatalf("curator calls = %d, want 1", fake.calls)
 	}
+
 	if string(fake.lastBody) != "<rss/>fixture" {
 		t.Errorf("curator received body %q", fake.lastBody)
 	}
 
 	// Both records persisted as 'extracted' with curator evidence.
-	rows, err := database.Writer.Query(context.Background(),
+	rows, err := database.Writer.Query(t.Context(),
 		`SELECT entity_type, external_key, status, confidence_overall, evidence::text
 		 FROM intel_records WHERE raw_document_id = $1 ORDER BY external_key`, rawDoc.ID)
 	if err != nil {
@@ -418,20 +436,26 @@ func TestHandleIntelCurateChannel_LiveDB(t *testing.T) {
 	defer rows.Close()
 
 	var got []string
+
 	for rows.Next() {
 		var et, key, status, evidence string
+
 		var conf float32
 		if err := rows.Scan(&et, &key, &status, &conf, &evidence); err != nil {
 			t.Fatalf("scan record: %v", err)
 		}
+
 		if et != "news" || status != "extracted" || conf != 1.0 {
 			t.Errorf("record %s: entity_type=%q status=%q confidence=%v", key, et, status, conf)
 		}
+
 		if !json.Valid([]byte(evidence)) || !jsonContains([]byte(evidence), `"origin":"curator"`) {
 			t.Errorf("record %s evidence missing curator origin: %s", key, evidence)
 		}
+
 		got = append(got, key)
 	}
+
 	if len(got) != 2 {
 		t.Fatalf("persisted records = %v, want 2", got)
 	}
@@ -441,15 +465,18 @@ func TestHandleIntelCurateChannel_LiveDB(t *testing.T) {
 	if len(infos) != 2 {
 		t.Fatalf("dedup tasks = %d, want 2", len(infos))
 	}
+
 	for _, info := range infos {
 		var rp intelRecordPayload
 		if err := json.Unmarshal(info.Payload, &rp); err != nil {
 			t.Fatalf("dedup payload: %v", err)
 		}
+
 		if rp.ChannelID != ch.ID.String() || rp.RecordID == "" {
 			t.Errorf("dedup payload = %+v", rp)
 		}
 	}
+
 	if n := len(pendingTasks(t, inspector, TypeIntelPromote)); n != 0 {
 		t.Errorf("promote tasks = %d, want 0 (trust 3 exceeds default ceiling 2)", n)
 	}
@@ -462,10 +489,12 @@ func jsonContains(doc []byte, pair string) bool {
 	if err := json.Unmarshal(doc, &m); err != nil {
 		return false
 	}
+
 	var kv map[string]string
 	if err := json.Unmarshal([]byte("{"+pair+"}"), &kv); err != nil {
 		return false
 	}
+
 	for k, v := range kv {
 		if mv, ok := m[k].(string); !ok || mv != v {
 			return false
@@ -488,7 +517,7 @@ func TestHandleIntelCurateChannel_NoCuratorFallsBack(t *testing.T) {
 		a.EntityTypes = []string{"news"}
 	})
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -510,7 +539,7 @@ func TestHandleIntelCurateChannel_NoCuratorFallsBack(t *testing.T) {
 		RawDocID:  rawDoc.ID.String(),
 	})
 
-	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelCurateChannel: %v", err)
 	}
 
@@ -518,10 +547,12 @@ func TestHandleIntelCurateChannel_NoCuratorFallsBack(t *testing.T) {
 	if len(infos) == 0 {
 		t.Fatal("no intel:extract fallback task enqueued")
 	}
+
 	var ep intelExtractPayload
 	if err := json.Unmarshal(infos[0].Payload, &ep); err != nil {
 		t.Fatalf("extract payload: %v", err)
 	}
+
 	if ep.ChannelID != ch.ID.String() {
 		t.Errorf("extract channel_id = %q, want %q", ep.ChannelID, ch.ID.String())
 	}
@@ -542,7 +573,7 @@ func TestHandleIntelCurateChannel_SitemapManifestSkipsExtract(t *testing.T) {
 		a.EntityTypes = []string{"news"}
 	})
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -565,7 +596,7 @@ func TestHandleIntelCurateChannel_SitemapManifestSkipsExtract(t *testing.T) {
 		RawDocID:  rawDoc.ID.String(),
 	})
 
-	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelCurateChannel: %v", err)
 	}
 
@@ -589,7 +620,7 @@ func TestHandleIntelCurateChannel_DerivedDocDispatchesEffectiveMethod(t *testing
 		a.EntityTypes = []string{"job"}
 	})
 
-	parent, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	parent, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -603,7 +634,7 @@ func TestHandleIntelCurateChannel_DerivedDocDispatchesEffectiveMethod(t *testing
 		t.Fatalf("create parent doc: %v", err)
 	}
 
-	derived, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	derived, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:         src.ID,
 		ChannelID:        ch.ID,
 		Url:              "https://example.com/jobs/1",
@@ -635,13 +666,14 @@ func TestHandleIntelCurateChannel_DerivedDocDispatchesEffectiveMethod(t *testing
 		RawDocID:  derived.ID.String(),
 	})
 
-	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelCurateChannel: %v", err)
 	}
 
 	if fake.calls != 1 {
 		t.Fatalf("curator calls = %d, want 1", fake.calls)
 	}
+
 	if fake.lastCh.CrawlMethod != "static" {
 		t.Errorf("curator dispatched on crawl_method %q, want %q (effective fetch method)", fake.lastCh.CrawlMethod, "static")
 	}
@@ -650,6 +682,7 @@ func TestHandleIntelCurateChannel_DerivedDocDispatchesEffectiveMethod(t *testing
 	if fake.lastCh.EntryUrl != "https://example.com/jobs/1" {
 		t.Errorf("curator dispatched with entry_url %q, want the derived doc URL", fake.lastCh.EntryUrl)
 	}
+
 	if fake.lastCh.ID != ch.ID {
 		t.Errorf("curator dispatched with channel id %q, want %q (clone must keep identity)", fake.lastCh.ID, ch.ID)
 	}
@@ -680,7 +713,7 @@ func TestHandleIntelDetectChanges_DerivedDocKeepsChannelPipeline(t *testing.T) {
 				a.EntityTypes = []string{"job"}
 			})
 
-			parent, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+			parent, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 				SourceID:    src.ID,
 				ChannelID:   ch.ID,
 				Url:         ch.EntryUrl,
@@ -694,7 +727,7 @@ func TestHandleIntelDetectChanges_DerivedDocKeepsChannelPipeline(t *testing.T) {
 				t.Fatalf("create parent doc: %v", err)
 			}
 
-			derived, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+			derived, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 				SourceID:         src.ID,
 				ChannelID:        ch.ID,
 				Url:              "https://example.com/jobs/1",
@@ -717,13 +750,14 @@ func TestHandleIntelDetectChanges_DerivedDocKeepsChannelPipeline(t *testing.T) {
 				PriorHash: "", // first capture of this URL → downstream fires
 			})
 
-			if err := HandleIntelDetectChanges(context.Background(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
+			if err := HandleIntelDetectChanges(t.Context(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
 				t.Fatalf("HandleIntelDetectChanges: %v", err)
 			}
 
 			if n := len(pendingTasks(t, inspector, tc.wantTask)); n == 0 {
 				t.Fatalf("no %s task enqueued for derived doc", tc.wantTask)
 			}
+
 			if n := len(pendingTasks(t, inspector, tc.wantAbsent)); n != 0 {
 				t.Errorf("%d %s tasks enqueued, want 0", n, tc.wantAbsent)
 			}
@@ -745,7 +779,7 @@ func TestHandleIntelDetectChanges_SitemapStopsChain(t *testing.T) {
 		a.EntityTypes = []string{"news"}
 	})
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -767,13 +801,14 @@ func TestHandleIntelDetectChanges_SitemapStopsChain(t *testing.T) {
 		PriorHash: "", // first crawl → downstream would fire without the guard
 	})
 
-	if err := HandleIntelDetectChanges(context.Background(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
+	if err := HandleIntelDetectChanges(t.Context(), asynq.NewTask(TypeIntelDetectChanges, payload)); err != nil {
 		t.Fatalf("HandleIntelDetectChanges: %v", err)
 	}
 
 	if n := len(pendingTasks(t, inspector, TypeIntelCurateChannel)); n != 0 {
 		t.Errorf("sitemap manifest enqueued %d intel:curate_channel tasks, want 0", n)
 	}
+
 	if n := len(pendingTasks(t, inspector, TypeIntelExtract)); n != 0 {
 		t.Errorf("sitemap manifest enqueued %d intel:extract tasks, want 0", n)
 	}
@@ -788,6 +823,7 @@ func TestHandleIntelCurateChannel_TrustAutoPublish(t *testing.T) {
 
 	oldSettings := appSettings
 	appSettings = fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 2}}
+
 	t.Cleanup(func() { appSettings = oldSettings })
 
 	src := mkIntelTestSource(t, srcStore, "trusted-src", func(a *gen.CreateIntelSourceParams) {
@@ -799,7 +835,7 @@ func TestHandleIntelCurateChannel_TrustAutoPublish(t *testing.T) {
 		a.EntityTypes = []string{"news"}
 	})
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -826,15 +862,16 @@ func TestHandleIntelCurateChannel_TrustAutoPublish(t *testing.T) {
 		RawDocID:  rawDoc.ID.String(),
 	})
 
-	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelCurateChannel: %v", err)
 	}
 
 	var status string
-	if err := database.Writer.QueryRow(context.Background(),
+	if err := database.Writer.QueryRow(t.Context(),
 		`SELECT status FROM intel_records WHERE raw_document_id = $1`, rawDoc.ID).Scan(&status); err != nil {
 		t.Fatalf("load record status: %v", err)
 	}
+
 	if status != "auto_published" {
 		t.Errorf("record status = %q, want auto_published", status)
 	}
@@ -846,21 +883,26 @@ func TestHandleIntelCurateChannel_TrustAutoPublish(t *testing.T) {
 	if len(infos) != 1 {
 		t.Fatalf("promote tasks = %d, want 1", len(infos))
 	}
+
 	var rp intelRecordPayload
 	if err := json.Unmarshal(infos[0].Payload, &rp); err != nil {
 		t.Fatalf("promote payload: %v", err)
 	}
+
 	var recordID string
-	if err := database.Writer.QueryRow(context.Background(),
+	if err := database.Writer.QueryRow(t.Context(),
 		`SELECT id::text FROM intel_records WHERE raw_document_id = $1`, rawDoc.ID).Scan(&recordID); err != nil {
 		t.Fatalf("load record id: %v", err)
 	}
+
 	if rp.RecordID != recordID {
 		t.Errorf("promote payload record_id = %q, want %q", rp.RecordID, recordID)
 	}
+
 	if rp.ChannelID != ch.ID.String() {
 		t.Errorf("promote payload channel_id = %q, want %q", rp.ChannelID, ch.ID.String())
 	}
+
 	if n := len(pendingTasks(t, inspector, TypeIntelDedup)); n != 0 {
 		t.Errorf("dedup tasks = %d, want 0 (auto-publish skips dedup)", n)
 	}
@@ -896,8 +938,10 @@ func TestHandleIntelCurateChannel_TrustGateRouting(t *testing.T) {
 			if tc.hasOverride {
 				ints["intel.curate.auto_publish_trust_max"] = tc.trustMax
 			}
+
 			oldSettings := appSettings
 			appSettings = fakeSettingsReader{ints: ints}
+
 			t.Cleanup(func() { appSettings = oldSettings })
 
 			src := mkIntelTestSource(t, srcStore, fmt.Sprintf("trust-gate-%d", i), func(a *gen.CreateIntelSourceParams) {
@@ -909,7 +953,7 @@ func TestHandleIntelCurateChannel_TrustGateRouting(t *testing.T) {
 				a.EntityTypes = []string{"news"}
 			})
 
-			rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+			rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 				SourceID:    src.ID,
 				ChannelID:   ch.ID,
 				Url:         ch.EntryUrl,
@@ -936,15 +980,16 @@ func TestHandleIntelCurateChannel_TrustGateRouting(t *testing.T) {
 				RawDocID:  rawDoc.ID.String(),
 			})
 
-			if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+			if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 				t.Fatalf("HandleIntelCurateChannel: %v", err)
 			}
 
 			var status, recordID string
-			if err := database.Writer.QueryRow(context.Background(),
+			if err := database.Writer.QueryRow(t.Context(),
 				`SELECT status, id::text FROM intel_records WHERE raw_document_id = $1`, rawDoc.ID).Scan(&status, &recordID); err != nil {
 				t.Fatalf("load record: %v", err)
 			}
+
 			if status != tc.wantStatus {
 				t.Errorf("record status = %q, want %q", status, tc.wantStatus)
 			}
@@ -953,13 +998,16 @@ func TestHandleIntelCurateChannel_TrustGateRouting(t *testing.T) {
 			if len(infos) != 1 {
 				t.Fatalf("%s tasks = %d, want 1", tc.wantTask, len(infos))
 			}
+
 			var rp intelRecordPayload
 			if err := json.Unmarshal(infos[0].Payload, &rp); err != nil {
 				t.Fatalf("%s payload: %v", tc.wantTask, err)
 			}
+
 			if rp.RecordID != recordID || rp.ChannelID != ch.ID.String() {
 				t.Errorf("%s payload = %+v, want record_id=%q channel_id=%q", tc.wantTask, rp, recordID, ch.ID.String())
 			}
+
 			if n := len(pendingTasks(t, inspector, tc.wantAbsent)); n != 0 {
 				t.Errorf("%s tasks = %d, want 0", tc.wantAbsent, n)
 			}
@@ -979,6 +1027,7 @@ func TestHandleIntelCurateChannel_Hybrid(t *testing.T) {
 	// auto-publish under the spec-default ceiling (2).
 	oldSettings := appSettings
 	appSettings = fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 0}}
+
 	t.Cleanup(func() { appSettings = oldSettings })
 
 	src := mkIntelTestSource(t, srcStore, "hybrid-src", nil)
@@ -988,7 +1037,7 @@ func TestHandleIntelCurateChannel_Hybrid(t *testing.T) {
 		a.EntityTypes = []string{"job", "article"}
 	})
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -1035,7 +1084,7 @@ func TestHandleIntelCurateChannel_Hybrid(t *testing.T) {
 		RawDocID:  rawDoc.ID.String(),
 	})
 
-	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 		t.Fatalf("HandleIntelCurateChannel: %v", err)
 	}
 
@@ -1046,7 +1095,7 @@ func TestHandleIntelCurateChannel_Hybrid(t *testing.T) {
 
 	// The curate-only article record persisted with review_required; the
 	// complete job record persisted with extracted + dedup.
-	rows, err := database.Writer.Query(context.Background(),
+	rows, err := database.Writer.Query(t.Context(),
 		`SELECT entity_type, status FROM intel_records WHERE raw_document_id = $1 ORDER BY external_key`, rawDoc.ID)
 	if err != nil {
 		t.Fatalf("query records: %v", err)
@@ -1054,19 +1103,24 @@ func TestHandleIntelCurateChannel_Hybrid(t *testing.T) {
 	defer rows.Close()
 
 	statuses := map[string]string{}
+
 	for rows.Next() {
 		var et, st string
 		if err := rows.Scan(&et, &st); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
+
 		statuses[et] = st
 	}
+
 	if statuses["article"] != "review_required" {
 		t.Errorf("article record status = %q, want review_required", statuses["article"])
 	}
+
 	if statuses["job"] != "extracted" {
 		t.Errorf("job record status = %q, want extracted", statuses["job"])
 	}
+
 	if len(statuses) != 2 {
 		t.Errorf("persisted entity types = %v, want exactly article+job", statuses)
 	}
@@ -1092,6 +1146,7 @@ func TestHandleIntelCurateChannel_HybridExtractSkipSet(t *testing.T) {
 	// relevance gate — the skip-set contract is under test alone.
 	oldSettings := appSettings
 	appSettings = fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 0}}
+
 	t.Cleanup(func() { appSettings = oldSettings })
 	setRelevanceGate(t, nil)
 
@@ -1102,7 +1157,7 @@ func TestHandleIntelCurateChannel_HybridExtractSkipSet(t *testing.T) {
 		a.EntityTypes = []string{"job"}
 	})
 
-	rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+	rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID:    src.ID,
 		ChannelID:   ch.ID,
 		Url:         ch.EntryUrl,
@@ -1146,7 +1201,7 @@ func TestHandleIntelCurateChannel_HybridExtractSkipSet(t *testing.T) {
 		ChannelID: ch.ID.String(),
 		RawDocID:  rawDoc.ID.String(),
 	})
-	if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, curatePayload)); err != nil {
+	if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, curatePayload)); err != nil {
 		t.Fatalf("HandleIntelCurateChannel: %v", err)
 	}
 
@@ -1156,13 +1211,16 @@ func TestHandleIntelCurateChannel_HybridExtractSkipSet(t *testing.T) {
 	if len(extractInfos) != 1 {
 		t.Fatalf("extract tasks = %d, want 1", len(extractInfos))
 	}
+
 	var ep intelExtractPayload
 	if err := json.Unmarshal(extractInfos[0].Payload, &ep); err != nil {
 		t.Fatalf("extract payload: %v", err)
 	}
+
 	if !slices.Contains(ep.SkipItemURLs, "https://jobs.example.com/complete") {
 		t.Errorf("skip_item_urls = %v, want the claimed item URL", ep.SkipItemURLs)
 	}
+
 	if slices.Contains(ep.SkipItemURLs, "https://jobs.example.com/incomplete") {
 		t.Errorf("skip_item_urls must not contain the extract-routed item: %v", ep.SkipItemURLs)
 	}
@@ -1193,9 +1251,10 @@ func TestHandleIntelCurateChannel_HybridExtractSkipSet(t *testing.T) {
 	}}
 	oldExt := intelExtractor
 	intelExtractor = ext
+
 	t.Cleanup(func() { intelExtractor = oldExt })
 
-	if err := HandleIntelExtract(context.Background(), asynq.NewTask(TypeIntelExtract, extractInfos[0].Payload)); err != nil {
+	if err := HandleIntelExtract(t.Context(), asynq.NewTask(TypeIntelExtract, extractInfos[0].Payload)); err != nil {
 		t.Fatalf("HandleIntelExtract: %v", err)
 	}
 
@@ -1203,20 +1262,22 @@ func TestHandleIntelCurateChannel_HybridExtractSkipSet(t *testing.T) {
 	// extracted 'recovered' row — the claimed item was NOT re-persisted
 	// under the extractor key.
 	var n int
-	if err := database.Writer.QueryRow(context.Background(),
+	if err := database.Writer.QueryRow(t.Context(),
 		`SELECT count(*) FROM intel_records WHERE raw_document_id = $1`, rawDoc.ID).Scan(&n); err != nil {
 		t.Fatalf("count records: %v", err)
 	}
+
 	if n != 2 {
 		t.Errorf("records = %d, want 2 (claimed item suppressed)", n)
 	}
 
 	var dup int
-	if err := database.Writer.QueryRow(context.Background(),
+	if err := database.Writer.QueryRow(t.Context(),
 		`SELECT count(*) FROM intel_records WHERE raw_document_id = $1 AND external_key = $2`,
 		rawDoc.ID, "https://example.com/hybrid-skip-src|dup-1").Scan(&dup); err != nil {
 		t.Fatalf("count dup: %v", err)
 	}
+
 	if dup != 0 {
 		t.Error("claimed item double-persisted under the extractor key")
 	}

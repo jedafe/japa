@@ -64,7 +64,7 @@ func TestIntentRuleFor(t *testing.T) {
 		"visit": {"hide_paths": ["/academy"], "demote_space_types": ["university"]}
 	}`}
 
-	rule := IntentRuleFor(context.Background(), matrix, "visit")
+	rule := IntentRuleFor(t.Context(), matrix, "visit")
 	if len(rule.HidePaths) != 1 || rule.HidePaths[0] != "/academy" {
 		t.Errorf("expected hide_paths [/academy], got %v", rule.HidePaths)
 	}
@@ -72,23 +72,26 @@ func TestIntentRuleFor(t *testing.T) {
 	if len(rule.PinPaths) != 1 || rule.PinPaths[0] != "/feed" {
 		t.Errorf("expected pinned /feed from wildcard, got %v", rule.PinPaths)
 	}
+
 	if len(rule.DemoteSpaceTypes) != 1 || rule.DemoteSpaceTypes[0] != "university" {
 		t.Errorf("expected demote [university], got %v", rule.DemoteSpaceTypes)
 	}
 
 	// No declared intent → no rule.
-	if got := IntentRuleFor(context.Background(), matrix, ""); !got.Empty() {
+	if got := IntentRuleFor(t.Context(), matrix, ""); !got.Empty() {
 		t.Errorf("expected empty rule for empty intent, got %+v", got)
 	}
 
 	// Nil reader / missing setting / invalid JSON → zero rule.
-	if got := IntentRuleFor(context.Background(), nil, "visit"); !got.Empty() {
+	if got := IntentRuleFor(t.Context(), nil, "visit"); !got.Empty() {
 		t.Error("expected empty rule for nil reader")
 	}
-	if got := IntentRuleFor(context.Background(), fakeGetter{""}, "visit"); !got.Empty() {
+
+	if got := IntentRuleFor(t.Context(), fakeGetter{""}, "visit"); !got.Empty() {
 		t.Error("expected empty rule for missing setting")
 	}
-	if got := IntentRuleFor(context.Background(), fakeGetter{"{bad json"}, "visit"); !got.Empty() {
+
+	if got := IntentRuleFor(t.Context(), fakeGetter{"{bad json"}, "visit"); !got.Empty() {
 		t.Error("expected empty rule for invalid JSON")
 	}
 }

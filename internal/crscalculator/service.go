@@ -63,6 +63,7 @@ func (c CLBScores) Min() int {
 			m = v
 		}
 	}
+
 	return m
 }
 
@@ -256,10 +257,12 @@ func factorDTO(f FactorRow) FactorDTO {
 		PointsSingle:    f.PointsSingle,
 		SortOrder:       f.SortOrder,
 	}
+
 	if f.PointsWithSpouse.Valid {
 		v := f.PointsWithSpouse.Int32
 		d.PointsWithSpouse = &v
 	}
+
 	return d
 }
 
@@ -291,6 +294,7 @@ func (s *Service) Calculate(ctx context.Context, userID *pgtype.UUID, in Calcula
 	if userID != nil {
 		inputs, _ := json.Marshal(in)
 		bd, _ := json.Marshal(breakdown)
+
 		if _, err := s.store.SaveScoreHistory(ctx, *userID, ruleset.ID, inputs, bd, score); err == nil {
 			result.Saved = true
 		}
@@ -305,6 +309,7 @@ func (s *Service) ListDraws(ctx context.Context, category string, limit int32) (
 	if err != nil {
 		return nil, err
 	}
+
 	return drawDTOs(rows), nil
 }
 
@@ -314,6 +319,7 @@ func (s *Service) AdminListDraws(ctx context.Context, limit int32) ([]DrawDTO, e
 	if err != nil {
 		return nil, err
 	}
+
 	return drawDTOs(rows), nil
 }
 
@@ -323,6 +329,7 @@ func (s *Service) LatestDraws(ctx context.Context) ([]DrawDTO, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return drawDTOs(rows), nil
 }
 
@@ -343,6 +350,7 @@ func (s *Service) ScoreHistory(ctx context.Context, userID pgtype.UUID, page, li
 			CreatedAt: h.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
+
 	return out, total, nil
 }
 
@@ -352,10 +360,12 @@ func (s *Service) ListRulesets(ctx context.Context) ([]RulesetDTO, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]RulesetDTO, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, rulesetDTO(r))
 	}
+
 	return out, nil
 }
 
@@ -364,15 +374,17 @@ func (s *Service) CreateRuleset(ctx context.Context, in CreateRulesetRequest) (*
 	if in.VersionLabel == "" || in.EffectiveDate == "" {
 		return nil, errors.New("version_label and effective_date are required")
 	}
+
 	var d pgtype.Date
 	if err := d.Scan(in.EffectiveDate); err != nil {
-		return nil, fmt.Errorf("invalid effective_date")
+		return nil, errors.New("invalid effective_date")
 	}
 
 	tx, err := s.store.BeginTx(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	id, err := s.store.CreateRuleset(ctx, tx, in.VersionLabel, d, in.SourceURL, false)
@@ -393,9 +405,11 @@ func (s *Service) CreateRuleset(ctx context.Context, in CreateRulesetRequest) (*
 		if f.SortOrder != 0 {
 			row.SortOrder = f.SortOrder
 		}
+
 		if f.PointsWithSpouse != nil {
 			row.PointsWithSpouse = pgtype.Int4{Int32: *f.PointsWithSpouse, Valid: true}
 		}
+
 		if err := s.store.CreateFactorPoint(ctx, tx, row); err != nil {
 			return nil, err
 		}
@@ -419,14 +433,17 @@ func (s *Service) GetRulesetDetail(ctx context.Context, id pgtype.UUID) (*Factor
 	if err != nil {
 		return nil, err
 	}
+
 	factors, err := s.store.ListFactorPoints(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+
 	out := &FactorsResponse{Ruleset: rulesetDTO(r), Factors: make([]FactorDTO, 0, len(factors))}
 	for _, f := range factors {
 		out.Factors = append(out.Factors, factorDTO(f))
 	}
+
 	return out, nil
 }
 
@@ -436,12 +453,14 @@ func (s *Service) UpdateRuleset(ctx context.Context, id pgtype.UUID, in CreateRu
 	var d pgtype.Date
 	if in.EffectiveDate != "" {
 		if err := d.Scan(in.EffectiveDate); err != nil {
-			return fmt.Errorf("invalid effective_date")
+			return errors.New("invalid effective_date")
 		}
 	}
+
 	var factors []FactorRow
 	if in.Factors != nil {
 		factors = make([]FactorRow, 0, len(in.Factors))
+
 		for i, f := range in.Factors {
 			row := FactorRow{
 				RulesetID:       id,
@@ -455,12 +474,15 @@ func (s *Service) UpdateRuleset(ctx context.Context, id pgtype.UUID, in CreateRu
 			if f.SortOrder != 0 {
 				row.SortOrder = f.SortOrder
 			}
+
 			if f.PointsWithSpouse != nil {
 				row.PointsWithSpouse = pgtype.Int4{Int32: *f.PointsWithSpouse, Valid: true}
 			}
+
 			factors = append(factors, row)
 		}
 	}
+
 	return s.store.UpdateRuleset(ctx, id, in.VersionLabel, d, in.SourceURL, factors)
 }
 
@@ -479,9 +501,10 @@ func (s *Service) CreateDraw(ctx context.Context, in DrawRequest) (*DrawDTO, err
 	if in.DrawDate == "" || in.Category == "" || in.CRSCutoff == nil || in.InvitationsIssued == nil {
 		return nil, errors.New("draw_date, category, crs_cutoff and invitations_issued are required")
 	}
+
 	var d pgtype.Date
 	if err := d.Scan(in.DrawDate); err != nil {
-		return nil, fmt.Errorf("invalid draw_date")
+		return nil, errors.New("invalid draw_date")
 	}
 
 	row := DrawRow{
@@ -500,8 +523,10 @@ func (s *Service) CreateDraw(ctx context.Context, in DrawRequest) (*DrawDTO, err
 	if err != nil {
 		return nil, err
 	}
+
 	row.ID = id
 	dtos := drawDTOs([]DrawRow{row})
+
 	return &dtos[0], nil
 }
 
@@ -511,24 +536,31 @@ func (s *Service) UpdateDraw(ctx context.Context, id pgtype.UUID, in DrawRequest
 	if in.DrawNumber != nil {
 		row.DrawNumber = pgtype.Int4{Int32: *in.DrawNumber, Valid: true}
 	}
+
 	if in.DrawDate != "" {
 		var d pgtype.Date
 		if err := d.Scan(in.DrawDate); err != nil {
-			return fmt.Errorf("invalid draw_date")
+			return errors.New("invalid draw_date")
 		}
+
 		row.DrawDate = d
 	}
+
 	if in.Category != "" {
 		row.Category = in.Category
 	}
+
 	if in.CRSCutoff != nil {
 		row.CRSCutoff = *in.CRSCutoff
 	}
+
 	if in.InvitationsIssued != nil {
 		row.InvitationsIssued = *in.InvitationsIssued
 	}
+
 	row.TieBreakRule = in.TieBreakRule
 	row.SourceURL = in.SourceURL
+
 	return s.store.UpdateDraw(ctx, id, row)
 }
 
@@ -537,69 +569,84 @@ func (s *Service) resolveRuleset(ctx context.Context, version string) (RulesetRo
 	if version != "" {
 		return s.store.GetRulesetByVersion(ctx, version)
 	}
+
 	return s.store.GetActiveRuleset(ctx)
 }
 
 // validateProfile sanity-checks the submitted profile.
 func validateProfile(in CalculateRequest) error {
 	if in.MaritalStatus != "single" && in.MaritalStatus != "married" {
-		return fmt.Errorf("marital_status must be single or married")
+		return errors.New("marital_status must be single or married")
 	}
+
 	if in.Age < 0 || in.Age > 120 {
-		return fmt.Errorf("age out of range")
+		return errors.New("age out of range")
 	}
+
 	if _, ok := educationRank[in.Education]; !ok {
-		return fmt.Errorf("unknown education level")
+		return errors.New("unknown education level")
 	}
+
 	if in.FirstLanguage != "" && in.FirstLanguage != "english" && in.FirstLanguage != "french" {
-		return fmt.Errorf("first_language must be english or french")
+		return errors.New("first_language must be english or french")
 	}
+
 	for _, v := range in.CLBFirst.Each() {
 		if v < 0 || v > 10 {
-			return fmt.Errorf("clb_first scores must be 0–10")
+			return errors.New("clb_first scores must be 0–10")
 		}
 	}
+
 	if in.CLBSecond != nil {
 		for _, v := range in.CLBSecond.Each() {
 			if v < 0 || v > 10 {
-				return fmt.Errorf("clb_second scores must be 0–10")
+				return errors.New("clb_second scores must be 0–10")
 			}
 		}
 	}
+
 	if in.FrenchCLB != nil {
 		for _, v := range in.FrenchCLB.Each() {
 			if v < 0 || v > 10 {
-				return fmt.Errorf("french_clb scores must be 0–10")
+				return errors.New("french_clb scores must be 0–10")
 			}
 		}
 	}
+
 	if in.CanadianExpYears < 0 || in.CanadianExpYears > 60 {
-		return fmt.Errorf("canadian_experience_years out of range")
+		return errors.New("canadian_experience_years out of range")
 	}
+
 	if in.ForeignExpYears < 0 || in.ForeignExpYears > 60 {
-		return fmt.Errorf("foreign_experience_years out of range")
+		return errors.New("foreign_experience_years out of range")
 	}
+
 	switch in.CanadianEducation {
 	case "", "none", "one_or_two_years", "three_plus_years":
 	default:
-		return fmt.Errorf("unknown canadian_education value")
+		return errors.New("unknown canadian_education value")
 	}
+
 	if in.MaritalStatus == "married" {
 		if in.Spouse == nil {
-			return fmt.Errorf("spouse details required when married")
+			return errors.New("spouse details required when married")
 		}
+
 		if _, ok := educationRank[in.Spouse.Education]; !ok {
-			return fmt.Errorf("unknown spouse education level")
+			return errors.New("unknown spouse education level")
 		}
+
 		for _, v := range in.Spouse.CLBFirst.Each() {
 			if v < 0 || v > 10 {
-				return fmt.Errorf("spouse clb scores must be 0–10")
+				return errors.New("spouse clb scores must be 0–10")
 			}
 		}
+
 		if in.Spouse.CanadianExpYears < 0 || in.Spouse.CanadianExpYears > 60 {
-			return fmt.Errorf("spouse canadian_experience_years out of range")
+			return errors.New("spouse canadian_experience_years out of range")
 		}
 	}
+
 	return nil
 }
 
@@ -615,10 +662,12 @@ func (d descriptor) num(key string) (float64, bool) {
 	if !ok {
 		return 0, false
 	}
+
 	var n float64
 	if err := json.Unmarshal(raw, &n); err != nil {
 		return 0, false
 	}
+
 	return n, true
 }
 
@@ -627,10 +676,12 @@ func (d descriptor) str(key string) (string, bool) {
 	if !ok {
 		return "", false
 	}
+
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return "", false
 	}
+
 	return s, true
 }
 
@@ -639,16 +690,19 @@ func (d descriptor) flag(key string) (bool, bool) {
 	if !ok {
 		return false, false
 	}
+
 	var b bool
 	if err := json.Unmarshal(raw, &b); err != nil {
 		return false, false
 	}
+
 	return b, true
 }
 
 func decodeDescriptor(raw []byte) descriptor {
 	var d descriptor
 	_ = json.Unmarshal(raw, &d)
+
 	return d
 }
 
@@ -656,13 +710,16 @@ func decodeDescriptor(raw []byte) descriptor {
 // the rows; the *meaning* of each descriptor field is implemented here.
 func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownItem) {
 	married := in.MaritalStatus == "married"
+
 	var total int32
+
 	var breakdown []BreakdownItem
 
 	award := func(group, key, label string, pts int32) {
 		if pts <= 0 {
 			return
 		}
+
 		breakdown = append(breakdown, BreakdownItem{Group: group, Key: key, Label: label, Points: pts})
 		total += pts
 	}
@@ -671,6 +728,7 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 		if married && f.PointsWithSpouse.Valid {
 			return f.PointsWithSpouse.Int32
 		}
+
 		return f.PointsSingle
 	}
 
@@ -681,18 +739,23 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 	// tier is awarded — IRCC grants the best qualifying tier, not the sum
 	// of every tier whose conditions happen to pass.
 	bestTier := map[string]int{} // combo → factors index of best match
+
 	for i, f := range factors {
 		if f.FactorGroup != GroupTransferability {
 			continue
 		}
+
 		d := decodeDescriptor(f.InputDescriptor)
+
 		combo, _ := d.str("combo")
 		if combo == "" {
 			combo = f.FactorKey
 		}
+
 		if !transferabilityMatch(d, in) {
 			continue
 		}
+
 		if bi, ok := bestTier[combo]; !ok || f.PointsSingle > factors[bi].PointsSingle {
 			bestTier[combo] = i
 		}
@@ -708,12 +771,15 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			}
 		case "education", "spouse_education":
 			level := in.Education
+
 			if f.FactorKey == "spouse_education" {
 				if !married || in.Spouse == nil {
 					continue
 				}
+
 				level = in.Spouse.Education
 			}
+
 			if edu, ok := d.str("edu"); ok && edu == level {
 				award(f.FactorGroup, f.FactorKey, f.Label, pointsFor(f))
 			}
@@ -727,6 +793,7 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			if in.CLBSecond == nil {
 				continue
 			}
+
 			for _, skill := range in.CLBSecond.Each() {
 				if clb, ok := d.num("clb"); ok && int(clb) == skill {
 					award(f.FactorGroup, f.FactorKey, f.Label, pointsFor(f))
@@ -736,6 +803,7 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			if !married || in.Spouse == nil {
 				continue
 			}
+
 			for _, skill := range in.Spouse.CLBFirst.Each() {
 				if clb, ok := d.num("clb"); ok && int(clb) == skill {
 					award(f.FactorGroup, f.FactorKey, f.Label, pointsFor(f))
@@ -749,6 +817,7 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			if !married || in.Spouse == nil {
 				continue
 			}
+
 			if inBand(d, "min_years", "max_years", float64(in.Spouse.CanadianExpYears)) {
 				award(f.FactorGroup, f.FactorKey, f.Label, pointsFor(f))
 			}
@@ -768,10 +837,12 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			if in.FrenchCLB == nil {
 				continue
 			}
+
 			matched := false
 			if min, ok := d.num("clb_min"); ok && float64(in.FrenchCLB.Min()) >= min {
 				matched = true
 			}
+
 			if !matched {
 				continue
 			}
@@ -784,6 +855,7 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 					continue
 				}
 			}
+
 			award(f.FactorGroup, f.FactorKey, f.Label, f.PointsSingle)
 		case "canadian_education":
 			if edu, ok := d.str("edu"); ok && edu == in.CanadianEducation {
@@ -795,6 +867,7 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			if f.FactorGroup != GroupTransferability {
 				continue
 			}
+
 			combo, _ := d.str("combo")
 			if combo == "" {
 				combo = f.FactorKey
@@ -810,10 +883,12 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			if i := strings.IndexByte(combo, '_'); i > 0 {
 				section = combo[:i]
 			}
+
 			awarded := f.PointsSingle
 			if comboScores[section]+awarded > transferabilityCapPerSection {
 				awarded = transferabilityCapPerSection - comboScores[section]
 			}
+
 			comboScores[section] += awarded
 			award(f.FactorGroup, f.FactorKey, f.Label, awarded)
 		}
@@ -826,18 +901,22 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 	if married {
 		secondCap = secondLanguageCapMarried
 	}
+
 	var secondTotal int32
+
 	for _, it := range breakdown {
 		if it.Key == "language_second" {
 			secondTotal += it.Points
 		}
 	}
+
 	if secondTotal > secondCap {
 		excess := secondTotal - secondCap
 		for i := len(breakdown) - 1; i >= 0 && excess > 0; i-- {
 			if breakdown[i].Key != "language_second" {
 				continue
 			}
+
 			trim := min32(excess, breakdown[i].Points)
 			breakdown[i].Points -= trim
 			total -= trim
@@ -853,6 +932,7 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			if breakdown[i].Group != GroupTransferability {
 				continue
 			}
+
 			trim := min32(excess, breakdown[i].Points)
 			breakdown[i].Points -= trim
 			total -= trim
@@ -863,6 +943,7 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 	// Drop items the caps trimmed to zero so they don't render as
 	// meaningless 0-point rows in the breakdown.
 	kept := breakdown[:0]
+
 	for _, it := range breakdown {
 		if it.Points > 0 {
 			kept = append(kept, it)
@@ -882,12 +963,15 @@ func englishScores(in CalculateRequest) *CLBScores {
 	if in.FirstLanguage == "french" {
 		return in.CLBSecond
 	}
+
 	if in.FirstLanguage == "english" {
 		return &in.CLBFirst
 	}
+
 	if in.FrenchCLB != nil && *in.FrenchCLB == in.CLBFirst {
 		return in.CLBSecond
 	}
+
 	return &in.CLBFirst
 }
 
@@ -895,15 +979,19 @@ func englishScores(in CalculateRequest) *CLBScores {
 func inBand(d descriptor, minKey, maxKey string, v float64) bool {
 	min, okMin := d.num(minKey)
 	max, okMax := d.num(maxKey)
+
 	if !okMin && !okMax {
 		return false
 	}
+
 	if okMin && v < min {
 		return false
 	}
+
 	if okMax && v > max {
 		return false
 	}
+
 	return true
 }
 
@@ -913,38 +1001,46 @@ func transferabilityMatch(d descriptor, in CalculateRequest) bool {
 	if eduMin, ok := d.str("edu_min"); ok {
 		want := educationRank[eduMin]
 		got := educationRank[in.Education]
+
 		if got < want {
 			return false
 		}
 	}
+
 	if clbMin, ok := d.num("clb_min"); ok {
 		if float64(in.CLBFirst.Min()) < clbMin {
 			return false
 		}
 	}
+
 	if foreignMin, ok := d.num("foreign_min"); ok {
 		if float64(in.ForeignExpYears) < foreignMin {
 			return false
 		}
 	}
+
 	if canadianMin, ok := d.num("canadian_min"); ok {
 		if float64(in.CanadianExpYears) < canadianMin {
 			return false
 		}
 	}
+
 	if want, ok := d.flag("cert"); ok && want && !in.CertificateOfQualification {
 		return false
 	}
+
 	return true
 }
 
 func transferabilityTotal(b []BreakdownItem) int32 {
 	var t int32
+
 	for _, it := range b {
 		if it.Group == GroupTransferability {
 			t += it.Points
 		}
 	}
+
 	return t
 }
 
@@ -952,6 +1048,7 @@ func min32(a, b int32) int32 {
 	if a < b {
 		return a
 	}
+
 	return b
 }
 
@@ -968,14 +1065,17 @@ func rulesetDTO(r RulesetRow) RulesetDTO {
 	if r.EffectiveDate.Valid {
 		d.EffectiveDate = r.EffectiveDate.Time.Format("2006-01-02")
 	}
+
 	if r.SourceURL != nil {
 		d.SourceURL = *r.SourceURL
 	}
+
 	return d
 }
 
 func drawDTOs(rows []DrawRow) []DrawDTO {
 	out := make([]DrawDTO, 0, len(rows))
+
 	for _, d := range rows {
 		dto := DrawDTO{
 			ID:                uuidStr(d.ID),
@@ -984,18 +1084,23 @@ func drawDTOs(rows []DrawRow) []DrawDTO {
 			CRSCutoff:         d.CRSCutoff,
 			InvitationsIssued: d.InvitationsIssued,
 		}
+
 		if d.DrawNumber.Valid {
 			n := d.DrawNumber.Int32
 			dto.DrawNumber = &n
 		}
+
 		if d.TieBreakRule != nil {
 			dto.TieBreakRule = *d.TieBreakRule
 		}
+
 		if d.SourceURL != nil {
 			dto.SourceURL = *d.SourceURL
 		}
+
 		out = append(out, dto)
 	}
+
 	return out
 }
 
@@ -1003,7 +1108,9 @@ func uuidStr(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
+
 	b := u.Bytes
+
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
@@ -1033,14 +1140,17 @@ func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string)
 	if s.enqueuer == nil {
 		return errors.New("crscalculator: task enqueuer not configured")
 	}
+
 	payload := map[string]string{"entity_type": "crs_ruleset"}
 	for k, v := range params {
 		payload[k] = v
 	}
+
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
+
 	return s.enqueuer.Enqueue("tool:generate_draft", raw)
 }
 
@@ -1077,28 +1187,32 @@ func (s *Service) GenerateRulesetDraft(ctx context.Context, params map[string]st
 		SourceURL     string           `json:"source_url"`
 		Factors       []FactorRowInput `json:"factors"`
 	}
+
 	if err := json.Unmarshal(extractJSON(resp.Text), &out); err != nil {
 		return fmt.Errorf("crscalculator: generate draft: unparseable AI output: %w", err)
 	}
+
 	if out.VersionLabel == "" || out.EffectiveDate == "" || len(out.Factors) == 0 {
 		return errors.New("crscalculator: generate draft: AI output missing required fields")
 	}
 
 	var d pgtype.Date
 	if err := d.Scan(out.EffectiveDate); err != nil {
-		return fmt.Errorf("crscalculator: generate draft: invalid effective_date")
+		return errors.New("crscalculator: generate draft: invalid effective_date")
 	}
 
 	tx, err := s.store.BeginTx(ctx)
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	id, err := s.store.CreateRuleset(ctx, tx, out.VersionLabel, d, out.SourceURL, true)
 	if err != nil {
 		return err
 	}
+
 	for i, f := range out.Factors {
 		row := FactorRow{
 			RulesetID:       id,
@@ -1112,13 +1226,16 @@ func (s *Service) GenerateRulesetDraft(ctx context.Context, params map[string]st
 		if f.SortOrder != 0 {
 			row.SortOrder = f.SortOrder
 		}
+
 		if f.PointsWithSpouse != nil {
 			row.PointsWithSpouse = pgtype.Int4{Int32: *f.PointsWithSpouse, Valid: true}
 		}
+
 		if err := s.store.CreateFactorPoint(ctx, tx, row); err != nil {
 			return err
 		}
 	}
+
 	return tx.Commit(ctx)
 }
 
@@ -1130,14 +1247,17 @@ func extractJSON(s string) []byte {
 		if j := strings.Index(s, "\n"); j >= 0 {
 			s = s[j+1:]
 		}
+
 		if k := strings.LastIndex(s, "```"); k >= 0 {
 			s = s[:k]
 		}
 	}
+
 	start := strings.IndexAny(s, "{[")
 	if start < 0 {
 		return []byte(s)
 	}
+
 	return []byte(s[start:])
 }
 
@@ -1146,10 +1266,14 @@ func formatParams(params map[string]string) string {
 	if len(params) == 0 {
 		return "Generate the current IRCC Express Entry CRS ruleset."
 	}
+
 	var b strings.Builder
+
 	b.WriteString("Generate a CRS ruleset with these hints:\n")
+
 	for k, v := range params {
 		fmt.Fprintf(&b, "- %s: %s\n", k, v)
 	}
+
 	return b.String()
 }

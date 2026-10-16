@@ -593,19 +593,24 @@ func (h *Handlers) GetWidgetConfigOptions(w http.ResponseWriter, r *http.Request
 	for _, opt := range out.WidgetTypes {
 		seen[opt.Value] = true
 	}
+
 	for _, wt := range sidebars.GetWidgetTypes() {
 		if wt.Type == "configured_widget" || seen[wt.Type] {
 			continue
 		}
+
 		seen[wt.Type] = true
+
 		out.WidgetTypes = append(out.WidgetTypes, CatalogOption{
 			Value: wt.Type,
 			Label: wt.Name + " (Sidebar)",
 		})
+
 		fields := make([]WidgetConfigField, 0, len(wt.PropSchema))
 		for _, pf := range wt.PropSchema {
 			fields = append(fields, propFieldToConfigField(pf, wt.DefaultProps))
 		}
+
 		out.ConfigSchemas[wt.Type] = fields
 	}
 
@@ -620,6 +625,7 @@ func (h *Handlers) GetWidgetConfigOptions(w http.ResponseWriter, r *http.Request
 func propFieldToConfigField(pf sidebars.PropField, defaults map[string]any) WidgetConfigField {
 	fieldType := pf.Type
 	help := pf.Help
+
 	switch fieldType {
 	case "boolean":
 		fieldType = "checkbox"
@@ -627,6 +633,7 @@ func propFieldToConfigField(pf sidebars.PropField, defaults map[string]any) Widg
 		fieldType = "text"
 	case "links":
 		fieldType = "textarea"
+
 		if help == "" {
 			help = "JSON array of {platform, url} objects"
 		}

@@ -55,6 +55,7 @@ func (s *Service) CreateCampaign(ctx context.Context, createdBy pgtype.UUID, inp
 		if input.Status == CampaignStatusPendingReview {
 			return AdCampaign{}, errors.New("house campaigns cannot enter pending_review")
 		}
+
 		if input.Status == CampaignStatusActive {
 			status = CampaignStatusActive
 		}
@@ -98,7 +99,6 @@ func (s *Service) CreateCampaign(ctx context.Context, createdBy pgtype.UUID, inp
 	}
 
 	return s.store.Queries().CreateAdCampaign(ctx, gen.CreateAdCampaignParams{
-
 		Name:                input.Name,
 		SlotTypeID:          slotType.ID,
 		Content:             content,
@@ -271,6 +271,7 @@ func (s *Service) RenderSlot(ctx context.Context, userID pgtype.UUID, slotName, 
 		if err != nil {
 			return nil, fmt.Errorf("listing house campaigns: %w", err)
 		}
+
 		filtered, err = s.filterByFrequencyCap(ctx, campaigns, userID)
 		if err != nil {
 			return nil, err
@@ -308,8 +309,8 @@ func (s *Service) filterByFrequencyCap(ctx context.Context, campaigns []AdCampai
 				return nil, fmt.Errorf("checking frequency cap: %w", err)
 			}
 
-			// nolint:gosec // G115: bounded
-			// nolint:gosec // G115: cap is bounded by caller
+			//nolint:gosec // G115: bounded
+			//nolint:gosec // G115: cap is bounded by caller
 			if count >= int32(cap) {
 				continue
 			}
@@ -348,7 +349,6 @@ type AdSlotTypeInput struct {
 // CreateSlotType creates a new ad slot type.
 func (s *Service) CreateSlotType(ctx context.Context, input AdSlotTypeInput) (AdSlotType, error) {
 	return s.store.Queries().CreateAdSlotType(ctx, gen.CreateAdSlotTypeParams{
-
 		SlotName:          input.Name,
 		Description:       &input.Description,
 		MaxDisplayPerPage: 1,
@@ -414,7 +414,6 @@ func (s *Service) CreateBoost(ctx context.Context, input CreateBoostInput) (Orga
 	}
 
 	return s.store.Queries().CreateOrganizationBoost(ctx, gen.CreateOrganizationBoostParams{
-
 		OrganizationID: input.OrganizationID,
 		CampaignID:     input.CampaignID,
 		BoostType:      boostType,
@@ -634,7 +633,6 @@ func (s *Service) CreateAdNetwork(ctx context.Context, input CreateAdNetworkInpu
 	}
 
 	return s.store.createAdNetwork(ctx, gen.CreateAdNetworkParams{
-
 		Provider:        input.Provider,
 		Name:            input.Name,
 		ClientID:        input.ClientID,

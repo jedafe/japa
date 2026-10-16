@@ -103,6 +103,7 @@ const guideSelect = `
 
 func scanGuides(rows pgx.Rows) ([]GuideRow, error) {
 	var out []GuideRow
+
 	for rows.Next() {
 		var g GuideRow
 		if err := rows.Scan(&g.ID, &g.DestinationSpaceID, &g.DestinationSpaceName,
@@ -114,8 +115,10 @@ func scanGuides(rows pgx.Rows) ([]GuideRow, error) {
 			&g.CreatedAt, &g.UpdatedAt); err != nil {
 			return nil, err
 		}
+
 		out = append(out, g)
 	}
+
 	return out, rows.Err()
 }
 
@@ -123,12 +126,14 @@ func scanGuides(rows pgx.Rows) ([]GuideRow, error) {
 // with a published guide at a destination.
 func (s *Store) ListProviders(ctx context.Context, destSpaceID pgtype.UUID) ([]ProviderRow, error) {
 	q := `SELECT id, slug, name, website, is_active FROM eca_providers WHERE is_active`
+
 	args := []any{}
 	if destSpaceID.Valid {
 		args = append(args, destSpaceID)
 		q += ` AND id IN (SELECT provider_id FROM eca_guides
 		        WHERE destination_space_id = $1 AND status = 'published' AND is_active)`
 	}
+
 	q += ` ORDER BY name`
 
 	rows, err := s.pool.Reader.Query(ctx, q, args...)
@@ -138,13 +143,16 @@ func (s *Store) ListProviders(ctx context.Context, destSpaceID pgtype.UUID) ([]P
 	defer rows.Close()
 
 	var out []ProviderRow
+
 	for rows.Next() {
 		var p ProviderRow
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.Website, &p.IsActive); err != nil {
 			return nil, err
 		}
+
 		out = append(out, p)
 	}
+
 	return out, rows.Err()
 }
 
@@ -154,6 +162,7 @@ func (s *Store) ListProviders(ctx context.Context, destSpaceID pgtype.UUID) ([]P
 func (s *Store) ListGuides(ctx context.Context, destSpaceID pgtype.UUID, purpose, provider string) ([]GuideRow, error) {
 	q := guideSelect + ` WHERE g.status = 'published' AND g.is_active`
 	args := []any{}
+
 	add := func(cond string, v any) {
 		args = append(args, v)
 		q += ` AND ` + cond + ` = $` + itoa(len(args))
@@ -161,9 +170,11 @@ func (s *Store) ListGuides(ctx context.Context, destSpaceID pgtype.UUID, purpose
 	if destSpaceID.Valid {
 		add(`g.destination_space_id`, destSpaceID)
 	}
+
 	if purpose != "" {
 		add(`g.purpose`, purpose)
 	}
+
 	if provider != "" {
 		var pid pgtype.UUID
 		if err := pid.Scan(provider); err == nil && pid.Valid {
@@ -172,13 +183,16 @@ func (s *Store) ListGuides(ctx context.Context, destSpaceID pgtype.UUID, purpose
 			add(`p.slug`, provider)
 		}
 	}
+
 	q += ` ORDER BY s.name, p.name`
 
 	rows, err := s.pool.Reader.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
+
 	return scanGuides(rows)
 }
 
@@ -189,14 +203,18 @@ func (s *Store) GetGuide(ctx context.Context, id pgtype.UUID) (GuideRow, error) 
 	if err != nil {
 		return GuideRow{}, err
 	}
+
 	defer rows.Close()
+
 	guides, err := scanGuides(rows)
 	if err != nil {
 		return GuideRow{}, err
 	}
+
 	if len(guides) == 0 {
 		return GuideRow{}, pgx.ErrNoRows
 	}
+
 	return guides[0], nil
 }
 
@@ -210,7 +228,9 @@ func (s *Store) CompareGuides(ctx context.Context, destSpaceID pgtype.UUID, prov
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
+
 	return scanGuides(rows)
 }
 
@@ -226,20 +246,25 @@ func (s *Store) ListApprovedUpdates(ctx context.Context, guideID pgtype.UUID) ([
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
+
 	return scanUpdates(rows)
 }
 
 func scanUpdates(rows pgx.Rows) ([]UpdateRow, error) {
 	var out []UpdateRow
+
 	for rows.Next() {
 		var u UpdateRow
 		if err := rows.Scan(&u.ID, &u.GuideID, &u.UserID, &u.UserName,
 			&u.StepIndex, &u.FeeEstimate, &u.TurnaroundDays, &u.Note, &u.Status, &u.CreatedAt); err != nil {
 			return nil, err
 		}
+
 		out = append(out, u)
 	}
+
 	return out, rows.Err()
 }
 
@@ -255,17 +280,20 @@ func (s *Store) CreateCommunityUpdate(ctx context.Context, guideID, userID pgtyp
 			SELECT 1 FROM eca_guides g
 			WHERE g.id = $1 AND g.status = 'published' AND g.is_active)
 		RETURNING id`, guideID, userID, stepIndex, feeEstimate, turnaroundDays, note).Scan(&id)
+
 	return id, err
 }
 
 // AdminListGuides returns guides in any status (admin).
 func (s *Store) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, status string, page, limit int32) ([]GuideRow, int64, error) {
 	where := ` WHERE true`
+
 	args := []any{}
 	if destSpaceID.Valid {
 		args = append(args, destSpaceID)
 		where += ` AND g.destination_space_id = $` + itoa(len(args))
 	}
+
 	if status != "" {
 		args = append(args, status)
 		where += ` AND g.status = $` + itoa(len(args))
@@ -277,14 +305,17 @@ func (s *Store) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, st
 	}
 
 	args = append(args, limit, (page-1)*limit)
+
 	rows, err := s.pool.Reader.Query(ctx,
 		guideSelect+where+` ORDER BY g.updated_at DESC LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)), args...)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	defer rows.Close()
 
 	guides, err := scanGuides(rows)
+
 	return guides, total, err
 }
 
@@ -301,6 +332,7 @@ func (s *Store) CreateGuide(ctx context.Context, g GuideRow) (pgtype.UUID, error
 		g.DestinationSpaceID, g.ProviderID, g.Purpose, g.PathwaySteps,
 		g.FeeEstimate, g.Currency, g.TimelineEstimate, g.DocumentsRequired,
 		g.AcceptedFor, strOrEmpty(g.OfficialURL), g.Status, g.AIGenerated).Scan(&id)
+
 	return id, err
 }
 
@@ -326,9 +358,11 @@ func (s *Store) UpdateGuide(ctx context.Context, id pgtype.UUID, g GuideRow) err
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -342,15 +376,18 @@ func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, no
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
 // AdminListUpdates returns community updates for moderation (admin).
 func (s *Store) AdminListUpdates(ctx context.Context, status string, page, limit int32) ([]UpdateRow, int64, error) {
 	where := ` WHERE u.deleted_at IS NULL`
+
 	args := []any{}
 	if status != "" {
 		args = append(args, status)
@@ -364,6 +401,7 @@ func (s *Store) AdminListUpdates(ctx context.Context, status string, page, limit
 	}
 
 	args = append(args, limit, (page-1)*limit)
+
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT u.id, u.guide_id, u.user_id, up.display_name,
 		       u.step_index, u.fee_estimate, u.turnaround_days, u.note, u.status, u.created_at
@@ -373,9 +411,11 @@ func (s *Store) AdminListUpdates(ctx context.Context, status string, page, limit
 	if err != nil {
 		return nil, 0, err
 	}
+
 	defer rows.Close()
 
 	updates, err := scanUpdates(rows)
+
 	return updates, total, err
 }
 
@@ -388,9 +428,11 @@ func (s *Store) ModerateUpdate(ctx context.Context, id, reviewerID pgtype.UUID, 
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -400,13 +442,16 @@ func itoa(i int) string {
 	if i < 1 {
 		return "1"
 	}
+
 	var buf [4]byte
+
 	p := len(buf)
 	for i > 0 {
 		p--
 		buf[p] = byte('0' + i%10)
 		i /= 10
 	}
+
 	return string(buf[p:])
 }
 
@@ -414,6 +459,7 @@ func strOrEmpty(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }
 
@@ -421,6 +467,7 @@ func nullBytes(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
+
 	return b
 }
 
@@ -434,9 +481,11 @@ func (s *Store) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, not
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -449,9 +498,11 @@ func (s *Store) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -466,13 +517,16 @@ func (s *Store) AdminListProviders(ctx context.Context) ([]ProviderRow, error) {
 	defer rows.Close()
 
 	var out []ProviderRow
+
 	for rows.Next() {
 		var p ProviderRow
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.Website, &p.IsActive); err != nil {
 			return nil, err
 		}
+
 		out = append(out, p)
 	}
+
 	return out, rows.Err()
 }
 
@@ -483,6 +537,7 @@ func (s *Store) CreateProvider(ctx context.Context, slug, name string, website *
 		INSERT INTO eca_providers (slug, name, website, is_active)
 		VALUES ($1, $2, $3, COALESCE($4, true))
 		RETURNING id`, slug, name, website, isActive).Scan(&id)
+
 	return id, err
 }
 
@@ -500,9 +555,11 @@ func (s *Store) UpdateProvider(ctx context.Context, id pgtype.UUID, slug, name s
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -516,8 +573,10 @@ func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -85,6 +84,7 @@ func (s *Service) MentorShadowContent(ctx context.Context, mentorID pgtype.UUID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
+
 		return nil, err
 	}
 
@@ -105,6 +105,7 @@ func (s *Service) MentorShadowContent(ctx context.Context, mentorID pgtype.UUID)
 		if err != nil {
 			return nil, err
 		}
+
 		dto.Tiers = tiers
 	}
 
@@ -173,6 +174,7 @@ func (s *Service) syncMentorShadowContent(ctx context.Context, contentID pgtype.
 			ErrTooManySellingPoints, ErrInvalidSellingPoint); err != nil {
 			return err
 		}
+
 		dirty = true
 	}
 
@@ -180,6 +182,7 @@ func (s *Service) syncMentorShadowContent(ctx context.Context, contentID pgtype.
 		if params.Facts, err = s.encodeFacts(ctx, *in.Facts); err != nil {
 			return err
 		}
+
 		dirty = true
 	}
 
@@ -189,6 +192,7 @@ func (s *Service) syncMentorShadowContent(ctx context.Context, contentID pgtype.
 			ErrTooManyHighlights, ErrInvalidHighlight); err != nil {
 			return err
 		}
+
 		dirty = true
 	}
 
@@ -198,6 +202,7 @@ func (s *Service) syncMentorShadowContent(ctx context.Context, contentID pgtype.
 			ErrTooManyAudience, ErrInvalidAudience); err != nil {
 			return err
 		}
+
 		dirty = true
 	}
 
@@ -207,6 +212,7 @@ func (s *Service) syncMentorShadowContent(ctx context.Context, contentID pgtype.
 			ErrTooManyIncluded, ErrInvalidIncluded); err != nil {
 			return err
 		}
+
 		dirty = true
 	}
 
@@ -214,6 +220,7 @@ func (s *Service) syncMentorShadowContent(ctx context.Context, contentID pgtype.
 		if params.Faqs, err = s.encodeListingFaqs(ctx, *in.Faqs); err != nil {
 			return err
 		}
+
 		dirty = true
 	}
 
@@ -221,6 +228,7 @@ func (s *Service) syncMentorShadowContent(ctx context.Context, contentID pgtype.
 		if params.Steps, err = s.encodeListingSteps(ctx, *in.Steps); err != nil {
 			return err
 		}
+
 		dirty = true
 	}
 
@@ -254,6 +262,7 @@ func (s *Service) ensureMentorShadow(ctx context.Context, authorID pgtype.UUID, 
 	if title == "" {
 		title = in.Username
 	}
+
 	title += " — Mentorship"
 
 	slug := mentorSlugPrefix + in.Username

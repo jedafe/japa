@@ -9,6 +9,7 @@
 package fx
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -64,6 +65,7 @@ func NewAdapter(svc *Service, httpClient *http.Client) *Adapter {
 		httpClient = &http.Client{Timeout: defaultHTTPTimeout}
 		return &Adapter{svc: svc, http: httpClient}
 	}
+
 	return &Adapter{svc: svc, http: httpClient, allowPrivate: true}
 }
 
@@ -78,17 +80,21 @@ func (a *Adapter) FetchRates(ctx context.Context, apiConfig []byte, corridors []
 			return nil, fmt.Errorf("fx: parse api_config: %w", err)
 		}
 	}
+
 	if cfg.Engine == "" {
 		cfg.Engine = "oxr"
 	}
+
 	if cfg.BaseCurrency == "" {
 		cfg.BaseCurrency = "USD"
 	}
+
 	if cfg.MinIntervalMinutes <= 0 {
 		cfg.MinIntervalMinutes = 60
 	}
+
 	if cfg.AppID == "" {
-		return nil, fmt.Errorf("fx: provider api_config missing app_id")
+		return nil, errors.New("fx: provider api_config missing app_id")
 	}
 
 	// Quota guard: skip when the last matrix is fresher than min_interval.
@@ -108,6 +114,7 @@ func (a *Adapter) FetchRates(ctx context.Context, apiConfig []byte, corridors []
 	if err != nil {
 		return nil, err
 	}
+
 	if len(rates) == 0 {
 		return nil, fmt.Errorf("fx: engine %q returned empty matrix", cfg.Engine)
 	}
@@ -119,6 +126,7 @@ func (a *Adapter) FetchRates(ctx context.Context, apiConfig []byte, corridors []
 	}
 
 	m := &Matrix{Base: cfg.BaseCurrency, Rates: rates, FetchedAt: time.Now()}
+
 	return emitSnapshots(m, cfg.Corridors, corridors, attributionURL), nil
 }
 
@@ -128,6 +136,7 @@ func throttled(lastFetch time.Time, minIntervalMinutes int) bool {
 	if lastFetch.IsZero() {
 		return false
 	}
+
 	return time.Since(lastFetch) < time.Duration(minIntervalMinutes)*time.Minute
 }
 
@@ -136,7 +145,9 @@ func throttled(lastFetch time.Time, minIntervalMinutes int) bool {
 // matrix uniformly contains its own base.
 func (a *Adapter) fetchMatrix(ctx context.Context, cfg providerConfig) (map[string]float64, error) {
 	var base string
+
 	var rates map[string]float64
+
 	var err error
 
 	switch cfg.Engine {
@@ -145,6 +156,7 @@ func (a *Adapter) fetchMatrix(ctx context.Context, cfg providerConfig) (map[stri
 	default:
 		return nil, fmt.Errorf("fx: unsupported engine %q", cfg.Engine)
 	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -175,6 +187,7 @@ func (a *Adapter) fetchOXR(ctx context.Context, cfg providerConfig) (string, map
 	if err != nil {
 		return "", nil, fmt.Errorf("fx: parse oxr endpoint: %w", err)
 	}
+
 	q := u.Query()
 	q.Set("app_id", cfg.AppID)
 	u.RawQuery = q.Encode()
@@ -209,12 +222,15 @@ func parseOXRResponse(body []byte) (string, map[string]float64, error) {
 		Base  string             `json:"base"`
 		Rates map[string]float64 `json:"rates"`
 	}
+
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return "", nil, fmt.Errorf("fx: parse oxr response: %w", err)
 	}
+
 	if parsed.Rates == nil {
-		return "", nil, fmt.Errorf("fx: oxr response has no rates")
+		return "", nil, errors.New("fx: oxr response has no rates")
 	}
+
 	return parsed.Base, parsed.Rates, nil
 }
 
@@ -224,6 +240,7 @@ func parseOXRResponse(body []byte) (string, map[string]float64, error) {
 // no fees or transfer time — only the cross-rate and the attribution URL.
 func emitSnapshots(m *Matrix, configCorridors []string, requested []remittance.Corridor, sourceURL string) []remittance.RateSnapshot {
 	seen := map[string]bool{}
+
 	var pairs []remittance.Corridor
 
 	for _, c := range configCorridors {
@@ -231,23 +248,28 @@ func emitSnapshots(m *Matrix, configCorridors []string, requested []remittance.C
 		if len(parts) != 2 {
 			continue
 		}
+
 		pairs = append(pairs, remittance.Corridor{
 			SendCurrency:    strings.ToUpper(strings.TrimSpace(parts[0])),
 			ReceiveCurrency: strings.ToUpper(strings.TrimSpace(parts[1])),
 		})
 	}
+
 	pairs = append(pairs, requested...)
 
 	var snaps []remittance.RateSnapshot
+
 	for _, p := range pairs {
 		key := p.SendCurrency + "->" + p.ReceiveCurrency
 		if seen[key] {
 			continue
 		}
+
 		seen[key] = true
 
 		fromRate, ok1 := m.Rates[p.SendCurrency]
 		toRate, ok2 := m.Rates[p.ReceiveCurrency]
+
 		if !ok1 || !ok2 || fromRate <= 0 || toRate <= 0 {
 			continue
 		}
@@ -276,10 +298,12 @@ func (a *Adapter) validateEngineEndpoint(endpoint string) error {
 	if err != nil || u.Host == "" {
 		return fmt.Errorf("fx: engine endpoint must be a valid URL: %q", endpoint)
 	}
+
 	if u.Scheme != "https" {
 		if !a.allowPrivate || u.Scheme != "http" {
 			return fmt.Errorf("fx: engine endpoint must be https: %q", endpoint)
 		}
+
 		host := u.Hostname()
 		if ip := net.ParseIP(host); ip != nil {
 			if !isReservedIP(ip) {
@@ -288,14 +312,18 @@ func (a *Adapter) validateEngineEndpoint(endpoint string) error {
 		} else if !strings.EqualFold(host, "localhost") && !strings.HasSuffix(strings.ToLower(host), ".localhost") {
 			return fmt.Errorf("fx: engine endpoint must be https for non-local hosts: %q", endpoint)
 		}
+
 		return nil
 	}
+
 	if u.User != nil {
-		return fmt.Errorf("fx: engine endpoint must not embed credentials")
+		return errors.New("fx: engine endpoint must not embed credentials")
 	}
+
 	if ip := net.ParseIP(u.Hostname()); ip != nil && isReservedIP(ip) {
 		return fmt.Errorf("fx: engine endpoint targets a private address: %q", endpoint)
 	}
+
 	return nil
 }
 
@@ -306,13 +334,16 @@ func isReservedIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
 		return true
 	}
+
 	if v4 := ip.To4(); v4 != nil {
 		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
 			return true
 		}
+
 		if v4[0] == 0 || v4[0] >= 240 {
 			return true
 		}
+
 		if (v4[0] == 192 && v4[1] == 0 && (v4[2] == 0 || v4[2] == 2)) ||
 			(v4[0] == 198 && v4[1] == 51 && v4[2] == 100) ||
 			(v4[0] == 203 && v4[1] == 0 && v4[2] == 113) ||
@@ -320,5 +351,6 @@ func isReservedIP(ip net.IP) bool {
 			return true
 		}
 	}
+
 	return false
 }

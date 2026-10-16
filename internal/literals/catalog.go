@@ -53,7 +53,6 @@ func (c *Catalog) GetActive(ctx context.Context) ([]TemplateLiteral, error) {
 	active := true
 
 	rows, err := c.queries.ListTemplateLiterals(ctx, gen.ListTemplateLiteralsParams{
-
 		Search:     "",
 		IsActive:   &active,
 		Kind:       "",

@@ -359,6 +359,7 @@ func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, 
 	if conversationID != "" {
 		meta["conversation_id"] = conversationID
 	}
+
 	if unified {
 		// ADR-130: marks entries that belong to an ai_conversations thread so
 		// the conversation list doesn't union the same thread twice (Honcho
@@ -377,6 +378,7 @@ func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, 
 	if conversationID != "" {
 		replyMeta["conversation_id"] = conversationID
 	}
+
 	if unified {
 		replyMeta["unified"] = true
 	}
@@ -1926,7 +1928,6 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	review, err := CreateHITLReview(r.Context(), h.Store, HITLReview{
-
 		ContentID:   contentID,
 		ContentType: input.ContentType,
 		AIOutput:    aiOutputBytes,
@@ -2350,7 +2351,6 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 // GET /admin/ai/usage?period=7d|30d&provider=openai|ollama.
 // Returns the Section 20 contract: { total_cost_usd, tokens_used, by_task_type }.
 func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
-
 	periodDays := 30
 
 	if p := r.URL.Query().Get("period"); p != "" {
@@ -2461,6 +2461,7 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 			if u, ok := e.Metadata["unified"].(bool); ok && u {
 				continue
 			}
+
 			if cid, ok := e.Metadata["conversation_id"].(string); ok && cid == conversationID {
 				matched = append(matched, e)
 				continue

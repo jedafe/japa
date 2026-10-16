@@ -175,7 +175,6 @@ func (h *Handlers) GetSidebarOptions(w http.ResponseWriter, r *http.Request) {
 
 // ListSidebars handles GET /api/v1/admin/sidebars.
 func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 	app := r.URL.Query().Get("app")
@@ -205,7 +204,6 @@ func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
 
 // GetSidebar handles GET /api/v1/admin/sidebars/{id}.
 func (h *Handlers) GetSidebar(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
@@ -223,7 +221,6 @@ func (h *Handlers) GetSidebar(w http.ResponseWriter, r *http.Request) {
 
 // CreateSidebar handles POST /api/v1/admin/sidebars.
 func (h *Handlers) CreateSidebar(w http.ResponseWriter, r *http.Request) {
-
 	var input CreateSidebarInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -254,7 +251,6 @@ func (h *Handlers) CreateSidebar(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSidebar handles PATCH /api/v1/admin/sidebars/{id}.
 func (h *Handlers) UpdateSidebar(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
@@ -278,7 +274,6 @@ func (h *Handlers) UpdateSidebar(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSidebar handles DELETE /api/v1/admin/sidebars/{id}.
 func (h *Handlers) DeleteSidebar(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
@@ -297,7 +292,6 @@ func (h *Handlers) DeleteSidebar(w http.ResponseWriter, r *http.Request) {
 
 // CreateSidebarWidget handles POST /api/v1/admin/sidebars/{id}/widgets.
 func (h *Handlers) CreateSidebarWidget(w http.ResponseWriter, r *http.Request) {
-
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
@@ -334,7 +328,6 @@ func (h *Handlers) CreateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSidebarWidget handles PATCH /api/v1/admin/sidebars/{id}/widgets/{widgetId}.
 func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
-
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
@@ -364,7 +357,6 @@ func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSidebarWidget handles DELETE /api/v1/admin/sidebars/{id}/widgets/{widgetId}.
 func (h *Handlers) DeleteSidebarWidget(w http.ResponseWriter, r *http.Request) {
-
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
@@ -387,7 +379,6 @@ func (h *Handlers) DeleteSidebarWidget(w http.ResponseWriter, r *http.Request) {
 
 // ReorderSidebarWidgets handles POST /api/v1/admin/sidebars/{id}/widgets/reorder.
 func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request) {
-
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
@@ -417,7 +408,6 @@ func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request)
 
 // Resolve handles GET /api/v1/sidebars/resolve?app=&position=&path=.
 func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
-
 	app := r.URL.Query().Get("app")
 	position := r.URL.Query().Get("position")
 	requestPath := r.URL.Query().Get("path")

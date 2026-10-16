@@ -115,6 +115,7 @@ func (s *Store) GetActiveRuleset(ctx context.Context) (RulesetRow, error) {
 		WHERE status = 'active'
 		ORDER BY effective_date DESC
 		LIMIT 1`).Scan(&r.ID, &r.VersionLabel, &r.EffectiveDate, &r.Status, &r.SourceURL)
+
 	return r, err
 }
 
@@ -128,6 +129,7 @@ func (s *Store) GetRulesetByVersion(ctx context.Context, version string) (Rulese
 		FROM crs_rulesets
 		WHERE version_label = $1 AND status IN ('active','superseded')`, version).
 		Scan(&r.ID, &r.VersionLabel, &r.EffectiveDate, &r.Status, &r.SourceURL)
+
 	return r, err
 }
 
@@ -143,13 +145,16 @@ func (s *Store) ListRulesets(ctx context.Context) ([]RulesetRow, error) {
 	defer rows.Close()
 
 	var out []RulesetRow
+
 	for rows.Next() {
 		var r RulesetRow
 		if err := rows.Scan(&r.ID, &r.VersionLabel, &r.EffectiveDate, &r.Status, &r.SourceURL); err != nil {
 			return nil, err
 		}
+
 		out = append(out, r)
 	}
+
 	return out, rows.Err()
 }
 
@@ -167,14 +172,17 @@ func (s *Store) ListFactorPoints(ctx context.Context, rulesetID pgtype.UUID) ([]
 	defer rows.Close()
 
 	var out []FactorRow
+
 	for rows.Next() {
 		var f FactorRow
 		if err := rows.Scan(&f.ID, &f.RulesetID, &f.FactorGroup, &f.FactorKey,
 			&f.InputDescriptor, &f.Label, &f.PointsSingle, &f.PointsWithSpouse, &f.SortOrder); err != nil {
 			return nil, err
 		}
+
 		out = append(out, f)
 	}
+
 	return out, rows.Err()
 }
 
@@ -191,10 +199,13 @@ func (s *Store) ListDraws(ctx context.Context, category string, limit int32) ([]
 		FROM crs_draws
 		WHERE status = 'published'`
 	args := []any{limit}
+
 	if category != "" {
 		q += ` AND category = $2`
+
 		args = append(args, category)
 	}
+
 	q += ` ORDER BY draw_date DESC LIMIT $1`
 
 	rows, err := s.pool.Reader.Query(ctx, q, args...)
@@ -211,6 +222,7 @@ func (s *Store) AdminListDraws(ctx context.Context, limit int32) ([]DrawRow, err
 	if limit <= 0 || limit > 500 {
 		limit = 500
 	}
+
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT id, draw_number, draw_date, category, crs_cutoff,
 		       invitations_issued, tie_break_rule, source_url, status
@@ -219,7 +231,9 @@ func (s *Store) AdminListDraws(ctx context.Context, limit int32) ([]DrawRow, err
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
+
 	return scanDraws(rows)
 }
 
@@ -242,14 +256,17 @@ func (s *Store) LatestDraws(ctx context.Context) ([]DrawRow, error) {
 
 func scanDraws(rows pgx.Rows) ([]DrawRow, error) {
 	var out []DrawRow
+
 	for rows.Next() {
 		var d DrawRow
 		if err := rows.Scan(&d.ID, &d.DrawNumber, &d.DrawDate, &d.Category,
 			&d.CRSCutoff, &d.InvitationsIssued, &d.TieBreakRule, &d.SourceURL, &d.Status); err != nil {
 			return nil, err
 		}
+
 		out = append(out, d)
 	}
+
 	return out, rows.Err()
 }
 
@@ -260,6 +277,7 @@ func (s *Store) SaveScoreHistory(ctx context.Context, userID, rulesetID pgtype.U
 		INSERT INTO crs_score_history (user_id, ruleset_id, inputs, score, breakdown)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id`, userID, rulesetID, inputs, score, breakdown).Scan(&id)
+
 	return id, err
 }
 
@@ -284,13 +302,16 @@ func (s *Store) ListScoreHistory(ctx context.Context, userID pgtype.UUID, page, 
 	defer rows.Close()
 
 	var out []ScoreHistoryRow
+
 	for rows.Next() {
 		var h ScoreHistoryRow
 		if err := rows.Scan(&h.ID, &h.UserID, &h.RulesetID, &h.Inputs, &h.Score, &h.Breakdown, &h.CreatedAt); err != nil {
 			return nil, 0, err
 		}
+
 		out = append(out, h)
 	}
+
 	return out, total, rows.Err()
 }
 
@@ -301,11 +322,13 @@ func (s *Store) CreateRuleset(ctx context.Context, tx pgx.Tx, versionLabel strin
 	if aiGenerated {
 		status = "ai_draft"
 	}
+
 	var id pgtype.UUID
 	err := tx.QueryRow(ctx, `
 		INSERT INTO crs_rulesets (version_label, effective_date, status, source_url, ai_generated)
 		VALUES ($1, $2, $4, NULLIF($3, ''), $5)
 		RETURNING id`, versionLabel, effectiveDate, sourceURL, status, aiGenerated).Scan(&id)
+
 	return id, err
 }
 
@@ -318,6 +341,7 @@ func (s *Store) CreateFactorPoint(ctx context.Context, tx pgx.Tx, f FactorRow) e
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		f.RulesetID, f.FactorGroup, f.FactorKey, f.InputDescriptor, f.Label,
 		f.PointsSingle, f.PointsWithSpouse, f.SortOrder)
+
 	return err
 }
 
@@ -328,6 +352,7 @@ func (s *Store) ApproveRuleset(ctx context.Context, id, reviewerID pgtype.UUID) 
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `
@@ -343,6 +368,7 @@ func (s *Store) ApproveRuleset(ctx context.Context, id, reviewerID pgtype.UUID) 
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
@@ -360,6 +386,7 @@ func (s *Store) CreateDraw(ctx context.Context, d DrawRow) (pgtype.UUID, error) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id`, d.DrawNumber, d.DrawDate, d.Category, d.CRSCutoff,
 		d.InvitationsIssued, d.TieBreakRule, d.SourceURL).Scan(&id)
+
 	return id, err
 }
 
@@ -380,9 +407,11 @@ func (s *Store) UpdateDraw(ctx context.Context, id pgtype.UUID, d DrawRow) error
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -401,9 +430,11 @@ func (s *Store) RejectRuleset(ctx context.Context, id, reviewerID pgtype.UUID, n
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -414,6 +445,7 @@ func (s *Store) GetRuleset(ctx context.Context, id pgtype.UUID) (RulesetRow, err
 		SELECT id, version_label, effective_date, status, source_url
 		FROM crs_rulesets WHERE id = $1`, id).Scan(
 		&r.ID, &r.VersionLabel, &r.EffectiveDate, &r.Status, &r.SourceURL)
+
 	return r, err
 }
 
@@ -425,6 +457,7 @@ func (s *Store) UpdateRuleset(ctx context.Context, id pgtype.UUID, versionLabel 
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	res, err := tx.Exec(ctx, `
@@ -438,6 +471,7 @@ func (s *Store) UpdateRuleset(ctx context.Context, id pgtype.UUID, versionLabel 
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
@@ -447,12 +481,14 @@ func (s *Store) UpdateRuleset(ctx context.Context, id pgtype.UUID, versionLabel 
 			`DELETE FROM crs_factor_points WHERE ruleset_id = $1`, id); err != nil {
 			return err
 		}
+
 		for _, f := range factors {
 			if err := s.CreateFactorPoint(ctx, tx, f); err != nil {
 				return err
 			}
 		}
 	}
+
 	return tx.Commit(ctx)
 }
 
@@ -465,9 +501,11 @@ func (s *Store) DeleteRuleset(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -478,8 +516,10 @@ func (s *Store) DeleteDraw(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

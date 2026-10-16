@@ -61,7 +61,6 @@ func (s *Store) listBlogSeriesByPlatform(ctx context.Context, q, contentType, so
 	}
 
 	rows, err := s.read.ListBlogSeries(ctx, gen.ListBlogSeriesParams{
-
 		Q:           q,
 		ContentType: contentType,
 		Sort:        sort,
@@ -81,7 +80,6 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.
 	}
 
 	rows, err := s.read.ListBlogSeriesByAuthor(ctx, gen.ListBlogSeriesByAuthorParams{
-
 		AuthorUserID: authorUserID,
 		Q:            q,
 		ContentType:  contentType,
@@ -98,7 +96,6 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.
 
 func (s *Store) countBlogSeriesByPlatform(ctx context.Context, q, contentType string) (int64, error) {
 	count, err := s.read.CountBlogSeries(ctx, gen.CountBlogSeriesParams{
-
 		Q:           q,
 		ContentType: contentType,
 	})
@@ -111,7 +108,6 @@ func (s *Store) countBlogSeriesByPlatform(ctx context.Context, q, contentType st
 
 func (s *Store) countBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID, q, contentType string) (int64, error) {
 	count, err := s.read.CountBlogSeriesByAuthor(ctx, gen.CountBlogSeriesByAuthorParams{
-
 		AuthorUserID: authorUserID,
 		Q:            q,
 		ContentType:  contentType,
@@ -154,9 +150,11 @@ func (s *Store) hardDeleteBlogSeries(ctx context.Context, id pgtype.UUID) error 
 		if err != nil {
 			return fmt.Errorf("check blog series exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		return errpkg.ErrNotDeleted
 	}
 
@@ -316,7 +314,6 @@ func (s *Store) listPendingContentReviews(ctx context.Context, limit, offset int
 	}
 
 	rows, err := s.read.ListPendingContentReviews(ctx, gen.ListPendingContentReviewsParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -377,7 +374,6 @@ func (s *Store) listFeaturedPosts(ctx context.Context, limit, offset int32) ([]g
 	}
 
 	rows, err := s.read.ListFeaturedPosts(ctx, gen.ListFeaturedPostsParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -416,7 +412,6 @@ func (s *Store) listFeaturedBlogPostCards(ctx context.Context, limit, offset int
 	}
 
 	rows, err := s.read.ListFeaturedBlogPostCards(ctx, gen.ListFeaturedBlogPostCardsParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -509,7 +504,6 @@ func (s *Store) listPublishedBlogPosts(ctx context.Context, f BlogListFilter, li
 	}
 
 	rows, err := s.read.ListPublishedBlogPosts(ctx, gen.ListPublishedBlogPostsParams{
-
 		SpaceID:    f.SpaceID,
 		AuthorID:   f.AuthorID,
 		SeriesID:   f.SeriesID,
@@ -531,7 +525,6 @@ func (s *Store) listPublishedBlogPosts(ctx context.Context, f BlogListFilter, li
 // pagination total reflects the active filter set.
 func (s *Store) countPublishedBlogPosts(ctx context.Context, f BlogListFilter) (int64, error) {
 	count, err := s.read.CountPublishedBlogPosts(ctx, gen.CountPublishedBlogPostsParams{
-
 		SpaceID:  f.SpaceID,
 		AuthorID: f.AuthorID,
 		SeriesID: f.SeriesID,
@@ -556,7 +549,6 @@ func (s *Store) listAdminBlogPosts(ctx context.Context, limit, offset int32) ([]
 	}
 
 	rows, err := s.read.ListAdminBlogPosts(ctx, gen.ListAdminBlogPostsParams{
-
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -575,7 +567,6 @@ func (s *Store) listPendingReviewSummaries(ctx context.Context, limit, offset in
 	}
 
 	rows, err := s.read.ListPendingReviewSummaries(ctx, gen.ListPendingReviewSummariesParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

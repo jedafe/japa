@@ -47,7 +47,7 @@ var soft404Patterns = []*regexp.Regexp{
 // noscript, template, svg, and iframe contents removed); everything else is
 // returned unchanged apart from the length cap. maxChars <= 0 applies
 // DefaultMaxSourceChars.
-func SourceText(body string, contentType string, maxChars int) string {
+func SourceText(body, contentType string, maxChars int) string {
 	if maxChars <= 0 {
 		maxChars = DefaultMaxSourceChars
 	}
@@ -71,7 +71,7 @@ func SourceText(body string, contentType string, maxChars int) string {
 // 2xx HTTP status. httpStatus >= 400 is a hard signal; otherwise the
 // document's <title> and the first 500 chars of visible text are checked
 // against the error-page patterns.
-func IsSoft404(body string, contentType string, httpStatus int) bool {
+func IsSoft404(body, contentType string, httpStatus int) bool {
 	if httpStatus >= 400 {
 		return true
 	}
@@ -104,7 +104,7 @@ func IsSoft404(body string, contentType string, httpStatus int) bool {
 // under 20 chars of text are JS-shell SPAs or blank pages — extraction can
 // only yield nulls from them, so the worker skips them instead of burning
 // an LLM call.
-func HasExtractableText(body string, contentType string) bool {
+func HasExtractableText(body, contentType string) bool {
 	if !isHTML(body, contentType) {
 		return strings.TrimSpace(body) != ""
 	}
@@ -122,6 +122,7 @@ func isHTML(body, contentType string) bool {
 	if strings.Contains(ct, "html") {
 		return true
 	}
+
 	if ct != "" && (strings.Contains(ct, "xml") || strings.Contains(ct, "json") || strings.Contains(ct, "calendar") || strings.Contains(ct, "csv")) {
 		return false
 	}
@@ -130,9 +131,11 @@ func isHTML(body, contentType string) bool {
 	if trimmed == "" {
 		return false
 	}
+
 	if strings.HasPrefix(trimmed, "<?xml") || strings.HasPrefix(trimmed, "<rss") || strings.HasPrefix(trimmed, "<feed") {
 		return false
 	}
+
 	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
 		return false
 	}

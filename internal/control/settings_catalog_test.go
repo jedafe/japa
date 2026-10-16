@@ -32,6 +32,7 @@ func TestIsDeprecatedSettingKeyCatalogless(t *testing.T) {
 		if _, inCatalog := settingsCatalog[key]; inCatalog {
 			t.Fatalf("test premise broken: %q gained a catalog entry", key)
 		}
+
 		if !isDeprecatedSettingKey(key) {
 			t.Errorf("catalogless deprecated key %q not filtered", key)
 		}
@@ -43,6 +44,7 @@ func TestGetSettingMetaDeprecated(t *testing.T) {
 	if !meta.Deprecated {
 		t.Fatal("video.enabled should be marked Deprecated")
 	}
+
 	if !strings.HasPrefix(meta.Description, "DEPRECATED — managed via feature_flags/video.enabled") {
 		t.Fatalf("description missing DEPRECATED prefix: %q", meta.Description)
 	}
@@ -52,6 +54,7 @@ func TestGetSettingMetaDeprecated(t *testing.T) {
 	if sub.Deprecated {
 		t.Fatal("intel.discovery.enabled is a sub-behavior switch, not deprecated")
 	}
+
 	if strings.HasPrefix(sub.Description, "DEPRECATED") {
 		t.Fatalf("sub-setting got DEPRECATED prefix: %q", sub.Description)
 	}

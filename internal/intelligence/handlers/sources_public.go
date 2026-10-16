@@ -166,7 +166,7 @@ type collectionQuery struct {
 // current platform. Manual collections read source_collection_items; query-based
 // collections execute stored filters against ListPublicSources.
 //
-// GET /api/v1/sources/collections
+// GET /api/v1/sources/collections.
 func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -179,11 +179,13 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		slog.Error("intel: list source collections failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_collections_failed", "Failed to load source collections")
+
 		return
 	}
 
 	// Build blocked set for authenticated users (v2 Task 2).
 	blockedSet := make(map[string]struct{})
+
 	if authed && h.intelSources != nil {
 		blockedIDs, err := h.intelSources.ListBlockedSourceIDs(r.Context(), userID)
 		if err != nil {
@@ -198,6 +200,7 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 	}
 
 	collections := make([]sourceCollection, 0, len(rows))
+
 	for _, c := range rows {
 		var sources []gen.IntelSource
 
@@ -208,38 +211,46 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 				slog.Error("intel: list collection items failed", "collection_id", c.ID, "error", err)
 				continue
 			}
+
 			sources = items
 		case "query":
 			var q collectionQuery
 			if len(c.QueryJson) > 0 {
 				_ = json.Unmarshal(c.QueryJson, &q)
 			}
+
 			sort := q.Sort
 			if sort == "" {
 				sort = derefString(c.Sort)
 			}
+
 			if sort == "" {
 				sort = "popular"
 			}
+
 			queryItems, _, err := h.intelStores.ListPublicSources(r.Context(), q.Category, q.SourceKind, q.Search, sort, int32(c.Limit), 0)
 			if err != nil {
 				slog.Error("intel: query collection sources failed", "collection_id", c.ID, "error", err)
 				continue
 			}
+
 			sources = queryItems
 		default:
 			continue
 		}
 
 		public := make([]publicSource, 0, len(sources))
+
 		for _, s := range sources {
 			if _, isBlocked := blockedSet[s.ID.String()]; isBlocked {
 				continue
 			}
+
 			isFollowing := false
 			if authed && h.followsSvc != nil {
 				isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), userID, follows.EntityTypeSource, s.ID)
 			}
+
 			public = append(public, intelSourceToPublic(s, isFollowing, false, nil))
 		}
 
@@ -264,7 +275,7 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 
 // HandlePublicSourcesDirectory returns the public source directory.
 //
-// GET /api/v1/sources
+// GET /api/v1/sources.
 func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -275,6 +286,7 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 	category := q.Get("category")
 	sourceKind := q.Get("source_kind")
 	search := q.Get("q")
+
 	sort := q.Get("sort")
 	if sort == "" {
 		sort = "popular"
@@ -287,6 +299,7 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 	if err != nil {
 		slog.Error("intel: public sources directory list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "sources_list_failed", "Failed to list sources")
+
 		return
 	}
 
@@ -294,6 +307,7 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 
 	// Build a set of blocked sources for the authenticated caller (v2 Task 2).
 	blockedSet := make(map[string]struct{})
+
 	if authed && h.intelSources != nil {
 		blockedIDs, err := h.intelSources.ListBlockedSourceIDs(r.Context(), userID)
 		if err != nil {
@@ -308,14 +322,17 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 	}
 
 	entries := make([]publicSource, 0, len(rows))
+
 	for _, s := range rows {
 		if _, isBlocked := blockedSet[s.ID.String()]; isBlocked {
 			continue
 		}
+
 		isFollowing := false
 		if authed && h.followsSvc != nil {
 			isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), userID, follows.EntityTypeSource, s.ID)
 		}
+
 		entries = append(entries, intelSourceToPublic(s, isFollowing, false, nil))
 	}
 
@@ -334,7 +351,7 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 // HandleGetSource returns the public source profile, including linked entity
 // and (for authenticated users) is_following state.
 //
-// GET /api/v1/sources/{slug}
+// GET /api/v1/sources/{slug}.
 func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -358,6 +375,7 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
@@ -366,6 +384,7 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 
 		slog.Error("intel: public source detail failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_detail_failed", "Failed to load source")
+
 		return
 	}
 
@@ -423,7 +442,7 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 
 // HandleReportSource accepts a user report against a publisher source.
 //
-// POST /api/v1/sources/{slug}/report
+// POST /api/v1/sources/{slug}/report.
 type sourceReportBody struct {
 	Reason       string   `json:"reason"`
 	Notes        *string  `json:"notes"`
@@ -454,8 +473,10 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
 			return
 		}
+
 		slog.Error("intel: source report lookup failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_report_lookup_failed", "Failed to load source")
+
 		return
 	}
 
@@ -485,6 +506,7 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 			slog.Error("intel: source report failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_report_failed", "Failed to submit report")
 		}
+
 		return
 	}
 
@@ -519,7 +541,9 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource) {
 	}
 
 	tagSlugs := make(map[string]string, 0)
+
 	var slugList []string
+
 	var keywordList []string
 
 	for _, kw := range src.Keywords {
@@ -527,10 +551,12 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource) {
 		if kw == "" || strings.ContainsAny(kw, " \t\n\r") {
 			continue
 		}
+
 		slug := content.Slugify(kw)
 		if slug == "" || slug == "untitled" {
 			continue
 		}
+
 		tagSlugs[kw] = slug
 		slugList = append(slugList, slug)
 		keywordList = append(keywordList, kw)
@@ -545,6 +571,7 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource) {
 	if err != nil {
 		slog.Debug("intel: source tag resolution failed; leaving keywords unlinked", "source", src.Slug, "error", err)
 		src.TagSlugs = tagSlugs
+
 		return
 	}
 
@@ -573,6 +600,7 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource) {
 				found[slug] = struct{}{}
 				continue
 			}
+
 			delete(tagSlugs, kw)
 			slog.Debug("intel: source tag creation failed; removing keyword link", "source", src.Slug, "slug", slug, "error", cerr)
 		}
@@ -604,6 +632,7 @@ func (h *Handlers) resolveSourceFeedEntityTypes(ctx context.Context, sourceID pg
 			have["video"] = true
 		}
 	}
+
 	if h.contents != nil {
 		if _, total, cErr := h.contents.ListComparisonContentsBySourceID(ctx, sourceID, "latest", 1, 0); cErr == nil && total > 0 {
 			have["comparison"] = true
@@ -611,11 +640,13 @@ func (h *Handlers) resolveSourceFeedEntityTypes(ctx context.Context, sourceID pg
 	}
 
 	out := make([]string, 0, len(have))
+
 	for _, opt := range sourceItemEntityTypes {
 		if have[opt.Value] {
 			out = append(out, opt.Value)
 		}
 	}
+
 	return out
 }
 
@@ -673,6 +704,7 @@ func derefString(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }
 
@@ -682,7 +714,7 @@ func derefString(s *string) string {
 // (idempotent — no-op when not following). Mirrors HandleToggleSourceBlock.
 //
 // POST /api/v1/sources/{slug}/follow
-// DELETE /api/v1/sources/{slug}/follow
+// DELETE /api/v1/sources/{slug}/follow.
 func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil || h.followsSvc == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "unavailable", "Source follow is not configured")
@@ -709,6 +741,7 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 
 		slog.Error("intel: source follow lookup failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_lookup_failed", "Failed to load source")
+
 		return
 	}
 
@@ -716,6 +749,7 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 	// so anything else falls back to toggling (defensive parity with
 	// HandleToggleSourceBlock).
 	var wantFollow bool
+
 	switch r.Method {
 	case http.MethodPost:
 		wantFollow = true
@@ -726,8 +760,10 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 		if cerr != nil {
 			slog.Error("intel: source follow state failed", "slug", slug, "error", cerr)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_state_failed", "Failed to check follow state")
+
 			return
 		}
+
 		wantFollow = !current
 	}
 
@@ -737,9 +773,11 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 	} else {
 		isFollowing, err = h.followsSvc.EnsureUnfollow(r.Context(), userID, follows.EntityTypeSource, row.ID)
 	}
+
 	if err != nil {
 		slog.Error("intel: source follow update failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_failed", "Failed to update follow state")
+
 		return
 	}
 
@@ -748,6 +786,7 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("intel: source follow reload failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_reload_failed", "Failed to load updated source")
+
 		return
 	}
 
@@ -763,6 +802,7 @@ func pgtypeUUIDString(id pgtype.UUID) string {
 	if !id.Valid {
 		return ""
 	}
+
 	return id.String()
 }
 
@@ -789,7 +829,7 @@ type proposeSourceRequest struct {
 // intentionally exposed so the frontend proposal form can render selects without
 // hardcoding options (Rule 16).
 //
-// GET /api/v1/sources/meta
+// GET /api/v1/sources/meta.
 func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
@@ -848,7 +888,7 @@ func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) 
 
 // HandleProposeSource accepts a public source proposal from an authenticated user.
 //
-// POST /api/v1/sources/propose
+// POST /api/v1/sources/propose.
 func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -889,6 +929,7 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 			// video-platform guard — pick the code/message from the
 			// service's field tag so each failure stays identifiable.
 			code, msg := "invalid_source_url", "source_url must be a valid http/https URL"
+
 			switch {
 			case strings.Contains(err.Error(), "source_kind"):
 				code, msg = "invalid_source_kind", "source_kind is not a supported value"
@@ -899,12 +940,14 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 			case strings.Contains(err.Error(), "video"):
 				msg = "video sources must be a supported video platform URL"
 			}
+
 			errpkg.WriteError(w, http.StatusBadRequest, code, msg)
 		case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_source", "A source with this URL already exists")
 		default:
 			errpkg.WriteError(w, http.StatusInternalServerError, "propose_source_failed", "Failed to propose source")
 		}
+
 		return
 	}
 
@@ -932,7 +975,7 @@ type blockedSource struct {
 
 // HandleListBlockedSources returns the sources the current user has blocked.
 //
-// GET /api/v1/me/blocked-sources
+// GET /api/v1/me/blocked-sources.
 func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -948,15 +991,18 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("intel: list blocked sources failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_blocked_sources_failed", "Failed to load blocked sources")
+
 		return
 	}
 
 	sources := make([]blockedSource, 0, len(ids))
+
 	for _, id := range ids {
 		src, err := h.intelSources.Get(r.Context(), id)
 		if err != nil {
 			continue
 		}
+
 		sources = append(sources, blockedSource{
 			ID:     pgtypeUUIDString(src.ID),
 			Slug:   derefString(src.Slug),
@@ -974,7 +1020,7 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 // POST blocks, DELETE unblocks. Returns the new block state.
 //
 // POST /api/v1/sources/{slug}/block
-// DELETE /api/v1/sources/{slug}/block
+// DELETE /api/v1/sources/{slug}/block.
 func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil || h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "unavailable", "Source blocking is not configured")
@@ -1001,11 +1047,13 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 
 		slog.Error("intel: source block lookup failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_block_lookup_failed", "Failed to load source")
+
 		return
 	}
 
 	// POST blocks; DELETE unblocks. For other methods, default to the method.
 	var wantBlock bool
+
 	switch r.Method {
 	case http.MethodPost:
 		wantBlock = true
@@ -1017,8 +1065,10 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			slog.Error("intel: source block state failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_block_state_failed", "Failed to check block state")
+
 			return
 		}
+
 		wantBlock = !blocked
 	}
 
@@ -1027,6 +1077,7 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		slog.Error("intel: source block state failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_block_state_failed", "Failed to check block state")
+
 		return
 	}
 
@@ -1036,6 +1087,7 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			slog.Error("intel: source block toggle failed", "slug", slug, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "source_block_toggle_failed", "Failed to toggle block")
+
 			return
 		}
 	}

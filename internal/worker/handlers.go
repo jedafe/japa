@@ -57,7 +57,7 @@ import (
 // - pro_membership → pro_subscription, product_id = "null" (pro_subscription
 // links have no product_id; the subscription_id is not part of the key)
 // - course_access → course, product_id = purpose_id (content_id matches)
-// - everything else → general, product_id = "null"
+// - everything else → general, product_id = "null".
 func paymentPurposeToAffiliateProduct(purposeType string, purposeID pgtype.UUID) (affProductType, affProductID string) {
 	affProductID = "null"
 
@@ -275,7 +275,8 @@ var videoImportProcessor interface {
 // video:import_bulk handler.
 func RegisterVideoImportProcessor(p interface {
 	ProcessBulkImport(ctx context.Context, payload BulkImportPayload) error
-}) {
+},
+) {
 	videoImportProcessor = p
 }
 
@@ -471,7 +472,7 @@ func resolveBaseURL(ctx context.Context) string {
 // the token cannot be created — the email is still sent without the link
 // rather than dropped, but the failure is visible in logs.
 // // Ref: japaconnect-engineering/sections/62-newsletter-digest.md
-// //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+// //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md.
 func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, map[string]string) {
 	if dbPool == nil {
 		return "", nil
@@ -793,7 +794,6 @@ func enqueueAcademyEnrollment(p gen.Payment) {
 	}
 
 	enrollPayload, _ := json.Marshal(map[string]any{
-
 		"user_id":    p.UserID.String(),
 		"track_id":   p.PurposeID.String(),
 		"payment_id": p.ID.String(),
@@ -845,7 +845,6 @@ func enqueueReferralConversion(p gen.Payment) {
 	}
 
 	referralPayload, _ := json.Marshal(map[string]any{
-
 		"payer_id":   p.UserID.String(),
 		"payment_id": p.ID.String(),
 		"session_id": p.UserID.String(), // attribution key is per-user at signup
@@ -921,7 +920,7 @@ func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, p gen.
 // - credit_purchase: enqueue a wallet credit reversal
 // - course_access: revoke the course access grant
 // - org_boost: expire the organization boost
-// - pro_membership: no reversal (refunds affect future renewal only)
+// - pro_membership: no reversal (refunds affect future renewal only).
 func reversePaymentSideEffects(ctx context.Context, p gen.Payment) error {
 	switch p.PurposeType {
 	case "credit_purchase":
@@ -2080,6 +2079,7 @@ func HandleMediaCleanupDeleted(ctx context.Context, _ *asynq.Task) error {
 	}
 
 	slog.Info("task:media:cleanup_deleted: complete", "purged", purged, "retention_days", retentionDays)
+
 	return nil
 }
 
@@ -2167,7 +2167,6 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 // the maxFanOut threshold. The author is skipped.
 func fanOutToFollowers(ctx context.Context, queries *gen.Queries, contentID, authorID, spaceID pgtype.UUID, contentType string, maxFanOut int) error {
 	followers, err := queries.GetFollowersByEntity(ctx, gen.GetFollowersByEntityParams{
-
 		EntityType: "user",
 		EntityID:   authorID,
 		PageOffset: 0,
@@ -2327,7 +2326,6 @@ func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, contentID, 
 // insertFeedItem inserts a single feeds row with a default score.
 func insertFeedItem(ctx context.Context, queries *gen.Queries, userID, contentID, spaceID pgtype.UUID, contentType string) error {
 	return queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
-
 		UserID:      userID,
 		ContentID:   contentID,
 		SpaceID:     spaceID,
@@ -2510,6 +2508,7 @@ func HandleContentRegenerateFromSource(ctx context.Context, t *asynq.Task) error
 	}
 
 	var actorID pgtype.UUID
+
 	if payload.UserID != "" {
 		if actorID, err = scanUUID(payload.UserID); err != nil {
 			return fmt.Errorf("task:content:regenerate_from_source: bad user_id: %w", err)
@@ -2598,6 +2597,7 @@ func ragIndexAfterEmbed(ctx context.Context, contentID [16]byte, text string) {
 	if ragIndexer == nil {
 		return
 	}
+
 	contentUUID := pgtype.UUID{Bytes: contentID, Valid: true}
 
 	// BUG-004 fix: resolve the indexing language from the i18n.default_language
@@ -2621,15 +2621,18 @@ func ragIndexAfterEmbed(ctx context.Context, contentID [16]byte, text string) {
 		slog.Warn("task:content:generate_embedding: no database for RAG meta, skipping", "error", err)
 		return
 	}
+
 	meta, err := queries.GetContentEmbeddingMeta(ctx, contentUUID)
 	if err != nil {
 		slog.Warn("task:content:generate_embedding: RAG meta lookup failed, skipping", "content_id", contentUUID.String(), "error", err)
 		return
 	}
+
 	if meta.Status != "published" {
 		if err := ragIndexer.PurgeEntity(ctx, entityTypeContent, contentUUID); err != nil {
 			slog.Warn("task:content:generate_embedding: RAG purge failed", "content_id", contentUUID.String(), "error", err)
 		}
+
 		return
 	}
 
@@ -2641,6 +2644,7 @@ func ragIndexAfterEmbed(ctx context.Context, contentID [16]byte, text string) {
 			slog.Info("task:content:generate_embedding: RAG index skipped, no embedding provider", "content_id", contentUUID.String())
 			return
 		}
+
 		slog.Warn("task:content:generate_embedding: RAG index failed", "content_id", contentUUID.String(), "error", err)
 	}
 }
@@ -2672,7 +2676,6 @@ func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
 
 	// List published reviews for this entity.
 	reviews, err := queries.ListReviewsByEntity(ctx, gen.ListReviewsByEntityParams{
-
 		EntityType: payload.EntityType,
 		EntityID:   entityID,
 		PageOffset: 0,
@@ -2701,7 +2704,6 @@ func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
 
 	// Upsert the aggregate — the SQL query computes count and avg internally.
 	_, err = queries.UpsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-
 		EntityType: payload.EntityType,
 		EntityID:   entityID,
 	})
@@ -2976,7 +2978,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		failed += f
 		total += len(recipients)
 
-		// nolint:gosec // G115: bounded
+		//nolint:gosec // G115: bounded
 		if int32(len(recipients)) < batchSize { // #nosec //nolint:gosec // G115: bounded
 			break
 		}
@@ -2986,7 +2988,6 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 	// Mark the campaign as sent with the recipient count (Section 62).
 	_ = writer.MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
-
 		ID:             campaignID,
 		RecipientCount: int32(sent), // #nosec
 	})
@@ -3300,6 +3301,7 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 	}
 
 	generateSitemapForPlatform(ctx, baseURL)
+
 	return nil
 }
 
@@ -3370,13 +3372,13 @@ func generateSitemapForPlatform(ctx context.Context, baseURL string) {
 	sitemap.WriteString("</urlset>\n")
 
 	sitemapDir := getEnv("JC_SITEMAP_DIR", "./sitemaps")
-	// nolint:gosec // G301: bounded
+	//nolint:gosec // G301: bounded
 	if err := os.MkdirAll(sitemapDir, 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
 		slog.Error("task:sitemap:generate: failed to create dir", "dir", sitemapDir, "error", err)
 		return
 	}
 
-	sitemapPath := fmt.Sprintf("%s/sitemap.xml", sitemapDir)
+	sitemapPath := sitemapDir + "/sitemap.xml"
 	if err := os.WriteFile(sitemapPath, []byte(sitemap.String()), 0o600); err != nil {
 		slog.Error("task:sitemap:generate: failed to write file", "path", sitemapPath, "error", err)
 		return
@@ -3406,6 +3408,7 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 	}
 
 	generateRSSForPlatform(ctx, baseURL)
+
 	return nil
 }
 
@@ -3661,7 +3664,6 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if _, err := queries.InsertAdEvent(ctx, gen.InsertAdEventParams{
-
 		CampaignID: campaignID,
 		UserID:     userID,
 		EventType:  payload.EventType,
@@ -3674,7 +3676,9 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 			slog.Warn("task:ad:ingest_event_batch: dropping event for unknown campaign", "campaign_id", payload.CampaignID)
 			return nil
 		}
+
 		slog.Error("task:ad:ingest_event_batch: failed to insert event", "campaign_id", payload.CampaignID, "error", err)
+
 		return err
 	}
 
@@ -3689,6 +3693,7 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 			slog.Warn("task:ad:ingest_event_batch: campaign lookup for rollup failed", "campaign_id", payload.CampaignID, "error", err)
 			return nil
 		}
+
 		var impressions, clicks int32
 		switch payload.EventType {
 		case "impression":
@@ -3696,6 +3701,7 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 		case "click":
 			clicks = 1
 		}
+
 		if _, err := queries.UpsertAdAnalyticsDaily(ctx, gen.UpsertAdAnalyticsDailyParams{
 			CampaignID:  campaignID,
 			SlotTypeID:  campaign.SlotTypeID,
@@ -3740,6 +3746,7 @@ func HandleAdsAccrueSpendDaily(ctx context.Context, t *asynq.Task) error {
 
 	for _, c := range campaigns {
 		updated, err := queries.AccrueCampaignSpend(ctx, c.ID)
+
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			// Already accrued today — the end check still runs with the
@@ -3802,8 +3809,7 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 		return nil
 	}
 
-	var payload struct {
-	}
+	var payload struct{}
 
 	// Payload is optional — scheduler sends nil. Parse without failing.
 	_ = parsePayload(t, &payload)
@@ -3838,8 +3844,7 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 		return nil
 	}
 
-	var payload struct {
-	}
+	var payload struct{}
 
 	// Payload is optional — scheduler sends nil. Parse without failing.
 	_ = parsePayload(t, &payload)
@@ -3869,7 +3874,6 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 			subjectType := "ticket"
 
 			if _, nErr := gen.New(dbPool.Writer).InsertNotification(ctx, gen.InsertNotificationParams{
-
 				RecipientID:      b.AssignedTo,
 				NotificationType: "ticket_sla_breached",
 				ActorType:        &actorType,
@@ -4057,6 +4061,7 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, _ *asynq.Task) erro
 	}
 
 	slog.Info("task:maintenance:regenerate_llms_txt: invalidated caches")
+
 	return nil
 }
 
@@ -4121,8 +4126,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	var payload struct {
-	}
+	var payload struct{}
 
 	if err := parsePayload(t, &payload); err != nil {
 		slog.Error("task:newsletter:digest: invalid payload", "error", err)
@@ -4532,7 +4536,7 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 // apply within onboarding.reminder_window_days of registration (default 14);
 // onboarding.reminder_min_interval_hours (default 20) prevents double-sends
 // if the cron fires twice in a day.
-// Ref: japaconnect-engineering/sections/09-onboarding-flow.md
+// Ref: japaconnect-engineering/sections/09-onboarding-flow.md.
 func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:onboarding:reminder_sweep: starting sweep")
 
@@ -4548,6 +4552,7 @@ func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
 
 	q := gen.New(dbPool.Reader)
 	minInterval := onboardingReminderIntSetting(ctx, "onboarding.reminder_min_interval_hours", 20)
+
 	candidates, err := q.ListOnboardingReminderCandidates(ctx, gen.ListOnboardingReminderCandidatesParams{
 		WindowDays:       onboardingReminderIntSetting(ctx, "onboarding.reminder_window_days", 14),
 		MaxCount:         onboardingReminderIntSetting(ctx, "onboarding.reminder_max_count", 5),
@@ -4558,6 +4563,7 @@ func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
 		slog.Error("task:onboarding:reminder_sweep: candidate query failed", "error", err)
 		return err
 	}
+
 	if len(candidates) == 0 {
 		return nil
 	}
@@ -4584,6 +4590,7 @@ func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
 			slog.Error("task:onboarding:reminder_sweep: mark failed", "user_id", userID.String(), "error", err)
 			continue
 		}
+
 		if marked == 0 {
 			continue // already marked by a concurrent sweep — no duplicate send
 		}
@@ -4602,10 +4609,12 @@ func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
 			slog.Error("task:onboarding:reminder_sweep: insert failed", "user_id", userID.String(), "error", err)
 			continue
 		}
+
 		sent++
 	}
 
 	slog.Info("task:onboarding:reminder_sweep: complete", "sent", sent, "candidates", len(candidates))
+
 	return nil
 }
 
@@ -4615,10 +4624,12 @@ func onboardingReminderEnabled(ctx context.Context) bool {
 	if dbPool == nil {
 		return true
 	}
+
 	row, err := gen.New(dbPool.Reader).GetSettingValue(ctx, "onboarding.reminder_enabled")
 	if err != nil || len(row) == 0 {
 		return true
 	}
+
 	return strings.Trim(string(row), `"`) != "false"
 }
 
@@ -4628,17 +4639,21 @@ func onboardingReminderIntSetting(ctx context.Context, key string, fallback int3
 	if dbPool == nil {
 		return fallback
 	}
+
 	row, err := gen.New(dbPool.Reader).GetSettingValue(ctx, key)
 	if err != nil || len(row) == 0 {
 		return fallback
 	}
+
 	n, err := strconv.Atoi(strings.Trim(string(row), `"`))
 	if err != nil || n <= 0 {
 		return fallback
 	}
+
 	if n > 10000 {
 		n = 10000
 	}
+
 	return int32(n) //nolint:gosec // bounded above
 }
 
@@ -4730,7 +4745,7 @@ func sendEmailWithContext(ctx context.Context, to, subject, body string, isHTML 
 // and digest) via the ADR-015 marketing provider, with optional extra SMTP
 // headers (e.g. List-Unsubscribe for GDPR one-click unsubscribe).
 // Ref: japaconnect-engineering/adr/ADR-015-multi-provider-email.md
-// //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+// //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md.
 func sendMarketingEmail(ctx context.Context, to, subject, body string, isHTML bool, headers map[string]string) error {
 	return sendEmailWithCategory(ctx, to, subject, body, isHTML, "marketing", headers)
 }
@@ -4984,6 +4999,7 @@ func HandleMaintenancePruneOAuthRecords(ctx context.Context, _ *asynq.Task) erro
 	recordDays := 30
 	revokedDays := 90
 	idleDays := 30
+
 	if appSettings != nil {
 		recordDays = appSettings.GetIntOr(ctx, "mcp.oauth_record_retention_days", 30)
 		revokedDays = appSettings.GetIntOr(ctx, "mcp.oauth_revoked_retention_days", 90)
@@ -4995,28 +5011,38 @@ func HandleMaintenancePruneOAuthRecords(ctx context.Context, _ *asynq.Task) erro
 		days  int
 		query string
 	}{
-		{"authorization_codes", recordDays,
-			`DELETE FROM oauth_authorization_codes WHERE expires_at < now() - make_interval(days => $1)`},
-		{"expired_tokens", recordDays,
-			`DELETE FROM oauth_tokens WHERE revoked_at IS NULL AND expires_at < now() - make_interval(days => $1)`},
-		{"revoked_tokens", revokedDays,
-			`DELETE FROM oauth_tokens WHERE revoked_at IS NOT NULL AND revoked_at < now() - make_interval(days => $1)`},
-		{"idle_clients", idleDays,
+		{
+			"authorization_codes", recordDays,
+			`DELETE FROM oauth_authorization_codes WHERE expires_at < now() - make_interval(days => $1)`,
+		},
+		{
+			"expired_tokens", recordDays,
+			`DELETE FROM oauth_tokens WHERE revoked_at IS NULL AND expires_at < now() - make_interval(days => $1)`,
+		},
+		{
+			"revoked_tokens", revokedDays,
+			`DELETE FROM oauth_tokens WHERE revoked_at IS NOT NULL AND revoked_at < now() - make_interval(days => $1)`,
+		},
+		{
+			"idle_clients", idleDays,
 			`DELETE FROM oauth_clients c
 			 WHERE c.created_at < now() - make_interval(days => $1)
 			   AND NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.client_id = c.client_id)
-			   AND NOT EXISTS (SELECT 1 FROM oauth_authorization_codes ac WHERE ac.client_id = c.client_id)`},
+			   AND NOT EXISTS (SELECT 1 FROM oauth_authorization_codes ac WHERE ac.client_id = c.client_id)`,
+		},
 	}
 
 	for _, s := range sweeps {
 		if s.days <= 0 {
 			continue
 		}
+
 		tag, err := dbPool.Writer.Exec(ctx, s.query, s.days)
 		if err != nil {
 			slog.Error("maintenance:prune_oauth_records failed", "sweep", s.name, "error", err)
 			return err
 		}
+
 		if tag.RowsAffected() > 0 {
 			slog.Info("maintenance:prune_oauth_records swept", "sweep", s.name, "deleted", tag.RowsAffected())
 		}
@@ -5105,9 +5131,11 @@ func HandleCouponImportFeed(ctx context.Context, task *asynq.Task) error {
 	var payload struct {
 		FeedID string `json:"feed_id"`
 	}
+
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return fmt.Errorf("coupon:import_feed: bad payload: %w", err)
 	}
+
 	feedID, err := scanUUID(payload.FeedID)
 	if err != nil {
 		return fmt.Errorf("coupon:import_feed: %w", err)
@@ -5303,7 +5331,6 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 		actorTypePtr := &actorType
 
 		if _, err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
-
 			RecipientID:      recipientID,
 			NotificationType: "report.new",
 			ActorType:        actorTypePtr,
@@ -5445,7 +5472,6 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if _, err := gen.New(dbPool.Writer).CreateAffiliateLinkEvent(ctx, gen.CreateAffiliateLinkEventParams{
-
 		LinkID:        linkID,
 		EventType:     "click",
 		IpHash:        &ipHashStr,
@@ -5614,7 +5640,6 @@ func creditCommissionTx(ctx context.Context, tx pgx.Tx, memberUserID, linkID, pa
 	}
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     memberUserID,
 		LedgerType: "credits",
 	})
@@ -5630,7 +5655,6 @@ func creditCommissionTx(ctx context.Context, tx pgx.Tx, memberUserID, linkID, pa
 	reason := "Affiliate commission"
 
 	if _, err := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           memberUserID,
 		LedgerType:       "credits",
 		Operation:        "credit",
@@ -5663,7 +5687,6 @@ func creditCommissionTx(ctx context.Context, tx pgx.Tx, memberUserID, linkID, pa
 	}
 
 	if _, err := qtx.CreateAffiliateLinkEvent(ctx, gen.CreateAffiliateLinkEventParams{
-
 		LinkID:             linkID,
 		EventType:          "conversion",
 		ConvertedPaymentID: paymentID,
@@ -5834,6 +5857,69 @@ func HandleWikiFieldsPropagate(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("task:wiki:fields_propagate: completed",
 		"entity_type", payload.EntityType, "entity_id", payload.EntityID)
+
+	return nil
+}
+
+// HandleBroadcastDispatchScheduled sweeps admin_broadcasts for rows whose
+// scheduled_at is due and delivers them: a system_announcement notification
+// for every user in the stored target scope, then sent_at + recipient_count
+// stamped. §35 — runs every minute via the Asynq scheduler.
+func HandleBroadcastDispatchScheduled(ctx context.Context, _ *asynq.Task) error {
+	if dbPool == nil {
+		slog.Warn("task:broadcast:dispatch_scheduled: no database, skipping")
+		return nil
+	}
+
+	due, err := gen.New(dbPool.Reader).ListDueScheduledBroadcasts(ctx)
+	if err != nil {
+		slog.Error("task:broadcast:dispatch_scheduled: query failed", "error", err)
+		return err
+	}
+
+	if len(due) == 0 {
+		return nil
+	}
+
+	q := gen.New(dbPool.Writer)
+
+	for _, b := range due {
+		var recipients []pgtype.UUID
+
+		switch b.Target {
+		case "geo_space":
+			recipients, err = q.ListActiveUserIDsByGeoSpace(ctx, b.TargetID)
+		case "user_group":
+			recipients, err = q.ListActiveUserIDsByGroup(ctx, b.TargetID)
+		default:
+			recipients, err = q.ListActiveUserIDs(ctx)
+		}
+		if err != nil {
+			slog.Error("task:broadcast:dispatch_scheduled: scope resolve failed", "id", b.ID, "error", err)
+			continue
+		}
+
+		if len(recipients) > 0 {
+			if err := q.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
+				RecipientID: b.SentBy,
+				Column2:     recipients,
+				Title:       b.Title,
+				Body:        &b.Body,
+				CreatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			}); err != nil {
+				slog.Error("task:broadcast:dispatch_scheduled: notify failed", "id", b.ID, "error", err)
+				continue
+			}
+		}
+
+		// #nosec G115 // recipient count bounded by user table size
+		if err := q.MarkBroadcastSent(ctx, gen.MarkBroadcastSentParams{ID: b.ID, RecipientCount: int32(len(recipients))}); err != nil {
+			slog.Error("task:broadcast:dispatch_scheduled: mark sent failed", "id", b.ID, "error", err)
+			continue
+		}
+
+		slog.Info("task:broadcast:dispatch_scheduled: sent", "id", b.ID, "recipients", len(recipients))
+	}
 
 	return nil
 }

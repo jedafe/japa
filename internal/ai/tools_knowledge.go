@@ -99,7 +99,7 @@ func RAGSearchHandler(deps *ToolDeps) ToolHandler {
 		chunks = filterExemptRAGChunks(ctx, deps.Privacy, chunks)
 
 		// Apply the limit if the RAG service returned more than requested.
-		// nolint:gosec // G115: bounded
+		//nolint:gosec // G115: bounded
 		if a.Limit > 0 && int32(len(chunks)) > a.Limit { // #nosec G115 -- len() of a RAG result slice //nolint:gosec // G115: bounded
 			chunks = chunks[:a.Limit]
 		}

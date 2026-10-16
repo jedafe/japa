@@ -153,8 +153,11 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 			// materialization path as an admin approval.
 			status := "proposed"
 			enabled := false
+
 			var approvedBy pgtype.UUID
+
 			var approvedAt pgtype.Timestamptz
+
 			if autoEnable {
 				status = "active"
 				enabled = true
@@ -163,7 +166,6 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 			}
 
 			src, cerr := deps.IntelSourceManager.Create(ctx, gen.CreateIntelSourceParams{
-
 				Name:                name,
 				Domain:              domain,
 				SourceUrl:           r.URL,

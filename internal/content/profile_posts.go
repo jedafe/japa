@@ -24,7 +24,6 @@ var htmlTagPattern = regexp.MustCompile(`<[^>]*>`)
 // paginated. Powers the public profile Posts tab (GET /users/{id}/content).
 func (s *Service) ListPublishedByAuthor(ctx context.Context, authorID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedContentByAuthorRow, error) {
 	rows, err := s.read.ListPublishedContentByAuthor(ctx, gen.ListPublishedContentByAuthorParams{
-
 		AuthorID:   authorID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -41,7 +40,6 @@ func (s *Service) ListPublishedByAuthor(ctx context.Context, authorID pgtype.UUI
 // returned all platform content. Public-safe: only published+public content;
 // non-active users are already 404'd by the requireActiveProfileUser gate.
 func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
-
 	var authorID pgtype.UUID
 	if err := authorID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
@@ -119,6 +117,7 @@ func splitTags(csv string) []string {
 
 	parts := strings.Split(csv, ",")
 	out := make([]string, 0, len(parts))
+
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p != "" {
@@ -131,7 +130,7 @@ func splitTags(csv string) []string {
 
 // OrgRef is the lean org reference embedded in an org-attributed PostCard so
 // the "on behalf of <Org>" badge renders. Nil for personal posts.
-// Ref: japaconnect-engineering/sections/07-organization-profiles.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles.md.
 type OrgRef struct {
 	ID      pgtype.UUID `json:"id"`
 	Name    string      `json:"name"`
@@ -141,7 +140,7 @@ type OrgRef struct {
 
 // orgRefFrom builds an OrgRef badge from the joined org columns, or nil when the
 // post is not org-attributed. The logo URL is resolved from storage bucket/path.
-func orgRefFrom(orgID pgtype.UUID, name, slug *string, logoBucket, logoPath *string) *OrgRef {
+func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string) *OrgRef {
 	if !orgID.Valid {
 		return nil
 	}
@@ -163,7 +162,7 @@ func orgRefFrom(orgID pgtype.UUID, name, slug *string, logoBucket, logoPath *str
 // (body_html is the rendered public form), field_values, content_hash,
 // geo_space_id, canonical_url, status/visibility (always published+public
 // here), is_locked, reshare_count, publish_at, updated_at.
-// Ref: japaconnect-engineering/sections/14-content-type-system.md
+// Ref: japaconnect-engineering/sections/14-content-type-system.md.
 type PostCard struct {
 	ID                pgtype.UUID        `json:"id"`
 	ContentType       string             `json:"content_type"`
@@ -219,6 +218,7 @@ func MakeExcerpt(bodyHtml string, maxLen int) string {
 // inputs are skipped.
 func ExcerptFromBody(body, bodyHtml string, maxLen int) string {
 	plain := ""
+
 	if strings.TrimSpace(body) != "" {
 		trimmed := strings.TrimSpace(body)
 		if trimmed[0] == '{' || trimmed[0] == '[' {
@@ -226,13 +226,16 @@ func ExcerptFromBody(body, bodyHtml string, maxLen int) string {
 				plain = text
 			}
 		}
+
 		if plain == "" && trimmed[0] != '<' {
 			plain = trimmed
 		}
 	}
+
 	if strings.TrimSpace(plain) == "" && strings.TrimSpace(bodyHtml) != "" {
 		plain = htmlTagPattern.ReplaceAllString(bodyHtml, "")
 	}
+
 	plain = strings.Join(strings.Fields(plain), " ")
 
 	if len(plain) > maxLen {
@@ -303,7 +306,6 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 // first, paginated. Powers the org profile Posts tab (GET /organizations/{id}/content).
 func (s *Service) ListPublishedByOrganization(ctx context.Context, orgID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedContentByOrganizationRow, error) {
 	rows, err := s.read.ListPublishedContentByOrganization(ctx, gen.ListPublishedContentByOrganizationParams{
-
 		OrganizationID: orgID,
 		PageLimit:      limit,
 		PageOffset:     offset,
@@ -318,7 +320,6 @@ func (s *Service) ListPublishedByOrganization(ctx context.Context, orgID pgtype.
 // ListByOrganization handles GET /organizations/{id}/content — the org profile
 // Posts tab. Non-active orgs are already 404'd by the requireActiveOrgByID gate.
 func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
-
 	var orgID pgtype.UUID
 	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_org_id", "Invalid organization ID format")

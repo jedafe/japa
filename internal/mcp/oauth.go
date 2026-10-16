@@ -196,11 +196,13 @@ func (s *oauthPGXStore) CreateClient(ctx context.Context, c OAuthClient) error {
 func (s *oauthPGXStore) CountClients(ctx context.Context) (int64, error) {
 	var n int64
 	err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM oauth_clients`).Scan(&n)
+
 	return n, err
 }
 
 func (s *oauthPGXStore) GetClientByClientID(ctx context.Context, clientID string) (*OAuthClient, error) {
 	var c OAuthClient
+
 	err := s.db.QueryRow(ctx, `
 		SELECT id, client_id, client_name, redirect_uris, grant_types, scopes, token_endpoint_auth_method, created_at
 		FROM oauth_clients WHERE client_id = $1
@@ -224,6 +226,7 @@ func (s *oauthPGXStore) CreateAuthorizationCode(ctx context.Context, codeHash st
 
 func (s *oauthPGXStore) ConsumeAuthorizationCode(ctx context.Context, codeHash, clientID string) (*OAuthAuthorizationCode, error) {
 	var c OAuthAuthorizationCode
+
 	err := s.db.QueryRow(ctx, `
 		UPDATE oauth_authorization_codes
 		SET used_at = now()
@@ -269,7 +272,9 @@ func (s *oauthPGXStore) CreateTokenPair(ctx context.Context, accessHash string, 
 
 func (s *oauthPGXStore) GetTokenByHash(ctx context.Context, tokenType, tokenHash string) (*OAuthToken, error) {
 	var t OAuthToken
+
 	var revoked pgtype.Timestamptz
+
 	err := s.db.QueryRow(ctx, `
 		SELECT id, client_id, user_id, scope, token_type, expires_at, revoked_at
 		FROM oauth_tokens
@@ -278,6 +283,7 @@ func (s *oauthPGXStore) GetTokenByHash(ctx context.Context, tokenType, tokenHash
 	if err != nil {
 		return nil, err
 	}
+
 	if revoked.Valid {
 		t.RevokedAt = &revoked
 	}
@@ -287,7 +293,9 @@ func (s *oauthPGXStore) GetTokenByHash(ctx context.Context, tokenType, tokenHash
 
 func (s *oauthPGXStore) ConsumeRefreshToken(ctx context.Context, tokenHash string) (*OAuthToken, error) {
 	var t OAuthToken
+
 	var revoked pgtype.Timestamptz
+
 	err := s.db.QueryRow(ctx, `
 		UPDATE oauth_tokens
 		SET revoked_at = now()
@@ -297,6 +305,7 @@ func (s *oauthPGXStore) ConsumeRefreshToken(ctx context.Context, tokenHash strin
 	if err != nil {
 		return nil, err
 	}
+
 	if revoked.Valid {
 		t.RevokedAt = &revoked
 	}
@@ -339,8 +348,10 @@ func (s *oauthPGXStore) ListUserGrants(ctx context.Context, userID pgtype.UUID) 
 	defer rows.Close()
 
 	var out []OAuthGrant
+
 	for rows.Next() {
 		var g OAuthGrant
+
 		var scopeRows []string
 		if err := rows.Scan(&g.ClientID, &g.ClientName, &scopeRows, &g.FirstGrantedAt, &g.LastGrantedAt); err != nil {
 			return nil, err
@@ -348,14 +359,17 @@ func (s *oauthPGXStore) ListUserGrants(ctx context.Context, userID pgtype.UUID) 
 		// Each token row carries a space-separated scope string; the grant's
 		// scope set is the deduped union across the family's rows.
 		set := map[string]struct{}{}
+
 		for _, row := range scopeRows {
 			for _, sc := range strings.Fields(row) {
 				set[sc] = struct{}{}
 			}
 		}
+
 		for sc := range set {
 			g.Scopes = append(g.Scopes, sc)
 		}
+
 		sort.Strings(g.Scopes)
 		out = append(out, g)
 	}
@@ -381,6 +395,7 @@ func (s *oauthPGXStore) AuditOAuthEvent(ctx context.Context, action string, acto
 	if actorUserID.Valid {
 		actor = actorUserID
 	}
+
 	var ipArg any
 	if ip != "" {
 		ipArg = ip
@@ -396,7 +411,9 @@ func (s *oauthPGXStore) AuditOAuthEvent(ctx context.Context, action string, acto
 
 func (s *oauthPGXStore) GetUserIdentity(ctx context.Context, userID pgtype.UUID) (*OAuthUserIdentity, error) {
 	var id OAuthUserIdentity
+
 	var emailVerifiedAt pgtype.Timestamptz
+
 	err := s.db.QueryRow(ctx, `
 		SELECT u.id, u.email, u.username, u.email_verified_at, up.display_name, up.avatar_url
 		FROM users u
@@ -406,6 +423,7 @@ func (s *oauthPGXStore) GetUserIdentity(ctx context.Context, userID pgtype.UUID)
 	if err != nil {
 		return nil, err
 	}
+
 	id.EmailVerified = emailVerifiedAt.Valid
 
 	return &id, nil
@@ -457,6 +475,7 @@ func (s *OAuthService) accessTokenTTL(ctx context.Context) time.Duration {
 	if s.settings != nil {
 		sec = s.settings.GetIntOr(ctx, "mcp.oauth_access_token_ttl_seconds", 3600)
 	}
+
 	if sec <= 0 {
 		sec = 3600
 	}
@@ -476,6 +495,7 @@ func (s *OAuthService) refreshTokenTTL(ctx context.Context) time.Duration {
 	if s.settings != nil {
 		sec = s.settings.GetIntOr(ctx, "mcp.oauth_refresh_token_ttl_seconds", 2592000)
 	}
+
 	if sec <= 0 {
 		sec = 2592000
 	}
@@ -493,6 +513,7 @@ func (s *OAuthService) tokenCacheTTL(ctx context.Context) time.Duration {
 	if s.settings != nil {
 		sec = s.settings.GetIntOr(ctx, "mcp.oauth_token_cache_ttl_seconds", 60)
 	}
+
 	if sec <= 0 {
 		sec = 60
 	}
@@ -509,6 +530,7 @@ func (s *OAuthService) reuseGraceWindow(ctx context.Context) time.Duration {
 	if s.settings != nil {
 		sec = s.settings.GetIntOr(ctx, "mcp.oauth_reuse_grace_seconds", 30)
 	}
+
 	if sec < 0 {
 		sec = 0
 	}
@@ -530,6 +552,7 @@ func (s *OAuthService) maxClients(ctx context.Context) int64 {
 	if s.settings != nil {
 		n = int64(s.settings.GetIntOr(ctx, "mcp.oauth_max_clients", 500))
 	}
+
 	return n
 }
 
@@ -562,6 +585,7 @@ func (s *OAuthService) ResolveAccessToken(ctx context.Context, token string) (us
 			if cached == "revoked" {
 				return pgtype.UUID{}, nil, "", errors.New("token revoked")
 			}
+
 			var e oauthCacheEntry
 			if json.Unmarshal([]byte(cached), &e) == nil && e.Expires > time.Now().Unix() {
 				var uid pgtype.UUID
@@ -573,6 +597,7 @@ func (s *OAuthService) ResolveAccessToken(ctx context.Context, token string) (us
 				if n, xerr := s.cache.Exists(ctx, famrevCacheKey(e.ClientID, uid)).Result(); xerr == nil && n > 0 {
 					return pgtype.UUID{}, nil, "", errors.New("token family revoked")
 				}
+
 				return uid, e.Scopes, e.ClientID, nil
 			}
 		}
@@ -582,9 +607,11 @@ func (s *OAuthService) ResolveAccessToken(ctx context.Context, token string) (us
 	if err != nil {
 		return pgtype.UUID{}, nil, "", errors.New("invalid token")
 	}
+
 	if tok.RevokedAt != nil {
 		return pgtype.UUID{}, nil, "", errors.New("token revoked")
 	}
+
 	if !tok.ExpiresAt.Valid || tok.ExpiresAt.Time.Before(time.Now()) {
 		return pgtype.UUID{}, nil, "", errors.New("token expired")
 	}
@@ -596,6 +623,7 @@ func (s *OAuthService) ResolveAccessToken(ctx context.Context, token string) (us
 		if rem := time.Until(tok.ExpiresAt.Time); rem < ttl {
 			ttl = rem
 		}
+
 		if ttl > 0 {
 			entry, _ := json.Marshal(oauthCacheEntry{
 				UserID:   tok.UserID.String(),
@@ -618,6 +646,7 @@ func (s *OAuthService) RevokeToken(ctx context.Context, token string) error {
 	if err := s.store.RevokeTokenByHash(ctx, hash); err != nil {
 		return err
 	}
+
 	if s.cache != nil {
 		_ = s.cache.Set(ctx, valkey.MustKey("oauth_atok:%s", hash), "revoked", s.tokenCacheTTL(ctx)).Err()
 	}
@@ -648,6 +677,7 @@ func (s *OAuthService) RevokeUserGrant(ctx context.Context, clientID string, use
 	if err := s.store.RevokeTokenFamily(ctx, clientID, userID); err != nil {
 		return err
 	}
+
 	if s.cache != nil {
 		_ = s.cache.Set(ctx, famrevCacheKey(clientID, userID), "1", s.tokenCacheTTL(ctx)).Err()
 	}
@@ -661,6 +691,7 @@ func verifyPKCE(verifier, challenge string) bool {
 	if verifier == "" || challenge == "" {
 		return false
 	}
+
 	sum := sha256.Sum256([]byte(verifier))
 
 	return hmac.Equal([]byte(base64.RawURLEncoding.EncodeToString(sum[:])), []byte(challenge))
@@ -686,6 +717,7 @@ func (s *OAuthService) issueTokenPair(ctx context.Context, clientID string, user
 	if err != nil {
 		return nil, pgtype.UUID{}, err
 	}
+
 	refresh, err := newRandomToken(oauthRefreshTokenPrefix, 32)
 	if err != nil {
 		return nil, pgtype.UUID{}, err
@@ -734,14 +766,17 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context, code, clie
 	if err != nil {
 		return nil, errors.New("invalid grant")
 	}
+
 	if grant.RedirectURI != redirectURI {
 		return nil, errors.New("invalid grant")
 	}
+
 	if !verifyPKCE(codeVerifier, grant.CodeChallenge) {
 		return nil, errors.New("invalid grant")
 	}
 
 	resp, _, err := s.issueTokenPair(ctx, grant.ClientID, grant.UserID, grant.Scope)
+
 	return resp, err
 }
 
@@ -771,9 +806,11 @@ func (s *OAuthService) RotateRefreshToken(ctx context.Context, refreshToken, cli
 	if lerr != nil {
 		return nil, errors.New("invalid grant")
 	}
+
 	if prev.ClientID != clientID {
 		return nil, errors.New("invalid grant")
 	}
+
 	if prev.RevokedAt != nil {
 		// Distinguish "already rotated" from unknown misses. Within the grace
 		// window a second presentation is most likely a lost-response retry
@@ -782,16 +819,20 @@ func (s *OAuthService) RotateRefreshToken(ctx context.Context, refreshToken, cli
 		if time.Since(prev.RevokedAt.Time) <= s.reuseGraceWindow(ctx) {
 			return nil, errors.New("invalid grant")
 		}
+
 		s.revokeTokenFamily(ctx, prev.ClientID, prev.UserID)
 		_ = s.store.AuditOAuthEvent(ctx, "oauth.token_family_revoked", prev.UserID, map[string]any{
 			"client_id": prev.ClientID,
 			"reason":    "refresh_token_reuse",
 		}, "")
+
 		return nil, errRefreshReuse
 	}
+
 	if !prev.ExpiresAt.Valid || prev.ExpiresAt.Time.Before(time.Now()) {
 		return nil, errors.New("invalid grant")
 	}
+
 	if checkGrant != nil {
 		if err := checkGrant(ctx, prev.UserID, prev.Scope); err != nil {
 			return nil, err

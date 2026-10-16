@@ -1,7 +1,6 @@
 package literals
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +23,7 @@ func testCatalog(t *testing.T) *Catalog {
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
+
 	t.Cleanup(mr.Close)
 
 	vk, err := valkey.NewClient(valkey.ClientOption{
@@ -33,6 +33,7 @@ func testCatalog(t *testing.T) *Catalog {
 	if err != nil {
 		t.Fatalf("valkey.NewClient: %v", err)
 	}
+
 	t.Cleanup(func() { vk.Close() })
 
 	compat := valkeycompat.NewAdapter(vk)
@@ -41,7 +42,8 @@ func testCatalog(t *testing.T) *Catalog {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := compat.Set(context.Background(), jcvalkey.MustKey(catalogKeyTemplate, ""), string(encoded), 0).Err(); err != nil {
+
+	if err := compat.Set(t.Context(), jcvalkey.MustKey(catalogKeyTemplate, ""), string(encoded), 0).Err(); err != nil {
 		t.Fatalf("seed catalog: %v", err)
 	}
 
@@ -165,6 +167,7 @@ func TestMiddlewareNoContent(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d", rec.Code)
 	}
+
 	if rec.Body.Len() != 0 {
 		t.Fatalf("204 body = %q", rec.Body.String())
 	}

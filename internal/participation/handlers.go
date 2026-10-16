@@ -95,7 +95,6 @@ func NewHandlers(database *db.DB, service *Service, settings *config.Settings, v
 // Supports server-side pagination (page, page_size), search (q), and
 // sort (sort + dir) per the admin list-endpoint spec.
 func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
-
 	page, pageSize := parsePagination(r)
 	sortCol, sortDir := parseSort(r, map[string]bool{"created_at": true, "persona_name": true, "content_type": true, "status": true}, "created_at", "desc")
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -206,7 +205,6 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 // BUG-005) and the global cap (read from system_settings
 // participation.global_daily_cap, BUG-013).
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
-
 	var activePersonas int
 	_ = h.database.Reader.QueryRow(r.Context(), `SELECT count(*) FROM ai_personas WHERE status = 'active'`).Scan(&activePersonas)
 

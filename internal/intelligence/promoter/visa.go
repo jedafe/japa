@@ -222,7 +222,6 @@ func buildVisaCreateParams(record gen.IntelRecord, source gen.IntelSource, ext e
 	}
 
 	return gen.CreateVisaRouteIntelParams{
-
 		DestinationSpaceID: pgtype.UUID{}, // resolved by visaCreatePath
 		VisaCategory:       visaCategory,
 		Name:               name,
@@ -260,7 +259,6 @@ func buildVisaCreateParams(record gen.IntelRecord, source gen.IntelSource, ext e
 // is only honored on the create path.
 func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateVisaRouteIntelParams, []string) {
 	params := gen.UpdateVisaRouteIntelParams{
-
 		ID:                   existing.ID,
 		Name:                 existing.Name,
 		VisaCategory:         existing.VisaCategory,

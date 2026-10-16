@@ -35,7 +35,6 @@ func (s *Store) getState(ctx context.Context, userID pgtype.UUID) (gen.GetOnboar
 // upsertState inserts or updates the onboarding state.
 func (s *Store) upsertState(ctx context.Context, userID pgtype.UUID, currentStep int32, completed bool, stepData []byte, tourDismissed bool, tourDismissals []byte) error {
 	if err := s.write.UpsertOnboardingState(ctx, gen.UpsertOnboardingStateParams{
-
 		UserID:         userID,
 		CurrentStep:    currentStep,
 		Completed:      completed,
@@ -65,7 +64,6 @@ func (s *Store) completeOnboarding(ctx context.Context, userID pgtype.UUID) erro
 // Upserts so it also works when no onboarding_state row exists yet.
 func (s *Store) dismissTour(ctx context.Context, userID pgtype.UUID, tourDismissed bool, tourDismissals []byte) error {
 	if err := s.write.DismissTour(ctx, gen.DismissTourParams{
-
 		UserID:         userID,
 		TourDismissed:  tourDismissed,
 		TourDismissals: tourDismissals,
@@ -101,7 +99,6 @@ func (s *Store) getTemplate(ctx context.Context, id pgtype.UUID) (gen.Onboarding
 // createTemplate inserts a new onboarding template.
 func (s *Store) createTemplate(ctx context.Context, name, description string, steps []byte, isActive, isSystem bool) (gen.OnboardingTemplate, error) {
 	row, err := s.write.CreateOnboardingTemplate(ctx, gen.CreateOnboardingTemplateParams{
-
 		Name:        name,
 		Description: &description,
 		Steps:       steps,
@@ -118,7 +115,6 @@ func (s *Store) createTemplate(ctx context.Context, name, description string, st
 // updateTemplate updates an existing onboarding template.
 func (s *Store) updateTemplate(ctx context.Context, id pgtype.UUID, name, description string, steps []byte, isActive bool) error {
 	return s.write.UpdateOnboardingTemplate(ctx, gen.UpdateOnboardingTemplateParams{
-
 		ID:          id,
 		Name:        name,
 		Description: &description,

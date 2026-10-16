@@ -121,7 +121,7 @@ func New(database *db.DB, vkClient valkeycompat.Cmdable) *RBAC {
 // // Usage:
 // //	if rbac.HasPermission(ctx, userID, ID, "blog.publish") {
 // allowPublish()
-// }
+// }.
 func (r *RBAC) HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool {
 	uc, err := r.GetUserContext(ctx, userID)
 	if err != nil || uc == nil {
@@ -216,7 +216,6 @@ func (r *RBAC) HasSpacePermission(ctx context.Context, userID, spaceID pgtype.UU
 // Super admins bypass all permission checks.
 func (r *RBAC) IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool {
 	inGroup, err := r.read.IsUserInGroup(ctx, gen.IsUserInGroupParams{
-
 		UserID:    userID,
 		GroupSlug: SystemGroupSuperAdmin,
 	})
@@ -401,11 +400,13 @@ func (r *RBAC) loadUserContext(ctx context.Context, userID pgtype.UUID) (*UserCo
 // is never served between background sweeper runs.
 func (r *RBAC) cacheGet(key string) *UserContext {
 	r.cache.mu.RLock()
+
 	entry, ok := r.cache.entries[key]
 	if !ok {
 		r.cache.mu.RUnlock()
 		return nil
 	}
+
 	if time.Since(entry.createdAt) > l1CacheMaxAge {
 		// Upgrade to a write lock to evict the expired entry.
 		r.cache.mu.RUnlock()
@@ -414,8 +415,10 @@ func (r *RBAC) cacheGet(key string) *UserContext {
 			delete(r.cache.entries, key)
 		}
 		r.cache.mu.Unlock()
+
 		return nil
 	}
+
 	uc := entry.user
 	r.cache.mu.RUnlock()
 

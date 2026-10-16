@@ -67,6 +67,7 @@ func startProbeTestValkey(t *testing.T) valkeycompat.Cmdable {
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
+
 	t.Cleanup(mr.Close)
 
 	vk, err := valkey.NewClient(valkey.ClientOption{
@@ -76,6 +77,7 @@ func startProbeTestValkey(t *testing.T) valkeycompat.Cmdable {
 	if err != nil {
 		t.Fatalf("valkey.NewClient: %v", err)
 	}
+
 	t.Cleanup(vk.Close)
 
 	return valkeycompat.NewAdapter(vk)
@@ -106,6 +108,7 @@ func decodeDataEnvelope(t *testing.T, rr *httptest.ResponseRecorder) map[string]
 	var env struct {
 		Data map[string]any `json:"data"`
 	}
+
 	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
 		t.Fatalf("decode data envelope: %v (body=%s)", err, rr.Body.String())
 	}
@@ -352,6 +355,7 @@ func TestHandleGetSourcesMeta_IntelChannels(t *testing.T) {
 	if len(got) != len(want) {
 		t.Fatalf("channel_pipelines = %v, want %v", got, want)
 	}
+
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("channel_pipelines[%d] = %q, want %q", i, got[i], want[i])
@@ -365,14 +369,17 @@ func TestHandleGetSourcesMeta_IntelChannels(t *testing.T) {
 	}
 
 	kindValues := map[string]bool{}
+
 	for _, k := range kinds {
 		opt, ok := k.(map[string]any)
 		if !ok {
 			t.Fatalf("source_kinds option not an object: %v", k)
 		}
+
 		if opt["value"] == "" || opt["label"] == "" {
 			t.Errorf("source_kinds option missing value/label: %v", opt)
 		}
+
 		kindValues[opt["value"].(string)] = true
 	}
 
@@ -392,6 +399,7 @@ func TestHandleGetSourcesMeta_IntelChannels(t *testing.T) {
 	if !ok || len(subKinds) != 8 {
 		t.Fatalf("submittable_source_kinds = %v, want 8 options", data["submittable_source_kinds"])
 	}
+
 	for _, k := range subKinds {
 		opt := k.(map[string]any)
 		if v := opt["value"]; v == "institution" || v == "individual" {
@@ -409,6 +417,7 @@ func TestHandleGetSourcesMeta_IntelChannels(t *testing.T) {
 	for _, c := range cats {
 		catSet[c.(string)] = true
 	}
+
 	for _, v := range []string{"blog", "event", "dataset", "announcement", "scam_alert"} {
 		if !catSet[v] {
 			t.Errorf("categories missing %q", v)
@@ -426,11 +435,13 @@ func TestHandleGetSourcesMeta_IntelChannels(t *testing.T) {
 	for _, c := range subCats {
 		subSet[c.(string)] = true
 	}
+
 	for _, v := range []string{"job", "internship", "work_career", "news", "blog", "video"} {
 		if !subSet[v] {
 			t.Errorf("submittable_categories missing %q", v)
 		}
 	}
+
 	for _, v := range []string{"scholarship", "visa", "event", "dataset", "housing"} {
 		if subSet[v] {
 			t.Errorf("submittable_categories must not contain %q", v)

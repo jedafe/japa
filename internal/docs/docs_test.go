@@ -33,6 +33,7 @@ func TestAudienceGatesOnlyInternal(t *testing.T) {
 			t.Errorf("audience %q must not be gated — only internal docs are", aud)
 		}
 	}
+
 	for aud := range expected {
 		if _, ok := AudienceGates[aud]; !ok {
 			t.Errorf("internal audience %q must be gated", aud)
@@ -45,9 +46,11 @@ func TestPublicAudiences(t *testing.T) {
 
 	got := publicAudiences()
 	want := []string{"users", "premium", "organizations", "moderators", "api"}
+
 	if len(got) != len(want) {
 		t.Fatalf("expected %d public audiences, got %d (%v)", len(want), len(got), got)
 	}
+
 	for i, a := range want {
 		if got[i] != a {
 			t.Errorf("public audience[%d]: expected %q, got %q", i, a, got[i])
@@ -245,12 +248,12 @@ func TestValidateDocSlug(t *testing.T) {
 		{"users", "-leading"},
 		{"users", "trailing-"},
 		{"users", "double--dash"},
-		{"users", "new"},        // reserved in every audience
-		{"admin", "new"},        // reserved in every audience
-		{"api", "keys"},         // api static route
-		{"api", "playground"},   // api static route
-		{"api", "new"},          // both rules apply
-		{"users", "keys"},       // NOT reserved outside api — should be valid, see below
+		{"users", "new"},      // reserved in every audience
+		{"admin", "new"},      // reserved in every audience
+		{"api", "keys"},       // api static route
+		{"api", "playground"}, // api static route
+		{"api", "new"},        // both rules apply
+		{"users", "keys"},     // NOT reserved outside api — should be valid, see below
 	}
 	for _, tc := range invalid[:9] {
 		if err := validateDocSlug(tc.audience, tc.slug); err == nil {

@@ -34,10 +34,12 @@ func (h *Handlers) HandleSeedAttractions(w http.ResponseWriter, r *http.Request)
 		Limit  int    `json:"limit"`
 		DryRun bool   `json:"dry_run"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if body.Within == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_within", "within is required")
 		return
@@ -48,6 +50,7 @@ func (h *Handlers) HandleSeedAttractions(w http.ResponseWriter, r *http.Request)
 		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Parent space not found")
 		return
 	}
+
 	switch space.Level {
 	case LevelCountry, LevelState, LevelCity:
 	default:
@@ -64,18 +67,21 @@ func (h *Handlers) HandleSeedAttractions(w http.ResponseWriter, r *http.Request)
 				"Attraction seeder is not configured")
 			return
 		}
+
 		candidates, err := h.attrSeeder.ListAttractionCandidates(r.Context(), space.ID, limit)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadGateway, "wikidata_error",
 				"Failed to query Wikidata candidates")
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"candidates": candidates,
 				"count":      len(candidates),
 			},
 		})
+
 		return
 	}
 

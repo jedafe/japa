@@ -88,10 +88,12 @@ func (h *Handlers) CreateMyWebhook(w http.ResponseWriter, r *http.Request) {
 		URL        string   `json:"url"`
 		EventTypes []string `json:"event_types"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.URL == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_url", "url is required")
 		return
@@ -102,6 +104,7 @@ func (h *Handlers) CreateMyWebhook(w http.ResponseWriter, r *http.Request) {
 	if len(input.EventTypes) == 0 {
 		input.EventTypes = []string{"content.published"}
 	}
+
 	for _, t := range input.EventTypes {
 		if !userWebhookEventTypes[t] {
 			errpkg.WriteError(w, http.StatusBadRequest, "unsupported_event_type",
@@ -115,11 +118,13 @@ func (h *Handlers) CreateMyWebhook(w http.ResponseWriter, r *http.Request) {
 	if h.Service != nil {
 		maxPerKey = h.Service.GetIntSetting(r.Context(), "api.webhooks.max_per_key", maxPerKey)
 	}
+
 	count, err := svc.CountUserEndpoints(r.Context(), keyCtx.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	if count >= int64(maxPerKey) {
 		handleServiceError(w, ErrWebhookLimitReached)
 		return
@@ -147,6 +152,7 @@ func (h *Handlers) ListMyWebhooks(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if eps == nil {
 		eps = []PublicWebhookEndpoint{}
 	}
@@ -220,6 +226,7 @@ func (h *Handlers) ListMyWebhookDeliveries(w http.ResponseWriter, r *http.Reques
 		handleServiceError(w, err)
 		return
 	}
+
 	if deliveries == nil {
 		deliveries = []PublicWebhookDelivery{}
 	}
@@ -235,9 +242,11 @@ func (h *Handlers) requireWebhookCtx(w http.ResponseWriter, r *http.Request) (*A
 		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return nil, nil, false
 	}
+
 	if h.webhooks == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return nil, nil, false
 	}
+
 	return keyCtx, h.webhooks, true
 }

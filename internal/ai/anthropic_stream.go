@@ -171,6 +171,7 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatWithToolsReq
 						if ev.ContentBlock != nil {
 							b := &anthropicStreamBlock{typ: ev.ContentBlock.Type, id: ev.ContentBlock.ID, name: ev.ContentBlock.Name}
 							blocks[ev.Index] = b
+
 							blockOrder = append(blockOrder, ev.Index)
 						}
 
@@ -181,6 +182,7 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatWithToolsReq
 							case "text_delta":
 								b.text.WriteString(ev.Delta.Text)
 								content.WriteString(ev.Delta.Text)
+
 								if sink != nil {
 									sink(ev.Delta.Text)
 								}
@@ -193,6 +195,7 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatWithToolsReq
 						if ev.Delta != nil && ev.Delta.StopReason != "" {
 							stopReason = ev.Delta.StopReason
 						}
+
 						if ev.Usage != nil && ev.Usage.OutputTokens > 0 {
 							outputTok = ev.Usage.OutputTokens
 						}
@@ -205,6 +208,7 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatWithToolsReq
 						if ev.Error != nil && ev.Error.Message != "" {
 							msg = ev.Error.Message
 						}
+
 						return ChatWithToolsResponse{}, fmt.Errorf("anthropic: %s", msg)
 
 					default:
@@ -218,6 +222,7 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatWithToolsReq
 			if errors.Is(readErr, io.EOF) {
 				break
 			}
+
 			return ChatWithToolsResponse{}, fmt.Errorf("anthropic: reading stream: %w", readErr)
 		}
 	}
@@ -247,10 +252,12 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatWithToolsReq
 		if b == nil || b.typ != "tool_use" {
 			continue
 		}
+
 		args := json.RawMessage(b.input.String())
 		if len(args) == 0 || string(args) == "null" || !json.Valid(args) {
 			args = json.RawMessage("{}")
 		}
+
 		result.ToolCalls = append(result.ToolCalls, ToolCall{
 			ID:        b.id,
 			Name:      b.name,

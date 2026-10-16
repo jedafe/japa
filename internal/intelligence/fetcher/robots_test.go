@@ -22,6 +22,7 @@ func TestParseRobotsTXT_WildcardMultipleDisallows(t *testing.T) {
 			t.Errorf("disallowed paths missing %q: %v", want, policy.DisallowedPaths)
 		}
 	}
+
 	if !policy.IsPathDisallowed("/private/x") {
 		t.Error("IsPathDisallowed(/private/x) = false, want true")
 	}
@@ -42,6 +43,7 @@ func TestParseRobotsTXT_ForeignBlockDoesNotClear(t *testing.T) {
 	if !slices.Contains(policy.DisallowedPaths, "/admin") {
 		t.Errorf("foreign Disallow cleared our rules: %v", policy.DisallowedPaths)
 	}
+
 	if !policy.IsPathDisallowed("/admin") {
 		t.Error("IsPathDisallowed(/admin) = false, want true")
 	}
@@ -64,9 +66,11 @@ func TestParseRobotsTXT_JapaBlockSupersedesWildcard(t *testing.T) {
 	if !slices.Contains(policy.DisallowedPaths, "/japa-only") {
 		t.Errorf("japa block rule missing: %v", policy.DisallowedPaths)
 	}
+
 	if slices.Contains(policy.DisallowedPaths, "/wildcard-only") {
 		t.Error("wildcard rule survived the dedicated block — should be superseded")
 	}
+
 	if slices.Contains(policy.DisallowedPaths, "/also-ignored") {
 		t.Error("post-block wildcard rule collected — should be ignored")
 	}
@@ -85,6 +89,7 @@ func TestParseRobotsTXT_BareDisallowInWildcardAllowsAll(t *testing.T) {
 	if len(policy.DisallowedPaths) != 0 {
 		t.Errorf("bare wildcard Disallow must clear collected paths: %v", policy.DisallowedPaths)
 	}
+
 	if !policy.Allowed {
 		t.Error("Allowed = false after bare Disallow, want true")
 	}

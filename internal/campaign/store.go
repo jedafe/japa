@@ -73,7 +73,6 @@ func (s *Store) CreateCampaign(ctx context.Context, userID pgtype.UUID, in Creat
 	}
 
 	return s.write.CreateContentCampaign(ctx, gen.CreateContentCampaignParams{
-
 		Name:                  name,
 		Prompt:                in.Prompt,
 		Status:                CampaignStatusPlanning,
@@ -157,7 +156,6 @@ func (s *Store) ListCampaigns(ctx context.Context, f CampaignListFilter) ([]gen.
 	}
 
 	items, err := s.read.ListContentCampaigns(ctx, gen.ListContentCampaignsParams{
-
 		Status:     f.Status,
 		PageLimit:  f.Limit,
 		PageOffset: f.Offset,
@@ -256,7 +254,6 @@ func campaignItemParams(campaign gen.ContentCampaign, it CampaignItemPlan, sortO
 	}
 
 	return gen.CreateContentCampaignItemParams{
-
 		CampaignID:    campaign.ID,
 		SortOrder:     int32(sortOrder), // #nosec
 		PersonaID:     personaID,

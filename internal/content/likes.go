@@ -19,7 +19,6 @@ import (
 // public profile Likes tab — draft/private content is excluded by the query.
 func (s *Service) ListContentLikedByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListContentLikedByUserRow, error) {
 	rows, err := s.read.ListContentLikedByUser(ctx, gen.ListContentLikedByUserParams{
-
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -35,7 +34,6 @@ func (s *Service) ListContentLikedByUser(ctx context.Context, userID pgtype.UUID
 // Public-safe: only published+public content; non-active users are already
 // 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListLikedByUser(w http.ResponseWriter, r *http.Request) {
-
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")

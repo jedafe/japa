@@ -17,10 +17,12 @@ func ParseTimestamptz(s string) (pgtype.Timestamptz, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return pgtype.Timestamptz{Time: t, Valid: true}, nil
 	}
+
 	var ts pgtype.Timestamptz
 	if err := ts.Scan(s); err != nil {
 		return pgtype.Timestamptz{}, err
 	}
+
 	return ts, nil
 }
 
@@ -30,15 +32,18 @@ func ParseTimestamptz(s string) (pgtype.Timestamptz, error) {
 // date in the sender's own offset so "+05:00" inputs don't shift the day.
 func ParseDate(s string) (pgtype.Date, error) {
 	var d pgtype.Date
+
 	scanErr := d.Scan(s)
 	if scanErr == nil {
 		return d, nil
 	}
+
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return pgtype.Date{
 			Time:  time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC),
 			Valid: true,
 		}, nil
 	}
+
 	return pgtype.Date{}, scanErr
 }

@@ -353,6 +353,7 @@ func (s *Service) SetListingCoupons(ctx context.Context, contentID, userID pgtyp
 	// UNIQUE(coupon_id, listing_meta_id), and a duplicated id would also
 	// inflate the count check.
 	uniqueIDs := make([]pgtype.UUID, 0, len(couponIDs))
+
 	seen := make(map[pgtype.UUID]struct{}, len(couponIDs))
 	for _, id := range couponIDs {
 		if _, dup := seen[id]; dup {
@@ -360,6 +361,7 @@ func (s *Service) SetListingCoupons(ctx context.Context, contentID, userID pgtyp
 		}
 
 		seen[id] = struct{}{}
+
 		uniqueIDs = append(uniqueIDs, id)
 	}
 

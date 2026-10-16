@@ -18,6 +18,7 @@ func factor(group, key, descriptor, label string, single int32, withSpouse *int3
 	if withSpouse != nil {
 		f.PointsWithSpouse = pgtype.Int4{Int32: *withSpouse, Valid: true}
 	}
+
 	return f
 }
 
@@ -61,11 +62,13 @@ func testFactors() []FactorRow {
 
 func findPoints(b []BreakdownItem, group, key string) int32 {
 	var total int32
+
 	for _, it := range b {
 		if it.Group == group && it.Key == key {
 			total += it.Points
 		}
 	}
+
 	return total
 }
 
@@ -84,9 +87,11 @@ func TestScoreProfile_SingleProfile(t *testing.T) {
 
 	// core: 110 age + 135 edu + 4×31 language + 53 canadian exp
 	wantCore := int32(110 + 135 + 124 + 53)
+
 	if got := findPoints(breakdown, GroupCore, "age"); got != 110 {
 		t.Fatalf("age points = %d, want 110", got)
 	}
+
 	if got := findPoints(breakdown, GroupCore, "language_first"); got != 124 {
 		t.Fatalf("language_first points = %d, want 124 (4×31)", got)
 	}
@@ -95,9 +100,11 @@ func TestScoreProfile_SingleProfile(t *testing.T) {
 	if got := findPoints(breakdown, GroupTransferability, "foreign_language"); got != 0 {
 		t.Fatalf("foreign_language = %d, want 0 (superseded by higher tier)", got)
 	}
+
 	if got := findPoints(breakdown, GroupTransferability, "foreign_language_hi"); got != 50 {
 		t.Fatalf("foreign_language_hi = %d, want 50 (best tier)", got)
 	}
+
 	if got := transferabilityTotal(breakdown); got != 100 {
 		t.Fatalf("transferability total = %d, want 100 (capped)", got)
 	}
@@ -105,6 +112,7 @@ func TestScoreProfile_SingleProfile(t *testing.T) {
 	if got := findPoints(breakdown, GroupAdditional, "sibling"); got != 15 {
 		t.Fatalf("sibling points = %d, want 15", got)
 	}
+
 	if score != wantCore+100+15 {
 		t.Fatalf("total = %d, want %d", score, wantCore+100+15)
 	}
@@ -129,12 +137,15 @@ func TestScoreProfile_MarriedUsesSpousePoints(t *testing.T) {
 	if got := findPoints(breakdown, GroupCore, "age"); got != 88 {
 		t.Fatalf("married age points = %d, want 88 (with-spouse variant)", got)
 	}
+
 	if got := findPoints(breakdown, GroupCore, "language_first"); got != 128 {
 		t.Fatalf("married language = %d, want 128 (4×32)", got)
 	}
+
 	if got := findPoints(breakdown, GroupSpouse, "spouse_education"); got != 8 {
 		t.Fatalf("spouse edu = %d, want 8", got)
 	}
+
 	if got := findPoints(breakdown, GroupSpouse, "spouse_language"); got != 20 {
 		t.Fatalf("spouse language = %d, want 20 (4×5)", got)
 	}
@@ -142,6 +153,7 @@ func TestScoreProfile_MarriedUsesSpousePoints(t *testing.T) {
 	if got := findPoints(breakdown, GroupTransferability, "edu_language"); got != 50 {
 		t.Fatalf("edu_language = %d, want 50", got)
 	}
+
 	if score <= 0 {
 		t.Fatal("expected positive score")
 	}
@@ -167,6 +179,7 @@ func TestScoreProfile_PNPAndAdditional(t *testing.T) {
 	if got := findPoints(breakdown, GroupAdditional, "french"); got != 80 {
 		t.Fatalf("french = %d, want 80", got)
 	}
+
 	if got := findPoints(breakdown, GroupAdditional, "canadian_education"); got != 30 {
 		t.Fatalf("canadian_education = %d, want 30", got)
 	}
@@ -187,6 +200,7 @@ func TestScoreProfile_FrenchEnglishTier(t *testing.T) {
 	in.FirstLanguage = "english"
 	french := *in.CLBSecond
 	in.FrenchCLB = &french
+
 	_, breakdown := scoreProfile(testFactors(), in)
 	if got := findPoints(breakdown, GroupAdditional, "french"); got != 80 {
 		t.Fatalf("french = %d, want 80 (30 base tier + 50 bilingual tier)", got)
@@ -198,6 +212,7 @@ func TestScoreProfile_FrenchEnglishTier(t *testing.T) {
 	in.FirstLanguage = "french"
 	in.FrenchCLB = &in.CLBFirst
 	in.CLBSecond = nil
+
 	_, breakdown = scoreProfile(testFactors(), in)
 	if got := findPoints(breakdown, GroupAdditional, "french"); got != 30 {
 		t.Fatalf("french = %d, want 30 (base tier only — no English scores)", got)
@@ -210,6 +225,7 @@ func TestScoreProfile_FrenchEnglishTier(t *testing.T) {
 	in.FirstLanguage = "french"
 	in.FrenchCLB = &in.CLBFirst
 	in.CLBSecond = &CLBScores{Listening: 5, Reading: 5, Writing: 5, Speaking: 5}
+
 	_, breakdown = scoreProfile(testFactors(), in)
 	if got := findPoints(breakdown, GroupAdditional, "french"); got != 80 {
 		t.Fatalf("french = %d, want 80 (French-first + English second test)", got)
@@ -226,6 +242,7 @@ func TestScoreProfile_SecondLanguageCap(t *testing.T) {
 		CLBFirst:      CLBScores{Listening: 9, Reading: 9, Writing: 9, Speaking: 9},
 		CLBSecond:     &CLBScores{Listening: 10, Reading: 10, Writing: 10, Speaking: 10},
 	}
+
 	_, breakdown := scoreProfile(testFactors(), in)
 	if got := findPoints(breakdown, GroupCore, "language_second"); got != 24 {
 		t.Fatalf("single second language = %d, want 24 (cap)", got)
@@ -233,6 +250,7 @@ func TestScoreProfile_SecondLanguageCap(t *testing.T) {
 
 	in.MaritalStatus = "married"
 	in.Spouse = &SpouseInput{Education: "bachelors"}
+
 	_, breakdown = scoreProfile(testFactors(), in)
 	if got := findPoints(breakdown, GroupCore, "language_second"); got != 22 {
 		t.Fatalf("married second language = %d, want 22 (cap)", got)

@@ -64,17 +64,20 @@ func TestLinkSpaceToPrimarySpaces_GeoScoped(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LinkSpaceToPrimarySpaces: %v", err)
 			}
+
 			if len(parentIDs) == 0 {
 				t.Fatalf("expected at least the geo_code country as parent")
 			}
 
 			// Country itself must be in the set.
 			foundCountry := false
+
 			for _, pid := range parentIDs {
 				if pid == country.ID {
 					foundCountry = true
 				}
 			}
+
 			if !foundCountry {
 				t.Fatalf("geo_code country %s not in parent set", tc.geoCode)
 			}
@@ -85,15 +88,18 @@ func TestLinkSpaceToPrimarySpaces_GeoScoped(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetSpaceCountryAncestorIDs: %v", err)
 			}
+
 			bySpace := map[pgtype.UUID]pgtype.UUID{}
 			for _, r := range anc {
 				bySpace[r.SpaceID] = r.CountryID
 			}
+
 			for _, pid := range parentIDs {
 				c, ok := bySpace[pid]
 				if !ok {
 					t.Fatalf("parent %v has no country ancestor (non-geo edge)", pid)
 				}
+
 				if c != country.ID {
 					t.Fatalf("parent %v resolves to a different country than geo_code %s", pid, tc.geoCode)
 				}
@@ -118,6 +124,7 @@ func TestLinkSpaceToPrimarySpaces_NoGeoCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LinkSpaceToPrimarySpaces: %v", err)
 	}
+
 	if len(parentIDs) == 0 || !primary.Valid {
 		t.Fatalf("expected fallback matcher to find primary parents")
 	}

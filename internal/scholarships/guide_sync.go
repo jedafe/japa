@@ -75,6 +75,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, contentID pgtype.UUID)
 			// projection row that may still reference it.
 			return s.deleteProjectionIfExists(ctx, contentID)
 		}
+
 		return fmt.Errorf("scholarships: sync from guide: get content: %w", err)
 	}
 
@@ -86,6 +87,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, contentID pgtype.UUID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("scholarships: sync from guide: check existing: %w", err)
 		}
+
 		if existing.GuideID.Valid {
 			if err := s.queries.DeleteScholarship(ctx,
 
@@ -93,8 +95,10 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, contentID pgtype.UUID)
 			); err != nil {
 				return fmt.Errorf("scholarships: sync from guide: delete stale projection: %w", err)
 			}
+
 			slog.Info("scholarships: deleted stale projection", "content_id", content.ID.String())
 		}
+
 		return nil
 	}
 
@@ -121,7 +125,9 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, contentID pgtype.UUID)
 		if err != nil {
 			return fmt.Errorf("scholarships: sync from guide: update: %w", err)
 		}
+
 		slog.Info("scholarships: synced guide to existing scholarship", "content_id", content.ID.String(), "scholarship_id", existing.ID.String())
+
 		return nil
 	}
 
@@ -131,7 +137,9 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, contentID pgtype.UUID)
 	if err != nil {
 		return fmt.Errorf("scholarships: sync from guide: create: %w", err)
 	}
+
 	slog.Info("scholarships: created scholarship from guide", "content_id", content.ID.String())
+
 	return nil
 }
 
@@ -147,6 +155,7 @@ func (s *Store) deleteProjectionIfExists(ctx context.Context, guideID pgtype.UUI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
+
 		return fmt.Errorf("scholarships: sync from guide: check deleted guide: %w", err)
 	}
 
@@ -160,7 +169,9 @@ func (s *Store) deleteProjectionIfExists(ctx context.Context, guideID pgtype.UUI
 	); err != nil {
 		return fmt.Errorf("scholarships: sync from guide: delete projection for deleted guide: %w", err)
 	}
+
 	slog.Info("scholarships: deleted projection for deleted guide", "content_id", guideID.String())
+
 	return nil
 }
 
@@ -168,6 +179,7 @@ func isScholarshipGuideCategory(category *string) bool {
 	if category == nil {
 		return false
 	}
+
 	return *category == "scholarship"
 }
 
@@ -197,12 +209,14 @@ func (s *Store) loadGuideFields(ctx context.Context, contentID pgtype.UUID, fiel
 		if row.FieldKey == "" {
 			continue
 		}
+
 		if v := customFieldValueToString(row); v != "" {
 			fields[row.FieldKey] = v
 		}
 	}
 
 	mergeContentFieldValues(fields, fieldValues)
+
 	return fields, nil
 }
 
@@ -249,11 +263,13 @@ func customFieldValueToString(row gen.ListCustomFieldValuesWithDefsByEntityRow) 
 // joinInterfaceArray joins non-empty values in an interface slice.
 func joinInterfaceArray(arr []interface{}, sep string) string {
 	parts := make([]string, 0, len(arr))
+
 	for _, v := range arr {
 		if s := valueToString(v); s != "" {
 			parts = append(parts, s)
 		}
 	}
+
 	return strings.Join(parts, sep)
 }
 
@@ -274,6 +290,7 @@ func valueToString(v interface{}) string {
 			return strings.TrimSpace(s)
 		}
 	}
+
 	return ""
 }
 
@@ -313,6 +330,7 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 
 	p.GuideID = content.ID
 	p.Title = strings.TrimSpace(content.Title)
+
 	if p.Title == "" {
 		if name := fields["scholarship_name"]; name != "" {
 			p.Title = name
@@ -328,6 +346,7 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 		if len(trunc) > 500 {
 			trunc = trunc[:500]
 		}
+
 		p.Description = &trunc
 	}
 
@@ -336,6 +355,7 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 	} else {
 		p.SourceURL = "/guide/" + content.Slug
 	}
+
 	p.SourceType = "community"
 	p.TrustLevel = 4
 
@@ -353,9 +373,11 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 	if uni == "" {
 		uni = fields["institution_name"]
 	}
+
 	if uni == "" {
 		uni = fields["university"]
 	}
+
 	if uni = strings.TrimSpace(uni); uni != "" {
 		p.University = &uni
 	}
@@ -364,6 +386,7 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 	if lvl == "" {
 		lvl = strings.TrimSpace(fields["degree_level"])
 	}
+
 	if lvl != "" {
 		p.DegreeLevel = &lvl
 	}
@@ -386,6 +409,7 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 	if appURL == "" {
 		appURL = strings.TrimSpace(fields["application_url"])
 	}
+
 	if appURL != "" {
 		if _, ok := sanitizeScholarshipURL(appURL); !ok {
 			slog.Warn("scholarships: guide_sync quarantined invalid application_url", "value", appURL)
@@ -426,6 +450,7 @@ func (s *Store) resolveCountrySpaceID(ctx context.Context, countryCode string) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, nil
 		}
+
 		return pgtype.UUID{}, err
 	}
 
@@ -439,6 +464,7 @@ func firstFromList(s string) string {
 			return part
 		}
 	}
+
 	return ""
 }
 
@@ -447,14 +473,17 @@ func splitList(s string) []string {
 	if s == "" {
 		return nil
 	}
+
 	parts := strings.Split(s, ",")
 	out := make([]string, 0, len(parts))
+
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p != "" {
 			out = append(out, p)
 		}
 	}
+
 	return out
 }
 
@@ -503,6 +532,7 @@ func buildFundingJSON(fields fieldMap) []byte {
 	if err != nil || len(b) == 0 {
 		return []byte("{}")
 	}
+
 	return b
 }
 
@@ -524,6 +554,7 @@ func buildLanguageRequirementsJSON(v string) []byte {
 	if err != nil {
 		return []byte("{}")
 	}
+
 	return b
 }
 
@@ -532,6 +563,7 @@ func buildLanguageRequirementsJSON(v string) []byte {
 // will not clobber user-authored values.
 func buildEditorialOverrides(fields fieldMap) []byte {
 	overrides := map[string]bool{}
+
 	for key, value := range fields {
 		if value != "" && knownScholarshipFieldKeys[key] {
 			overrides[key] = true
@@ -542,11 +574,13 @@ func buildEditorialOverrides(fields fieldMap) []byte {
 	if err != nil || len(b) == 0 {
 		return []byte("{}")
 	}
+
 	return b
 }
 
 func parseDate(v string) pgtype.Date {
 	var d pgtype.Date
+
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return d
@@ -558,7 +592,9 @@ func parseDate(v string) pgtype.Date {
 			return d
 		}
 	}
+
 	slog.Warn("scholarships: guide_sync quarantined invalid application_deadline", "value", v)
+
 	return d
 }
 
@@ -571,6 +607,7 @@ func parseNumeric(v string) pgtype.Numeric {
 	if f, err := strconv.ParseFloat(v, 64); err == nil {
 		return float64ToNumeric(f)
 	}
+
 	return pgtype.Numeric{}
 }
 
@@ -619,6 +656,7 @@ func emptyIfNil(s []string) []string {
 	if s == nil {
 		return []string{}
 	}
+
 	return s
 }
 
@@ -646,6 +684,7 @@ func buildUpdateInput(p guideScholarshipParams, existing gen.Scholarship) Update
 		if s == "" {
 			return nil
 		}
+
 		return &s
 	}
 

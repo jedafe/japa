@@ -403,7 +403,6 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, visaCa
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListGuides(ctx, ListGuidesFilter{
-
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		ApplicantType:      applicantType,
@@ -655,7 +654,6 @@ func (s *Service) GenerateGuide(ctx context.Context, req GenerateGuideRequest) (
 	aiModel := "content_agent_v1"
 
 	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
-
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		ApplicantType:      applicantType,

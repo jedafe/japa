@@ -224,6 +224,7 @@ func (p *Processor) computeForPlatform(ctx context.Context) (int64, error) {
 	}
 
 	var total int64
+
 	var errs []error
 
 	// Error isolation: a failure in one entity type must not abort the

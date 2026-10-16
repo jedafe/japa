@@ -237,6 +237,7 @@ func isoBMFFBrandMIME(data []byte) string {
 	if len(data) < 12 || string(data[4:8]) != "ftyp" {
 		return ""
 	}
+
 	return bmffBrandMIME[string(data[8:12])]
 }
 
@@ -275,6 +276,7 @@ func CanonicalMIMEType(mimeType string) string {
 	if i := strings.IndexByte(normalized, ';'); i >= 0 {
 		normalized = strings.TrimSpace(normalized[:i])
 	}
+
 	if canonical, ok := mimeAlias[normalized]; ok {
 		return canonical
 	}
@@ -317,6 +319,7 @@ func VerifyMIMEType(fileBytes []byte, declaredMimeType string) (detectedType str
 		if brandMIME := isoBMFFBrandMIME(fileBytes); brandMIME != "" {
 			return detected, declaredMatchesBMFF(declared, brandMIME), nil
 		}
+
 		return detected, true, nil
 	}
 
@@ -398,6 +401,7 @@ func isExtAllowed(canonicalMIME, allowedCSV string) bool {
 		if ext == "" {
 			continue
 		}
+
 		if m, ok := ExtensionToMIME["."+ext]; ok && CanonicalMIMEType(m) == canonicalMIME {
 			return true
 		}

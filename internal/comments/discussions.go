@@ -123,7 +123,6 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 		title := "Discussing: " + blog.Title
 
 		thread, err := s.write.CreateContent(ctx, gen.CreateContentParams{
-
 			AuthorID:    userID,
 			ContentType: "discussion",
 			Title:       title,
@@ -145,7 +144,6 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 	}
 
 	link, err := s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
-
 		ContentID: contentID,
 		ThreadID:  threadID,
 	})
@@ -162,7 +160,6 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 
 // ListDiscussions handles GET /api/v1/content/{id}/discussions.
 func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
-
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")

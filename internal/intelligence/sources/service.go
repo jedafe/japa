@@ -153,6 +153,7 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 		arg.CrawlFrequency = string(CrawlFrequencyManual)
 		arg.CrawlFrequencyMins = 0
 	}
+
 	if arg.Status == nil || arg.Status == "" {
 		arg.Status = "active"
 	}
@@ -177,6 +178,7 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 	if len(arg.RobotsPolicy) == 0 {
 		arg.RobotsPolicy = []byte("{}")
 	}
+
 	if len(arg.ProviderConfig) == 0 {
 		arg.ProviderConfig = []byte("{}")
 	}
@@ -189,6 +191,7 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 		if strings.TrimSpace(base) == "" {
 			base = arg.Domain
 		}
+
 		slug := s.uniqueSlug(ctx, slugify(base))
 		arg.Slug = &slug
 	}
@@ -208,6 +211,7 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 	// Default (dedupe handles the overlap). It no-ops for disabled,
 	// non-active, and video_channel sources internally.
 	s.queueProbeVerify(ctx, src)
+
 	return src, nil
 }
 
@@ -439,6 +443,7 @@ func (s *Service) ApproveProposed(ctx context.Context, id, approvedBy pgtype.UUI
 	// writes probe_report + detected_methods and materializes the source's
 	// intel_source_channels rows. Fire-and-forget like the metadata queue.
 	s.queueProbeVerify(ctx, src)
+
 	return src, nil
 }
 
@@ -487,6 +492,7 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	if input.Name == "" {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: name", errpkg.ErrRequired)
 	}
+
 	if input.SourceURL == "" {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: source_url", errpkg.ErrRequired)
 	}
@@ -509,6 +515,7 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	if domain == "" {
 		domain = u.Hostname()
 	}
+
 	if domain == "" || strings.Contains(domain, ":") {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: invalid domain", errpkg.ErrInvalid)
 	}
@@ -520,6 +527,7 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	if len(categories) == 0 && input.Category != "" {
 		categories = NormalizeCategories([]string{input.Category})
 	}
+
 	if len(categories) == 0 {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("%w: categories", errpkg.ErrRequired)
 	}
@@ -541,6 +549,7 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	// defaults to publisher.
 	kind := SourceKind(input.SourceKind)
 	legacyVideoType := false
+
 	if input.SourceKind == "" {
 		switch input.SourceType {
 		case "video", "youtube":
@@ -550,9 +559,11 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 			kind = SourceKindPublisher
 		}
 	}
+
 	if !kind.IsValid() {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: unknown source_kind %q", errpkg.ErrInvalid, input.SourceKind)
 	}
+
 	if !kind.IsSubmittable() {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: source_kind %q is reserved for entity-backed sources", errpkg.ErrInvalid, input.SourceKind)
 	}
@@ -570,6 +581,7 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	// video:sync_channels poller picks up (kind-driven, replacing the old
 	// source_type-driven switch).
 	sourceType := "auto"
+
 	if kind == SourceKindChannelProfile {
 		if isVideoProviderHost(u.Hostname()) {
 			sourceType = string(SourceTypeVideoChannel)
@@ -612,12 +624,15 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 func NormalizeCategories(cats []string) []string {
 	out := make([]string, 0, len(cats))
 	seen := make(map[string]bool, len(cats))
+
 	for _, c := range cats {
 		c = strings.ToLower(strings.TrimSpace(c))
 		if c == "" || seen[c] {
 			continue
 		}
+
 		seen[c] = true
+
 		out = append(out, c)
 	}
 
@@ -684,9 +699,11 @@ func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories [
 	if rawURL == "" {
 		return Channel{}, false, fmt.Errorf("sources: oneshot: %w: url", errpkg.ErrRequired)
 	}
+
 	if !strings.Contains(rawURL, "://") {
 		rawURL = "https://" + rawURL
 	}
+
 	if err := validateChannelEntryURL(rawURL, CrawlMethodOneshot, ""); err != nil {
 		return Channel{}, false, fmt.Errorf("sources: oneshot: %w", err)
 	}
@@ -697,10 +714,13 @@ func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories [
 	}
 
 	cats := NormalizeCategories(categories)
+
 	var entityTypes []string
+
 	if len(cats) > 0 {
 		entityTypes = ResolveCategoryMap(nil, cats).EntityTypes
 	}
+
 	if entityHint != "" && !slices.Contains(entityTypes, entityHint) {
 		entityTypes = append([]string{entityHint}, entityTypes...)
 	}
@@ -718,6 +738,7 @@ func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories [
 	if err == nil {
 		return ch, true, nil
 	}
+
 	if !errors.Is(err, errpkg.ErrAlreadyExists) {
 		return Channel{}, false, fmt.Errorf("sources: oneshot: create channel: %w", err)
 	}
@@ -730,19 +751,22 @@ func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories [
 	if lerr != nil {
 		return Channel{}, false, fmt.Errorf("sources: oneshot: list channels: %w", lerr)
 	}
+
 	for _, c := range channels {
 		if c.EntryUrl == rawURL && c.CrawlMethod == string(CrawlMethodOneshot) {
 			if !c.Enabled {
 				if uerr := s.store.UpdateChannelEnabled(ctx, c.ID, true); uerr != nil {
 					return Channel{}, false, fmt.Errorf("sources: oneshot: re-enable channel: %w", uerr)
 				}
+
 				c.Enabled = true
 			}
+
 			return c, false, nil
 		}
 	}
 
-	return Channel{}, false, fmt.Errorf("sources: oneshot: channel exists but could not be loaded")
+	return Channel{}, false, errors.New("sources: oneshot: channel exists but could not be loaded")
 }
 
 // oneshotSource returns the shared system source, creating it on first
@@ -756,6 +780,7 @@ func (s *Service) oneshotSource(ctx context.Context) (Source, error) {
 	}
 
 	slug := oneshotSourceSlug
+
 	src, err := s.store.Create(ctx, gen.CreateIntelSourceParams{
 		Name:       oneshotSourceName,
 		Slug:       &slug,
@@ -792,6 +817,7 @@ func derefString(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }
 
@@ -799,6 +825,7 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, userID pgtype.UUID, ti
 	if title == nil || *title == "" {
 		return Source{}, fmt.Errorf("%w: name", errpkg.ErrRequired)
 	}
+
 	if sourceURL == nil || *sourceURL == "" {
 		return Source{}, fmt.Errorf("%w: source_url", errpkg.ErrRequired)
 	}
@@ -808,12 +835,14 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, userID pgtype.UUID, ti
 		s.queueMetadataFetch(ctx, existing)
 		return existing, nil
 	}
+
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Source{}, err
 	}
 
 	domain := ""
 	u, err := url.Parse(*sourceURL)
+
 	if err == nil && u.Host != "" {
 		domain = u.Host
 	}
@@ -844,6 +873,7 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, entityID, userID p
 	if name == "" {
 		return Source{}, fmt.Errorf("%w: name", errpkg.ErrRequired)
 	}
+
 	if slug == "" {
 		return Source{}, fmt.Errorf("%w: slug", errpkg.ErrRequired)
 	}
@@ -854,6 +884,7 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, entityID, userID p
 			s.queueMetadataFetch(ctx, existing)
 			return existing, nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return Source{}, err
 		}
@@ -861,6 +892,7 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, entityID, userID p
 
 	domain := ""
 	u, err := url.Parse(sourceURL)
+
 	if err == nil && u.Host != "" {
 		domain = u.Host
 	}
@@ -899,11 +931,13 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, userID pgtype.UUI
 		s.queueMetadataFetch(ctx, existing)
 		return existing, nil
 	}
+
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Source{}, err
 	}
 
 	domain := ""
+
 	if sourceURL != nil && *sourceURL != "" {
 		u, err := url.Parse(*sourceURL)
 		if err == nil && u.Host != "" {
@@ -939,19 +973,23 @@ func (s *Service) uniqueSlug(ctx context.Context, base string) string {
 	}
 
 	candidate := base
-	for i := 0; i < 100; i++ {
+
+	for i := range 100 {
 		if i > 0 {
 			candidate = fmt.Sprintf("%s-%d", base, i)
 		}
+
 		_, err := s.store.GetBySlug(ctx, candidate)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return candidate
 		}
+
 		if err != nil {
 			// On unexpected error, fall back to a UUID-suffixed slug.
 			return fmt.Sprintf("%s-%d", base, time.Now().Unix())
 		}
 	}
+
 	return fmt.Sprintf("%s-%d", base, time.Now().Unix())
 }
 
@@ -967,13 +1005,15 @@ func (s *Service) ToggleSourceBlock(ctx context.Context, blockerID, sourceID pgt
 		if err := s.store.UnblockSource(ctx, blockerID, sourceID); err != nil {
 			return false, fmt.Errorf("sources: toggle block: unblock: %w", err)
 		}
+
 		return false, nil
 	}
 
 	_, err = s.store.BlockSource(ctx, blockerID, sourceID)
 	if err != nil {
-		return false, fmt.Errorf("sources: toggle block: block: %w", err)
+		return false, fmt.Errorf("sources: toggle block: %w", err)
 	}
+
 	return true, nil
 }
 
@@ -1007,12 +1047,15 @@ func (s *Service) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceCh
 	if arg.Pipeline == "" {
 		arg.Pipeline = string(defaultChannelPipeline(CrawlMethod(arg.CrawlMethod)))
 	}
+
 	if arg.RelevanceMode == "" {
 		arg.RelevanceMode = string(RelevanceFiltered)
 	}
+
 	if arg.Origin == "" {
 		arg.Origin = string(ChannelOriginAdmin)
 	}
+
 	if len(arg.ProviderConfig) == 0 {
 		arg.ProviderConfig = []byte("{}")
 	}
@@ -1024,12 +1067,15 @@ func (s *Service) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceCh
 	if arg.EntityTypes == nil {
 		arg.EntityTypes = []string{}
 	}
+
 	if arg.RelevanceTopics == nil {
 		arg.RelevanceTopics = []string{}
 	}
+
 	if arg.RelevanceUrlPatterns == nil {
 		arg.RelevanceUrlPatterns = []string{}
 	}
+
 	if arg.CrawlFrequencyMins <= 0 {
 		arg.CrawlFrequencyMins = 1440
 	}
@@ -1041,6 +1087,7 @@ func (s *Service) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceCh
 	// probe materialization on dev/test 127.0.0.1 sources depends on it);
 	// a literal on any other host is rejected (SSRF, final review C1c).
 	allowedLiteralHost := ""
+
 	if parent, err := s.Get(ctx, arg.SourceID); err == nil {
 		if u, uerr := url.Parse(parent.SourceUrl); uerr == nil {
 			allowedLiteralHost = u.Host
@@ -1087,6 +1134,7 @@ func (s *Service) UpdateChannel(ctx context.Context, arg gen.UpdateIntelSourceCh
 	if err != nil {
 		return Channel{}, err
 	}
+
 	if err := validateChannelUpdate(arg, CrawlMethod(existing.CrawlMethod)); err != nil {
 		return Channel{}, err
 	}

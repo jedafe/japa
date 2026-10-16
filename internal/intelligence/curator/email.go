@@ -46,6 +46,7 @@ func (Email) Curate(_ context.Context, body []byte, _ string, ch sources.Channel
 	if err := json.Unmarshal(body, &env); err != nil {
 		return nil, errors.New("curator: email: decode envelope: " + err.Error())
 	}
+
 	if env.Subject == "" && env.Text == "" {
 		// A blank delivery is noise, not a parse failure — no records, no
 		// review stub. The inbound event row already carries the audit trail.
@@ -63,6 +64,7 @@ func (Email) Curate(_ context.Context, body []byte, _ string, ch sources.Channel
 		if len(summary) > emailSummaryCap {
 			summary = summary[:emailSummaryCap]
 		}
+
 		field(ext, "summary", summary, text)
 		field(ext, "body", text, text)
 	}
@@ -70,6 +72,7 @@ func (Email) Curate(_ context.Context, body []byte, _ string, ch sources.Channel
 	if link := firstEmailLink(text); link != "" {
 		field(ext, "article_url", link, link)
 	}
+
 	if env.From != "" {
 		field(ext, "author", extractAuthorName(env.From), env.From)
 	}

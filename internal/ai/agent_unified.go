@@ -101,6 +101,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	// Resolve below would just create a fresh one). ---
 	if h.convos != nil && req.ConversationID != nil && req.ConversationID.Valid {
 		timeout := h.getIntSetting(ctx, "agent.timeout_seconds", defaultTimeoutSeconds)
+
 		busy, err := h.convos.HasRunningTurn(ctx, *req.ConversationID, userID, time.Now().Add(-time.Duration(timeout)*time.Second))
 		if err != nil {
 			slog.Warn("ai: conversation busy check failed, proceeding", "error", err)
@@ -159,6 +160,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	if effModel == "" {
 		effModel = h.getStringSetting(ctx, "ai.model.default.chat", "")
 	}
+
 	if effModel != "" && h.modelValidator != nil && !h.modelValidator(effModel, h.llmCategory) {
 		return nil, errInvalidModel
 	}
@@ -171,17 +173,20 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	// resolve → Resolve creates a new row). ---
 	if req.ProjectID != nil && req.ProjectID.Valid {
 		applies := true
+
 		if req.ConversationID != nil && req.ConversationID.Valid && h.convos != nil {
 			if _, err := h.convos.Get(ctx, userID, *req.ConversationID); err == nil {
 				applies = false
 			}
 		}
+
 		if applies {
 			// No projects service → can't validate ownership; fail closed
 			// rather than stamping an unchecked foreign id.
 			if h.projects == nil {
 				return nil, errProjectNotFound
 			}
+
 			if _, perr := h.projects.Get(ctx, userID, *req.ProjectID); perr != nil {
 				return nil, errProjectNotFound
 			}
@@ -192,9 +197,11 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	// appending the current user message, so runLoop can append it itself
 	// as the final user turn. ---
 	var conv gen.AiConversation
+
 	hasConv := false
 
 	var history []ChatMessage
+
 	msgCount := 0
 	userMsgPersisted := false
 
@@ -222,6 +229,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 			msgCount = int(n) // #nosec G115 -- message counts fit int
 		} else {
 			slog.Warn("ai: counting conversation messages", "conversation_id", conv.ID, "error", err)
+
 			msgCount = len(history)
 		}
 	}
@@ -236,6 +244,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 			if req.Context == nil {
 				req.Context = map[string]any{}
 			}
+
 			req.Context["project_instructions"] = instructions
 		}
 	}
@@ -270,11 +279,13 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 				session, err = h.createSession(ctx, userID, req.Prompt, geoSpaceID, preSearchResult.Level, convUUID, conv.ProjectID)
 			}
 		}
+
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 				return nil, errConversationBusy
 			}
+
 			return nil, fmt.Errorf("ai: creating agent session: %w", err)
 		}
 	}
@@ -327,9 +338,11 @@ func truncateRunes(s string, n int) string {
 	if n <= 0 {
 		return s
 	}
+
 	rs := []rune(s)
 	if len(rs) <= n {
 		return s
 	}
+
 	return string(rs[:n])
 }

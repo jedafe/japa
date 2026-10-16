@@ -31,7 +31,7 @@ import (
 )
 
 // WikiPageDTO is the API response shape for a wiki page (index listing).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type WikiPageDTO struct {
 	ID             string  `json:"id"`
 	SpaceID        string  `json:"space_id"`
@@ -80,7 +80,7 @@ type AdminWikiPageDTO struct {
 // Fields carries the page category's bound field group — schema + this
 // space's stored values — when the wiki type binds a group to the category
 // (§80 Wiki Types & Field-Group Pages).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type WikiPageDetailDTO struct {
 	WikiPageDTO
 	SpaceSlug       string          `json:"space_slug"`
@@ -152,7 +152,7 @@ type WikiPageDetailDTO struct {
 
 // WikiHelpfulDTO is the helpful-vote summary embedded in a page read and
 // returned by POST /wiki/:space/:page/feedback (§80 Reader UX).
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiHelpfulDTO struct {
 	Up     int64   `json:"up"`
 	Down   int64   `json:"down"`
@@ -162,7 +162,7 @@ type WikiHelpfulDTO struct {
 // WikiPageParentDTO is one segment of a page's ancestor chain — the
 // category stub and any template ancestors, ordered root → immediate
 // parent (§80 Wiki Topic Pages).
-// //nolint:revive // exported: DTO naming follows package convention
+// //nolint:revive // exported: DTO naming follows package convention.
 type WikiPageParentDTO struct {
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
@@ -173,7 +173,7 @@ type WikiPageParentDTO struct {
 // template ordering position. ParentTemplateID is the nesting edge (§80
 // Wiki Topic Pages) — the frontend groups children under their parent in
 // "More in this section" nav.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type WikiPageTemplateItemDTO struct {
 	Slug             string  `json:"slug"`
 	Label            string  `json:"label"`
@@ -192,6 +192,7 @@ func pageTemplateItems(templates []WikiPageTemplate, spaceName string) []WikiPag
 	}
 
 	out := make([]WikiPageTemplateItemDTO, 0, len(templates))
+
 	for _, tm := range templates {
 		item := WikiPageTemplateItemDTO{
 			Slug:       tm.Slug,
@@ -199,10 +200,12 @@ func pageTemplateItems(templates []WikiPageTemplate, spaceName string) []WikiPag
 			Position:   tm.Position,
 			TemplateID: tm.ID.String(),
 		}
+
 		if tm.ParentTemplateID.Valid {
 			pid := tm.ParentTemplateID.String()
 			item.ParentTemplateID = &pid
 		}
+
 		out = append(out, item)
 	}
 
@@ -210,7 +213,7 @@ func pageTemplateItems(templates []WikiPageTemplate, spaceName string) []WikiPag
 }
 
 // WikiDestinationDTO is the API response shape for a destination with wikis.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type WikiDestinationDTO struct {
 	SpaceID   string `json:"space_id"`
 	Slug      string `json:"slug"`
@@ -230,7 +233,7 @@ type WikiDestinationDTO struct {
 // field ops columns (kind/ops/target_*) are included so the admin review
 // queue can render a field-level diff and the entity revision history can
 // show structured edits.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type WikiRevisionDTO struct {
 	ID          string          `json:"id"`
 	Status      string          `json:"status"`
@@ -383,10 +386,12 @@ func (s *Service) currencyFx(ctx context.Context, localCode string) *CurrencyFxD
 	if s.fxRates == nil || localCode == "" {
 		return nil
 	}
+
 	rate, base, fetchedAt, stale, err := s.fxRates.BaseRate(ctx, localCode)
 	if err != nil {
 		return nil
 	}
+
 	return &CurrencyFxDTO{
 		Base:      base,
 		Rate:      rate,
@@ -534,12 +539,15 @@ func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, re
 			limit = 24
 		}
 	}
+
 	if limit < 0 {
 		limit = 0
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	if page < 1 {
 		page = 1
 	}
@@ -576,6 +584,7 @@ func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, re
 		if paginate {
 			dto.LogoURL = s.resolveLogoURL(ctx, d.LogoMediaID)
 		}
+
 		if d.GeoCode != nil {
 			dto.GeoCode = *d.GeoCode
 		}
@@ -653,7 +662,7 @@ func (s *Service) SubmitPageFeedback(ctx context.Context, userID pgtype.UUID, sp
 // pageFeedbackDTO aggregates a page's helpful votes for one viewer — a
 // best-effort read (nil on error or for lazy pages) so page GETs never fail
 // on the feedback table (§80 Reader UX).
-func (s *Service) pageFeedbackDTO(ctx context.Context, pageID pgtype.UUID, viewerID pgtype.UUID) *WikiHelpfulDTO {
+func (s *Service) pageFeedbackDTO(ctx context.Context, pageID, viewerID pgtype.UUID) *WikiHelpfulDTO {
 	counts, err := s.store.GetPageFeedbackCounts(ctx, pageID, viewerID)
 	if err != nil {
 		return nil
@@ -720,6 +729,7 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiInde
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
+
 	out.Kind = s.spaceKindValue(ctx, spaceID)
 
 	return out, nil
@@ -732,15 +742,18 @@ func (s *Service) spaceKindValue(ctx context.Context, spaceID pgtype.UUID) strin
 	if s.fields == nil {
 		return ""
 	}
+
 	vals, err := s.fields.ListFieldValuesWithDefsForEntities(ctx, "space", []pgtype.UUID{spaceID})
 	if err != nil {
 		return ""
 	}
+
 	for _, v := range vals {
 		if v.FieldKey == "kind" {
 			return selectValueJSON(v.ValueJson)
 		}
 	}
+
 	return ""
 }
 
@@ -752,10 +765,12 @@ func (s *Service) enqueueStubSeed(ctx context.Context, spaceID pgtype.UUID) {
 	if s.enqueuer == nil || !spaceID.Valid {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{"space_id": spaceID.String()})
 	if err != nil {
 		return
 	}
+
 	if err := s.enqueuer.Enqueue(TaskSeedStubPages, payload, asynq.Unique(time.Hour)); err != nil &&
 		!errors.Is(err, asynq.ErrDuplicateTask) {
 		slog.Warn("wiki: lazy seed_stub_pages enqueue failed", "space_id", spaceID.String(), "error", err)
@@ -787,6 +802,7 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
+
 	out.Kind = s.spaceKindValue(ctx, spaceID)
 
 	return out, nil
@@ -841,6 +857,7 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 				lazy.SpaceCurrencyCode = spaceCurrency
 				lazy.SpaceCurrencyFx = s.currencyFx(ctx, spaceCurrency)
 			}
+
 			return lazy, lerr
 		}
 
@@ -888,9 +905,13 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 	if cerr != nil && page.Category != pageSlug {
 		cat, cerr = s.store.GetCategoryForSpace(ctx, spaceID, pageSlug)
 	}
+
 	var catPtr *WikiCategory
+
 	var templates []WikiPageTemplate
+
 	var pageTmpl *WikiPageTemplate
+
 	if cerr == nil {
 		catPtr = &cat
 		dto.CategoryLabel = cat.Label
@@ -913,6 +934,7 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 					break
 				}
 			}
+
 			if pageTmpl == nil {
 				if t, terr := s.store.GetPageTemplate(ctx, page.PageTemplateID); terr == nil {
 					pageTmpl = &t
@@ -929,11 +951,13 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 
 		if groupID.Valid {
 			dto.FieldGroupID = groupID.String()
+
 			if s.fields != nil {
 				if g, gerr := s.fields.GetFieldGroup(ctx, groupID); gerr == nil {
 					dto.FieldGroupSlug = g.Slug
 				}
 			}
+
 			if grp, ferr := s.GetPageFields(ctx, userID, spaceID, groupID); ferr == nil && grp != nil {
 				dto.Fields = grp
 			} else if ferr != nil {
@@ -984,10 +1008,12 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
+
 	var parentTemplateID pgtype.UUID
 	if pageTmpl != nil {
 		parentTemplateID = pageTmpl.ParentTemplateID
 	}
+
 	dto.Siblings = s.getSiblings(ctx, spaceID, page.SpaceName, catPtr, page.Category, page.Slug, parentTemplateID, templates)
 
 	return dto, nil
@@ -1033,9 +1059,11 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 		Lazy:      true,
 	}
 	dto.PageTemplateID = tmpl.ID.String()
+
 	if tmpl.FieldGroupID.Valid {
 		dto.FieldGroupID = tmpl.FieldGroupID.String()
 	}
+
 	if tmpl.FieldGroupSlug != nil {
 		dto.FieldGroupSlug = *tmpl.FieldGroupSlug
 	}
@@ -1043,6 +1071,7 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 	// CategoryLabel mirrors the materialized path — the owning category's
 	// admin-set label, best-effort.
 	var catPtr *WikiCategory
+
 	if cat, cerr := s.store.GetWikiTypeCategory(ctx, tmpl.CategoryID); cerr == nil {
 		cat := cat
 		catPtr = &cat
@@ -1072,6 +1101,7 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 	// section per child template; the topic page itself gains the
 	// category-stub→parent chain for breadcrumbs.
 	s.attachCompositeSections(ctx, userID, spaceID, spaceName, tmpl.FieldGroupID, &dto, childTemplates(templates, tmpl.ID))
+
 	if catPtr != nil {
 		wt := tmpl.WikiPageTemplate
 		dto.Parents = s.pageParents(ctx, catPtr, &wt, spaceName)
@@ -1080,6 +1110,7 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
+
 	dto.Siblings = s.getSiblings(ctx, spaceID, spaceName, catPtr, tmpl.CategoryToken, pageSlug, tmpl.ParentTemplateID, templates)
 
 	return dto, nil
@@ -1143,6 +1174,7 @@ func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.U
 		if cat.FieldGroupSlug != nil {
 			dto.FieldGroupSlug = *cat.FieldGroupSlug
 		}
+
 		if s.fields != nil {
 			if grp, ferr := s.GetPageFields(ctx, userID, spaceID, cat.FieldGroupID); ferr == nil && grp != nil {
 				dto.Fields = grp
@@ -1164,8 +1196,10 @@ func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.U
 	if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && rcfg.Mode == rollupModePages {
 		dto.Rollup = s.computePageRollup(ctx, userID, spaceID, spaceSlug, spaceName, rcfg, cat, templates)
 	}
+
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
+
 		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && rcfg.Mode != rollupModePages {
 			if rcfg.Mode == rollupModeDirectory {
 				dto.Directory = s.computeDirectory(ctx, spaceID, spaceTypeID, rcfg)
@@ -1235,16 +1269,18 @@ func (s *Service) GetRevisionHistory(ctx context.Context, viewerID pgtype.UUID, 
 	}
 
 	dtos := make([]WikiRevisionDTO, 0, len(revs))
+
 	for _, r := range revs {
 		dto := revisionToDTO(r)
 		// Redact unmoderated bodies on pending revisions for viewers who
 		// are neither the submitter nor a reviewer (BUG: public history
 		// previously exposed pending content to anonymous readers).
-		if r.Status == "pending" && !canReview && !(viewerID.Valid && r.SubmittedBy == viewerID) {
+		if r.Status == "pending" && !canReview && (!viewerID.Valid || r.SubmittedBy != viewerID) {
 			dto.Content = nil
 			dto.Ops = nil
 			dto.Summary = ""
 		}
+
 		dtos = append(dtos, dto)
 	}
 
@@ -1296,6 +1332,7 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 			// stub), then the revision attaches normally.
 			page, err = s.materializeLazyPage(ctx, spaceID, spaceSlug, spaceName, userID, pageSlug)
 		}
+
 		if err != nil {
 			return "", pgtype.UUID{}, false, err
 		}
@@ -1373,6 +1410,7 @@ func (s *Service) materializeLazyPage(ctx context.Context, spaceID pgtype.UUID, 
 		return s.createLazyBoundPage(ctx, spaceID, spaceSlug, spaceName, createdBy,
 			pageSlug, title, tmpl.CategoryToken, tmpl.ID, tmpl.FieldGroupID, tmpl.Position)
 	}
+
 	if !errors.Is(err, ErrWikiPageTemplateNotFound) {
 		return WikiPageWithSpace{}, fmt.Errorf("wiki: materialize page: resolve template: %w", err)
 	}
@@ -1388,6 +1426,7 @@ func (s *Service) materializeLazyPage(ctx context.Context, spaceID pgtype.UUID, 
 	}
 
 	title := substituteTemplateLabel(cat.Label, spaceName)
+
 	return s.createLazyBoundPage(ctx, spaceID, spaceSlug, spaceName, createdBy,
 		cat.Slug, title, cat.Category, pgtype.UUID{}, cat.FieldGroupID, cat.Position)
 }
@@ -1647,6 +1686,7 @@ func (s *Service) ApprovedPageContent(ctx context.Context, pageID pgtype.UUID) (
 	if err != nil {
 		return nil, err
 	}
+
 	return rev.Content, nil
 }
 
@@ -1686,9 +1726,11 @@ func (s *Service) onPageLifecycle(ctx context.Context, pageID pgtype.UUID) {
 				slog.Warn("wiki: page index state check failed, purging embeddings",
 					"page_id", pageID.String(), "error", err)
 			}
+
 			if pErr := s.rag.PurgeEntity(ctx, "wiki_page", pageID); pErr != nil {
 				slog.Warn("wiki: RAG purge failed", "page_id", pageID.String(), "error", pErr)
 			}
+
 			return
 		}
 
@@ -1696,6 +1738,7 @@ func (s *Service) onPageLifecycle(ctx context.Context, pageID pgtype.UUID) {
 			if err := s.rag.PurgeEntity(ctx, "wiki_page", pageID); err != nil {
 				slog.Warn("wiki: RAG purge failed", "page_id", pageID.String(), "error", err)
 			}
+
 			return
 		}
 
@@ -1705,8 +1748,10 @@ func (s *Service) onPageLifecycle(ctx context.Context, pageID pgtype.UUID) {
 				slog.Warn("wiki: approved content fetch for re-index failed",
 					"page_id", pageID.String(), "error", err)
 			}
+
 			return
 		}
+
 		if len(content) == 0 {
 			return
 		}
@@ -1722,6 +1767,7 @@ func (s *Service) onPageLifecycle(ctx context.Context, pageID pgtype.UUID) {
 		if err != nil {
 			slog.Warn("wiki: RAG re-index failed after lifecycle change",
 				"page_id", pageID.String(), "error", err)
+
 			if recErr := s.rag.RecordIndexFailure(ctx, "wiki_page", pageID, "index", err); recErr != nil {
 				slog.Warn("wiki: RAG index failure record failed",
 					"page_id", pageID.String(), "error", recErr)
@@ -1744,7 +1790,6 @@ func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destS
 	offset := (page - 1) * limit
 
 	pages, total, err := s.store.AdminListPages(ctx, AdminListPagesFilter{
-
 		SpaceID:    spaceID,
 		DestSlug:   destSlug,
 		Category:   category,
@@ -1788,6 +1833,7 @@ func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destS
 		if p.FieldGroupID.Valid {
 			dto.FieldGroupID = p.FieldGroupID.String()
 		}
+
 		dto.FieldGroupSlug = p.FieldGroupSlug
 		dto.FieldGroupName = p.FieldGroupName
 
@@ -1812,12 +1858,15 @@ func (s *Service) DeletePage(ctx context.Context, pageID pgtype.UUID, force bool
 	} else {
 		err = s.store.DeleteWikiPage(ctx, pageID)
 	}
+
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrPageNotDeleted) {
 			return err
 		}
+
 		return fmt.Errorf("wiki: delete page: %w", err)
 	}
+
 	return nil
 }
 
@@ -1832,12 +1881,15 @@ func (s *Service) DeleteRevision(ctx context.Context, revID pgtype.UUID, force b
 	} else {
 		err = s.store.DeleteWikiRevision(ctx, revID)
 	}
+
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrRevisionNotDeleted) {
 			return err
 		}
+
 		return fmt.Errorf("wiki: delete revision: %w", err)
 	}
+
 	return nil
 }
 
@@ -1979,6 +2031,7 @@ func revisionToDTO(r WikiRevision) WikiRevisionDTO {
 	if r.HitlReviewedBy.Valid {
 		dto.HitlReviewedBy = r.HitlReviewedBy.String()
 	}
+
 	dto.HitlReviewedAt = formatTs(r.HitlReviewedAt)
 	if r.HitlReviewNotes != nil {
 		dto.HitlReviewNotes = *r.HitlReviewNotes
@@ -2111,7 +2164,7 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 // ON CONFLICT DO NOTHING. Used by the wiki:seed_stub_pages Asynq task
 // handler.
 // // Ref: japaconnect-engineering/sections/80-destination-wiki.md
-// //	japaconnect-engineering/adr/ADR-088-destination-wiki.md
+// //	japaconnect-engineering/adr/ADR-088-destination-wiki.md.
 func (s *Service) SeedStubPages(ctx context.Context, spaceID pgtype.UUID) error {
 	if !spaceID.Valid {
 		return errors.New("wiki: seed stub pages: space_id is required")
@@ -2182,7 +2235,7 @@ func (s *Service) EnqueueStubSeedFanOut(ctx context.Context) {
 // text, sanitized, and wrapped in a TipTap doc. If it is a JSON object, it
 // is validated as a TipTap doc and the text nodes are sanitized.
 // // Ref: japaconnect-engineering/sections/14-content-type-system.md
-// //	japaconnect-engineering/sections/05-authentication-sessions.md (XSS)
+// //	japaconnect-engineering/sections/05-authentication-sessions.md (XSS).
 func normalizeWikiContent(raw json.RawMessage) (json.RawMessage, error) {
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {

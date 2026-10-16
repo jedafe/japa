@@ -280,6 +280,46 @@ func (q *Queries) CreateBroadcastNotifications(ctx context.Context, arg CreateBr
 	return err
 }
 
+const createScheduledBroadcast = `-- name: CreateScheduledBroadcast :one
+INSERT INTO admin_broadcasts (title, body, sent_by, scheduled_at, target, target_id)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id
+`
+
+type CreateScheduledBroadcastParams struct {
+	Title       string             `json:"title"`
+	Body        string             `json:"body"`
+	SentBy      pgtype.UUID        `json:"sent_by"`
+	ScheduledAt pgtype.Timestamptz `json:"scheduled_at"`
+	Target      string             `json:"target"`
+	TargetID    pgtype.UUID        `json:"target_id"`
+}
+
+// §35 scheduled broadcasts (000870)
+func (q *Queries) CreateScheduledBroadcast(ctx context.Context, arg CreateScheduledBroadcastParams) (AdminBroadcast, error) {
+	row := q.db.QueryRow(ctx, createScheduledBroadcast,
+		arg.Title,
+		arg.Body,
+		arg.SentBy,
+		arg.ScheduledAt,
+		arg.Target,
+		arg.TargetID,
+	)
+	var i AdminBroadcast
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Body,
+		&i.SentBy,
+		&i.SentAt,
+		&i.RecipientCount,
+		&i.ScheduledAt,
+		&i.Target,
+		&i.TargetID,
+	)
+	return i, err
+}
+
 const createUserBan = `-- name: CreateUserBan :exec
 
 INSERT INTO user_moderation_actions (user_id, action, reason, expires_at, created_at) VALUES ($1, 'ban', $2, CASE WHEN $3 > 0 THEN now() + ($3 || ' days')::interval ELSE NULL END, now())
@@ -525,18 +565,27 @@ ORDER BY sent_at DESC
 LIMIT 50
 `
 
+type ListAdminBroadcastsRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Title          string             `json:"title"`
+	Body           string             `json:"body"`
+	SentBy         pgtype.UUID        `json:"sent_by"`
+	SentAt         pgtype.Timestamptz `json:"sent_at"`
+	RecipientCount int32              `json:"recipient_count"`
+}
+
 // =====================
 // Broadcasts
 // =====================
-func (q *Queries) ListAdminBroadcasts(ctx context.Context) ([]AdminBroadcast, error) {
+func (q *Queries) ListAdminBroadcasts(ctx context.Context) ([]ListAdminBroadcastsRow, error) {
 	rows, err := q.db.Query(ctx, listAdminBroadcasts)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AdminBroadcast
+	var items []ListAdminBroadcastsRow
 	for rows.Next() {
-		var i AdminBroadcast
+		var i ListAdminBroadcastsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -600,6 +649,43 @@ func (q *Queries) ListDeletedContents(ctx context.Context, limit int32) ([]ListD
 			&i.CreatedAt,
 			&i.Username,
 			&i.DisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDueScheduledBroadcasts = `-- name: ListDueScheduledBroadcasts :many
+SELECT id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id FROM admin_broadcasts
+WHERE scheduled_at IS NOT NULL AND sent_at IS NULL AND scheduled_at <= now()
+ORDER BY scheduled_at
+LIMIT 50
+`
+
+func (q *Queries) ListDueScheduledBroadcasts(ctx context.Context) ([]AdminBroadcast, error) {
+	rows, err := q.db.Query(ctx, listDueScheduledBroadcasts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminBroadcast
+	for rows.Next() {
+		var i AdminBroadcast
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Body,
+			&i.SentBy,
+			&i.SentAt,
+			&i.RecipientCount,
+			&i.ScheduledAt,
+			&i.Target,
+			&i.TargetID,
 		); err != nil {
 			return nil, err
 		}
@@ -801,6 +887,22 @@ func (q *Queries) ListUserWarnings(ctx context.Context, userID pgtype.UUID) ([]L
 		return nil, err
 	}
 	return items, nil
+}
+
+const markBroadcastSent = `-- name: MarkBroadcastSent :exec
+UPDATE admin_broadcasts
+SET sent_at = now(), recipient_count = $2
+WHERE id = $1
+`
+
+type MarkBroadcastSentParams struct {
+	ID             pgtype.UUID `json:"id"`
+	RecipientCount int32       `json:"recipient_count"`
+}
+
+func (q *Queries) MarkBroadcastSent(ctx context.Context, arg MarkBroadcastSentParams) error {
+	_, err := q.db.Exec(ctx, markBroadcastSent, arg.ID, arg.RecipientCount)
+	return err
 }
 
 const moderateContentReport = `-- name: ModerateContentReport :exec

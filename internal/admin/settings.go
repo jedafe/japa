@@ -741,6 +741,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		settings := make([]SettingDef, 0, len(def.Settings))
+
 		for _, s := range def.Settings {
 			// Hidden settings stay writable via UpdateSettings but are managed
 			// on a dedicated admin surface — omit them from this response.
@@ -760,6 +761,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 					s.Value = val
 				}
 			}
+
 			settings = append(settings, s)
 		}
 
@@ -783,6 +785,7 @@ func isCurrencySetting(category, key string) bool {
 	case "wallet":
 		return key == "default_currency" // wallet.default_currency
 	}
+
 	return false
 }
 
@@ -794,10 +797,12 @@ func (h *Handlers) currencySettingCodes(ctx context.Context) []string {
 	if err != nil || len(currencies) == 0 {
 		return nil
 	}
+
 	codes := make([]string, 0, len(currencies))
 	for _, c := range currencies {
 		codes = append(codes, c.Code)
 	}
+
 	return codes
 }
 
@@ -881,6 +886,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 				if b, ok := value.(bool); ok {
 					want = b
 				}
+
 				if want && (h.RBAC == nil || !h.RBAC.IsSuperAdmin(ctx, actor.UserID)) {
 					errpkg.WriteError(w, http.StatusForbidden, "super_admin_required", "Approving custom JS requires super_admin")
 					return
@@ -931,12 +937,16 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		for k := range pending {
 			keys = append(keys, k)
 		}
+
 		meta, _ := json.Marshal(map[string]any{"category": category, "keys": keys})
 		ip := clientip.FromRequest(r)
+
 		var ipArg any
+
 		if ip != "" {
 			ipArg = ip
 		}
+
 		if _, err := h.DB.Writer.Exec(ctx, `
 			INSERT INTO audit_logs (actor_user_id, action_type, target_type, metadata, ip_address)
 			VALUES ($1, 'admin.settings.update', 'system_setting', $2::jsonb, $3::inet)

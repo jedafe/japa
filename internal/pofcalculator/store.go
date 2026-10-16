@@ -77,6 +77,7 @@ const reqSelect = `
 
 func scanRequirements(rows pgx.Rows) ([]RequirementRow, error) {
 	var out []RequirementRow
+
 	for rows.Next() {
 		var r RequirementRow
 		if err := rows.Scan(&r.ID, &r.DestinationSpaceID, &r.DestinationSpaceName, &r.DestinationSpaceCode,
@@ -87,8 +88,10 @@ func scanRequirements(rows pgx.Rows) ([]RequirementRow, error) {
 			&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
+
 		out = append(out, r)
 	}
+
 	return out, rows.Err()
 }
 
@@ -96,22 +99,27 @@ func scanRequirements(rows pgx.Rows) ([]RequirementRow, error) {
 // destination and/or visa type. Public.
 func (s *Store) ListRequirements(ctx context.Context, destSpaceID pgtype.UUID, visaType string) ([]RequirementRow, error) {
 	q := reqSelect + ` WHERE p.status = 'published' AND p.is_active`
+
 	args := []any{}
 	if destSpaceID.Valid {
 		args = append(args, destSpaceID)
 		q += ` AND p.destination_space_id = $` + n(len(args))
 	}
+
 	if visaType != "" {
 		args = append(args, visaType)
 		q += ` AND p.visa_type = $` + n(len(args))
 	}
+
 	q += ` ORDER BY s.name, p.visa_type, p.program_label`
 
 	rows, err := s.pool.Reader.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
+
 	return scanRequirements(rows)
 }
 
@@ -128,13 +136,16 @@ func (s *Store) DistinctVisaTypes(ctx context.Context, destSpaceID pgtype.UUID) 
 	defer rows.Close()
 
 	var out []string
+
 	for rows.Next() {
 		var v string
 		if err := rows.Scan(&v); err != nil {
 			return nil, err
 		}
+
 		out = append(out, v)
 	}
+
 	return out, rows.Err()
 }
 
@@ -144,6 +155,7 @@ func (s *Store) DistinctVisaTypes(ctx context.Context, destSpaceID pgtype.UUID) 
 func (s *Store) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UUID, visaType, status, q, sort, order string, page, limit int32) ([]RequirementRow, int64, error) {
 	where := ` WHERE true`
 	args := []any{}
+
 	add := func(cond string, v any) {
 		args = append(args, v)
 		where += ` AND ` + cond + ` = $` + n(len(args))
@@ -151,12 +163,15 @@ func (s *Store) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UU
 	if destSpaceID.Valid {
 		add(`p.destination_space_id`, destSpaceID)
 	}
+
 	if visaType != "" {
 		add(`p.visa_type`, visaType)
 	}
+
 	if status != "" {
 		add(`p.status`, status)
 	}
+
 	if q != "" {
 		args = append(args, q)
 		where += ` AND (p.program_label ILIKE '%' || $` + n(len(args)) + ` || '%' OR p.visa_type ILIKE '%' || $` + n(len(args)) + ` || '%')`
@@ -171,23 +186,28 @@ func (s *Store) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UU
 	// Sort: whitelist of allowed columns to prevent SQL injection via
 	// user-supplied sort param (geo-aware-tool-pattern.md admin list).
 	orderClause := "p.updated_at DESC"
+
 	if col, ok := adminSortColumn(sort); ok {
 		dir := "DESC"
 		if strings.EqualFold(order, "asc") {
 			dir = "ASC"
 		}
+
 		orderClause = col + " " + dir
 	}
 
 	args = append(args, limit, (page-1)*limit)
+
 	rows, err := s.pool.Reader.Query(ctx,
 		reqSelect+where+` ORDER BY `+orderClause+` LIMIT $`+n(len(args)-1)+` OFFSET $`+n(len(args)), args...)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	defer rows.Close()
 
 	reqs, err := scanRequirements(rows)
+
 	return reqs, total, err
 }
 
@@ -213,6 +233,7 @@ func adminSortColumn(key string) (string, bool) {
 	case "updated_at":
 		return "p.updated_at", true
 	}
+
 	return "", false
 }
 
@@ -229,6 +250,7 @@ func (s *Store) CreateRequirement(ctx context.Context, r RequirementRow) (pgtype
 		r.DestinationSpaceID, r.VisaType, r.ProgramLabel, r.AmountSchedule,
 		r.Currency, r.FundsMustBeLiquid, r.AcceptedProof, r.Notes,
 		r.EffectiveDate, strOrEmpty(r.SourceURL), r.Status, r.AIGenerated).Scan(&id)
+
 	return id, err
 }
 
@@ -258,9 +280,11 @@ func (s *Store) UpdateRequirement(ctx context.Context, id pgtype.UUID, r Require
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -276,9 +300,11 @@ func (s *Store) ApproveRequirement(ctx context.Context, id, reviewerID pgtype.UU
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -290,12 +316,14 @@ func n(i int) string {
 	}
 	// positional params are small ints; format without strconv import churn
 	digits := [4]byte{}
+
 	p := len(digits)
 	for i > 0 {
 		p--
 		digits[p] = byte('0' + i%10)
 		i /= 10
 	}
+
 	return string(digits[p:])
 }
 
@@ -303,6 +331,7 @@ func strOrEmpty(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }
 
@@ -310,6 +339,7 @@ func nullBytes(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
+
 	return b
 }
 
@@ -317,6 +347,7 @@ func nullDate(d pgtype.Date) any {
 	if !d.Valid {
 		return nil
 	}
+
 	return d
 }
 
@@ -324,6 +355,7 @@ func nullUUID(u pgtype.UUID) any {
 	if !u.Valid {
 		return nil
 	}
+
 	return u
 }
 
@@ -334,14 +366,18 @@ func (s *Store) GetRequirement(ctx context.Context, id pgtype.UUID) (Requirement
 	if err != nil {
 		return RequirementRow{}, err
 	}
+
 	defer rows.Close()
+
 	out, err := scanRequirements(rows)
 	if err != nil {
 		return RequirementRow{}, err
 	}
+
 	if len(out) == 0 {
 		return RequirementRow{}, pgx.ErrNoRows
 	}
+
 	return out[0], nil
 }
 
@@ -354,9 +390,11 @@ func (s *Store) DeleteRequirement(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -372,8 +410,10 @@ func (s *Store) RejectRequirement(ctx context.Context, id, reviewerID pgtype.UUI
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

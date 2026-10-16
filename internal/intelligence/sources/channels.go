@@ -145,6 +145,7 @@ func validateChannelCreate(arg gen.CreateIntelSourceChannelParams, allowedLitera
 	if !arg.SourceID.Valid {
 		return fmt.Errorf("sources: channel: %w: source_id", errpkg.ErrRequired)
 	}
+
 	if arg.Label == "" {
 		return fmt.Errorf("sources: channel: %w: label", errpkg.ErrRequired)
 	}
@@ -162,6 +163,7 @@ func validateChannelCreate(arg gen.CreateIntelSourceChannelParams, allowedLitera
 	if !pipeline.IsValid() {
 		return fmt.Errorf("sources: channel: %w: unknown pipeline %q", errpkg.ErrInvalid, arg.Pipeline)
 	}
+
 	if pipelineRequiresEntityTypes(pipeline) && len(arg.EntityTypes) == 0 {
 		return fmt.Errorf("sources: channel: %w: entity_types required for %s pipeline", errpkg.ErrInvalid, pipeline)
 	}
@@ -169,6 +171,7 @@ func validateChannelCreate(arg gen.CreateIntelSourceChannelParams, allowedLitera
 	if !RelevanceMode(arg.RelevanceMode).IsValid() {
 		return fmt.Errorf("sources: channel: %w: unknown relevance_mode %q", errpkg.ErrInvalid, arg.RelevanceMode)
 	}
+
 	if !ChannelOrigin(arg.Origin).IsValid() {
 		return fmt.Errorf("sources: channel: %w: unknown origin %q", errpkg.ErrInvalid, arg.Origin)
 	}
@@ -241,6 +244,7 @@ func IsPrivateIP(ip net.IP) bool {
 		ip.IsLinkLocalMulticast() || ip.IsMulticast() {
 		return true
 	}
+
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
@@ -270,6 +274,7 @@ func validateChannelEntryURL(entryURL string, method CrawlMethod, allowedLiteral
 	if entryURL == "" {
 		return fmt.Errorf("sources: channel: %w: entry_url", errpkg.ErrRequired)
 	}
+
 	if InboundMethod(method) {
 		return nil
 	}
@@ -302,6 +307,7 @@ func validateChannelUpdate(arg gen.UpdateIntelSourceChannelParams, existingMetho
 		if label == "" {
 			return fmt.Errorf("sources: channel: %w: label must not be empty", errpkg.ErrInvalid)
 		}
+
 		*arg.Label = label
 	}
 
@@ -310,19 +316,23 @@ func validateChannelUpdate(arg gen.UpdateIntelSourceChannelParams, existingMetho
 		if entryURL == "" {
 			return fmt.Errorf("sources: channel: %w: entry_url", errpkg.ErrRequired)
 		}
+
 		method := existingMethod
 		if arg.CrawlMethod != nil {
 			method = CrawlMethod(*arg.CrawlMethod)
 		}
+
 		if !InboundMethod(method) {
 			u, err := url.Parse(entryURL)
 			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 				return fmt.Errorf("sources: channel: %w: entry_url must be an http(s) URL", errpkg.ErrInvalid)
 			}
+
 			if IsPrivateIPLiteral(u.Hostname()) {
 				return fmt.Errorf("sources: channel: %w: entry_url targets a private/reserved IP", errpkg.ErrInvalid)
 			}
 		}
+
 		*arg.EntryUrl = entryURL
 	}
 

@@ -213,7 +213,6 @@ func (s *Service) CreateWithdrawal(ctx context.Context, userID pgtype.UUID, inpu
 
 	// Re-read balance inside the lock.
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -234,7 +233,6 @@ func (s *Service) CreateWithdrawal(ctx context.Context, userID pgtype.UUID, inpu
 	reason := "credit withdrawal"
 
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationWithdraw,
@@ -250,7 +248,6 @@ func (s *Service) CreateWithdrawal(ctx context.Context, userID pgtype.UUID, inpu
 	}
 
 	withdrawal, err := qtx.InsertWithdrawal(ctx, gen.InsertWithdrawalParams{
-
 		UserID:         userID,
 		CreditAmount:   input.CreditAmount,
 		CurrencyCode:   calc.CurrencyCode,
@@ -297,7 +294,6 @@ func (s *Service) CreateWithdrawal(ctx context.Context, userID pgtype.UUID, inpu
 				reason := "payout initiation failed - refund"
 
 				_, lerr := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 					UserID:           userID,
 					LedgerType:       LedgerTypeCredits,
 					Operation:        OperationRefund,
@@ -708,7 +704,6 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, userID pgtype.UUI
 	qtx := s.store.write.WithTx(tx)
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -725,7 +720,6 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, userID pgtype.UUI
 	reason := "withdrawal payout failed - refund"
 
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationRefund,
@@ -780,7 +774,6 @@ func (s *Service) ReopenWithdrawalOnAppeal(ctx context.Context, withdrawalID pgt
 	}
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     withdrawal.UserID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -804,7 +797,6 @@ func (s *Service) ReopenWithdrawalOnAppeal(ctx context.Context, withdrawalID pgt
 	reason := "withdrawal rejection overturned on appeal - credits re-reserved"
 
 	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           withdrawal.UserID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationWithdraw,
@@ -835,7 +827,6 @@ func (s *Service) ListWithdrawals(ctx context.Context, userID pgtype.UUID, limit
 	}
 
 	return s.store.read.ListWithdrawalsByUser(ctx, gen.ListWithdrawalsByUserParams{
-
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -925,7 +916,6 @@ func (s *Service) CreateWithdrawalMethod(ctx context.Context, userID pgtype.UUID
 	}
 
 	method, err := qtx.InsertWithdrawalMethod(ctx, gen.InsertWithdrawalMethodParams{
-
 		UserID:       userID,
 		Provider:     input.Provider,
 		Label:        label,
@@ -977,7 +967,6 @@ func (s *Service) AdminListWithdrawals(ctx context.Context, status, userID strin
 	}
 
 	withdrawals, err := s.store.read.ListWithdrawals(ctx, gen.ListWithdrawalsParams{
-
 		Status:     statusArg,
 		UserID:     userIDArg,
 		PageLimit:  limit,
@@ -988,7 +977,6 @@ func (s *Service) AdminListWithdrawals(ctx context.Context, status, userID strin
 	}
 
 	count, err := s.store.read.CountWithdrawals(ctx, gen.CountWithdrawalsParams{
-
 		Status: statusArg,
 		UserID: userIDArg,
 	})

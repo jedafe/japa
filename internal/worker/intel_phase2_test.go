@@ -48,6 +48,7 @@ func TestIntelExpandManifest_FansOut(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create prev raw doc: %v", err)
 	}
+
 	curDoc, err := store.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID: src.ID, Url: ch.EntryUrl, HttpStatus: 200, HttpHeaders: []byte("{}"),
 		ContentType: strPtr(fetcher.ManifestContentType), Body: curBody, ContentHash: "hash-cur", ChannelID: ch.ID,
@@ -64,14 +65,17 @@ func TestIntelExpandManifest_FansOut(t *testing.T) {
 	}
 
 	var derived []intelChannelPayload
+
 	for _, ti := range tasks {
 		if ti.Type != TypeIntelFetchChannel {
 			continue
 		}
+
 		var p intelChannelPayload
 		if err := json.Unmarshal(ti.Payload, &p); err != nil {
 			t.Fatalf("payload decode: %v", err)
 		}
+
 		if p.ParentDocID != "" {
 			derived = append(derived, p)
 		}
@@ -80,13 +84,16 @@ func TestIntelExpandManifest_FansOut(t *testing.T) {
 	if len(derived) != 2 {
 		t.Fatalf("derived fetch tasks = %d, want 2 (changed /b, new /c)", len(derived))
 	}
+
 	for _, p := range derived {
 		if p.URLOverride == "" {
 			t.Errorf("derived payload missing url_override: %+v", p)
 		}
+
 		if p.ParentDocID != curDoc.ID.String() {
 			t.Errorf("parent_document_id = %q, want %q", p.ParentDocID, curDoc.ID.String())
 		}
+
 		if p.ChannelID != ch.ID.String() {
 			t.Errorf("channel_id = %q, want %q", p.ChannelID, ch.ID.String())
 		}
@@ -137,13 +144,16 @@ func TestIntelExpandManifest_SitemapIndexChildren(t *testing.T) {
 	if len(tasks) != 1 {
 		t.Fatalf("index manifest enqueued %d fetches, want 1", len(tasks))
 	}
+
 	var p intelChannelPayload
 	if err := json.Unmarshal(tasks[0].Payload, &p); err != nil {
 		t.Fatalf("payload decode: %v", err)
 	}
+
 	if !p.SitemapChild {
 		t.Errorf("index manifest child missing sitemap_child flag: %+v", p)
 	}
+
 	if p.URLOverride != "https://example.com/news-sitemap.xml" {
 		t.Errorf("url_override = %q, want member sitemap URL", p.URLOverride)
 	}
@@ -198,6 +208,7 @@ func TestIntelExpandManifest_DerivedUsesURLScopedPrev(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create prev child doc: %v", err)
 	}
+
 	curDoc, err := store.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID: src.ID, Url: childURL, HttpStatus: 200, HttpHeaders: []byte("{}"),
 		ContentType: strPtr(fetcher.ManifestContentType), Body: childBody,
@@ -240,9 +251,10 @@ func TestIntelExpandManifest_Cap(t *testing.T) {
 	}
 
 	var b []byte
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		b = append(b, []byte(fmt.Sprintf("https://example.com/p%d\t2024-01-01\n", i))...)
 	}
+
 	doc, err := store.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 		SourceID: src.ID, Url: ch.EntryUrl, HttpStatus: 200, HttpHeaders: []byte("{}"),
 		ContentType: strPtr("text/plain"), Body: b, ContentHash: "hash-x", ChannelID: ch.ID,
@@ -257,12 +269,15 @@ func TestIntelExpandManifest_Cap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list pending: %v", err)
 	}
+
 	count := 0
+
 	for _, ti := range tasks {
 		if ti.Type == TypeIntelFetchChannel {
 			count++
 		}
 	}
+
 	if count != 3 {
 		t.Fatalf("fan-out = %d, want provider_config.max_urls cap of 3", count)
 	}
@@ -304,9 +319,11 @@ func TestIntelSniffEndpoints(t *testing.T) {
 		// Non-JSON postData kept too — body + mime replay into the proposal.
 		{Method: "POST", URL: "https://api.example.com/v1/form", Body: []byte("q=visa&page=2"), BodyMime: "application/x-www-form-urlencoded"},
 	}
+
 	if len(got) != len(want) {
 		t.Fatalf("endpoints = %v, want %v", got, want)
 	}
+
 	for i := range want {
 		if got[i].Method != want[i].Method || got[i].URL != want[i].URL ||
 			string(got[i].Body) != string(want[i].Body) || got[i].BodyMime != want[i].BodyMime {
@@ -331,6 +348,7 @@ func TestIntelSniffProposalInput(t *testing.T) {
 		if err := json.Unmarshal(in.ProviderConfig, &cfg); err != nil {
 			t.Fatalf("provider_config decode: %v", err)
 		}
+
 		if string(cfg["body"]) != `{"q":"visa"}` {
 			t.Fatalf("body = %s, want posted JSON preserved", cfg["body"])
 		}
@@ -352,10 +370,12 @@ func TestIntelSniffProposalInput(t *testing.T) {
 		if err := json.Unmarshal(cfg["body"], &body); err != nil || body != "a=1&b=2" {
 			t.Fatalf("body = %s, want JSON-encoded string %q", cfg["body"], "a=1&b=2")
 		}
+
 		var headers map[string]string
 		if err := json.Unmarshal(cfg["headers"], &headers); err != nil {
 			t.Fatalf("headers decode: %v", err)
 		}
+
 		if headers["Content-Type"] != "application/x-www-form-urlencoded" {
 			t.Fatalf("Content-Type header = %q", headers["Content-Type"])
 		}
@@ -368,6 +388,7 @@ func TestIntelSniffProposalInput(t *testing.T) {
 		if err := json.Unmarshal(in.ProviderConfig, &cfg); err != nil {
 			t.Fatalf("provider_config decode: %v", err)
 		}
+
 		if _, present := cfg["body"]; present {
 			t.Fatal("GET proposal must not set provider_config.body")
 		}

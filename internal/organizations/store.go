@@ -62,7 +62,8 @@ func (s *Store) GetOrganizationBySlug(ctx context.Context, slug string) (gen.Org
 // ListOrganizations returns paginated organizations. deleted is ” (live
 // only), 'only' (soft-deleted), or 'all'.
 func (s *Store) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string, limit, offset int32) ([]gen.ListOrganizationsRow, error) {
-	return s.read.ListOrganizations(ctx, gen.ListOrganizationsParams{Column1: orgType, Column2: countryCode, Column3: search, Column4: verified, Limit: clampLimit(limit),
+	return s.read.ListOrganizations(ctx, gen.ListOrganizationsParams{
+		Column1: orgType, Column2: countryCode, Column3: search, Column4: verified, Limit: clampLimit(limit),
 		Offset:  offset,
 		Column7: deleted,
 	})
@@ -98,16 +99,20 @@ func (s *Store) HardDeleteOrganization(ctx context.Context, id pgtype.UUID) erro
 		if err != nil {
 			return fmt.Errorf("check organization exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		hasClaims, err := s.read.OrganizationHasOwnershipClaims(ctx, id)
 		if err != nil {
 			return fmt.Errorf("check organization claims: %w", err)
 		}
+
 		if hasClaims {
 			return errpkg.ErrInUse
 		}
+
 		return errpkg.ErrNotDeleted
 	}
 
@@ -143,7 +148,6 @@ func (s *Store) UpdateMemberRole(ctx context.Context, params gen.UpdateOrganizat
 // UpdateSourceID links an organization to its canonical intel_sources row.
 func (s *Store) UpdateSourceID(ctx context.Context, orgID, sourceID pgtype.UUID) error {
 	return s.write.UpdateOrganizationSourceID(ctx, gen.UpdateOrganizationSourceIDParams{
-
 		ID:       orgID,
 		SourceID: sourceID,
 	})
@@ -204,7 +208,6 @@ func (s *Store) GetInvitationByToken(ctx context.Context, tokenHash string) (gen
 // member's role projected through. Used by GET /me/organizations.
 func (s *Store) ListOrganizationsByMember(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListOrganizationsByMemberRow, error) {
 	return s.read.ListOrganizationsByMember(ctx, gen.ListOrganizationsByMemberParams{
-
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -218,7 +221,8 @@ func (s *Store) CreateOwnershipClaim(ctx context.Context, params gen.CreateOwner
 
 // ListOwnershipClaims returns paginated ownership claims.
 func (s *Store) ListOwnershipClaims(ctx context.Context, status string, limit, offset int32) ([]gen.ListOwnershipClaimsRow, error) {
-	return s.read.ListOwnershipClaims(ctx, gen.ListOwnershipClaimsParams{Column1: status, Limit: clampLimit(limit),
+	return s.read.ListOwnershipClaims(ctx, gen.ListOwnershipClaimsParams{
+		Column1: status, Limit: clampLimit(limit),
 		Offset: offset,
 	})
 }
@@ -310,7 +314,6 @@ func (s *Store) GetOrgOwnerPublicProfile(ctx context.Context, orgID pgtype.UUID)
 // ListPublicOrganizations is an exported method.
 func (s *Store) ListPublicOrganizations(ctx context.Context, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, error) {
 	return s.read.ListPublicOrganizations(ctx, gen.ListPublicOrganizationsParams{
-
 		Search:     search,
 		OrgType:    orgType,
 		Verified:   verified,
@@ -322,7 +325,6 @@ func (s *Store) ListPublicOrganizations(ctx context.Context, search, orgType, ve
 // CountPublicOrganizations is an exported method.
 func (s *Store) CountPublicOrganizations(ctx context.Context, search, orgType, verified string) (int64, error) {
 	return s.read.CountPublicOrganizations(ctx, gen.CountPublicOrganizationsParams{
-
 		Search:   search,
 		OrgType:  orgType,
 		Verified: verified,

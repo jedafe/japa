@@ -787,7 +787,7 @@ func (s *Service) selectAction(ctx context.Context, personaID pgtype.UUID, today
 // - target_entity_id: the polymorphic entity ID for follow/react/bookmark
 // - target_form_id: the form ID for form_submit
 // - reaction_key: the reaction key for react
-// - body: the AI-generated TipTap JSON body for content-bearing actions
+// - body: the AI-generated TipTap JSON body for content-bearing actions.
 type actionPayload struct {
 	ActionType       string          `json:"action_type"`
 	TargetContentID  string          `json:"target_content_id,omitempty"`

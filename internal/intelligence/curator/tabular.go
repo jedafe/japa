@@ -75,6 +75,7 @@ func (Tabular) Curate(_ context.Context, body []byte, contentType string, ch sou
 	if err != nil {
 		return nil, err
 	}
+
 	if len(rows) == 0 {
 		return nil, errors.New("curator: tabular: no data rows")
 	}
@@ -122,22 +123,26 @@ func readTabular(body []byte, contentType string, cfg tabularConfig) ([]string, 
 	}
 
 	var rows [][]string
+
 	for {
 		rec, err := r.Read()
 		if errors.Is(err, io.EOF) {
 			break
 		}
+
 		if err != nil {
 			return nil, nil, fmt.Errorf("curator: tabular: parse row %d: %w", len(rows), err)
 		}
 		// Skip fully blank rows.
 		blank := true
+
 		for _, cell := range rec {
 			if strings.TrimSpace(cell) != "" {
 				blank = false
 				break
 			}
 		}
+
 		if !blank {
 			rows = append(rows, rec)
 		}
@@ -182,6 +187,7 @@ func tabularRowToExtraction(headers, row []string, cfg tabularConfig, ch sources
 		}
 
 		col := headers[i]
+
 		value := strings.TrimSpace(cell)
 		if value == "" {
 			continue
@@ -201,6 +207,7 @@ func tabularRowToExtraction(headers, row []string, cfg tabularConfig, ch sources
 		if idx < 0 {
 			idx = 0
 		}
+
 		if idx < len(row) && strings.TrimSpace(row[idx]) != "" {
 			field(ext, "title", strings.TrimSpace(row[idx]), row[idx])
 		}
@@ -256,6 +263,7 @@ func tabularRowKey(headers, row []string, cfg tabularConfig) string {
 // shared `data` field's evidence string.
 func tabularRowEvidence(headers, row []string) string {
 	m := make(map[string]string, len(headers))
+
 	for i, h := range headers {
 		if i < len(row) {
 			m[h] = row[i]

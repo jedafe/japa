@@ -206,9 +206,11 @@ func TestIntelPromoterPortAdapter_MapsRouteToReview(t *testing.T) {
 	if !errors.As(err, &rte) {
 		t.Fatalf("err = %T %v, want *worker.RouteToReviewError", err, err)
 	}
+
 	if !errors.Is(err, promoter.ErrRouteToReview) {
 		t.Error("wrapped reason should still match promoter.ErrRouteToReview")
 	}
+
 	if !strings.Contains(err.Error(), "resolvable geo space") {
 		t.Errorf("detail lost in mapping: %v", err)
 	}
@@ -223,6 +225,7 @@ func TestIntelPromoterPortAdapter_PassesThroughOtherErrors(t *testing.T) {
 	if errors.As(err, &rte) {
 		t.Fatalf("infra error must not map to RouteToReviewError: %v", err)
 	}
+
 	if err == nil || err.Error() != "db down" {
 		t.Errorf("err = %v, want passthrough 'db down'", err)
 	}

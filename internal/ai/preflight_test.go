@@ -56,6 +56,7 @@ func (s *stubTierResolver) ResolveUserTier(ctx context.Context, userID pgtype.UU
 func validTestUserID() pgtype.UUID {
 	var id pgtype.UUID
 	_ = id.Scan("11111111-1111-1111-1111-111111111111")
+
 	return id
 }
 
@@ -68,7 +69,7 @@ func TestPreflight_CheckAdmission_FlagEnabled(t *testing.T) {
 
 	p := NewPreflight(&stubFeatureChecker{flags: map[string]bool{"feature.ai_content_gen": true}}, nil, nil, nil, nil)
 
-	if err := p.CheckAdmission(context.Background(), validTestUserID(), GateAssist); err != nil {
+	if err := p.CheckAdmission(t.Context(), validTestUserID(), GateAssist); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 }
@@ -78,7 +79,7 @@ func TestPreflight_CheckAdmission_FlagDisabled(t *testing.T) {
 
 	p := NewPreflight(&stubFeatureChecker{flags: map[string]bool{"feature.ai_content_gen": false}}, nil, nil, nil, nil)
 
-	err := p.CheckAdmission(context.Background(), validTestUserID(), GateAssist)
+	err := p.CheckAdmission(t.Context(), validTestUserID(), GateAssist)
 	if err == nil {
 		t.Fatal("expected disabled error, got nil")
 	}
@@ -100,7 +101,7 @@ func TestPreflight_CheckAdmission_NilCheckerFallsBackToSetting(t *testing.T) {
 	settings := &agentSettingsReader{bools: map[string]bool{"ai.content_assist_enabled": false}}
 	p := NewPreflight(nil, settings, nil, nil, nil)
 
-	err := p.CheckAdmission(context.Background(), validTestUserID(), GateAssist)
+	err := p.CheckAdmission(t.Context(), validTestUserID(), GateAssist)
 	if err == nil || err.Code != "ai_assist_disabled" {
 		t.Fatalf("expected ai_assist_disabled, got %v", err)
 	}
@@ -111,7 +112,7 @@ func TestPreflight_CheckAdmission_NilDepsOpen(t *testing.T) {
 
 	p := NewPreflight(nil, nil, nil, nil, nil)
 
-	if err := p.CheckAdmission(context.Background(), validTestUserID(), GateJapaBot); err != nil {
+	if err := p.CheckAdmission(t.Context(), validTestUserID(), GateJapaBot); err != nil {
 		t.Fatalf("nil deps should default open, got %v", err)
 	}
 }
@@ -124,7 +125,7 @@ func TestPreflight_CheckAdmission_FlagBeatsSetting(t *testing.T) {
 	settings := &agentSettingsReader{bools: map[string]bool{"ai.content_assist_enabled": false}}
 	p := NewPreflight(&stubFeatureChecker{flags: map[string]bool{"feature.ai_content_gen": true}}, settings, nil, nil, nil)
 
-	if err := p.CheckAdmission(context.Background(), validTestUserID(), GateAssist); err != nil {
+	if err := p.CheckAdmission(t.Context(), validTestUserID(), GateAssist); err != nil {
 		t.Fatalf("feature flag should beat the legacy setting, got %v", err)
 	}
 }
@@ -138,7 +139,7 @@ func TestPreflight_CheckConsent_Granted(t *testing.T) {
 
 	p := NewPreflight(nil, nil, &stubConsentChecker{granted: true}, nil, nil)
 
-	if err := p.CheckConsent(context.Background(), validTestUserID()); err != nil {
+	if err := p.CheckConsent(t.Context(), validTestUserID()); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -149,7 +150,7 @@ func TestPreflight_CheckConsent_Denied(t *testing.T) {
 	c := &stubConsentChecker{granted: false}
 	p := NewPreflight(nil, nil, c, nil, nil)
 
-	err := p.CheckConsent(context.Background(), validTestUserID())
+	err := p.CheckConsent(t.Context(), validTestUserID())
 	if err == nil {
 		t.Fatal("expected consent error, got nil")
 	}
@@ -168,7 +169,7 @@ func TestPreflight_CheckConsent_CheckerErrorFailsOpen(t *testing.T) {
 
 	p := NewPreflight(nil, nil, &stubConsentChecker{err: errors.New("gdpr store down")}, nil, nil)
 
-	if err := p.CheckConsent(context.Background(), validTestUserID()); err != nil {
+	if err := p.CheckConsent(t.Context(), validTestUserID()); err != nil {
 		t.Fatalf("checker error should fail open, got %v", err)
 	}
 }
@@ -178,7 +179,7 @@ func TestPreflight_CheckConsent_InvalidUserSkips(t *testing.T) {
 
 	p := NewPreflight(nil, nil, &stubConsentChecker{granted: false}, nil, nil)
 
-	if err := p.CheckConsent(context.Background(), pgtype.UUID{}); err != nil {
+	if err := p.CheckConsent(t.Context(), pgtype.UUID{}); err != nil {
 		t.Fatalf("invalid userID should skip consent, got %v", err)
 	}
 }
@@ -193,7 +194,7 @@ func TestPreflight_CheckBudget_UnderLimit(t *testing.T) {
 	rl := &stubRateLimiter{count: 0}
 	p := NewPreflight(nil, nil, nil, rl, &stubTierResolver{tier: "regular"})
 
-	if err := p.CheckBudget(context.Background(), validTestUserID()); err != nil {
+	if err := p.CheckBudget(t.Context(), validTestUserID()); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -213,7 +214,7 @@ func TestPreflight_CheckBudget_OverLimit(t *testing.T) {
 	rl := &stubRateLimiter{count: 2}
 	p := NewPreflight(nil, settings, nil, rl, &stubTierResolver{tier: "regular"})
 
-	err := p.CheckBudget(context.Background(), validTestUserID())
+	err := p.CheckBudget(t.Context(), validTestUserID())
 	if err == nil {
 		t.Fatal("expected rate-limit error, got nil")
 	}
@@ -231,7 +232,7 @@ func TestPreflight_CheckBudget_UnlimitedTier(t *testing.T) {
 	rl := &stubRateLimiter{count: 10000}
 	p := NewPreflight(nil, settings, nil, rl, &stubTierResolver{tier: "business"})
 
-	if err := p.CheckBudget(context.Background(), validTestUserID()); err != nil {
+	if err := p.CheckBudget(t.Context(), validTestUserID()); err != nil {
 		t.Fatalf("unlimited tier should pass, got %v", err)
 	}
 }
@@ -250,7 +251,7 @@ func TestPreflight_CheckBudget_UsesResolvedTier(t *testing.T) {
 	rl := &stubRateLimiter{count: 50}
 	p := NewPreflight(nil, settings, nil, rl, &stubTierResolver{tier: "pro"})
 
-	if err := p.CheckBudget(context.Background(), validTestUserID()); err != nil {
+	if err := p.CheckBudget(t.Context(), validTestUserID()); err != nil {
 		t.Fatalf("pro tier should allow 51 queries, got %v", err)
 	}
 }
@@ -262,7 +263,7 @@ func TestPreflight_CheckBudget_TierResolveErrorFallsToRegular(t *testing.T) {
 	rl := &stubRateLimiter{count: 2}
 	p := NewPreflight(nil, settings, nil, rl, &stubTierResolver{err: errors.New("no db")})
 
-	err := p.CheckBudget(context.Background(), validTestUserID())
+	err := p.CheckBudget(t.Context(), validTestUserID())
 	if err == nil || err.Code != "ai_daily_limit" {
 		t.Fatalf("tier failure should fall back to regular limits, got %v", err)
 	}
@@ -275,7 +276,7 @@ func TestPreflight_CheckBudget_CostCapExceeded(t *testing.T) {
 	rl := &stubRateLimiter{costVal: "5.25"}
 	p := NewPreflight(nil, settings, nil, rl, &stubTierResolver{tier: "business"})
 
-	err := p.CheckBudget(context.Background(), validTestUserID())
+	err := p.CheckBudget(t.Context(), validTestUserID())
 	if err == nil {
 		t.Fatal("expected cost-cap error, got nil")
 	}
@@ -292,7 +293,7 @@ func TestPreflight_CheckBudget_CostCapZeroDisabled(t *testing.T) {
 	rl := &stubRateLimiter{costVal: "9999.99"}
 	p := NewPreflight(nil, settings, nil, rl, &stubTierResolver{tier: "business"})
 
-	if err := p.CheckBudget(context.Background(), validTestUserID()); err != nil {
+	if err := p.CheckBudget(t.Context(), validTestUserID()); err != nil {
 		t.Fatalf("0 cost cap should be disabled, got %v", err)
 	}
 }
@@ -304,7 +305,7 @@ func TestPreflight_CheckBudget_ValkeyFailureFailsOpen(t *testing.T) {
 	rl := &stubRateLimiter{failIncr: true}
 	p := NewPreflight(nil, settings, nil, rl, &stubTierResolver{tier: "regular"})
 
-	if err := p.CheckBudget(context.Background(), validTestUserID()); err != nil {
+	if err := p.CheckBudget(t.Context(), validTestUserID()); err != nil {
 		t.Fatalf("valkey outage should fail open, got %v", err)
 	}
 }
@@ -314,7 +315,7 @@ func TestPreflight_CheckBudget_NilBudgetSkips(t *testing.T) {
 
 	p := NewPreflight(nil, nil, nil, nil, nil)
 
-	if err := p.CheckBudget(context.Background(), validTestUserID()); err != nil {
+	if err := p.CheckBudget(t.Context(), validTestUserID()); err != nil {
 		t.Fatalf("nil budget client should skip, got %v", err)
 	}
 }
@@ -329,7 +330,7 @@ func TestPreflight_RecordCost_Accumulates(t *testing.T) {
 	rl := &stubRateLimiter{}
 	p := NewPreflight(nil, nil, nil, rl, nil)
 
-	p.RecordCost(context.Background(), validTestUserID(), 0.0123)
+	p.RecordCost(t.Context(), validTestUserID(), 0.0123)
 
 	if !rl.expired {
 		t.Error("first accumulation should set the daily TTL")
@@ -342,7 +343,7 @@ func TestPreflight_RecordCost_NonPositiveNoop(t *testing.T) {
 	rl := &stubRateLimiter{failIncr: true} // would error if called
 	p := NewPreflight(nil, nil, nil, rl, nil)
 
-	p.RecordCost(context.Background(), validTestUserID(), 0)
+	p.RecordCost(t.Context(), validTestUserID(), 0)
 	// no panic / no-op — pass
 }
 
@@ -480,7 +481,8 @@ func TestAssistImproveHandler_NotConfigured(t *testing.T) {
 	t.Parallel()
 
 	handler := AssistImproveHandler(&ToolDeps{})
-	res, err := handler(context.Background(), nil, validTestUserID())
+
+	res, err := handler(t.Context(), nil, validTestUserID())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -507,7 +509,8 @@ func TestAssistImproveHandler_Success(t *testing.T) {
 	}
 
 	handler := AssistImproveHandler(&ToolDeps{Assist: runner})
-	res, err := handler(context.Background(), json.RawMessage(`{"text":"rough draft","tone":"casual"}`), validTestUserID())
+
+	res, err := handler(t.Context(), json.RawMessage(`{"text":"rough draft","tone":"casual"}`), validTestUserID())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -527,7 +530,8 @@ func TestAssistImproveHandler_ValidationError(t *testing.T) {
 	}
 
 	handler := AssistImproveHandler(&ToolDeps{Assist: runner})
-	res, err := handler(context.Background(), json.RawMessage(`{}`), validTestUserID())
+
+	res, err := handler(t.Context(), json.RawMessage(`{}`), validTestUserID())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -541,7 +545,8 @@ func TestAssistImproveHandler_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	handler := AssistImproveHandler(&ToolDeps{Assist: &stubAssistRunner{}})
-	res, err := handler(context.Background(), json.RawMessage(`{bad`), validTestUserID())
+
+	res, err := handler(t.Context(), json.RawMessage(`{bad`), validTestUserID())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

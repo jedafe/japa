@@ -79,6 +79,7 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 			slog.Warn("task:intel:source_metadata: source not found", "source_id", p.SourceID)
 			return nil
 		}
+
 		return fmt.Errorf("task:intel:source_metadata: get source: %w", err)
 	}
 
@@ -89,7 +90,6 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 	}
 
 	params := gen.UpdateIntelSourceMetadataParams{
-
 		ID: sourceID,
 	}
 
@@ -121,6 +121,7 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:intel:source_metadata: updated", "source_id", p.SourceID)
+
 	return nil
 }
 
@@ -132,15 +133,18 @@ func fetchSourcePreview(ctx context.Context, fetcher SourceLinkPreviewer, src ge
 		if err == nil {
 			return preview, true
 		}
+
 		slog.Debug("task:intel:source_metadata: source_url preview failed; trying domain", "source_id", src.ID.String(), "source_url", src.SourceUrl, "error", err)
 	}
 
 	if src.Domain != "" {
 		pageURL := "https://" + src.Domain
+
 		preview, err := fetcher.Fetch(ctx, pageURL)
 		if err == nil {
 			return preview, true
 		}
+
 		slog.Debug("task:intel:source_metadata: domain preview failed", "source_id", src.ID.String(), "url", pageURL, "error", err)
 	}
 
@@ -155,5 +159,6 @@ func (e *Enqueuer) EnqueueSourceMetadata(sourceID string) error {
 	if err != nil {
 		return err
 	}
+
 	return e.Enqueue(TypeIntelSourceMetadata, payload)
 }

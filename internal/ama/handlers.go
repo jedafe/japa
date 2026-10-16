@@ -134,7 +134,6 @@ func parseCursor(r *http.Request) pgtype.Timestamptz {
 // Supports the geo-aware ?dest= and ?profession= filters (§88 / §§79–101)
 // and cursor-based pagination (?page_size=, ?cursor_created_at=).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	dest := r.URL.Query().Get("dest")
 	profession := r.URL.Query().Get("profession")
 	pageSize := parsePageSize(r)
@@ -142,12 +141,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 
 	var dtos []AMAThreadDTO
+
 	var err error
 	if status == "closed" {
 		dtos, err = h.service.ListClosed(r.Context(), dest, profession, pageSize, cursor)
 	} else {
 		dtos, err = h.service.ListActive(r.Context(), dest, profession, pageSize, cursor)
 	}
+
 	if err != nil {
 		slog.Error("ama: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list AMA sessions")
@@ -162,7 +163,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /forum/ama/:id — single AMA thread.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	threadID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -267,7 +267,9 @@ func handleCreateError(w http.ResponseWriter, err error) {
 		if activeErr.SessionID.Valid {
 			data["session_id"] = activeErr.SessionID.String()
 		}
+
 		errpkg.WriteErrorData(w, http.StatusConflict, "ama_active_exists", "You already have an active AMA session.", data)
+
 		return
 	}
 
@@ -277,7 +279,9 @@ func handleCreateError(w http.ResponseWriter, err error) {
 		if !cooldownErr.RetryAt.IsZero() {
 			data["retry_after"] = cooldownErr.RetryAt.UTC().Format(time.RFC3339)
 		}
+
 		errpkg.WriteErrorData(w, http.StatusTooManyRequests, "ama_cooldown", "The AMA cooldown period has not elapsed.", data)
+
 		return
 	}
 

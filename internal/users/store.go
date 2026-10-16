@@ -47,7 +47,6 @@ func (s *Store) SetContentCountryPreference(ctx context.Context, userID pgtype.U
 	}
 
 	return s.write.SetUserContentCountryPreference(ctx, gen.SetUserContentCountryPreferenceParams{
-
 		UserID:                   userID,
 		ContentCountryPreference: pref,
 	})
@@ -257,7 +256,6 @@ func (s *Store) getPublicProfileByUsername(ctx context.Context, username string)
 // upsertProfile inserts or updates the user profile.
 func (s *Store) upsertProfile(ctx context.Context, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string, avatarMediaID, headerMediaID pgtype.UUID) error {
 	if err := s.write.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-
 		UserID:        userID,
 		DisplayName:   displayName,
 		AvatarUrl:     avatarURL,
@@ -291,7 +289,6 @@ func (s *Store) getProfileForUpdateTx(ctx context.Context, q *gen.Queries, userI
 // upsertProfileTx is the transaction-scoped variant of upsertProfile.
 func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string, avatarMediaID, headerMediaID pgtype.UUID) error {
 	if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-
 		UserID:        userID,
 		DisplayName:   displayName,
 		AvatarUrl:     avatarURL,
@@ -363,7 +360,6 @@ func (s *Store) getPreferences(ctx context.Context, userID pgtype.UUID) (gen.Use
 // upsertPreferences inserts or updates user preferences.
 func (s *Store) upsertPreferences(ctx context.Context, userID pgtype.UUID, darkMode, language string) error {
 	if err := s.write.UpsertUserPreferences(ctx, gen.UpsertUserPreferencesParams{
-
 		UserID:   userID,
 		DarkMode: darkMode,
 		Language: language,
@@ -397,7 +393,6 @@ func (s *Store) getPreferencesForUpdateTx(ctx context.Context, q *gen.Queries, u
 // upsertPreferencesTx is the transaction-scoped variant of upsertPreferences.
 func (s *Store) upsertPreferencesTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, darkMode, language string) error {
 	if err := q.UpsertUserPreferences(ctx, gen.UpsertUserPreferencesParams{
-
 		UserID:   userID,
 		DarkMode: darkMode,
 		Language: language,
@@ -413,7 +408,6 @@ func (s *Store) upsertPreferencesTx(ctx context.Context, q *gen.Queries, userID 
 // keys fall through to the created_at DESC default.
 func (s *Store) listUsers(ctx context.Context, search, status, groupSlug, sortKey, sortDir string, limit, offset int32) ([]gen.ListUsersRow, error) {
 	rows, err := s.read.ListUsers(ctx, gen.ListUsersParams{
-
 		Search:     search,
 		Status:     status,
 		GroupSlug:  groupSlug,
@@ -436,7 +430,6 @@ func (s *Store) listUsers(ctx context.Context, search, status, groupSlug, sortKe
 //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (s *Store) listPublicUsers(ctx context.Context, search, profileType, sortKey string, limit, offset int32) ([]gen.ListPublicUsersRow, error) {
 	rows, err := s.read.ListPublicUsers(ctx, gen.ListPublicUsersParams{
-
 		Search:      search,
 		ProfileType: profileType,
 		SortKey:     sortKey,
@@ -455,7 +448,6 @@ func (s *Store) listPublicUsers(ctx context.Context, search, profileType, sortKe
 // public directory.
 func (s *Store) countPublicUsers(ctx context.Context, search, profileType string) (int32, error) {
 	count, err := s.read.CountPublicUsers(ctx, gen.CountPublicUsersParams{
-
 		Search:      search,
 		ProfileType: profileType,
 	})
@@ -469,7 +461,6 @@ func (s *Store) countPublicUsers(ctx context.Context, search, profileType string
 // countUsers returns the total count of users for a platform, optionally filtered by search, status, and group.
 func (s *Store) countUsers(ctx context.Context, search, status, groupSlug string) (int32, error) {
 	count, err := s.read.CountUsers(ctx, gen.CountUsersParams{
-
 		Search:    search,
 		Status:    status,
 		GroupSlug: groupSlug,
@@ -499,7 +490,6 @@ func (s *Store) updateUserPassword(ctx context.Context, userID pgtype.UUID, pass
 // so it can be checked against future password changes (auth.password.history_count).
 func (s *Store) insertPasswordHistory(ctx context.Context, userID pgtype.UUID, passwordHash string) error {
 	return s.write.InsertPasswordHistory(ctx, gen.InsertPasswordHistoryParams{
-
 		UserID:       userID,
 		PasswordHash: passwordHash,
 	})
@@ -540,7 +530,6 @@ func (s *Store) getUserPrivacySettings(ctx context.Context, userID pgtype.UUID) 
 
 func (s *Store) upsertUserPrivacySettings(ctx context.Context, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool) error {
 	return s.write.UpsertUserPrivacySettings(ctx, gen.UpsertUserPrivacySettingsParams{
-
 		UserID:             userID,
 		DmPrivacy:          dmPrivacy,
 		ProfileVisibility:  profileVisibility,
@@ -565,7 +554,6 @@ func (s *Store) getUserPrivacySettingsForUpdateTx(ctx context.Context, q *gen.Qu
 // upsertUserPrivacySettings.
 func (s *Store) upsertUserPrivacySettingsTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool) error {
 	return q.UpsertUserPrivacySettings(ctx, gen.UpsertUserPrivacySettingsParams{
-
 		UserID:             userID,
 		DmPrivacy:          dmPrivacy,
 		ProfileVisibility:  profileVisibility,
@@ -588,7 +576,6 @@ func (s *Store) listUserSessions(ctx context.Context, userID pgtype.UUID) ([]gen
 // token is not found so the caller can degrade gracefully.
 func (s *Store) getSessionIDByHash(ctx context.Context, userID pgtype.UUID, tokenHash string) (pgtype.UUID, error) {
 	return s.read.GetSessionIDByHash(ctx, gen.GetSessionIDByHashParams{
-
 		UserID:    userID,
 		TokenHash: tokenHash,
 	})
@@ -596,7 +583,6 @@ func (s *Store) getSessionIDByHash(ctx context.Context, userID pgtype.UUID, toke
 
 func (s *Store) listUserActivity(ctx context.Context, userID pgtype.UUID, limit int32) ([]gen.ListUserActivityRow, error) {
 	return s.read.ListUserActivity(ctx, gen.ListUserActivityParams{
-
 		AuthorID: userID,
 		Limit:    limit,
 	})
@@ -619,7 +605,6 @@ func (s *Store) revokeUserSession(ctx context.Context, sessionID, userID pgtype.
 
 func (s *Store) revokeAllUserSessions(ctx context.Context, userID, keepCurrentID pgtype.UUID) error {
 	return s.write.RevokeAllUserSessions(ctx, gen.RevokeAllUserSessionsParams{
-
 		UserID: userID,
 		ID:     keepCurrentID,
 	})
@@ -634,7 +619,6 @@ func (s *Store) listOAuthAccounts(ctx context.Context, userID pgtype.UUID) ([]ge
 
 func (s *Store) disconnectOAuthAccount(ctx context.Context, userID pgtype.UUID, provider string) error {
 	return s.write.DisconnectOAuthAccount(ctx, gen.DisconnectOAuthAccountParams{
-
 		UserID:   userID,
 		Provider: provider,
 	})
@@ -648,7 +632,6 @@ func (s *Store) userHasPassword(ctx context.Context, userID pgtype.UUID) (bool, 
 
 func (s *Store) listUserContent(ctx context.Context, userID pgtype.UUID, status, contentType, q, sort string, limit, offset int32) ([]gen.ListUserContentRow, error) {
 	return s.read.ListUserContent(ctx, gen.ListUserContentParams{
-
 		AuthorID:    userID,
 		Status:      status,
 		ContentType: contentType,
@@ -733,7 +716,6 @@ func (s *Store) activeUserExistsByID(ctx context.Context, userID pgtype.UUID) (b
 // getUserContentAnalytics returns per-content analytics for the user.
 func (s *Store) getUserContentAnalytics(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserContentAnalyticsRow, error) {
 	return s.read.GetUserContentAnalytics(ctx, gen.GetUserContentAnalyticsParams{
-
 		AuthorID: userID,
 		Limit:    limit,
 		Offset:   offset,
@@ -745,7 +727,6 @@ func (s *Store) getUserContentAnalytics(ctx context.Context, userID pgtype.UUID,
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (s *Store) getUserTopContentByPeriod(ctx context.Context, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserTopContentByPeriodRow, error) {
 	return s.read.GetUserTopContentByPeriod(ctx, gen.GetUserTopContentByPeriodParams{
-
 		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
@@ -754,7 +735,6 @@ func (s *Store) getUserTopContentByPeriod(ctx context.Context, userID pgtype.UUI
 // content items. NULL date bounds fall back to all-time ranking.
 func (s *Store) getUserContentByPeriod(ctx context.Context, userID pgtype.UUID, from, to pgtype.Timestamptz, limit, offset int32) ([]gen.GetUserContentByPeriodRow, error) {
 	return s.read.GetUserContentByPeriod(ctx, gen.GetUserContentByPeriodParams{
-
 		AuthorID: userID, Column2: from, Column3: to, Limit: limit,
 		Offset: offset,
 	})
@@ -763,7 +743,6 @@ func (s *Store) getUserContentByPeriod(ctx context.Context, userID pgtype.UUID, 
 // getUserFollowerGrowth returns daily follower growth for the user.
 func (s *Store) getUserFollowerGrowth(ctx context.Context, userID pgtype.UUID, startDate, endDate *pgtype.Date) ([]gen.GetUserFollowerGrowthRow, error) {
 	return s.read.GetUserFollowerGrowth(ctx, gen.GetUserFollowerGrowthParams{
-
 		EntityID: userID, Column2: derefDate(startDate), Column3: derefDate(endDate),
 	})
 }
@@ -839,7 +818,6 @@ func (s *Store) updateEmailTx(ctx context.Context, q *gen.Queries, userID pgtype
 // the given email (0 = available).
 func (s *Store) emailExistsForPlatform(ctx context.Context, userID pgtype.UUID, email string) (int32, error) {
 	return s.write.EmailExists(ctx, gen.EmailExistsParams{
-
 		Email: email,
 		ID:    userID,
 	})
@@ -849,7 +827,6 @@ func (s *Store) emailExistsForPlatform(ctx context.Context, userID pgtype.UUID, 
 // emailExistsForPlatform.
 func (s *Store) emailExistsForPlatformTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, email string) (int32, error) {
 	return q.EmailExists(ctx, gen.EmailExistsParams{
-
 		Email: email,
 		ID:    userID,
 	})
@@ -859,7 +836,6 @@ func (s *Store) emailExistsForPlatformTx(ctx context.Context, q *gen.Queries, us
 // the given username (0 = available).
 func (s *Store) usernameExistsForPlatform(ctx context.Context, userID pgtype.UUID, username string) (int32, error) {
 	return s.write.UsernameExists(ctx, gen.UsernameExistsParams{
-
 		Username: username,
 		ID:       userID,
 	})
@@ -869,7 +845,6 @@ func (s *Store) usernameExistsForPlatform(ctx context.Context, userID pgtype.UUI
 // usernameExistsForPlatform.
 func (s *Store) usernameExistsForPlatformTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, username string) (int32, error) {
 	return q.UsernameExists(ctx, gen.UsernameExistsParams{
-
 		Username: username,
 		ID:       userID,
 	})
@@ -892,7 +867,6 @@ func (s *Store) countUserContent(ctx context.Context, userID pgtype.UUID) (gen.C
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (s *Store) countUserContentCreatedInPeriod(ctx context.Context, userID pgtype.UUID, from, to pgtype.Timestamptz) (gen.CountUserContentCreatedInPeriodRow, error) {
 	return s.read.CountUserContentCreatedInPeriod(ctx, gen.CountUserContentCreatedInPeriodParams{
-
 		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
@@ -916,7 +890,6 @@ func (s *Store) countUserFollowStats(ctx context.Context, userID pgtype.UUID) (g
 // the user within the supplied date range.
 func (s *Store) countUserFollowersGained(ctx context.Context, userID pgtype.UUID, from, to pgtype.Timestamptz) (int64, error) {
 	return s.read.CountUserFollowersGained(ctx, gen.CountUserFollowersGainedParams{
-
 		EntityID: userID, Column2: from, Column3: to,
 	})
 }
@@ -925,7 +898,6 @@ func (s *Store) countUserFollowersGained(ctx context.Context, userID pgtype.UUID
 // content within the supplied date range.
 func (s *Store) getUserDailyImpressions(ctx context.Context, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserDailyImpressionsRow, error) {
 	return s.read.GetUserDailyImpressions(ctx, gen.GetUserDailyImpressionsParams{
-
 		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
@@ -933,7 +905,6 @@ func (s *Store) getUserDailyImpressions(ctx context.Context, userID pgtype.UUID,
 // getUserReadersByCountry returns the top countries reading the user's content.
 func (s *Store) getUserReadersByCountry(ctx context.Context, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserReadersByCountryRow, error) {
 	return s.read.GetUserReadersByCountry(ctx, gen.GetUserReadersByCountryParams{
-
 		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
@@ -942,7 +913,6 @@ func (s *Store) getUserReadersByCountry(ctx context.Context, userID pgtype.UUID,
 // user's content within the supplied date range.
 func (s *Store) getUserPeriodEngagement(ctx context.Context, userID pgtype.UUID, from, to pgtype.Timestamptz) (gen.GetUserPeriodEngagementRow, error) {
 	return s.read.GetUserPeriodEngagement(ctx, gen.GetUserPeriodEngagementParams{
-
 		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
@@ -951,7 +921,6 @@ func (s *Store) getUserPeriodEngagement(ctx context.Context, userID pgtype.UUID,
 // within the supplied date range.
 func (s *Store) countUserPointsEarned(ctx context.Context, userID pgtype.UUID, from, to pgtype.Timestamptz) (int64, error) {
 	return s.read.CountUserPointsEarned(ctx, gen.CountUserPointsEarnedParams{
-
 		UserID: userID, Column2: from, Column3: to,
 	})
 }

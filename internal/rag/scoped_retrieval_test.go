@@ -46,7 +46,7 @@ func TestScopedRetrievalMatrix(t *testing.T) {
 	t.Cleanup(database.Writer.Close)
 	t.Cleanup(database.Reader.Close)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	fx := seedScopeFixture(t, ctx, database)
 	store := NewStore(database)
 
@@ -62,21 +62,25 @@ func TestScopedRetrievalMatrix(t *testing.T) {
 		if err != nil {
 			t.Fatalf("search: %v", err)
 		}
+
 		got := make(map[string]bool, len(chunks))
 		for _, c := range chunks {
 			got[c.EntityID] = true
 		}
+
 		return got
 	}
 
 	assertScope := func(name string, scope RetrievalScope, want, notWant []pgtype.UUID) {
 		t.Helper()
+
 		got := search(scope)
 		for _, id := range want {
 			if !got[id.String()] {
 				t.Errorf("%s: expected entity %s in results", name, id.String())
 			}
 		}
+
 		for _, id := range notWant {
 			if got[id.String()] {
 				t.Errorf("%s: entity %s leaked into results", name, id.String())
@@ -89,6 +93,7 @@ func TestScopedRetrievalMatrix(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListMemberSpaceIDs: %v", err)
 		}
+
 		return RetrievalScope{ViewerID: viewer, MemberSpaceIDs: ids}
 	}
 
@@ -144,10 +149,11 @@ func TestScopedRetrievalGeoFiltered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
+
 	t.Cleanup(database.Writer.Close)
 	t.Cleanup(database.Reader.Close)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	fx := seedScopeFixture(t, ctx, database)
 	store := NewStore(database)
 
@@ -163,6 +169,7 @@ func TestScopedRetrievalGeoFiltered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMemberSpaceIDs: %v", err)
 	}
+
 	chunks, err := store.SearchGeoFiltered(ctx, vec, "en", 500, fx.privSpace,
 		RetrievalScope{ViewerID: fx.memberID, MemberSpaceIDs: ids})
 	if err != nil {
@@ -173,12 +180,15 @@ func TestScopedRetrievalGeoFiltered(t *testing.T) {
 	for _, c := range chunks {
 		got[c.EntityID] = true
 	}
+
 	if !got[fx.cPublic.String()] {
 		t.Error("geo search: expected public content in geo space")
 	}
+
 	if got[fx.cPrivSpace.String()] {
 		t.Error("geo search: author-private content leaked via member space")
 	}
+
 	if got[fx.thread.String()] || got[fx.privSpace.String()] {
 		t.Error("geo search: non-content entity leaked into content-only path")
 	}
@@ -189,6 +199,7 @@ func TestScopedRetrievalGeoFiltered(t *testing.T) {
 // uniform (0.5 × 1536) — the test asserts set membership, not ranking.
 func seedScopeFixture(t *testing.T, ctx context.Context, database *db.DB) scopeFixture {
 	t.Helper()
+
 	var fx scopeFixture
 
 	mustID := func(query string, args ...any) pgtype.UUID {
@@ -196,6 +207,7 @@ func seedScopeFixture(t *testing.T, ctx context.Context, database *db.DB) scopeF
 		if err := database.Writer.QueryRow(ctx, query, args...).Scan(&id); err != nil {
 			t.Fatalf("fixture insert: %v", err)
 		}
+
 		return id
 	}
 
@@ -269,6 +281,7 @@ func seedScopeFixture(t *testing.T, ctx context.Context, database *db.DB) scopeF
 		mustExec(`DELETE FROM contents WHERE id = ANY($1::uuid[])`,
 			[]pgtype.UUID{fx.cPublic, fx.cMembers, fx.cPrivate, fx.cPrivSpace})
 		mustExec(`DELETE FROM spaces WHERE id = ANY($1::uuid[])`, []pgtype.UUID{fx.privSpace, fx.pubSpace})
+
 		for _, u := range []pgtype.UUID{fx.authorID, fx.memberID, fx.pendingID, fx.outsiderID} {
 			mustExec(`DELETE FROM users WHERE id = $1`, u)
 		}

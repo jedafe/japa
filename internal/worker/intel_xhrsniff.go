@@ -56,6 +56,7 @@ func intelSniffHTTPClient() *http.Client {
 		// attacker-controlled.
 		sniffClient = fetcher.NewSafeClientOpts(60*time.Second, 0, fetcher.SafeClientOpts{AllowPrivate: true})
 	})
+
 	return sniffClient
 }
 
@@ -131,6 +132,7 @@ func HandleIntelXHRSniff(ctx context.Context, t *asynq.Task) error {
 	if appSettings != nil {
 		serviceURL = strings.TrimRight(appSettings.GetStringOr(ctx, "intel.render.service_url", ""), "/")
 	}
+
 	if serviceURL == "" {
 		slog.Info("task:intel:xhr_sniff: intel.render.service_url unset, skipping", "source_id", p.SourceID)
 		return nil
@@ -142,8 +144,10 @@ func HandleIntelXHRSniff(ctx context.Context, t *asynq.Task) error {
 			slog.Info("task:intel:xhr_sniff: source no longer exists, skipping", "source_id", p.SourceID)
 			return nil
 		}
+
 		return fmt.Errorf("task:intel:xhr_sniff: load source: %w", err)
 	}
+
 	if !src.Enabled || src.Status != "active" || verifySkipSource(src) {
 		slog.Info("task:intel:xhr_sniff: source not snifffable, skipping", "source_id", p.SourceID)
 		return nil
@@ -154,10 +158,12 @@ func HandleIntelXHRSniff(ctx context.Context, t *asynq.Task) error {
 	// budget) is a provider_config override on the same row.
 	target := src.SourceUrl
 	waitMs := 5000
+
 	if p.ChannelID != "" {
 		if chID, cerr := scanUUID(p.ChannelID); cerr == nil {
 			if ch, gerr := intelSourcesStore.GetChannel(ctx, chID); gerr == nil {
 				target = ch.EntryUrl
+
 				var cfg map[string]any
 				if json.Unmarshal(ch.ProviderConfig, &cfg) == nil {
 					if ms, ok := cfg["wait_ms"].(float64); ok && ms > 0 {
@@ -191,6 +197,7 @@ func HandleIntelXHRSniff(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:intel:xhr_sniff: done", "source_id", p.SourceID, "endpoints", len(endpoints), "channels_created", created, "channels_skipped", skipped)
+
 	return nil
 }
 
@@ -209,6 +216,7 @@ func intelSniffHAR(ctx context.Context, serviceURL, target string, waitMs int) (
 	if err != nil {
 		return env, fmt.Errorf("har request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := intelSniffHTTPClient().Do(req)
@@ -221,9 +229,11 @@ func intelSniffHAR(ctx context.Context, serviceURL, target string, waitMs int) (
 	if err != nil {
 		return env, fmt.Errorf("har read: %w", err)
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		return env, fmt.Errorf("har: status %d", resp.StatusCode)
 	}
+
 	if err := json.Unmarshal(body, &env); err != nil {
 		return env, fmt.Errorf("har decode: %w", err)
 	}
@@ -244,6 +254,7 @@ func intelSniffProposalInput(ep sniffEndpoint) sources.ChannelProposalInput {
 		"method":         ep.Method,
 		"discovered_via": "xhr_sniff",
 	}
+
 	if ep.Method == http.MethodPost && len(ep.Body) > 0 {
 		if json.Valid(ep.Body) {
 			cfg["body"] = json.RawMessage(ep.Body)
@@ -284,40 +295,52 @@ type sniffEndpoint struct {
 // endpoints — beyond that the page is a firehose, not an API surface.
 func intelSniffEndpoints(env harEnvelope) []sniffEndpoint {
 	seen := map[string]bool{}
+
 	var out []sniffEndpoint
 
 	for _, e := range env.entries() {
 		if len(out) >= 10 {
 			break
 		}
+
 		if e.Response.Status < 200 || e.Response.Status >= 300 {
 			continue
 		}
+
 		if !strings.Contains(strings.ToLower(e.Response.Content.MimeType), "json") {
 			continue
 		}
+
 		method := strings.ToUpper(e.Request.Method)
 		if method != http.MethodGet && method != http.MethodPost {
 			continue
 		}
+
 		u, err := url.Parse(e.Request.URL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			continue
 		}
+
 		if sources.IsPrivateIPLiteral(u.Hostname()) {
 			continue
 		}
+
 		key := method + " " + strings.ToLower(u.Host) + u.Path
 		if seen[key] {
 			continue
 		}
+
 		seen[key] = true
+
 		var body []byte
+
 		var bodyMime string
+
 		if method == http.MethodPost {
 			body = []byte(e.Request.PostData.Text)
 			bodyMime = e.Request.PostData.MimeType
 		}
+
 		out = append(out, sniffEndpoint{
 			Method:   method,
 			URL:      u.Scheme + "://" + u.Host + u.EscapedPath(),

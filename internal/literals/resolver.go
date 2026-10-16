@@ -141,6 +141,7 @@ func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env
 		if inlineFallback != "" {
 			return inlineFallback
 		}
+
 		if lit.Fallback != nil && *lit.Fallback != "" {
 			return *lit.Fallback
 		}

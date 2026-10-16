@@ -92,7 +92,6 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 	offset, limit := computePagination(page, pageSize)
 
 	rows, err := h.Queries.ListTemplateLiterals(r.Context(), gen.ListTemplateLiteralsParams{
-
 		Deleted:    deleted,
 		Search:     q,
 		IsActive:   isActive,
@@ -108,7 +107,6 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total, err := h.Queries.CountTemplateLiterals(r.Context(), gen.CountTemplateLiteralsParams{
-
 		Deleted:  deleted,
 		Search:   q,
 		IsActive: isActive,
@@ -154,6 +152,7 @@ func computePagination(page, pageSize int64) (int32, int32) {
 	if offset > maxInt32Value {
 		offset = maxInt32Value
 	}
+
 	if pageSize > maxInt32Value {
 		pageSize = maxInt32Value
 	}
@@ -182,7 +181,6 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lit, err := h.Queries.CreateTemplateLiteral(r.Context(), gen.CreateTemplateLiteralParams{
-
 		Key:         req.Key,
 		Kind:        req.Kind,
 		Value:       req.Value,
@@ -471,7 +469,9 @@ func (h *Handlers) forceDeleteLiteral(w http.ResponseWriter, r *http.Request, id
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Literal not found")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load literal")
+
 		return
 	}
 
@@ -479,6 +479,7 @@ func (h *Handlers) forceDeleteLiteral(w http.ResponseWriter, r *http.Request, id
 		errpkg.WriteError(w, http.StatusForbidden, "system_literal", "Cannot delete system literals")
 		return
 	}
+
 	if !row.DeletedAt.Valid {
 		errpkg.WriteError(w, http.StatusConflict, "not_deleted", "Literal must be deleted before it can be permanently removed")
 		return

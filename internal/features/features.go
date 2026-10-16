@@ -2,12 +2,12 @@ package features
 
 import (
 	"context"
-	"regexp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -323,6 +323,7 @@ func (c *Checker) rolloutID(ctx context.Context) string {
 		if c.db == nil {
 			return
 		}
+
 		if err := c.db.Reader.QueryRow(ctx,
 			`SELECT system_identifier FROM pg_control_system()`).Scan(&c.platformID); err != nil {
 			slog.Warn("features: platform id unavailable, rollout bucketing unsalted", "error", err)

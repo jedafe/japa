@@ -150,11 +150,13 @@ func AvailableScopes() []ScopeOption {
 // request on their own keys — the list served by /developer/scopes.
 func SelfServiceScopes() []ScopeOption {
 	out := make([]ScopeOption, 0, len(ScopeCatalog))
+
 	for _, s := range ScopeCatalog {
 		if !s.AdminOnly {
 			out = append(out, s)
 		}
 	}
+
 	return out
 }
 
@@ -167,11 +169,13 @@ func SelfServiceScopes() []ScopeOption {
 // RequireScope gate will ever match them.
 func AnyAdminOnly(requested []string) bool {
 	admin := make([]string, 0, len(ScopeCatalog))
+
 	for _, s := range ScopeCatalog {
 		if s.AdminOnly {
 			admin = append(admin, s.Value)
 		}
 	}
+
 	for _, r := range requested {
 		for _, a := range admin {
 			if scopeCovers(r, a) {
@@ -179,6 +183,7 @@ func AnyAdminOnly(requested []string) bool {
 			}
 		}
 	}
+
 	return false
 }
 
@@ -192,5 +197,6 @@ func scopeCovers(requested, required string) bool {
 	case strings.HasSuffix(requested, ".*"):
 		return strings.HasPrefix(required, requested[:len(requested)-2]+".")
 	}
+
 	return false
 }

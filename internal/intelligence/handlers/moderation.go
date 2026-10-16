@@ -73,6 +73,7 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 	if s.Slug != nil {
 		entry.Slug = *s.Slug
 	}
+
 	entry.Description = s.Description
 
 	entry.Categories = s.Categories
@@ -122,6 +123,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 		RowLimit:  clampInt32(limit),
 		RowOffset: offset,
 	}
+
 	if !includeDisabled {
 		enabledOnly := true
 		listParams.Enabled = &enabledOnly
@@ -129,13 +131,16 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 	} else {
 		listParams.Status = q.Get("status")
 	}
+
 	if enabledParam := q.Get("enabled"); includeDisabled && (enabledParam == "true" || enabledParam == "false") {
 		v := enabledParam == "true"
 		listParams.Enabled = &v
 	}
+
 	if _, ok := intelSourceSortKeys[listParams.SortKey]; !ok {
 		listParams.SortKey = ""
 	}
+
 	if listParams.SortDir != "desc" {
 		listParams.SortDir = "asc"
 	}
@@ -301,18 +306,21 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 	if categories == nil {
 		categories = []string{}
 	}
+
 	entry["categories"] = categories
 
 	keywords := s.Keywords
 	if keywords == nil {
 		keywords = []string{}
 	}
+
 	entry["keywords"] = keywords
 
 	methods := s.DetectedMethods
 	if methods == nil {
 		methods = []string{}
 	}
+
 	entry["detected_methods"] = methods
 	entry["probe_report"] = jsonBlobToRawMessage(s.ProbeReport)
 	entry["last_probed_at"] = s.LastProbedAt
@@ -450,8 +458,10 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	// approval. promote_queued surfaces the failure so the reviewer knows
 	// to use the re-promote action instead of assuming it will publish.
 	promoteQueued := true
+
 	if err := h.enqueueIntelPromote(r.Context(), recordID, userID); err != nil {
 		slog.Error("intel: approve enqueue promote failed", "record_id", recordID.String(), "error", err)
+
 		promoteQueued = false
 	}
 
@@ -564,7 +574,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 // this endpoint is the operator-visible retry path. Records already
 // promoted (promoted_record_id set) or in any other status get 409.
 // // POST /api/v1/intel/records/{id}/promote
-// // Requires: intel.review.approve
+// // Requires: intel.review.approve.
 func (h *Handlers) HandleRequeuePromote(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")

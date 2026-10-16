@@ -54,7 +54,6 @@ func (s *Store) GetCostOfLivingType(ctx context.Context) (gen.ComparisonTypeDefi
 // country_id, state_id, and city_id (via the space_parent_spaces hierarchy).
 func (s *Store) ListCities(ctx context.Context, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID, offset, limit int32) ([]gen.ListCOLCitiesRow, error) {
 	rows, err := s.queries.ListCOLCities(ctx, gen.ListCOLCitiesParams{
-
 		TypeID:      typeID,
 		Search:      search,
 		CountryCode: countryCode,
@@ -75,7 +74,6 @@ func (s *Store) ListCities(ctx context.Context, typeID pgtype.UUID, search, coun
 // optional country geo_code / ancestor scope filters.
 func (s *Store) CountCities(ctx context.Context, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID) (int64, error) {
 	count, err := s.queries.CountCOLCities(ctx, gen.CountCOLCitiesParams{
-
 		TypeID:      typeID,
 		Search:      search,
 		CountryCode: countryCode,
@@ -172,7 +170,6 @@ func (s *Store) ListSpaceFieldValues(ctx context.Context, spaceIDs []pgtype.UUID
 // AdminStats returns the per-city data completeness + staleness report.
 func (s *Store) AdminStats(ctx context.Context, typeID pgtype.UUID, offset, limit int32) ([]gen.AdminCOLStatsRow, error) {
 	rows, err := s.queries.AdminCOLStats(ctx, gen.AdminCOLStatsParams{
-
 		TypeID:     typeID,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -190,6 +187,7 @@ func (s *Store) AdminStats(ctx context.Context, typeID pgtype.UUID, offset, limi
 // needed. Spaces without a resolvable currency are absent from the map.
 func (s *Store) SpaceCurrencyCodes(ctx context.Context, ids []pgtype.UUID) map[pgtype.UUID]string {
 	out := make(map[pgtype.UUID]string, len(ids))
+
 	for _, id := range ids {
 		if code, err := s.queries.GetSpaceCountryCurrencyCode(ctx, id); err == nil && code != nil && *code != "" {
 			out[id] = *code
@@ -201,10 +199,12 @@ func (s *Store) SpaceCurrencyCodes(ctx context.Context, ids []pgtype.UUID) map[p
 		if err != nil || space.GeoCode == nil || *space.GeoCode == "" {
 			continue
 		}
+
 		country, err := s.queries.GetSpaceByGeoCode(ctx, space.GeoCode)
 		if err == nil && country.CurrencyCode != nil && *country.CurrencyCode != "" {
 			out[id] = *country.CurrencyCode
 		}
 	}
+
 	return out
 }

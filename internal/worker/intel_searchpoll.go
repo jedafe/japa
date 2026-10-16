@@ -32,6 +32,7 @@ func HandleIntelSearchPoll(ctx context.Context, t *asynq.Task) error {
 	if err := parsePayloadOrSkip(t, &p); err != nil {
 		return err
 	}
+
 	channelID, err := scanUUID(p.ChannelID)
 	if err != nil {
 		return fmt.Errorf("task:intel:search_poll: %w: %w", err, asynq.SkipRetry)
@@ -43,12 +44,15 @@ func HandleIntelSearchPoll(ctx context.Context, t *asynq.Task) error {
 			slog.Info("task:intel:search_poll: channel no longer exists, skipping", "channel_id", p.ChannelID)
 			return nil
 		}
+
 		return fmt.Errorf("task:intel:search_poll: load channel: %w", err)
 	}
+
 	if !ch.Enabled {
 		slog.Info("task:intel:search_poll: channel disabled, skipping", "channel_id", p.ChannelID)
 		return nil
 	}
+
 	if ch.CrawlMethod != string(sources.CrawlMethodSearch) {
 		slog.Info("task:intel:search_poll: channel repurposed, skipping", "channel_id", p.ChannelID, "crawl_method", ch.CrawlMethod)
 		return nil
@@ -60,8 +64,10 @@ func HandleIntelSearchPoll(ctx context.Context, t *asynq.Task) error {
 			slog.Info("task:intel:search_poll: parent source no longer exists, skipping", "channel_id", p.ChannelID)
 			return nil
 		}
+
 		return fmt.Errorf("task:intel:search_poll: load parent source: %w", err)
 	}
+
 	if !src.Enabled || src.Status != "active" {
 		slog.Info("task:intel:search_poll: parent source not active, skipping", "channel_id", p.ChannelID)
 		return nil

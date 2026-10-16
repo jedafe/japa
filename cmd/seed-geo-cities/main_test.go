@@ -72,6 +72,7 @@ func newStateFx(countryID pgtype.UUID, countryKey string, states map[string]stri
 		tokens:    map[pgtype.UUID]map[pgtype.UUID]map[string]struct{}{countryID: {}},
 		byID:      map[pgtype.UUID]geoRow{},
 	}
+
 	for code, name := range states {
 		id := uid(countryKey + "/" + name)
 		norm := normName(name)
@@ -81,6 +82,7 @@ func newStateFx(countryID pgtype.UUID, countryKey string, states map[string]stri
 		fx.tokens[countryID][id] = tokenSet(norm)
 		fx.byID[id] = geoRow{id: id, name: name, geoCode: code}
 	}
+
 	return fx
 }
 
@@ -148,6 +150,7 @@ func TestResolveStateUncorroboratedNumericCodeIgnored(t *testing.T) {
 func TestResolveStateLetteredCodeTrusted(t *testing.T) {
 	gb := uid("GB")
 	fx := newStateFx(gb, "GB", map[string]string{"eng": "England"})
+
 	got, ok := fx.resolve(cityRow{name: "London", country: "GB", admin1: "ENG"}, gb, map[string]string{})
 	if !ok || got != uid("GB/England") {
 		t.Fatalf("expected England via lettered code, got %v ok=%v", got, ok)
@@ -169,6 +172,7 @@ func TestMatchStateNameAmbiguousSubset(t *testing.T) {
 	}
 	// Space-collapsed.
 	byNorm["north west"] = id1
+
 	bySq["northwest"] = id1
 	if got, ok := matchStateName("North-Western X", map[string]pgtype.UUID{"northwestern x": id1}, bySq, tokens); !ok || got != id1 {
 		t.Fatalf("squeeze match failed: %v %v", got, ok)
@@ -176,6 +180,7 @@ func TestMatchStateNameAmbiguousSubset(t *testing.T) {
 	// Ambiguous token-subset: 'north' ⊆ both? 'north' ⊆ {north} only -> unique.
 	tok2 := map[pgtype.UUID]map[string]struct{}{id1: {"north": {}}, id2: {"north": {}, "east": {}}}
 	byNorm2 := map[string]pgtype.UUID{} // force token path
+
 	if _, ok := matchStateName("north", byNorm2, map[string]pgtype.UUID{}, tok2); ok {
 		t.Fatal("expected ambiguous token-subset to resolve to nothing")
 	}
@@ -186,13 +191,16 @@ func TestUniqueSlugDeterministic(t *testing.T) {
 	if got := uniqueSlug("london", "GB", "ENG", taken); got != "london-gb-eng" {
 		t.Fatalf("got %q", got)
 	}
+
 	taken["london-gb-eng"] = struct{}{}
 	if got := uniqueSlug("london", "GB", "ENG", taken); got != "london-gb-eng-2" {
 		t.Fatalf("got %q", got)
 	}
+
 	if got := uniqueSlug("", "GB", "ENG", taken); got != "" {
 		t.Fatalf("empty base should yield empty slug, got %q", got)
 	}
+
 	if got := uniqueSlug("fresh", "GB", "ENG", taken); got != "fresh" {
 		t.Fatalf("got %q", got)
 	}
@@ -206,12 +214,15 @@ func TestPinAdmin1(t *testing.T) {
 	if got := pinAdmin1(rows, "arai-jp-29", "JP"); len(got) != 1 || got[0].admin1 != "29" {
 		t.Fatalf("pin failed: %+v", got)
 	}
+
 	if got := pinAdmin1(rows, "arai-jp-29-2", "JP"); len(got) != 1 || got[0].admin1 != "29" {
 		t.Fatalf("numbered pin failed: %+v", got)
 	}
+
 	if got := pinAdmin1(rows, "arai", "JP"); got != nil {
 		t.Fatalf("base slug should not pin: %+v", got)
 	}
+
 	if got := pinAdmin1(rows[:1], "arai-jp-29", "JP"); got != nil {
 		t.Fatalf("single-variant should not pin: %+v", got)
 	}

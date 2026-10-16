@@ -234,7 +234,7 @@ func (s *Store) CountPendingHITLReviews(ctx context.Context, sourceFilter string
 // AI Usage Log (Section 20 — admin AI usage monitoring)
 // ---------------------------------------------------------------------------
 // Matches the Section 20 contract: { total_cost_usd, tokens_used, by_task_type }.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type AIUsageSummary struct {
 	TotalCostUSD float64             `json:"total_cost_usd"`
 	TokensUsed   int64               `json:"tokens_used"`
@@ -243,7 +243,7 @@ type AIUsageSummary struct {
 }
 
 // AIUsageByTaskType is the per-task-type cost/token breakdown.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type AIUsageByTaskType struct {
 	TaskType     string  `json:"task_type"`
 	TokensUsed   int64   `json:"tokens_used"`
@@ -252,7 +252,7 @@ type AIUsageByTaskType struct {
 }
 
 // AIUsageByProvider is the per-provider cost/token breakdown.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type AIUsageByProvider struct {
 	Provider     string  `json:"provider"`
 	TokensUsed   int64   `json:"tokens_used"`

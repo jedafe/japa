@@ -129,6 +129,7 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 	}
 
 	bases := make([]spaceBase, 0, len(items))
+
 	for _, it := range items {
 		if base, ok := spaceBaseFromRow(it); ok {
 			bases = append(bases, base)

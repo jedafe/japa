@@ -179,7 +179,6 @@ func (s *Service) CreateSidebar(ctx context.Context, input CreateSidebarInput) (
 	}
 
 	sb, err := s.store.createSidebar(ctx, gen.CreateSidebarParams{
-
 		App:              input.App,
 		Position:         input.Position,
 		Slug:             input.Slug,
@@ -310,6 +309,7 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, sidebarID pgtype.UUID
 	if err != nil {
 		return gen.SidebarWidget{}, ErrSidebarNotFound
 	}
+
 	if !WidgetTypeAllowedForApp(input.WidgetType, sidebar.App) {
 		return gen.SidebarWidget{}, ErrWidgetTypeNotAllowedForApp
 	}
@@ -364,7 +364,6 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, sidebarID pgtype.UUID
 	}
 
 	widget, err := s.store.createSidebarWidget(ctx, gen.CreateSidebarWidgetParams{
-
 		SidebarID:  sidebarID,
 		WidgetType: input.WidgetType,
 		Label:      input.Label,
@@ -417,6 +416,7 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID pgtype.
 	if err != nil {
 		return gen.SidebarWidget{}, ErrSidebarNotFound
 	}
+
 	if !WidgetTypeAllowedForApp(input.WidgetType, sidebar.App) {
 		return gen.SidebarWidget{}, ErrWidgetTypeNotAllowedForApp
 	}
@@ -680,11 +680,13 @@ func (s *Service) Resolve(ctx context.Context, app, position, requestPath string
 	// created before registry app-scoping (WidgetType.Apps) would otherwise
 	// resolve to dead no-op stubs on the frontend.
 	renderable := filtered[:0]
+
 	for _, w := range filtered {
 		if WidgetTypeAllowedForApp(w.WidgetType, bestSidebar.App) {
 			renderable = append(renderable, w)
 		}
 	}
+
 	filtered = renderable
 
 	sidebarJSON := genSidebarToJSON(*bestSidebar)

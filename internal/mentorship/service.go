@@ -133,7 +133,6 @@ func NewService(database *db.DB) *Service {
 // ListPrograms returns all mentorship programs for the platform with aggregate counts.
 func (s *Service) ListPrograms(ctx context.Context, limit, offset int32) ([]ProgramWithCounts, error) {
 	rows, err := s.read.ListMentorshipProgramsWithCounts(ctx, gen.ListMentorshipProgramsWithCountsParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -175,7 +174,6 @@ func (s *Service) GetProgram(ctx context.Context, id pgtype.UUID) (Program, erro
 // CreateProgram creates a new mentorship program.
 func (s *Service) CreateProgram(ctx context.Context, name, description string, isActive bool) (Program, error) {
 	row, err := s.write.CreateMentorshipProgram(ctx, gen.CreateMentorshipProgramParams{
-
 		Name:        name,
 		Description: description,
 		IsActive:    isActive,
@@ -211,7 +209,6 @@ func (s *Service) UpdateProgram(ctx context.Context, id pgtype.UUID, name, descr
 	}
 
 	row, err := s.write.UpdateMentorshipProgram(ctx, gen.UpdateMentorshipProgramParams{
-
 		ID:          id,
 		Name:        n,
 		Description: desc,
@@ -227,7 +224,6 @@ func (s *Service) UpdateProgram(ctx context.Context, id pgtype.UUID, name, descr
 // ListMatches returns all mentor-mentee matches for the platform with resolved names.
 func (s *Service) ListMatches(ctx context.Context, limit, offset int32) ([]Match, error) {
 	rows, err := s.read.ListMentorshipMatches(ctx, gen.ListMentorshipMatchesParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -257,7 +253,6 @@ func (s *Service) ListMatches(ctx context.Context, limit, offset int32) ([]Match
 // UpdateMatch updates a mentor-mentee match status.
 func (s *Service) UpdateMatch(ctx context.Context, id pgtype.UUID, status string) (Match, error) {
 	row, err := s.write.UpdateMentorshipMatch(ctx, gen.UpdateMentorshipMatchParams{
-
 		ID:     id,
 		Status: status,
 	})
@@ -467,11 +462,13 @@ func (s *Service) SetSettingsProvider(sp SettingsProvider) { s.settings = sp }
 // mentorMaxCapacity returns the platform cap for mentor capacity from system_settings.
 func (s *Service) mentorMaxCapacity(ctx context.Context) int32 {
 	maxCap := int32(10) // catalog default for mentorship.max_capacity (§102)
+
 	if s.settings != nil {
 		if v, err := s.settings.GetSettingInt(ctx, "mentorship.max_capacity"); err == nil && v > 0 && v <= math.MaxInt32 {
 			maxCap = int32(v) //nolint:gosec // G115: v is checked against math.MaxInt32.
 		}
 	}
+
 	return maxCap
 }
 
@@ -516,8 +513,10 @@ func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Men
 	// to seed its structured-content fields — best-effort read through
 	// the servicedir seam (nil backend keeps program/match surfaces).
 	var shadow *servicedir.MentorShadowContentDTO
+
 	if s.bookings != nil {
 		var err error
+
 		shadow, err = s.bookings.MentorShadowContent(ctx, userID)
 		if err != nil {
 			return MentorProfile{}, fmt.Errorf("getting mentor shadow content: %w", err)
@@ -623,12 +622,15 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 	if card.Languages != nil {
 		params.MentorLanguages = *card.Languages
 	}
+
 	if card.SessionFormats != nil {
 		params.MentorSessionFormats = *card.SessionFormats
 	}
+
 	if card.Countries != nil {
 		params.MentorCountries = *card.Countries
 	}
+
 	if card.Credentials != nil {
 		params.MentorCredentials = *card.Credentials
 	}
@@ -656,10 +658,12 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 			if row.DisplayName != nil {
 				displayName = *row.DisplayName
 			}
+
 			bio := ""
 			if row.MentorBio != nil {
 				bio = *row.MentorBio
 			}
+
 			if _, err := s.bookings.EnsureMentorShadowListing(ctx, userID, servicedir.MentorShadowInput{
 				Username:    current.Username,
 				DisplayName: displayName,
@@ -688,11 +692,14 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 	// Read the shadow content back so the response mirrors what the
 	// editor just saved (a retired shadow resolves to nil).
 	var shadow *servicedir.MentorShadowContentDTO
+
 	if s.bookings != nil {
 		var err error
+
 		shadow, err = s.bookings.MentorShadowContent(ctx, userID)
 		if err != nil {
 			slog.Warn("mentorship: shadow content read failed — returning profile without shadow", "user_id", userID.String(), "error", err)
+
 			shadow = nil
 		}
 	}
@@ -770,11 +777,14 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 		}
 
 		var total int
+
 		mentors := make([]MentorSummary, len(rows))
+
 		for i, r := range rows {
 			if i == 0 {
 				total = int(r.TotalCount)
 			}
+
 			mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 				r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
@@ -786,7 +796,6 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 	// Default and sort=match-without-embedding use the same ListMentors query,
 	// which now orders by area_overlap when sort='match'.
 	rows, err := s.read.ListMentors(ctx, gen.ListMentorsParams{
-
 		DestSpaceID:        destSpaceID,
 		Areas:              areas,
 		IncludeUnavailable: includeUnavailable,
@@ -799,11 +808,14 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 	}
 
 	var total int
+
 	mentors := make([]MentorSummary, len(rows))
+
 	for i, r := range rows {
 		if i == 0 {
 			total = int(r.TotalCount)
 		}
+
 		mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
@@ -1033,6 +1045,7 @@ func (s *Service) CreateConnection(ctx context.Context, mentorID, menteeID pgtyp
 	if goals != nil {
 		input.Goals = *goals
 	}
+
 	if destSpaceID.Valid {
 		input.DestinationSpaceID = destSpaceID.String()
 	}
@@ -1255,6 +1268,7 @@ func (s *Service) CompleteConnection(ctx context.Context, userID, connID pgtype.
 	} else {
 		_, err = s.bookings.CompleteMyBooking(ctx, row.ID, userID)
 	}
+
 	if err != nil {
 		return Connection{}, mapBookingErr(err)
 	}
@@ -1305,6 +1319,7 @@ func (s *Service) CancelConnection(ctx context.Context, userID, connID pgtype.UU
 	} else {
 		_, err = s.bookings.CancelMyBooking(ctx, row.ID, userID, reasonStr)
 	}
+
 	if err != nil {
 		return Connection{}, mapBookingErr(err)
 	}
@@ -1403,7 +1418,6 @@ func (s *Service) UpdateMentorEmbedding(ctx context.Context, userID pgtype.UUID,
 	vec := pgvector.NewVector(embedding)
 
 	return s.write.UpdateMentorEmbedding(ctx, gen.UpdateMentorEmbeddingParams{
-
 		UserID:    userID,
 		Embedding: &vec,
 	})
@@ -1431,7 +1445,6 @@ func (s *Service) GenerateEmbedding(ctx context.Context, userID pgtype.UUID) err
 	if profile.MentorBio == nil || *profile.MentorBio == "" {
 		// No bio — nothing to embed. Clear any stale embedding.
 		return s.write.UpdateMentorEmbedding(ctx, gen.UpdateMentorEmbeddingParams{
-
 			UserID:    userID,
 			Embedding: nil,
 		})
@@ -1464,7 +1477,6 @@ func (s *Service) enqueueGenerateEmbedding(ctx context.Context, userID pgtype.UU
 	}
 
 	payload, err := json.Marshal(map[string]string{
-
 		"user_id": userID.String(),
 	})
 	if err != nil {
@@ -1525,6 +1537,7 @@ func connectionFromBookingRow(r servicedir.BookingRow) Connection {
 	if goals == "" && r.Note != nil {
 		goals = *r.Note
 	}
+
 	if goals != "" {
 		conn.Goals = &goals
 	}

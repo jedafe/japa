@@ -230,6 +230,7 @@ func TestAccessGrantsCreate(t *testing.T) {
 	if err := groupA.Scan("11111111-1111-1111-1111-111111111111"); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := groupB.Scan("22222222-2222-2222-2222-222222222222"); err != nil {
 		t.Fatal(err)
 	}
@@ -289,6 +290,7 @@ func TestAccessGrantsCreate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := accessGrantsCreate(tt.access, tt.groupSet); got != tt.want {
 				t.Errorf("accessGrantsCreate() = %v, want %v", got, tt.want)
 			}

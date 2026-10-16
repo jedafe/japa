@@ -195,10 +195,12 @@ func (s *Server) callerTier(ctx context.Context, userID pgtype.UUID) string {
 	if s.tierResolver == nil {
 		return "regular"
 	}
+
 	tier, err := s.tierResolver.ResolveUserTier(ctx, userID)
 	if err != nil || tier == "" {
 		return "regular"
 	}
+
 	return tier
 }
 
@@ -212,6 +214,7 @@ func (s *Server) toolDenied(ctx context.Context, user *auth.AuthenticatedUser, n
 	if g, gated := apiKeyToolGates[name]; gated && g.minTier != "" {
 		tier = s.callerTier(ctx, user.UserID)
 	}
+
 	return s.toolDeniedWithTier(ctx, user, name, tier)
 }
 
@@ -231,15 +234,18 @@ func (s *Server) toolDeniedWithTier(ctx context.Context, user *auth.Authenticate
 		if !gated {
 			return fmt.Sprintf("tool %q is not available to API-key callers", name)
 		}
+
 		if g.scope != "" {
 			if key := publicapi.APIKeyFromContext(ctx); key == nil || !publicapi.HasScope(key.Scopes, g.scope) {
 				return fmt.Sprintf("tool %q requires scope %s", name, g.scope)
 			}
 		}
 	}
+
 	if gated && g.minTier != "" && !publicapi.TierAtLeast(tier, g.minTier) {
 		return fmt.Sprintf("tool %q requires a %s subscription", name, g.minTier)
 	}
+
 	return ""
 }
 
@@ -343,16 +349,19 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request, user *auth.
 		s.writeError(w, nil, -32700, "Parse error", err.Error())
 		return
 	}
+
 	if len(reqs) == 0 {
 		s.writeError(w, nil, -32600, "Invalid Request", "empty batch")
 		return
 	}
+
 	if len(reqs) > maxBatchSize {
 		s.writeError(w, nil, -32600, "Invalid Request", "batch too large")
 		return
 	}
 
 	var out []*jsonRPCResponse
+
 	for i := range reqs {
 		req := &reqs[i]
 		// Elements without an id are notifications — never answered, even
@@ -360,17 +369,21 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request, user *auth.
 		if req.ID == nil {
 			continue
 		}
+
 		if req.JSONRPC != "2.0" {
 			out = append(out, s.errorResp(req.ID, -32600, "Invalid Request", "jsonrpc must be 2.0"))
 			continue
 		}
+
 		resp, isNotification := s.handle(r.Context(), user, req)
 		if isNotification {
 			continue
 		}
+
 		if resp == nil {
 			resp = &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Error: &jsonRPCError{Code: -32603, Message: "Internal error"}}
 		}
+
 		out = append(out, resp)
 	}
 
@@ -380,6 +393,7 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request, user *auth.
 	}
 
 	w.WriteHeader(http.StatusOK)
+
 	if err := json.NewEncoder(w).Encode(out); err != nil {
 		slog.Error("mcp: write batch response", "error", err)
 	}
@@ -425,6 +439,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, user *auth.Au
 			if _, err := fmt.Fprint(w, ": keep-alive\n\n"); err != nil {
 				return
 			}
+
 			if flusher != nil {
 				flusher.Flush()
 			}
@@ -605,17 +620,21 @@ func (s *Server) handleToolsList(ctx context.Context, user *auth.AuthenticatedUs
 	// The tier is resolved once, lazily, only if the catalog contains a
 	// tier-gated tool.
 	var tier string
+
 	tierResolved := false
 	filtered := tools[:0]
+
 	for _, t := range tools {
 		if g, gated := apiKeyToolGates[t.Name]; gated && g.minTier != "" && !tierResolved {
 			tier = s.callerTier(ctx, user.UserID)
 			tierResolved = true
 		}
+
 		if s.toolDeniedWithTier(ctx, user, t.Name, tier) == "" {
 			filtered = append(filtered, t)
 		}
 	}
+
 	tools = filtered
 
 	// §120: append the ChatGPT deep-research aliases the caller can see.
@@ -684,6 +703,7 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 		if isAPIKeyCaller(ctx) {
 			return s.errorResp(req.ID, -32602, "Invalid params", fmt.Sprintf("tool %q is not available to API-key callers", callReq.Name)), false
 		}
+
 		return s.handleJapaChat(ctx, user, req, callReq)
 	}
 
@@ -700,7 +720,6 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 
 	// Create an audit session for the tool call.
 	session, err := s.sessions.CreateAgentSession(ctx, gen.CreateAgentSessionParams{
-
 		UserID:         user.UserID,
 		Prompt:         "mcp:" + callReq.Name,
 		PresearchLevel: "none",
@@ -749,10 +768,12 @@ func (s *Server) buildCallResult(res *ai.ToolResult, execErr error) callToolResu
 		if execErr != nil {
 			msg = execErr.Error()
 		}
+
 		errText, merr := json.Marshal(map[string]any{"error": msg})
 		if merr != nil {
 			errText = []byte(`{"error":"tool execution failed"}`)
 		}
+
 		return callToolResult{
 			Content: []mcpContent{{Type: "text", Text: string(errText)}},
 			IsError: true,

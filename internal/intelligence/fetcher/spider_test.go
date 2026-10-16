@@ -15,6 +15,7 @@ import (
 // asset, tracking-param, and fragment links against the fixture server.
 func spiderPage(srvURL string) string {
 	host := strings.TrimPrefix(srvURL, "http://")
+
 	return fmt.Sprintf(`<html><body>
 		<a href="/scholarships/list">Scholarships</a>
 		<a href="/admissions/apply">Apply</a>
@@ -54,9 +55,11 @@ func TestCompositeFetch_Spider(t *testing.T) {
 	if res.ContentType != ManifestContentType {
 		t.Fatalf("ContentType = %q, want manifest marker", res.ContentType)
 	}
+
 	if res.Headers[ManifestKindHeader] != ManifestKindSpider {
 		t.Errorf("manifest kind = %q, want spider", res.Headers[ManifestKindHeader])
 	}
+
 	if res.Headers[SpiderDepthHeader] != "0" {
 		t.Errorf("spider depth = %q, want 0", res.Headers[SpiderDepthHeader])
 	}
@@ -70,13 +73,16 @@ func TestCompositeFetch_Spider(t *testing.T) {
 		if !strings.HasPrefix(u, srv.URL) {
 			t.Errorf("manifest contains non-entry-host URL %q", u)
 		}
+
 		if strings.Contains(u, "utm_") || strings.Contains(u, "fbclid") || strings.Contains(u, "#") {
 			t.Errorf("manifest URL not normalized: %q", u)
 		}
+
 		if strings.HasSuffix(u, ".png") {
 			t.Errorf("asset link in manifest: %q", u)
 		}
 	}
+
 	if _, ok := lines[srv.URL+"/scholarships/list"]; !ok {
 		t.Errorf("manifest missing /scholarships/list: %v", lines)
 	}
@@ -87,17 +93,21 @@ func TestCompositeFetch_Spider(t *testing.T) {
 	}
 
 	hosts := map[string]int{}
+
 	for _, u := range outbound {
 		if strings.Contains(u, "10.9.9.9") || strings.Contains(u, "127.0.0.1:1") || strings.HasPrefix(u, "mailto:") {
 			t.Errorf("outbound list carried a non-crawlable URL: %q", u)
 		}
+
 		if i := strings.Index(u, "://"); i >= 0 {
 			hosts[u[i+3:strings.Index(u[i+3:], "/")+i+3]]++
 		}
 	}
+
 	if hosts["external.example.com"] != 1 {
 		t.Errorf("external.example.com deduped by host = %d entries, want 1 (%v)", hosts["external.example.com"], outbound)
 	}
+
 	if hosts["other.example.net"] != 1 {
 		t.Errorf("other.example.net missing from outbound list: %v", outbound)
 	}
@@ -114,6 +124,7 @@ func TestCompositeFetch_SpiderRedirectScope(t *testing.T) {
 	// Server B is the real content host; server A is the entry that
 	// redirects to it (different port = different crawl scope).
 	var bURL string
+
 	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(spiderPage(bURL)))
@@ -127,6 +138,7 @@ func TestCompositeFetch_SpiderRedirectScope(t *testing.T) {
 	t.Cleanup(a.Close)
 
 	composite := NewCompositeWithClient(a.Client(), nil, nil)
+
 	res, err := composite.Fetch(t.Context(),
 		sources.Source{SourceUrl: "https://src.example/"},
 		sources.Channel{EntryUrl: a.URL + "/entry", CrawlMethod: string(sources.CrawlMethodSpider)})
@@ -137,9 +149,11 @@ func TestCompositeFetch_SpiderRedirectScope(t *testing.T) {
 	if res.FinalURL != b.URL+"/landing" {
 		t.Fatalf("FinalURL = %q, want %q", res.FinalURL, b.URL+"/landing")
 	}
+
 	if got := res.Headers[SpiderScopeHeader]; got != b.URL+"/landing" {
 		t.Errorf("scope header = %q, want %q", got, b.URL+"/landing")
 	}
+
 	for u := range ParseManifest(res.Body) {
 		if !strings.HasPrefix(u, b.URL) {
 			t.Errorf("manifest URL %q not scoped to the post-redirect host", u)
@@ -169,6 +183,7 @@ func TestCompositeFetch_SpiderDepthStamp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
+
 	if res.Headers[SpiderDepthHeader] != "1" {
 		t.Errorf("depth header = %q, want 1", res.Headers[SpiderDepthHeader])
 	}
@@ -216,9 +231,11 @@ func TestSpiderManifestDepth(t *testing.T) {
 	if got := SpiderManifestDepth(map[string]string{SpiderDepthHeader: "2"}); got != 2 {
 		t.Errorf("depth = %d, want 2", got)
 	}
+
 	if got := SpiderManifestDepth(map[string]string{SpiderDepthHeader: "bogus"}); got != 0 {
 		t.Errorf("depth = %d, want 0 on malformed header", got)
 	}
+
 	if got := SpiderManifestDepth(nil); got != 0 {
 		t.Errorf("depth = %d, want 0 on absent header", got)
 	}
@@ -240,6 +257,7 @@ func TestExtractOutboundLinks(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("outbound = %v, want 2 (one per host)", out)
 	}
+
 	for _, u := range out {
 		if strings.HasPrefix(u, "https://site.example") {
 			t.Errorf("same-host link leaked into outbound list: %q", u)
@@ -286,5 +304,6 @@ func srvURL(r *http.Request) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
+
 	return scheme + "://" + r.Host
 }

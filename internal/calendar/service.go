@@ -34,25 +34,25 @@ type Notifier interface {
 }
 
 // CalendarEntryDTO is the API response shape for a calendar entry (list).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type CalendarEntryDTO struct {
-	ID                 string `json:"id"`
-	Title              string `json:"title"`
-	Description        string `json:"description,omitempty"`
-	Category              string `json:"category"`
-	DestinationSpaceID    string `json:"destination_space_id,omitempty"`
-	DestinationSpaceName  string `json:"destination_space_name,omitempty"`
-	OriginSpaceID         string `json:"origin_space_id,omitempty"`
-	OriginSpaceName       string `json:"origin_space_name,omitempty"`
-	OccursAt           string `json:"occurs_at"`
-	EndsAt             string `json:"ends_at,omitempty"`
-	IsRecurring        bool   `json:"is_recurring"`
-	RecurrencePattern  string `json:"recurrence_pattern,omitempty"`
-	SourceURL          string `json:"source_url,omitempty"`
-	Status             string `json:"status,omitempty"`
-	SubmittedBy        string `json:"submitted_by,omitempty"`
-	ReviewedBy         string `json:"reviewed_by,omitempty"`
-	ReviewedAt         string `json:"reviewed_at,omitempty"`
+	ID                   string `json:"id"`
+	Title                string `json:"title"`
+	Description          string `json:"description,omitempty"`
+	Category             string `json:"category"`
+	DestinationSpaceID   string `json:"destination_space_id,omitempty"`
+	DestinationSpaceName string `json:"destination_space_name,omitempty"`
+	OriginSpaceID        string `json:"origin_space_id,omitempty"`
+	OriginSpaceName      string `json:"origin_space_name,omitempty"`
+	OccursAt             string `json:"occurs_at"`
+	EndsAt               string `json:"ends_at,omitempty"`
+	IsRecurring          bool   `json:"is_recurring"`
+	RecurrencePattern    string `json:"recurrence_pattern,omitempty"`
+	SourceURL            string `json:"source_url,omitempty"`
+	Status               string `json:"status,omitempty"`
+	SubmittedBy          string `json:"submitted_by,omitempty"`
+	ReviewedBy           string `json:"reviewed_by,omitempty"`
+	ReviewedAt           string `json:"reviewed_at,omitempty"`
 	// ADR-088 universal AI content generation columns.
 	AiGenerated     bool   `json:"ai_generated"`
 	AiModel         string `json:"ai_model,omitempty"`
@@ -282,7 +282,6 @@ func (s *Service) List(ctx context.Context, destSpaceID, originSpaceID pgtype.UU
 	offset := (page - 1) * limit
 
 	entries, total, err := s.store.ListEntries(ctx, ListEntriesFilter{
-
 		DestinationSpaceID: destSpaceID,
 		OriginSpaceID:      originSpaceID,
 		Category:           category,
@@ -298,24 +297,29 @@ func (s *Service) List(ctx context.Context, destSpaceID, originSpaceID pgtype.UU
 	// Batch the per-entry is_saved lookup — a single IN query for the whole
 	// page instead of an N+1 EXISTS loop.
 	var saved map[string]bool
+
 	if userID.Valid && len(entries) > 0 {
 		ids := make([]pgtype.UUID, 0, len(entries))
 		for _, e := range entries {
 			ids = append(ids, e.ID)
 		}
+
 		saved, err = s.store.SavedEntryIDs(ctx, userID, ids)
 		if err != nil {
 			slog.Warn("calendar: list: failed to batch check is_saved", "error", err)
+
 			saved = nil
 		}
 	}
 
 	dtos := make([]CalendarEntryDTO, 0, len(entries))
+
 	for _, e := range entries {
 		dto := entryToDTO(e)
 		if userID.Valid && saved != nil {
 			dto.IsSaved = saved[e.ID.String()]
 		}
+
 		dtos = append(dtos, dto)
 	}
 
@@ -348,17 +352,20 @@ func (s *Service) Get(ctx context.Context, id, userID pgtype.UUID) (CalendarEntr
 					s.rbac.HasPermission(ctx, userID, "calendar.edit_any")
 			}
 		}
+
 		if !allowed {
 			return CalendarEntryDTO{}, pgx.ErrNoRows
 		}
 	}
 
 	dto := entryToDTO(entry)
+
 	if userID.Valid {
 		saved, err := s.store.IsSaved(ctx, userID, entry.ID)
 		if err != nil {
 			slog.Warn("calendar: get: failed to check is_saved", "entry_id", entry.ID, "error", err)
 		}
+
 		dto.IsSaved = saved
 	}
 
@@ -372,19 +379,24 @@ func (s *Service) Get(ctx context.Context, id, userID pgtype.UUID) (CalendarEntr
 // a single batch lookup against the spaces table.
 func (s *Service) populateSpaceNames(ctx context.Context, dtos []CalendarEntryDTO) {
 	seen := make(map[string]bool)
+
 	var ids []pgtype.UUID
+
 	for _, dto := range dtos {
 		for _, raw := range []string{dto.DestinationSpaceID, dto.OriginSpaceID} {
 			if raw == "" || seen[raw] {
 				continue
 			}
+
 			var id pgtype.UUID
 			if err := id.Scan(raw); err == nil {
 				seen[raw] = true
+
 				ids = append(ids, id)
 			}
 		}
 	}
+
 	if len(ids) == 0 {
 		return
 	}
@@ -399,6 +411,7 @@ func (s *Service) populateSpaceNames(ctx context.Context, dtos []CalendarEntryDT
 		if n, ok := names[dtos[i].DestinationSpaceID]; ok {
 			dtos[i].DestinationSpaceName = n
 		}
+
 		if n, ok := names[dtos[i].OriginSpaceID]; ok {
 			dtos[i].OriginSpaceName = n
 		}
@@ -414,6 +427,7 @@ func (s *Service) IsSubscribed(ctx context.Context, userID, destSpaceID pgtype.U
 		slog.Warn("calendar: is subscribed failed", "error", err)
 		return false
 	}
+
 	return subscribed
 }
 
@@ -519,9 +533,11 @@ func (s *Service) buildEntry(ctx context.Context, input SubmitEntryInput) (Calen
 	// §86 Geo Awareness: destination country is the primary data axis —
 	// every entry requires a destination (spec column is NOT NULL).
 	var destSpaceID pgtype.UUID
+
 	if input.DestinationSpaceID == "" {
 		return CalendarEntry{}, validationErr("destination_space_id is required")
 	}
+
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
 		return CalendarEntry{}, validationErr("invalid destination_space_id: %v", err)
 	}
@@ -534,7 +550,6 @@ func (s *Service) buildEntry(ctx context.Context, input SubmitEntryInput) (Calen
 	}
 
 	entry := CalendarEntry{
-
 		Title:              input.Title,
 		Category:           input.Category,
 		DestinationSpaceID: destSpaceID,
@@ -553,6 +568,7 @@ func (s *Service) buildEntry(ctx context.Context, input SubmitEntryInput) (Calen
 		if !isValidRecurrencePattern(input.RecurrencePattern) {
 			return CalendarEntry{}, validationErr("recurrence_pattern must be one of: daily, weekly, monthly, yearly")
 		}
+
 		entry.RecurrencePattern = &input.RecurrencePattern
 	}
 
@@ -626,6 +642,7 @@ func (s *Service) ListSaved(ctx context.Context, userID pgtype.UUID, page, limit
 	}
 
 	dtos := make([]CalendarEntryDTO, 0, len(entries))
+
 	for _, e := range entries {
 		dto := entryToDTO(e)
 		dto.IsSaved = true
@@ -670,7 +687,6 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID, originSpaceID pgty
 	offset := (page - 1) * limit
 
 	entries, total, err := s.store.AdminListEntries(ctx, AdminListEntriesFilter{
-
 		DestinationSpaceID: destSpaceID,
 		OriginSpaceID:      originSpaceID,
 		Category:           category,
@@ -1028,7 +1044,6 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 	// The AdminUpdate HITL gate (BUG-003/BUG-005) blocks publishing AI
 	// entries with an empty or placeholder source_url.
 	entryID, err := s.store.CreateEntry(ctx, CalendarEntry{
-
 		Title:              title,
 		Description:        descPtr,
 		Category:           category,

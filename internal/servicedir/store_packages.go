@@ -296,6 +296,7 @@ func bookingRowFromDetail(r gen.GetServiceBookingDetailRow) BookingRow {
 	if r.EffectiveTierName != "" {
 		row.TierName = strPtr(r.EffectiveTierName) // snapshot wins, live tier name is the fallback
 	}
+
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
@@ -338,6 +339,7 @@ func bookingRowFromUser(r gen.ListServiceBookingsByUserRow) BookingRow {
 	if r.EffectiveTierName != "" {
 		row.TierName = strPtr(r.EffectiveTierName)
 	}
+
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
@@ -376,6 +378,7 @@ func bookingRowFromOrg(r gen.ListServiceBookingsByOrgRow) BookingRow {
 	if r.EffectiveTierName != "" {
 		row.TierName = strPtr(r.EffectiveTierName)
 	}
+
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
@@ -418,6 +421,7 @@ func bookingRowFromProvider(r gen.ListServiceBookingsByProviderUserRow) BookingR
 	if r.EffectiveTierName != "" {
 		row.TierName = strPtr(r.EffectiveTierName)
 	}
+
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
@@ -459,6 +463,7 @@ func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 	if r.EffectiveTierName != "" {
 		row.TierName = strPtr(r.EffectiveTierName) // snapshot wins, live tier name is the fallback
 	}
+
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind

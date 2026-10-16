@@ -32,12 +32,12 @@ func mapStoreError(err error) error {
 	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("%w: %v", errpkg.ErrNotFound, err)
+		return fmt.Errorf("%w: %w", errpkg.ErrNotFound, err)
 	}
 
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return fmt.Errorf("%w: %v", errpkg.ErrDuplicate, err)
+		return fmt.Errorf("%w: %w", errpkg.ErrDuplicate, err)
 	}
 
 	return err

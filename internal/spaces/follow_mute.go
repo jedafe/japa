@@ -11,7 +11,6 @@ import (
 // ToggleFollowSpace is an exported method.
 func (s *Service) ToggleFollowSpace(ctx context.Context, userID, spaceID pgtype.UUID) (bool, error) {
 	isFollowing, err := s.read.IsFollowing(ctx, gen.IsFollowingParams{
-
 		FollowerID: userID,
 		EntityType: "space",
 		EntityID:   spaceID,
@@ -22,7 +21,6 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, userID, spaceID pgtype.
 
 	if isFollowing {
 		err = s.write.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
-
 			FollowerID: userID,
 			EntityType: "space",
 			EntityID:   spaceID,
@@ -41,7 +39,6 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, userID, spaceID pgtype.
 	}
 
 	err = s.write.InsertFollow(ctx, gen.InsertFollowParams{
-
 		FollowerID: userID,
 		EntityType: "space",
 		EntityID:   spaceID,
@@ -64,7 +61,6 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, userID, spaceID pgtype.
 // VALKEY-001, BUG-003: platform-scoped).
 func (s *Service) MuteSpace(ctx context.Context, userID, spaceID pgtype.UUID) error {
 	if err := s.write.MuteSpace(ctx, gen.MuteSpaceParams{
-
 		UserID:  userID,
 		SpaceID: spaceID,
 	}); err != nil {
@@ -81,7 +77,6 @@ func (s *Service) MuteSpace(ctx context.Context, userID, spaceID pgtype.UUID) er
 // VALKEY-001, BUG-003: platform-scoped).
 func (s *Service) UnmuteSpace(ctx context.Context, userID, spaceID pgtype.UUID) error {
 	if err := s.write.UnmuteSpace(ctx, gen.UnmuteSpaceParams{
-
 		UserID:  userID,
 		SpaceID: spaceID,
 	}); err != nil {
@@ -96,7 +91,6 @@ func (s *Service) UnmuteSpace(ctx context.Context, userID, spaceID pgtype.UUID) 
 // IsSpaceMuted is an exported method.
 func (s *Service) IsSpaceMuted(ctx context.Context, userID, spaceID pgtype.UUID) (bool, error) {
 	return s.read.IsSpaceMuted(ctx, gen.IsSpaceMutedParams{
-
 		UserID:  userID,
 		SpaceID: spaceID,
 	})

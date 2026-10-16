@@ -125,12 +125,14 @@ func SourceURL(entityType, contentType, slug string) string {
 	if slug == "" {
 		return ""
 	}
+
 	switch entityType {
 	case EntityTypeContent:
 		prefix, ok := contentRoutePrefix[contentType]
 		if !ok {
 			prefix = "/content"
 		}
+
 		return prefix + "/" + slug
 	case EntityTypeForumThread:
 		return "/forum/" + slug
@@ -153,6 +155,7 @@ func interfaceString(v interface{}) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
+
 	return ""
 }
 
@@ -180,7 +183,6 @@ func (s *Store) UpsertChunk(ctx context.Context, ref EntityRef, chunk Chunk, lan
 	vec := pgvector.NewVector(chunk.Vector)
 
 	_, err := s.writeQueries.UpsertContentEmbedding(ctx, gen.UpsertContentEmbeddingParams{
-
 		EntityType: ref.Type,
 		EntityID:   ref.ID,
 		ChunkIndex: int32(chunk.Index), // #nosec G115 -- chunk index, bounded by chunking logic
@@ -202,7 +204,6 @@ func (s *Store) UpsertChunk(ctx context.Context, ref EntityRef, chunk Chunk, lan
 // Used on unpublish/delete and by the admin DELETE route.
 func (s *Store) DeleteEntityEmbeddings(ctx context.Context, entityType string, entityID pgtype.UUID) error {
 	return s.writeQueries.DeleteContentEmbeddingsByEntity(ctx, gen.DeleteContentEmbeddingsByEntityParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -221,7 +222,6 @@ func (s *Store) DeleteEmbeddingsByType(ctx context.Context, entityType string) e
 // Called after a re-index that produced fewer chunks than the previous index.
 func (s *Store) DeleteStaleTail(ctx context.Context, entityType string, entityID pgtype.UUID, maxIndex int32) error {
 	return s.writeQueries.DeleteContentEmbeddingsAboveIndex(ctx, gen.DeleteContentEmbeddingsAboveIndexParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 		MaxIndex:   maxIndex,
@@ -231,7 +231,6 @@ func (s *Store) DeleteStaleTail(ctx context.Context, entityType string, entityID
 // CountEntityChunks returns the number of chunks stored for an entity.
 func (s *Store) CountEntityChunks(ctx context.Context, entityType string, entityID pgtype.UUID) (int64, error) {
 	return s.queries.CountContentEmbeddingsByEntity(ctx, gen.CountContentEmbeddingsByEntityParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -252,7 +251,6 @@ type ReindexRef struct {
 // into memory at once.
 func (s *Store) ListPublishedContentIDs(ctx context.Context, limit, offset int32) ([]ReindexRef, error) {
 	rows, err := s.queries.ListPublishedContentIDsForReindex(ctx, gen.ListPublishedContentIDsForReindexParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -278,7 +276,6 @@ func (s *Store) ListPublishedContentIDs(ctx context.Context, limit, offset int32
 // Threads inherit their parent space's visibility.
 func (s *Store) ListForumThreadIDs(ctx context.Context, limit, offset int32) ([]ReindexRef, error) {
 	rows, err := s.queries.ListForumThreadIDsForReindex(ctx, gen.ListForumThreadIDsForReindexParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -303,7 +300,6 @@ func (s *Store) ListForumThreadIDs(ctx context.Context, limit, offset int32) ([]
 // re-indexing (ADR-069 §2: spaces are part of the corpus).
 func (s *Store) ListSpaceIDs(ctx context.Context, limit, offset int32) ([]ReindexRef, error) {
 	rows, err := s.queries.ListSpaceIDsForReindex(ctx, gen.ListSpaceIDsForReindexParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -326,7 +322,6 @@ func (s *Store) ListSpaceIDs(ctx context.Context, limit, offset int32) ([]Reinde
 // full corpus re-indexing (ADR-069 §2: learning tracks are part of the corpus).
 func (s *Store) ListAcademyTrackIDs(ctx context.Context, limit, offset int32) ([]pgtype.UUID, error) {
 	rows, err := s.queries.ListAcademyTrackIDsForReindex(ctx, gen.ListAcademyTrackIDsForReindexParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -508,10 +503,12 @@ func (s *Store) RecordIndexFailure(ctx context.Context, entityType string, entit
 	if s == nil || s.writeQueries == nil {
 		return nil
 	}
+
 	errStr := "<nil>"
 	if indexErr != nil {
 		errStr = indexErr.Error()
 	}
+
 	if err := s.writeQueries.UpsertRAGIndexFailure(ctx, gen.UpsertRAGIndexFailureParams{
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -520,6 +517,7 @@ func (s *Store) RecordIndexFailure(ctx context.Context, entityType string, entit
 	}); err != nil {
 		return fmt.Errorf("rag: record index failure: %w", err)
 	}
+
 	return nil
 }
 
@@ -528,10 +526,12 @@ func (s *Store) ListIndexFailures(ctx context.Context, limit int32) ([]IndexFail
 	if s == nil || s.queries == nil {
 		return nil, nil
 	}
+
 	rows, err := s.queries.ListRAGIndexFailures(ctx, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rag: list index failures: %w", err)
 	}
+
 	out := make([]IndexFailure, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, IndexFailure{
@@ -542,6 +542,7 @@ func (s *Store) ListIndexFailures(ctx context.Context, limit int32) ([]IndexFail
 			AttemptedAt: r.AttemptedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		})
 	}
+
 	return out, nil
 }
 
@@ -551,10 +552,12 @@ func (s *Store) CountIndexFailures24h(ctx context.Context) (int64, error) {
 	if s == nil || s.queries == nil {
 		return 0, nil
 	}
+
 	n, err := s.queries.CountRAGIndexFailures24h(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("rag: count index failures: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -564,6 +567,7 @@ func (s *Store) ListContentIndexFailureIDs(ctx context.Context) ([]pgtype.UUID, 
 	if s == nil || s.queries == nil {
 		return nil, nil
 	}
+
 	return s.queries.ListContentRAGIndexFailures(ctx)
 }
 
@@ -572,6 +576,7 @@ func (s *Store) ClearIndexFailure(ctx context.Context, entityType string, entity
 	if s == nil || s.writeQueries == nil {
 		return nil
 	}
+
 	if err := s.writeQueries.DeleteRAGIndexFailure(ctx, gen.DeleteRAGIndexFailureParams{
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -579,6 +584,7 @@ func (s *Store) ClearIndexFailure(ctx context.Context, entityType string, entity
 	}); err != nil {
 		return fmt.Errorf("rag: clear index failure: %w", err)
 	}
+
 	return nil
 }
 
@@ -589,9 +595,11 @@ func (s *Store) ClearIndexFailures(ctx context.Context, entityType string) error
 	if s == nil || s.writeQueries == nil {
 		return nil
 	}
+
 	if err := s.writeQueries.DeleteRAGIndexFailures(ctx, entityType); err != nil {
 		return fmt.Errorf("rag: clear index failures: %w", err)
 	}
+
 	return nil
 }
 
@@ -601,10 +609,12 @@ func (s *Store) ClearNonContentIndexFailures(ctx context.Context) (int64, error)
 	if s == nil || s.writeQueries == nil {
 		return 0, nil
 	}
+
 	n, err := s.writeQueries.DeleteNonContentRAGIndexFailures(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("rag: clear non-content index failures: %w", err)
 	}
+
 	return n, nil
 }
 

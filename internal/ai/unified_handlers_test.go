@@ -18,14 +18,18 @@ import (
 func unifiedHTTPHandlers(t *testing.T, provider *recordingProvider, perms *stubPerms) *AgentHTTPHandlers {
 	t.Helper()
 	agent, _, _ := newUnifiedHandler(t, provider, perms)
+
 	return NewAgentHTTPHandlers(agent, newStubAgentSessions())
 }
 
 func authedRequest(t *testing.T, method, path, body string, uid byte) *http.Request {
 	t.Helper()
+
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
+
 	user := &auth.AuthenticatedUser{UserID: pgtype.UUID{Bytes: [16]byte{uid}, Valid: true}}
+
 	return r.WithContext(context.WithValue(r.Context(), auth.UserContextKey, user))
 }
 
@@ -41,6 +45,7 @@ func TestHandleUnifiedChat_JSONContract(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", res.StatusCode, w.Body.String())
 	}
+
 	body := w.Body.String()
 	for _, want := range []string{`"reply":"hello back"`, `"conversation_id"`, `"message_id"`} {
 		if !strings.Contains(body, want) {
@@ -55,6 +60,7 @@ func TestHandleUnifiedChat_SSEStream(t *testing.T) {
 
 	r := authedRequest(t, http.MethodPost, "/api/v1/ai/chat", `{"message":"hi"}`, 1)
 	r.Header.Set("Accept", "text/event-stream")
+
 	w := httptest.NewRecorder()
 	hh.HandleUnifiedChat(w, r)
 
@@ -62,6 +68,7 @@ func TestHandleUnifiedChat_SSEStream(t *testing.T) {
 	if ct := res.Header.Get("Content-Type"); ct != "text/event-stream" {
 		t.Fatalf("expected SSE content type, got %s", ct)
 	}
+
 	body := w.Body.String()
 	if !strings.Contains(body, "data: ") || !strings.Contains(body, `"type":"session_start"`) || !strings.Contains(body, `"type":"final_response"`) || !strings.Contains(body, `"type":"conversation"`) {
 		t.Fatalf("bad SSE body: %s", body)
@@ -73,6 +80,7 @@ func TestHandleUnifiedChat_EmptyMessage(t *testing.T) {
 	r := authedRequest(t, http.MethodPost, "/api/v1/ai/chat", `{}`, 1)
 	w := httptest.NewRecorder()
 	hh.HandleUnifiedChat(w, r)
+
 	if w.Result().StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Result().StatusCode)
 	}
@@ -83,10 +91,12 @@ func TestHandleUnifiedChat_NoPermission(t *testing.T) {
 	r := authedRequest(t, http.MethodPost, "/api/v1/ai/chat", `{"message":"hi"}`, 1)
 	w := httptest.NewRecorder()
 	hh.HandleUnifiedChat(w, r)
+
 	res := w.Result()
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", res.StatusCode)
 	}
+
 	if code := decodeError(t, w.Body)["code"]; code != "ai_permission_required" {
 		t.Fatalf("expected ai_permission_required, got %s", code)
 	}
@@ -97,7 +107,9 @@ func TestHandleUnifiedChat_NoPermission(t *testing.T) {
 // passthrough lets any client inject prompt keys.
 func TestHandleUnifiedChat_SanitizesContext(t *testing.T) {
 	provider := &recordingProvider{name: "mock", reply: "ok"}
+
 	var captured map[string]any
+
 	agent, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}},
 		WithAgentAIContext(func(_ context.Context, _ pgtype.UUID, clientCtx map[string]any) map[string]any {
 			captured = clientCtx
@@ -113,12 +125,15 @@ func TestHandleUnifiedChat_SanitizesContext(t *testing.T) {
 	if captured == nil {
 		t.Fatal("aiContextFn was not invoked")
 	}
+
 	if captured["tone"] != "friendly" {
 		t.Fatalf("allowlisted key dropped: %+v", captured)
 	}
+
 	if _, ok := captured["system_override"]; ok {
 		t.Fatalf("non-allowlisted key leaked into prompt context: %+v", captured)
 	}
+
 	if _, ok := captured["nested"]; ok {
 		t.Fatalf("nested object leaked into prompt context: %+v", captured)
 	}
@@ -155,11 +170,13 @@ func TestHandleGetConversationV2_DeletedDoesNotFallThrough(t *testing.T) {
 	h := &Handlers{Convos: NewConversationService(st, nil)}
 
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
-	conv, err := st.CreateAIConversation(context.Background(), gen.CreateAIConversationParams{UserID: uid, Title: "x"})
+
+	conv, err := st.CreateAIConversation(t.Context(), gen.CreateAIConversationParams{UserID: uid, Title: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.SoftDeleteAIConversationForUser(context.Background(), gen.SoftDeleteAIConversationForUserParams{ID: conv.ID, UserID: uid}); err != nil {
+
+	if _, err := st.SoftDeleteAIConversationForUser(t.Context(), gen.SoftDeleteAIConversationForUserParams{ID: conv.ID, UserID: uid}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -175,6 +192,7 @@ func TestHandleGetConversationV2_DeletedDoesNotFallThrough(t *testing.T) {
 	if w.Result().StatusCode != http.StatusNotFound {
 		t.Fatalf("deleted thread should 404, got %d", w.Result().StatusCode)
 	}
+
 	if !strings.Contains(w.Body.String(), "conversation_not_found") {
 		t.Fatalf("deleted thread must not fall through to legacy handler: %s", w.Body.String())
 	}
@@ -187,6 +205,7 @@ func TestAIPrefsHandlers(t *testing.T) {
 	r := authedRequest(t, http.MethodGet, "/api/v1/me/ai-preferences", "", 1)
 	w := httptest.NewRecorder()
 	h.HandleGetAIPrefs(w, r)
+
 	if w.Result().StatusCode != http.StatusOK {
 		t.Fatalf("GET status %d", w.Result().StatusCode)
 	}
@@ -196,6 +215,7 @@ func TestAIPrefsHandlers(t *testing.T) {
 		`{"default_mode":"agent","disabled_categories":["forum"]}`, 1)
 	w = httptest.NewRecorder()
 	h.HandlePutAIPrefs(w, r)
+
 	if w.Result().StatusCode != http.StatusOK {
 		t.Fatalf("PUT status %d: %s", w.Result().StatusCode, w.Body.String())
 	}
@@ -204,6 +224,7 @@ func TestAIPrefsHandlers(t *testing.T) {
 	r = authedRequest(t, http.MethodPut, "/api/v1/me/ai-preferences", `{"default_mode":"turbo"}`, 1)
 	w = httptest.NewRecorder()
 	h.HandlePutAIPrefs(w, r)
+
 	if w.Result().StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad mode should 400, got %d", w.Result().StatusCode)
 	}
@@ -212,6 +233,7 @@ func TestAIPrefsHandlers(t *testing.T) {
 	r = authedRequest(t, http.MethodGet, "/api/v1/me/ai-preferences", "", 1)
 	w = httptest.NewRecorder()
 	h.HandleGetAIPrefs(w, r)
+
 	if !strings.Contains(w.Body.String(), `"default_mode":"agent"`) {
 		t.Fatalf("prefs not persisted: %s", w.Body.String())
 	}
@@ -226,6 +248,7 @@ func TestAIPrefsChatTemplates(t *testing.T) {
 		`{"default_mode":"agent","chat_templates":[{"id":"t1","name":"Guide","folder":"visa/guides","values":{"content_type":"guide","min_words":1500},"created_at":"2026-01-01T00:00:00Z"}]}`, 1)
 	w := httptest.NewRecorder()
 	h.HandlePutAIPrefs(w, r)
+
 	if w.Result().StatusCode != http.StatusOK {
 		t.Fatalf("PUT status %d: %s", w.Result().StatusCode, w.Body.String())
 	}
@@ -233,10 +256,12 @@ func TestAIPrefsChatTemplates(t *testing.T) {
 	r = authedRequest(t, http.MethodGet, "/api/v1/me/ai-preferences", "", 1)
 	w = httptest.NewRecorder()
 	h.HandleGetAIPrefs(w, r)
+
 	body := w.Body.String()
 	if !strings.Contains(body, `"chat_templates"`) || !strings.Contains(body, `"min_words":1500`) {
 		t.Fatalf("chat templates not persisted: %s", body)
 	}
+
 	if !strings.Contains(body, `"folder":"visa/guides"`) {
 		t.Fatalf("template folder not persisted: %s", body)
 	}
@@ -246,6 +271,7 @@ func TestAIPrefsChatTemplates(t *testing.T) {
 		`{"chat_templates":[{"id":"t1","name":"x","folder":"`+strings.Repeat("f", 201)+`"}]}`, 1)
 	w = httptest.NewRecorder()
 	h.HandlePutAIPrefs(w, r)
+
 	if w.Result().StatusCode != http.StatusBadRequest {
 		t.Fatalf("overlong folder should 400, got %d", w.Result().StatusCode)
 	}
@@ -255,23 +281,29 @@ func TestAIPrefsChatTemplates(t *testing.T) {
 		`{"chat_templates":[{"id":"t1","name":"x","values":[1,2]}]}`, 1)
 	w = httptest.NewRecorder()
 	h.HandlePutAIPrefs(w, r)
+
 	if w.Result().StatusCode != http.StatusBadRequest {
 		t.Fatalf("array values should 400, got %d", w.Result().StatusCode)
 	}
 
 	// Over the 32-template cap → 400.
 	var many strings.Builder
+
 	many.WriteString(`{"chat_templates":[`)
-	for i := 0; i < 33; i++ {
+
+	for i := range 33 {
 		if i > 0 {
 			many.WriteString(",")
 		}
+
 		fmt.Fprintf(&many, `{"id":"t%d","name":"x"}`, i)
 	}
+
 	many.WriteString(`]}`)
 	r = authedRequest(t, http.MethodPut, "/api/v1/me/ai-preferences", many.String(), 1)
 	w = httptest.NewRecorder()
 	h.HandlePutAIPrefs(w, r)
+
 	if w.Result().StatusCode != http.StatusBadRequest {
 		t.Fatalf("33 templates should 400, got %d", w.Result().StatusCode)
 	}
@@ -285,6 +317,7 @@ func TestAIPrefsChatTemplates(t *testing.T) {
 		r = authedRequest(t, http.MethodPut, "/api/v1/me/ai-preferences", payload, 1)
 		w = httptest.NewRecorder()
 		h.HandlePutAIPrefs(w, r)
+
 		if w.Result().StatusCode != http.StatusBadRequest {
 			t.Fatalf("payload %s should 400, got %d", payload, w.Result().StatusCode)
 		}
@@ -301,7 +334,8 @@ func TestHandleGetConversationV2_RunningSessionID(t *testing.T) {
 	}
 
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
-	conv, err := st.CreateAIConversation(context.Background(), gen.CreateAIConversationParams{UserID: uid, Title: "x"})
+
+	conv, err := st.CreateAIConversation(t.Context(), gen.CreateAIConversationParams{UserID: uid, Title: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,9 +347,11 @@ func TestHandleGetConversationV2_RunningSessionID(t *testing.T) {
 		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 		w := httptest.NewRecorder()
 		h.HandleGetConversationV2(w, r)
+
 		if w.Result().StatusCode != http.StatusOK {
 			t.Fatalf("detail should 200, got %d: %s", w.Result().StatusCode, w.Body.String())
 		}
+
 		return w.Body.String()
 	}
 
@@ -331,6 +367,7 @@ func TestHandleGetConversationV2_RunningSessionID(t *testing.T) {
 		Status:    "running",
 		StartedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	}
+
 	body := get()
 	if !strings.Contains(body, `"running_session_id":"`+sessID.String()+`"`) {
 		t.Fatalf("running session should surface on detail: %s", body)
@@ -340,6 +377,7 @@ func TestHandleGetConversationV2_RunningSessionID(t *testing.T) {
 	s := st.sessions[sessID.String()]
 	s.Status = "failed"
 	st.sessions[sessID.String()] = s
+
 	if strings.Contains(get(), "running_session_id") {
 		t.Fatal("running_session_id must be absent once the session is terminal")
 	}

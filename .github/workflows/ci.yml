@@ -52,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [main, admin, control, academy, docs]
+        app: [main, admin, control, academy, docs, tools, studio-desktop]
     defaults:
       run:
         working-directory: apps/${{ matrix.app }}
@@ -79,6 +79,35 @@ jobs:
         run: bun run test
 
       - name: Production build
+        run: bun run build
+
+  # WXT extension: no vitest suite — type check + wxt build only.
+  extension:
+    name: Extension
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/extension
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Provision env from example
+        run: cp .env.example .env
+
+      - name: WXT prepare
+        run: bunx wxt prepare
+
+      - name: Type check
+        run: bun run check
+
+      - name: Build
         run: bun run build
 
   test:

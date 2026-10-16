@@ -12,6 +12,7 @@
 package main
 
 import (
+	"errors"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -48,6 +49,7 @@ func distillSource(opts distillOptions) func(context.Context, *pgxpool.Pool, str
 		if err != nil {
 			return nil, err
 		}
+
 		if opts.Model != "" {
 			model = opts.Model
 		}
@@ -56,6 +58,7 @@ func distillSource(opts distillOptions) func(context.Context, *pgxpool.Pool, str
 		if err != nil {
 			return nil, err
 		}
+
 		if len(docs) == 0 {
 			slog.Warn("distill: no seed documents found")
 			return nil, nil
@@ -64,6 +67,7 @@ func distillSource(opts distillOptions) func(context.Context, *pgxpool.Pool, str
 		client := &http.Client{Timeout: 120 * time.Second}
 
 		var exs []example
+
 		for i, doc := range docs {
 			pairs, err := distillDoc(ctx, client, baseURL, apiKey, model, doc, opts.PairsPerDoc)
 			if err != nil {
@@ -76,6 +80,7 @@ func distillSource(opts distillOptions) func(context.Context, *pgxpool.Pool, str
 					exs = append(exs, ex)
 				}
 			}
+
 			slog.Info("distill progress", "doc", i+1, "of", len(docs), "title", doc.Title, "pairs", len(pairs))
 		}
 
@@ -97,6 +102,7 @@ func loadTeacherConfig(ctx context.Context, pool *pgxpool.Pool, name string) (ap
 		if p.Name != name {
 			continue
 		}
+
 		if !p.Enabled {
 			return "", "", "", fmt.Errorf("provider %q is disabled", name)
 		}
@@ -134,16 +140,19 @@ func loadSeedDocuments(ctx context.Context, pool *pgxpool.Pool, maxDocs int) ([]
 	}
 
 	var docs []seedDoc
+
 	for rows.Next() {
 		var kind, title, body string
 		if err := rows.Scan(&kind, &title, &body); err != nil {
 			rows.Close()
 			return nil, err
 		}
+
 		if t := stripTitlePrefix(bodyText(body), title); t != "" {
 			docs = append(docs, seedDoc{Kind: kind, Title: title, Body: t})
 		}
 	}
+
 	rows.Close()
 
 	// Wiki pages — destination context makes the questions concrete.
@@ -162,17 +171,21 @@ func loadSeedDocuments(ctx context.Context, pool *pgxpool.Pool, maxDocs int) ([]
 	if err != nil {
 		return nil, fmt.Errorf("loading wiki seeds: %w", err)
 	}
+
 	for wrows.Next() {
 		var title, dest string
+
 		var content []byte
 		if err := wrows.Scan(&title, &content, &dest); err != nil {
 			wrows.Close()
 			return nil, err
 		}
+
 		if t := stripTitlePrefix(bodyText(string(content)), title); t != "" {
 			docs = append(docs, seedDoc{Kind: "wiki", Title: title, Context: dest, Body: t})
 		}
 	}
+
 	wrows.Close()
 
 	// Lessons — curriculum text, strongest teaching signal per token.
@@ -187,19 +200,23 @@ func loadSeedDocuments(ctx context.Context, pool *pgxpool.Pool, maxDocs int) ([]
 	if err != nil {
 		return nil, fmt.Errorf("loading lesson seeds: %w", err)
 	}
+
 	for lrows.Next() {
 		var title, track string
+
 		var content *string
 		if err := lrows.Scan(&title, &content, &track); err != nil {
 			lrows.Close()
 			return nil, err
 		}
+
 		if content != nil {
 			if t := stripTitlePrefix(bodyText(*content), title); t != "" {
 				docs = append(docs, seedDoc{Kind: "lesson", Title: title, Context: track, Body: t})
 			}
 		}
 	}
+
 	lrows.Close()
 
 	return docs, nil
@@ -260,6 +277,7 @@ func distillDoc(ctx context.Context, client *http.Client, baseURL, apiKey, model
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
@@ -267,12 +285,14 @@ func distillDoc(ctx context.Context, client *http.Client, baseURL, apiKey, model
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("teacher API error (status %d): %s", resp.StatusCode, string(respBody[:min(300, len(respBody))]))
 	}
@@ -284,16 +304,19 @@ func distillDoc(ctx context.Context, client *http.Client, baseURL, apiKey, model
 			} `json:"message"`
 		} `json:"choices"`
 	}
+
 	if err := json.Unmarshal(respBody, &chatResp); err != nil {
 		return nil, fmt.Errorf("parsing teacher response: %w", err)
 	}
+
 	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("teacher returned no choices")
+		return nil, errors.New("teacher returned no choices")
 	}
 
 	var out struct {
 		Pairs []qaPair `json:"pairs"`
 	}
+
 	if err := json.Unmarshal([]byte(chatResp.Choices[0].Message.Content), &out); err != nil {
 		return nil, fmt.Errorf("teacher returned non-JSON pairs: %w", err)
 	}

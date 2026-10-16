@@ -4,7 +4,6 @@ package search
 // Not part of CI — run manually: SEARCH_LIVE_URL=http://localhost:7700 go test ./internal/search/ -run TestLiveEngine -v
 
 import (
-	"context"
 	"os"
 	"testing"
 	"time"
@@ -16,18 +15,21 @@ func TestLiveEngine(t *testing.T) {
 		t.Skip("set SEARCH_LIVE_URL to run against a live engine")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	engine, err := NewEngine(url, "")
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
+
 	if engine == nil {
 		t.Fatal("engine is nil")
 	}
+
 	if engine.Name() != "Meilisearch" {
 		t.Errorf("Name() = %q, want Meilisearch", engine.Name())
 	}
+
 	if err := engine.Health(ctx); err != nil {
 		t.Fatalf("Health: %v", err)
 	}
@@ -51,8 +53,10 @@ func TestLiveEngine(t *testing.T) {
 			if err == nil {
 				return nil
 			}
+
 			time.Sleep(200 * time.Millisecond)
 		}
+
 		return err
 	}
 	if err := waitForIndex(); err != nil {
@@ -80,6 +84,7 @@ func TestLiveEngine(t *testing.T) {
 		if err == nil && len(r.Hits) > 0 {
 			break
 		}
+
 		time.Sleep(200 * time.Millisecond)
 	}
 
@@ -100,9 +105,11 @@ func TestLiveEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
+
 	if len(res.Hits) != 1 {
 		t.Fatalf("Search hits = %d, want 1", len(res.Hits))
 	}
+
 	if got := stringField(res.Hits[0], "id"); got != "smoke-1" {
 		t.Errorf("hit id = %q", got)
 	}
@@ -121,6 +128,7 @@ func TestLiveEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search(geo mismatch): %v", err)
 	}
+
 	if len(res2.Hits) != 0 {
 		t.Errorf("geo-mismatched search returned %d hits, want 0", len(res2.Hits))
 	}
@@ -144,12 +152,15 @@ func TestLiveEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MultiSearch: %v", err)
 	}
+
 	if len(multi) != 2 {
 		t.Fatalf("MultiSearch results = %d, want 2", len(multi))
 	}
+
 	if multi[0].IndexUID != idx || len(multi[0].Hits) != 1 {
 		t.Errorf("first result: IndexUID=%q hits=%d, want %q/1", multi[0].IndexUID, len(multi[0].Hits), idx)
 	}
+
 	if len(multi[1].Hits) != 0 {
 		t.Errorf("second result hits = %d, want 0 (mismatched filter)", len(multi[1].Hits))
 	}
@@ -170,6 +181,7 @@ func TestLiveEngine(t *testing.T) {
 		if err == nil && len(r.Hits) == 0 {
 			break
 		}
+
 		time.Sleep(200 * time.Millisecond)
 	}
 
@@ -177,6 +189,7 @@ func TestLiveEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post-delete Search: %v", err)
 	}
+
 	if len(res3.Hits) != 0 {
 		t.Errorf("post-delete hits = %d, want 0", len(res3.Hits))
 	}

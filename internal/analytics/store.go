@@ -52,7 +52,8 @@ func (s *Store) ListPlatformEvents(ctx context.Context, filter EventFilter) ([]g
 		}
 	}
 
-	return s.read.ListPlatformEvents(ctx, gen.ListPlatformEventsParams{Column1: filter.EventType, Column2: userID, Column3: filter.EntityType, Column4: nullableTimestamptz(filter.StartDate), Column5: nullableTimestamptz(filter.EndDate), Limit: filter.Limit,
+	return s.read.ListPlatformEvents(ctx, gen.ListPlatformEventsParams{
+		Column1: filter.EventType, Column2: userID, Column3: filter.EntityType, Column4: nullableTimestamptz(filter.StartDate), Column5: nullableTimestamptz(filter.EndDate), Limit: filter.Limit,
 		Offset: filter.Page * filter.Limit,
 	})
 }
@@ -94,7 +95,6 @@ func (s *Store) GetUserGrowthOverTime(ctx context.Context, startDate, endDate *p
 // Ref: sections/40-platform-analytics-reports.md (user dashboard traffic sources).
 func (s *Store) GetUserTrafficSources(ctx context.Context, authorID pgtype.UUID, startDate, endDate *pgtype.Timestamptz, limit int32) ([]gen.GetUserTrafficSourcesRow, error) {
 	return s.read.GetUserTrafficSources(ctx, gen.GetUserTrafficSourcesParams{
-
 		AuthorID: authorID, Column2: nullableTimestamptzPtr(startDate), Column3: nullableTimestamptzPtr(endDate), Limit: limit,
 	})
 }
@@ -103,7 +103,6 @@ func (s *Store) GetUserTrafficSources(ctx context.Context, authorID pgtype.UUID,
 // Ref: sections/40-platform-analytics-reports.md (user dashboard ad performance).
 func (s *Store) GetUserAdPerformance(ctx context.Context, createdBy pgtype.UUID, startDate, endDate *pgtype.Date, limit int32) ([]gen.GetUserAdPerformanceRow, error) {
 	return s.read.GetUserAdPerformance(ctx, gen.GetUserAdPerformanceParams{
-
 		CreatedBy: createdBy, Column2: nullableDate(startDate), Column3: nullableDate(endDate), Limit: limit,
 	})
 }
@@ -158,7 +157,8 @@ func (s *Store) CreateSecurityScanResult(ctx context.Context, p gen.CreateSecuri
 
 // ListSecurityScanResults returns scan results matching filters.
 func (s *Store) ListSecurityScanResults(ctx context.Context, filter SecurityScanFilter) ([]gen.SecurityScanResult, error) {
-	return s.read.ListSecurityScanResults(ctx, gen.ListSecurityScanResultsParams{Column1: filter.Severity, Column2: filter.Unresolved, Limit: filter.Limit,
+	return s.read.ListSecurityScanResults(ctx, gen.ListSecurityScanResultsParams{
+		Column1: filter.Severity, Column2: filter.Unresolved, Limit: filter.Limit,
 		Offset: filter.Page * filter.Limit,
 	})
 }
@@ -242,7 +242,8 @@ func nullableDate(d *pgtype.Date) pgtype.Date {
 
 // GetSearchAnalytics returns search analytics summary for the given time window.
 func (s *Store) GetSearchAnalytics(ctx context.Context, startDate, endDate *time.Time, limit int32) ([]gen.GetSearchAnalyticsSummaryRow, error) {
-	return s.read.GetSearchAnalyticsSummary(ctx, gen.GetSearchAnalyticsSummaryParams{Column1: nullableTimestamptz(startDate), Column2: nullableTimestamptz(endDate), Limit: limit,
+	return s.read.GetSearchAnalyticsSummary(ctx, gen.GetSearchAnalyticsSummaryParams{
+		Column1: nullableTimestamptz(startDate), Column2: nullableTimestamptz(endDate), Limit: limit,
 		Offset: 0,
 	})
 }

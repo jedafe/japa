@@ -84,6 +84,7 @@ func NewAPIFetcherWithClient(client *http.Client) *APIFetcher {
 	if client == nil {
 		return NewAPIFetcher()
 	}
+
 	return &APIFetcher{client: client, allowPrivate: true}
 }
 
@@ -136,11 +137,14 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	var bodyBytes []byte
 	if len(cfg.Body) > 0 {
 		bodyBytes = cfg.Body
+
 		var asString string
+
 		if err := json.Unmarshal(cfg.Body, &asString); err == nil {
 			bodyBytes = []byte(asString)
 		}
 	}
+
 	var bodyReader io.Reader
 	if len(bodyBytes) > 0 {
 		bodyReader = bytes.NewReader(bodyBytes)
@@ -167,9 +171,11 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		case "host", "authorization", "proxy-authorization", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded":
 			continue
 		}
+
 		if lowered == "" || strings.ContainsAny(lowered, " :\r\n") {
 			continue
 		}
+
 		req.Header.Set(k, v)
 	}
 
@@ -222,14 +228,17 @@ func (f *APIFetcher) validateAPIEndpoint(endpoint string) error {
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return fmt.Errorf("api: endpoint must be an http(s) URL: %q", endpoint)
 	}
+
 	if u.User != nil {
-		return fmt.Errorf("api: endpoint must not embed credentials")
+		return errors.New("api: endpoint must not embed credentials")
 	}
+
 	host := u.Hostname()
 	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
 		if !f.allowPrivate || !isLoopbackOrPrivateLiteral(host) {
 			return fmt.Errorf("api: endpoint targets a private address: %q", endpoint)
 		}
 	}
+
 	return nil
 }

@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -17,10 +16,12 @@ import (
 // regardless of how trusted the source is.
 func TestIntelCurateShouldAutoPublish(t *testing.T) {
 	// Not parallel: mutates the appSettings package var.
-	ctx := context.Background()
+	ctx := t.Context()
 
 	oldSettings := appSettings
+
 	t.Cleanup(func() { appSettings = oldSettings })
+
 	appSettings = fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 2}}
 
 	src := func(trust int16) gen.IntelSource { return gen.IntelSource{TrustLevel: trust} }
@@ -62,6 +63,7 @@ func TestHandleIntelCurateChannel_HighStakesGate(t *testing.T) {
 
 	oldSettings := appSettings
 	appSettings = fakeSettingsReader{ints: map[string]int{"intel.curate.auto_publish_trust_max": 2}}
+
 	t.Cleanup(func() { appSettings = oldSettings })
 
 	// runCase creates a trust-1 source + curate channel + raw doc, stubs the
@@ -77,7 +79,7 @@ func TestHandleIntelCurateChannel_HighStakesGate(t *testing.T) {
 			a.EntityTypes = []string{entityType}
 		})
 
-		rawDoc, err := intelDocStore.CreateIntelRawDocument(context.Background(), gen.CreateIntelRawDocumentParams{
+		rawDoc, err := intelDocStore.CreateIntelRawDocument(t.Context(), gen.CreateIntelRawDocumentParams{
 			SourceID:    src.ID,
 			ChannelID:   ch.ID,
 			Url:         ch.EntryUrl,
@@ -103,12 +105,12 @@ func TestHandleIntelCurateChannel_HighStakesGate(t *testing.T) {
 			ChannelID: ch.ID.String(),
 			RawDocID:  rawDoc.ID.String(),
 		})
-		if err := HandleIntelCurateChannel(context.Background(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
+		if err := HandleIntelCurateChannel(t.Context(), asynq.NewTask(TypeIntelCurateChannel, payload)); err != nil {
 			t.Fatalf("HandleIntelCurateChannel %s: %v", name, err)
 		}
 
 		var status string
-		if err := database.Writer.QueryRow(context.Background(),
+		if err := database.Writer.QueryRow(t.Context(),
 			`SELECT status FROM intel_records WHERE raw_document_id = $1`, rawDoc.ID).Scan(&status); err != nil {
 			t.Fatalf("load record status %s: %v", name, err)
 		}
@@ -120,9 +122,11 @@ func TestHandleIntelCurateChannel_HighStakesGate(t *testing.T) {
 	if status := runCase("gate-visa", "visa"); status != "extracted" {
 		t.Errorf("visa record status = %q, want extracted (dedup pending) — 'auto_published' would bypass the ADR-088 review gate", status)
 	}
+
 	if n := len(pendingTasks(t, inspector, TypeIntelDedup)); n != 1 {
 		t.Errorf("visa path dedup tasks = %d, want 1", n)
 	}
+
 	if n := len(pendingTasks(t, inspector, TypeIntelPromote)); n != 0 {
 		t.Errorf("visa path promote tasks = %d — must not promote without review", n)
 	}
@@ -131,6 +135,7 @@ func TestHandleIntelCurateChannel_HighStakesGate(t *testing.T) {
 	if status := runCase("gate-news", "news"); status != "auto_published" {
 		t.Errorf("news record status = %q, want auto_published", status)
 	}
+
 	if n := len(pendingTasks(t, inspector, TypeIntelPromote)); n != 1 {
 		t.Errorf("news path promote tasks = %d, want 1", n)
 	}

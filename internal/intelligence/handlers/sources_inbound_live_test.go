@@ -34,6 +34,7 @@ func newLiveInboundHandlers(t *testing.T) (*Handlers, *db.DB, *asynq.Inspector) 
 	if dsn == "" {
 		t.Skip("JC_TEST_DATABASE_URL not set — skipping live Postgres test")
 	}
+
 	database, err := db.New(t.Context(), dsn)
 	if err != nil {
 		t.Skipf("test database unreachable: %v", err)
@@ -58,11 +59,12 @@ func newLiveInboundHandlers(t *testing.T) (*Handlers, *db.DB, *asynq.Inspector) 
 // — source_url is unique and other live tests share the fixed example.test
 // fixture. Cleanup removes the whole chain: raw docs (channel_id FK is
 // NO ACTION) → channel (inbound events cascade) → source.
-func mkInboundChannel(t *testing.T, h *Handlers, database *db.DB, method string, providerConfig string) gen.IntelSourceChannel {
+func mkInboundChannel(t *testing.T, h *Handlers, database *db.DB, method, providerConfig string) gen.IntelSourceChannel {
 	t.Helper()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	svc := h.intelSources
+
 	src, err := svc.Create(ctx, gen.CreateIntelSourceParams{
 		Name:               "Inbound Test Source " + t.Name(),
 		Domain:             "example.test",
@@ -80,6 +82,7 @@ func mkInboundChannel(t *testing.T, h *Handlers, database *db.DB, method string,
 	if err != nil {
 		t.Fatalf("create test source: %v", err)
 	}
+
 	sourceID := src.ID
 
 	ch, err := svc.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
@@ -100,6 +103,7 @@ func mkInboundChannel(t *testing.T, h *Handlers, database *db.DB, method string,
 	if err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_, _ = database.Writer.Exec(ctx, "DELETE FROM intel_raw_documents WHERE channel_id=$1", ch.ID)
 		_ = svc.DeleteChannel(ctx, ch.ID)
@@ -115,7 +119,7 @@ func mkInboundChannel(t *testing.T, h *Handlers, database *db.DB, method string,
 func mkInboundEvent(t *testing.T, h *Handlers, chID pgtype.UUID, status, hash string) gen.IntelInboundEvent {
 	t.Helper()
 
-	event, err := h.intelSources.CreateInboundEvent(context.Background(), gen.CreateIntelInboundEventParams{
+	event, err := h.intelSources.CreateInboundEvent(t.Context(), gen.CreateIntelInboundEventParams{
 		ChannelID:   chID,
 		Payload:     []byte(`{"from":"a@b.example","to":"intel@inbound.japa.example","subject":"s","text":"body"}`),
 		Headers:     []byte(`{"from":"a@b.example"}`),
@@ -125,12 +129,14 @@ func mkInboundEvent(t *testing.T, h *Handlers, chID pgtype.UUID, status, hash st
 	if err != nil {
 		t.Fatalf("create inbound event: %v", err)
 	}
+
 	if status != "received" {
-		if err := h.intelSources.MarkInboundEvent(context.Background(), gen.MarkIntelInboundEventParams{
+		if err := h.intelSources.MarkInboundEvent(t.Context(), gen.MarkIntelInboundEventParams{
 			ID: event.ID, Status: status,
 		}); err != nil {
 			t.Fatalf("mark event %s: %v", status, err)
 		}
+
 		event.Status = status
 	}
 
@@ -144,6 +150,7 @@ func webSubVerifyRequest(t *testing.T, channelID, query string) *http.Request {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("channel_id", channelID)
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/intel/inbound/websub/"+channelID+"?"+query, nil)
+
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
@@ -158,7 +165,7 @@ func TestWebSubVerify_Denied(t *testing.T) {
 
 	// Seed a stale lease — denied must clear it.
 	leaseKey := "jc:intel:websub:lease:" + ch.ID.String()
-	if err := h.rdb.Set(context.Background(), leaseKey, `{"hub":"x"}`, time.Hour).Err(); err != nil {
+	if err := h.rdb.Set(t.Context(), leaseKey, `{"hub":"x"}`, time.Hour).Err(); err != nil {
 		t.Fatalf("seed lease: %v", err)
 	}
 
@@ -170,22 +177,26 @@ func TestWebSubVerify_Denied(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	if rr.Body.String() != "CH123" {
 		t.Errorf("challenge echo = %q, want CH123", rr.Body.String())
 	}
-	if n, _ := h.rdb.Exists(context.Background(), leaseKey).Result(); n != 0 {
+
+	if n, _ := h.rdb.Exists(t.Context(), leaseKey).Result(); n != 0 {
 		t.Error("lease key still present after denied")
 	}
 
-	got, err := h.intelSources.GetChannel(context.Background(), ch.ID)
+	got, err := h.intelSources.GetChannel(t.Context(), ch.ID)
 	if err != nil {
 		t.Fatalf("reload channel: %v", err)
 	}
+
 	if got.LastErrorMessage == nil ||
 		!strings.Contains(*got.LastErrorMessage, "denied") ||
 		!strings.Contains(*got.LastErrorMessage, "quota") {
 		t.Errorf("last_error_message = %v, want denial + hub.reason", got.LastErrorMessage)
 	}
+
 	if got.ConsecutiveFailures != 0 {
 		t.Errorf("consecutive_failures = %d, want 0 (denied is not a crawl failure)", got.ConsecutiveFailures)
 	}
@@ -210,11 +221,13 @@ func TestWebSubVerify_SubscribeArmsRenew(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	if rr.Body.String() != "CH999" {
 		t.Errorf("challenge echo = %q, want CH999", rr.Body.String())
 	}
+
 	leaseKey := "jc:intel:websub:lease:" + ch.ID.String()
-	if n, _ := h.rdb.Exists(context.Background(), leaseKey).Result(); n == 0 {
+	if n, _ := h.rdb.Exists(t.Context(), leaseKey).Result(); n == 0 {
 		t.Error("lease key not written on subscribe verify")
 	}
 
@@ -224,19 +237,24 @@ func TestWebSubVerify_SubscribeArmsRenew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list scheduled: %v", err)
 	}
+
 	var armed *asynq.TaskInfo
+
 	for _, ti := range infos {
 		if ti.Type != worker.TypeIntelWebSubRenew {
 			continue
 		}
+
 		var p map[string]string
 		if err := json.Unmarshal(ti.Payload, &p); err == nil && p["channel_id"] == ch.ID.String() {
 			armed = ti
 		}
 	}
+
 	if armed == nil {
 		t.Fatal("no intel:websub_renew scheduled on subscribe verify")
 	}
+
 	want := time.Now().Add(3240 * time.Second)
 	if d := armed.NextProcessAt.Sub(want); d < -time.Minute || d > time.Minute {
 		t.Errorf("renew fires at %s, want ~%s (granted lease - margin)", armed.NextProcessAt, want)
@@ -246,13 +264,16 @@ func TestWebSubVerify_SubscribeArmsRenew(t *testing.T) {
 	r2 := webSubVerifyRequest(t, ch.ID.String(),
 		"hub.mode=subscribe&hub.topic=https%3A%2F%2Fhub.example%2Ffeed&hub.challenge=CH999&hub.lease_seconds=3600")
 	h.HandleWebSubVerify(httptest.NewRecorder(), r2)
+
 	infos, _ = inspector.ListScheduledTasks("low", asynq.PageSize(100))
 	n := 0
+
 	for _, ti := range infos {
 		if ti.Type == worker.TypeIntelWebSubRenew {
 			n++
 		}
 	}
+
 	if n != 1 {
 		t.Errorf("scheduled renews = %d, want 1 (Unique dedupes retried verifies)", n)
 	}
@@ -275,10 +296,11 @@ func TestAdminRedriveInboundEvent_Email(t *testing.T) {
 		t.Fatalf("status = %d, want 202 (body=%s)", rr.Code, rr.Body.String())
 	}
 
-	got, err := h.intelSources.GetInboundEvent(context.Background(), event.ID)
+	got, err := h.intelSources.GetInboundEvent(t.Context(), event.ID)
 	if err != nil {
 		t.Fatalf("reload event: %v", err)
 	}
+
 	if got.Status != "received" {
 		t.Errorf("event status = %q, want received", got.Status)
 	}
@@ -287,7 +309,9 @@ func TestAdminRedriveInboundEvent_Email(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list pending: %v", err)
 	}
+
 	var found bool
+
 	for _, task := range tasks {
 		if task.Type == worker.TypeIntelInboundEmail {
 			var p map[string]string
@@ -296,6 +320,7 @@ func TestAdminRedriveInboundEvent_Email(t *testing.T) {
 			}
 		}
 	}
+
 	if !found {
 		t.Error("no intel:inbound_email task enqueued for the redriven event")
 	}
@@ -315,8 +340,10 @@ func TestAdminRedriveInboundEvent_WebSub(t *testing.T) {
 	// the deterministic websub:{ch}:{hash16} URL means the redrive must
 	// reuse this row instead of inserting a duplicate.
 	docURL := "websub:" + ch.ID.String() + ":" + hash[:16]
+
 	var docID pgtype.UUID
-	err := database.Writer.QueryRow(context.Background(),
+
+	err := database.Writer.QueryRow(t.Context(),
 		`INSERT INTO intel_raw_documents (source_id, channel_id, url, http_status, content_type, body, content_hash)
 		 VALUES ((SELECT source_id FROM intel_source_channels WHERE id=$1), $1, $2, 200, 'application/atom+xml', '\x7b7d'::bytea, $3)
 		 RETURNING id`, ch.ID, docURL, hash).Scan(&docID)
@@ -331,15 +358,17 @@ func TestAdminRedriveInboundEvent_WebSub(t *testing.T) {
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want 202 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	data := decodeChannelData(t, rr)
 	if data["raw_doc_id"] != docID.String() {
 		t.Errorf("raw_doc_id = %v, want reused doc %s — a duplicate was inserted", data["raw_doc_id"], docID.String())
 	}
 
-	got, err := h.intelSources.GetInboundEvent(context.Background(), event.ID)
+	got, err := h.intelSources.GetInboundEvent(t.Context(), event.ID)
 	if err != nil {
 		t.Fatalf("reload event: %v", err)
 	}
+
 	if got.Status != "processed" {
 		t.Errorf("event status = %q, want processed", got.Status)
 	}
@@ -348,11 +377,14 @@ func TestAdminRedriveInboundEvent_WebSub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list pending: %v", err)
 	}
+
 	var found bool
+
 	for _, task := range tasks {
 		if task.Type != worker.TypeIntelDetectChanges {
 			continue
 		}
+
 		found = true
 		// The seeded doc is the channel's latest — a self-referential
 		// prior_hash would make detect_changes decide 'unchanged' and the
@@ -361,10 +393,12 @@ func TestAdminRedriveInboundEvent_WebSub(t *testing.T) {
 		var p struct {
 			PriorHash string `json:"prior_hash"`
 		}
+
 		if err := json.Unmarshal(task.Payload, &p); err == nil && p.PriorHash != "" {
 			t.Errorf("detect_changes prior_hash = %q, want empty on re-materialization", p.PriorHash)
 		}
 	}
+
 	if !found {
 		t.Error("no intel:detect_changes task enqueued for the redriven delivery")
 	}
@@ -388,6 +422,7 @@ func TestAdminRedriveInboundEvent_NotRedrivable(t *testing.T) {
 		if status == "processed" && rr.Code != http.StatusConflict {
 			t.Errorf("status=%s: redrive = %d, want 409", status, rr.Code)
 		}
+
 		if status == "received" && rr.Code != http.StatusConflict {
 			t.Errorf("status=%s: redrive = %d, want 409", status, rr.Code)
 		}
@@ -398,6 +433,7 @@ func TestAdminRedriveInboundEvent_NotRedrivable(t *testing.T) {
 	rr := httptest.NewRecorder()
 	r := authedChannelRequest(t, http.MethodPost, "/", event.ID.String(), "", false)
 	h.HandleAdminRedriveInboundEvent(rr, r)
+
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("unauthed redrive = %d, want 401", rr.Code)
 	}

@@ -538,6 +538,7 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 			canEditAny = h.permResolver.HasPermission(r.Context(), user.UserID, "comparison.edit_any")
 		}
 	}
+
 	if !canEditAny {
 		handleServiceError(w, pgx.ErrNoRows)
 		return

@@ -279,7 +279,6 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, input SubmitIn
 	}
 
 	in := CreateOrgInput{
-
 		Name:                 input.Name,
 		Slug:                 input.Slug,
 		OrgType:              input.OrgType,
@@ -491,7 +490,6 @@ func (s *Service) Generate(ctx context.Context, generatedBy pgtype.UUID, input G
 	aiModel := "content_agent_v1"
 
 	in := CreateOrgInput{
-
 		Name:                 input.Name,
 		Slug:                 slug,
 		OrgType:              orgType,
@@ -586,7 +584,6 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 	offset := (page - 1) * limit
 
 	f := ListOrgsFilter{
-
 		DestinationSpaceID: destSpaceID,
 		CitySpaceID:        citySpaceID,
 		OriginCommunity:    originCommunity,
@@ -645,7 +642,6 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, origin
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-
 		Status:             status,
 		Q:                  q,
 		DestinationSpaceID: destSpaceID,

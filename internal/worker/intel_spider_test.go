@@ -1,9 +1,8 @@
 package worker
 
 import (
-	"context"
+	"strconv"
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -27,7 +26,7 @@ func mkSpiderManifestDoc(t *testing.T, store *stores.Store, src gen.IntelSource,
 
 	headers, err := json.Marshal(map[string]string{
 		fetcher.ManifestKindHeader: fetcher.ManifestKindSpider,
-		fetcher.SpiderDepthHeader:  fmt.Sprintf("%d", depth),
+		fetcher.SpiderDepthHeader:  strconv.Itoa(depth),
 		fetcher.SpiderScopeHeader:  ch.EntryUrl,
 	})
 	if err != nil {
@@ -41,7 +40,7 @@ func mkSpiderManifestDoc(t *testing.T, store *stores.Store, src gen.IntelSource,
 		HttpHeaders: headers,
 		ContentType: strPtr(fetcher.ManifestContentType),
 		Body:        []byte(body),
-		ContentHash: "hash-spider-" + fmt.Sprint(depth),
+		ContentHash: "hash-spider-" + strconv.Itoa(depth),
 		ChannelID:   ch.ID,
 	})
 	if err != nil {
@@ -68,11 +67,13 @@ func decodeSpiderPayloads(t *testing.T, inspector *asynq.Inspector) []intelChann
 	t.Helper()
 
 	var out []intelChannelPayload
+
 	for _, ti := range pendingTasks(t, inspector, TypeIntelFetchChannel) {
 		var p intelChannelPayload
 		if err := json.Unmarshal(ti.Payload, &p); err != nil {
 			t.Fatalf("payload decode: %v", err)
 		}
+
 		out = append(out, p)
 	}
 
@@ -97,13 +98,16 @@ func TestIntelExpandManifest_SpiderFansOutNested(t *testing.T) {
 	if len(payloads) != 2 {
 		t.Fatalf("derived fetches = %d, want 2", len(payloads))
 	}
+
 	for _, p := range payloads {
 		if !p.SpiderChild {
 			t.Errorf("depth-1 child missing spider_child (max_depth=2): %+v", p)
 		}
+
 		if p.SpiderDepth != 1 {
 			t.Errorf("spider_depth = %d, want 1: %+v", p.SpiderDepth, p)
 		}
+
 		if p.ParentDocID != doc.ID.String() {
 			t.Errorf("parent_document_id = %q, want %q", p.ParentDocID, doc.ID.String())
 		}
@@ -128,9 +132,11 @@ func TestIntelExpandManifest_SpiderCeiling(t *testing.T) {
 	if len(payloads) != 1 {
 		t.Fatalf("derived fetches = %d, want 1", len(payloads))
 	}
+
 	if payloads[0].SpiderChild {
 		t.Errorf("ceiling child must be a content fetch (spider_child=false): %+v", payloads[0])
 	}
+
 	if payloads[0].SpiderDepth != 2 {
 		t.Errorf("spider_depth = %d, want 2", payloads[0].SpiderDepth)
 	}
@@ -154,6 +160,7 @@ func TestIntelExpandManifest_SpiderCrossHost(t *testing.T) {
 	if len(payloads) != 1 {
 		t.Fatalf("derived fetches = %d, want 1 (same-host only)", len(payloads))
 	}
+
 	if payloads[0].URLOverride != "https://example.com/ok" {
 		t.Errorf("url_override = %q, want https://example.com/ok", payloads[0].URLOverride)
 	}
@@ -185,6 +192,7 @@ func TestIntelOutboundCandidates(t *testing.T) {
 		ContentType: strPtr("text/html"),
 		Body:        []byte(`<a href="https://c.example.net/">C</a><a href="/self">S</a>`),
 	}
+
 	got := intelOutboundCandidates(htmlDoc)
 	if len(got) != 1 || got[0] != "https://c.example.net/" {
 		t.Fatalf("html-path candidates = %v, want [https://c.example.net/]", got)
@@ -206,7 +214,9 @@ func TestIntelOutboundCandidates(t *testing.T) {
 // exclusion, and built-in/configured blocklists.
 func TestIntelDiscoveryCandidateOK(t *testing.T) {
 	oldSettings := appSettings
+
 	t.Cleanup(func() { appSettings = oldSettings })
+
 	appSettings = fakeSettingsReader{strings: map[string]string{
 		"intel.discovery.domain_blocklist": `["blocked.example.com"]`,
 	}}
@@ -249,16 +259,21 @@ func TestIntelEnqueueHarvestOutbound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
+
 	t.Cleanup(mr.Close)
 
 	client := asynq.NewClient(asynq.RedisClientOpt{Addr: mr.Addr()})
+
 	t.Cleanup(func() { _ = client.Close() })
+
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: mr.Addr()})
+
 	t.Cleanup(func() { _ = inspector.Close() })
 
 	oldClient, oldSettings := intelAsynqClient, appSettings
 	intelAsynqClient = client
 	appSettings = fakeSettingsReader{}
+
 	t.Cleanup(func() { intelAsynqClient, appSettings = oldClient, oldSettings })
 
 	doc := gen.IntelRawDocument{
@@ -273,20 +288,25 @@ func TestIntelEnqueueHarvestOutbound(t *testing.T) {
 	if len(tasks) != 1 {
 		t.Fatalf("harvest tasks pending = %d, want 1", len(tasks))
 	}
+
 	if tasks[0].Queue != QueueLow {
 		t.Errorf("harvest task queue = %q, want %q", tasks[0].Queue, QueueLow)
 	}
+
 	var p intelHarvestOutboundPayload
 	if err := json.Unmarshal(tasks[0].Payload, &p); err != nil {
 		t.Fatalf("payload decode: %v", err)
 	}
+
 	if p.SourceID != doc.SourceID.String() || p.ChannelID != doc.ChannelID.String() || p.RawDocID != doc.ID.String() {
 		t.Errorf("payload = %+v, want source/channel/rawdoc from doc", p)
 	}
 
 	// Kill switch: intel.discovery.enabled=false skips the enqueue.
 	appSettings = fakeSettingsReader{bools: map[string]bool{"intel.discovery.enabled": false}}
+
 	intelEnqueueHarvestOutbound(t.Context(), doc)
+
 	if n := len(pendingTasks(t, inspector, TypeIntelHarvestOutbound)); n != 1 {
 		t.Errorf("harvest tasks pending = %d after disabled enqueue, want 1", n)
 	}
@@ -345,6 +365,7 @@ func TestHandleIntelHarvestOutbound_Proposes(t *testing.T) {
 			t.Fatalf("domain %s proposed: exists=%v err=%v", domain, ok, err)
 		}
 	}
+
 	if ok, _ := srcStore.DomainExists(t.Context(), "facebook.com"); ok {
 		t.Error("denylisted facebook.com was proposed")
 	}
@@ -353,18 +374,23 @@ func TestHandleIntelHarvestOutbound_Proposes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lookup proposed source: %v", err)
 	}
-	t.Cleanup(func() { _ = srcStore.Delete(context.Background(), proposed.ID) })
+
+	t.Cleanup(func() { _ = srcStore.Delete(t.Context(), proposed.ID) })
+
 	if proposed.Status != "proposed" || proposed.Enabled {
 		t.Errorf("proposed source status=%q enabled=%v, want proposed/disabled", proposed.Status, proposed.Enabled)
 	}
+
 	if proposed.TrustLevel != 5 {
 		t.Errorf("trust_level = %d, want 5", proposed.TrustLevel)
 	}
+
 	if proposed.CrawlMethod != "manual" {
 		t.Errorf("crawl_method = %q, want manual", proposed.CrawlMethod)
 	}
+
 	if second, err := srcStore.GetByURL(t.Context(), "https://new-b.example.net/"); err == nil {
-		t.Cleanup(func() { _ = srcStore.Delete(context.Background(), second.ID) })
+		t.Cleanup(func() { _ = srcStore.Delete(t.Context(), second.ID) })
 	}
 
 	// Re-run over the same doc must be a no-op (domain dedupe).
@@ -377,6 +403,7 @@ func TestHandleIntelHarvestOutbound_Proposes(t *testing.T) {
 		`SELECT count(*) FROM intel_sources WHERE domain = 'new-a.example.org'`).Scan(&count); err != nil {
 		t.Fatalf("count proposed: %v", err)
 	}
+
 	if count != 1 {
 		t.Errorf("new-a.example.org rows = %d after rerun, want 1", count)
 	}

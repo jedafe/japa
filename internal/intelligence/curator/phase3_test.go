@@ -1,7 +1,6 @@
 package curator
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -42,10 +41,11 @@ func TestEmailCurate(t *testing.T) {
 		"text": "Appointments open Friday.\nBook here: https://embassy.example/slots/42 and prepare documents."
 	}`)
 
-	recs, err := (Email{}).Curate(context.Background(), body, "application/x-intel-email", ch)
+	recs, err := (Email{}).Curate(t.Context(), body, "application/x-intel-email", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 1 {
 		t.Fatalf("records = %d, want 1", len(recs))
 	}
@@ -54,15 +54,19 @@ func TestEmailCurate(t *testing.T) {
 	if fieldString(t, rec.Extraction, "title") != "New student visa slots open" {
 		t.Errorf("title = %v", rec.Extraction["title"])
 	}
+
 	if got := fieldString(t, rec.Extraction, "article_url"); got != "https://embassy.example/slots/42" {
 		t.Errorf("article_url = %q", got)
 	}
+
 	if got := fieldString(t, rec.Extraction, "author"); got != "Embassy Alerts" && got == "" {
 		t.Errorf("author = %q", got)
 	}
+
 	if rec.ExternalKey != "550e8400-e29b-41d4-a716-446655440000:<msg-42@embassy.example>" {
 		t.Errorf("ExternalKey = %q", rec.ExternalKey)
 	}
+
 	if rec.EntityType != "article" {
 		t.Errorf("EntityType = %q", rec.EntityType)
 	}
@@ -75,11 +79,12 @@ func TestEmailCurate_NoMessageID(t *testing.T) {
 
 	ch := sources.Channel{ID: mustUUIDCurator(t, "550e8400-e29b-41d4-a716-446655440000"), CrawlMethod: "email"}
 
-	recs, err := (Email{}).Curate(context.Background(),
+	recs, err := (Email{}).Curate(t.Context(),
 		[]byte(`{"subject":"s","text":"body"}`), "application/x-intel-email", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 1 || !strings.HasPrefix(recs[0].ExternalKey, ch.ID.String()+":hash:") {
 		t.Fatalf("ExternalKey = %+v", recs)
 	}
@@ -92,10 +97,12 @@ func TestEmailCurate_Empty(t *testing.T) {
 	t.Parallel()
 
 	ch := sources.Channel{CrawlMethod: "email"}
-	recs, err := (Email{}).Curate(context.Background(), []byte(`{"from":"a@b"}`), "", ch)
+
+	recs, err := (Email{}).Curate(t.Context(), []byte(`{"from":"a@b"}`), "", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v, want nil (empty delivery is a clean skip)", err)
 	}
+
 	if len(recs) != 0 {
 		t.Fatalf("records = %d, want 0", len(recs))
 	}
@@ -124,19 +131,23 @@ func TestWebSubCurate(t *testing.T) {
 	</entry>
 </feed>`)
 
-	recs, err := (WebSub{}).Curate(context.Background(), body, "application/atom+xml", ch)
+	recs, err := (WebSub{}).Curate(t.Context(), body, "application/atom+xml", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 1 {
 		t.Fatalf("records = %d, want 1", len(recs))
 	}
+
 	if fieldString(t, recs[0].Extraction, "title") != "Slot opened" {
 		t.Errorf("title = %v", recs[0].Extraction["title"])
 	}
+
 	if recs[0].ExternalKey != "urn:entry:1" {
 		t.Errorf("ExternalKey = %q", recs[0].ExternalKey)
 	}
+
 	if recs[0].EntityType != "news" {
 		t.Errorf("EntityType = %q", recs[0].EntityType)
 	}
@@ -159,22 +170,27 @@ func TestSearchCurate(t *testing.T) {
 		`{"title":"no url"}`,
 	}, "\n"))
 
-	recs, err := (Search{}).Curate(context.Background(), body, "application/x-ndjson", ch)
+	recs, err := (Search{}).Curate(t.Context(), body, "application/x-ndjson", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 2 {
 		t.Fatalf("records = %d, want 2", len(recs))
 	}
+
 	if recs[0].ExternalKey != "https://a.example/1" || recs[1].ExternalKey != "https://b.example/2" {
 		t.Errorf("ExternalKeys = %q, %q", recs[0].ExternalKey, recs[1].ExternalKey)
 	}
+
 	if fieldString(t, recs[0].Extraction, "title") != "Hit A" {
 		t.Errorf("title = %v", recs[0].Extraction["title"])
 	}
+
 	if fieldString(t, recs[0].Extraction, "summary") != "first" {
 		t.Errorf("summary = %v", recs[0].Extraction["summary"])
 	}
+
 	if recs[0].EntityType != "news" {
 		t.Errorf("EntityType = %q", recs[0].EntityType)
 	}
@@ -185,7 +201,7 @@ func TestSearchCurate_Empty(t *testing.T) {
 	t.Parallel()
 
 	ch := sources.Channel{CrawlMethod: "search"}
-	if _, err := (Search{}).Curate(context.Background(), []byte("garbage\n"), "", ch); err == nil {
+	if _, err := (Search{}).Curate(t.Context(), []byte("garbage\n"), "", ch); err == nil {
 		t.Fatal("expected error for no usable lines")
 	}
 }
@@ -197,9 +213,11 @@ func TestDefaultRegistry_Phase3(t *testing.T) {
 	t.Parallel()
 
 	reg := Default()
+
 	for _, m := range []string{"email", "webhook", "search"} {
 		ch := sources.Channel{CrawlMethod: m}
-		_, err := reg.Curate(context.Background(), []byte("x"), "", ch)
+
+		_, err := reg.Curate(t.Context(), []byte("x"), "", ch)
 		if errors.Is(err, ErrNoCurator) {
 			t.Errorf("no curator registered for %q", m)
 		}

@@ -51,7 +51,6 @@ func newIngestionStore(database *db.DB) *ingestionStore {
 
 func (st *ingestionStore) create(ctx context.Context, contentID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
 	row, err := st.write.CreateIngestionJob(ctx, gen.CreateIngestionJobParams{
-
 		ContentID:  contentID,
 		SourceKind: sourceKind,
 	})
@@ -79,7 +78,6 @@ func (st *ingestionStore) get(ctx context.Context, id pgtype.UUID) (IngestionJob
 
 func (st *ingestionStore) listByContent(ctx context.Context, contentID pgtype.UUID, limit, offset int32) ([]IngestionJob, error) {
 	rows, err := st.read.ListIngestionJobsByContent(ctx, gen.ListIngestionJobsByContentParams{
-
 		ContentID: contentID,
 		OffsetVal: offset,
 		LimitVal:  limit,
@@ -108,7 +106,6 @@ func (st *ingestionStore) findLatestPendingByContent(ctx context.Context, conten
 	const lookbackLimit = 1000
 
 	rows, err := st.read.ListIngestionJobsByContent(ctx, gen.ListIngestionJobsByContentParams{
-
 		ContentID: contentID,
 		OffsetVal: 0,
 		LimitVal:  lookbackLimit,
@@ -277,7 +274,6 @@ func (s *Service) enqueueRefresh(ctx context.Context, contentID, userID pgtype.U
 	}
 
 	payload, err := json.Marshal(refreshValuesPayload{
-
 		ContentID:      contentID.String(),
 		SourceKind:     sourceKind,
 		IngestionJobID: job.ID,

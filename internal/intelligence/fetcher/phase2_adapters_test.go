@@ -29,6 +29,7 @@ func (m mockAdapterSettings) GetStringOr(_ context.Context, key, fallback string
 	if v, ok := m[key]; ok {
 		return v
 	}
+
 	return fallback
 }
 
@@ -39,6 +40,7 @@ func (m mockAdapterSettings) GetIntOr(_ context.Context, key string, fallback in
 			return n
 		}
 	}
+
 	return fallback
 }
 
@@ -52,9 +54,11 @@ func TestDiffManifest(t *testing.T) {
 
 	got := DiffManifest(cur, prev)
 	want := []string{"https://a.example/2", "https://a.example/4"}
+
 	if len(got) != len(want) {
 		t.Fatalf("DiffManifest = %v, want %v", got, want)
 	}
+
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("DiffManifest = %v, want %v", got, want)
@@ -79,6 +83,7 @@ func TestRenderFetcher_Disabled(t *testing.T) {
 	t.Parallel()
 
 	f := NewRenderFetcher(nil, nil, nil)
+
 	_, err := f.Fetch(t.Context(), sources.Source{SourceUrl: "https://example.com"})
 	if !errors.Is(err, ErrAdapterDisabled) {
 		t.Fatalf("unset service_url: err = %v, want ErrAdapterDisabled", err)
@@ -94,11 +99,14 @@ func TestRenderFetcher_Fetch(t *testing.T) {
 	t.Parallel()
 
 	var gotReq renderRequest
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/render" {
 			t.Errorf("path = %q, want /render", r.URL.Path)
 		}
+
 		_ = json.NewDecoder(r.Body).Decode(&gotReq)
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"html":"<html><body>rendered</body></html>","final_url":"https://example.com/final"}`))
 	}))
@@ -115,12 +123,15 @@ func TestRenderFetcher_Fetch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
+
 	if gotReq.URL != "https://example.com/spa" || gotReq.WaitSelector != "#main" {
 		t.Errorf("request = %+v, want url+wait_selector propagated", gotReq)
 	}
+
 	if !strings.Contains(string(res.Body), "rendered") {
 		t.Errorf("body = %q", res.Body)
 	}
+
 	if res.Headers["X-Render-Final-URL"] != "https://example.com/final" {
 		t.Errorf("final_url header = %q", res.Headers["X-Render-Final-URL"])
 	}
@@ -142,7 +153,7 @@ func TestRenderFetcher_Circuit(t *testing.T) {
 	settings := mockAdapterSettings{"intel.render.service_url": srv.URL}
 	f := NewRenderFetcher(srv.Client(), settings, rdb)
 
-	for i := 0; i < renderCircuitThreshold; i++ {
+	for i := range renderCircuitThreshold {
 		_, err := f.Fetch(t.Context(), sources.Source{SourceUrl: "https://example.com"})
 		if err == nil || !strings.Contains(err.Error(), "502") {
 			t.Fatalf("fetch %d err = %v, want status 502", i+1, err)
@@ -163,12 +174,15 @@ func TestRenderFetcher_CircuitReset(t *testing.T) {
 	rdb := startTestValkey(t)
 
 	var failNext atomic.Bool
+
 	failNext.Store(true)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if failNext.Swap(false) {
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
+
 		_, _ = w.Write([]byte(`{"html":"<html>ok</html>","final_url":"https://example.com"}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -179,11 +193,13 @@ func TestRenderFetcher_CircuitReset(t *testing.T) {
 
 	// Alternate failure/success — the counter peaks at 1 each round, never
 	// reaching the threshold, so the breaker stays closed.
-	for i := 0; i < 2*renderCircuitThreshold; i++ {
+	for i := range 2 * renderCircuitThreshold {
 		failNext.Store(true)
+
 		if _, err := f.Fetch(t.Context(), src); err == nil {
 			t.Fatalf("round %d: want 502 failure", i)
 		}
+
 		if _, err := f.Fetch(t.Context(), src); err != nil {
 			t.Fatalf("round %d: success fetch err = %v (breaker tripped early?)", i, err)
 		}
@@ -205,6 +221,7 @@ func TestWaybackFetcher_Manifest(t *testing.T) {
 		if got := r.URL.Query().Get("limit"); got != "-25" {
 			t.Errorf("cdx limit param = %q, want -25 (last N captures)", got)
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
 			["timestamp","original","statuscode"],
@@ -216,6 +233,7 @@ func TestWaybackFetcher_Manifest(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	f := &WaybackFetcher{client: srv.Client(), allowPrivate: true}
+
 	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      "https://example.com/page",
 		ProviderConfig: []byte(`{"cdx_endpoint":"` + srv.URL + `"}`),
@@ -228,6 +246,7 @@ func TestWaybackFetcher_Manifest(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("manifest lines = %d, want 2 (non-200 filtered): %q", len(lines), res.Body)
 	}
+
 	if !strings.HasPrefix(lines[0], "https://web.archive.org/web/20240101000000id_/https://example.com/page") {
 		t.Errorf("manifest line = %q, want web.archive.org snapshot URL", lines[0])
 	}
@@ -241,8 +260,10 @@ func TestCompositeFetch_WaybackSinceInjection(t *testing.T) {
 	t.Parallel()
 
 	var gotSince string
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotSince = r.URL.Query().Get("since")
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[["timestamp","original","statuscode"],["20240102000000","https://example.com/p","200"]]`))
 	}))
@@ -259,6 +280,7 @@ func TestCompositeFetch_WaybackSinceInjection(t *testing.T) {
 	if _, err := testComposite(srv.Client()).Fetch(t.Context(), sources.Source{}, ch); err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
+
 	if gotSince != "20240101000000" {
 		t.Errorf("cdx since = %q, want 20240101000000 (channel last_success_at)", gotSince)
 	}
@@ -268,6 +290,7 @@ func TestCompositeFetch_WaybackSinceInjection(t *testing.T) {
 	if _, err := testComposite(srv.Client()).Fetch(t.Context(), sources.Source{}, ch); err != nil {
 		t.Fatalf("Fetch (explicit since): %v", err)
 	}
+
 	if gotSince != "20200101" {
 		t.Errorf("cdx since = %q, want explicit 20200101", gotSince)
 	}
@@ -313,6 +336,7 @@ func TestSocialEndpoint_RedditHandles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("handle %q: %v", tc.handle, err)
 		}
+
 		if got != tc.want {
 			t.Errorf("handle %q: endpoint = %q, want %q", tc.handle, got, tc.want)
 		}
@@ -338,15 +362,18 @@ func TestSocialFetcher_RedditNormalize(t *testing.T) {
 	f := NewSocialFetcher(srv.Client(), mockAdapterSettings{
 		"intel.social.enabled_providers": `["reddit"]`,
 	})
+
 	res, err := f.Fetch(t.Context(), sources.Source{
 		ProviderConfig: []byte(`{"provider":"reddit","handle":"r/nigeria","endpoint_override":"` + srv.URL + `"}`),
 	})
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
+
 	if res.ContentType != "application/x-ndjson" {
 		t.Errorf("content_type = %q", res.ContentType)
 	}
+
 	if !strings.Contains(string(res.Body), `"id":"abc"`) || !strings.Contains(string(res.Body), `"score":42`) {
 		t.Errorf("normalized body = %q", res.Body)
 	}
@@ -378,6 +405,7 @@ func TestSocialFetcher_TelegramNormalize(t *testing.T) {
 	f := NewSocialFetcher(srv.Client(), mockAdapterSettings{
 		"intel.social.enabled_providers": `["telegram"]`,
 	})
+
 	res, err := f.Fetch(t.Context(), sources.Source{
 		ProviderConfig: []byte(`{"provider":"telegram","handle":"testchan","endpoint_override":"` + srv.URL + `"}`),
 	})
@@ -389,11 +417,13 @@ func TestSocialFetcher_TelegramNormalize(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("telegram lines = %d, want 2: %q", len(lines), res.Body)
 	}
+
 	if !strings.Contains(lines[0], `"url":"https://t.me/testchan/42"`) ||
 		!strings.Contains(lines[0], "First post") ||
 		!strings.Contains(lines[0], "2026-09-20T10:00:00") {
 		t.Errorf("line 0 = %q", lines[0])
 	}
+
 	if !strings.Contains(lines[1], `"author":"Chan Admin"`) {
 		t.Errorf("line 1 missing author: %q", lines[1])
 	}
@@ -434,22 +464,27 @@ func TestGitFetcher_LocalRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init fixture repo: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(dir, "data.txt"), []byte("payload"), 0o644); err != nil {
 		t.Fatalf("write fixture file: %v", err)
 	}
+
 	w, err := repo.Worktree()
 	if err != nil {
 		t.Fatalf("worktree: %v", err)
 	}
+
 	if _, err := w.Add("data.txt"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
+
 	commit, err := w.Commit("fixture commit", &git.CommitOptions{
 		Author: &object.Signature{Name: "test", Email: "test@example.com", When: time.Now()},
 	})
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}
+
 	if _, err := repo.CreateTag("v1.0.0", commit, nil); err != nil {
 		t.Fatalf("tag: %v", err)
 	}
@@ -462,6 +497,7 @@ func TestGitFetcher_LocalRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetchFiles: %v", err)
 	}
+
 	if !strings.Contains(string(body), `"path":"data.txt"`) || !strings.Contains(string(body), `"content":"payload"`) {
 		t.Errorf("files body = %q, want data.txt JSON line", body)
 	}
@@ -471,6 +507,7 @@ func TestGitFetcher_LocalRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetchFiles (paths filter): %v", err)
 	}
+
 	if strings.Contains(string(body), "data.txt") {
 		t.Errorf("paths=docs/ should exclude data.txt, got %q", body)
 	}
@@ -480,6 +517,7 @@ func TestGitFetcher_LocalRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetchTags: %v", err)
 	}
+
 	if !strings.HasPrefix(string(tags), "v1.0.0\t"+commit.String()) {
 		t.Errorf("tags body = %q, want v1.0.0\\t%s", tags, commit.String())
 	}

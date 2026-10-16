@@ -46,7 +46,9 @@ func resolutionErr(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	msg := err.Error()
+
 	return strings.Contains(msg, "not found") ||
 		strings.Contains(msg, "does not support") ||
 		strings.Contains(msg, "has ") && strings.Contains(msg, "inputs") ||
@@ -151,6 +153,7 @@ func TestToolWriterLifecycle(t *testing.T) {
 		if len(supported) == 0 {
 			continue
 		}
+
 		if !supported["create"] {
 			t.Logf("%s: no create op — update/delete require a created record; skipped", toolType)
 			continue
@@ -162,7 +165,9 @@ func TestToolWriterLifecycle(t *testing.T) {
 				t.Errorf("%s.create: resolution failure: %v", toolType, err)
 				continue
 			}
+
 			t.Logf("%s.create: service error (payload coverage): %v", toolType, err)
+
 			continue
 		}
 

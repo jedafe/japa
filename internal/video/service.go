@@ -295,14 +295,17 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, metadata *Metada
 	// the /sources directory must only list channel/user URLs (e.g.
 	// youtube.com/@handle), never per-video watch URLs or upload paths.
 	var intelSourceID pgtype.UUID
+
 	if s.sources != nil && metadata.ChannelURL != "" {
 		channelName := metadata.ChannelName
 		if channelName == "" {
 			channelName = metadata.AuthorName
 		}
+
 		if channelName == "" {
 			channelName = metadata.ChannelURL
 		}
+
 		var channelLogo *string
 		if metadata.ChannelLogo != "" {
 			channelLogo = &metadata.ChannelLogo
@@ -311,6 +314,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, metadata *Metada
 			// thumbnail so the /sources card still shows an image.
 			channelLogo = thumbnailURL
 		}
+
 		src, sErr := s.sources.CreateAutoForVideo(ctx, authorID, &channelName, &metadata.ChannelURL, channelLogo)
 		if sErr != nil {
 			slog.Warn("video: failed to register canonical source", "source_url", metadata.ChannelURL, "error", sErr)
@@ -326,7 +330,6 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, metadata *Metada
 	}
 
 	source, err := s.store.CreateOrUpdateSource(ctx, gen.CreateOrUpdateVideoSourceParams{
-
 		AuthorUserID:     authorID,
 		SourceType:       metadata.SourceType,
 		SourceUrl:        metadata.SourceURL,
@@ -396,7 +399,9 @@ func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filen
 	// grids/poster slots rendered nothing and composers picked a video file
 	// as the post's featured image. Non-fatal — the video plays regardless.
 	var thumbnailMediaID pgtype.UUID
+
 	var thumbnailURL *string
+
 	if tID, tURL, tErr := s.storeVideoPoster(ctx, uploaderID, data); tErr != nil {
 		slog.WarnContext(ctx, "video: poster generation skipped", "error", tErr)
 	} else {
@@ -405,7 +410,6 @@ func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filen
 	}
 
 	source, err := s.store.CreateOrUpdateSource(ctx, gen.CreateOrUpdateVideoSourceParams{
-
 		AuthorUserID:     uploaderID,
 		SourceType:       SourceUpload,
 		SourceUrl:        sourceURL,
@@ -451,6 +455,7 @@ func (s *Service) storeVideoPoster(ctx context.Context, uploaderID pgtype.UUID, 
 		in.Close()
 		return pgtype.UUID{}, "", fmt.Errorf("writing temp input: %w", err)
 	}
+
 	if err := in.Close(); err != nil {
 		return pgtype.UUID{}, "", fmt.Errorf("closing temp input: %w", err)
 	}
@@ -459,8 +464,10 @@ func (s *Service) storeVideoPoster(ctx context.Context, uploaderID pgtype.UUID, 
 	if err != nil {
 		return pgtype.UUID{}, "", fmt.Errorf("temp output: %w", err)
 	}
+
 	outPath := out.Name()
 	out.Close()
+
 	defer os.Remove(outPath)
 
 	timestamp := "00:00:01"
@@ -513,13 +520,14 @@ func (s *Service) GetSourceBySlug(ctx context.Context, slug string) (gen.VideoSo
 // pre-insert; ON CONFLICT (source_url) keeps an existing row's slug.
 func (s *Service) uniqueVideoSlug(ctx context.Context, title string) string {
 	base := content.Slugify(title)
-	for i := 0; i < content.MaxSlugAttempts; i++ {
+	for i := range content.MaxSlugAttempts {
 		candidate := base
 		if i > 0 {
 			candidate = fmt.Sprintf("%s-%d", base, i+1)
 		}
+
 		if _, err := s.store.GetSourceBySlug(ctx, candidate); err != nil {
-			return candidate //nolint:nilerr // no row → slug is available
+			return candidate
 		}
 	}
 
@@ -576,7 +584,6 @@ func (s *Service) SubmitClaim(ctx context.Context, claimantUserID pgtype.UUID, u
 	}
 
 	return s.store.CreateChannelClaim(ctx, gen.CreateVideoChannelClaimParams{
-
 		ClaimantUserID:    claimantUserID,
 		VideoAuthorUserID: videoAuthorUserID,
 		VideoSourceID:     targetSourceID,
@@ -1081,7 +1088,6 @@ func (s *Service) EnqueueGenerateSummary(ctx context.Context, userID, videoSourc
 	}
 
 	payload, err := json.Marshal(worker.GenerateSummaryPayload{
-
 		UserID:        userID.String(),
 		VideoSourceID: videoSourceID.String(),
 	})

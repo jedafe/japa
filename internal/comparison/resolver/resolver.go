@@ -129,15 +129,18 @@ func (r *Registry) ResolveBatch(ctx context.Context, entityType string, refs []m
 	}
 
 	out := ResolveResult{Items: []ResolvedItem{}}
+
 	for i, ref := range refs {
 		item, found, err := res.Resolve(ctx, ref)
 		if err != nil || !found {
 			out.MissingIDs = append(out.MissingIDs, missingIDForRef(ref, i))
 			continue
 		}
+
 		item.Type = entityType
 		out.Items = append(out.Items, item)
 	}
+
 	return out, nil
 }
 
@@ -147,6 +150,7 @@ func missingIDForRef(ref map[string]any, i int) string {
 			return v
 		}
 	}
+
 	return "index:" + strconv.Itoa(i)
 }
 

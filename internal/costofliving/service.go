@@ -406,10 +406,12 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 	// slot — including a seeded baseline smuggled inside city_ids by a
 	// legacy share URL that predates the baseline_id param.
 	destCount := 0
+
 	for _, id := range uniqueIDs {
 		if baselineID.Valid && id == baselineID {
 			continue
 		}
+
 		destCount++
 	}
 
@@ -570,6 +572,7 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 
 		for dimKey, meta := range dimMetaMap {
 			v, ok := cfv[meta.Slug]
+
 			if meta.SourceKey != "" {
 				if sv, sok := cfv[meta.SourceKey]; sok {
 					v, ok = sv, true
@@ -610,24 +613,30 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 
 	for _, id := range cityOrder {
 		spaceID := geoSpaceByCity[id]
+
 		code := spaceCurrencies[spaceID]
 		if code != "" {
 			cityCurrency[id.String()] = code
 		}
+
 		if s.fxRates == nil || code == "" {
 			continue
 		}
+
 		if _, ok := ratesByCode[code]; !ok {
 			rate, base, fetchedAt, stale, rerr := s.fxRates.BaseRate(ctx, code)
 			if rerr != nil {
 				continue // unsupported/absent quote → city stays raw
 			}
+
 			ratesByCode[code] = rate
+
 			if displayCurrency == "" {
 				displayCurrency, fxStale = base, stale
 				fxFetchedAt = fetchedAt.UTC().Format(time.RFC3339)
 			}
 		}
+
 		ratesByCity[id.String()] = ratesByCode[code]
 	}
 
@@ -636,6 +645,7 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 			if !dimMetaMap[dimID].Money {
 				continue
 			}
+
 			for cityKey, v := range byCity {
 				if rate, ok := ratesByCity[cityKey]; ok && rate > 0 {
 					byCity[cityKey] = v / rate
@@ -741,6 +751,7 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 			if mixedUnits {
 				continue
 			}
+
 			if hasBase && baseVal > 0 && ok {
 				cat.Ratios[cityKey] = val / baseVal
 			} else if hasBase && baseVal == 0 && ok {

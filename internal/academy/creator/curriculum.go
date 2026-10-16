@@ -176,7 +176,9 @@ func uuidPtr(id pgtype.UUID) *string {
 	if !id.Valid {
 		return nil
 	}
+
 	s := id.String()
+
 	return &s
 }
 
@@ -259,17 +261,21 @@ func decodeQuizOptions(raw string) []string {
 		Text  string `json:"text"`
 		Label string `json:"label"`
 	}
+
 	if err := json.Unmarshal([]byte(trimmed), &objects); err == nil {
 		out := make([]string, 0, len(objects))
+
 		for _, o := range objects {
 			l := o.Text
 			if l == "" {
 				l = o.Label
 			}
+
 			if l != "" {
 				out = append(out, l)
 			}
 		}
+
 		return out
 	}
 
@@ -309,11 +315,13 @@ func (s *Service) GetMyCurriculum(ctx context.Context, userID, trackID pgtype.UU
 
 		for _, l := range lessons {
 			dto := lessonDTOFromListRow(l)
+
 			if l.LessonType == "quiz" {
 				if qs, qerr := s.store.read.GetQuizQuestionsByLesson(ctx, l.ID); qerr == nil {
 					dto.QuestionCount = len(qs)
 				}
 			}
+
 			cm.Lessons = append(cm.Lessons, dto)
 		}
 
@@ -346,6 +354,7 @@ func (s *Service) CreateMyModule(ctx context.Context, userID, trackID pgtype.UUI
 	}
 
 	var mod gen.AcademyModule
+
 	err := s.withMutationAndReset(ctx, trackID, func(q *gen.Queries) error {
 		var e error
 		mod, e = q.CreateAcademyModule(ctx, gen.CreateAcademyModuleParams{
@@ -355,6 +364,7 @@ func (s *Service) CreateMyModule(ctx context.Context, userID, trackID pgtype.UUI
 			Description: in.Description,
 			SortOrder:   sortOrder,
 		})
+
 		return e
 	})
 	if err != nil {
@@ -377,6 +387,7 @@ func (s *Service) UpdateMyModule(ctx context.Context, userID, moduleID pgtype.UU
 	}
 
 	var mod gen.AcademyModule
+
 	err = s.withMutationAndReset(ctx, track.ID, func(q *gen.Queries) error {
 		var e error
 		mod, e = q.UpdateAcademyModule(ctx, gen.UpdateAcademyModuleParams{
@@ -385,6 +396,7 @@ func (s *Service) UpdateMyModule(ctx context.Context, userID, moduleID pgtype.UU
 			Description: in.Description,
 			SortOrder:   in.SortOrder,
 		})
+
 		return e
 	})
 	if err != nil {
@@ -421,6 +433,7 @@ func (s *Service) CreateMyLesson(ctx context.Context, userID, moduleID pgtype.UU
 	if in.LessonType != nil && *in.LessonType != "" {
 		lessonType = *in.LessonType
 	}
+
 	if !validLessonTypes[lessonType] {
 		return LessonDTO{}, fmt.Errorf("invalid lesson_type %q", lessonType)
 	}
@@ -449,6 +462,7 @@ func (s *Service) CreateMyLesson(ctx context.Context, userID, moduleID pgtype.UU
 	}
 
 	var row gen.CreateAcademyLessonRow
+
 	err = s.withMutationAndReset(ctx, track.ID, func(q *gen.Queries) error {
 		var e error
 		row, e = q.CreateAcademyLesson(ctx, gen.CreateAcademyLessonParams{
@@ -463,6 +477,7 @@ func (s *Service) CreateMyLesson(ctx context.Context, userID, moduleID pgtype.UU
 			IsPublished:     in.IsPublished != nil && *in.IsPublished,
 			IsPreview:       in.IsPreview != nil && *in.IsPreview,
 		})
+
 		return e
 	})
 	if err != nil {
@@ -491,6 +506,7 @@ func (s *Service) UpdateMyLesson(ctx context.Context, userID, lessonID pgtype.UU
 	// Slug renames go through the same normalizer as create; empty means
 	// "keep the current slug" (PATCH-sparse field).
 	var slug *string
+
 	if in.Slug != nil && strings.TrimSpace(*in.Slug) != "" {
 		normalized := moduleSlug(in.Slug, in.Title)
 		slug = &normalized
@@ -499,6 +515,7 @@ func (s *Service) UpdateMyLesson(ctx context.Context, userID, lessonID pgtype.UU
 	// media_id is tri-state: nil keeps the attachment, "" detaches it
 	// (zero-UUID sentinel in the UPDATE CASE), a UUID replaces it.
 	var mediaID pgtype.UUID
+
 	if in.MediaID != nil {
 		if *in.MediaID == "" {
 			mediaID = pgtype.UUID{Valid: true}
@@ -508,6 +525,7 @@ func (s *Service) UpdateMyLesson(ctx context.Context, userID, lessonID pgtype.UU
 	}
 
 	var row gen.UpdateAcademyLessonRow
+
 	err = s.withMutationAndReset(ctx, track.ID, func(q *gen.Queries) error {
 		var e error
 		row, e = q.UpdateAcademyLesson(ctx, gen.UpdateAcademyLessonParams{
@@ -522,6 +540,7 @@ func (s *Service) UpdateMyLesson(ctx context.Context, userID, lessonID pgtype.UU
 			IsPublished:     in.IsPublished,
 			IsPreview:       in.IsPreview,
 		})
+
 		return e
 	})
 	if err != nil {
@@ -583,25 +602,31 @@ func (s *Service) ReplaceMyQuizQuestions(ctx context.Context, userID, lessonID p
 		if strings.TrimSpace(q.Question) == "" {
 			return nil, fmt.Errorf("question %d: text is required", i+1)
 		}
+
 		if len(q.Options) < 2 {
 			return nil, fmt.Errorf("question %d: at least 2 options are required", i+1)
 		}
+
 		if strings.TrimSpace(q.Answer) == "" {
 			return nil, fmt.Errorf("question %d: a correct answer is required", i+1)
 		}
+
 		found := false
+
 		for _, o := range q.Options {
 			if strings.EqualFold(strings.TrimSpace(o), strings.TrimSpace(q.Answer)) {
 				found = true
 				break
 			}
 		}
+
 		if !found {
 			return nil, fmt.Errorf("question %d: the answer must match one of the options", i+1)
 		}
 	}
 
 	out := make([]QuizQuestionDTO, 0, len(in))
+
 	err = s.withMutationAndReset(ctx, track.ID, func(q *gen.Queries) error {
 		// Replace-set: delete all + re-insert must commit together or the
 		// quiz is left gutted.
@@ -611,6 +636,7 @@ func (s *Service) ReplaceMyQuizQuestions(ctx context.Context, userID, lessonID p
 
 		for i, qu := range in {
 			optionsJSON, _ := json.Marshal(qu.Options)
+
 			position := qu.Position
 			if position == 0 {
 				position = int32(i + 1) // #nosec G115 -- bounded by question count
@@ -637,6 +663,7 @@ func (s *Service) ReplaceMyQuizQuestions(ctx context.Context, userID, lessonID p
 				Position:    row.Position,
 			})
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -866,6 +893,7 @@ func (h *Handlers) ReplaceMyQuizQuestions(w http.ResponseWriter, r *http.Request
 	var in struct {
 		Questions []QuizQuestionInput `json:"questions"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return

@@ -40,6 +40,7 @@ func newFakeOAuthStore() *fakeOAuthStore {
 func (f *fakeOAuthStore) CreateClient(_ context.Context, c OAuthClient) error {
 	cp := c
 	f.clients[c.ClientID] = &cp
+
 	return nil
 }
 
@@ -51,12 +52,14 @@ func (f *fakeOAuthStore) GetClientByClientID(_ context.Context, clientID string)
 	if c, ok := f.clients[clientID]; ok {
 		return c, nil
 	}
+
 	return nil, pgx.ErrNoRows
 }
 
 func (f *fakeOAuthStore) CreateAuthorizationCode(_ context.Context, codeHash string, c OAuthAuthorizationCode) error {
 	cp := c
 	f.codes[codeHash] = &cp
+
 	return nil
 }
 
@@ -65,8 +68,10 @@ func (f *fakeOAuthStore) ConsumeAuthorizationCode(_ context.Context, codeHash, c
 	if !ok || c.ClientID != clientID || c.ExpiresAt.Time.Before(time.Now()) {
 		return nil, pgx.ErrNoRows
 	}
+
 	f.codes[codeHash] = nil
 	delete(f.codes, codeHash)
+
 	return c, nil
 }
 
@@ -79,6 +84,7 @@ func (f *fakeOAuthStore) CreateTokenPair(_ context.Context, accessHash string, a
 	r.ID = rid
 	f.tokens[accessHash] = &a
 	f.tokens[refreshHash] = &r
+
 	return rid, nil
 }
 
@@ -93,6 +99,7 @@ func (f *fakeOAuthStore) GetTokenByHash(_ context.Context, tokenType, tokenHash 
 	if !ok || t.TokenType != tokenType {
 		return nil, pgx.ErrNoRows
 	}
+
 	return t, nil
 }
 
@@ -101,7 +108,9 @@ func (f *fakeOAuthStore) ConsumeRefreshToken(_ context.Context, tokenHash string
 	if !ok || t.TokenType != "refresh" || t.RevokedAt != nil {
 		return nil, pgx.ErrNoRows
 	}
+
 	t.RevokedAt = &pgtype.Timestamptz{Time: time.Now(), Valid: true}
+
 	return t, nil
 }
 
@@ -109,6 +118,7 @@ func (f *fakeOAuthStore) RevokeTokenByHash(_ context.Context, tokenHash string) 
 	if t, ok := f.tokens[tokenHash]; ok {
 		t.RevokedAt = &pgtype.Timestamptz{Time: time.Now(), Valid: true}
 	}
+
 	return nil
 }
 
@@ -118,41 +128,51 @@ func (f *fakeOAuthStore) RevokeTokenFamily(_ context.Context, clientID string, u
 			t.RevokedAt = &pgtype.Timestamptz{Time: time.Now(), Valid: true}
 		}
 	}
+
 	return nil
 }
 
 func (f *fakeOAuthStore) ListUserGrants(_ context.Context, userID pgtype.UUID) ([]OAuthGrant, error) {
 	byClient := map[string]*OAuthGrant{}
+
 	for _, t := range f.tokens {
 		if t.UserID != userID || t.RevokedAt != nil || t.ExpiresAt.Time.Before(time.Now()) {
 			continue
 		}
+
 		g := byClient[t.ClientID]
 		if g == nil {
 			g = &OAuthGrant{ClientID: t.ClientID}
 			if c, ok := f.clients[t.ClientID]; ok {
 				g.ClientName = c.ClientName
 			}
+
 			byClient[t.ClientID] = g
 		}
+
 		for _, sc := range strings.Fields(t.Scope) {
 			dup := false
+
 			for _, have := range g.Scopes {
 				if have == sc {
 					dup = true
 					break
 				}
 			}
+
 			if !dup {
 				g.Scopes = append(g.Scopes, sc)
 			}
 		}
 	}
+
 	out := make([]OAuthGrant, 0, len(byClient))
+
 	for _, g := range byClient {
 		sort.Strings(g.Scopes)
 		out = append(out, *g)
 	}
+
 	return out, nil
 }
 
@@ -168,6 +188,7 @@ func (f *fakeOAuthStore) GetUserIdentity(_ context.Context, userID pgtype.UUID) 
 	if id, ok := f.identities[userID]; ok {
 		return id, nil
 	}
+
 	return nil, pgx.ErrNoRows
 }
 
@@ -175,6 +196,7 @@ func newTestOAuth() (*OAuthHandlers, *OAuthService, *fakeOAuthStore) {
 	store := newFakeOAuthStore()
 	svc := NewOAuthService(store, nil, nil)
 	h := NewOAuthHandlers(svc, "https://api.example.com", "https://example.com", "JapaConnect", nil, nil, "test-consent-secret")
+
 	return h, svc, store
 }
 
@@ -182,6 +204,7 @@ func pkcePair() (verifier, challenge string) {
 	verifier = strings.Repeat("a", 64)
 	sum := sha256.Sum256([]byte(verifier))
 	challenge = base64.RawURLEncoding.EncodeToString(sum[:])
+
 	return
 }
 
@@ -190,9 +213,11 @@ func TestVerifyPKCE(t *testing.T) {
 	if !verifyPKCE(verifier, challenge) {
 		t.Fatal("valid verifier rejected")
 	}
+
 	if verifyPKCE("wrong", challenge) {
 		t.Fatal("wrong verifier accepted")
 	}
+
 	if verifyPKCE(verifier, "") || verifyPKCE("", challenge) {
 		t.Fatal("empty input accepted")
 	}
@@ -214,13 +239,16 @@ func TestRegisterClient(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
+
 	cid, _ := resp["client_id"].(string)
 	if !strings.HasPrefix(cid, oauthClientIDPrefix) {
 		t.Fatalf("client_id missing prefix: %q", cid)
 	}
+
 	if _, ok := resp["client_secret"]; ok {
 		t.Fatal("public clients must not receive a client_secret")
 	}
+
 	if resp["token_endpoint_auth_method"] != "none" {
 		t.Fatal("auth method must be none")
 	}
@@ -228,6 +256,7 @@ func TestRegisterClient(t *testing.T) {
 	if scope := resp["scope"].(string); strings.Contains(scope, "api.write") {
 		t.Fatalf("admin-only scope leaked into client: %s", scope)
 	}
+
 	if store.clients[cid] == nil {
 		t.Fatal("client not persisted")
 	}
@@ -238,7 +267,7 @@ func TestRegisterClient(t *testing.T) {
 func TestRegisterClientCap(t *testing.T) {
 	h, _, store := newTestOAuth()
 
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		cid := "jcmc_spam_" + strconv.Itoa(i)
 		store.clients[cid] = &OAuthClient{ClientID: cid}
 	}
@@ -251,6 +280,7 @@ func TestRegisterClientCap(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
 	}
+
 	if !strings.Contains(rec.Body.String(), "invalid_client_metadata") {
 		t.Fatalf("expected invalid_client_metadata, got: %s", rec.Body.String())
 	}
@@ -294,15 +324,18 @@ func TestTokenRejectsUnregisteredGrantType(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec := httptest.NewRecorder()
 	h.HandleToken(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
+
 	if !strings.Contains(rec.Body.String(), "unauthorized_client") {
 		t.Fatalf("want unauthorized_client, got %s", rec.Body.String())
 	}
+
 	if rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("token endpoint must emit Cache-Control: no-store")
 	}
@@ -313,11 +346,14 @@ func TestMetadataEndpoints(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	h.HandleProtectedResourceMetadata(rec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil))
+
 	var prm map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &prm)
+
 	if prm["resource"] != "https://api.example.com/api/v1/mcp" {
 		t.Fatalf("bad resource: %v", prm["resource"])
 	}
+
 	servers, _ := prm["authorization_servers"].([]any)
 	if len(servers) != 1 || servers[0] != "https://api.example.com" {
 		t.Fatalf("bad authorization_servers: %v", servers)
@@ -325,14 +361,18 @@ func TestMetadataEndpoints(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	h.HandleAuthorizationServerMetadata(rec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
+
 	var as map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &as)
+
 	if as["issuer"] != "https://api.example.com" {
 		t.Fatalf("bad issuer: %v", as["issuer"])
 	}
+
 	if as["token_endpoint"] != "https://api.example.com/oauth/token" {
 		t.Fatalf("bad token endpoint: %v", as["token_endpoint"])
 	}
+
 	methods, _ := as["code_challenge_methods_supported"].([]any)
 	if len(methods) != 1 || methods[0] != "S256" {
 		t.Fatalf("must require S256: %v", methods)
@@ -349,6 +389,7 @@ func TestAuthorizeRejectsUnknownClient(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
+
 	if loc := rec.Header().Get("Location"); loc != "" {
 		t.Fatalf("must not redirect on invalid request, got %q", loc)
 	}
@@ -399,10 +440,12 @@ func TestAuthorizeUnauthenticatedRedirectsToLogin(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302 to login", rec.Code)
 	}
+
 	loc := rec.Header().Get("Location")
 	if !strings.HasPrefix(loc, "https://example.com/login?redirect=") {
 		t.Fatalf("expected login redirect, got %q", loc)
 	}
+
 	if !strings.Contains(loc, url.QueryEscape("https://api.example.com/oauth/authorize")) {
 		t.Fatalf("redirect target missing authorize URL: %q", loc)
 	}
@@ -433,7 +476,7 @@ func TestTokenExchangePKCE(t *testing.T) {
 	}
 
 	code := oauthAuthCodePrefix + "deadbeef"
-	_ = svc.store.CreateAuthorizationCode(context.Background(), hashToken(code), OAuthAuthorizationCode{
+	_ = svc.store.CreateAuthorizationCode(t.Context(), hashToken(code), OAuthAuthorizationCode{
 		ClientID:      "jcmc_test",
 		UserID:        testUserID,
 		RedirectURI:   "https://agent.example.com/cb",
@@ -452,22 +495,27 @@ func TestTokenExchangePKCE(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec := httptest.NewRecorder()
 	h.HandleToken(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
+
 	var tok tokenResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &tok); err != nil {
 		t.Fatal(err)
 	}
+
 	if !strings.HasPrefix(tok.AccessToken, oauthAccessTokenPrefix) {
 		t.Fatalf("bad access token prefix: %q", tok.AccessToken)
 	}
+
 	if !strings.HasPrefix(tok.RefreshToken, oauthRefreshTokenPrefix) {
 		t.Fatalf("bad refresh token prefix: %q", tok.RefreshToken)
 	}
+
 	if tok.Scope != "agent.use api.read.content" {
 		t.Fatalf("scope mismatch: %q", tok.Scope)
 	}
@@ -475,8 +523,10 @@ func TestTokenExchangePKCE(t *testing.T) {
 	// Code is single-use — replay must fail.
 	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec = httptest.NewRecorder()
 	h.HandleToken(rec, req)
+
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("replayed code returned %d, want 400", rec.Code)
 	}
@@ -493,7 +543,7 @@ func TestTokenExchangeRejectsWrongVerifier(t *testing.T) {
 	}
 
 	code := oauthAuthCodePrefix + "cafe"
-	_ = svc.store.CreateAuthorizationCode(context.Background(), hashToken(code), OAuthAuthorizationCode{
+	_ = svc.store.CreateAuthorizationCode(t.Context(), hashToken(code), OAuthAuthorizationCode{
 		ClientID:      "jcmc_test",
 		UserID:        testUserID,
 		RedirectURI:   "https://agent.example.com/cb",
@@ -511,6 +561,7 @@ func TestTokenExchangeRejectsWrongVerifier(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec := httptest.NewRecorder()
 	h.HandleToken(rec, req)
 
@@ -533,26 +584,28 @@ func TestRefreshTokenRotationAndReuse(t *testing.T) {
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 
-	pair, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test", nil)
+	pair, err := svc.RotateRefreshToken(t.Context(), tok, "jcmc_test", nil)
 	if err != nil {
 		t.Fatalf("rotation failed: %v", err)
 	}
+
 	if pair.RefreshToken == tok {
 		t.Fatal("rotation must issue a new refresh token")
 	}
 
 	// Immediate retry (lost response / concurrent rotation) — within the
 	// grace window this is a plain invalid_grant, NOT a family revoke.
-	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test", nil); err == nil {
+	if _, err := svc.RotateRefreshToken(t.Context(), tok, "jcmc_test", nil); err == nil {
 		t.Fatal("reused rotated token accepted")
 	}
 
 	// The new pair must keep working — rotating the fresh refresh token
 	// proves the family was not revoked by the grace-window retry.
-	pair2, err := svc.RotateRefreshToken(context.Background(), pair.RefreshToken, "jcmc_test", nil)
+	pair2, err := svc.RotateRefreshToken(t.Context(), pair.RefreshToken, "jcmc_test", nil)
 	if err != nil {
 		t.Fatalf("rotation of new token failed after grace-window retry: %v", err)
 	}
+
 	if pair2.RefreshToken == pair.RefreshToken {
 		t.Fatal("second rotation must issue another refresh token")
 	}
@@ -584,9 +637,10 @@ func TestRefreshTokenStaleReuseRevokesFamily(t *testing.T) {
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 
-	if _, err := svc.RotateRefreshToken(context.Background(), old, "jcmc_test", nil); err == nil {
+	if _, err := svc.RotateRefreshToken(t.Context(), old, "jcmc_test", nil); err == nil {
 		t.Fatal("stale replay accepted")
 	}
+
 	for _, other := range store.tokens {
 		if other.ClientID == "jcmc_test" && other.UserID == testUserID && other.RevokedAt == nil {
 			t.Fatal("token family not revoked after stale refresh reuse")
@@ -610,12 +664,12 @@ func TestRefreshTokenCrossClientNotConsumed(t *testing.T) {
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 
-	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_attacker", nil); err == nil {
+	if _, err := svc.RotateRefreshToken(t.Context(), tok, "jcmc_attacker", nil); err == nil {
 		t.Fatal("cross-client refresh token accepted")
 	}
 
 	// The victim's token must still be live and consumable.
-	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_victim", nil); err != nil {
+	if _, err := svc.RotateRefreshToken(t.Context(), tok, "jcmc_victim", nil); err != nil {
 		t.Fatalf("victim token was burned by the rejected request: %v", err)
 	}
 }
@@ -641,12 +695,12 @@ func TestRefreshTokenRechecksUserCapability(t *testing.T) {
 	deny := func(context.Context, pgtype.UUID, string) error {
 		return errors.New("this application requires agent access, which is not enabled on your account")
 	}
-	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test", deny); err == nil {
+	if _, err := svc.RotateRefreshToken(t.Context(), tok, "jcmc_test", deny); err == nil {
 		t.Fatal("rotation succeeded despite revoked user capability")
 	}
 	// The token was NOT consumed — a denied capability is not evidence of
 	// compromise and must not burn the chain.
-	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test", nil); err != nil {
+	if _, err := svc.RotateRefreshToken(t.Context(), tok, "jcmc_test", nil); err != nil {
 		t.Fatalf("token was consumed by the rejected rotation: %v", err)
 	}
 }
@@ -662,12 +716,14 @@ func TestTokenMissingGrantType(t *testing.T) {
 	form := url.Values{"client_id": {"jcmc_test"}}
 	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec := httptest.NewRecorder()
 	h.HandleToken(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
+
 	if !strings.Contains(rec.Body.String(), "invalid_request") {
 		t.Fatalf("want invalid_request, got %s", rec.Body.String())
 	}
@@ -711,18 +767,23 @@ func TestListGrantsHandler(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
+
 	var resp struct {
 		Data []grantView `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
+
 	if len(resp.Data) != 1 {
 		t.Fatalf("grants = %d, want 1: %+v", len(resp.Data), resp.Data)
 	}
+
 	if resp.Data[0].ClientName != "Claude" || resp.Data[0].ClientID != "jcmc_test" {
 		t.Fatalf("bad grant row: %+v", resp.Data[0])
 	}
+
 	if len(resp.Data[0].Scopes) != 2 {
 		t.Fatalf("bad scopes: %v", resp.Data[0].Scopes)
 	}
@@ -760,10 +821,12 @@ func TestRevokeGrantHandler(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
+
 	for hash, tok := range store.tokens {
 		if tok.ClientID == "jcmc_test" && tok.RevokedAt == nil {
 			t.Fatalf("family token %s not revoked", hash)
 		}
+
 		if tok.ClientID == "jcmc_other" && tok.RevokedAt != nil {
 			t.Fatal("unrelated client's token was revoked")
 		}
@@ -783,28 +846,32 @@ func TestResolveAccessToken(t *testing.T) {
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 
-	userID, scopes, clientID, err := svc.ResolveAccessToken(context.Background(), tok)
+	userID, scopes, clientID, err := svc.ResolveAccessToken(t.Context(), tok)
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
+
 	if userID != testUserID {
 		t.Fatal("wrong user")
 	}
+
 	if clientID != "jcmc_test" {
 		t.Fatal("wrong client")
 	}
+
 	if len(scopes) != 2 || scopes[0] != "agent.use" {
 		t.Fatalf("bad scopes: %v", scopes)
 	}
 
 	// Revoked token must fail.
-	_ = svc.RevokeToken(context.Background(), tok)
-	if _, _, _, err := svc.ResolveAccessToken(context.Background(), tok); err == nil {
+	_ = svc.RevokeToken(t.Context(), tok)
+
+	if _, _, _, err := svc.ResolveAccessToken(t.Context(), tok); err == nil {
 		t.Fatal("revoked token resolved")
 	}
 
 	// Unknown token must fail.
-	if _, _, _, err := svc.ResolveAccessToken(context.Background(), "jcpat_"+strings.Repeat("9", 64)); err == nil {
+	if _, _, _, err := svc.ResolveAccessToken(t.Context(), "jcpat_"+strings.Repeat("9", 64)); err == nil {
 		t.Fatal("unknown token resolved")
 	}
 }
@@ -826,6 +893,7 @@ func TestConsentToken(t *testing.T) {
 	// Tampered scope must fail.
 	p2 := *p
 	p2.Scope = "agent.use api.read.*"
+
 	if h.verifyConsentToken(tok, &p2, testUserID) {
 		t.Fatal("consent token accepted after scope tampering")
 	}
@@ -874,11 +942,13 @@ func TestAuthorizeAgentClientRequiresAgentUse(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302 error redirect", rec.Code)
 	}
+
 	loc := rec.Header().Get("Location")
 	if !strings.HasPrefix(loc, "https://agent.example.com/cb?") ||
 		!strings.Contains(loc, "error=invalid_scope") {
 		t.Fatalf("expected invalid_scope redirect, got %q", loc)
 	}
+
 	if !strings.Contains(loc, "error_description=") {
 		t.Fatalf("expected error_description, got %q", loc)
 	}
@@ -934,11 +1004,13 @@ func TestCheckUserCapability(t *testing.T) {
 	}
 
 	h.SetPermissionResolver(&stubPerms{granted: map[string]bool{}})
+
 	if err := h.checkUserCapability(t.Context(), "agent.use api.read.content", testUserID); err == nil {
 		t.Fatal("agent.use grant allowed for a user without the RBAC node")
 	}
 
 	h.SetPermissionResolver(&stubPerms{granted: map[string]bool{"agent.use": true}})
+
 	if err := h.checkUserCapability(t.Context(), "agent.use api.read.content", testUserID); err != nil {
 		t.Fatalf("agent.use grant rejected for a user holding the node: %v", err)
 	}
@@ -967,6 +1039,7 @@ func TestUserinfoHandler(t *testing.T) {
 		TokenType: "access",
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
+
 	noOpenID := "jcpat_" + strings.Repeat("3", 64)
 	store.seedToken(hashToken(noOpenID), OAuthToken{
 		ClientID:  "jcmc_ext",
@@ -980,6 +1053,7 @@ func TestUserinfoHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/oauth/userinfo", nil)
 	rec := httptest.NewRecorder()
 	h.HandleUserinfo(rec, req)
+
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("no-token status = %d, want 401", rec.Code)
 	}
@@ -987,8 +1061,10 @@ func TestUserinfoHandler(t *testing.T) {
 	// Token without openid → 403.
 	req = httptest.NewRequest(http.MethodGet, "/oauth/userinfo", nil)
 	req.Header.Set("Authorization", "Bearer "+noOpenID)
+
 	rec = httptest.NewRecorder()
 	h.HandleUserinfo(rec, req)
+
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("no-openid status = %d, want 403", rec.Code)
 	}
@@ -996,15 +1072,19 @@ func TestUserinfoHandler(t *testing.T) {
 	// openid token → 200 claims.
 	req = httptest.NewRequest(http.MethodGet, "/oauth/userinfo", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
+
 	rec = httptest.NewRecorder()
 	h.HandleUserinfo(rec, req)
+
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
+
 	var claims map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &claims); err != nil {
 		t.Fatal(err)
 	}
+
 	if claims["sub"] != testUserID.String() || claims["preferred_username"] != "ada" ||
 		claims["name"] != name || claims["email"] != "ada@example.com" ||
 		claims["email_verified"] != true || claims["picture"] != avatar {

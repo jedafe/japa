@@ -615,6 +615,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 	}
 
 	recordIDs := make([]pgtype.UUID, 0, len(results))
+
 	for _, r := range results {
 		if r.intelRecordID.Valid {
 			recordIDs = append(recordIDs, r.intelRecordID)
@@ -656,19 +657,24 @@ func jobPosterFromRow(
 		if orgVerified != nil {
 			p.Verified = *orgVerified
 		}
+
 		if orgWebsite != nil {
 			p.WebsiteURL = *orgWebsite
 		}
+
 		if logoBucket != nil && logoPath != nil && *logoBucket != "" && *logoPath != "" {
 			p.LogoURL = media.MediaURL(*logoBucket, *logoPath, media.ImageProxyOpts{})
 		}
+
 		return p
 	}
+
 	if authorID.Valid && username != nil {
 		name := *username
 		if displayName != nil && *displayName != "" {
 			name = *displayName
 		}
+
 		p := &JobPoster{
 			Kind: "user",
 			ID:   authorID.String(),
@@ -678,8 +684,10 @@ func jobPosterFromRow(
 		if avatarURL != nil {
 			p.LogoURL = *avatarURL
 		}
+
 		return p
 	}
+
 	return nil
 }
 
@@ -781,6 +789,7 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 	if orgID.Valid {
 		detail.OrganizationID = orgID.String()
 	}
+
 	detail.Poster = jobPosterFromRow(orgID, authorID, orgSlug, orgName, orgVerified, orgWebsite, logoBucket, logoPath, username, displayName, avatarURL)
 
 	if intelRecordID.Valid {
@@ -912,12 +921,15 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 	}
 
 	var publishedExpr any = "now()"
+
 	var publishedStr string
+
 	if publishedAt != nil && strings.TrimSpace(*publishedAt) != "" {
 		t, err := time.Parse(time.RFC3339, strings.TrimSpace(*publishedAt))
 		if err != nil {
 			return JobDetail{}, fmt.Errorf("%w: published_at must be RFC3339", ErrInvalidFieldValue)
 		}
+
 		publishedExpr = pgtype.Timestamptz{Time: t, Valid: true}
 		publishedStr = t.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
@@ -927,6 +939,7 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 	// Skip hashing for empty bodies — NULL content_hash doesn't collide
 	// (the index has WHERE content_hash IS NOT NULL).
 	var contentHash *string
+
 	if strings.TrimSpace(body) != "" {
 		h := content.ComputeContentHash(body)
 		contentHash = &h
@@ -947,6 +960,7 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return JobDetail{}, ErrDuplicateContent
 		}
+
 		return JobDetail{}, fmt.Errorf("jobs: create listing: insert content: %w", err)
 	}
 
@@ -1116,6 +1130,7 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 	// Rule 12 — recompute content_hash on update; NULL for empty bodies so
 	// the partial unique index doesn't collide (see CreateJobListing).
 	var contentHash *string
+
 	if strings.TrimSpace(body) != "" {
 		h := content.ComputeContentHash(body)
 		contentHash = &h
@@ -1150,6 +1165,7 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return JobDetail{}, ErrDuplicateContent
 		}
+
 		return JobDetail{}, fmt.Errorf("jobs: update listing: update content: %w", err)
 	}
 
@@ -1214,9 +1230,11 @@ func sourceAttributionFromRow(src gen.ListSourcesByRecordIDsRow) SourceAttributi
 	if src.Slug != nil {
 		a.Slug = *src.Slug
 	}
+
 	if src.LogoUrl != nil {
 		a.LogoURL = *src.LogoUrl
 	}
+
 	return a
 }
 
@@ -1270,10 +1288,12 @@ func sanitizeJobFieldURL(raw string) (string, bool) {
 	if v == "" {
 		return "", true // empty = field not provided / cleared, not an error
 	}
+
 	u, err := url.Parse(v)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", false
 	}
+
 	return v, true
 }
 
@@ -1288,6 +1308,7 @@ func sanitizeJobMediaURL(raw string) (string, bool) {
 	if v != "" && strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") {
 		return v, true
 	}
+
 	return sanitizeJobFieldURL(v)
 }
 
@@ -1296,6 +1317,7 @@ func jobFieldURLSanitizer(key string) func(string) (string, bool) {
 	if key == "company_logo" {
 		return sanitizeJobMediaURL
 	}
+
 	return sanitizeJobFieldURL
 }
 
@@ -1311,9 +1333,11 @@ func validateJobFieldValues(fieldValues map[string]string) error {
 		if !ok {
 			continue
 		}
+
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
+
 		switch ft {
 		case fieldTypeURL:
 			if _, ok := jobFieldURLSanitizer(key)(value); !ok {
@@ -1329,6 +1353,7 @@ func validateJobFieldValues(fieldValues map[string]string) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -1338,6 +1363,7 @@ func isJobBoolValue(v string) bool {
 	case "true", "false", "1", "0":
 		return true
 	}
+
 	return false
 }
 
@@ -1347,6 +1373,7 @@ func parseJobBool(v string) bool {
 	case "true", "1":
 		return true
 	}
+
 	return false
 }
 
@@ -1377,6 +1404,7 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID
 			slog.Warn("jobs: invalid url field value, skipping", "field_key", key)
 			return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalidFieldValue, key)
 		}
+
 		value = v
 	}
 
@@ -1484,10 +1512,12 @@ func (s *Service) ViewerApplicationForJob(ctx context.Context, jobID, applicantI
 	if err != nil {
 		return nil
 	}
+
 	v := &ViewerApplication{ID: app.ID.String(), Status: app.Status}
 	if app.AppliedAt.Valid {
 		v.AppliedAt = app.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
+
 	return v
 }
 
@@ -1559,16 +1589,20 @@ func (s *Service) WithdrawApplication(ctx context.Context, appID, callerID pgtyp
 	if err != nil {
 		return gen.JobApplication{}, fmt.Errorf("jobs: withdraw: get: %w", err)
 	}
+
 	if app.ApplicantID != callerID {
 		return gen.JobApplication{}, ErrNotOrgMember
 	}
+
 	if app.Status == StatusWithdrawn {
 		return app, nil
 	}
+
 	updated, err := s.store.UpdateJobApplicationStatus(ctx, appID, StatusWithdrawn, nil)
 	if err != nil {
 		return gen.JobApplication{}, fmt.Errorf("jobs: withdraw: update: %w", err)
 	}
+
 	return updated, nil
 }
 
@@ -1966,11 +2000,13 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 		// Rule 12: recompute content_hash when body changes; NULL for empty
 		// bodies — the unique index is partial (WHERE content_hash IS NOT NULL).
 		setParts = append(setParts, fmt.Sprintf("content_hash = $%d", argIdx))
+
 		if strings.TrimSpace(*body) == "" {
 			args = append(args, nil)
 		} else {
 			args = append(args, content.ComputeContentHash(*body))
 		}
+
 		argIdx++
 	}
 
@@ -1991,6 +2027,7 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return ErrDuplicateContent
 		}
+
 		return fmt.Errorf("jobs: admin update: update content: %w", err)
 	}
 
@@ -2049,10 +2086,12 @@ func decodeSubmissionFields(raw []byte) map[string]any {
 	if len(raw) == 0 {
 		return nil
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil
 	}
+
 	return m
 }
 

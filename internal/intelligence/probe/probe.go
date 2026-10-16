@@ -513,9 +513,11 @@ func (r *runState) pipelineFor(method string) string {
 	if bypassMethods[method] {
 		return defaultPipeline(method)
 	}
+
 	if m, ok := r.resolved.ForMethod(method); ok && m.Pipeline.IsValid() {
 		return string(m.Pipeline)
 	}
+
 	if r.resolved.Pipeline.IsValid() {
 		return string(r.resolved.Pipeline)
 	}

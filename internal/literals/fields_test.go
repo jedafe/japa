@@ -1,7 +1,6 @@
 package literals
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -24,7 +23,7 @@ func testRC() RenderContext {
 func TestResolveCaseInsensitiveToken(t *testing.T) {
 	t.Parallel()
 
-	got, _ := Resolve(context.Background(), "{{current_year}} {{CURRENT_YEAR}} {{Current_Year}}", testRC(), nil)
+	got, _ := Resolve(t.Context(), "{{current_year}} {{CURRENT_YEAR}} {{Current_Year}}", testRC(), nil)
 	if got != "2026 2026 2026" {
 		t.Fatalf("got %q; want %q", got, "2026 2026 2026")
 	}
@@ -33,7 +32,7 @@ func TestResolveCaseInsensitiveToken(t *testing.T) {
 func TestResolveCaseInsensitiveCustomToken(t *testing.T) {
 	t.Parallel()
 
-	got, _ := Resolve(context.Background(), "{{platform_name}}", testRC(), testTokens)
+	got, _ := Resolve(t.Context(), "{{platform_name}}", testRC(), testTokens)
 	if got != "JapaConnect" {
 		t.Fatalf("got %q; want %q", got, "JapaConnect")
 	}
@@ -42,7 +41,7 @@ func TestResolveCaseInsensitiveCustomToken(t *testing.T) {
 func TestResolveCaseInsensitiveExpressionVar(t *testing.T) {
 	t.Parallel()
 
-	got, _ := Resolve(context.Background(), "{{destination_country}} {{adjective(destination_country)}}", testRC(), nil)
+	got, _ := Resolve(t.Context(), "{{destination_country}} {{adjective(destination_country)}}", testRC(), nil)
 	if got != "Canada Canadian" {
 		t.Fatalf("got %q; want %q", got, "Canada Canadian")
 	}
@@ -51,7 +50,7 @@ func TestResolveCaseInsensitiveExpressionVar(t *testing.T) {
 func TestResolveArithmeticAndConditional(t *testing.T) {
 	t.Parallel()
 
-	got, _ := Resolve(context.Background(), "{{Current_Year + 1}} {{if(Destination_Country != \"\", Destination_Country, \"nowhere\")}}", testRC(), nil)
+	got, _ := Resolve(t.Context(), "{{Current_Year + 1}} {{if(Destination_Country != \"\", Destination_Country, \"nowhere\")}}", testRC(), nil)
 	if got != "2027 Canada" {
 		t.Fatalf("got %q; want %q", got, "2027 Canada")
 	}
@@ -80,18 +79,22 @@ func TestResolveFieldsStruct(t *testing.T) {
 		Slug:    "guide-{{literal}}",
 	}
 
-	if err := ResolveFields(context.Background(), &row, testRC(), testTokens); err != nil {
+	if err := ResolveFields(t.Context(), &row, testRC(), testTokens); err != nil {
 		t.Fatal(err)
 	}
+
 	if row.Title != "Guide to your destination" {
 		t.Fatalf("Title = %q", row.Title)
 	}
+
 	if *row.Body != "Move to your destination in 2026" {
 		t.Fatalf("Body = %q", *row.Body)
 	}
+
 	if row.Excerpt != "About your destination" {
 		t.Fatalf("Excerpt = %q", row.Excerpt)
 	}
+
 	if row.Slug != "guide-{{literal}}" {
 		t.Fatalf("Slug must stay raw; got %q", row.Slug)
 	}
@@ -108,9 +111,10 @@ func TestResolveFieldsContentGeoWins(t *testing.T) {
 
 	// A row declaring its own geo overrides (and never leaks) request geo.
 	row := testGeoRow{Title: "From {{Source_Country}} to {{Destination_Country}}", SourceCountry: "Nigeria", TargetCountry: "GB"}
-	if err := ResolveFields(context.Background(), &row, testRC(), testTokens); err != nil {
+	if err := ResolveFields(t.Context(), &row, testRC(), testTokens); err != nil {
 		t.Fatal(err)
 	}
+
 	if row.Title != "From Nigeria to United Kingdom" {
 		t.Fatalf("Title = %q", row.Title)
 	}
@@ -131,9 +135,10 @@ func TestResolveFieldsNested(t *testing.T) {
 		Items: []testRow{{Title: "A {{Current_Year}}"}, {Title: "B {{Current_Year}}"}},
 	}
 
-	if err := ResolveFields(context.Background(), &n, testRC(), testTokens); err != nil {
+	if err := ResolveFields(t.Context(), &n, testRC(), testTokens); err != nil {
 		t.Fatal(err)
 	}
+
 	if n.Title != "Root 2026" || n.Item.Title != "Child your destination" || n.Items[0].Title != "A 2026" || n.Items[1].Title != "B 2026" {
 		t.Fatalf("nested resolution failed: %+v", n)
 	}
@@ -148,9 +153,10 @@ func TestResolveFieldsByteSlice(t *testing.T) {
 	t.Parallel()
 
 	row := testByteRow{Title: "T {{Current_Year}}", Content: []byte(`{"type":"doc","text":"{{Destination_Country|your destination}}"}`)}
-	if err := ResolveFields(context.Background(), &row, testRC(), testTokens); err != nil {
+	if err := ResolveFields(t.Context(), &row, testRC(), testTokens); err != nil {
 		t.Fatal(err)
 	}
+
 	if string(row.Content) != `{"type":"doc","text":"your destination"}` {
 		t.Fatalf("Content = %q", row.Content)
 	}
@@ -167,22 +173,27 @@ func TestResolveFieldsByteSlicePointer(t *testing.T) {
 	}
 
 	var nilRow row
+
 	nilRow.Title = "T {{Current_Year}}"
-	if err := ResolveFields(context.Background(), &nilRow, testRC(), testTokens); err != nil {
+	if err := ResolveFields(t.Context(), &nilRow, testRC(), testTokens); err != nil {
 		t.Fatal(err)
 	}
+
 	if nilRow.Details != nil {
 		t.Fatalf("nil *json.RawMessage must stay nil; got %q", *nilRow.Details)
 	}
+
 	if nilRow.Title != "T 2026" {
 		t.Fatalf("Title = %q", nilRow.Title)
 	}
 
 	d := json.RawMessage(`{"faq":"{{Destination_Country|your destination}}"}`)
+
 	r := row{Title: "T", Details: &d}
-	if err := ResolveFields(context.Background(), &r, testRC(), testTokens); err != nil {
+	if err := ResolveFields(t.Context(), &r, testRC(), testTokens); err != nil {
 		t.Fatal(err)
 	}
+
 	if string(*r.Details) != `{"faq":"your destination"}` {
 		t.Fatalf("Details = %q", *r.Details)
 	}
@@ -194,10 +205,12 @@ func TestResolveFieldsNilPointerMeta(t *testing.T) {
 	type meta struct {
 		MetaTitle *string
 	}
+
 	m := meta{}
-	if err := ResolveFields(context.Background(), &m, testRC(), testTokens); err != nil {
+	if err := ResolveFields(t.Context(), &m, testRC(), testTokens); err != nil {
 		t.Fatal(err)
 	}
+
 	if m.MetaTitle != nil {
 		t.Fatalf("nil MetaTitle must stay nil; got %q", *m.MetaTitle)
 	}
@@ -213,21 +226,25 @@ func TestResolveDataMap(t *testing.T) {
 		"content": []byte(`body {{Current_Year}}`),
 	}
 
-	ResolveData(context.Background(), payload, testRC(), testTokens)
+	ResolveData(t.Context(), payload, testRC(), testTokens)
 
 	if payload["title"] != "Welcome to JapaConnect" {
 		t.Fatalf("title = %v", payload["title"])
 	}
+
 	items := payload["items"].([]any)
 	if items[0] != "in 2026" {
 		t.Fatalf("items[0] = %v", items[0])
 	}
+
 	if items[1].(map[string]any)["name"] != "Canada" {
 		t.Fatalf("nested name = %v", items[1])
 	}
+
 	if string(payload["content"].([]byte)) != "body 2026" {
 		t.Fatalf("content = %v", payload["content"])
 	}
+
 	if payload["count"] != 3 {
 		t.Fatalf("count mutated: %v", payload["count"])
 	}
@@ -241,11 +258,12 @@ func TestResolveDataUnmarshalledJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ResolveData(context.Background(), payload, testRC(), testTokens)
+	ResolveData(t.Context(), payload, testRC(), testTokens)
 
 	if payload["title"] != "JapaConnect in 2026" {
 		t.Fatalf("title = %v", payload["title"])
 	}
+
 	if payload["items"].([]any)[0].(map[string]any)["label"] != "Canada" {
 		t.Fatalf("label = %v", payload["items"])
 	}
@@ -280,23 +298,28 @@ func TestResolveFieldsSuffixNames(t *testing.T) {
 		Prompt:          "{{keep}}",
 	}
 
-	ResolveFields(context.Background(), c, testRC(), testTokens)
+	ResolveFields(t.Context(), c, testRC(), testTokens)
 
 	if c.Heading != "Heading 2026" {
 		t.Fatalf("Heading = %q", c.Heading)
 	}
+
 	if c.Subject != "About JapaConnect" {
 		t.Fatalf("Subject = %q", c.Subject)
 	}
+
 	if c.ItemTitle != "Item 2026" {
 		t.Fatalf("ItemTitle = %q", c.ItemTitle)
 	}
+
 	if c.Question != "Why JapaConnect?" {
 		t.Fatalf("Question = %q", c.Question)
 	}
+
 	if c.Tagline != "Best of 2026" {
 		t.Fatalf("Tagline = %q", c.Tagline)
 	}
+
 	if c.RejectionReason != "Rejected 2026" {
 		t.Fatalf("RejectionReason = %q", c.RejectionReason)
 	}
@@ -332,11 +355,12 @@ func TestResolveFieldsNamedStringSlice(t *testing.T) {
 		Tags:    []string{"{{keep}}"},
 	}
 
-	ResolveFields(context.Background(), f, testRC(), testTokens)
+	ResolveFields(t.Context(), f, testRC(), testTokens)
 
 	if f.Answers[0] != "In 2026" || f.Answers[1] != "Yes" {
 		t.Fatalf("Answers = %v", f.Answers)
 	}
+
 	if f.Tags[0] != "{{keep}}" {
 		t.Fatalf("Tags = %v", f.Tags)
 	}
@@ -348,17 +372,19 @@ func TestResolveFieldsEmbeddedSuffix(t *testing.T) {
 	type Inner struct {
 		ItemHeading string `json:"item_heading"`
 	}
+
 	type Outer struct {
 		Inner
 		Slug string `json:"slug"`
 	}
 
 	o := &Outer{Inner: Inner{ItemHeading: "Head {{Current_Year}}"}, Slug: "{{keep}}"}
-	ResolveFields(context.Background(), o, testRC(), testTokens)
+	ResolveFields(t.Context(), o, testRC(), testTokens)
 
 	if o.ItemHeading != "Head 2026" {
 		t.Fatalf("ItemHeading = %q", o.ItemHeading)
 	}
+
 	if o.Slug != "{{keep}}" {
 		t.Fatalf("Slug = %q", o.Slug)
 	}

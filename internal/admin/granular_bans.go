@@ -71,6 +71,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_duration", "Duration must be one of: 1h, 2h, 6h, 12h, 1d, 7d, 30d, permanent")
 		return
 	}
+
 	if seconds < 0 || seconds > math.MaxInt32 {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_duration", "Duration out of range")
 		return
@@ -128,6 +129,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 		errpkg.HandleServiceError(w, serr)
 		return
 	}
+
 	if status == "active" || status == "restricted" {
 		if err := h.Queries.UpdateUserStatus(ctx, gen.UpdateUserStatusParams{
 			Status: "restricted",
@@ -197,6 +199,7 @@ func (h *Handlers) LiftRestriction(w http.ResponseWriter, r *http.Request) {
 					slog.Error("lift restriction: failed to clear suspension record", "error", err, "user_id", uid.String())
 				}
 			}
+
 			if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
 				Status: "active",
 				ID:     uid,
@@ -240,6 +243,7 @@ func (h *Handlers) LiftAllRestrictions(w http.ResponseWriter, r *http.Request) {
 				slog.Error("lift all restrictions: failed to clear suspension record", "error", err, "user_id", uid.String())
 			}
 		}
+
 		if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
 			Status: "active",
 			ID:     uid,
@@ -327,6 +331,7 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 		errpkg.HandleServiceError(w, serr)
 		return
 	}
+
 	if curStatus == "banned" || curStatus == "deleted" {
 		errpkg.WriteError(w, http.StatusConflict, "invalid_status_transition",
 			"Cannot suspend a "+curStatus+" user")

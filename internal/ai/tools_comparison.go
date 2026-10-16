@@ -665,6 +665,7 @@ func ComparisonListHandler(deps *ToolDeps) ToolHandler {
 			if v == "all" {
 				return ""
 			}
+
 			return v
 		}
 		a.Status = clearAll(a.Status)
@@ -672,8 +673,10 @@ func ComparisonListHandler(deps *ToolDeps) ToolHandler {
 		a.Depth = clearAll(a.Depth)
 
 		var spaceID pgtype.UUID
+
 		if a.SpaceID != "" {
 			var err error
+
 			spaceID, err = scanUUID(a.SpaceID)
 			if err != nil {
 				return errorToolResult("invalid_space_id", "space_id must be a valid UUID"), nil
@@ -681,11 +684,13 @@ func ComparisonListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		var typeID pgtype.UUID
+
 		if a.TypeSlug != "" {
 			td, err := deps.Comparison.GetComparisonTypeBySlug(ctx, a.TypeSlug)
 			if err != nil {
 				return errorToolResult("type_not_found", fmt.Sprintf("comparison type %q not found: %v", a.TypeSlug, err)), nil
 			}
+
 			typeID = td.ID
 		}
 
@@ -701,6 +706,7 @@ func ComparisonListHandler(deps *ToolDeps) ToolHandler {
 		if limit <= 0 {
 			limit = 20
 		}
+
 		page := a.Page
 		if page <= 0 {
 			page = 1

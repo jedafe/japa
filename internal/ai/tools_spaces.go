@@ -266,7 +266,6 @@ func SpacesCreateHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		space, err := deps.Spaces.CreateSpace(ctx, gen.CreateSpaceParams{
-
 			ParentID:       parentID,
 			SpaceTypeID:    spaceTypeID,
 			Name:           a.Name,

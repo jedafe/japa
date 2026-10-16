@@ -82,6 +82,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -91,38 +92,46 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func scanDestQuery(w http.ResponseWriter, r *http.Request, required bool) (pgtype.UUID, bool) {
 	var id pgtype.UUID
+
 	v := r.URL.Query().Get("dest")
 	if v == "" {
 		if required {
 			errpkg.WriteError(w, http.StatusBadRequest, "missing_dest", "dest query param is required")
 			return id, false
 		}
+
 		return id, true
 	}
+
 	if err := id.Scan(v); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
 		return id, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page, limit = 1, 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -146,6 +155,7 @@ func (h *Handlers) HandleListProviders(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ecaguide: list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list providers")
+
 		return
 	}
 
@@ -171,6 +181,7 @@ func (h *Handlers) HandleListGuides(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ecaguide: list guides failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list guides")
+
 		return
 	}
 
@@ -198,8 +209,10 @@ func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
 			return
 		}
+
 		slog.Error("ecaguide: get guide failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get guide")
+
 		return
 	}
 
@@ -221,16 +234,19 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var providerIDs []pgtype.UUID
+
 	for _, raw := range strings.Split(r.URL.Query().Get("provider_ids"), ",") {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
 		}
+
 		var id pgtype.UUID
 		if err := id.Scan(raw); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_provider_id", "Invalid provider id in provider_ids")
 			return
 		}
+
 		providerIDs = append(providerIDs, id)
 	}
 
@@ -252,6 +268,7 @@ func (h *Handlers) HandleCreateUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -274,7 +291,9 @@ func (h *Handlers) HandleCreateUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+
 		return
 	}
 
@@ -286,6 +305,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -297,10 +317,12 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePageParams(r)
+
 	guides, total, err := h.service.AdminListGuides(r.Context(), dest, r.URL.Query().Get("status"), page, limit)
 	if err != nil {
 		slog.Error("ecaguide: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list guides")
+
 		return
 	}
 
@@ -317,6 +339,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -344,6 +367,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -358,6 +382,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"status": "queued"}})
 }
 
@@ -366,6 +391,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -387,8 +413,10 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
 			return
 		}
+
 		slog.Error("ecaguide: update failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update guide")
+
 		return
 	}
 
@@ -401,6 +429,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -414,6 +443,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ReviewNotes string `json:"review_notes"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	if err := h.service.ApproveGuide(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
@@ -421,8 +451,10 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
 			return
 		}
+
 		slog.Error("ecaguide: approve failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve guide")
+
 		return
 	}
 
@@ -435,16 +467,19 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
 	}
 
 	page, limit := parsePageParams(r)
+
 	updates, total, err := h.service.AdminListUpdates(r.Context(), r.URL.Query().Get("status"), page, limit)
 	if err != nil {
 		slog.Error("ecaguide: admin updates failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list updates")
+
 		return
 	}
 
@@ -462,6 +497,7 @@ func (h *Handlers) HandleAdminModerateUpdate(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -483,7 +519,9 @@ func (h *Handlers) HandleAdminModerateUpdate(w http.ResponseWriter, r *http.Requ
 			errpkg.WriteError(w, http.StatusNotFound, "update_not_found", "Update not found")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "moderate_failed", err.Error())
+
 		return
 	}
 
@@ -496,6 +534,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -511,10 +550,13 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found or is published")
 			return
 		}
+
 		slog.Error("ecaguide: delete failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete guide")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -525,6 +567,7 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -538,6 +581,7 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ReviewNotes string `json:"review_notes"`
 	}
+
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
@@ -547,10 +591,13 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
 			return
 		}
+
 		slog.Error("ecaguide: reject failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject guide")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
 }
 
@@ -560,6 +607,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -569,8 +617,10 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("ecaguide: list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list providers")
+
 		return
 	}
+
 	h.resolveLiterals(r, &providers)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
@@ -581,6 +631,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -597,6 +648,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": provider})
 }
 
@@ -606,6 +658,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -627,10 +680,13 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 			errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Provider not found")
 			return
 		}
+
 		slog.Error("ecaguide: update provider failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update provider")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -640,6 +696,7 @@ func (h *Handlers) HandleAdminDeleteProvider(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -655,9 +712,12 @@ func (h *Handlers) HandleAdminDeleteProvider(w http.ResponseWriter, r *http.Requ
 			errpkg.WriteError(w, http.StatusConflict, "provider_in_use", "Provider not found or has guides referencing it")
 			return
 		}
+
 		slog.Error("ecaguide: delete provider failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete provider")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }

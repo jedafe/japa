@@ -121,7 +121,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleSelector handles GET /arrival-checklist/selector — returns the
 // available destination + visa category combinations. Anonymous-accessible.
 func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
@@ -143,7 +142,6 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 // HandleGetGuide handles GET /arrival-checklist/:guide_id — returns the
 // checklist items for a guide. Anonymous-accessible.
 func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return

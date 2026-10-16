@@ -378,6 +378,7 @@ func TestCleanExcerpt(t *testing.T) {
 	t.Parallel()
 
 	long := strings.Repeat("word ", 120)
+
 	cases := []struct {
 		name  string
 		input string

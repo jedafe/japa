@@ -139,6 +139,7 @@ func (s *stubComparisonService) ListComparisons(_ context.Context, f ComparisonL
 	if s.listErr != nil {
 		return ComparisonListResult{}, s.listErr
 	}
+
 	s.gotListArgs = &f
 
 	return s.listResult, nil
@@ -1477,12 +1478,15 @@ func TestComparisonPromoteHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success: %s", tr.Status, tr.Content)
 	}
+
 	if !strings.Contains(tr.Content, promotedID.String()) {
 		t.Fatalf("expected new comparison id in result, got %s", tr.Content)
 	}
+
 	if svc.promoteBypass {
 		t.Error("expected bypassOwnership=false without comparison.edit_any")
 	}
@@ -1501,6 +1505,7 @@ func TestComparisonPromoteHandler_EditAnyBypassesOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if !svc.promoteBypass {
 		t.Error("expected bypassOwnership=true for comparison.edit_any holder")
 	}
@@ -1533,29 +1538,33 @@ func TestComparisonListHandler_DefaultsAndFilters(t *testing.T) {
 	userID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 
 	// No filters → public-directory defaults (published/public/detailed).
-	res, err := ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{}`), userID)
+	res, err := ComparisonListHandler(deps)(t.Context(), json.RawMessage(`{}`), userID)
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
+
 	if svc.gotListArgs == nil || svc.gotListArgs.Status != "published" ||
 		svc.gotListArgs.Visibility != "public" || svc.gotListArgs.Depth != "detailed" {
 		t.Fatalf("directory defaults not applied: %+v", svc.gotListArgs)
 	}
+
 	var out struct {
 		Comparisons []ComparisonListItem `json:"comparisons"`
 		Total       int32                `json:"total"`
 	}
+
 	if err := json.Unmarshal([]byte(res.Content), &out); err != nil || out.Total != 1 {
 		t.Fatalf("unexpected result: %v", res.Content)
 	}
 
 	// Explicit draft status + type_slug resolution + mine=true.
-	res, err = ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{
+	res, err = ComparisonListHandler(deps)(t.Context(), json.RawMessage(`{
 		"type_slug": "cities", "status": "draft", "mine": true, "page": 2, "limit": 5
 	}`), userID)
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
+
 	f := svc.gotListArgs
 	if f == nil || f.TypeID != typeID || f.Status != "draft" || !f.Mine ||
 		f.UserID != userID || f.Limit != 5 || f.Offset != 5 {
@@ -1563,21 +1572,22 @@ func TestComparisonListHandler_DefaultsAndFilters(t *testing.T) {
 	}
 
 	// "all" clears a filter.
-	_, _ = ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{
+	_, _ = ComparisonListHandler(deps)(t.Context(), json.RawMessage(`{
 		"status": "all", "mine": true
 	}`), userID)
+
 	if svc.gotListArgs.Status != "" {
 		t.Fatalf("'all' should clear the status filter, got %q", svc.gotListArgs.Status)
 	}
 
 	// Bad type slug → type_not_found.
-	res, _ = ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{"type_slug": "nope"}`), userID)
+	res, _ = ComparisonListHandler(deps)(t.Context(), json.RawMessage(`{"type_slug": "nope"}`), userID)
 	if got := resultErrorCode(t, res); got != "type_not_found" {
 		t.Fatalf("want type_not_found, got %q", got)
 	}
 
 	// Bad space_id → invalid_space_id.
-	res, _ = ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{"space_id": "x"}`), userID)
+	res, _ = ComparisonListHandler(deps)(t.Context(), json.RawMessage(`{"space_id": "x"}`), userID)
 	if got := resultErrorCode(t, res); got != "invalid_space_id" {
 		t.Fatalf("want invalid_space_id, got %q", got)
 	}

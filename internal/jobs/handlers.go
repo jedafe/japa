@@ -166,7 +166,6 @@ func parseBoolParam(r *http.Request, key string) *bool {
 // HandleFindJobs handles GET /api/v1/jobs — public job finder with server-side
 // filtering on custom_field_values.
 func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
-
 	if h.service != nil && !h.service.IsEnabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
@@ -224,7 +223,6 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 
 // HandleJobDetail handles GET /api/v1/jobs/:slug — public job detail.
 func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
-
 	if h.service != nil && !h.service.IsEnabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
@@ -361,10 +359,12 @@ func (h *Handlers) HandleWithdrawApplication(w http.ResponseWriter, r *http.Requ
 			errpkg.WriteError(w, http.StatusForbidden, "not_application_owner", "You can only withdraw your own applications")
 			return
 		}
+
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "application_not_found", "Application not found")
 			return
 		}
+
 		slog.Error("jobs: withdraw application failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "withdraw_failed", "Failed to withdraw application")
 
@@ -477,10 +477,12 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A listing with identical content already exists")
 			return
 		}
+
 		if errors.Is(err, ErrInvalidFieldValue) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_value", err.Error())
 			return
 		}
+
 		slog.Error("jobs: create listing failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_listing_failed", "Failed to create job listing")
 
@@ -802,10 +804,12 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A listing with identical content already exists")
 			return
 		}
+
 		if errors.Is(err, ErrInvalidFieldValue) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_value", err.Error())
 			return
 		}
+
 		slog.Error("jobs: admin update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update job listing")
 

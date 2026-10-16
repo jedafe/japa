@@ -15,7 +15,6 @@ import (
 
 // ListPermissionPresets handles GET /api/v1/space-permission-presets.
 func (h *Handlers) ListPermissionPresets(w http.ResponseWriter, r *http.Request) {
-
 	presets, err := h.Service.ListPermissionPresets(r.Context())
 	if err != nil {
 		handleServiceError(w, err)

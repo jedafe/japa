@@ -138,7 +138,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleStats handles GET /visa-timelines/stats — public aggregated
 // processing-time statistics. Query params: ?origin=&dest=&visa=&consulate=&months=.
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
 		return
@@ -186,7 +185,6 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 // HandleTrend handles GET /visa-timelines/stats/trend — public monthly trend.
 // Query params: ?dest=&visa=&consulate=&months= (default 12).
 func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
 		return
@@ -637,11 +635,14 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
 			return
 		}
+
 		if err != nil {
 			errpkg.HandleServiceError(w, err)
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
+
 		return
 	}
 

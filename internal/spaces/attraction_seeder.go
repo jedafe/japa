@@ -165,9 +165,11 @@ func clampAttractionSeedLimit(limit int) int {
 	if limit <= 0 {
 		return attractionSeedDefaultLimit
 	}
+
 	if limit > attractionSeedMaxLimit {
 		return attractionSeedMaxLimit
 	}
+
 	return limit
 }
 
@@ -188,10 +190,12 @@ func (a *ProcessorAdapter) seedAttractions(ctx context.Context, parentID pgtype.
 	}
 
 	res := &AttractionSeedResult{Candidates: len(candidates)}
+
 	if dryRun {
 		for _, c := range candidates {
 			res.Slugs = append(res.Slugs, slugify(c.Name))
 		}
+
 		return res, nil
 	}
 
@@ -215,9 +219,12 @@ func (a *ProcessorAdapter) seedAttractions(ctx context.Context, parentID pgtype.
 		exists, err := a.svc.read.SpaceExistsByWikidataID(ctx, &c.QID)
 		if err != nil {
 			slog.Warn("wiki:seed_attractions: dedup check failed", "qid", c.QID, "error", err)
+
 			res.Failed++
+
 			continue
 		}
+
 		if exists != nil && *exists {
 			res.SkippedDuplicate++
 			continue
@@ -226,7 +233,9 @@ func (a *ProcessorAdapter) seedAttractions(ctx context.Context, parentID pgtype.
 		slug, err := a.uniqueAttractionSlug(ctx, c.Name)
 		if err != nil {
 			slog.Warn("wiki:seed_attractions: slug allocation failed", "name", c.Name, "error", err)
+
 			res.Failed++
+
 			continue
 		}
 
@@ -251,7 +260,9 @@ func (a *ProcessorAdapter) seedAttractions(ctx context.Context, parentID pgtype.
 		}, a.systemUserID, extraParents[c.QID])
 		if err != nil {
 			slog.Warn("wiki:seed_attractions: create failed", "name", c.Name, "qid", c.QID, "error", err)
+
 			res.Failed++
+
 			continue
 		}
 
@@ -296,15 +307,19 @@ func (a *ProcessorAdapter) candidateGeoParents(ctx context.Context, candidates [
 	}
 
 	var qids []string
+
 	seenQID := map[string]bool{}
+
 	for _, c := range candidates {
 		for _, q := range c.LocatedIn {
 			if !seenQID[q] {
 				seenQID[q] = true
+
 				qids = append(qids, q)
 			}
 		}
 	}
+
 	if len(qids) == 0 {
 		return out
 	}
@@ -318,12 +333,14 @@ func (a *ProcessorAdapter) candidateGeoParents(ctx context.Context, candidates [
 	// QID → matched geo space IDs (country/state/city only — a QID could
 	// collide with a stamped university or attraction).
 	byQID := make(map[string][]pgtype.UUID, len(matches))
+
 	for _, m := range matches {
 		switch m.TypeSlug {
 		case "country", "state", "city":
 		default:
 			continue
 		}
+
 		byQID[m.Qid] = append(byQID[m.Qid], m.ID)
 	}
 
@@ -340,13 +357,16 @@ func (a *ProcessorAdapter) candidateGeoParents(ctx context.Context, candidates [
 		for _, anc := range ancestors {
 			if !seen[anc.ID] && isGeoAncestor(anc) {
 				seen[anc.ID] = true
+
 				out[c.QID] = append(out[c.QID], anc.ID)
 			}
 		}
+
 		for _, q := range c.LocatedIn {
 			for _, id := range byQID[q] {
 				if !seen[id] {
 					seen[id] = true
+
 					out[c.QID] = append(out[c.QID], id)
 				}
 			}
@@ -363,6 +383,7 @@ func isGeoAncestor(anc gen.ListSpaceAncestorsRow) bool {
 	case "country", "state", "city":
 		return true
 	}
+
 	return false
 }
 
@@ -376,6 +397,7 @@ func (a *ProcessorAdapter) enqueueUnstampedGeoAncestors(ctx context.Context, par
 		slog.Warn("wiki:seed_attractions: ancestor populate check failed", "error", err)
 		return
 	}
+
 	for _, anc := range ancestors {
 		if isGeoAncestor(anc) && !anc.HasWikidataID {
 			a.svc.EnqueueAutoPopulate(ctx, anc.ID)
@@ -392,6 +414,7 @@ func (a *ProcessorAdapter) upsertAttractionTextField(ctx context.Context, spaceI
 
 	var fieldID pgtype.UUID
 	_ = fieldID.Scan(fieldUUID)
+
 	if _, err := a.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
 		FieldID:    fieldID,
 		EntityType: "space",
@@ -410,11 +433,12 @@ func (a *ProcessorAdapter) uniqueAttractionSlug(ctx context.Context, name string
 		base = "attraction"
 	}
 
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		candidate := base
 		if i > 0 {
 			candidate = fmt.Sprintf("%s-%d", base, i+1)
 		}
+
 		if _, err := a.svc.GetSpaceBySlug(ctx, candidate); err != nil {
 			return candidate, nil
 		}
@@ -436,6 +460,7 @@ func fetchAttractionCandidates(ctx context.Context, parentQID string, limit int)
 	for _, qid := range attractionClassQIDs {
 		classValues.WriteString("wd:" + qid + " ")
 	}
+
 	var excludedValues strings.Builder
 	for _, qid := range attractionExcludedQIDs {
 		excludedValues.WriteString("wd:" + qid + " ")
@@ -463,6 +488,7 @@ LIMIT %d`, classValues.String(), parentQID, excludedValues.String(), limit)
 	if err != nil {
 		return nil, err
 	}
+
 	q := u.Query()
 	q.Set("query", query)
 	q.Set("format", "json")
@@ -472,19 +498,23 @@ LIMIT %d`, classValues.String(), parentQID, excludedValues.String(), limit)
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("Accept", "application/sparql-results+json")
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (wiki:seed_attractions)")
 
 	client := &http.Client{Timeout: 60 * time.Second} // SPARQL unions are slow
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("wikidata SPARQL request: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return nil, ErrWikiRateLimited
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("wikidata SPARQL status %d", resp.StatusCode)
 	}
@@ -512,6 +542,7 @@ LIMIT %d`, classValues.String(), parentQID, excludedValues.String(), limit)
 			} `json:"bindings"`
 		} `json:"results"`
 	}
+
 	if err := json.Unmarshal(body, &sr); err != nil {
 		return nil, fmt.Errorf("decoding SPARQL response: %w", err)
 	}
@@ -519,11 +550,14 @@ LIMIT %d`, classValues.String(), parentQID, excludedValues.String(), limit)
 	// One candidate per item QID — multi-location items repeat across
 	// bindings, each carrying one ?loc.
 	byItem := make(map[string]*AttractionCandidate, len(sr.Results.Bindings))
+
 	var order []string
+
 	lastSeg := func(uri string) string {
 		if i := strings.LastIndexByte(uri, '/'); i >= 0 {
 			return uri[i+1:]
 		}
+
 		return uri
 	}
 	for _, b := range sr.Results.Bindings {
@@ -532,6 +566,7 @@ LIMIT %d`, classValues.String(), parentQID, excludedValues.String(), limit)
 		if qid == "" || b.ItemLabel.Value == "" || strings.HasPrefix(b.ItemLabel.Value, "Q") {
 			continue // unlabeled entity — the label service fell back to the QID
 		}
+
 		c, ok := byItem[qid]
 		if !ok {
 			c = &AttractionCandidate{
@@ -540,8 +575,10 @@ LIMIT %d`, classValues.String(), parentQID, excludedValues.String(), limit)
 				Description: b.ItemDescription.Value,
 			}
 			byItem[qid] = c
+
 			order = append(order, qid)
 		}
+
 		if b.Loc != nil {
 			if loc := lastSeg(b.Loc.Value); strings.HasPrefix(loc, "Q") && !slices.Contains(c.LocatedIn, loc) {
 				c.LocatedIn = append(c.LocatedIn, loc)

@@ -177,11 +177,13 @@ func (h *Handlers) accessibleAudiences(r *http.Request) []string {
 // the set readable without authentication.
 func publicAudiences() []string {
 	allowed := make([]string, 0, len(AudienceOrder))
+
 	for _, aud := range AudienceOrder {
 		if _, gated := AudienceGates[aud]; !gated {
 			allowed = append(allowed, aud)
 		}
 	}
+
 	return allowed
 }
 
@@ -208,7 +210,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // ListDocPages handles GET /api/v1/docs/{audience}.
 // Returns published pages for the given audience section.
 func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
-
 	audience := chi.URLParam(r, "audience")
 	if !ValidAudiences[audience] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
@@ -233,7 +234,6 @@ func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
 // GetDocPage handles GET /api/v1/docs/{audience}/{slug}.
 // Returns a single published page.
 func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
-
 	audience := chi.URLParam(r, "audience")
 	slug := chi.URLParam(r, "slug")
 
@@ -261,7 +261,6 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 // Returns the published-pages navigation tree grouped by audience, filtered
 // to only the audiences the requester may read (§44 — audience-gated nav).
 func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
-
 	allowed := h.accessibleAudiences(r)
 
 	nav, err := h.Service.GetDocNav(r.Context(), allowed)
@@ -280,7 +279,6 @@ func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
 // only the audiences the requester may read (§44 — audience-filtered search).
 // When audience is provided, results are further filtered to that section.
 func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
-
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter q is required")
@@ -365,7 +363,6 @@ func (h *Handlers) GetDocFeedback(w http.ResponseWriter, r *http.Request) {
 // post-vote feedback state. CSRF is enforced by the route middleware
 // (DOC-011 + §44 amendment 2).
 func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request) {
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "auth_required", "Authentication required to submit feedback")
@@ -435,7 +432,6 @@ func (h *Handlers) ListDocStatuses(w http.ResponseWriter, r *http.Request) {
 // ListAllDocPages handles GET /api/v1/admin/docs/pages.
 // Returns all pages (any status) for admin listing. Optionally filters by ?audience=.
 func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
-
 	audience := r.URL.Query().Get("audience")
 	if audience != "" {
 		if !ValidAudiences[audience] {
@@ -465,7 +461,6 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 
 // CreateDocPage handles POST /api/v1/admin/docs/pages.
 func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
-
 	var req CreateDocPageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -502,7 +497,6 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 // GetAdminDocPage handles GET /api/v1/admin/docs/pages/{id}.
 // Returns a single page by ID (any status) for admin detail view.
 func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
@@ -522,7 +516,6 @@ func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
 // Returns a page by audience+slug regardless of status — powers the docs
 // app's editor draft preview (§44 amendment 2). Route is docs.manage-gated.
 func (h *Handlers) GetAdminDocPageBySlug(w http.ResponseWriter, r *http.Request) {
-
 	audience := r.URL.Query().Get("audience")
 	slug := r.URL.Query().Get("slug")
 
@@ -542,7 +535,6 @@ func (h *Handlers) GetAdminDocPageBySlug(w http.ResponseWriter, r *http.Request)
 
 // UpdateDocPage handles PATCH /api/v1/admin/docs/pages/{id}.
 func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
@@ -576,7 +568,6 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 // ApproveDocPage handles POST /api/v1/admin/docs/pages/{id}/approve.
 // Sets review_status to 'approved' and records the reviewer (§44).
 func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
@@ -601,7 +592,6 @@ func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
 // PublishDocPage handles POST /api/v1/admin/docs/pages/{id}/publish.
 // Sets review_status to 'published'. Requires current status = 'approved' (§44).
 func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
@@ -625,7 +615,6 @@ func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
 
 // DeleteDocPage handles DELETE /api/v1/admin/docs/{id}.
 func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")

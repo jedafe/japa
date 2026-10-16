@@ -27,6 +27,7 @@ func (s stubIntelReader) ListRecentForSpace(ctx context.Context, viewerID, space
 	if s.listFn == nil {
 		return nil, nil
 	}
+
 	return s.listFn(ctx, viewerID, spaceID, limit)
 }
 
@@ -48,6 +49,7 @@ func geoFieldsDBTX(destinationCountry string) stubDBTX {
 func digestFixtures() (pgtype.UUID, gen.GetPublicSpaceByGeoCodeRow) {
 	var spaceID pgtype.UUID
 	_ = spaceID.Scan("11111111-1111-1111-1111-111111111111")
+
 	return spaceID, gen.GetPublicSpaceByGeoCodeRow{
 		ID:     spaceID,
 		Slug:   "germany",
@@ -62,6 +64,7 @@ func digestFixtures() (pgtype.UUID, gen.GetPublicSpaceByGeoCodeRow) {
 // destination_country, scam alerts + intel from their readers.
 func TestDigestHappyPath(t *testing.T) {
 	spaceID, space := digestFixtures()
+
 	var viewer pgtype.UUID
 	_ = viewer.Scan("22222222-2222-2222-2222-222222222222")
 
@@ -100,7 +103,7 @@ func TestDigestHappyPath(t *testing.T) {
 		},
 	})
 	svc.SetIntelReader(stubIntelReader{
-		listFn: func(_ context.Context, _ pgtype.UUID, dest pgtype.UUID, _ int32) ([]IntelDigestItem, error) {
+		listFn: func(_ context.Context, _, dest pgtype.UUID, _ int32) ([]IntelDigestItem, error) {
 			if dest != spaceID {
 				t.Fatalf("intel queried for wrong space: %v", dest)
 			}
@@ -113,21 +116,27 @@ func TestDigestHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Digest: %v", err)
 	}
+
 	if digest.Cached {
 		t.Fatal("first call should not be cached")
 	}
+
 	if len(digest.ForYou.Items) != 1 || digest.ForYou.Items[0].Title != "For you" {
 		t.Fatalf("for_you wrong: %+v", digest.ForYou)
 	}
+
 	if len(digest.Community.Popular) != 1 || digest.Community.Popular[0].Title != "Popular" {
 		t.Fatalf("community wrong: %+v", digest.Community)
 	}
+
 	if digest.Destination == nil {
 		t.Fatal("destination should be populated")
 	}
+
 	if digest.Destination.Space.Slug != "germany" || digest.Destination.Space.Level != "country" {
 		t.Fatalf("destination space wrong: %+v", digest.Destination.Space)
 	}
+
 	if len(digest.Destination.ScamAlerts) != 1 || len(digest.Destination.Intel) != 1 {
 		t.Fatalf("destination sections wrong: %+v", digest.Destination)
 	}
@@ -147,9 +156,11 @@ func TestDigestNoDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Digest: %v", err)
 	}
+
 	if digest.Destination != nil {
 		t.Fatalf("expected nil destination, got %+v", digest.Destination)
 	}
+
 	if digest.ForYou.Items == nil || digest.Community.Popular == nil {
 		t.Fatal("feed sections should be present (empty) even without a destination")
 	}
@@ -172,6 +183,7 @@ func TestDigestNonPublicDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Digest: %v", err)
 	}
+
 	if digest.Destination != nil {
 		t.Fatalf("non-public space must not surface in digest: %+v", digest.Destination)
 	}
@@ -181,6 +193,7 @@ func TestDigestNonPublicDestination(t *testing.T) {
 // keeps the rest of the destination section.
 func TestDigestScamDisabled(t *testing.T) {
 	_, space := digestFixtures()
+
 	var viewer pgtype.UUID
 	_ = viewer.Scan("22222222-2222-2222-2222-222222222222")
 
@@ -194,7 +207,7 @@ func TestDigestScamDisabled(t *testing.T) {
 	}})
 	svc.SetSafetyReader(stubSafetyReader{disabled: true})
 	svc.SetIntelReader(stubIntelReader{
-		listFn: func(_ context.Context, _ pgtype.UUID, _ pgtype.UUID, _ int32) ([]IntelDigestItem, error) {
+		listFn: func(_ context.Context, _, _ pgtype.UUID, _ int32) ([]IntelDigestItem, error) {
 			return []IntelDigestItem{{ID: "i1", Kind: "job", Title: "Job"}}, nil
 		},
 	})
@@ -203,12 +216,15 @@ func TestDigestScamDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Digest: %v", err)
 	}
+
 	if digest.Destination == nil {
 		t.Fatal("destination should still populate")
 	}
+
 	if len(digest.Destination.ScamAlerts) != 0 {
 		t.Fatalf("scam section must be empty when flag is off: %+v", digest.Destination.ScamAlerts)
 	}
+
 	if len(digest.Destination.Intel) != 1 {
 		t.Fatal("intel should still populate")
 	}
@@ -239,11 +255,14 @@ func TestDigestCacheHit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
+
 	t.Cleanup(mr.Close)
+
 	vk, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{mr.Addr()}, DisableCache: true})
 	if err != nil {
 		t.Fatalf("valkey.NewClient: %v", err)
 	}
+
 	t.Cleanup(vk.Close)
 
 	var viewer pgtype.UUID
@@ -264,13 +283,16 @@ func TestDigestCacheHit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Digest #1: %v", err)
 	}
+
 	d2, err := svc.Digest(t.Context(), viewer)
 	if err != nil {
 		t.Fatalf("Digest #2: %v", err)
 	}
+
 	if calls != 1 {
 		t.Fatalf("expected 1 reader call, got %d — cache did not serve second call", calls)
 	}
+
 	if d1.Cached || !d2.Cached {
 		t.Fatalf("cached flags wrong: first=%v second=%v", d1.Cached, d2.Cached)
 	}

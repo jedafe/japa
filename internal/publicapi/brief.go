@@ -31,7 +31,7 @@ var briefSections = []string{"visa", "timelines", "universities", "scholarships"
 
 // DestinationBrief is the aggregate document returned by
 // GET /public/destinations/{slug}/brief.
-// Ref: docs/superpowers/specs/2026-09-23-agent-data-api-design.md
+// Ref: docs/superpowers/specs/2026-09-23-agent-data-api-design.md.
 type DestinationBrief struct {
 	Destination         gen.GetPublicSpaceBySlugRow `json:"destination"`
 	Summary             string                      `json:"summary"`
@@ -52,6 +52,7 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 	if len(include) == 0 {
 		include = briefSections
 	}
+
 	include = dedupeStrings(include)
 
 	cacheKey := valkey.MustKey("api_dest_brief:%s:%s", slug, briefIncludeHash(include))
@@ -71,6 +72,7 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrDestinationNotFound
 		}
+
 		return nil, err
 	}
 
@@ -81,6 +83,7 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 	}
 
 	var mu sync.Mutex
+
 	g, gctx := errgroup.WithContext(ctx)
 
 	wants := func(name string) bool {
@@ -89,6 +92,7 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 				return true
 			}
 		}
+
 		return false
 	}
 	fail := func(name string) {
@@ -108,77 +112,97 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 				fail("visa")
 				return nil
 			}
+
 			routes, _, err := s.moat.VisaRoutes.List(gctx, dest.ID, "", "", 0, 1, 10)
 			if err != nil {
 				fail("visa")
 				return nil
 			}
+
 			put("visa", map[string]any{"routes": routes})
+
 			return nil
 		})
 	}
+
 	if wants("timelines") {
 		g.Go(func() error {
 			if s.moat.VisaTimeline == nil || !s.moat.VisaTimeline.Enabled(gctx) {
 				fail("timelines")
 				return nil
 			}
+
 			stats, err := s.moat.VisaTimeline.GetStats(gctx, pgtype.UUID{}, dest.ID, "", "", 0)
 			if err != nil {
 				fail("timelines")
 				return nil
 			}
+
 			put("timelines", map[string]any{"stats": stats})
+
 			return nil
 		})
 	}
+
 	if wants("universities") {
 		g.Go(func() error {
 			country := ""
 			if dest.GeoCode != nil {
 				country = *dest.GeoCode
 			}
+
 			items, total, err := s.ListUniversities(gctx, "", country, "", 10, 0)
 			if err != nil {
 				fail("universities")
 				return nil
 			}
+
 			put("universities", map[string]any{"items": items, "total": total})
+
 			return nil
 		})
 	}
+
 	if wants("scholarships") {
 		g.Go(func() error {
 			if s.moat.Scholarships == nil || !s.moat.Scholarships.Enabled(gctx) {
 				fail("scholarships")
 				return nil
 			}
+
 			country := ""
 			if dest.GeoCode != nil {
 				country = *dest.GeoCode
 			}
+
 			results, total, err := s.moat.Scholarships.FindScholarships(gctx,
 				scholarships.ScholarshipFilters{Country: country, Limit: 10, Page: 1})
 			if err != nil {
 				fail("scholarships")
 				return nil
 			}
+
 			put("scholarships", map[string]any{"items": results, "total": total})
+
 			return nil
 		})
 	}
+
 	if wants("scam_alerts") {
 		g.Go(func() error {
 			if s.moat.ScamAlerts == nil || !s.moat.ScamAlerts.Enabled(gctx) {
 				fail("scam_alerts")
 				return nil
 			}
+
 			alerts, _, err := s.moat.ScamAlerts.List(gctx, dest.ID, "", 1, 5)
 			if err != nil {
 				fail("scam_alerts")
 				return nil
 			}
+
 			put("scam_alerts", map[string]any{"items": alerts})
+
 			return nil
 		})
 	}
@@ -196,6 +220,7 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 			// Rule 3: TTL from system_settings (cataloged key, fallback 900).
 			ttl = s.settingsReader.GetIntOr(ctx, "api.destination_brief.cache_ttl_seconds", 900)
 		}
+
 		if raw, err := json.Marshal(brief); err == nil {
 			_ = s.cache.Set(ctx, cacheKey, raw, time.Duration(ttl)*time.Second).Err()
 		}
@@ -207,13 +232,17 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 // renderBriefSummary produces a deterministic markdown overview — no LLM.
 func renderBriefSummary(dest gen.GetPublicSpaceBySlugRow, b *DestinationBrief) string {
 	var sb strings.Builder
+
 	fmt.Fprintf(&sb, "# %s — destination brief\n\n", dest.Name)
+
 	if v, ok := b.Sections["visa"].(map[string]any); ok {
 		fmt.Fprintf(&sb, "- **Visa routes:** %d top routes included\n", len(v["routes"].([]visaroutes.RouteDTO)))
 	}
+
 	if len(b.SectionsUnavailable) > 0 {
 		fmt.Fprintf(&sb, "- _Sections unavailable: %s_\n", strings.Join(b.SectionsUnavailable, ", "))
 	}
+
 	return sb.String()
 }
 
@@ -223,18 +252,22 @@ func briefIncludeHash(include []string) string {
 	sorted := append([]string(nil), include...)
 	sort.Strings(sorted)
 	sum := sha256.Sum256([]byte(strings.Join(sorted, ",")))
+
 	return hex.EncodeToString(sum[:])[:12]
 }
 
 func dedupeStrings(in []string) []string {
 	seen := map[string]bool{}
 	out := in[:0]
+
 	for _, s := range in {
 		if !seen[s] {
 			seen[s] = true
+
 			out = append(out, s)
 		}
 	}
+
 	return out
 }
 
@@ -243,12 +276,15 @@ func (h *Handlers) GetDestinationBrief(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+
 	var include []string
+
 	if v := r.URL.Query().Get("include"); v != "" {
 		for _, part := range strings.Split(v, ",") {
 			if s := strings.TrimSpace(part); s != "" {
@@ -256,14 +292,18 @@ func (h *Handlers) GetDestinationBrief(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
 	brief, err := h.Service.GetDestinationBrief(r.Context(), slug, include)
 	if err != nil {
 		if errors.Is(err, ErrDestinationNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "destination_not_found", "Destination not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": brief})
 }

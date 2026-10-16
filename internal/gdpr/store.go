@@ -392,7 +392,6 @@ func (s *Store) gdprExportUserSpaceMutes(ctx context.Context, userID pgtype.UUID
 
 func (s *Store) gdprExportUserTicketComments(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	// ticket_comments has no column; the generated query takes only user_id.
-
 	data, err := s.read.GdprExportUserTicketComments(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -526,7 +525,6 @@ func (s *Store) listConsentsByPlatform(ctx context.Context, consentType string, 
 	}
 
 	rows, err := s.read.ListConsents(ctx, gen.ListConsentsParams{
-
 		ConsentType: consentType,
 		Q:           "",
 		PageLimit:   limit,
@@ -545,7 +543,6 @@ func (s *Store) listConsentsByPlatformFiltered(ctx context.Context, consentType,
 	}
 
 	rows, err := s.read.ListConsents(ctx, gen.ListConsentsParams{
-
 		ConsentType: consentType,
 		Q:           q,
 		PageLimit:   limit,

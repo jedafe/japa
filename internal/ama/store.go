@@ -41,7 +41,7 @@ func NewStore(database *db.DB) *Store {
 // AMAThread is a forum thread with AMA config + author info, returned by
 // list/get queries. AuthorUsername and AuthorAvatarUrl are interface{} because
 // sqlc types them as such (CASE WHEN ... THEN NULL ELSE ... END).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type AMAThread struct {
 	ID pgtype.UUID
 
@@ -85,7 +85,6 @@ func (s *Store) ListActive(ctx context.Context, dest, profession string, pageSiz
 	}
 
 	rows, err := s.read.ListActiveAMAs(ctx, gen.ListActiveAMAsParams{
-
 		Dest:            strPtr(dest),
 		Profession:      strPtr(profession),
 		CursorCreatedAt: cursorCreatedAt,
@@ -161,7 +160,6 @@ func (s *Store) HasActiveAMA(ctx context.Context, userID pgtype.UUID) (bool, err
 // permissions, rate limits, cooldown, and computing closes_at before calling.
 func (s *Store) CreateAMA(ctx context.Context, p CreateAMAParams) (AMAThread, error) {
 	r, err := s.write.CreateAMA(ctx, gen.CreateAMAParams{
-
 		SpaceID:           p.SpaceID,
 		AuthorUserID:      p.AuthorUserID,
 		Title:             p.Title,

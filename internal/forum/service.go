@@ -73,7 +73,6 @@ func (s *Service) CreateThread(ctx context.Context, authorUserID pgtype.UUID, in
 
 	thread, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.ForumThread, error) {
 		t, err := q.CreateForumThread(ctx, gen.CreateForumThreadParams{
-
 			ContentID:         input.ContentID,
 			SpaceID:           input.SpaceID,
 			AuthorUserID:      authorUserID,
@@ -361,7 +360,6 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 	}
 
 	reply, err := s.store.createReply(ctx, gen.CreateForumReplyParams{
-
 		ThreadID:      threadID,
 		ParentReplyID: input.ParentReplyID,
 		AuthorUserID:  authorUserID,
@@ -418,7 +416,7 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 			subjectID := threadID
 			actorName := ""
 			actorAvatar := ""
-			subjectURL := fmt.Sprintf("/forum/%s", thread.Slug)
+			subjectURL := "/forum/" + thread.Slug
 			_ = s.notifier.DispatchNotification(
 				notifyCtx, thread.AuthorUserID,
 				notifyType, subjectTitle,
@@ -590,7 +588,6 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 	}
 
 	vote, err := s.store.upsertVote(ctx, gen.UpsertForumVoteParams{
-
 		UserID:     userID,
 		EntityType: input.EntityType,
 		EntityID:   input.EntityID,
@@ -685,7 +682,6 @@ func (s *Service) AddBookmark(ctx context.Context, userID pgtype.UUID, entityTyp
 	}
 
 	bm, err := s.store.addBookmark(ctx, gen.AddForumBookmarkParams{
-
 		UserID:     userID,
 		EntityType: normalized,
 		EntityID:   entityID,

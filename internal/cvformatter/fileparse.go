@@ -64,6 +64,7 @@ func ExtractTextFromPDF(body []byte) (string, error) {
 	if totalPage > maxPDFPages {
 		return "", fmt.Errorf("pdf: page count %d exceeds limit of %d", totalPage, maxPDFPages)
 	}
+
 	for i := 1; i <= totalPage; i++ {
 		page := r.Page(i)
 		if page.V.IsNull() {
@@ -93,6 +94,7 @@ func ExtractTextFromDOCX(body []byte) (string, error) {
 	if len(body) > MaxUploadBytes {
 		return "", fmt.Errorf("docx: file size %d exceeds limit of %d bytes", len(body), MaxUploadBytes)
 	}
+
 	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
 	if err != nil {
 		return "", fmt.Errorf("docx: open zip: %w", err)
@@ -101,13 +103,16 @@ func ExtractTextFromDOCX(body []byte) (string, error) {
 	if len(zr.File) > maxDocxFiles {
 		return "", fmt.Errorf("docx: archive holds %d files, exceeding the limit of %d", len(zr.File), maxDocxFiles)
 	}
+
 	var totalUncompressed uint64
 	for _, f := range zr.File {
 		totalUncompressed += f.UncompressedSize64
 	}
+
 	if totalUncompressed > maxDocxUncompressed {
 		return "", fmt.Errorf("docx: uncompressed size %d exceeds limit of %d bytes", totalUncompressed, maxDocxUncompressed)
 	}
+
 	if len(body) > 0 && totalUncompressed/uint64(len(body)) > maxDocxCompressionRatio {
 		return "", fmt.Errorf("docx: compression ratio exceeds %d:1 (possible zip bomb)", maxDocxCompressionRatio)
 	}
@@ -140,6 +145,7 @@ func ExtractTextFromDOCX(body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("docx: read document.xml: %w", err)
 	}
+
 	if len(xmlBody) > maxDocumentXMLBytes {
 		return "", fmt.Errorf("docx: document.xml exceeds limit of %d bytes", maxDocumentXMLBytes)
 	}
@@ -168,6 +174,7 @@ func extractDocxText(body []byte) string {
 	var b strings.Builder
 
 	var inT bool
+
 	entityBytes := 0
 
 	for {
@@ -191,6 +198,7 @@ func extractDocxText(body []byte) string {
 			if entityBytes > maxXMLEntities {
 				return strings.TrimSpace(b.String())
 			}
+
 			if inT {
 				b.Write(v)
 			}

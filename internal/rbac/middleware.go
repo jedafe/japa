@@ -75,7 +75,7 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 // node check, so they are admitted without evaluating the list.
 // // Usage:
 // //	r.With(rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
-// Patch("/comparisons/{id}", handler)
+// Patch("/comparisons/{id}", handler).
 func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +119,7 @@ func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler)
 // hard delete (amended Rule 11).
 func RequireForceDelete(resolver *RBAC) func(http.Handler) http.Handler {
 	const forcePerm = "admin.hard_delete"
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Query().Get("force") != "true" {
@@ -131,6 +132,7 @@ func RequireForceDelete(resolver *RBAC) func(http.Handler) http.Handler {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+
 				return
 			}
 
@@ -139,6 +141,7 @@ func RequireForceDelete(resolver *RBAC) func(http.Handler) http.Handler {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+
 				return
 			}
 
@@ -277,7 +280,7 @@ func spaceFromContext(r *http.Request) pgtype.UUID {
 // to without holding the static "spaces.moderate" node.
 // // Usage:
 // //	r.With(rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
-// Delete("/spaces/{slug}/rules/{ruleId}", handler)
+// Delete("/spaces/{slug}/rules/{ruleId}", handler).
 func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

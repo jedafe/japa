@@ -45,7 +45,7 @@ type FeatureChecker interface {
 }
 
 // StoryDTO is the API response shape for a single story.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type StoryDTO struct {
 	ID                string `json:"id"`
 	AuthorID          string `json:"author_id,omitempty"`
@@ -195,6 +195,7 @@ func (s *Service) Submit(ctx context.Context, authorID pgtype.UUID, input Submit
 	// §14 visibility inheritance — defaults to public; any supplied value must
 	// be one of the valid contents.visibility values.
 	vis := content.VisibilityPublic
+
 	if input.Visibility != "" {
 		if !content.IsValidVisibility(input.Visibility) {
 			return StoryDTO{}, fmt.Errorf("%w: invalid visibility %q", ErrValidation, input.Visibility)
@@ -210,6 +211,7 @@ func (s *Service) Submit(ctx context.Context, authorID pgtype.UUID, input Submit
 	// The lookups also validate that the supplied space IDs exist — otherwise
 	// the story_meta insert would surface a raw FK violation as a 500.
 	var sourceCountry, targetCountry *string
+
 	if originSpaceID.Valid {
 		code, err := s.store.GetCountrySpaceGeoCode(ctx, originSpaceID)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -259,7 +261,6 @@ func (s *Service) Submit(ctx context.Context, authorID pgtype.UUID, input Submit
 	}
 
 	meta := StoryMeta{
-
 		ContentID:          contentRow.ID,
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -323,7 +324,6 @@ func (s *Service) List(ctx context.Context, originSpaceID, destSpaceID pgtype.UU
 	}
 
 	rows, total, err := s.store.ListStories(ctx, ListStoriesFilter{
-
 		OriginSpaceID: originSpaceID,
 		DestSpaceID:   destSpaceID,
 		VisaCategory:  visaCategory,
@@ -375,8 +375,11 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	// left untouched: writing it would route through content_spaces'
 	// membership-gated UpdateContentSpaces path.
 	var newDestSpaceID, newOriginSpaceID pgtype.UUID
+
 	var newDestCode, newOriginCode string
+
 	originProvided := input.OriginSpaceID != nil
+
 	if input.DestinationSpaceID != nil {
 		if *input.DestinationSpaceID == "" {
 			return StoryDTO{}, fmt.Errorf("%w: destination_space_id cannot be cleared", ErrValidation)
@@ -606,7 +609,6 @@ func (s *Service) AdminList(ctx context.Context, status, q string, verified *boo
 	}
 
 	rows, total, err := s.store.AdminListStories(ctx, AdminListStoriesFilter{
-
 		Status:      status,
 		Verified:    verified,
 		Q:           q,
@@ -673,6 +675,7 @@ func rowToDTO(r StoryRow) StoryDTO {
 	if r.DeletedAt.Valid {
 		dto.DeletedAt = formatTs(r.DeletedAt)
 	}
+
 	if r.OriginSpaceID.Valid {
 		dto.OriginSpaceID = r.OriginSpaceID.String()
 	}
@@ -759,6 +762,7 @@ func rowToDTO(r StoryRow) StoryDTO {
 	if r.FeaturedStorageBucket != nil && r.FeaturedStoragePath != nil {
 		dto.FeaturedImageURL = media.MediaURL(*r.FeaturedStorageBucket, *r.FeaturedStoragePath, media.ImageProxyOpts{})
 	}
+
 	if r.HeaderStorageBucket != nil && r.HeaderStoragePath != nil {
 		dto.HeaderImageURL = media.MediaURL(*r.HeaderStorageBucket, *r.HeaderStoragePath, media.ImageProxyOpts{})
 	}
@@ -873,7 +877,6 @@ func (s *Service) GenerateDraft(ctx context.Context, authorID pgtype.UUID, input
 	aiModel := "content_agent_v1"
 
 	meta := StoryMeta{
-
 		ContentID:          contentRow.ID,
 		DestinationSpaceID: destSpaceID,
 		Verified:           false,

@@ -38,6 +38,7 @@ func tsOrNil(t pgtype.Timestamptz) any {
 	if !t.Valid {
 		return nil
 	}
+
 	return t.Time.Format(time.RFC3339)
 }
 
@@ -47,6 +48,7 @@ func rawOrNil(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
+
 	return json.RawMessage(b)
 }
 
@@ -70,9 +72,11 @@ func IntelSourceGetHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.SourceID == "" {
 			return errorToolResult("missing_source_id", "source_id is required"), nil
 		}
+
 		sourceID, err := scanUUID(a.SourceID)
 		if err != nil {
 			return errorToolResult("invalid_source_id", "source_id is not a valid UUID"), nil
@@ -130,9 +134,11 @@ func IntelRecordGetHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.RecordID == "" {
 			return errorToolResult("missing_record_id", "record_id is required"), nil
 		}
+
 		recordID, err := scanUUID(a.RecordID)
 		if err != nil {
 			return errorToolResult("invalid_record_id", "record_id is not a valid UUID"), nil
@@ -194,6 +200,7 @@ func IntelRecordListHandler(deps *ToolDeps) ToolHandler {
 		if a.Limit > 0 && a.Limit < intelRecordListCap {
 			params.RowLimit = a.Limit
 		}
+
 		if params.RowOffset < 0 {
 			params.RowOffset = 0
 		}
@@ -203,11 +210,14 @@ func IntelRecordListHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("invalid_source_id", "source_id is not a valid UUID"), nil
 			}
+
 			params.SourceID = sourceID
 		}
+
 		if a.Status != "" {
 			params.Status = &a.Status
 		}
+
 		if a.EntityType != "" {
 			params.EntityType = &a.EntityType
 		}

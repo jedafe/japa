@@ -55,7 +55,6 @@ func (s *Store) getKnownBotByID(ctx context.Context, id pgtype.UUID) (gen.KnownB
 
 func (s *Store) listKnownBots(ctx context.Context, botType string, pageSize, offset int32) ([]gen.KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
-
 		BotType:    botType,
 		PageSize:   pageSize,
 		PageOffset: offset,
@@ -169,7 +168,6 @@ func (s *Store) GetBotsByUserAgent(ctx context.Context, userAgent string) ([]Kno
 // GetAllBots is an exported method.
 func (s *Store) GetAllBots(ctx context.Context) ([]KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
-
 		BotType:    "",
 		PageSize:   MaxPageSize,
 		PageOffset: 0,

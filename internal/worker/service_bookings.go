@@ -92,9 +92,11 @@ func bookingPayload(t *asynq.Task) (bookingTaskPayload, error) {
 		PaymentID string `json:"payment_id"`
 		Audience  string `json:"audience"`
 	}
+
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return bookingTaskPayload{}, fmt.Errorf("decode payload: %w", err)
 	}
+
 	if p.BookingID == "" {
 		return bookingTaskPayload{}, errors.New("missing booking_id")
 	}
@@ -120,7 +122,7 @@ func bookingPayload(t *asynq.Task) (bookingTaskPayload, error) {
 func HandleServiceBookingCreated(ctx context.Context, t *asynq.Task) error {
 	p, err := bookingPayload(t)
 	if err != nil {
-		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+		return fmt.Errorf("%w: %w", asynq.SkipRetry, err)
 	}
 
 	bookingID := p.BookingID
@@ -271,7 +273,7 @@ func notifyOrgMembers(ctx context.Context, q *gen.Queries, bk gen.GetServiceBook
 func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error {
 	p, err := bookingPayload(t)
 	if err != nil {
-		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+		return fmt.Errorf("%w: %w", asynq.SkipRetry, err)
 	}
 
 	bookingID := p.BookingID
@@ -293,7 +295,8 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 			return nil
 		}
 
-		title := fmt.Sprintf("Dispute raised: %s", bk.ListingTitle)
+		title := "Dispute raised: " + bk.ListingTitle
+
 		body := fmt.Sprintf("The booker reported a problem with their %s on %s. An admin will review the dispute.", bk.Intent, bk.ListingTitle)
 		if bk.DisputeReason != nil && *bk.DisputeReason != "" {
 			body += " Reason: " + *bk.DisputeReason
@@ -304,6 +307,7 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 
 	status := p.Status
 	ntype := bookingNotificationType(status)
+
 	if ntype == "" {
 		return fmt.Errorf("%w: unknown status %q", asynq.SkipRetry, status)
 	}
@@ -320,6 +324,7 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 		}
 
 		title := fmt.Sprintf("Booking %s — %s", status, bk.ListingTitle)
+
 		body := fmt.Sprintf("%s %s their %s for %s.", bookerName, status, bk.Intent, bk.ListingTitle)
 		if bk.CancelReason != nil && *bk.CancelReason != "" {
 			body += " Reason: " + *bk.CancelReason
@@ -342,21 +347,25 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 	// responding mentor is the actor and supplies the body copy name.
 	actorType := "organization"
 	actorID := bk.OrgID
+
 	if !bk.OrgID.Valid && bk.ProviderUserID.Valid {
 		actorType = "user"
 		actorID = bk.ProviderUserID
+
 		if bk.ProviderDisplayName != nil && *bk.ProviderDisplayName != "" {
 			orgName = *bk.ProviderDisplayName
 		}
 	}
 
 	subjectType := "service_booking"
+
 	actionURL := "/messages/bookings?b=" + bookingID.String()
 	if bk.ListingKind == "mentorship" {
 		// The mentee's requests live on the mentorship inbox — whose
 		// role=sent default is already the booker arm, no param needed.
 		actionURL = "/messages/mentorship?b=" + bookingID.String()
 	}
+
 	title := fmt.Sprintf("Booking %s — %s", status, bk.ListingTitle)
 	body := fmt.Sprintf("%s %s your booking for %s.", orgName, status, bk.ListingTitle)
 
@@ -390,7 +399,7 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 func HandleServiceBookingFeeSettle(ctx context.Context, t *asynq.Task) error {
 	p, err := bookingPayload(t)
 	if err != nil {
-		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+		return fmt.Errorf("%w: %w", asynq.SkipRetry, err)
 	}
 
 	bookingID := p.BookingID
@@ -477,6 +486,7 @@ func HandleServiceBookingExpirePending(ctx context.Context, t *asynq.Task) error
 	var p struct {
 		Limit int32 `json:"limit"`
 	}
+
 	_ = json.Unmarshal(t.Payload(), &p) // empty payload → default batch
 
 	if p.Limit <= 0 {
@@ -573,7 +583,7 @@ func HandleServiceBookingExpirePending(ctx context.Context, t *asynq.Task) error
 
 		actorType := "system"
 		subjectType := "service_booking"
-		title := fmt.Sprintf("Response SLA halfway: %s", bk.ListingTitle)
+		title := "Response SLA halfway: " + bk.ListingTitle
 		body := fmt.Sprintf("A %s for %s is still pending and half the response window has passed. Respond before it expires.", bk.Intent, bk.ListingTitle)
 
 		orgRef := bk.OrgID.String()

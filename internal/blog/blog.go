@@ -38,7 +38,7 @@ const (
 // sort=featured case is handled by the separate /blog/featured endpoint,
 // so callers should map sort=featured to that endpoint before reaching
 // the listing query.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type BlogListFilter struct {
 	SpaceID  pgtype.UUID // zero → no filter
 	AuthorID pgtype.UUID // zero → no filter

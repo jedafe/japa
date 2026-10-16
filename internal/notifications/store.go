@@ -39,7 +39,6 @@ func (s *Store) getNotificationsByRecipient(ctx context.Context, recipientID pgt
 	}
 
 	rows, err := s.read.GetNotificationsByRecipient(ctx, gen.GetNotificationsByRecipientParams{
-
 		RecipientID: recipientID,
 		PageLimit:   limit,
 		PageOffset:  offset,

@@ -212,6 +212,7 @@ func (s *Store) ListEnabledWikiTypes(ctx context.Context) ([]WikiType, error) {
 	}
 
 	out := make([]WikiType, 0, len(rows))
+
 	for _, r := range rows {
 		// §80 Hierarchical UX: the public type list carries the declared
 		// parent edges — they drive the landing drill-down, breadcrumb
@@ -242,6 +243,7 @@ func (s *Store) ListWikiTypes(ctx context.Context) ([]WikiType, error) {
 	}
 
 	out := make([]WikiType, 0, len(rows))
+
 	for _, r := range rows {
 		label := r.SpaceTypeName
 		if r.Label != nil && *r.Label != "" {

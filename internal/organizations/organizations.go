@@ -7,6 +7,7 @@
 package organizations
 
 import (
+	"strconv"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -187,6 +188,7 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 	// the email but with the relative path as a degraded fallback.
 	acceptPath := "/org/invite/" + token
 	acceptURL := acceptPath
+
 	if s.siteURL != "" {
 		acceptURL = s.siteURL + acceptPath
 	}
@@ -236,10 +238,11 @@ func orgListCacheKey(search, orgType, verified string, limit, offset int32) stri
 		strings.ToLower(strings.TrimSpace(search)),
 		strings.ToLower(strings.TrimSpace(orgType)),
 		strings.ToLower(strings.TrimSpace(verified)),
-		fmt.Sprintf("%d", limit),
-		fmt.Sprintf("%d", offset),
+		strconv.Itoa(int(limit)),
+		strconv.Itoa(int(offset)),
 	}, "\x00")))
 	page := offset / max(limit, 1)
+
 	return valkey.MustKey("org:list::%d:%x", page, sum)
 }
 

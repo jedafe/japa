@@ -64,6 +64,7 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 	if prompt == "" {
 		prompt = input.Prompt
 	}
+
 	if prompt == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "message is required")
 		return
@@ -74,6 +75,7 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 	input.Context = sanitizeClientContext(input.Context)
 
 	var convID *pgtype.UUID
+
 	if input.ConversationID != "" {
 		if u, err := scanUUID(input.ConversationID); err == nil && u.Valid {
 			convID = &u
@@ -83,12 +85,14 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 	}
 
 	var projectID *pgtype.UUID
+
 	if input.ProjectID != "" {
 		u, err := scanUUID(input.ProjectID)
 		if err != nil || !u.Valid {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "project_id must be a UUID")
 			return
 		}
+
 		projectID = &u
 	}
 
@@ -118,7 +122,9 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 	// JSON contract (legacy §20 shape): drain the channel, emit the final
 	// reply + conversation id + citation sources.
 	var reply, conversationID, messageID string
+
 	var sources []RAGChunk
+
 	var loopErr *AgentEvent
 
 	for ev := range events {
@@ -249,14 +255,17 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 	// the full set; a fixed cap would silently drop older threads.
 	if h.Convos != nil {
 		const convoPage = 200
+
 		for off := int32(0); ; off += convoPage {
 			rows, _, err := h.Convos.List(r.Context(), user.UserID, convoPage, off)
 			if err != nil {
 				slog.Warn("ai: listing ai_conversations", "error", err)
 				break
 			}
+
 			for _, c := range rows {
 				dbIDs[c.ID.String()] = true
+
 				sum := convoSummary{
 					ConversationID: c.ID.String(),
 					Title:          c.Title,
@@ -267,8 +276,10 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 				if c.ProjectID.Valid {
 					sum.ProjectID = c.ProjectID.String()
 				}
+
 				out = append(out, sum)
 			}
+
 			if len(rows) < convoPage {
 				break
 			}
@@ -285,13 +296,16 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 			// excluded via legacy_ref — including soft-deleted rows, so a
 			// deleted migrated thread never resurfaces as legacy.
 			var migratedRefs map[string]bool
+
 			if h.Convos != nil {
 				if m, merr := h.Convos.MigratedLegacyRefs(r.Context(), user.UserID); merr == nil {
 					migratedRefs = m
 				}
 			}
+
 			unmigrated := false
 			legacy := map[string]*convoSummary{}
+
 			for _, e := range entries {
 				// Skip entries that belong to unified threads — the unified
 				// path still writes each turn to Honcho long-term memory,
@@ -303,33 +317,42 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 						continue
 					}
 				}
+
 				cid := ""
+
 				if e.Metadata != nil {
 					if v, ok := e.Metadata["conversation_id"].(string); ok {
 						cid = v
 					}
 				}
+
 				if cid == "" {
 					cid = e.ID
 				}
+
 				if dbIDs[cid] {
 					continue
 				}
+
 				if migratedRefs["honcho:"+cid] {
 					continue
 				}
+
 				unmigrated = true
+
 				c, exists := legacy[cid]
 				if !exists {
 					c = &convoSummary{ConversationID: cid, Legacy: true}
 					legacy[cid] = c
 				}
+
 				c.TurnCount++
 				if e.CreatedAt.After(c.LastEntryAt) {
 					c.LastEntryAt = e.CreatedAt
 					c.Preview = e.Content
 				}
 			}
+
 			for _, c := range legacy {
 				out = append(out, *c)
 			}
@@ -344,6 +367,7 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 	sort.Slice(out, func(i, j int) bool { return out[i].LastEntryAt.After(out[j].LastEntryAt) })
 
 	total := int64(len(out))
+
 	if int(pageOffset) >= len(out) {
 		out = out[:0]
 	} else {
@@ -371,10 +395,12 @@ func (h *Handlers) enqueueConversationMigration(userID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{"user_id": userID.String()})
 	if err != nil {
 		return
 	}
+
 	opts := append(worker.TaskOpts(worker.TypeAIMigrateConversations),
 		asynq.TaskID(worker.TypeAIMigrateConversations+":"+userID.String()),
 	)
@@ -410,7 +436,9 @@ func (h *Handlers) HandleGetConversationV2(w http.ResponseWriter, r *http.Reques
 				errpkg.WriteError(w, http.StatusNotFound, "conversation_not_found", "Conversation not found")
 				return
 			}
+
 			h.serveUnifiedDetail(w, r, user, migrated.ID)
+
 			return
 		}
 	}
@@ -434,6 +462,7 @@ func (h *Handlers) HandleGetConversationV2(w http.ResponseWriter, r *http.Reques
 		errpkg.WriteError(w, http.StatusNotFound, "conversation_not_found", "Conversation not found")
 		return
 	}
+
 	h.HandleGetConversation(w, r) // may be a Honcho-era UUID
 }
 
@@ -450,8 +479,10 @@ func (h *Handlers) serveUnifiedDetail(w http.ResponseWriter, r *http.Request, us
 		if errors.Is(err, ErrConversationNotFound) {
 			return false
 		}
+
 		slog.Warn("ai: loading conversation detail", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load conversation")
+
 		return true
 	}
 
@@ -462,9 +493,12 @@ func (h *Handlers) serveUnifiedDetail(w http.ResponseWriter, r *http.Request, us
 		gen.AiMessage
 		ToolCalls []map[string]any `json:"tool_calls,omitempty"`
 	}
+
 	out := make([]messageDTO, 0, len(msgs))
+
 	for _, m := range msgs {
 		dto := messageDTO{AiMessage: m}
+
 		if m.AgentSessionID.Valid && h.agentSessions != nil {
 			if calls, err := h.agentSessions.ListAgentToolCallsBySession(r.Context(), m.AgentSessionID); err == nil && len(calls) > 0 {
 				dto.ToolCalls = make([]map[string]any, 0, len(calls))
@@ -473,6 +507,7 @@ func (h *Handlers) serveUnifiedDetail(w http.ResponseWriter, r *http.Request, us
 				}
 			}
 		}
+
 		out = append(out, dto)
 	}
 
@@ -498,6 +533,7 @@ func (h *Handlers) serveUnifiedDetail(w http.ResponseWriter, r *http.Request, us
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": detail})
+
 	return true
 }
 
@@ -512,6 +548,7 @@ func (h *Handlers) HandleDeleteConversation(w http.ResponseWriter, r *http.Reque
 	}
 
 	idParam := chi.URLParam(r, "id")
+
 	convID, parseErr := scanUUID(idParam)
 	if parseErr != nil || !convID.Valid {
 		errpkg.WriteError(w, http.StatusNotFound, "conversation_not_found", "Conversation not found")
@@ -528,8 +565,10 @@ func (h *Handlers) HandleDeleteConversation(w http.ResponseWriter, r *http.Reque
 			errpkg.WriteError(w, http.StatusNotFound, "conversation_not_found", "Conversation not found")
 			return
 		}
+
 		slog.Warn("ai: deleting conversation", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete conversation")
+
 		return
 	}
 
@@ -567,6 +606,7 @@ func (h *Handlers) HandleGetAIPrefs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("ai: loading ai prefs", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load AI preferences")
+
 		return
 	}
 
@@ -601,6 +641,7 @@ func (h *Handlers) HandlePutAIPrefs(w http.ResponseWriter, r *http.Request) {
 	// Bound the preference lists — an unbounded client payload would just
 	// bloat user_preferences.ai_prefs (names never match real tools anyway).
 	const maxPrefEntries, maxPrefLen = 512, 128
+
 	lists := map[string][]string{
 		"disabled_categories": input.DisabledCategories,
 		"disabled_tools":      input.DisabledTools,
@@ -611,6 +652,7 @@ func (h *Handlers) HandlePutAIPrefs(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", field+" has too many entries")
 			return
 		}
+
 		for _, x := range xs {
 			if len(x) > maxPrefLen {
 				errpkg.WriteError(w, http.StatusBadRequest, "validation_error", field+" contains an overlong entry")
@@ -626,21 +668,27 @@ func (h *Handlers) HandlePutAIPrefs(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates has too many entries")
 		return
 	}
+
 	seenTemplateIDs := make(map[string]bool, len(input.ChatTemplates))
+
 	for _, ct := range input.ChatTemplates {
 		if ct.ID == "" || ct.Name == "" {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates entries require id and name")
 			return
 		}
+
 		if seenTemplateIDs[ct.ID] {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates contains duplicate ids")
 			return
 		}
+
 		seenTemplateIDs[ct.ID] = true
+
 		if len(ct.ID) > 64 || len(ct.Name) > 200 || len(ct.Folder) > 200 || len(ct.CreatedAt) > 40 || len(ct.UpdatedAt) > 40 {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates contains an overlong entry")
 			return
 		}
+
 		if len(ct.Values) > maxTemplateValuesBytes {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates values payload too large")
 			return
@@ -655,17 +703,12 @@ func (h *Handlers) HandlePutAIPrefs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	prefs := AIPrefs{
-		DefaultMode:        input.DefaultMode,
-		DisabledCategories: input.DisabledCategories,
-		DisabledTools:      input.DisabledTools,
-		EnabledTools:       input.EnabledTools,
-		ChatTemplates:      input.ChatTemplates,
-	}
+	prefs := AIPrefs(input)
 
 	if err := h.Convos.SavePrefs(r.Context(), user.UserID, prefs); err != nil {
 		slog.Warn("ai: saving ai prefs", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to save AI preferences")
+
 		return
 	}
 

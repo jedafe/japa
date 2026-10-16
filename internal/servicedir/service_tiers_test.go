@@ -7,7 +7,6 @@
 package servicedir
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -16,14 +15,16 @@ import (
 func int64Ptr(v int64) *int64 { return &v }
 
 func TestValidatePackageTiers(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("empty input is ok", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{}}
+
 		params, err := s.validatePackageTiers(ctx, nil)
 		if err != nil {
 			t.Fatalf("nil: unexpected error %v", err)
 		}
+
 		if params != nil {
 			t.Fatalf("nil: expected nil params, got %+v", params)
 		}
@@ -32,6 +33,7 @@ func TestValidatePackageTiers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("empty slice: unexpected error %v", err)
 		}
+
 		if params != nil {
 			t.Fatalf("empty slice: expected nil params, got %+v", params)
 		}
@@ -39,6 +41,7 @@ func TestValidatePackageTiers(t *testing.T) {
 
 	t.Run("valid set maps to insert params", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{}}
+
 		params, err := s.validatePackageTiers(ctx, []TierInput{
 			{
 				Name:        "Essential",
@@ -58,6 +61,7 @@ func TestValidatePackageTiers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error %v", err)
 		}
+
 		if len(params) != 2 {
 			t.Fatalf("expected 2 params, got %d", len(params))
 		}
@@ -66,12 +70,15 @@ func TestValidatePackageTiers(t *testing.T) {
 		if params[0].Position != int32(0) || params[1].Position != int32(1) {
 			t.Fatalf("position mismatch: %v, %v", params[0].Position, params[1].Position)
 		}
+
 		if params[0].Name != "Essential" || params[1].Name != "Premium" {
 			t.Fatalf("name mismatch: %+v", params)
 		}
+
 		if params[0].Badge == nil || *params[0].Badge != "Basic" {
 			t.Fatalf("badge not carried: %+v", params[0])
 		}
+
 		if params[1].IsFeatured != true || params[1].IsActive != false {
 			t.Fatalf("featured/active not carried: %+v", params[1])
 		}
@@ -109,6 +116,7 @@ func TestValidatePackageTiers(t *testing.T) {
 		// Default cap is 5 (service_packages.tiers.max_count, migration
 		// 000804 seed). A lower override is honored too.
 		s := &Service{settings: fakeSettings{"service_packages.tiers.max_count": "2"}}
+
 		tiers := make([]TierInput, 3)
 		for i := range tiers {
 			tiers[i] = TierInput{Name: "T", PriceAmount: int64Ptr(1)}
@@ -120,6 +128,7 @@ func TestValidatePackageTiers(t *testing.T) {
 		}
 
 		s6 := &Service{settings: fakeSettings{}}
+
 		tiers6 := make([]TierInput, 6)
 		for i := range tiers6 {
 			tiers6[i] = TierInput{Name: "T", PriceAmount: int64Ptr(1)}
@@ -133,6 +142,7 @@ func TestValidatePackageTiers(t *testing.T) {
 
 	t.Run("at most one featured", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{}}
+
 		_, err := s.validatePackageTiers(ctx, []TierInput{
 			{Name: "A", PriceAmount: int64Ptr(1), IsFeatured: boolPtr(true)},
 			{Name: "B", PriceAmount: int64Ptr(1), IsFeatured: boolPtr(true)},
@@ -146,6 +156,7 @@ func TestValidatePackageTiers(t *testing.T) {
 		// price_currency is nullable and not validated against a currency
 		// enum — free-form values pass through untouched.
 		s := &Service{settings: fakeSettings{}}
+
 		params, err := s.validatePackageTiers(ctx, []TierInput{
 			{Name: "A", PriceAmount: int64Ptr(1), PriceCurrency: "XXX"},
 			{Name: "B", PriceAmount: int64Ptr(1)},
@@ -153,9 +164,11 @@ func TestValidatePackageTiers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error %v", err)
 		}
+
 		if params[0].PriceCurrency == nil || *params[0].PriceCurrency != "XXX" {
 			t.Fatalf("currency not carried: %+v", params[0])
 		}
+
 		if params[1].PriceCurrency != nil {
 			t.Fatalf("empty currency should stay NULL, got %+v", params[1])
 		}
@@ -163,7 +176,7 @@ func TestValidatePackageTiers(t *testing.T) {
 }
 
 func TestTiersEnabled(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("flag on via settings", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{"service_packages.tiers_enabled": "true"}}
@@ -207,6 +220,7 @@ func TestPackageTierPublicJSONShape(t *testing.T) {
 	}
 
 	var m map[string]any
+
 	raw, err := json.Marshal(d)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -216,8 +230,10 @@ func TestPackageTierPublicJSONShape(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	for _, k := range []string{"id", "name", "badge", "description",
-		"price_amount", "price_currency", "features", "position", "is_featured"} {
+	for _, k := range []string{
+		"id", "name", "badge", "description",
+		"price_amount", "price_currency", "features", "position", "is_featured",
+	} {
 		if _, ok := m[k]; !ok {
 			t.Errorf("missing key %q in public payload", k)
 		}

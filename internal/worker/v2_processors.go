@@ -21,6 +21,7 @@
 package worker
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -768,6 +769,7 @@ func HandleReferralReviewFlagged(ctx context.Context, t *asynq.Task) error {
 	var p struct {
 		ReferralID string `json:"referral_id"`
 	}
+
 	_ = json.Unmarshal(t.Payload(), &p)
 
 	if p.ReferralID == "" {
@@ -776,7 +778,9 @@ func HandleReferralReviewFlagged(ctx context.Context, t *asynq.Task) error {
 		if err != nil {
 			return fmt.Errorf("task:referral:review_flagged: sweep: %w", err)
 		}
+
 		slog.Info("task:referral:review_flagged: sweep completed", "flagged", n)
+
 		return nil
 	}
 
@@ -1164,18 +1168,23 @@ func HandleToolGenerateDraft(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:tool:generate_draft: no processor registered, skipping")
 		return nil
 	}
+
 	var p map[string]string
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:tool:generate_draft: invalid payload: %w", err)
 	}
+
 	entityType := p["entity_type"]
 	if entityType == "" {
-		return fmt.Errorf("task:tool:generate_draft: missing entity_type")
+		return errors.New("task:tool:generate_draft: missing entity_type")
 	}
+
 	delete(p, "entity_type")
+
 	if err := toolDraftProcessor.GenerateDraft(ctx, entityType, p); err != nil {
 		return fmt.Errorf("task:tool:generate_draft: %w", err)
 	}
+
 	return nil
 }
 

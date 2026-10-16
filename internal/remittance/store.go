@@ -48,6 +48,7 @@ func (s *Store) CreateProvider(ctx context.Context, arg gen.CreateRemittanceProv
 		f := false
 		arg.IsBenchmark = &f
 	}
+
 	return s.writeQueries.CreateRemittanceProvider(ctx, arg)
 }
 
@@ -133,7 +134,6 @@ func (s *Store) ListProviders(ctx context.Context, activeOnly bool) ([]gen.Remit
 // ListProvidersPaginated returns a page of providers and the total count.
 func (s *Store) ListProvidersPaginated(ctx context.Context, activeOnly bool, limit, offset int32) ([]gen.RemittanceProvider, int64, error) {
 	rows, err := s.queries.ListRemittanceProvidersPaginated(ctx, gen.ListRemittanceProvidersPaginatedParams{
-
 		ActiveOnly: activeOnly,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -161,7 +161,6 @@ func (s *Store) InsertRate(ctx context.Context, arg gen.InsertRemittanceRatePara
 // GetLatestRates returns the latest rate per active provider for a corridor.
 func (s *Store) GetLatestRates(ctx context.Context, sendCurrency, receiveCurrency string) ([]gen.GetLatestRatesForCorridorRow, error) {
 	return s.queries.GetLatestRatesForCorridor(ctx, gen.GetLatestRatesForCorridorParams{
-
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
 	})
@@ -170,7 +169,6 @@ func (s *Store) GetLatestRates(ctx context.Context, sendCurrency, receiveCurrenc
 // GetHistory returns daily best-rate aggregates for a corridor over a date range.
 func (s *Store) GetHistory(ctx context.Context, sendCurrency, receiveCurrency string, fromDate time.Time) ([]gen.GetRateHistoryRow, error) {
 	return s.queries.GetRateHistory(ctx, gen.GetRateHistoryParams{
-
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
 		FromDate:        pgtype.Timestamptz{Time: fromDate, Valid: true},
@@ -211,7 +209,6 @@ func (s *Store) GetAlertByID(ctx context.Context, id, userID pgtype.UUID) (gen.R
 // ListUserAlerts lists a user's rate alerts, optionally filtering to active only.
 func (s *Store) ListUserAlerts(ctx context.Context, userID pgtype.UUID, activeOnly bool) ([]gen.RemittanceRateAlert, error) {
 	return s.queries.ListUserRateAlerts(ctx, gen.ListUserRateAlertsParams{
-
 		UserID:     userID,
 		ActiveOnly: activeOnly,
 	})
@@ -221,7 +218,6 @@ func (s *Store) ListUserAlerts(ctx context.Context, userID pgtype.UUID, activeOn
 // eligible for notification (last_triggered_at is null or > 24h ago).
 func (s *Store) ListActiveAlertsForCorridor(ctx context.Context, sendCurrency, receiveCurrency string) ([]gen.RemittanceRateAlert, error) {
 	return s.queries.ListActiveAlertsForCorridor(ctx, gen.ListActiveAlertsForCorridorParams{
-
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
 	})

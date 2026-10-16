@@ -115,14 +115,17 @@ func (s *Service) tourSteps(ctx context.Context) map[string][]string {
 	}
 
 	steps := make(map[string][]string, len(configured))
+
 	for surface, keys := range configured {
 		surface = normalizeTourSurface(surface)
 		cleaned := make([]string, 0, len(keys))
+
 		for _, k := range keys {
 			k = strings.ToLower(strings.TrimSpace(k))
 			if isTourStepKey(k) {
 				cleaned = append(cleaned, k)
 			}
+
 			if len(cleaned) >= 48 {
 				break
 			}
@@ -144,11 +147,13 @@ func isTourStepKey(s string) bool {
 	if s == "" || len(s) > 64 {
 		return false
 	}
+
 	for _, r := range s {
 		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -323,6 +328,7 @@ func (s *Service) persistFollows(ctx context.Context, userID pgtype.UUID, fields
 
 	// Step 3: follow selected tags by slug.
 	tagIDs := make([]pgtype.UUID, 0, len(fields.Tags))
+
 	for _, slug := range fields.Tags {
 		tag, err := s.store.write.GetTagBySlug(ctx,
 
@@ -332,6 +338,7 @@ func (s *Service) persistFollows(ctx context.Context, userID pgtype.UUID, fields
 			slog.Warn("onboarding: failed to resolve tag slug", "slug", slug, "error", err)
 			continue
 		}
+
 		tagIDs = append(tagIDs, tag.ID)
 	}
 
@@ -350,6 +357,7 @@ func (s *Service) persistFollows(ctx context.Context, userID pgtype.UUID, fields
 			slog.Warn("onboarding: invalid source id in source_follows", "id", rawID, "error", err)
 			continue
 		}
+
 		if _, err := s.follower.EnsureFollow(ctx, userID, "source", id); err != nil {
 			slog.Warn("onboarding: failed to follow source", "entity_id", rawID, "error", err)
 		}
@@ -431,6 +439,7 @@ func (s *Service) autoFulfillSkip(ctx context.Context, userID pgtype.UUID, step 
 		// slug-valued entries that already parse as slugs) are kept as-is
 		// so the slug path still covers them.
 		promotedSlugs := make([]string, 0, len(promoted))
+
 		for _, entry := range promoted {
 			var id pgtype.UUID
 			if err := id.Scan(entry); err == nil && id.Valid {
@@ -439,6 +448,7 @@ func (s *Service) autoFulfillSkip(ctx context.Context, userID pgtype.UUID, step 
 					continue
 				}
 			}
+
 			promotedSlugs = append(promotedSlugs, entry)
 		}
 
@@ -608,10 +618,12 @@ func normalizeTourSurface(surface string) string {
 	}
 
 	var b strings.Builder
+
 	for _, r := range surface {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
 			b.WriteRune(r)
 		}
+
 		if b.Len() >= 32 {
 			break
 		}
@@ -718,10 +730,12 @@ func (s *Service) demoteSpaceTypes(ctx context.Context, recs []OnboardingRecomme
 	}
 
 	var spaceIDs []pgtype.UUID
+
 	for _, r := range recs {
 		if r.Type != "space" {
 			continue
 		}
+
 		var id pgtype.UUID
 		if err := id.Scan(r.ID); err == nil {
 			spaceIDs = append(spaceIDs, id)
@@ -738,6 +752,7 @@ func (s *Service) demoteSpaceTypes(ctx context.Context, recs []OnboardingRecomme
 	}
 
 	demoted := make(map[string]bool, len(rows))
+
 	for _, row := range rows {
 		if demoteSet[row.SpaceTypeSlug] {
 			demoted[row.ID.String()] = true
@@ -745,6 +760,7 @@ func (s *Service) demoteSpaceTypes(ctx context.Context, recs []OnboardingRecomme
 	}
 
 	var head, tail []OnboardingRecommendation
+
 	for _, r := range recs {
 		if r.Type == "space" && demoted[r.ID] {
 			tail = append(tail, r)
@@ -1123,6 +1139,7 @@ func (s *Service) recommendPopularUsers(ctx context.Context, userID pgtype.UUID)
 
 	for rows.Next() {
 		var id pgtype.UUID
+
 		var username, displayName, avatarURL pgtype.Text
 		if err := rows.Scan(&id, &username, &displayName, &avatarURL); err != nil {
 			continue

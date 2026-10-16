@@ -213,12 +213,15 @@ func (s *Service) LogImpersonatedAction(ctx context.Context, actionType, ipAddre
 	}
 
 	targetIDStr := ic.ImpersonatedID.String()
+
 	if metadata == nil {
 		metadata = map[string]string{}
 	}
+
 	if _, ok := metadata["admin_id"]; !ok {
 		metadata["admin_id"] = ic.AdminID.String()
 	}
+
 	if _, ok := metadata["target_id"]; !ok {
 		metadata["target_id"] = targetIDStr
 	}

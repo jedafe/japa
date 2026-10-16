@@ -40,7 +40,6 @@ func NewService(database *db.DB) *Service {
 // this user (UNIQUE(user_id, name) violation — BE-01).
 func (s *Service) CreateFolder(ctx context.Context, userID pgtype.UUID, name string) (gen.BookmarkFolder, error) {
 	folder, err := s.write.CreateBookmarkFolder(ctx, gen.CreateBookmarkFolderParams{
-
 		UserID:   userID,
 		Name:     name,
 		Position: 0,

@@ -82,6 +82,7 @@ func (ls *LocalStorage) Store(_ context.Context, exportID pgtype.UUID, filename,
 	if err != nil {
 		return "", 0, err
 	}
+
 	if err := os.WriteFile(full, data, 0o600); err != nil {
 		return "", 0, fmt.Errorf("writing export file: %w", err)
 	}
@@ -204,7 +205,6 @@ func (s *Service) CreateExport(ctx context.Context, userID pgtype.UUID, name, ex
 	}
 
 	exp, err := s.store.Create(ctx, gen.CreatePlatformDataExportParams{
-
 		Name:            name,
 		ExportType:      exportType,
 		Format:          format,

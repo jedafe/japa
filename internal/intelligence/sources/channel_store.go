@@ -31,9 +31,11 @@ func (s *Store) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceChan
 	if arg.EntityTypes == nil {
 		arg.EntityTypes = []string{}
 	}
+
 	if arg.RelevanceTopics == nil {
 		arg.RelevanceTopics = []string{}
 	}
+
 	if arg.RelevanceUrlPatterns == nil {
 		arg.RelevanceUrlPatterns = []string{}
 	}

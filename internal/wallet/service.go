@@ -47,7 +47,6 @@ func (s *Service) EmitActivityEvent(ctx context.Context, userID pgtype.UUID, inp
 	}
 
 	event, err := s.store.insertActivityEvent(ctx, gen.InsertActivityEventParams{
-
 		UserID:      userID,
 		ActivityKey: input.ActivityKey,
 		Reference:   input.Reference,
@@ -162,7 +161,6 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	// same source cannot both pass the count and insert.
 	if rule.OneTime {
 		count, err := qtx.CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
-
 			UserID: event.UserID,
 			Source: &event.ActivityKey,
 		})
@@ -189,7 +187,6 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 
 	// Get current balance within the transaction.
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     event.UserID,
 		LedgerType: LedgerTypePoints,
 	})
@@ -256,7 +253,6 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 
 	// Insert ledger entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           event.UserID,
 		LedgerType:       LedgerTypePoints,
 		Operation:        OperationEarn,
@@ -430,7 +426,6 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, userID pgtype.UUID
 
 	// Get current points balance within the transaction.
 	currentPoints, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     userID,
 		LedgerType: LedgerTypePoints,
 	})
@@ -459,7 +454,6 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, userID pgtype.UUID
 
 	// Get current credits balance within the transaction.
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -494,7 +488,6 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, userID pgtype.UUID
 
 	// Insert points debit entry — only the points actually converted.
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           userID,
 		LedgerType:       LedgerTypePoints,
 		Operation:        OperationConvert,
@@ -511,7 +504,6 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, userID pgtype.UUID
 
 	// Insert credits credit entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationConvert,
@@ -568,7 +560,6 @@ func (s *Service) SpendCredits(ctx context.Context, userID pgtype.UUID, input Sp
 	// ledger rows has a zero balance — NoRows must not leak through as a
 	// generic 500/404 upstream.
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -593,7 +584,6 @@ func (s *Service) SpendCredits(ctx context.Context, userID pgtype.UUID, input Sp
 
 	// Insert ledger entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationSpend,
@@ -662,7 +652,6 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 
 	// Get current balance within the transaction.
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     targetUserID,
 		LedgerType: input.LedgerType,
 	})
@@ -686,7 +675,6 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 
 	// Insert ledger entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           targetUserID,
 		LedgerType:       input.LedgerType,
 		Operation:        OperationAdminAdjust,
@@ -733,7 +721,6 @@ func (s *Service) GetWalletSettings(ctx context.Context) (gen.WalletSetting, err
 			}
 
 			return gen.WalletSetting{
-
 				PointsToCreditsRate: &rate,
 				DailyEarningCap:     1000,
 				EnableEarning:       true,
@@ -803,7 +790,6 @@ func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, input CreateOr
 	}
 
 	return s.store.upsertActivityRule(ctx, gen.UpsertActivityRuleParams{
-
 		ActivityKey: input.ActivityKey,
 		PointValue:  input.PointValue,
 		IsEnabled:   &input.IsEnabled,

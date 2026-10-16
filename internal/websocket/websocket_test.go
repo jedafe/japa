@@ -573,7 +573,6 @@ type mockTypingCall struct {
 
 func (m *mockDMServiceForTyping) GetOtherParticipant(_ context.Context, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
 	m.calls = append(m.calls, mockTypingCall{
-
 		conversationID: conversationID.String(),
 		userID:         userID.String(),
 	})

@@ -129,6 +129,7 @@ func (s *Store) MapSourcesByRecordIDs(ctx context.Context, recordIDs []pgtype.UU
 // non-null application_deadline custom-field value (admin aggregate).
 func (s *Store) CountUpcomingDeadlines(ctx context.Context) (int64, error) {
 	var n int64
+
 	err := s.pool.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM saved_scholarships ss
@@ -140,6 +141,7 @@ func (s *Store) CountUpcomingDeadlines(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("scholarships: count upcoming deadlines: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -147,6 +149,7 @@ func (s *Store) CountUpcomingDeadlines(ctx context.Context) (int64, error) {
 // a reminder sent (admin aggregate).
 func (s *Store) CountReminderLog(ctx context.Context) (int64, error) {
 	var n int64
+
 	err := s.pool.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM saved_scholarships
@@ -154,6 +157,7 @@ func (s *Store) CountReminderLog(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("scholarships: count reminder log: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -161,10 +165,12 @@ func (s *Store) CountReminderLog(ctx context.Context) (int64, error) {
 // owners (admin aggregate).
 func (s *Store) CountUniqueSaverUsers(ctx context.Context) (int64, error) {
 	var n int64
+
 	err := s.pool.Reader.QueryRow(ctx, `SELECT COUNT(DISTINCT user_id) FROM saved_scholarships`).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("scholarships: count unique users: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -234,7 +240,6 @@ func (s *Store) MarkReminderSent(ctx context.Context, id pgtype.UUID) error {
 // title/university/country; status is an optional verification_status filter.
 // The ID is stamped into the query params.
 func (s *Store) AdminListScholarships(ctx context.Context, arg gen.AdminListScholarshipsParams) ([]gen.Scholarship, error) {
-
 	rows, err := s.queries.AdminListScholarships(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: admin list: %w", err)
@@ -247,7 +252,6 @@ func (s *Store) AdminListScholarships(ctx context.Context, arg gen.AdminListScho
 // list with the same q + status filter as AdminListScholarships, so the admin
 // panel can compute total pages.
 func (s *Store) AdminCountScholarships(ctx context.Context, arg gen.AdminCountScholarshipsParams) (int64, error) {
-
 	count, err := s.queries.AdminCountScholarships(ctx, arg)
 	if err != nil {
 		return 0, fmt.Errorf("scholarships: admin count: %w", err)
@@ -273,7 +277,6 @@ func (s *Store) AdminGetScholarship(ctx context.Context, id pgtype.UUID) (gen.Sc
 // AdminCreateScholarship creates a new scholarship record. The ID is
 // stamped into the query params.
 func (s *Store) AdminCreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
-
 	row, err := s.queries.CreateScholarship(ctx, arg)
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("scholarships: admin create: %w", err)
@@ -285,7 +288,6 @@ func (s *Store) AdminCreateScholarship(ctx context.Context, arg gen.CreateSchola
 // AdminUpdateScholarship updates an existing scholarship record. The
 // ID is stamped into the query params.
 func (s *Store) AdminUpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error {
-
 	if err := s.queries.UpdateScholarship(ctx, arg); err != nil {
 		return fmt.Errorf("scholarships: admin update: %w", err)
 	}

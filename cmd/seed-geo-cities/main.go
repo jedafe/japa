@@ -114,6 +114,7 @@ func asciiFold(s string) string {
 	if err != nil {
 		return compatFold.Replace(s)
 	}
+
 	return out
 }
 
@@ -121,6 +122,7 @@ func asciiFold(s string) string {
 // space-joined token string so dataset and seeded names compare cleanly.
 func normName(s string) string {
 	var b strings.Builder
+
 	for _, r := range strings.ToLower(asciiFold(s)) {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			b.WriteRune(r)
@@ -128,6 +130,7 @@ func normName(s string) string {
 			b.WriteByte(' ')
 		}
 	}
+
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
@@ -147,11 +150,13 @@ var adminTypeWords = map[string]struct{}{
 // tokenSet returns normName tokens minus administrative-type words.
 func tokenSet(norm string) map[string]struct{} {
 	set := map[string]struct{}{}
+
 	for t := range strings.FieldsSeq(norm) {
 		if _, skip := adminTypeWords[t]; !skip {
 			set[t] = struct{}{}
 		}
 	}
+
 	return set
 }
 
@@ -160,11 +165,13 @@ func subset(a, b map[string]struct{}) bool {
 	if len(a) == 0 || len(a) > len(b) {
 		return false
 	}
+
 	for t := range a {
 		if _, ok := b[t]; !ok {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -172,21 +179,28 @@ func subset(a, b map[string]struct{}) bool {
 // non-alphanumeric runs collapsed to single hyphens.
 func slugify(s string) string {
 	out := asciiFold(s)
+
 	var b strings.Builder
+
 	b.Grow(len(out))
+
 	dash := false
+
 	for _, r := range strings.ToLower(out) {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', unicode.IsLetter(r):
 			b.WriteRune(r)
+
 			dash = false
 		default:
 			if b.Len() > 0 && !dash {
 				b.WriteByte('-')
 			}
+
 			dash = true
 		}
 	}
+
 	return strings.TrimRight(b.String(), "-")
 }
 
@@ -252,15 +266,19 @@ func main() {
 	}
 
 	var geo []geoRow
+
 	for geoRows.Next() {
 		var g geoRow
 		if err := geoRows.Scan(&g.id, &g.name, &g.slug, &g.geoCode, &g.level, &g.parentID); err != nil {
 			slog.Warn("skipping geo row: scan error", "error", err)
 			continue
 		}
+
 		geo = append(geo, g)
 	}
+
 	geoRows.Close()
+
 	if err := geoRows.Err(); err != nil {
 		slog.Error("geo row iteration failed", "error", err)
 		os.Exit(1)
@@ -270,10 +288,12 @@ func main() {
 	countryOf := map[pgtype.UUID]pgtype.UUID{}
 	levelByID := map[pgtype.UUID]string{}
 	statesByID := map[pgtype.UUID]geoRow{}
+
 	var existingCities []geoRow
 
 	for _, g := range geo {
 		levelByID[g.id] = g.level
+
 		switch g.level {
 		case "country":
 			countryByCode[strings.ToUpper(g.geoCode)] = g.id
@@ -297,11 +317,13 @@ func main() {
 			countryGeoCode[g.id] = g.geoCode
 		}
 	}
+
 	for _, st := range statesByID {
 		cid := st.parentID
 		if !cid.Valid || levelByID[cid] != "country" {
 			continue
 		}
+
 		countryOf[st.id] = cid
 
 		if statesByCode[cid] == nil {
@@ -310,17 +332,21 @@ func main() {
 			statesBySqueeze[cid] = map[string]pgtype.UUID{}
 			stateTokens[cid] = map[pgtype.UUID]map[string]struct{}{}
 		}
+
 		if st.geoCode != "" {
 			statesByCode[cid][strings.ToLower(st.geoCode)] = st.id
 		}
+
 		norm := normName(st.name)
 		if _, dup := statesByNorm[cid][norm]; !dup {
 			statesByNorm[cid][norm] = st.id
 		}
+
 		sq := strings.ReplaceAll(norm, " ", "")
 		if _, dup := statesBySqueeze[cid][sq]; !dup {
 			statesBySqueeze[cid][sq] = st.id
 		}
+
 		stateTokens[cid][st.id] = tokenSet(norm)
 	}
 
@@ -331,11 +357,13 @@ func main() {
 	//     the country, so same-named cities in different states still seed.
 	scopeKey := map[string]struct{}{}
 	countryWide := map[string]struct{}{}
+
 	var needGeoCode []geoRow
 
 	for _, c := range existingCities {
 		if c.parentID.Valid {
 			scopeKey[c.parentID.String()+"|"+normName(c.name)] = struct{}{}
+
 			if cid, ok := countryOf[c.parentID]; ok {
 				countryWide[cid.String()+"|"+normName(c.name)] = struct{}{}
 				countryOf[c.id] = cid
@@ -344,6 +372,7 @@ func main() {
 				countryOf[c.id] = c.parentID
 			}
 		}
+
 		if c.geoCode == "" {
 			needGeoCode = append(needGeoCode, c)
 		}
@@ -360,6 +389,7 @@ func main() {
 		slog.Error("failed to load cities", "error", err)
 		os.Exit(1)
 	}
+
 	slog.Info("dataset loaded", "rows", len(cities))
 
 	// ── Reparent pass ────────────────────────────────────────────────
@@ -373,11 +403,15 @@ func main() {
 	type reparentOp struct {
 		id, oldParent, newParent pgtype.UUID
 	}
+
 	var reparents []reparentOp
+
 	var retired []geoRow
+
 	var skippedScope int
 
 	byCityKey := map[string][]cityRow{}
+
 	for _, d := range cities {
 		k := d.country + "|" + normName(d.name)
 		byCityKey[k] = append(byCityKey[k], d)
@@ -388,23 +422,30 @@ func main() {
 		if len(rows) == 0 {
 			continue // admin-created city, not dataset-managed
 		}
+
 		if pinned := pinAdmin1(rows, c.slug, c.geoCode); len(pinned) > 0 {
 			rows = pinned
 		}
+
 		targets := map[pgtype.UUID]struct{}{}
+
 		var only pgtype.UUID
+
 		for _, d := range rows {
 			cid, ok := countryByCode[d.country]
 			if !ok {
 				continue
 			}
+
 			p := cid
 			if sid, ok := resolveState(d, cid, admin1Name, statesByCode, statesByNorm, statesBySqueeze, stateTokens, statesByID); ok {
 				p = sid
 			}
+
 			targets[p] = struct{}{}
 			only = p
 		}
+
 		if len(targets) != 1 {
 			// Ambiguous variant set: keep the row only if its current parent
 			// is one of the valid targets; otherwise it is a misattached
@@ -414,25 +455,34 @@ func main() {
 				if _, valid := targets[c.parentID]; valid {
 					continue
 				}
+
 				delete(scopeKey, c.parentID.String()+"|"+normName(c.name))
 				retired = append(retired, c)
 			}
+
 			continue
 		}
+
 		if only == c.parentID {
 			continue
 		}
+
 		norm := normName(c.name)
 		oldKey := c.parentID.String() + "|" + norm
+
 		newKey := only.String() + "|" + norm
 		if _, occupied := scopeKey[newKey]; occupied {
 			skippedScope++
+
 			slog.Info("reparent skipped: target scope already holds same-named city",
 				"slug", c.slug, "id", c.id.String())
+
 			continue
 		}
+
 		delete(scopeKey, oldKey)
 		scopeKey[newKey] = struct{}{}
+
 		reparents = append(reparents, reparentOp{id: c.id, oldParent: c.parentID, newParent: only})
 		c.parentID = only
 	}
@@ -450,6 +500,7 @@ func main() {
 	}
 
 	var planned []insert
+
 	var skippedExisting, skippedCountry, parentedState, parentedCountry int
 
 	for _, c := range cities {
@@ -465,6 +516,7 @@ func main() {
 		}
 
 		norm := normName(c.name)
+
 		key := parentID.String() + "|" + norm
 		if _, dup := scopeKey[key]; dup {
 			skippedExisting++
@@ -478,12 +530,14 @@ func main() {
 				skippedExisting++
 				continue
 			}
+
 			parentedCountry++
 		} else {
 			if _, dup := scopeKey[countryID.String()+"|"+norm]; dup {
 				skippedExisting++
 				continue
 			}
+
 			parentedState++
 		}
 
@@ -491,11 +545,13 @@ func main() {
 		if base == "" {
 			base = c.name
 		}
+
 		slug := uniqueSlug(slugify(base), c.country, c.admin1, slugTaken)
 		if slug == "" {
 			slog.Warn("no slug derivable", "city", c.name, "country", c.country)
 			continue
 		}
+
 		slugTaken[slug] = struct{}{}
 		scopeKey[key] = struct{}{}
 		countryWide[countryID.String()+"|"+norm] = struct{}{}
@@ -519,6 +575,7 @@ func main() {
 
 	// geo_code fix-up count for pre-existing cities (resolved via parent chain).
 	geoFixable := 0
+
 	for _, c := range needGeoCode {
 		if cid, ok := countryOf[c.parentID]; ok && countryGeoCode[cid] != "" {
 			geoFixable++
@@ -529,11 +586,14 @@ func main() {
 		for _, p := range planned {
 			fmt.Printf("plan %s\t%s\t%s\tparent=%s\n", p.geoCode, p.name, p.slug, levelByID[p.parentID])
 		}
+
 		for _, r := range retired {
 			fmt.Printf("retire %s\t%s\t%s\n", r.geoCode, r.name, r.slug)
 		}
+
 		fmt.Printf("\ndry-run: %d city spaces would be created (%d to state, %d to country), %d reparented, %d retired (ambiguous variants), %d scope-occupied skipped, %d skipped existing, %d unknown-country rows skipped, %d existing cities need geo_code backfill\n",
 			len(planned), parentedState, parentedCountry, len(reparents), len(retired), skippedScope, skippedExisting, skippedCountry, geoFixable)
+
 		return
 	}
 
@@ -547,25 +607,33 @@ func main() {
 			slog.Error("begin retire tx failed", "error", err)
 			os.Exit(1)
 		}
+
 		batch := &pgx.Batch{}
 		for _, r := range chunk {
 			batch.Queue(`UPDATE spaces SET status = 'deleted', deleted_at = now(), updated_at = now() WHERE id = $1`, r.id)
 		}
+
 		br := tx.SendBatch(ctx, batch)
+
 		var batchErr error
+
 		for range batch.Len() {
 			if _, err := br.Exec(); err != nil && batchErr == nil {
 				batchErr = err
 			}
 		}
+
 		if cerr := br.Close(); cerr != nil && batchErr == nil {
 			batchErr = cerr
 		}
+
 		if batchErr != nil {
 			_ = tx.Rollback(ctx)
+
 			slog.Error("retire batch failed — rolled back", "error", batchErr, "chunk_start", start)
 			os.Exit(1)
 		}
+
 		if err := tx.Commit(ctx); err != nil {
 			slog.Error("retire commit failed", "error", err, "chunk_start", start)
 			os.Exit(1)
@@ -574,6 +642,7 @@ func main() {
 
 	// ── Apply reparents in chunked transactions ─────────────────────────
 	reparented := 0
+
 	for start := 0; start < len(reparents); start += *batchSize {
 		end := min(start+*batchSize, len(reparents))
 		chunk := reparents[start:end]
@@ -592,29 +661,37 @@ func main() {
 		}
 
 		br := tx.SendBatch(ctx, batch)
+
 		var batchErr error
+
 		for range batch.Len() {
 			if _, err := br.Exec(); err != nil && batchErr == nil {
 				batchErr = err
 			}
 		}
+
 		if cerr := br.Close(); cerr != nil && batchErr == nil {
 			batchErr = cerr
 		}
+
 		if batchErr != nil {
 			_ = tx.Rollback(ctx)
+
 			slog.Error("reparent batch failed — rolled back", "error", batchErr, "chunk_start", start)
 			os.Exit(1)
 		}
+
 		if err := tx.Commit(ctx); err != nil {
 			slog.Error("reparent commit failed", "error", err, "chunk_start", start)
 			os.Exit(1)
 		}
+
 		reparented += len(chunk)
 	}
 
 	// ── Insert in chunked transactions ─────────────────────────────────
 	inserted := 0
+
 	for start := 0; start < len(planned); start += *batchSize {
 		end := min(start+*batchSize, len(planned))
 		chunk := planned[start:end]
@@ -632,20 +709,26 @@ func main() {
 		}
 
 		br := tx.SendBatch(ctx, batch)
+
 		var batchErr error
+
 		for range batch.Len() {
 			if _, err := br.Exec(); err != nil && batchErr == nil {
 				batchErr = err
 			}
 		}
+
 		if cerr := br.Close(); cerr != nil && batchErr == nil {
 			batchErr = cerr
 		}
+
 		if batchErr != nil {
 			_ = tx.Rollback(ctx)
+
 			slog.Error("insert batch failed — rolled back", "error", batchErr, "chunk_start", start)
 			os.Exit(1)
 		}
+
 		if err := tx.Commit(ctx); err != nil {
 			slog.Error("commit failed", "error", err, "chunk_start", start)
 			os.Exit(1)
@@ -657,21 +740,25 @@ func main() {
 
 	// Backfill geo_code on pre-existing cities that had none.
 	geoFixed := 0
+
 	for _, c := range needGeoCode {
 		cid, ok := countryOf[c.parentID]
 		if !ok || !cid.Valid {
 			continue
 		}
+
 		code := countryGeoCode[cid]
 		if code == "" {
 			continue
 		}
+
 		if _, err := database.Writer.Exec(ctx,
 			`UPDATE spaces SET geo_code = $1, updated_at = now() WHERE id = $2 AND (geo_code IS NULL OR geo_code = '')`,
 			code, c.id); err != nil {
 			slog.Warn("geo_code backfill failed", "city", c.name, "error", err)
 			continue
 		}
+
 		geoFixed++
 	}
 
@@ -684,6 +771,7 @@ func lookupCityTypeID(ctx context.Context, database *db.DB) (pgtype.UUID, error)
 	var id pgtype.UUID
 	err := database.Reader.QueryRow(ctx,
 		`SELECT id FROM space_types WHERE slug = 'city'`).Scan(&id)
+
 	return id, err
 }
 
@@ -697,13 +785,16 @@ func liveSlugs(ctx context.Context, database *db.DB) (map[string]struct{}, error
 	defer rows.Close()
 
 	set := map[string]struct{}{}
+
 	for rows.Next() {
 		var s string
 		if err := rows.Scan(&s); err != nil {
 			continue
 		}
+
 		set[s] = struct{}{}
 	}
+
 	return set, rows.Err()
 }
 
@@ -731,19 +822,23 @@ func resolveState(c cityRow, countryID pgtype.UUID,
 	if c.admin1 == "" {
 		return pgtype.UUID{}, false
 	}
+
 	name := admin1Name[c.country+"."+c.admin1]
 	if name != "" {
 		if id, ok := matchStateName(name, byNorm[countryID], bySqueeze[countryID], tokens[countryID]); ok {
 			return id, true
 		}
 	}
+
 	id, ok := byCode[countryID][strings.ToLower(c.admin1)]
 	if !ok {
 		return pgtype.UUID{}, false
 	}
+
 	if hasLetter(c.admin1) || name == "" || namesAgree(name, statesByID[id].name) {
 		return id, true
 	}
+
 	return pgtype.UUID{}, false
 }
 
@@ -759,20 +854,27 @@ func matchStateName(name string,
 	if id, ok := byNorm[norm]; ok {
 		return id, true
 	}
+
 	if id, ok := bySqueeze[strings.ReplaceAll(norm, " ", "")]; ok {
 		return id, true
 	}
+
 	want := tokenSet(norm)
+
 	var hit pgtype.UUID
+
 	found := false
+
 	for sid, set := range tokens {
 		if subset(set, want) || subset(want, set) {
 			if found {
 				return pgtype.UUID{}, false
 			}
+
 			hit, found = sid, true
 		}
 	}
+
 	return hit, found
 }
 
@@ -783,19 +885,25 @@ func pinAdmin1(rows []cityRow, slug, cc string) []cityRow {
 	if len(rows) < 2 {
 		return nil
 	}
+
 	marker := "-" + strings.ToLower(cc) + "-"
+
 	i := strings.Index(slug, marker)
 	if i < 0 {
 		return nil
 	}
+
 	tail := slug[i+len(marker):]
+
 	var out []cityRow
+
 	for _, d := range rows {
 		a := strings.ToLower(d.admin1)
 		if tail == a || strings.HasPrefix(tail, a+"-") {
 			out = append(out, d)
 		}
 	}
+
 	return out
 }
 
@@ -805,6 +913,7 @@ func hasLetter(s string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -815,7 +924,9 @@ func namesAgree(adminName, stateName string) bool {
 	if a == s || strings.ReplaceAll(a, " ", "") == strings.ReplaceAll(s, " ", "") {
 		return true
 	}
+
 	at, st := tokenSet(a), tokenSet(s)
+
 	return subset(at, st) || subset(st, at)
 }
 
@@ -824,21 +935,25 @@ func uniqueSlug(base, country, admin1 string, taken map[string]struct{}) string 
 	if base == "" {
 		return ""
 	}
+
 	if _, ok := taken[base]; !ok {
 		return base
 	}
+
 	cc := strings.ToLower(country)
 	for _, cand := range []string{base + "-" + cc, base + "-" + cc + "-" + strings.ToLower(admin1)} {
 		if _, ok := taken[cand]; !ok {
 			return cand
 		}
 	}
+
 	for i := 2; i < 100; i++ {
 		cand := fmt.Sprintf("%s-%s-%s-%d", base, cc, strings.ToLower(admin1), i)
 		if _, ok := taken[cand]; !ok {
 			return cand
 		}
 	}
+
 	return ""
 }
 
@@ -860,18 +975,23 @@ func loadCities(path string) ([]cityRow, error) {
 	type key struct {
 		country, admin1, norm string
 	}
+
 	seen := map[key]int{}
+
 	var out []cityRow
 
 	recs, err := r.ReadAll()
 	if err != nil {
 		return nil, err
 	}
+
 	for _, rec := range recs {
 		if len(rec) < 6 {
 			continue
 		}
+
 		pop, _ := strconv.ParseInt(rec[5], 10, 64)
+
 		c := cityRow{
 			name:       strings.TrimSpace(rec[1]),
 			asciiName:  strings.TrimSpace(rec[2]),
@@ -882,22 +1002,28 @@ func loadCities(path string) ([]cityRow, error) {
 		if c.name == "" || c.country == "" {
 			continue
 		}
+
 		k := key{c.country, c.admin1, normName(c.name)}
 		if i, dup := seen[k]; dup {
 			if c.population > out[i].population {
 				out[i] = c
 			}
+
 			continue
 		}
+
 		seen[k] = len(out)
 		out = append(out, c)
 	}
+
 	slices.SortFunc(out, func(a, b cityRow) int {
 		if a.country != b.country {
 			return strings.Compare(a.country, b.country)
 		}
+
 		return strings.Compare(a.name, b.name)
 	})
+
 	return out, nil
 }
 
@@ -919,12 +1045,15 @@ func loadAdmin1Aliases(path string, into map[string]string) error {
 	if err != nil {
 		return err
 	}
+
 	for _, rec := range recs {
 		if len(rec) < 3 {
 			continue
 		}
+
 		into[strings.TrimSpace(rec[0])+"."+strings.TrimSpace(rec[1])] = strings.TrimSpace(rec[2])
 	}
+
 	return nil
 }
 
@@ -943,19 +1072,24 @@ func loadAdmin1(path string) (map[string]string, error) {
 	r.FieldsPerRecord = -1
 
 	m := map[string]string{}
+
 	recs, err := r.ReadAll()
 	if err != nil {
 		return nil, err
 	}
+
 	for _, rec := range recs {
 		if len(rec) < 3 {
 			continue
 		}
+
 		name := strings.TrimSpace(rec[2])
 		if len(rec) >= 4 && strings.TrimSpace(rec[3]) != "" {
 			name = strings.TrimSpace(rec[3])
 		}
+
 		m[strings.TrimSpace(rec[0])+"."+strings.TrimSpace(rec[1])] = name
 	}
+
 	return m, nil
 }

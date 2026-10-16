@@ -833,9 +833,11 @@ func TestPreview_MixedCategoryAttribution(t *testing.T) {
 	if !ok {
 		t.Fatalf("channels missing rss proposal: %+v", report.Channels)
 	}
+
 	if rss.Pipeline != string(sources.PipelineCurate) {
 		t.Errorf("rss pipeline = %q, want curate (news nominates rss)", rss.Pipeline)
 	}
+
 	if !slices.Equal(rss.EntityTypes, []string{"news"}) {
 		t.Errorf("rss entity_types = %v, want [news]", rss.EntityTypes)
 	}
@@ -844,9 +846,11 @@ func TestPreview_MixedCategoryAttribution(t *testing.T) {
 	if !ok {
 		t.Fatalf("channels missing jsonld proposal: %+v", report.Channels)
 	}
+
 	if jsonld.Pipeline != string(sources.PipelineExtract) {
 		t.Errorf("jsonld pipeline = %q, want extract (job nominates jsonld)", jsonld.Pipeline)
 	}
+
 	if !slices.Equal(jsonld.EntityTypes, []string{"news", "job"}) {
 		t.Errorf("jsonld entity_types = %v, want [news job]", jsonld.EntityTypes)
 	}
@@ -921,6 +925,7 @@ func TestParseRobots_OurBlockSupersedesWildcard(t *testing.T) {
 	if !slices.Contains(v.DisallowedPaths, "/japa-only") {
 		t.Errorf("our block rule missing: %v", v.DisallowedPaths)
 	}
+
 	if slices.Contains(v.DisallowedPaths, "/wildcard-only") ||
 		slices.Contains(v.DisallowedPaths, "/also-ignored") {
 		t.Errorf("wildcard rules survived the dedicated block: %v", v.DisallowedPaths)

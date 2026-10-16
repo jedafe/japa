@@ -10,7 +10,6 @@ import (
 
 // ListReactionTypes handles GET /api/v1/reaction-types.
 func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
-
 	types, err := h.Service.ListReactionTypes(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -22,7 +21,6 @@ func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
 
 // CreateReactionType handles POST /api/v1/reaction-types.
 func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		Key      string `json:"key"`
 		Emoji    string `json:"emoji"`
@@ -62,7 +60,6 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 
 // UpdateReactionType handles PATCH /api/v1/reaction-types/{key}.
 func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
-
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
@@ -102,7 +99,6 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 
 // DeleteReactionType handles DELETE /api/v1/reaction-types/{key}.
 func (h *Handlers) DeleteReactionType(w http.ResponseWriter, r *http.Request) {
-
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")

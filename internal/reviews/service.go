@@ -46,7 +46,7 @@ func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, 
 	}
 
 	if len(input.Body) > MaxBodyBytes {
-		return gen.Review{}, fmt.Errorf("body exceeds size limit")
+		return gen.Review{}, errors.New("body exceeds size limit")
 	}
 
 	// Sanitize on write (mirror content/store.go:460): titles are plain
@@ -75,7 +75,6 @@ func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, 
 	}
 
 	review, err := s.store.createReview(ctx, gen.CreateReviewParams{
-
 		EntityType:     input.EntityType,
 		EntityID:       input.EntityID,
 		ReviewerUserID: reviewerUserID,
@@ -91,12 +90,12 @@ func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, 
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return gen.Review{}, ErrAlreadyReviewed
 		}
+
 		return gen.Review{}, err
 	}
 
 	// Best-effort aggregate update (non-blocking failure).
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-
 		EntityType: input.EntityType,
 		EntityID:   input.EntityID,
 	}); err != nil {
@@ -177,7 +176,7 @@ func (s *Service) UpdateReview(ctx context.Context, id, reviewerUserID pgtype.UU
 	}
 
 	if len(body) > MaxBodyBytes {
-		return gen.Review{}, fmt.Errorf("body exceeds size limit")
+		return gen.Review{}, errors.New("body exceeds size limit")
 	}
 
 	// Sanitize on write (mirror content/store.go:460): titles are plain
@@ -209,7 +208,6 @@ func (s *Service) UpdateReview(ctx context.Context, id, reviewerUserID pgtype.UU
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -240,7 +238,6 @@ func (s *Service) DeleteReview(ctx context.Context, id, reviewerUserID pgtype.UU
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -263,7 +260,6 @@ func (s *Service) HardDeleteReview(ctx context.Context, id pgtype.UUID) error {
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -298,7 +294,6 @@ func (s *Service) FlagReview(ctx context.Context, id pgtype.UUID) error {
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -348,7 +343,6 @@ func (s *Service) ModerateReview(ctx context.Context, id, moderatorUserID pgtype
 	})
 
 	if _, auditErr := s.store.createAuditLog(ctx, gen.CreateAuditLogParams{
-
 		ActorUserID: moderatorUserID,
 		ActionType:  "review.moderate",
 		TargetType:  &targetType,
@@ -360,7 +354,6 @@ func (s *Service) ModerateReview(ctx context.Context, id, moderatorUserID pgtype
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -382,7 +375,6 @@ func (s *Service) RecalculateAggregate(ctx context.Context, entityType string, e
 	}
 
 	_, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 	})

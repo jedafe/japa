@@ -49,14 +49,18 @@ func TestComputeConvert_CrossRate(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error, got rate=%v converted=%v", rate, converted)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if diff := rate - tc.wantRate; diff > 1e-9 || diff < -1e-9 {
 				t.Fatalf("rate: got %v want %v", rate, tc.wantRate)
 			}
+
 			if diff := converted - tc.wantConv; diff > 1e-6 || diff < -1e-6 {
 				t.Fatalf("converted: got %v want %v", converted, tc.wantConv)
 			}
@@ -80,6 +84,7 @@ func TestComputeConvert_UnsupportedCurrency(t *testing.T) {
 
 func TestMatrixStale_Boundary(t *testing.T) {
 	now := time.Now()
+
 	const staleHours = 48
 
 	tests := []struct {
@@ -133,15 +138,19 @@ func TestMatrixFromRows(t *testing.T) {
 	if m.Base != "USD" {
 		t.Fatalf("base: got %q want USD", m.Base)
 	}
+
 	if m.Rates["USD"] != 1 {
 		t.Fatalf("base→base rate: got %v want 1", m.Rates["USD"])
 	}
+
 	if m.Rates["NGN"] != 1600 {
 		t.Fatalf("NGN rate: got %v want 1600", m.Rates["NGN"])
 	}
+
 	if m.Rates["GBP"] != 0.8 {
 		t.Fatalf("GBP rate: got %v want 0.8", m.Rates["GBP"])
 	}
+
 	if !m.FetchedAt.Equal(newer) {
 		t.Fatalf("fetched_at: got %v want %v (newest row)", m.FetchedAt, newer)
 	}

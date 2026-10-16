@@ -9,6 +9,7 @@ func scopeIndex(value string) int {
 			return i
 		}
 	}
+
 	return -1
 }
 
@@ -42,9 +43,11 @@ func TestScopeCatalogPhase2Ordering(t *testing.T) {
 	if safety != brief+1 || search != brief+2 {
 		t.Errorf("phase 2 scopes must follow api.read.brief: brief=%d safety=%d search=%d", brief, safety, search)
 	}
+
 	if search >= agentUse {
 		t.Errorf("phase 2 scopes must precede agent.use: search=%d agent.use=%d", search, agentUse)
 	}
+
 	if agentUse >= readWildcard || readWildcard >= fullWildcard {
 		t.Errorf("wildcard ordering broken: agent.use=%d api.read.*=%d *=%d", agentUse, readWildcard, fullWildcard)
 	}
@@ -60,10 +63,12 @@ func TestScopeCatalogPhase2Entries(t *testing.T) {
 		if idx < 0 {
 			t.Fatalf("scope %s missing from ScopeCatalog", value)
 		}
+
 		got := ScopeCatalog[idx]
 		if got.Label != wantLabel {
 			t.Errorf("scope %s label = %q, want %q", value, got.Label, wantLabel)
 		}
+
 		if got.Description == "" {
 			t.Errorf("scope %s has empty description", value)
 		}

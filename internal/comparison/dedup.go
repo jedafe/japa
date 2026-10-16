@@ -122,14 +122,18 @@ func dedupeTokenItemRefs(refs []map[string]any) []map[string]any {
 		if err != nil {
 			continue
 		}
+
 		key := itemRefDedupKey(b)
 		if key == "" {
 			key = string(b)
 		}
+
 		if seen[key] {
 			continue
 		}
+
 		seen[key] = true
+
 		out = append(out, ref)
 	}
 

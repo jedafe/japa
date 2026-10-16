@@ -251,7 +251,6 @@ func buildCommunityOrgCreateParams(record gen.IntelRecord, source gen.IntelSourc
 	}
 
 	return gen.CreateCommunityOrganisationIntelParams{
-
 		Name:               name,
 		Slug:               slug,
 		OrgType:            orgType,
@@ -290,7 +289,6 @@ func buildCommunityOrgCreateParams(record gen.IntelRecord, source gen.IntelSourc
 // they are not considered here.
 func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateCommunityOrganisationIntelParams, []string) {
 	params := gen.UpdateCommunityOrganisationIntelParams{
-
 		ID:                 existing.ID,
 		Name:               existing.Name,
 		OrgType:            existing.OrgType,

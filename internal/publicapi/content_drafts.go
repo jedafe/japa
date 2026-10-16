@@ -75,6 +75,7 @@ func (h *Handlers) CreatePublicDraft(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
+
 	if h.drafts == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
@@ -98,9 +99,11 @@ func (h *Handlers) CreatePublicDraft(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
 	}
+
 	if input.ContentType == "" {
 		input.ContentType = "discussion"
 	}
+
 	if !publicDraftContentTypes[input.ContentType] {
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_content_type",
 			"content_type must be one of: blog_post, guide, story, discussion")

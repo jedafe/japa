@@ -84,6 +84,7 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 	// destination_space_id) directly; otherwise leave the destination
 	// unfiltered rather than silently matching nothing.
 	var destSpaceID pgtype.UUID
+
 	for _, key := range []string{"country_id", "geo_space_id", "destination_space_id", "dest"} {
 		if v, ok := filters[key].(string); ok && v != "" {
 			if id, err := ParseUUID(v); err == nil && id.Valid {
@@ -120,6 +121,7 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 
 	if r.queries != nil && len(routes) > 0 {
 		ids := make([]pgtype.UUID, 0, len(routes))
+
 		for _, route := range routes {
 			if id, perr := ParseUUID(route.ID); perr == nil {
 				ids = append(ids, id)
@@ -130,6 +132,7 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 	}
 
 	out := make([]ResolvedItem, 0, len(routes))
+
 	for _, route := range routes {
 		var cfv map[string]any
 
@@ -418,12 +421,15 @@ func filterVisaRoutesByDestination(routes []visaroutes.RouteDTO, dest string) []
 	if needle == "" {
 		return routes
 	}
+
 	kept := routes[:0]
+
 	for _, route := range routes {
 		if strings.Contains(strings.ToLower(route.DestinationSpaceName), needle) ||
 			strings.Contains(strings.ToLower(route.DestinationSpaceCode), needle) {
 			kept = append(kept, route)
 		}
 	}
+
 	return kept
 }

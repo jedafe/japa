@@ -21,5 +21,6 @@ func URLParamDecoded(r *http.Request, key string) string {
 	if err != nil {
 		return raw
 	}
+
 	return decoded
 }

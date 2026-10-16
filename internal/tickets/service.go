@@ -99,7 +99,6 @@ func (s *Service) CreateTicketType(ctx context.Context, input CreateTicketTypeIn
 	}
 
 	return s.store.createTicketType(ctx, gen.CreateTicketTypeParams{
-
 		Name:              input.Name,
 		Slug:              input.Slug,
 		Description:       description,
@@ -268,7 +267,6 @@ func (s *Service) CreateTicket(ctx context.Context, input CreateTicketInput) (ge
 	}
 
 	ticket, err := s.store.createTicket(ctx, gen.CreateTicketParams{
-
 		TypeID:          input.TypeID,
 		Subject:         input.Subject,
 		Description:     input.Description,
@@ -352,6 +350,7 @@ func (s *Service) ListTickets(ctx context.Context, status, priority string, type
 			search = strconv.FormatInt(n, 10)
 		}
 	}
+
 	return s.store.listTicketsByPlatform(ctx, gen.ListTicketsParams{
 		Status:     strPtrOrNil(status),
 		Priority:   strPtrOrNil(priority),
@@ -369,6 +368,7 @@ func strPtrOrNil(v string) *string {
 	if v == "" {
 		return nil
 	}
+
 	return &v
 }
 
@@ -384,7 +384,6 @@ func (s *Service) ListTicketsBySubmitter(ctx context.Context, submitterUserID pg
 	}
 
 	return s.store.listTicketsBySubmitter(ctx, gen.ListTicketsBySubmitterParams{
-
 		SubmitterUserID: submitterUserID,
 		Status:          statusPtr,
 		PageLimit:       limit,

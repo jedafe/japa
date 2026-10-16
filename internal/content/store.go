@@ -198,11 +198,14 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("content: story destination space lookup failed", "error", err)
 		}
+
 		return
 	}
 
 	var origin pgtype.UUID
+
 	originResolved := false
+
 	if source != nil {
 		if srcCode := literals.ToCountryCode(*source); srcCode != "" {
 			if sp, err := q.GetCountrySpaceIDByGeoCode(ctx,
@@ -228,9 +231,11 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 			if v == "" {
 				return nil
 			}
+
 			return &v
 		case []any:
 			parts := make([]string, 0, len(v))
+
 			for _, item := range v {
 				switch it := item.(type) {
 				case string:
@@ -242,6 +247,7 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 					link, _ := it["link"].(string)
 					name = strings.TrimSpace(name)
 					link = strings.TrimSpace(link)
+
 					switch {
 					case name != "" && link != "":
 						parts = append(parts, name+" — "+link)
@@ -252,10 +258,13 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 					}
 				}
 			}
+
 			if len(parts) == 0 {
 				return nil
 			}
+
 			joined := strings.Join(parts, "; ")
+
 			return &joined
 		default:
 			return nil
@@ -263,6 +272,7 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 	}
 
 	var year *int16
+
 	switch v := fv["relocation_year"].(type) {
 	case float64:
 		if v > 0 && v <= math.MaxInt16 {
@@ -285,12 +295,14 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 		if _, present := fv[key]; present {
 			return str(key)
 		}
+
 		return existing
 	}
 	mergeYear := func(existing *int16) *int16 {
 		if _, present := fv["relocation_year"]; !present {
 			return existing
 		}
+
 		return year
 	}
 
@@ -319,7 +331,6 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 		})
 	} else if errors.Is(metaErr, pgx.ErrNoRows) {
 		err = q.InsertStoryMeta(ctx, gen.InsertStoryMetaParams{
-
 			ContentID:          contentID,
 			OriginSpaceID:      origin,
 			DestinationSpaceID: dest,
@@ -331,6 +342,7 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 			BestAdvice:         str("best_advice"),
 		})
 	}
+
 	if err != nil {
 		slog.Warn("content: story meta sync failed", "content_id", contentID, "error", err)
 	}
@@ -349,6 +361,7 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 	if (input.SourceCountry == nil || *input.SourceCountry == "") && src != "" {
 		input.SourceCountry = &src
 	}
+
 	if (input.TargetCountry == nil || *input.TargetCountry == "") && dst != "" {
 		input.TargetCountry = &dst
 	}
@@ -479,6 +492,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		} else {
 			h = ComputeContentHash(input.Body)
 		}
+
 		contentHash = &h
 	}
 
@@ -529,7 +543,6 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	}
 
 	content, err := writeQ.CreateContent(ctx, gen.CreateContentParams{
-
 		AuthorID:        input.AuthorID,
 		OrganizationID:  input.OrganizationID,
 		SpaceID:         input.SpaceID,
@@ -707,7 +720,6 @@ func (s *Service) ListContents(ctx context.Context, q string, cursor pgtype.Time
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 
 	contents, err := s.read.ListContents(ctx, gen.ListContentsParams{
-
 		Q:                 q,
 		CursorCreatedAt:   cursor,
 		PageLimit:         limit,
@@ -749,7 +761,6 @@ func (s *Service) SearchContents(ctx context.Context, q string, limit int32, fil
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 
 	return s.read.ListContentsByIDs(ctx, gen.ListContentsByIDsParams{
-
 		Ids:               ids,
 		PageLimit:         limit,
 		RequesterID:       requesterID,
@@ -770,7 +781,6 @@ func (s *Service) ListFeaturedContentsByType(ctx context.Context, contentType st
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 
 	rows, err := s.read.ListFeaturedContentsByType(ctx, gen.ListFeaturedContentsByTypeParams{
-
 		ContentType:       contentType,
 		PageOffset:        offset,
 		PageLimit:         limit,
@@ -790,7 +800,6 @@ func (s *Service) ListFeaturedContentsByType(ctx context.Context, contentType st
 // (Section 14 — generic featuring; gated by the content.feature node).
 func (s *Service) FeatureContent(ctx context.Context, contentID pgtype.UUID, order int32, until pgtype.Timestamptz) (gen.ContentFeatured, error) {
 	return s.write.FeatureContent(ctx, gen.FeatureContentParams{
-
 		ContentID:     contentID,
 		FeaturedOrder: order,
 		FeaturedUntil: until,
@@ -820,7 +829,6 @@ func (s *Service) ListContentsByType(ctx context.Context, contentType, guideCate
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 
 	contents, err := s.read.ListContentsByType(ctx, gen.ListContentsByTypeParams{
-
 		ContentType:       contentType,
 		GuideCategory:     guideCategory,
 		CursorCreatedAt:   cursor,
@@ -854,7 +862,6 @@ func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, 
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 
 	contents, err := s.read.ListContentsBySpace(ctx, gen.ListContentsBySpaceParams{
-
 		SpaceID:           spaceID,
 		CursorCreatedAt:   cursor,
 		PageLimit:         limit,
@@ -886,7 +893,6 @@ func (s *Service) SearchContentsBySpace(ctx context.Context, spaceID pgtype.UUID
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 
 	contents, err := s.read.SearchContentsBySpace(ctx, gen.SearchContentsBySpaceParams{
-
 		SpaceID:           spaceID,
 		Query:             &query,
 		PageLimit:         limit,
@@ -918,7 +924,6 @@ func (s *Service) SearchContentsByTypeAndSpace(ctx context.Context, spaceID pgty
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 
 	contents, err := s.read.SearchContentsByTypeAndSpace(ctx, gen.SearchContentsByTypeAndSpaceParams{
-
 		SpaceID:           spaceID,
 		ContentType:       contentType,
 		Query:             &query,
@@ -1022,6 +1027,7 @@ func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Quer
 	if (input.SourceCountry == nil || *input.SourceCountry == "") && src != "" {
 		input.SourceCountry = &src
 	}
+
 	if (input.TargetCountry == nil || *input.TargetCountry == "") && dst != "" {
 		input.TargetCountry = &dst
 	}
@@ -1178,7 +1184,6 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	// yields a clean 409 duplicate_content instead of a raw 23505 violation.
 	if input.ContentHash != nil && *input.ContentHash != "" {
 		if _, err := s.read.GetContentByHash(ctx, gen.GetContentByHashParams{
-
 			ContentHash: input.ContentHash,
 			ExcludeID:   id,
 		}); err == nil {
@@ -1255,10 +1260,12 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		if src == nil {
 			src = existing.SourceCountry
 		}
+
 		dst := input.TargetCountry
 		if dst == nil {
 			dst = existing.TargetCountry
 		}
+
 		s.syncStoryMeta(ctx, s.write, content.ID, src, dst, params.FieldValues)
 	}
 
@@ -1434,24 +1441,31 @@ func ApplyExplicitNullClears(raw map[string]json.RawMessage, input *UpdateConten
 	if isExplicitNull(raw, "featured_image_id") {
 		input.ClearFeaturedImageID = true
 	}
+
 	if isExplicitNull(raw, "header_image_id") {
 		input.ClearHeaderImageID = true
 	}
+
 	if isExplicitNull(raw, "organization_id") {
 		input.ClearOrganizationID = true
 	}
+
 	if isExplicitNull(raw, "publish_at") {
 		input.ClearPublishAt = true
 	}
+
 	if isExplicitNull(raw, "canonical_url") {
 		input.ClearCanonicalUrl = true
 	}
+
 	if isExplicitNull(raw, "meta_title") {
 		input.ClearMetaTitle = true
 	}
+
 	if isExplicitNull(raw, "meta_description") {
 		input.ClearMetaDescription = true
 	}
+
 	if isExplicitNull(raw, "og_image_url") {
 		input.ClearOgImageUrl = true
 	}
@@ -1613,7 +1627,6 @@ func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, userID p
 	entityType := "content"
 
 	if _, err := s.write.CreatePlatformEvent(ctx, gen.CreatePlatformEventParams{
-
 		EventType:   eventType,
 		UserID:      userID,
 		EntityType:  &entityType,
@@ -1706,6 +1719,7 @@ func (s *Service) HardDeleteContent(ctx context.Context, id pgtype.UUID) error {
 		if errpkg.IsFKViolation(err) {
 			return errpkg.ErrInUse
 		}
+
 		return fmt.Errorf("hard deleting content: %w", err)
 	}
 
@@ -1714,9 +1728,11 @@ func (s *Service) HardDeleteContent(ctx context.Context, id pgtype.UUID) error {
 		if err != nil {
 			return fmt.Errorf("check content exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		return errpkg.ErrNotDeleted
 	}
 
@@ -1745,7 +1761,6 @@ func (s *Service) ListContentRevisions(ctx context.Context, contentID pgtype.UUI
 // defense-in-depth (BUG-012).
 func (s *Service) GetContentRevision(ctx context.Context, id, contentID pgtype.UUID) (gen.ContentRevision, error) {
 	revision, err := s.read.GetContentRevision(ctx, gen.GetContentRevisionParams{
-
 		ID:        id,
 		ContentID: contentID,
 	})
@@ -1895,7 +1910,6 @@ func (s *Service) GetReactionType(ctx context.Context, key string) (gen.Reaction
 // label, and position for a specific platform.
 func (s *Service) CreateReactionType(ctx context.Context, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
 	rt, err := s.write.CreateReactionType(ctx, gen.CreateReactionTypeParams{
-
 		Key:      key,
 		Emoji:    emoji,
 		Label:    label,
@@ -1943,7 +1957,6 @@ func (s *Service) DeleteReactionType(ctx context.Context, key string) error {
 // user already reacted with the same key, nothing changes (ON CONFLICT DO NOTHING).
 func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) (gen.Reaction, error) {
 	reaction, err := s.write.AddReaction(ctx, gen.AddReactionParams{
-
 		EntityType:  entityType,
 		EntityID:    entityID,
 		UserID:      userID,
@@ -1959,7 +1972,6 @@ func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, 
 // RemoveReaction removes a user's reaction from an entity.
 func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) error {
 	if err := s.write.RemoveReaction(ctx, gen.RemoveReactionParams{
-
 		EntityType:  entityType,
 		EntityID:    entityID,
 		UserID:      userID,
@@ -1974,7 +1986,6 @@ func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityI
 // ListReactionsByEntity returns all reactions for a given entity.
 func (s *Service) ListReactionsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.Reaction, error) {
 	reactions, err := s.read.ListReactionsByEntity(ctx, gen.ListReactionsByEntityParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -1988,7 +1999,6 @@ func (s *Service) ListReactionsByEntity(ctx context.Context, entityType string, 
 // CountReactionsByEntity returns reaction counts grouped by reaction key.
 func (s *Service) CountReactionsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CountReactionsByEntityRow, error) {
 	counts, err := s.read.CountReactionsByEntity(ctx, gen.CountReactionsByEntityParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -2002,7 +2012,6 @@ func (s *Service) CountReactionsByEntity(ctx context.Context, entityType string,
 // GetUserReactions returns all reactions a specific user has on an entity.
 func (s *Service) GetUserReactions(ctx context.Context, entityType string, entityID, userID pgtype.UUID) ([]gen.Reaction, error) {
 	reactions, err := s.read.GetUserReactions(ctx, gen.GetUserReactionsParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 		UserID:     userID,
@@ -2034,12 +2043,14 @@ func (s *Service) GetViewerContentStates(ctx context.Context, userID pgtype.UUID
 	if err != nil {
 		return nil, fmt.Errorf("getting batch user reactions: %w", err)
 	}
+
 	for _, row := range reactionRows {
 		st := states[row.EntityID.String()]
 		if st == nil {
 			st = &ViewerContentState{}
 			states[row.EntityID.String()] = st
 		}
+
 		st.ReactionKeys = append(st.ReactionKeys, row.ReactionKey)
 	}
 
@@ -2050,12 +2061,14 @@ func (s *Service) GetViewerContentStates(ctx context.Context, userID pgtype.UUID
 	if err != nil {
 		return nil, fmt.Errorf("getting batch bookmarks: %w", err)
 	}
+
 	for _, entityID := range bookmarked {
 		st := states[entityID.String()]
 		if st == nil {
 			st = &ViewerContentState{}
 			states[entityID.String()] = st
 		}
+
 		st.Bookmarked = true
 	}
 
@@ -2118,7 +2131,6 @@ func (s *Service) ListJSONLDTemplates(ctx context.Context, q pgtype.Text) ([]gen
 // type within a platform.
 func (s *Service) UpsertJSONLDTemplate(ctx context.Context, contentType string, template []byte, isActive bool) (gen.ContentTypeJsonldTemplate, error) {
 	tmpl, err := s.write.UpsertJSONLDTemplate(ctx, gen.UpsertJSONLDTemplateParams{
-
 		ContentType: contentType,
 		Template:    template,
 		IsActive:    isActive,
@@ -2270,7 +2282,6 @@ func (s *Service) ShareContent(ctx context.Context, contentID, userID pgtype.UUI
 	}
 
 	share, err := s.write.CreateContentShare(ctx, gen.CreateContentShareParams{
-
 		ContentID: contentID,
 		UserID:    userID,
 		Platform:  platform,
@@ -2342,7 +2353,6 @@ func (s *Service) CreateBookmark(ctx context.Context, userID pgtype.UUID, entity
 	}
 
 	bm, err := s.write.CreateBookmark(ctx, gen.CreateBookmarkParams{
-
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -2398,7 +2408,6 @@ func (s *Service) ValidateFolderOwnership(ctx context.Context, folderID, userID 
 // Platform-scoped for defense-in-depth (BE-05).
 func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.DeleteBookmark(ctx, gen.DeleteBookmarkParams{
-
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -2430,7 +2439,6 @@ func (s *Service) ListBookmarks(ctx context.Context, userID pgtype.UUID, limit, 
 	}
 
 	bms, err := s.read.ListBookmarksByUser(ctx, gen.ListBookmarksByUserParams{
-
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -2455,7 +2463,6 @@ func (s *Service) GetRelatedContent(ctx context.Context, excludeID pgtype.UUID, 
 	}
 
 	contents, err := s.read.GetRelatedContent(ctx, gen.GetRelatedContentParams{
-
 		ExcludeID:   excludeID,
 		Embedding:   &embedding,
 		ContentType: contentType,

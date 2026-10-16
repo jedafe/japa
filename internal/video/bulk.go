@@ -155,7 +155,6 @@ func (s *Service) createBulkImportJob(ctx context.Context, userID pgtype.UUID, d
 	errorLog, _ := json.Marshal([]bulkErrorLogEntry{})
 
 	return s.store.CreateImportJob(ctx, gen.CreateVideoImportJobParams{
-
 		UserID:             userID,
 		SourceType:         dbSourceType,
 		SourceUrl:          stringPtr(sourceURL),

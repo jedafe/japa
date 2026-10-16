@@ -244,7 +244,6 @@ func buildTaxCreateParams(record gen.IntelRecord, ext extractor.Extraction) gen.
 	}
 
 	return gen.CreateTaxObligationGuideIntelParams{
-
 		OriginSpaceID:        pgtype.UUID{}, // resolved by taxCreatePath
 		DestinationSpaceID:   pgtype.UUID{}, // resolved by taxCreatePath
 		EmploymentStatus:     employmentStatus,
@@ -279,7 +278,6 @@ func buildTaxCreateParams(record gen.IntelRecord, ext extractor.Extraction) gen.
 // country extraction is only honored on the create path.
 func buildTaxUpdateParams(existing gen.TaxObligationGuide, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateTaxObligationGuideIntelParams, []string) {
 	params := gen.UpdateTaxObligationGuideIntelParams{
-
 		ID:                   existing.ID,
 		EmploymentStatus:     existing.EmploymentStatus,
 		ResidencyTrigger:     existing.ResidencyTrigger,

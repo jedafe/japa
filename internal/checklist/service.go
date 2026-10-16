@@ -41,7 +41,7 @@ type TaskEnqueuer interface {
 // ChecklistItem is a single document requirement rendered as a checkable
 // item. ItemKey is a stable slug derived from the label so that rewording a
 // guide's document label does not orphan saved progress.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type ChecklistItem struct {
 	ItemKey     string `json:"item_key"`
 	Label       string `json:"label"`
@@ -55,7 +55,7 @@ type ChecklistItem struct {
 // ChecklistGuideResult is the payload for GET /checklist/:guide_id — the
 // guide's identity plus its checklist items. Matches the frontend
 // ChecklistGuide type (§70 contract).
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type ChecklistGuideResult struct {
 	GuideID string          `json:"guide_id"`
 	Title   string          `json:"title"`
@@ -190,6 +190,7 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 	// real Geo Space id (previously emitted as "" — produced duplicate option
 	// keys once more than one destination existed).
 	spaceByKey := make(map[string]CountrySpace, len(countrySpaces)*2)
+
 	for _, c := range countrySpaces {
 		origins = append(origins, CountryOption{
 			ID:   c.ID.String(),
@@ -237,7 +238,9 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 				if opt.ID == "" {
 					opt.ID = opt.Slug
 				}
+
 				destMap[v] = opt
+
 				destOrder = append(destOrder, v)
 				guideVisaTypes[v] = make(map[string]VisaTypeOption)
 			}
@@ -325,6 +328,7 @@ func prettifyVisaType(v string) string {
 				words[i] = strings.ToUpper(w[:1]) + w[1:]
 			}
 		}
+
 		return strings.Join(words, " ")
 	}
 }
@@ -474,7 +478,6 @@ func (s *Service) UpsertProgress(ctx context.Context, userID, guideID pgtype.UUI
 	}
 
 	row, err := s.store.UpsertChecklistProgress(ctx, gen.UpsertChecklistProgressParams{
-
 		UserID:      userID,
 		GuideID:     guideID,
 		ItemKey:     itemKey,
@@ -523,7 +526,6 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, userID, guideI
 	}
 
 	payload, err := json.Marshal(map[string]any{
-
 		"user_id":  userID.String(),
 		"guide_id": guideID.String(),
 		"points":   points,
@@ -565,7 +567,6 @@ func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.
 	offset := (page - 1) * limit
 
 	rows, err := s.store.AdminListChecklistProgress(ctx, gen.AdminListChecklistProgressParams{
-
 		GuideID:    guideID,
 		UserID:     userID,
 		PageOffset: offset,

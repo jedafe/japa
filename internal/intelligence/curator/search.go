@@ -33,17 +33,22 @@ type searchHit struct {
 // malformed lines are skipped rather than failing the whole page.
 func (Search) Curate(_ context.Context, body []byte, _ string, ch sources.Channel) ([]Record, error) {
 	entityType := resolveEntityType("", ch)
+
 	var out []Record
+
 	sawLine := false
 
 	sc := bufio.NewScanner(bytes.NewReader(body))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
+
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
 		if len(line) == 0 {
 			continue
 		}
+
 		sawLine = true
+
 		var hit searchHit
 		if err := json.Unmarshal(line, &hit); err != nil || hit.URL == "" {
 			continue
@@ -53,6 +58,7 @@ func (Search) Curate(_ context.Context, body []byte, _ string, ch sources.Channe
 		field(ext, "title", hit.Title, hit.Title)
 		field(ext, "summary", hit.Snippet, hit.Snippet)
 		field(ext, "article_url", hit.URL, hit.URL)
+
 		if iso := parseFeedDate(hit.PublishedAt); iso != "" {
 			field(ext, "published_date", iso, hit.PublishedAt)
 		}
@@ -63,9 +69,11 @@ func (Search) Curate(_ context.Context, body []byte, _ string, ch sources.Channe
 			EntityType:  entityType,
 		})
 	}
+
 	if err := sc.Err(); err != nil {
 		return nil, errors.New("curator: search: scan body: " + err.Error())
 	}
+
 	if len(out) == 0 {
 		if !sawLine {
 			// A genuinely empty SERP page (provider returned zero hits) is
@@ -73,6 +81,7 @@ func (Search) Curate(_ context.Context, body []byte, _ string, ch sources.Channe
 			// no review stub. Unparseable lines still count as a broken body.
 			return nil, nil
 		}
+
 		return nil, errors.New("curator: search: no usable results in body")
 	}
 

@@ -168,8 +168,10 @@ func RequireTOTPForAdmin(
 				slog.Error("totp-for-admin: RBAC resolver unavailable while enforcement is enabled — denying admin access",
 					"path", r.URL.Path, "user_id", user.UserID.String())
 				errpkg.WriteError(w, http.StatusServiceUnavailable, "totp_unavailable", "Two-factor enforcement is temporarily unavailable")
+
 				return
 			}
+
 			if !rbac.HasAdminCapability(r.Context(), user.UserID) {
 				next.ServeHTTP(w, r)
 				return
@@ -180,6 +182,7 @@ func RequireTOTPForAdmin(
 				slog.Error("totp-for-admin: TOTP store unavailable while enforcement is enabled — denying admin access",
 					"path", r.URL.Path, "user_id", user.UserID.String())
 				errpkg.WriteError(w, http.StatusServiceUnavailable, "totp_unavailable", "Two-factor enforcement is temporarily unavailable")
+
 				return
 			}
 
@@ -189,6 +192,7 @@ func RequireTOTPForAdmin(
 				slog.Error("totp-for-admin: enrollment check failed — denying admin access",
 					"path", r.URL.Path, "user_id", user.UserID.String(), "error", err)
 				errpkg.WriteError(w, http.StatusServiceUnavailable, "totp_unavailable", "Two-factor enforcement is temporarily unavailable")
+
 				return
 			}
 

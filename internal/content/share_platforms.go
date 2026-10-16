@@ -34,7 +34,6 @@ func (s *Service) ListEnabledSharePlatforms(ctx context.Context) ([]gen.SharePla
 // CreateSharePlatform creates a new share platform.
 func (s *Service) CreateSharePlatform(ctx context.Context, key, label, icon, urlTemplate, color string, enabled bool, position int32) (gen.SharePlatform, error) {
 	p, err := s.write.CreateSharePlatform(ctx, gen.CreateSharePlatformParams{
-
 		Key:         key,
 		Label:       label,
 		Icon:        icon,
@@ -53,7 +52,6 @@ func (s *Service) CreateSharePlatform(ctx context.Context, key, label, icon, url
 // UpdateSharePlatform updates an existing share platform by key.
 func (s *Service) UpdateSharePlatform(ctx context.Context, key, label, icon, urlTemplate, color string, enabled bool, position int32) (gen.SharePlatform, error) {
 	p, err := s.write.UpdateSharePlatform(ctx, gen.UpdateSharePlatformParams{
-
 		Key:         key,
 		Label:       label,
 		Icon:        icon,

@@ -201,7 +201,6 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID pgtype.UUI
 // ?status=&search=). Uses the AdminListSubscribers sqlc query.
 func (s *Service) ListSubscribersFiltered(ctx context.Context, status, search string, limit, offset int32) ([]gen.NewsletterSubscriber, error) {
 	return s.queries.AdminListSubscribers(ctx, gen.AdminListSubscribersParams{
-
 		Status:     status,
 		Search:     search,
 		PageLimit:  limit,
@@ -248,7 +247,6 @@ func (s *Service) DeleteSubscriber(ctx context.Context, id pgtype.UUID) error {
 // UpdateSubscriberStatus updates a subscriber's status (admin PATCH endpoint).
 func (s *Service) UpdateSubscriberStatus(ctx context.Context, id pgtype.UUID, status string) (gen.NewsletterSubscriber, error) {
 	return s.writeQueries.UpdateSubscriberStatus(ctx, gen.UpdateSubscriberStatusParams{
-
 		ID:     id,
 		Status: status,
 	})
@@ -272,7 +270,6 @@ func (s *Service) CreateSubscriber(ctx context.Context, email string, userID *pg
 	}
 
 	subscriber, err := s.writeQueries.Subscribe(ctx, gen.SubscribeParams{
-
 		Email:  email,
 		UserID: userIDArg,
 		Source: source,
@@ -332,7 +329,6 @@ func (s *Service) CreateCampaign(ctx context.Context, createdBy pgtype.UUID, par
 	}
 
 	campaign, err := s.writeQueries.CreateCampaign(ctx, gen.CreateCampaignParams{
-
 		Name:        params.Name,
 		Subject:     params.Subject,
 		Html:        params.HTML,
@@ -401,7 +397,6 @@ func (s *Service) UpdateCampaign(ctx context.Context, id pgtype.UUID, input Upda
 	}
 
 	campaign, err := s.writeQueries.UpdateCampaign(ctx, gen.UpdateCampaignParams{
-
 		ID:          id,
 		Name:        input.Name,
 		Subject:     input.Subject,
@@ -479,7 +474,6 @@ func (s *Service) GetPreferencesByUserID(ctx context.Context, userID pgtype.UUID
 // UpdatePreferences updates a subscriber's digest/campaign toggles.
 func (s *Service) UpdatePreferences(ctx context.Context, subscriberID pgtype.UUID, digestEnabled, campaignEnabled *bool) (gen.NewsletterSubscriber, error) {
 	return s.writeQueries.UpdatePreferences(ctx, gen.UpdatePreferencesParams{
-
 		ID:              subscriberID,
 		DigestEnabled:   digestEnabled,
 		CampaignEnabled: campaignEnabled,
@@ -541,7 +535,6 @@ func (s *Service) AdminListSubscribers(ctx context.Context, status, search strin
 	offset := int32((page - 1) * limit)
 
 	rows, err := s.queries.AdminListSubscribers(ctx, gen.AdminListSubscribersParams{
-
 		Status:     status,
 		Search:     search,
 		PageLimit:  int32(limit), //nolint:gosec // G115: bounded
@@ -552,7 +545,6 @@ func (s *Service) AdminListSubscribers(ctx context.Context, status, search strin
 	}
 
 	total, err := s.queries.AdminCountSubscribers(ctx, gen.AdminCountSubscribersParams{
-
 		Status: status,
 		Search: search,
 	})
@@ -582,7 +574,6 @@ func (s *Service) AdminListCampaigns(ctx context.Context, status string, page, l
 	offset := int32((page - 1) * limit)
 
 	rows, err := s.queries.AdminListCampaigns(ctx, gen.AdminListCampaignsParams{
-
 		Status:     status,
 		PageLimit:  int32(limit), //nolint:gosec // G115: bounded
 		PageOffset: offset,
@@ -662,7 +653,6 @@ func (s *Service) GetDigestSubscribers(ctx context.Context, page, limit int) ([]
 	offset := int32((page - 1) * limit)
 
 	rows, err := s.queries.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
-
 		PageLimit:  int32(limit), //nolint:gosec // G115: bounded
 		PageOffset: offset,
 	})

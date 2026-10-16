@@ -215,6 +215,7 @@ func (d *TriggerDispatcher) fireSendWebhook(ctx context.Context, cfg map[string]
 	if url == "" {
 		return errors.New("send_webhook: missing 'url' in config")
 	}
+
 	if !validWebhookURL(url) {
 		return errors.New("send_webhook: 'url' must be an http(s) URL")
 	}
@@ -308,6 +309,7 @@ func validWebhookURL(raw string) bool {
 	if err != nil || parsed.Host == "" {
 		return false
 	}
+
 	return parsed.Scheme == "http" || parsed.Scheme == "https"
 }
 

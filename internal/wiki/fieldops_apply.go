@@ -149,6 +149,7 @@ func applySetValue(ctx context.Context, q *gen.Queries, tx pgx.Tx, op FieldOp, s
 		); err != nil {
 			return fmt.Errorf("denorm merge into %s.field_values: %w", table, err)
 		}
+
 		if diverges(denorm, op.Value) {
 			logDivergence(ctx, op.EntityType, op.FieldKey, entityID, op.Value, denorm)
 		}
@@ -183,6 +184,7 @@ func denormValueJSON(params gen.UpsertCustomFieldValueParams, raw json.RawMessag
 	case len(params.ValueJson) > 0:
 		return json.RawMessage(params.ValueJson)
 	}
+
 	return raw
 }
 
@@ -197,6 +199,7 @@ func diverges(normalized, raw json.RawMessage) bool {
 // canonical (CF11); this log is the audit trail, not a second write.
 func logDivergence(ctx context.Context, entityType, fieldKey string, entityID pgtype.UUID, raw, normalized json.RawMessage) {
 	_ = ctx
+
 	slog.Warn("wiki: denorm divergence normalized",
 		"entity_type", entityType, "entity_id", entityID.String(),
 		"field_key", fieldKey,
@@ -483,6 +486,7 @@ func marshalFieldOptions(opts json.RawMessage) ([]byte, error) {
 	if len(opts) == 0 || string(opts) == "null" {
 		return nil, nil
 	}
+
 	if !json.Valid(opts) {
 		return nil, errors.New("options are not valid JSON")
 	}
@@ -682,6 +686,7 @@ func normalizePriceRange(v json.RawMessage, key string) (json.RawMessage, error)
 		if err := json.Unmarshal(rv, &n); err != nil {
 			return nil, fmt.Errorf("field %q: %q must be a number: %w", key, k, err)
 		}
+
 		if n < 0 {
 			return nil, fmt.Errorf("field %q: %q must not be negative", key, k)
 		}
@@ -734,6 +739,7 @@ func normalizePriceParts(v json.RawMessage, key string, options []byte) (json.Ra
 		if len(raw) != 1 {
 			return nil, fmt.Errorf("field %q: %q carries members alongside parts", key, key)
 		}
+
 		raw = nil
 		if err := json.Unmarshal(inner, &raw); err != nil {
 			return nil, fmt.Errorf("field %q: parts must be an object: %w", key, err)
@@ -747,6 +753,7 @@ func normalizePriceParts(v json.RawMessage, key string, options []byte) (json.Ra
 		if !known {
 			return nil, fmt.Errorf("field %q: unknown part %q (not in options.parts)", key, pk)
 		}
+
 		if string(rv) == "null" {
 			continue
 		}
@@ -761,7 +768,9 @@ func normalizePriceParts(v json.RawMessage, key string, options []byte) (json.Ra
 			if err := json.Unmarshal(rv, &s); err != nil {
 				return nil, fmt.Errorf("field %q: part %q must be a string: %w", key, pk, err)
 			}
+
 			out[pk] = s
+
 			continue
 		}
 
@@ -769,22 +778,27 @@ func normalizePriceParts(v json.RawMessage, key string, options []byte) (json.Ra
 		// and numeric strings both accepted (set_value submitters quote
 		// input-field values).
 		var n float64
+
 		var ns string
 		if err := json.Unmarshal(rv, &n); err != nil {
 			if serr := json.Unmarshal(rv, &ns); serr != nil {
 				return nil, fmt.Errorf("field %q: part %q must be a number: %w", key, pk, err)
 			}
+
 			n, err = strconv.ParseFloat(strings.TrimSpace(ns), 64)
 			if err != nil {
 				return nil, fmt.Errorf("field %q: part %q must be a number", key, pk)
 			}
 		}
+
 		if !finite(n) {
 			return nil, fmt.Errorf("field %q: part %q must be a finite number", key, pk)
 		}
+
 		if n < 0 {
 			return nil, fmt.Errorf("field %q: part %q must not be negative", key, pk)
 		}
+
 		out[pk] = n
 	}
 

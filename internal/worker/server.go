@@ -43,6 +43,7 @@ func retryDelay(n int, e error, t *asynq.Task) time.Duration {
 func permanentTaskError(next asynq.Handler) asynq.Handler {
 	return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
 		err := next.ProcessTask(ctx, t)
+
 		switch {
 		case err == nil || errors.Is(err, asynq.SkipRetry):
 			return err
@@ -128,6 +129,9 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 
 	// Scheduled content publishing sweep — every minute.
 	schedule("* * * * *", TypeScheduledPublishSweep, 1*time.Minute)
+
+	// §35 scheduled admin broadcasts — every minute.
+	schedule("* * * * *", TypeBroadcastDispatch, 1*time.Minute)
 
 	// Velocity score recalculation — every 5 minutes.
 	// Writes to content_scores.velocity_score (used by feed ranking queries).

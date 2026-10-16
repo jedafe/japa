@@ -283,7 +283,6 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 
 		displayName := in.Name
 		if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-
 			UserID:      user.ID,
 			DisplayName: &displayName,
 			Bio:         tagline,
@@ -324,7 +323,6 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 					voiceName := in.Name + " Voice"
 
 					newVoice, err := q.CreatePersonaVoice(ctx, gen.CreatePersonaVoiceParams{
-
 						Name:        voiceName,
 						Slug:        voiceSlug,
 						Description: nil,
@@ -366,7 +364,6 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 		}
 
 		persona, err := s.store.CreateAIPersona(ctx, q, gen.CreateAIPersonaParams{
-
 			UserID:         user.ID,
 			ProfileID:      pgtype.UUID{},
 			DisclosureMode: disclosure,
@@ -748,7 +745,6 @@ func (s *Service) CreatePersonaVoice(ctx context.Context, createdBy pgtype.UUID,
 	}
 
 	row, err := s.store.CreatePersonaVoice(ctx, nil, gen.CreatePersonaVoiceParams{
-
 		Name:        in.Name,
 		Slug:        in.Slug,
 		Description: desc,
@@ -971,7 +967,6 @@ func (s *Service) UpdatePersonaVoice(ctx context.Context, id pgtype.UUID, in Upd
 	}
 
 	params := gen.UpdatePersonaVoiceParams{
-
 		ID:          id,
 		Name:        in.Name,
 		Slug:        in.Slug,

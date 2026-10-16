@@ -241,7 +241,6 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 
 // ListComparisonTypes handles GET /api/v1/comparisons/types.
 func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
@@ -267,7 +266,6 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 // No authentication required; the SQL layer filters to status='published'
 // AND visibility='public' so drafts/private comparisons are never exposed.
 func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
-
 	filter, err := h.buildListComparisonsFilter(r)
 	if err != nil {
 		handleServiceError(w, err)
@@ -342,6 +340,7 @@ func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
 		return
 	}
+
 	filter.Deleted = deleted
 
 	comparisons, err := h.Service.ListComparisonsAdmin(r.Context(), filter)
@@ -357,7 +356,6 @@ func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) 
 
 // GetComparisonType handles GET /api/v1/comparisons/types/{slug}.
 func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
@@ -635,7 +633,6 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 // comparisons; unpublished or non-public comparisons require the authenticated
 // user to be the author.
 func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
-
 	contentID, err := h.Service.ResolveComparisonContentID(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		handleServiceError(w, err)
@@ -755,7 +752,6 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 // published and publicly-visible comparisons; unpublished or non-public
 // comparisons require the authenticated user to be the author.
 func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
-
 	contentID, err := h.Service.ResolveComparisonContentID(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		handleServiceError(w, err)

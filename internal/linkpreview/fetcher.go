@@ -457,6 +457,7 @@ func normalizeHost(rawURL string) string {
 	if u, err := url.Parse(rawURL); err == nil && u.Hostname() != "" {
 		return strings.ToLower(u.Hostname())
 	}
+
 	return strings.ToLower(getHost(rawURL))
 }
 
@@ -468,12 +469,15 @@ func normalizeURL(rawURL string) string {
 	if err != nil || u.Host == "" {
 		return rawURL
 	}
+
 	u.Host = strings.ToLower(u.Host)
 	// url.Values.Encode sorts keys, giving a canonical query form.
 	if u.RawQuery != "" {
 		u.RawQuery = u.Query().Encode()
 	}
+
 	u.Path = strings.TrimSuffix(u.Path, "/")
+
 	return u.String()
 }
 

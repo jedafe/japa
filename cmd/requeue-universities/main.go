@@ -49,6 +49,7 @@ func main() {
 		Close()
 		Err() error
 	}
+
 	switch {
 	case *slug != "":
 		rows, err = pool.Query(context.Background(), `
@@ -75,9 +76,11 @@ func main() {
 			  AND (wiki_content IS NULL OR wiki_content = '{}'::jsonb)
 		`)
 	}
+
 	if err != nil {
 		log.Fatalf("querying spaces: %v", err)
 	}
+
 	defer rows.Close()
 
 	client := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr, DB: 0})

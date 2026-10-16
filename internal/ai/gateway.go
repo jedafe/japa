@@ -278,33 +278,40 @@ func ExtractText(resp Response) string {
 	if resp.Raw == nil {
 		return ""
 	}
+
 	for _, k := range []string{"text", "content", "output"} {
 		if v, ok := resp.Raw[k].(string); ok && v != "" {
 			return v
 		}
 	}
+
 	if choices, ok := resp.Raw["choices"].([]openAIChoice); ok && len(choices) > 0 {
 		msg := choices[0].Message
 		if msg.Content != "" {
 			return msg.Content
 		}
+
 		return msg.Reasoning
 	}
+
 	if choices, ok := resp.Raw["choices"].([]mimoChoice); ok && len(choices) > 0 {
 		return choices[0].Message.Content
 	}
+
 	if choicesRaw, ok := resp.Raw["choices"].([]any); ok && len(choicesRaw) > 0 {
 		if choice, ok := choicesRaw[0].(map[string]any); ok {
 			if msg, ok := choice["message"].(map[string]any); ok {
 				if c, ok := msg["content"].(string); ok && c != "" {
 					return c
 				}
+
 				if r, ok := msg["reasoning"].(string); ok {
 					return r
 				}
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -314,6 +321,7 @@ func ExtractModel(resp Response) string {
 	if v, ok := resp.Raw["model"].(string); ok {
 		return v
 	}
+
 	return ""
 }
 
@@ -323,9 +331,11 @@ func ExtractTokens(resp Response) int {
 	if v, ok := resp.Raw["total_tokens"].(float64); ok {
 		return int(v)
 	}
+
 	if v, ok := resp.Raw["tokens_used"].(float64); ok {
 		return int(v)
 	}
+
 	switch usage := resp.Raw["usage"].(type) {
 	case openAIUsage:
 		return usage.TotalTokens
@@ -336,5 +346,6 @@ func ExtractTokens(resp Response) int {
 			return int(t)
 		}
 	}
+
 	return 0
 }

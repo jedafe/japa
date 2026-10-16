@@ -67,6 +67,7 @@ func (h *Handlers) packagesAvailable(w http.ResponseWriter, r *http.Request) boo
 func (h *Handlers) bookingSurfaceAvailable(w http.ResponseWriter, r *http.Request) bool {
 	packages := h.service != nil && h.service.PackagesEnabled(r.Context())
 	mentorship := h.service != nil && h.service.MentorshipEnabled(r.Context())
+
 	if !packages && !mentorship {
 		errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
 		return false
@@ -100,8 +101,10 @@ func (h *Handlers) HandleCreateBooking(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
+
 		slog.Error("servicedir: booking listing lookup failed", "content_id", contentID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "booking_failed", "Failed to create booking")
+
 		return
 	}
 
@@ -167,7 +170,9 @@ func (h *Handlers) HandleCreateBooking(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandlePricePreview(w http.ResponseWriter, r *http.Request) {
 	// Optional viewer — nil for anonymous previews (M4).
 	user := auth.FromContext(r.Context())
+
 	var bookerID pgtype.UUID
+
 	if user != nil {
 		bookerID = user.UserID
 	}
@@ -182,6 +187,7 @@ func (h *Handlers) HandlePricePreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tierID := r.URL.Query().Get("tier_id")
+
 	couponCode := r.URL.Query().Get("coupon_code")
 	if couponCode == "" {
 		// `coupon` is the spec-named alias for the same param.
@@ -257,13 +263,16 @@ func (h *Handlers) HandleMyBookings(w http.ResponseWriter, r *http.Request) {
 	if role == "" {
 		role = "booker"
 	}
+
 	kind := r.URL.Query().Get("kind")
 
 	packages := h.service != nil && h.service.PackagesEnabled(r.Context())
 	mentorship := h.service != nil && h.service.MentorshipEnabled(r.Context())
 
 	var bookings []BookingDTO
+
 	var total int64
+
 	var err error
 
 	switch role {
@@ -274,6 +283,7 @@ func (h *Handlers) HandleMyBookings(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
 			return
 		}
+
 		if kind == ListingKindMentorship && !mentorship {
 			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 			return
@@ -347,6 +357,7 @@ func (h *Handlers) HandleMyBookingRespond(w http.ResponseWriter, r *http.Request
 		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
 			slog.Error("servicedir: booking respond failed", "booking_id", bookingID, "action", input.Action, "error", err)
 		}
+
 		writeMyBookingError(w, err, "respond_failed", "Failed to respond to booking")
 
 		return
@@ -376,6 +387,7 @@ func (h *Handlers) HandleMyBookingDetail(w http.ResponseWriter, r *http.Request)
 		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
 			slog.Error("servicedir: get booking failed", "booking_id", bookingID, "error", err)
 		}
+
 		writeMyBookingError(w, err, "get_failed", "Failed to get booking")
 
 		return
@@ -418,6 +430,7 @@ func (h *Handlers) HandleMyBookingPay(w http.ResponseWriter, r *http.Request) {
 		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
 			slog.Error("servicedir: resume booking payment failed", "booking_id", bookingID, "error", err)
 		}
+
 		writeMyBookingError(w, err, "payment_resume_failed", "Failed to resume booking payment")
 
 		return
@@ -445,6 +458,7 @@ func (h *Handlers) HandleMyBookingCancel(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		Reason string `json:"reason"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body) // reason is optional
 
 	booking, err := h.service.CancelMyBooking(r.Context(), bookingID, user.UserID, body.Reason)
@@ -452,6 +466,7 @@ func (h *Handlers) HandleMyBookingCancel(w http.ResponseWriter, r *http.Request)
 		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
 			slog.Error("servicedir: cancel booking failed", "booking_id", bookingID, "error", err)
 		}
+
 		writeMyBookingError(w, err, "cancel_failed", "Failed to cancel booking")
 
 		return
@@ -484,6 +499,7 @@ func (h *Handlers) HandleMyBookingComplete(w http.ResponseWriter, r *http.Reques
 		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
 			slog.Error("servicedir: complete booking failed", "booking_id", bookingID, "error", err)
 		}
+
 		writeMyBookingError(w, err, "complete_failed", "Failed to complete booking")
 
 		return
@@ -513,6 +529,7 @@ func (h *Handlers) HandleMyBookingDispute(w http.ResponseWriter, r *http.Request
 	var body struct {
 		Reason string `json:"reason"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body) // reason is optional but recommended
 
 	booking, err := h.service.DisputeMyBooking(r.Context(), bookingID, user.UserID, body.Reason)
@@ -520,6 +537,7 @@ func (h *Handlers) HandleMyBookingDispute(w http.ResponseWriter, r *http.Request
 		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
 			slog.Error("servicedir: dispute booking failed", "booking_id", bookingID, "error", err)
 		}
+
 		writeMyBookingError(w, err, "dispute_failed", "Failed to dispute booking")
 
 		return

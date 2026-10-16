@@ -343,6 +343,7 @@ func (h *Handlers) filterBlockedRadarItems(ctx context.Context, userID pgtype.UU
 	}
 
 	blockedSet := make(map[string]struct{}, len(blocked))
+
 	for _, id := range blocked {
 		if id.Valid {
 			blockedSet[id.String()] = struct{}{}
@@ -350,6 +351,7 @@ func (h *Handlers) filterBlockedRadarItems(ctx context.Context, userID pgtype.UU
 	}
 
 	recordIDs := make([]pgtype.UUID, 0, len(items))
+
 	for _, it := range items {
 		if it.IntelRecordID.Valid {
 			recordIDs = append(recordIDs, it.IntelRecordID)
@@ -361,6 +363,7 @@ func (h *Handlers) filterBlockedRadarItems(ctx context.Context, userID pgtype.UU
 		if err != nil {
 			return nil, err
 		}
+
 		for i := range items {
 			if attr, ok := sourceMap[items[i].IntelRecordID.String()]; ok {
 				items[i].SourceID = attr.SourceID
@@ -369,10 +372,12 @@ func (h *Handlers) filterBlockedRadarItems(ctx context.Context, userID pgtype.UU
 	}
 
 	filtered := make([]radarItem, 0, len(items))
+
 	for _, it := range items {
 		if _, isBlocked := blockedSet[it.SourceID]; isBlocked {
 			continue
 		}
+
 		filtered = append(filtered, it)
 	}
 
@@ -579,6 +584,7 @@ func (h *Handlers) radarMergePage(ctx context.Context, userID pgtype.UUID, domai
 			var ts pgtype.Timestamptz
 
 			var id pgtype.UUID
+
 			if cp, ok := checkpoints[d.domain]; ok {
 				ts = pgtype.Timestamptz{Time: timeFromNano(cp.TS), Valid: true}
 				_ = id.Scan(cp.ID)
@@ -715,9 +721,11 @@ func sortRadarItems(items []radarItem) {
 		if a.CreatedAt.Valid != b.CreatedAt.Valid {
 			return a.CreatedAt.Valid
 		}
+
 		if !a.CreatedAt.Time.Equal(b.CreatedAt.Time) {
 			return a.CreatedAt.Time.After(b.CreatedAt.Time)
 		}
+
 		if ra, rb := radarTypeRank(a.Type), radarTypeRank(b.Type); ra != rb {
 			return ra < rb
 		}
@@ -762,10 +770,12 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	byCountry := make(map[string]int64, len(countryRows))
+
 	for _, row := range countryRows {
 		if row.Country == "" {
 			continue
 		}
+
 		byCountry[row.Country] = row.Count
 	}
 
@@ -820,6 +830,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 
 	if len(spaceIDs) > 0 {
 		var err error
+
 		items, next, hasMore, err = h.radarMergePage(r.Context(), userID, h.radarFollowedDomains(spaceIDs), checkpoints, offset, limit)
 		if err != nil {
 			slog.Error("intel: radar followed merge failed", "error", err)
@@ -1001,6 +1012,7 @@ func (h *Handlers) resolveRadarItem(ctx context.Context, itemID pgtype.UUID, ite
 		if err == nil {
 			return scholarshipToRadarItem(s), s.GuideID, nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return radarItem{}, pgtype.UUID{}, err
 		}
@@ -1011,6 +1023,7 @@ func (h *Handlers) resolveRadarItem(ctx context.Context, itemID pgtype.UUID, ite
 		if err == nil {
 			return jobToRadarItem(j), j.GuideID, nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return radarItem{}, pgtype.UUID{}, err
 		}
@@ -1021,6 +1034,7 @@ func (h *Handlers) resolveRadarItem(ctx context.Context, itemID pgtype.UUID, ite
 		if err == nil {
 			return visaRouteToRadarItem(v), v.GuideID, nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return radarItem{}, pgtype.UUID{}, err
 		}
@@ -1031,6 +1045,7 @@ func (h *Handlers) resolveRadarItem(ctx context.Context, itemID pgtype.UUID, ite
 		if err == nil {
 			return housingGuideToRadarItem(g), g.GuideID, nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return radarItem{}, pgtype.UUID{}, err
 		}
@@ -1041,6 +1056,7 @@ func (h *Handlers) resolveRadarItem(ctx context.Context, itemID pgtype.UUID, ite
 		if err == nil {
 			return remittanceRateToRadarItem(rt), pgtype.UUID{}, nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return radarItem{}, pgtype.UUID{}, err
 		}
@@ -1051,6 +1067,7 @@ func (h *Handlers) resolveRadarItem(ctx context.Context, itemID pgtype.UUID, ite
 		if err == nil {
 			return comparisonItemToRadarItem(c), pgtype.UUID{}, nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return radarItem{}, pgtype.UUID{}, err
 		}
@@ -1077,6 +1094,7 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 
 	q := r.URL.Query()
 	itemType := normalizeRadarItemType(q.Get("item_type"))
+
 	if itemType == "" {
 		itemType = normalizeRadarItemType(q.Get("type"))
 	}

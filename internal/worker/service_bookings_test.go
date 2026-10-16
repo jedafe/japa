@@ -11,7 +11,6 @@
 package worker
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -42,9 +41,11 @@ func workerLiveDB(t *testing.T) *db.DB {
 	}
 
 	prev := dbPool
+
 	RegisterDBPool(database)
 	t.Cleanup(func() {
 		dbPool = prev
+
 		database.Writer.Close()
 		database.Reader.Close()
 	})
@@ -74,7 +75,7 @@ func insertWorkerUser(t *testing.T, database *db.DB, username string) pgtype.UUI
 	}
 
 	t.Cleanup(func() {
-		ctx := context.Background()
+		ctx := t.Context()
 		database.Writer.Exec(ctx, `DELETE FROM notifications WHERE recipient_id = $1 OR actor_id = $1`, id)
 		database.Writer.Exec(ctx, `DELETE FROM service_bookings WHERE booker_user_id = $1 OR provider_user_id = $1`, id)
 		database.Writer.Exec(ctx, `DELETE FROM user_profiles WHERE user_id = $1`, id)
@@ -117,7 +118,7 @@ func insertMentorshipBooking(t *testing.T, database *db.DB, providerID, bookerID
 	}
 
 	t.Cleanup(func() {
-		c := context.Background()
+		c := t.Context()
 		database.Writer.Exec(c, `DELETE FROM notifications WHERE subject_id = $1`, bookingID)
 		database.Writer.Exec(c, `DELETE FROM service_bookings WHERE listing_meta_id = $1`, metaID)
 		database.Writer.Exec(c, `DELETE FROM service_listing_meta WHERE id = $1`, metaID)
@@ -129,6 +130,7 @@ func insertMentorshipBooking(t *testing.T, database *db.DB, providerID, bookerID
 
 func bookingTask(t *testing.T, taskType string, payload map[string]string) *asynq.Task {
 	t.Helper()
+
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -156,11 +158,13 @@ func notificationsFor(t *testing.T, database *db.DB, bookingID pgtype.UUID) []no
 	defer rows.Close()
 
 	var out []notificationRow
+
 	for rows.Next() {
 		var n notificationRow
 		if err := rows.Scan(&n.RecipientID, &n.ActorType, &n.ActorID, &n.ActionURL); err != nil {
 			t.Fatalf("scan notification: %v", err)
 		}
+
 		out = append(out, n)
 	}
 
@@ -193,12 +197,15 @@ func TestServiceBookingCreated_ProviderArm_LiveDB(t *testing.T) {
 	if n.RecipientID != mentorID.String() {
 		t.Errorf("recipient = %s, want provider %s", n.RecipientID, mentorID)
 	}
+
 	if n.ActorType == nil || *n.ActorType != "user" {
 		t.Errorf("actor_type = %v, want user", n.ActorType)
 	}
+
 	if n.ActorID == nil || *n.ActorID != menteeID.String() {
 		t.Errorf("actor_id = %v, want booker %s", n.ActorID, menteeID)
 	}
+
 	wantURL := "/messages/mentorship?role=received&b=" + bookingID.String()
 	if n.ActionURL == nil || *n.ActionURL != wantURL {
 		t.Errorf("action_url = %v, want %s", n.ActionURL, wantURL)
@@ -240,12 +247,15 @@ func TestServiceBookingStatusChanged_MentorshipBookerArm_LiveDB(t *testing.T) {
 	if n.RecipientID != menteeID.String() {
 		t.Errorf("recipient = %s, want booker %s", n.RecipientID, menteeID)
 	}
+
 	if n.ActorType == nil || *n.ActorType != "user" {
 		t.Errorf("actor_type = %v, want user (provider)", n.ActorType)
 	}
+
 	if n.ActorID == nil || *n.ActorID != mentorID.String() {
 		t.Errorf("actor_id = %v, want provider %s", n.ActorID, mentorID)
 	}
+
 	wantURL := "/messages/mentorship?b=" + bookingID.String()
 	if n.ActionURL == nil || *n.ActionURL != wantURL {
 		t.Errorf("action_url = %v, want %s", n.ActionURL, wantURL)
@@ -285,12 +295,15 @@ func TestServiceBookingStatusChanged_ProviderArm_BookerCancel_LiveDB(t *testing.
 	if n.RecipientID != mentorID.String() {
 		t.Errorf("recipient = %s, want provider %s", n.RecipientID, mentorID)
 	}
+
 	if n.ActorType == nil || *n.ActorType != "user" {
 		t.Errorf("actor_type = %v, want user (booker)", n.ActorType)
 	}
+
 	if n.ActorID == nil || *n.ActorID != menteeID.String() {
 		t.Errorf("actor_id = %v, want booker %s (the canceller)", n.ActorID, menteeID)
 	}
+
 	wantURL := "/messages/mentorship?role=received&b=" + bookingID.String()
 	if n.ActionURL == nil || *n.ActionURL != wantURL {
 		t.Errorf("action_url = %v, want %s", n.ActionURL, wantURL)
@@ -329,9 +342,11 @@ func TestServiceBookingDispute_ProviderArm_LiveDB(t *testing.T) {
 	if n.RecipientID != mentorID.String() {
 		t.Errorf("recipient = %s, want provider %s", n.RecipientID, mentorID)
 	}
+
 	if n.ActorID == nil || *n.ActorID != menteeID.String() {
 		t.Errorf("actor_id = %v, want booker %s (the disputer)", n.ActorID, menteeID)
 	}
+
 	wantURL := "/messages/mentorship?role=received&b=" + bookingID.String()
 	if n.ActionURL == nil || *n.ActionURL != wantURL {
 		t.Errorf("action_url = %v, want %s", n.ActionURL, wantURL)

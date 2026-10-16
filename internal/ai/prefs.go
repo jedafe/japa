@@ -4,7 +4,7 @@ import "encoding/json"
 
 // AIPrefs is the user_preferences.ai_prefs JSONB shape (ADR-130). All fields
 // are optional; the zero value means defaults — chat mode, no restrictions.
-// Ref: japaconnect-engineering/adr/ADR-130-unified-japa-ai.md
+// Ref: japaconnect-engineering/adr/ADR-130-unified-japa-ai.md.
 type AIPrefs struct {
 	DefaultMode        string         `json:"default_mode,omitempty"` // "" | "chat" | "agent"
 	DisabledCategories []string       `json:"disabled_categories,omitempty"`
@@ -37,6 +37,7 @@ func ParseAIPrefs(raw []byte) AIPrefs {
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &p)
 	}
+
 	return p
 }
 
@@ -49,6 +50,7 @@ func (p AIPrefs) AllowsTool(functionName, category string) bool {
 			return false
 		}
 	}
+
 	for _, c := range p.DisabledCategories {
 		if c == category {
 			for _, t := range p.EnabledTools {
@@ -56,9 +58,11 @@ func (p AIPrefs) AllowsTool(functionName, category string) bool {
 					return true // per-tool exception inside a disabled category
 				}
 			}
+
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -79,23 +83,29 @@ func FilterCatalog(tools []ToolConfig, categories map[string]string, prefs AIPre
 	if sel != nil && sel.Enabled != nil && !*sel.Enabled {
 		return nil
 	}
+
 	out := tools[:0:0]
+
 	for _, tc := range tools {
 		if !prefs.AllowsTool(tc.FunctionName, categories[tc.FunctionName]) {
 			continue
 		}
+
 		if sel != nil {
 			// A non-nil whitelist is authoritative: an explicitly empty
 			// array narrows to nothing — "[]" is not the same as absent.
 			if sel.Categories != nil && !sliceContains(sel.Categories, categories[tc.FunctionName]) {
 				continue
 			}
+
 			if sel.Tools != nil && !sliceContains(sel.Tools, tc.FunctionName) {
 				continue
 			}
 		}
+
 		out = append(out, tc)
 	}
+
 	return out
 }
 
@@ -105,5 +115,6 @@ func sliceContains(xs []string, s string) bool {
 			return true
 		}
 	}
+
 	return false
 }

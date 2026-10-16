@@ -30,7 +30,6 @@ func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 // HandleListSlots returns available ad slot types with flat_rate.
 // GET /org/{org_id}/ads/slots.
 func (h *Handlers) HandleListSlots(w http.ResponseWriter, r *http.Request) {
-
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -47,7 +46,6 @@ func (h *Handlers) HandleListSlots(w http.ResponseWriter, r *http.Request) {
 // HandleCreateCampaign creates a self-serve ad campaign.
 // POST /org/{org_id}/ads/campaigns.
 func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) {
-
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -106,7 +104,6 @@ func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) 
 // HandleListCampaigns lists an org's campaigns.
 // GET /org/{org_id}/ads/campaigns.
 func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
-
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -136,7 +133,6 @@ func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 // HandleGetCampaign returns a single campaign detail.
 // GET /org/{org_id}/ads/campaigns/{id}.
 func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
-
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -163,7 +159,6 @@ func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleUpdateCampaign updates a campaign's creative (pending/paused only).
 // PATCH /org/{org_id}/ads/campaigns/{id}.
 func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) {
-
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -200,7 +195,6 @@ func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) 
 // HandlePauseCampaign pauses an active campaign.
 // POST /org/{org_id}/ads/campaigns/{id}/pause.
 func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
-
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -232,7 +226,6 @@ func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleResumeCampaign resumes a paused campaign.
 // POST /org/{org_id}/ads/campaigns/{id}/resume.
 func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) {
-
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -264,7 +257,6 @@ func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) 
 // HandleGetStats returns campaign statistics.
 // GET /org/{org_id}/ads/campaigns/{id}/stats.
 func (h *Handlers) HandleGetStats(w http.ResponseWriter, r *http.Request) {
-
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}

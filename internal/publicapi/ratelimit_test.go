@@ -149,6 +149,7 @@ func TestSlidingWindowRateLimit_UserTierCapsKey(t *testing.T) {
 	// Clean up test keys.
 	ctx := t.Context()
 	prefix := "test_unlimited_" + time.Now().Format("150405")
+
 	keys, _ := rdb.Keys(ctx, valkeypkg.MustKey("api_rate:%s:*", prefix)).Result()
 	if len(keys) > 0 {
 		rdb.Del(ctx, keys...)

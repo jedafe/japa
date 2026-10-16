@@ -172,7 +172,7 @@ func (s *Service) ListSlots(ctx context.Context) ([]SlotInfo, error) {
 // Steps: verify org, verify member, check min days, calculate cost,
 // create campaign, deduct credits, enqueue notification, enter review queue.
 // // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
-// //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3
+// //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3.
 func (s *Service) CreateCampaign(ctx context.Context, orgID, userID pgtype.UUID, input CreateCampaignInput) (gen.AdCampaign, error) {
 	enabled, err := s.settings.GetSettingBool(ctx, "ads.self_serve_enabled")
 	if err == nil && !enabled {
@@ -314,7 +314,6 @@ func (s *Service) CreateCampaign(ctx context.Context, orgID, userID pgtype.UUID,
 	// Deduct credits from org wallet (fire-and-forget per Rule 8).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
-
 			"organization_id": orgID.String(),
 			"amount":          cost,
 			"campaign_id":     campaign.ID.String(),
@@ -377,7 +376,6 @@ func (s *Service) UpdateCampaignCreative(ctx context.Context, orgID, campaignID 
 	}
 
 	return s.store.UpdateCampaignCreative(ctx, gen.UpdateSelfServeAdCampaignCreativeParams{
-
 		ID:             campaignID,
 		OrganizationID: orgID,
 		Content:        contentArg,
@@ -434,7 +432,6 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, campaignID pgtype.U
 
 	if refundEnabled && s.enqueuer != nil && campaign.BudgetCredits > 0 {
 		payload, _ := json.Marshal(map[string]interface{}{
-
 			"organization_id": campaign.OrganizationID.String(),
 			"amount":          int(campaign.BudgetCredits),
 			"campaign_id":     campaign.ID.String(),
@@ -476,6 +473,7 @@ func (s *Service) ReopenCampaignOnAppeal(ctx context.Context, campaignID pgtype.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("adsselfserve: campaign %s not found", campaignID)
 		}
+
 		return fmt.Errorf("adsselfserve: loading campaign: %w", err)
 	}
 
@@ -496,12 +494,15 @@ func (s *Service) ReopenCampaignOnAppeal(ctx context.Context, campaignID pgtype.
 		if err != nil {
 			return fmt.Errorf("adsselfserve: resolving campaign org: %w", err)
 		}
+
 		if !org.OwnerUserID.Valid {
 			return fmt.Errorf("adsselfserve: organization %s has no owner", campaign.OrganizationID)
 		}
+
 		ownerID := org.OwnerUserID
 
 		refundKey := fmt.Sprintf("deduct:%s:ad_campaign_refund:%s", ownerID.String(), campaignID.String())
+
 		refundAmount, err := qtx.GetAdCampaignRefundAmount(ctx, &refundKey)
 		switch {
 		case err == nil && refundAmount > 0:
@@ -509,6 +510,7 @@ func (s *Service) ReopenCampaignOnAppeal(ctx context.Context, campaignID pgtype.
 			if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "wallet::"+ownerID.String()); err != nil {
 				return fmt.Errorf("adsselfserve: acquiring wallet lock: %w", err)
 			}
+
 			balance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 				UserID:     ownerID,
 				LedgerType: "credits",
@@ -517,14 +519,18 @@ func (s *Service) ReopenCampaignOnAppeal(ctx context.Context, campaignID pgtype.
 				if !errors.Is(err, pgx.ErrNoRows) {
 					return fmt.Errorf("adsselfserve: reading credits balance: %w", err)
 				}
+
 				balance = 0
 			}
+
 			if balance < refundAmount {
 				return fmt.Errorf("%w: refunded campaign budget was spent", ErrInsufficientBalance)
 			}
+
 			source := "ad_campaign_appeal_reopen"
 			reference := fmt.Sprintf("%s — %s", source, campaignID.String())
 			idempotencyKey := fmt.Sprintf("deduct:%s:%s:%s", ownerID.String(), source, campaignID.String())
+
 			if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 				UserID:           ownerID,
 				LedgerType:       "credits",
@@ -538,6 +544,7 @@ func (s *Service) ReopenCampaignOnAppeal(ctx context.Context, campaignID pgtype.
 			}); err != nil {
 				return fmt.Errorf("adsselfserve: inserting re-escrow ledger entry: %w", err)
 			}
+
 			restoreCredits = int32(refundAmount)
 		case errors.Is(err, pgx.ErrNoRows):
 			// No refund row — either refunds are disabled
@@ -562,7 +569,7 @@ func (s *Service) ReopenCampaignOnAppeal(ctx context.Context, campaignID pgtype.
 // review decision is made (approved or rejected). Called by the
 // ads:notify_campaign_status worker task.
 // // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
-// //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §7
+// //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §7.
 func (s *Service) NotifyCampaignStatus(ctx context.Context, campaignID pgtype.UUID) error {
 	campaign, err := s.store.GetCampaignForRefund(ctx, campaignID)
 	if err != nil {

@@ -238,7 +238,6 @@ func (s *Service) Create(ctx context.Context, ownerID pgtype.UUID, input CreateG
 	}
 
 	group, err := s.store.CreateGroup(ctx, PlanningGroup{
-
 		Name:                  input.Name,
 		Description:           descPtr,
 		DestinationSpaceID:    destSpaceID,
@@ -290,7 +289,6 @@ func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, visaCategor
 	offset := (page - 1) * limit
 
 	groups, total, err := s.store.ListGroups(ctx, ListGroupsFilter{
-
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		Limit:              limit,

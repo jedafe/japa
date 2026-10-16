@@ -34,7 +34,6 @@ func logAuditEvent(ctx context.Context, store *Store, params LogAuditParams) err
 	ipAddress := parseIPAddress(params.IPAddress)
 
 	_, err := store.createAuditLog(ctx, gen.CreateAuditLogParams{
-
 		ActorUserID:        params.ActorUserID,
 		ImpersonatedUserID: params.ImpersonatedUserID,
 		ActionType:         params.ActionType,

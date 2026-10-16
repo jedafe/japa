@@ -29,7 +29,6 @@ import (
 // SPACES-009/011: the default (no type/parent filter) branch uses SQL-level
 // pagination, search, geo, and sort for performance and spec conformance.
 func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
-
 	// Resolve the optional viewer user so the visibility filter can include
 	// members/private spaces the caller belongs to (BUG-007, Section 05 line 272).
 	// On OptionalAuth routes the user may be nil → zero UUID → public spaces only.
@@ -161,7 +160,6 @@ func ptrStringsToStrings(in []*string) []string {
 
 // ListDistinctRegions handles GET /api/v1/spaces/regions.
 func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
-
 	regions, err := h.Service.ListDistinctRegions(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -173,7 +171,6 @@ func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
 
 // ListSubregionsByRegion handles GET /api/v1/spaces/subregions.
 func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request) {
-
 	region := r.URL.Query().Get("region")
 	if region == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_region", "region query parameter is required")
@@ -228,14 +225,17 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 		ids = append(ids, id)
 
 		var spaceTypeID pgtype.UUID
+
 		if stField := elem.FieldByName("SpaceTypeID"); stField.IsValid() {
 			if stID, ok := stField.Interface().(pgtype.UUID); ok {
 				spaceTypeID = stID
+
 				if _, seen := typeIDs[stID]; !seen {
 					typeIDs[stID] = struct{}{}
 				}
 			}
 		}
+
 		rowTypeIDs = append(rowTypeIDs, spaceTypeID)
 
 		m := rowToMap(elem.Interface())
@@ -262,6 +262,7 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 			for _, st := range types {
 				wikiOnlyByType[st.ID.String()] = st.WikiOnly
 			}
+
 			for i, m := range out {
 				m["wiki_only"] = wikiOnlyByType[rowTypeIDs[i].String()]
 			}
@@ -338,7 +339,6 @@ func rowToMap[T any](row T) map[string]any {
 // q (name/slug search), status, visibility, space_type_id, deleted, sort/dir
 // filter params.
 func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 	search := r.URL.Query().Get("q")
@@ -387,7 +387,6 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 // to. Super admins see every active space in the platform so they can post to
 // any space without joining it first (Section 03 — admin override).
 func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -459,7 +458,6 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 // tab. Public-safe: only public+active spaces of the {id} user. Non-active
 // users are already 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
-
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
@@ -521,7 +519,6 @@ func toSpaceCards(spaces []gen.ListPublicSpacesByMemberUserRow) []SpaceCard {
 // ListMyModeratedSpaces handles GET /api/v1/me/spaces/moderated — every space
 // the caller moderates. Supports optional ?q, ?page_size and ?page_offset.
 func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request) {
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -550,7 +547,6 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 // returns every space the caller belongs to as a member. Supports optional ?q,
 // ?page_size and ?page_offset.
 func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -591,25 +587,30 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 
 	if space.Visibility == VisibilityPrivate {
 		allowed := false
+
 		if viewer := auth.FromContext(r.Context()); viewer != nil && viewer.UserID.Valid {
 			ctx := r.Context()
 			if isMember, err := h.Service.IsMember(ctx, space.ID, viewer.UserID); err == nil && isMember {
 				allowed = true
 			}
+
 			if !allowed {
 				if isModerator, err := h.Service.IsModerator(ctx, space.ID, viewer.UserID); err == nil && isModerator {
 					allowed = true
 				}
 			}
+
 			if !allowed {
 				if isOwner, err := h.Service.IsOwner(ctx, space.ID, viewer.UserID); err == nil && isOwner {
 					allowed = true
 				}
 			}
+
 			if !allowed && h.permChecker != nil && h.permChecker.HasPermission(ctx, viewer.UserID, "spaces.moderate") {
 				allowed = true
 			}
 		}
+
 		if !allowed {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 			return
@@ -874,6 +875,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		if req.GeoCode != nil {
 			geoCode = *req.GeoCode
 		}
+
 		matchedParentID, matchedParentIDs, err := h.Service.LinkSpaceToPrimarySpaces(r.Context(), pgtype.UUID{}, req.Name, geoCode)
 		if err != nil {
 			handleServiceError(w, err)
@@ -910,7 +912,6 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	space, err := h.Service.CreateSpaceWithOwner(r.Context(), gen.CreateSpaceParams{
-
 		ParentID:       parentID,
 		SpaceTypeID:    spaceTypeID,
 		Name:           req.Name,
@@ -1115,6 +1116,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo_media_id format")
 			return
 		}
+
 		if err := h.ensureImageMedia(r.Context(), logoUUID, "logo_media_id"); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_logo_media_id", err.Error())
 			return
@@ -1142,6 +1144,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
 				return
 			}
+
 			if err := h.ensureImageMedia(r.Context(), headerUUID, "header_image_id"); err != nil {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", err.Error())
 				return
@@ -1225,13 +1228,16 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 				"Permanent delete requires the spaces.admin permission")
 			return
 		}
+
 		if err := h.Service.HardDeleteSpace(r.Context(), id); err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		h.Service.EnqueueSearchIndex(r.Context(), id, "delete")
 		h.purgeSpaceRAG(r.Context(), id)
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted", "force": "true"}})
+
 		return
 	}
 

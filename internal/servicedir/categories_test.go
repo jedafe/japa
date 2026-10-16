@@ -8,7 +8,6 @@
 package servicedir
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,7 +21,8 @@ import (
 func TestCategorySetFallsBackToStaticEnum(t *testing.T) {
 	// nil store → the hardcoded §98 enum is the fallback
 	s := &Service{}
-	set := s.categorySet(context.Background())
+
+	set := s.categorySet(t.Context())
 	for _, slug := range []string{"immigration_legal", "relocation", "finance", "education", "health", "community", "other"} {
 		if _, ok := set[slug]; !ok {
 			t.Fatalf("expected %q in fallback category set", slug)
@@ -33,13 +33,15 @@ func TestCategorySetFallsBackToStaticEnum(t *testing.T) {
 func TestCategoriesFallsBackToStaticEnum(t *testing.T) {
 	// nil store → Categories serves the static enum, sorted by value.
 	s := &Service{}
-	opts := s.Categories(context.Background())
+
+	opts := s.Categories(t.Context())
 	if len(opts) != len(categoryLabels) {
 		t.Fatalf("expected %d fallback options, got %d", len(categoryLabels), len(opts))
 	}
 
 	for _, slug := range []string{"immigration_legal", "relocation", "finance", "education", "health", "community", "other"} {
 		found := false
+
 		for _, o := range opts {
 			if o.Value == slug {
 				found = true
@@ -51,6 +53,7 @@ func TestCategoriesFallsBackToStaticEnum(t *testing.T) {
 				break
 			}
 		}
+
 		if !found {
 			t.Fatalf("expected %q in fallback Categories options", slug)
 		}
@@ -95,9 +98,11 @@ func TestValidateCategoryInput(t *testing.T) {
 			if tc.wantErr && err == nil {
 				t.Fatalf("expected validation error, got nil")
 			}
+
 			if !tc.wantErr && err != nil {
 				t.Fatalf("unexpected validation error: %v", err)
 			}
+
 			if tc.wantErr {
 				var inputErr *CategoryInputError
 				if !errors.As(err, &inputErr) {
@@ -111,8 +116,10 @@ func TestValidateCategoryInput(t *testing.T) {
 func TestAdminCreateCategoryValidationRunsBeforeStore(t *testing.T) {
 	// nil store → a validation failure must return before touching the DB.
 	s := &Service{}
-	_, err := s.AdminCreateCategory(context.Background(), CategoryInput{Slug: "BAD SLUG", Label: "x"})
+	_, err := s.AdminCreateCategory(t.Context(), CategoryInput{Slug: "BAD SLUG", Label: "x"})
+
 	var inputErr *CategoryInputError
+
 	if !errors.As(err, &inputErr) {
 		t.Fatalf("expected *CategoryInputError, got %v", err)
 	}
@@ -121,8 +128,10 @@ func TestAdminCreateCategoryValidationRunsBeforeStore(t *testing.T) {
 func TestAdminUpdateCategoryRejectsSlugChange(t *testing.T) {
 	// Body slug disagreeing with the path slug is rejected before the DB.
 	s := &Service{}
-	_, err := s.AdminUpdateCategory(context.Background(), "legal", CategoryInput{Slug: "renamed", Label: "Legal"})
+	_, err := s.AdminUpdateCategory(t.Context(), "legal", CategoryInput{Slug: "renamed", Label: "Legal"})
+
 	var inputErr *CategoryInputError
+
 	if !errors.As(err, &inputErr) {
 		t.Fatalf("expected *CategoryInputError, got %v", err)
 	}
@@ -132,8 +141,10 @@ func TestAdminUpdateCategoryValidationRunsBeforeStore(t *testing.T) {
 	// Same slug in body and path is fine; a missing label still fails
 	// before the store lookup.
 	s := &Service{}
-	_, err := s.AdminUpdateCategory(context.Background(), "legal", CategoryInput{Slug: "legal", Label: ""})
+	_, err := s.AdminUpdateCategory(t.Context(), "legal", CategoryInput{Slug: "legal", Label: ""})
+
 	var inputErr *CategoryInputError
+
 	if !errors.As(err, &inputErr) {
 		t.Fatalf("expected *CategoryInputError, got %v", err)
 	}
@@ -156,6 +167,7 @@ func TestWriteCategoryErrorMapping(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			writeCategoryError(rec, tc.err, "failed", "Failed")
+
 			if rec.Code != tc.wantStatus {
 				t.Fatalf("expected %d, got %d", tc.wantStatus, rec.Code)
 			}

@@ -92,11 +92,14 @@ type stubSessionStore struct {
 func (s *stubSessionStore) CreateAgentSession(ctx context.Context, arg gen.CreateAgentSessionParams) (gen.AiAgentSession, error) {
 	if s.createErr != nil {
 		err := s.createErr
+
 		if s.createErrOnce {
 			s.createErr = nil
 		}
+
 		return gen.AiAgentSession{}, err
 	}
+
 	s.created = gen.AiAgentSession{
 		ID: randomUUID(),
 
@@ -145,6 +148,7 @@ func (s *stubSessionStore) FailStaleRunningAgentSessionsForConversation(ctx cont
 	if s.staleFail != nil {
 		return *s.staleFail, nil
 	}
+
 	return 0, nil
 }
 
@@ -1140,9 +1144,11 @@ func TestAgentLoop_ProviderPanicRecovered(t *testing.T) {
 	if errEv == nil {
 		t.Fatal("expected error event after provider panic")
 	}
+
 	if !strings.Contains(errEv.Error, "internal error") {
 		t.Errorf("expected internal error, got: %v", errEv.Error)
 	}
+
 	if sessions.failed == nil {
 		t.Error("expected session to be failed after panic")
 	}

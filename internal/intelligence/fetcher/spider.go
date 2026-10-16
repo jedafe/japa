@@ -118,8 +118,10 @@ func (c *Composite) fetchSpider(ctx context.Context, eff sources.Source) (FetchR
 	if base == "" {
 		base = eff.SourceUrl
 	}
+
 	baseURL, _ := url.Parse(base)
 	scope := ""
+
 	if baseURL != nil {
 		scope = normalizeLinkURL(baseURL)
 	}
@@ -137,6 +139,7 @@ func (c *Composite) fetchSpider(ctx context.Context, eff sources.Source) (FetchR
 	for _, l := range internal {
 		fmt.Fprintf(&b, "%s\t%s\n", l.url, l.stamp)
 	}
+
 	manifest := []byte(b.String())
 
 	outboundJSON, _ := json.Marshal(external)
@@ -153,11 +156,14 @@ func (c *Composite) fetchSpider(ctx context.Context, eff sources.Source) (FetchR
 	if res.Headers == nil {
 		res.Headers = map[string]string{}
 	}
+
 	res.Headers[ManifestKindHeader] = ManifestKindSpider
-	res.Headers[SpiderDepthHeader] = fmt.Sprintf("%d", depth)
+	res.Headers[SpiderDepthHeader] = strconv.Itoa(depth)
+
 	if scope != "" {
 		res.Headers[SpiderScopeHeader] = scope
 	}
+
 	if len(external) > 0 {
 		res.Headers[OutboundLinksHeader] = string(outboundJSON)
 	}
@@ -210,6 +216,7 @@ func spiderScopePort(u *url.URL) string {
 	if p := u.Port(); p != "" {
 		return p
 	}
+
 	switch strings.ToLower(u.Scheme) {
 	case "http":
 		return "80"
@@ -229,6 +236,7 @@ func SpiderSameScope(childURL, baseURL string) bool {
 	if err != nil {
 		return false
 	}
+
 	bu, err := url.Parse(baseURL)
 	if err != nil {
 		return false
@@ -262,6 +270,7 @@ func extractPageLinks(body []byte, base string, maxInternal, maxExternal int) (i
 
 	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
 		href, _ := s.Attr("href")
+
 		link := normalizeAnchor(baseURL, href, self)
 		if link == "" {
 			return
@@ -274,12 +283,14 @@ func extractPageLinks(body []byte, base string, maxInternal, maxExternal int) (i
 				stamp := sha256.Sum256([]byte(strings.Join(strings.Fields(s.Text()), " ")))
 				internal = append(internal, spiderLink{url: link, stamp: hex.EncodeToString(stamp[:])[:12]})
 			}
+
 			return
 		}
 
 		if len(external) < maxExternal {
 			if h := strings.ToLower(u.Hostname()); !seenExternalHost[h] {
 				seenExternalHost[h] = true
+
 				external = append(external, link)
 			}
 		}
@@ -358,6 +369,7 @@ func normalizeLinkURL(u *url.URL) string {
 
 	host := v.Hostname()
 	port := v.Port()
+
 	if (v.Scheme == "http" && port == "80") || (v.Scheme == "https" && port == "443") {
 		v.Host = host
 	}
@@ -373,6 +385,7 @@ func normalizeLinkURL(u *url.URL) string {
 			q.Del(key)
 		}
 	}
+
 	v.RawQuery = q.Encode()
 
 	return v.String()
@@ -402,6 +415,7 @@ func clampSpiderInt(v, lo, hi int) int {
 	if v < lo {
 		return lo
 	}
+
 	if v > hi {
 		return hi
 	}

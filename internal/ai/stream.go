@@ -46,7 +46,7 @@ var ErrStreamingUnsupported = errors.New("ai: streaming not supported by this pr
 // Providers without a usable stream API (Perplexity, Devin, Cursor) simply
 // don't implement this interface and stay on the single-shot path.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Phases 2–4)
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Phases 2–4).
 type ChatStreamer interface {
 	ChatStream(ctx context.Context, req ChatWithToolsRequest, sink DeltaSink) (ChatWithToolsResponse, error)
 }
@@ -166,6 +166,7 @@ func estimateTurnTokens(msgs []ChatMessage, reply string) (prompt, completion in
 // under-counted it roughly 4×.
 func estimateTextTokens(s string) int {
 	ascii, nonASCII := 0, 0
+
 	for _, r := range s {
 		if r < utf8.RuneSelf {
 			ascii++
@@ -173,5 +174,6 @@ func estimateTextTokens(s string) int {
 			nonASCII++
 		}
 	}
+
 	return (ascii+3)/4 + (nonASCII*3+1)/2
 }

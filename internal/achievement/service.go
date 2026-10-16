@@ -284,7 +284,6 @@ func (s *Service) Submit(ctx context.Context, authorID pgtype.UUID, input Submit
 	}
 
 	meta := AchievementMeta{
-
 		ContentID:          contentRow.ID,
 		DestinationSpaceID: destSpaceID,
 		OriginSpaceID:      originSpaceID,
@@ -363,7 +362,6 @@ func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, milestoneTy
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListAchievements(ctx, ListAchievementsFilter{
-
 		DestSpaceID:   destSpaceID,
 		MilestoneType: milestoneType,
 		Sort:          sort,
@@ -544,7 +542,6 @@ func (s *Service) AdminList(ctx context.Context, status, milestoneType, q string
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-
 		Status:        status,
 		MilestoneType: milestoneType,
 		Q:             q,

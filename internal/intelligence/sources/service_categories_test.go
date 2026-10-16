@@ -16,9 +16,11 @@ func TestNormalizeCategories(t *testing.T) {
 
 	got := NormalizeCategories([]string{" News ", "", "JOB", "news", "  "})
 	want := []string{"news", "job"}
+
 	if len(got) != len(want) {
 		t.Fatalf("NormalizeCategories = %v, want %v", got, want)
 	}
+
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
@@ -70,11 +72,13 @@ func TestServiceCategories_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
+
 	defer func() { _ = svc.Delete(ctx, src.ID) }()
 
 	if len(src.Categories) != 2 || src.Categories[0] != "news" || src.Categories[1] != "job" {
 		t.Errorf("categories = %v, want [news job]", src.Categories)
 	}
+
 	if src.Category != "news" {
 		t.Errorf("category = %q, want news (dual-write of categories[0])", src.Category)
 	}
@@ -87,6 +91,7 @@ func TestServiceCategories_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update categories: %v", err)
 	}
+
 	if len(updated.Categories) != 2 || updated.Categories[0] != "visa" || updated.Categories[1] != "travel_alert" {
 		t.Errorf("categories = %v, want [visa travel_alert]", updated.Categories)
 	}
@@ -104,6 +109,7 @@ func TestServiceCategories_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clear categories: %v", err)
 	}
+
 	if len(updated.Categories) != 0 {
 		t.Errorf("categories = %v, want [] (explicit clear)", updated.Categories)
 	}
@@ -118,6 +124,7 @@ func TestServiceCategories_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create fallback: %v", err)
 	}
+
 	defer func() { _ = svc.Delete(ctx, src2.ID) }()
 
 	if len(src2.Categories) != 1 || src2.Categories[0] != "news" {

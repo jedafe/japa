@@ -486,6 +486,7 @@ func (s *Service) GetIntSetting(ctx context.Context, key string, fallback int) i
 	if s.settingsReader == nil {
 		return fallback
 	}
+
 	return s.settingsReader.GetIntOr(ctx, key, fallback)
 }
 
@@ -828,6 +829,7 @@ func (s *Service) HasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP s
 	if count == 0 {
 		return true, nil
 	}
+
 	var allowed int
 
 	err = s.store.dbPool.QueryRow(ctx, `

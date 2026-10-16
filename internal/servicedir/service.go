@@ -575,6 +575,7 @@ func (s *Service) Categories(ctx context.Context) []Option {
 	if s.store != nil {
 		if rows, err := s.store.listCategories(ctx, false); err == nil && len(rows) > 0 {
 			out := make([]Option, 0, len(rows))
+
 			for _, r := range rows {
 				if !r.IsActive {
 					continue
@@ -612,14 +613,17 @@ func (s *Service) categorySet(ctx context.Context) map[string]struct{} {
 	if s.store != nil {
 		if rows, err := s.store.listCategories(ctx, false); err == nil && len(rows) > 0 {
 			set := make(map[string]struct{}, len(rows))
+
 			for _, r := range rows {
 				if r.IsActive {
 					set[r.Slug] = struct{}{}
 				}
 			}
+
 			return set
 		}
 	}
+
 	return validCategories
 }
 
@@ -1329,6 +1333,7 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		// Compensating cleanup: without a meta row the content is an
 		// orphaned 'service_listing' that no query can reach.
 		s.deleteCreatedListing(ctx, contentRow.ID)
+
 		return ServiceDTO{}, fmt.Errorf("servicedir: create service_listing_meta: %w", err)
 	}
 
@@ -1342,12 +1347,14 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		if err := s.store.ReplacePackageItems(ctx, metaRow.ID, itemParams); err != nil {
 			slog.Error("servicedir: create package items failed", "meta_id", metaRow.ID, "error", err)
 			s.deleteCreatedListing(ctx, contentRow.ID)
+
 			return ServiceDTO{}, fmt.Errorf("servicedir: create package items: %w", err)
 		}
 
 		if err := s.store.ReplacePackageDepartures(ctx, metaRow.ID, nil, depParams); err != nil {
 			slog.Error("servicedir: create package departures failed", "meta_id", metaRow.ID, "error", err)
 			s.deleteCreatedListing(ctx, contentRow.ID)
+
 			return ServiceDTO{}, fmt.Errorf("servicedir: create package departures: %w", err)
 		}
 	}
@@ -1358,6 +1365,7 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		if err := s.store.ReplacePackageTiers(ctx, metaRow.ID, tierParams); err != nil {
 			slog.Error("servicedir: create package tiers failed", "meta_id", metaRow.ID, "error", err)
 			s.deleteCreatedListing(ctx, contentRow.ID)
+
 			return ServiceDTO{}, fmt.Errorf("servicedir: create package tiers: %w", err)
 		}
 	}
@@ -1782,12 +1790,12 @@ func validatePackageDepartures(deps []PackageDepartureInput) ([]gen.CreateServic
 
 		startsOn, err := parseOptionalDate(d.StartsOn)
 		if err != nil || !startsOn.Valid {
-			return nil, fmt.Errorf("departures[%d]: invalid starts_on (%v): %w", i, err, ErrInvalidDeparture)
+			return nil, fmt.Errorf("departures[%d]: invalid starts_on (%w): %w", i, err, ErrInvalidDeparture)
 		}
 
 		endsOn, err := parseOptionalDate(d.EndsOn)
 		if err != nil {
-			return nil, fmt.Errorf("departures[%d]: invalid ends_on (%v): %w", i, err, ErrInvalidDeparture)
+			return nil, fmt.Errorf("departures[%d]: invalid ends_on (%w): %w", i, err, ErrInvalidDeparture)
 		}
 
 		if endsOn.Valid && endsOn.Time.Before(startsOn.Time) {
@@ -2009,9 +2017,116 @@ func (s *Service) GetBySlugEditor(ctx context.Context, slug string, userID pgtyp
 			dto.Coupons = coupons
 		}
 	}
+
 	dto.Badge = s.deriveBadge(ctx, dto.ReviewCount, dto.RatingAvg, dto.HasCoupon || len(dto.Coupons) > 0)
 
 	return dto, nil
+}
+
+// ListDeparturesForEditor returns ALL departures (open, past, full,
+// cancelled) for a package listing — §111 GET /services/:id/departures.
+// Gated to the author, an owning-org member, or service.edit_any;
+// non-editors get ErrNotOwner so unpublished departures never leak.
+func (s *Service) ListDeparturesForEditor(ctx context.Context, contentID, userID pgtype.UUID, isEditAny bool) ([]PackageDepartureDTO, error) {
+	if !s.PackagesEnabled(ctx) {
+		return nil, ErrPackagesDisabled
+	}
+
+	row, err := s.store.GetByContentID(ctx, contentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, pgx.ErrNoRows
+		}
+
+		return nil, fmt.Errorf("servicedir: list departures: get listing: %w", err)
+	}
+
+	if row.ListingKind != ListingKindPackage {
+		return nil, ErrNotPackage
+	}
+
+	meta, err := s.store.GetMeta(ctx, row.ID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, pgx.ErrNoRows
+		}
+
+		return nil, fmt.Errorf("servicedir: list departures: get meta: %w", err)
+	}
+
+	if !isEditAny && row.AuthorID != userID {
+		if !meta.OrgID.Valid {
+			return nil, ErrNotOwner
+		}
+
+		isMember, err := s.store.IsOrgMember(ctx, meta.OrgID, userID)
+		if err != nil {
+			return nil, fmt.Errorf("servicedir: list departures: check org membership: %w", err)
+		}
+
+		if !isMember {
+			return nil, ErrNotOwner
+		}
+	}
+
+	deps, err := s.store.ListPackageDepartures(ctx, meta.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]PackageDepartureDTO, 0, len(deps))
+	for _, d := range deps {
+		out = append(out, departureToDTO(d))
+	}
+
+	return out, nil
+}
+
+// ListOrgPackages returns an org's package listings — §111 GET
+// /org/:org_id/packages. Public callers see published rows only; org
+// members additionally see drafts/in_review and every other status.
+func (s *Service) ListOrgPackages(ctx context.Context, orgID, viewerID pgtype.UUID, page, limit int32) ([]ServiceDTO, int64, error) {
+	if !s.PackagesEnabled(ctx) {
+		return nil, 0, ErrPackagesDisabled
+	}
+
+	status := "published"
+
+	if viewerID.Valid {
+		isMember, err := s.store.IsOrgMember(ctx, orgID, viewerID)
+		if err != nil {
+			return nil, 0, fmt.Errorf("servicedir: org packages: membership check: %w", err)
+		}
+
+		if isMember {
+			status = ""
+		}
+	}
+
+	if limit <= 0 {
+		limit = 20
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+
+	rows, err := s.store.ListByOrg(ctx, orgID, status, ListingKindPackage, limit, (page-1)*limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	total, err := s.store.CountByOrg(ctx, orgID, status, ListingKindPackage)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	out := make([]ServiceDTO, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, rowToDTO(r))
+	}
+
+	return out, total, nil
 }
 
 // packageDetailCache is the cached slice of a package detail response —
@@ -2088,6 +2203,7 @@ func (s *Service) attachPackageData(ctx context.Context, metaID pgtype.UUID, dto
 	}
 
 	dto.Items = make([]PackageItemDTO, 0, len(items))
+
 	for _, it := range items {
 		item := PackageItemDTO{
 			ID:       it.ID.String(),
@@ -2217,13 +2333,13 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 	var excludeKind string
 	if listingKind == "" {
 		excludeKind = ListingKindPackage
+
 		if !mentorshipOn {
 			listingKind = ListingKindService
 		}
 	}
 
 	rows, total, err := s.store.ListServices(ctx, ListServicesFilter{
-
 		DestSpaceID:     destSpaceID,
 		CitySpaceID:     citySpaceID,
 		ServiceCategory: serviceCategory,
@@ -2247,6 +2363,7 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 	tiersOn := s.TiersEnabled(ctx)
 
 	dtos := make([]ServiceDTO, 0, len(rows))
+
 	for _, r := range rows {
 		dto := rowToDTO(r)
 		if couponsOn {
@@ -2441,7 +2558,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	// is indistinguishable from absent on pointer fields).
 	if input.PriceAmount != nil {
 		if *input.PriceAmount < 0 {
-			return ServiceDTO{}, fmt.Errorf("servicedir: edit: price_amount must be positive")
+			return ServiceDTO{}, errors.New("servicedir: edit: price_amount must be positive")
 		}
 
 		if *input.PriceAmount == 0 {
@@ -2466,7 +2583,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	if isPackage {
 		if input.Capacity != nil {
 			if *input.Capacity < 0 {
-				return ServiceDTO{}, fmt.Errorf("servicedir: edit: capacity must be positive")
+				return ServiceDTO{}, errors.New("servicedir: edit: capacity must be positive")
 			}
 
 			if *input.Capacity == 0 {
@@ -2590,8 +2707,11 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	}
 
 	var depInserts []gen.CreateServicePackageDepartureParams
+
 	var depUpdates []gen.UpdateServicePackageDepartureParams
+
 	var keepIDs []pgtype.UUID
+
 	if isPackage && input.Departures != nil {
 		depParams, err := validatePackageDepartures(*input.Departures)
 		if err != nil {
@@ -2604,13 +2724,16 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		// duplicate it). Ids must belong to this package, and capacity
 		// can't shrink below seats already booked.
 		var existingDeps []gen.ServicePackageDeparture
+
 		hasIDs := false
+
 		for i := range *input.Departures {
 			if (*input.Departures)[i].ID != "" {
 				hasIDs = true
 				break
 			}
 		}
+
 		if hasIDs {
 			existingDeps, err = s.store.ListPackageDepartures(ctx, meta.ID)
 			if err != nil {
@@ -2622,6 +2745,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		for _, e := range existingDeps {
 			byID[e.ID] = e
 		}
+
 		seenUpdate := make(map[pgtype.UUID]bool)
 
 		for i, d := range *input.Departures {
@@ -2639,6 +2763,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 			if !ok || seenUpdate[depID] {
 				return ServiceDTO{}, ErrInvalidDeparture
 			}
+
 			seenUpdate[depID] = true
 
 			if depParams[i].Capacity != nil && *depParams[i].Capacity < ex.BookedCount {
@@ -2653,6 +2778,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 				Capacity:      depParams[i].Capacity,
 				Status:        depParams[i].Status,
 			})
+
 			keepIDs = append(keepIDs, depID)
 		}
 
@@ -2662,6 +2788,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		if err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: list booked departures: %w", err)
 		}
+
 		keepIDs = append(keepIDs, bookedIDs...)
 	}
 
@@ -2810,7 +2937,6 @@ func (s *Service) AdminList(ctx context.Context, status, claimStatus, serviceCat
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-
 		DestSpaceID:     destSpaceID,
 		Status:          status,
 		IsVerified:      isVerified,
@@ -2826,6 +2952,7 @@ func (s *Service) AdminList(ctx context.Context, status, claimStatus, serviceCat
 	}
 
 	dtos := make([]ServiceDTO, 0, len(rows))
+
 	for _, r := range rows {
 		dto := rowToDTO(r)
 		// AdminListServiceListings does not project the tier COALESCE —
@@ -3186,12 +3313,15 @@ func mentorBlock(r ServiceRow) *MentorDTO {
 	if r.MentorIsMentor != nil {
 		m.IsMentor = *r.MentorIsMentor
 	}
+
 	if r.MentorCapacity != nil {
 		m.Capacity = int32(*r.MentorCapacity)
 	}
+
 	if r.MentorActiveMenteeCount != nil {
 		m.ActiveMenteeCount = int32(*r.MentorActiveMenteeCount)
 	}
+
 	if slots := m.Capacity - m.ActiveMenteeCount; slots > 0 {
 		m.AvailableSlots = slots
 	}
@@ -3208,6 +3338,7 @@ func mentorBlock(r ServiceRow) *MentorDTO {
 	m.Credentials = r.MentorCredentials
 	m.SuccessLabel = strOrEmpty(r.MentorSuccessLabel)
 	m.MenteesHelped = r.MenteesHelped
+
 	if r.MentorYearsExperience != nil {
 		m.YearsExperience = int32(*r.MentorYearsExperience)
 	}
@@ -3291,6 +3422,7 @@ func metaToDTO(c gen.GetContentByIDRow, m gen.ServiceListingMetum) ServiceDTO {
 	dto.PriceAmount = m.PriceAmount
 	dto.PurchaseMode = m.PurchaseMode
 	dto.Capacity = m.Capacity
+
 	if m.PriceCurrency != nil {
 		dto.PriceCurrency = *m.PriceCurrency
 	}

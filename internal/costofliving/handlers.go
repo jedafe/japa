@@ -158,7 +158,6 @@ func parsePageLimit(r *http.Request) (int, int) {
 // route (col_calculator.use — all users including anonymous).
 // Query params: search, country_code, page, limit.
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
 		return
@@ -192,7 +191,6 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 // baseline_id (optional UUID — picks the ratio reference city; falls back
 // to the seeded is_baseline city when absent or not a cost_of_living item).
 func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
 		return

@@ -894,6 +894,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 			deps.Permission.HasPermission(ctx, userID, "agent.skip_hitl")
 
 		publishedDirect := false
+
 		if skipHITL && deps.ContentLifecycle != nil {
 			if _, perr := deps.ContentLifecycle.UpdateContentStatus(ctx, row.ID, "published"); perr == nil {
 				publishedDirect = true
@@ -904,7 +905,6 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 
 		if deps.HITL != nil && !publishedDirect {
 			review, hitlErr := deps.HITL.CreateHITLReview(ctx, HITLReview{
-
 				ContentID:   row.ID,
 				ContentType: a.ContentType,
 				AIOutput:    fvJSON,
@@ -922,6 +922,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 
 		outStatus := row.Status
 		reviewStatus := "draft submitted for admin review"
+
 		if publishedDirect {
 			outStatus = "published"
 			reviewStatus = "auto-published via agent.skip_hitl"

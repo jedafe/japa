@@ -157,7 +157,6 @@ func (p *CostOfLivingPromoter) costOfLivingCreatePath(ctx context.Context, recor
 		}
 
 		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
-
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
@@ -230,7 +229,6 @@ func buildCostOfLivingCreateParams(record gen.IntelRecord, source gen.IntelSourc
 	}
 
 	return gen.CreateComparisonItemIntelParams{
-
 		Title:         title,
 		GeoSpaceID:    pgtype.UUID{}, // resolved by the promoter from the country space
 		TypeID:        pgtype.UUID{}, // placeholder — follow-up resolves from comparison_type_definitions
@@ -263,7 +261,6 @@ func buildCostOfLivingCreateParams(record gen.IntelRecord, source gen.IntelSourc
 // the caller before the write.
 func buildCostOfLivingUpdateParams(existing gen.ComparisonItem, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateComparisonItemIntelParams, []string) {
 	params := gen.UpdateComparisonItemIntelParams{
-
 		ID:                 existing.ID,
 		IntelCostData:      existing.IntelCostData,
 		ConfidenceOverall:  existing.ConfidenceOverall,

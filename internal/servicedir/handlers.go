@@ -312,7 +312,6 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 // hardening): when the directory flag is off, only applies_to='mentorship'
 // rows are returned so the rail never advertises unreachable kinds.
 func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
-
 	directoryOn := h.service != nil && h.service.Enabled(r.Context())
 	if !directoryOn && (h.service == nil || !h.service.MentorshipEnabled(r.Context())) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
@@ -326,6 +325,7 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 		// taxonomy only — service/package categories describe kinds the
 		// deployment can't reach.
 		scoped := make([]Option, 0, len(cats))
+
 		for _, c := range cats {
 			// 'both' means every kind per the applies_to convention
 			// (pricing.go, coupons.go), so it stays visible here.
@@ -333,6 +333,7 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 				scoped = append(scoped, c)
 			}
 		}
+
 		cats = scoped
 	}
 
@@ -342,7 +343,6 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 // HandleList handles GET /services — list published service listings with
 // filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&q=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	// The bare list is directory-gated, but an explicit kind=mentorship
 	// request gets the kind-appropriate gate: Task 12 redirects
 	// /mentors → /services?kind=mentorship and that surface must stay live
@@ -400,6 +400,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
 			return
 		}
+
 		if errors.Is(err, ErrMentorshipDisabled) {
 			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 			return
@@ -425,7 +426,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /services/:slug — single published service listing.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	// The cheap pre-check only rejects when EVERY relevant flag is off —
 	// the kind-appropriate gate runs after the listing resolves below:
 	// mentorship-kind listings (000824) are reachable while
@@ -474,6 +474,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		service = rawService
 	} else {
 		var err error
+
 		service, err = h.service.GetBySlug(r.Context(), slug)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -854,6 +855,7 @@ func (h *Handlers) HandleGetCoupons(w http.ResponseWriter, r *http.Request) {
 		}
 
 		writeServiceError(w, err, "coupons_failed", "Failed to list listing coupons")
+
 		return
 	}
 
@@ -889,6 +891,7 @@ func (h *Handlers) HandleSetCoupons(w http.ResponseWriter, r *http.Request) {
 	}
 
 	couponIDs := make([]pgtype.UUID, 0, len(body.CouponIDs))
+
 	for _, raw := range body.CouponIDs {
 		var id pgtype.UUID
 		if err := id.Scan(raw); err != nil {
@@ -943,6 +946,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	claimStatus := r.URL.Query().Get("claim_status")
 	serviceCategory := r.URL.Query().Get("category")
+
 	listingKind := r.URL.Query().Get("kind")
 	if listingKind == "all" {
 		listingKind = ""
@@ -1213,6 +1217,7 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 // message; unexpected errors fall through to the provided 500.
 func writeCategoryError(w http.ResponseWriter, err error, code, msg string) {
 	var inputErr *CategoryInputError
+
 	switch {
 	case errors.As(err, &inputErr):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", inputErr.Msg)
@@ -1338,4 +1343,77 @@ func (h *Handlers) HandleAdminDeleteCategory(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleListDepartures handles GET /services/:id/departures — ALL
+// departures (open, past, full, cancelled) for a package listing, §111.
+// Editor-scoped: author / owning-org member / service.edit_any.
+// Non-editors get 404 (ErrNotOwner) so unpublished packages never leak.
+func (h *Handlers) HandleListDepartures(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	isEditAny := h.rbac != nil && h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")
+
+	deps, err := h.service.ListDeparturesForEditor(r.Context(), contentID, user.UserID, isEditAny)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrNotOwner) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+
+		slog.Error("servicedir: list departures failed", "content_id", contentID, "error", err)
+		writeServiceError(w, err, "list_failed", "Failed to list departures")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": deps})
+}
+
+// HandleOrgPackages handles GET /org/:org_id/packages — an org's package
+// listings, §111. Public callers see published rows only; org members
+// additionally see drafts/in_review (OptionalAuth resolves the viewer).
+func (h *Handlers) HandleOrgPackages(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := scanUUIDParam(w, r, "org_id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	var viewerID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		viewerID = u.UserID
+	}
+
+	page, limit := parsePageParams(r)
+
+	services, total, err := h.service.ListOrgPackages(r.Context(), orgID, viewerID, page, limit)
+	if err != nil {
+		slog.Error("servicedir: org packages failed", "org_id", orgID, "error", err)
+		writeServiceError(w, err, "list_failed", "Failed to list org packages")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": services,
+		"meta": map[string]any{"total": total, "page": page, "limit": limit},
+	})
 }

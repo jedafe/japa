@@ -124,7 +124,6 @@ func (h *Handlers) resolveItems(ctx context.Context, items []RSSItem) {
 // auto-hidden items). Reads from the Valkey cache populated by the
 // rss:regenerate worker task when available; falls back to live DB.
 func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
-
 	siteURL := resolveSiteURL(r, h.siteURL)
 
 	// Try the Valkey cache first (jc:cache:feed:rss:{}).
@@ -227,7 +226,6 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 		w, r, cacheKey,
 		func() ([]RSSItem, error) {
 			rows, err := h.q.ListRSSSpaceFeedItems(r.Context(), gen.ListRSSSpaceFeedItemsParams{
-
 				Slug:      slug,
 				PageLimit: h.feedLimit,
 			})
@@ -259,7 +257,6 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 		w, r, cacheKey,
 		func() ([]RSSItem, error) {
 			rows, err := h.q.ListRSSTagFeedItems(r.Context(), gen.ListRSSTagFeedItemsParams{
-
 				Slug:      slug,
 				PageLimit: h.feedLimit,
 			})
@@ -293,8 +290,10 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
 		}
+
 		slog.Error("rss: lookup user for feed", "username", username, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load feed")
+
 		return
 	}
 
@@ -305,7 +304,6 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 		w, r, cacheKey,
 		func() ([]RSSItem, error) {
 			rows, err := h.q.ListRSSUserFeedItems(r.Context(), gen.ListRSSUserFeedItemsParams{
-
 				Username:  username,
 				PageLimit: h.feedLimit,
 			})

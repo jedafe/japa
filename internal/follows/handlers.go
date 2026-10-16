@@ -157,6 +157,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	} else {
 		followed, err = h.service.EnsureFollow(r.Context(), user.UserID, entityType, entityID)
 	}
+
 	if err != nil {
 		if errors.Is(err, ErrEntityNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "entity_not_found", "The target entity does not exist")
@@ -179,7 +180,6 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 // and the entity_id is read from the same path parameter — not from a query
 // string. Ref: japaconnect-engineering/sections/31-follow-system.md.
 func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
-
 	// The caller's user ID is needed to resolve is_following per item
 	// (Section 31). Best-effort: when absent, is_following defaults to false.
 	var callerID pgtype.UUID
@@ -222,7 +222,6 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 // GetFollowing handles GET /api/v1/users/{user_id}/following.
 func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
-
 	// The caller's user ID is needed to resolve is_following per item
 	// (Section 31). Best-effort: when absent, is_following defaults to false.
 	var callerID pgtype.UUID
@@ -255,7 +254,6 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 // Supports optional ?type=user|space|tag|organization
 // filtering per Section 31 contract (H6).
 func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -294,7 +292,6 @@ func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 // ListMyFollowers handles GET /api/v1/me/followers — the caller's own followers
 // (H5 — Section 31 contract). Ref: japaconnect-engineering/sections/31-follow-system.md.
 func (h *Handlers) ListMyFollowers(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -332,7 +329,6 @@ func mapTypeFilter(t string) (string, bool) {
 
 // ListMyFollowedTags handles GET /api/v1/me/followed-tags — tags the caller follows.
 func (h *Handlers) ListMyFollowedTags(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return

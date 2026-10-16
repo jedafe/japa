@@ -264,7 +264,7 @@ type PublicProviderInfo struct {
 // The default implementation (DefaultAPIClient) makes real HTTP calls via
 // net/http; tests inject a fake implementation so the service can be exercised
 // without network access.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type TravelAPIClient interface {
 	SearchFlights(ctx context.Context, apiConfig json.RawMessage, params FlightSearchParams) ([]FlightResult, error)
 	SearchHotels(ctx context.Context, apiConfig json.RawMessage, params HotelSearchParams) ([]HotelResult, error)
@@ -545,6 +545,7 @@ func (c *DefaultAPIClient) SearchLocations(ctx context.Context, apiConfig json.R
 		if city == "" {
 			city = loc.CityName
 		}
+
 		if city == "" {
 			city = loc.Municipality
 		}
@@ -553,6 +554,7 @@ func (c *DefaultAPIClient) SearchLocations(ctx context.Context, apiConfig json.R
 		if country == "" {
 			country = loc.ISOCountry
 		}
+
 		if country == "" {
 			country = loc.Country
 		}
@@ -623,9 +625,11 @@ func (c *DefaultAPIClient) FetchHotelDirectory(ctx context.Context, apiConfig js
 		if id == "" {
 			id = h.PropertyID
 		}
+
 		if id == "" {
 			id = h.HotelCode
 		}
+
 		if id == "" {
 			id = h.ID
 		}
@@ -634,6 +638,7 @@ func (c *DefaultAPIClient) FetchHotelDirectory(ctx context.Context, apiConfig js
 		if city == "" {
 			city = h.CityName
 		}
+
 		if city == "" {
 			city = h.Destination
 		}
@@ -642,6 +647,7 @@ func (c *DefaultAPIClient) FetchHotelDirectory(ctx context.Context, apiConfig js
 		if stars == 0 {
 			stars = h.Stars
 		}
+
 		if stars == 0 {
 			stars = h.Rating
 		}
@@ -650,6 +656,7 @@ func (c *DefaultAPIClient) FetchHotelDirectory(ctx context.Context, apiConfig js
 		if image == "" {
 			image = h.Image
 		}
+
 		if image == "" {
 			image = h.Thumbnail
 		}
@@ -1188,7 +1195,6 @@ func (s *Service) upsertHotelDirectoryRow(ctx context.Context, providerID pgtype
 		LastPrice:    floatToNumeric(r.Price),
 		LastCurrency: strPtrOrNil(offerCurrency(r.Currency)),
 	})
-
 	if err != nil {
 		slog.Warn("travel: upsert hotel directory row failed", "hotel", r.Name, "error", err)
 	}
@@ -1198,7 +1204,7 @@ func (s *Service) upsertHotelDirectoryRow(ctx context.Context, providerID pgtype
 // travel_hotels. It never calls a provider; the table is filled by search
 // upserts and the sync task. Disabled surfaces return ErrTravelDisabled so
 // the directory honors the same travel.enabled gate as search.
-func (s *Service) HotelDirectory(ctx context.Context, city, q string, minStars int, page, pageSize int) ([]HotelDirectoryItem, int64, error) {
+func (s *Service) HotelDirectory(ctx context.Context, city, q string, minStars, page, pageSize int) ([]HotelDirectoryItem, int64, error) {
 	if !s.IsEnabled(ctx) {
 		return nil, 0, ErrTravelDisabled
 	}
@@ -1253,11 +1259,13 @@ func (s *Service) HotelDirectory(ctx context.Context, city, q string, minStars i
 // rows would mutate the directory on a mere query.
 func (s *Service) lookupAirline(ctx context.Context, raw string) (gen.TravelAirline, error) {
 	var row gen.TravelAirline
+
 	var err error
 
 	if airlineIATARe.MatchString(raw) {
 		row, err = s.store.FindTravelAirlineByIATA(ctx, strings.ToUpper(raw))
 	}
+
 	if err != nil || row.AirlineKey == "" {
 		row, err = s.store.FindTravelAirlineByName(ctx, raw)
 	}
@@ -1293,7 +1301,9 @@ func (s *Service) airlineKeyFor(ctx context.Context, providerID pgtype.UUID, raw
 		// code when the provider sent one (it may fill a seed gap), else a
 		// name slug.
 		key := "name:" + airlineSlug(raw)
+
 		var iata *string
+
 		if airlineIATARe.MatchString(raw) {
 			code := strings.ToUpper(raw)
 			iata = &code
@@ -1309,6 +1319,7 @@ func (s *Service) airlineKeyFor(ctx context.Context, providerID pgtype.UUID, raw
 			slog.Warn("travel: upsert airline failed", "airline", raw, "error", uerr)
 			return ""
 		}
+
 		row.AirlineKey = key
 	}
 
@@ -1327,9 +1338,11 @@ func airlineSlug(name string) string {
 	s := strings.ToLower(strings.TrimSpace(name))
 	s = airlineSlugRe.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
+
 	if s == "" {
 		s = "unknown"
 	}
+
 	return s
 }
 
@@ -1402,9 +1415,11 @@ func airlineDirectoryItemFromRow(a gen.ListTravelAirlinesRow) AirlineDirectoryIt
 	if a.IataCode != nil {
 		item.IATACode = *a.IataCode
 	}
+
 	if a.IcaoCode != nil {
 		item.ICAOCode = *a.IcaoCode
 	}
+
 	if a.CoverageLastSeenAt.Valid {
 		item.LastSeenAt = a.CoverageLastSeenAt.Time.UTC().Format(time.RFC3339)
 	}
@@ -1559,6 +1574,7 @@ func (s *Service) persistFlightOffers(ctx context.Context, provider gen.TravelPr
 	departDate, _ := time.Parse("2006-01-02", params.Date)
 
 	var returnDate pgtype.Date
+
 	if params.ReturnDate != "" {
 		if rd, err := time.Parse("2006-01-02", params.ReturnDate); err == nil {
 			returnDate = pgtype.Date{Time: rd, Valid: true}
@@ -1574,8 +1590,10 @@ func (s *Service) persistFlightOffers(ctx context.Context, provider gen.TravelPr
 		if v, ok := airlineKeys[k]; ok {
 			return v
 		}
+
 		v := s.airlineKeyFor(ctx, provider.ID, raw)
 		airlineKeys[k] = v
+
 		return v
 	}
 
@@ -1689,6 +1707,7 @@ func (s *Service) inventoryFlights(ctx context.Context, provider gen.TravelProvi
 	departDate, _ := time.Parse("2006-01-02", params.Date)
 
 	var returnDate pgtype.Date
+
 	if params.ReturnDate != "" {
 		if rd, err := time.Parse("2006-01-02", params.ReturnDate); err == nil {
 			returnDate = pgtype.Date{Time: rd, Valid: true}
@@ -1763,21 +1782,27 @@ func flightResultFromOffer(provider gen.TravelProvider, o gen.TravelFlightOffer)
 	if o.Airline != nil {
 		r.Airline = *o.Airline
 	}
+
 	if o.AirlineKey != nil {
 		r.AirlineKey = *o.AirlineKey
 	}
+
 	if o.FlightNumber != nil {
 		r.FlightNumber = *o.FlightNumber
 	}
+
 	if o.Stops != nil {
 		r.Stops = int(*o.Stops)
 	}
+
 	if o.Duration != nil {
 		r.Duration = *o.Duration
 	}
+
 	if o.DepartTs.Valid {
 		r.DepartureTime = o.DepartTs.Time.UTC().Format(time.RFC3339)
 	}
+
 	if o.ArriveTs.Valid {
 		r.ArrivalTime = o.ArriveTs.Time.UTC().Format(time.RFC3339)
 	}
@@ -1799,15 +1824,19 @@ func hotelResultFromOffer(provider gen.TravelProvider, o gen.TravelHotelOffer) H
 	if o.StarRating != nil {
 		r.StarRating = int(*o.StarRating)
 	}
+
 	if o.Address != nil {
 		r.Address = *o.Address
 	}
+
 	if o.ImageUrl != nil {
 		r.ImageURL = *o.ImageUrl
 	}
+
 	if o.Checkin.Valid {
 		r.CheckIn = o.Checkin.Time.Format("2006-01-02")
 	}
+
 	if o.Checkout.Valid {
 		r.CheckOut = o.Checkout.Time.Format("2006-01-02")
 	}
@@ -1830,15 +1859,19 @@ func hotelDirectoryItemFromRow(h gen.TravelHotel) HotelDirectoryItem {
 	if h.StarRating != nil {
 		item.StarRating = int(*h.StarRating)
 	}
+
 	if h.Address != nil {
 		item.Address = *h.Address
 	}
+
 	if h.ImageUrl != nil {
 		item.ImageURL = *h.ImageUrl
 	}
+
 	if h.LastCurrency != nil {
 		item.LastCurrency = strings.TrimSpace(*h.LastCurrency)
 	}
+
 	if h.LastPrice.Valid {
 		p := numericToFloat(h.LastPrice)
 		item.LastPrice = &p
@@ -1862,9 +1895,11 @@ func applyFlightPresentation(in []FlightResult, opts SearchOptions) ([]FlightRes
 			(opts.airlineKey == "" || r.AirlineKey != opts.airlineKey) {
 			continue
 		}
+
 		if opts.MaxStops >= 0 && r.Stops > opts.MaxStops {
 			continue
 		}
+
 		if opts.PriceMax > 0 && r.Price > opts.PriceMax {
 			continue
 		}
@@ -1898,6 +1933,7 @@ func applyHotelPresentation(in []HotelResult, opts SearchOptions) ([]HotelResult
 		if opts.PriceMax > 0 && r.Price > opts.PriceMax {
 			continue
 		}
+
 		if opts.MinStars > 0 && r.StarRating < opts.MinStars {
 			continue
 		}
@@ -1949,8 +1985,10 @@ func pageSlice[T any](in []T, page, pageSize int) ([]T, int) {
 // durationRe parses provider duration strings: "6h30m", "6h 30m", "PT6H30M".
 var durationRe = regexp.MustCompile(`(?i)(\d+)\s*h(?:ours?)?\s*(\d+)?`)
 
-var airlineIATARe = regexp.MustCompile(`^[A-Za-z0-9]{2}$`)
-var airlineSlugRe = regexp.MustCompile(`[^a-z0-9]+`)
+var (
+	airlineIATARe = regexp.MustCompile(`^[A-Za-z0-9]{2}$`)
+	airlineSlugRe = regexp.MustCompile(`[^a-z0-9]+`)
+)
 
 // durationMinutes converts a duration string to minutes for sorting.
 // Unparseable values sort last.
@@ -1976,6 +2014,7 @@ func durationMinutes(s string) int {
 	if i := strings.Index(s, ":"); i > 0 { // "6:30"
 		hours, err1 := strconv.Atoi(s[:i])
 		mins, err2 := strconv.Atoi(s[i+1:])
+
 		if err1 == nil && err2 == nil {
 			return hours*60 + mins
 		}
@@ -2040,6 +2079,7 @@ func int16PtrOrNil(v int, keep bool) *int16 {
 	}
 
 	i := int16(v)
+
 	return &i
 }
 
@@ -2144,10 +2184,13 @@ func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams, 
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("travel: get active flight provider: %w", err)
 	}
+
 	hasProvider := err == nil
 
 	var affiliate json.RawMessage
+
 	var providerPtr *gen.TravelProvider
+
 	if hasProvider {
 		affiliate = provider.AffiliateConfig
 		providerPtr = &provider
@@ -2200,6 +2243,7 @@ func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams, 
 		if resp := s.staleFlightResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
 			slog.Warn("travel: provider config unusable, serving stale results", "error", err)
 			s.store.BumpSearchResultHit(ctx, stored.ID)
+
 			return resp, nil
 		}
 
@@ -2238,6 +2282,7 @@ func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams, 
 		if resp := s.staleFlightResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
 			slog.Warn("travel: provider failed, serving stale results", "error", err)
 			s.store.BumpSearchResultHit(ctx, stored.ID)
+
 			return resp, nil
 		}
 
@@ -2296,10 +2341,13 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams, op
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("travel: get active hotel provider: %w", err)
 	}
+
 	hasProvider := err == nil
 
 	var affiliate json.RawMessage
+
 	var providerPtr *gen.TravelProvider
+
 	if hasProvider {
 		affiliate = provider.AffiliateConfig
 		providerPtr = &provider
@@ -2348,6 +2396,7 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams, op
 		if resp := s.staleHotelResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
 			slog.Warn("travel: provider config unusable, serving stale results", "error", err)
 			s.store.BumpSearchResultHit(ctx, stored.ID)
+
 			return resp, nil
 		}
 
@@ -2380,6 +2429,7 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams, op
 		if resp := s.staleHotelResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
 			slog.Warn("travel: provider failed, serving stale results", "error", err)
 			s.store.BumpSearchResultHit(ctx, stored.ID)
+
 			return resp, nil
 		}
 
@@ -2427,6 +2477,7 @@ func (s *Service) SearchLocations(ctx context.Context, q string, limit int32) ([
 	if limit <= 0 {
 		limit = 15
 	}
+
 	if limit > 50 {
 		limit = 50
 	}
@@ -2441,6 +2492,7 @@ func (s *Service) SearchLocations(ctx context.Context, q string, limit int32) ([
 
 	for _, r := range rows {
 		seen[r.IataCode] = true
+
 		out = append(out, LocationResult{
 			IATA:        r.IataCode,
 			Name:        r.Name,
@@ -2585,6 +2637,7 @@ func (s *Service) MergeAPIConfigPatch(ctx context.Context, providerID pgtype.UUI
 		APIKey   string          `json:"api_key"`
 		Extra    json.RawMessage `json:"extra"`
 	}
+
 	if err := json.Unmarshal(incoming, &inc); err != nil {
 		return nil, fmt.Errorf("travel: parse api_config: %w", err)
 	}
@@ -2599,11 +2652,13 @@ func (s *Service) MergeAPIConfigPatch(ctx context.Context, providerID pgtype.UUI
 	}
 
 	existing := map[string]json.RawMessage{}
+
 	if len(provider.ApiConfig) > 0 {
 		dec, err := crypto.DecryptJSON(provider.ApiConfig)
 		if err != nil {
 			return nil, fmt.Errorf("travel: decrypt existing api_config: %w", err)
 		}
+
 		_ = json.Unmarshal(dec, &existing)
 	}
 
@@ -2623,6 +2678,7 @@ func (s *Service) MergeAPIConfigPatch(ctx context.Context, providerID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("travel: merge api_config extra: %w", err)
 	}
+
 	existing["extra"] = mergedExtra
 
 	out, err := json.Marshal(existing)

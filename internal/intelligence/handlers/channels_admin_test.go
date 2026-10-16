@@ -197,12 +197,15 @@ func TestValidateEntityTypes_ChannelPatch(t *testing.T) {
 	if got := validateEntityTypes([]string{}); got != "" {
 		t.Errorf("validateEntityTypes([]) = %q, want \"\" (explicit clear is valid)", got)
 	}
+
 	if got := validateEntityTypes(nil); got != "" {
 		t.Errorf("validateEntityTypes(nil) = %q, want \"\" (null → clear)", got)
 	}
+
 	if got := validateEntityTypes([]string{"not_a_schema"}); got == "" {
 		t.Error("validateEntityTypes([not_a_schema]) = \"\", want the offending value")
 	}
+
 	if got := validateEntityTypes([]string{"job"}); got != "" {
 		t.Errorf("validateEntityTypes([job]) = %q, want \"\" (registered type)", got)
 	}
@@ -273,6 +276,7 @@ func decodeChannelData(t *testing.T, rr *httptest.ResponseRecorder) map[string]a
 	var env struct {
 		Data map[string]any `json:"data"`
 	}
+
 	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
 		t.Fatalf("decode data envelope: %v (body=%s)", err, rr.Body.String())
 	}
@@ -291,6 +295,7 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 
 	ctx := t.Context()
 	sourceID := createChannelTestSource(t, svc)
+
 	defer func() { _ = svc.Delete(ctx, sourceID) }()
 
 	// --- create ---
@@ -312,18 +317,22 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 	}
 
 	created := decodeChannelData(t, rr)
+
 	channelID, _ := created["id"].(string)
 	if channelID == "" {
 		t.Fatalf("create: no id in response (body=%s)", rr.Body.String())
 	}
+
 	defer func() { _ = svc.DeleteChannel(ctx, mustUUID(t, channelID)) }()
 
 	if created["pipeline"] != "curate" {
 		t.Errorf("pipeline = %v, want curate", created["pipeline"])
 	}
+
 	if created["origin"] != "admin" {
 		t.Errorf("origin = %v, want admin", created["origin"])
 	}
+
 	if created["enabled"] != true {
 		t.Errorf("enabled = %v, want true", created["enabled"])
 	}
@@ -340,15 +349,19 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 	var listEnv struct {
 		Data []map[string]any `json:"data"`
 	}
+
 	if err := json.NewDecoder(rr.Body).Decode(&listEnv); err != nil {
 		t.Fatalf("list: decode: %v", err)
 	}
+
 	found := false
+
 	for _, c := range listEnv.Data {
 		if c["id"] == channelID {
 			found = true
 		}
 	}
+
 	if !found {
 		t.Errorf("list: channel %s not in listing (body=%s)", channelID, rr.Body.String())
 	}
@@ -361,10 +374,12 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("get: status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	got := decodeChannelData(t, rr)
 	if got["label"] != "Jobs RSS" {
 		t.Errorf("get: label = %v, want Jobs RSS", got["label"])
 	}
+
 	if got["source_id"] != sourceID.String() {
 		t.Errorf("get: source_id = %v, want %s", got["source_id"], sourceID.String())
 	}
@@ -384,16 +399,20 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("patch: status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	patched := decodeChannelData(t, rr)
 	if patched["label"] != "Jobs RSS (renamed)" {
 		t.Errorf("patch: label = %v", patched["label"])
 	}
+
 	if ets, ok := patched["entity_types"].([]any); !ok || len(ets) != 0 {
 		t.Errorf("patch: entity_types = %v, want []", patched["entity_types"])
 	}
+
 	if patched["relevance_mode"] != "custom" {
 		t.Errorf("patch: relevance_mode = %v, want custom", patched["relevance_mode"])
 	}
+
 	if topics, ok := patched["relevance_topics"].([]any); !ok || len(topics) != 2 {
 		t.Errorf("patch: relevance_topics = %v", patched["relevance_topics"])
 	}
@@ -416,22 +435,28 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("crawl: list pending tasks: %v", err)
 	}
+
 	var crawlTask *asynq.TaskInfo
+
 	for _, task := range tasks {
 		if task.Type == TaskIntelFetchChannel {
 			crawlTask = task
 		}
 	}
+
 	if crawlTask == nil {
 		t.Fatalf("crawl: no %s task pending", TaskIntelFetchChannel)
 	}
+
 	var crawlPayload map[string]string
 	if err := json.Unmarshal(crawlTask.Payload, &crawlPayload); err != nil {
 		t.Fatalf("crawl: unmarshal payload: %v", err)
 	}
+
 	if crawlPayload["channel_id"] != channelID {
 		t.Errorf("crawl payload channel_id = %v, want %s", crawlPayload["channel_id"], channelID)
 	}
+
 	if crawlPayload["source_id"] != sourceID.String() {
 		t.Errorf("crawl payload source_id = %v, want %s", crawlPayload["source_id"], sourceID.String())
 	}
@@ -440,6 +465,7 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 	rr = httptest.NewRecorder()
 	r = authedChannelRequest(t, http.MethodPatch, "/", channelID, `{"enabled": false}`, true)
 	h.HandleAdminUpdateChannel(rr, r)
+
 	if rr.Code != http.StatusOK {
 		t.Fatalf("disable patch: status = %d (body=%s)", rr.Code, rr.Body.String())
 	}
@@ -454,10 +480,13 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 	rr = httptest.NewRecorder()
 	r = authedChannelRequest(t, http.MethodPost, "/", sourceID.String(), manualBody, true)
 	h.HandleAdminCreateChannel(rr, r)
+
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create manual: status = %d (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	manualID, _ := decodeChannelData(t, rr)["id"].(string)
+
 	defer func() { _ = svc.DeleteChannel(ctx, mustUUID(t, manualID)) }()
 
 	rr = httptest.NewRecorder()
@@ -478,19 +507,24 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reprobe: list pending tasks: %v", err)
 	}
+
 	var probeTask *asynq.TaskInfo
+
 	for _, task := range tasks {
 		if task.Type == TaskIntelProbeVerify {
 			probeTask = task
 		}
 	}
+
 	if probeTask == nil {
 		t.Fatalf("reprobe: no %s task pending", TaskIntelProbeVerify)
 	}
+
 	var probePayload map[string]string
 	if err := json.Unmarshal(probeTask.Payload, &probePayload); err != nil {
 		t.Fatalf("reprobe: unmarshal payload: %v", err)
 	}
+
 	if probePayload["source_id"] != sourceID.String() {
 		t.Errorf("reprobe payload source_id = %v, want %s", probePayload["source_id"], sourceID.String())
 	}
@@ -499,6 +533,7 @@ func TestAdminChannelCRUD_LiveDB(t *testing.T) {
 	rr = httptest.NewRecorder()
 	r = authedChannelRequest(t, http.MethodDelete, "/", channelID, "", true)
 	h.HandleAdminDeleteChannel(rr, r)
+
 	if rr.Code != http.StatusOK {
 		t.Fatalf("delete: status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}

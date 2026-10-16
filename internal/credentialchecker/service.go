@@ -278,7 +278,6 @@ func (s *Service) ListPathways(ctx context.Context, destSpaceID, issuingSpaceID,
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListPathways(ctx, ListPathwaysFilter{
-
 		DestinationSpaceID: destSpaceID,
 		ProfessionID:       professionID,
 		IssuingSpaceID:     issuingSpaceID,
@@ -360,7 +359,6 @@ func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (
 	}
 
 	input := CreatePathwayInput{
-
 		ProfessionID:       req.ProfessionID,
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -637,7 +635,6 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 	}
 
 	input := CreatePathwayInput{
-
 		ProfessionID:       req.ProfessionID,
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -731,7 +728,6 @@ func (s *Service) AdminListPathways(ctx context.Context, destSpaceID, issuingSpa
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListPathways(ctx, ListPathwaysFilter{
-
 		DestinationSpaceID: destSpaceID,
 		ProfessionID:       professionID,
 		IssuingSpaceID:     issuingSpaceID,

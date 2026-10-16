@@ -41,6 +41,7 @@ func (h *Handlers) Fetch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Info("linkpreview: fetch failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "fetch_failed", "Could not fetch a preview for this URL")
+
 		return
 	}
 

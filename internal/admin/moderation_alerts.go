@@ -198,7 +198,6 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 // or empty defaults to "pending" (the review queue view), and "all" returns
 // every claim for history/audit. Ref: sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Request) {
-
 	// Default to pending so existing callers (e.g. the /organisations page's
 	// "Approve Claim" action map) keep receiving only actionable claims.
 	status := r.URL.Query().Get("status")

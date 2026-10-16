@@ -13,6 +13,7 @@
 package ai
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -97,6 +98,7 @@ func wikiCreateFallback(ctx context.Context, deps *ToolDeps, userID pgtype.UUID,
 	if content, _ := rawContent(payload["content"]); len(content) > 0 {
 		return errorToolResult("wiki_unavailable", "wiki service is not configured; content-bearing creates need the §80 revision path"), nil
 	}
+
 	if deps == nil || deps.ToolsRegistry == nil {
 		return errorToolResult("wiki_unavailable", "wiki service is not configured"), nil
 	}
@@ -121,6 +123,7 @@ func wikiCreateWithRevision(ctx context.Context, deps *ToolDeps, userID pgtype.U
 		if err != nil {
 			return errorToolResult("invalid_space", err.Error()), nil
 		}
+
 		spaceSlug, err = deps.Wiki.SpaceSlugByID(ctx, id)
 		if err != nil {
 			return errorToolResult("invalid_space", fmt.Sprintf("could not resolve space: %v", err)), nil
@@ -128,9 +131,10 @@ func wikiCreateWithRevision(ctx context.Context, deps *ToolDeps, userID pgtype.U
 	}
 
 	var position *int32
+
 	if v, ok := payload["position"]; ok && v != nil {
 		if f, ok := v.(float64); ok {
-			p := int32(f) //nolint:gosec // position is a small ordinal
+			p := int32(f)
 			position = &p
 		}
 	}
@@ -217,10 +221,12 @@ func WikiPageSubmitRevisionHandler(deps *ToolDeps) ToolHandler {
 			if deps.Points == nil {
 				return errorToolResult("reputation_check_unavailable", "reputation verification is currently unavailable"), nil
 			}
+
 			points, err := deps.Points.GetPointsBalance(ctx, userID)
 			if err != nil {
 				return errorToolResult("reputation_check_failed", "failed to verify reputation"), nil
 			}
+
 			if points < int64(threshold) {
 				return errorToolResult("insufficient_reputation", "you need more reputation to edit this wiki page"), nil
 			}
@@ -294,15 +300,7 @@ func WikiPageListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
 
-		pages, total, err := deps.Wiki.ListPages(ctx, WikiPageListFilter{
-			SpaceSlug: a.SpaceSlug,
-			Category:  a.Category,
-			Status:    a.Status,
-			Q:         a.Q,
-			IsActive:  a.IsActive,
-			Page:      a.Page,
-			Limit:     a.Limit,
-		})
+		pages, total, err := deps.Wiki.ListPages(ctx, WikiPageListFilter(a))
 		if err != nil {
 			return errorToolResult("wiki_list_failed", err.Error()), nil
 		}
@@ -339,6 +337,7 @@ func WikiPageReadHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.SpaceSlug == "" || a.PageSlug == "" {
 			return errorToolResult("missing_slug", "space_slug and page_slug are required"), nil
 		}
@@ -389,16 +388,20 @@ func WikiPageRevisionsListHandler(deps *ToolDeps) ToolHandler {
 			deps.Permission.HasPermission(ctx, userID, "wiki.review")
 
 		var revs []WikiRevisionInfo
+
 		var total int64
+
 		var err error
 
 		switch {
 		case a.EntityType != "" || a.EntityID != "":
 			var entityID pgtype.UUID
+
 			entityID, err = scanUUID(a.EntityID)
 			if err != nil || a.EntityType == "" {
 				return errorToolResult("invalid_entity", "entity_type and a valid entity_id are required together"), nil
 			}
+
 			revs, total, err = deps.Wiki.ListEntityRevisions(ctx, userID, canReview, a.EntityType, entityID, a.Page, a.Limit)
 		case a.SpaceSlug != "" && a.PageSlug != "":
 			revs, total, err = deps.Wiki.ListRevisionHistory(ctx, userID, canReview, a.SpaceSlug, a.PageSlug, a.Page, a.Limit)
@@ -407,8 +410,10 @@ func WikiPageRevisionsListHandler(deps *ToolDeps) ToolHandler {
 			if !canReview {
 				return errorToolResult("permission_denied", "wiki.review is required to list the global revision queue; pass space_slug+page_slug or entity_type+entity_id for a scoped listing"), nil
 			}
+
 			revs, total, err = deps.Wiki.ListRevisions(ctx, a.Kind, a.Status, a.Q, a.Page, a.Limit)
 		}
+
 		if err != nil {
 			return errorToolResult("wiki_revisions_failed", err.Error()), nil
 		}
@@ -521,13 +526,16 @@ func rawContent(v any) (json.RawMessage, error) {
 	if v == nil {
 		return nil, nil
 	}
+
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
+
 	if string(raw) == `""` || string(raw) == "null" {
 		return nil, nil
 	}
+
 	return raw, nil
 }
 
@@ -537,8 +545,10 @@ func wikiSpaceID(ctx context.Context, wiki WikiAgentService, payload map[string]
 	if s, _ := payload["space_id"].(string); s != "" {
 		return scanUUID(s)
 	}
+
 	if slug, _ := payload["space_slug"].(string); slug != "" {
 		return wiki.SpaceIDBySlug(ctx, slug)
 	}
-	return pgtype.UUID{}, fmt.Errorf("space_id or space_slug is required")
+
+	return pgtype.UUID{}, errors.New("space_id or space_slug is required")
 }

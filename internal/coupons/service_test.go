@@ -140,6 +140,7 @@ func TestConstants(t *testing.T) {
 
 func TestValidateCouponDetails(t *testing.T) {
 	oversize := json.RawMessage(`{"s":"` + string(make([]byte, 40*1024)) + `"}`)
+
 	cases := []struct {
 		name    string
 		raw     json.RawMessage
@@ -159,6 +160,7 @@ func TestValidateCouponDetails(t *testing.T) {
 			if tc.wantErr && err == nil {
 				t.Error("expected error")
 			}
+
 			if !tc.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
@@ -174,6 +176,7 @@ func TestPendingConstant(t *testing.T) {
 
 func TestValidateOutboundURL(t *testing.T) {
 	str := func(s string) *string { return &s }
+
 	cases := []struct {
 		name    string
 		u       *string
@@ -198,9 +201,11 @@ func TestValidateOutboundURL(t *testing.T) {
 			if tc.wantErr && err == nil {
 				t.Error("expected error")
 			}
+
 			if !tc.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
+
 			if tc.wantErr && err != nil && !errors.Is(err, ErrInvalidURL) {
 				t.Errorf("expected ErrInvalidURL, got %v", err)
 			}
@@ -210,12 +215,15 @@ func TestValidateOutboundURL(t *testing.T) {
 
 func TestValidateCouponWriteURLs(t *testing.T) {
 	bad := "javascript:alert(1)"
+
 	input := CreateCouponInput{Title: "x", Status: string(CouponStatusActive), ReferralURL: &bad}
 	if err := validateCouponWrite(input); !errors.Is(err, ErrInvalidURL) {
 		t.Errorf("expected ErrInvalidURL, got %v", err)
 	}
+
 	input.ReferralURL = nil
 	input.TermsURL = &bad
+
 	if err := validateCouponWrite(input); !errors.Is(err, ErrInvalidURL) {
 		t.Errorf("expected ErrInvalidURL, got %v", err)
 	}

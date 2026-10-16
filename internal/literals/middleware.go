@@ -1,10 +1,10 @@
 package literals
 
 import (
+	"strconv"
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -102,6 +102,7 @@ func (w *literalResponseWriter) Write(p []byte) (int, error) {
 	if w.buf.Len()+len(p) > maxResponseBuffer {
 		// Oversized JSON — flush head + buffered bytes and stream the rest.
 		w.flushHead()
+
 		if _, err := w.buf.WriteTo(w.ResponseWriter); err != nil {
 			return 0, err
 		}
@@ -160,8 +161,10 @@ func (w *literalResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 	}
 
 	n, err := w.buf.ReadFrom(io.LimitReader(r, maxResponseBuffer+1))
+
 	if w.buf.Len() > maxResponseBuffer {
 		w.flushHead()
+
 		_, _ = w.buf.WriteTo(w.ResponseWriter)
 		if err == nil {
 			_, err = io.Copy(w.ResponseWriter, r)
@@ -187,6 +190,7 @@ func (w *literalResponseWriter) finish(cat *Catalog, r *http.Request) {
 	}
 
 	body := w.buf.Bytes()
+
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
@@ -196,12 +200,14 @@ func (w *literalResponseWriter) finish(cat *Catalog, r *http.Request) {
 	}
 
 	w.header.Del("Content-Length")
+
 	if len(body) > 0 {
-		w.header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
+		w.header.Set("Content-Length", strconv.Itoa(len(body)))
 	}
 
 	copyHeaders(w.ResponseWriter.Header(), w.header)
 	w.ResponseWriter.WriteHeader(w.status)
+
 	if len(body) > 0 && w.status != http.StatusNoContent {
 		_, _ = w.ResponseWriter.Write(body)
 	}

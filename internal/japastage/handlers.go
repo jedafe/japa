@@ -158,7 +158,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // journey classes it applies to; ?intent= filters to one class's stages
 // (ADR-122 class-scoped terminals).
 func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
@@ -179,7 +178,6 @@ func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
 // HandleIntents handles GET /japa-stage/intents — returns the canonical
 // japa_intent option list (Rule 16, ADR-122).
 func (h *Handlers) HandleIntents(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
@@ -195,7 +193,6 @@ func (h *Handlers) HandleIntents(w http.ResponseWriter, r *http.Request) {
 // view. Returns an empty data object (stage omitted) when the profile is not
 // public, so anonymous browsers simply see no stage.
 func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
@@ -230,7 +227,6 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 // ?stage=&intent=&dest=&page=&page_size= (dest is the destination space id,
 // geo-aware ?dest= filter per §87; intent per ADR-122).
 func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return

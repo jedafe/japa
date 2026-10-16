@@ -68,7 +68,6 @@ func (s *Store) CreateIPBlock(ctx context.Context, input CreateIPBlockInput) (ge
 	}
 
 	return s.queries.CreateIPBlock(ctx, gen.CreateIPBlockParams{
-
 		Cidr:      addr,
 		BlockType: input.BlockType,
 		Reason:    input.Reason,
@@ -93,7 +92,6 @@ func (s *Store) GetIPBlockByCIDR(ctx context.Context, cidr string) (gen.IpBlock,
 // ListIPBlocks returns paginated IP blocks for the given platform.
 func (s *Store) ListIPBlocks(ctx context.Context, limit int32, cursorCreatedAt pgtype.Timestamptz) ([]gen.IpBlock, error) {
 	return s.queries.ListIPBlocks(ctx, gen.ListIPBlocksParams{
-
 		Limit:     limit,
 		CreatedAt: cursorCreatedAt,
 	})
@@ -103,7 +101,6 @@ func (s *Store) ListIPBlocks(ctx context.Context, limit int32, cursorCreatedAt p
 // server-side pagination (BUG-010). Supports optional block_type filter.
 func (s *Store) ListIPBlocksPaginated(ctx context.Context, limit, offset int32, blockType *string) ([]gen.IpBlock, error) {
 	return s.queries.ListIPBlocksPaginated(ctx, gen.ListIPBlocksPaginatedParams{
-
 		Limit:     limit,
 		Offset:    offset,
 		BlockType: blockType,
@@ -263,7 +260,6 @@ func (s *Store) ListAllUserBlocks(ctx context.Context, limit int32) ([]gen.ListA
 // DataTable server-side pagination (BUG-010). Platform-scoped per JEOS §9.
 func (s *Store) ListAllUserBlocksPaginated(ctx context.Context, limit, offset int32) ([]gen.ListAllUserBlocksPaginatedRow, error) {
 	return s.queries.ListAllUserBlocksPaginated(ctx, gen.ListAllUserBlocksPaginatedParams{
-
 		Limit:  limit,
 		Offset: offset,
 	})
@@ -301,7 +297,6 @@ type CreateCensoredWordInput struct {
 // CreateCensoredWord inserts a new censored word pattern.
 func (s *Store) CreateCensoredWord(ctx context.Context, input CreateCensoredWordInput) (gen.CensoredWord, error) {
 	return s.queries.CreateCensoredWord(ctx, gen.CreateCensoredWordParams{
-
 		Pattern:     input.Pattern,
 		Action:      input.Action,
 		Replacement: input.Replacement,
@@ -317,7 +312,6 @@ func (s *Store) ListCensoredWords(ctx context.Context) ([]gen.CensoredWord, erro
 // DataTable server-side pagination (BUG-010). Supports optional action filter.
 func (s *Store) ListCensoredWordsPaginated(ctx context.Context, limit, offset int32, action *string) ([]gen.CensoredWord, error) {
 	return s.queries.ListCensoredWordsPaginated(ctx, gen.ListCensoredWordsPaginatedParams{
-
 		Limit:  limit,
 		Offset: offset,
 		Action: action,
@@ -428,5 +422,6 @@ func netipParseAddrOrCIDR(s string) (netip.Prefix, error) {
 	if addr.Is4() {
 		bits = 32
 	}
+
 	return addr.Prefix(bits)
 }

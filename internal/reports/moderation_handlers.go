@@ -36,10 +36,12 @@ func (h *Handlers) requireModerationScope(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve moderation scope")
 		return nil, false
 	}
+
 	if !scope.Active() {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have moderation access")
 		return nil, false
 	}
+
 	return scope, true
 }
 
@@ -50,22 +52,28 @@ func parseModerationFilter(r *http.Request) ModerationQueueFilter {
 	if v := r.URL.Query().Get("status"); v != "" {
 		f.Status = &v
 	}
+
 	if v := r.URL.Query().Get("entity_type"); v != "" {
 		f.EntityType = &v
 	}
+
 	if v := r.URL.Query().Get("content_type"); v != "" {
 		f.ContentType = &v
 	}
+
 	if v := r.URL.Query().Get("space_id"); v != "" {
 		_ = f.SpaceID.Scan(v)
 	}
+
 	if v := r.URL.Query().Get("tag_id"); v != "" {
 		_ = f.TagID.Scan(v)
 	}
+
 	f.AssignedOnly = r.URL.Query().Get("assigned") == "me" || r.URL.Query().Get("assigned") == "true"
 	if v := r.URL.Query().Get("q"); v != "" {
 		f.Q = &v
 	}
+
 	return f
 }
 
@@ -84,11 +92,13 @@ func (h *Handlers) ListModerationQueue(w http.ResponseWriter, r *http.Request) {
 	filter := parseModerationFilter(r)
 	limit := parsePageSize(r)
 	page := int32(0)
+
 	if p := r.URL.Query().Get("page"); p != "" {
 		if v, err := strconv.ParseInt(p, 10, 32); err == nil && v >= 0 {
 			page = int32(v)
 		}
 	}
+
 	offset := page * limit
 
 	items, err := h.service.ListModerationQueue(r.Context(), scope, user.UserID, filter, limit, offset)
@@ -96,6 +106,7 @@ func (h *Handlers) ListModerationQueue(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list moderation queue")
 		return
 	}
+
 	total, err := h.service.CountModerationQueue(r.Context(), scope, user.UserID, filter)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count moderation queue")
@@ -168,10 +179,12 @@ func (h *Handlers) ActionModerationItem(w http.ResponseWriter, r *http.Request) 
 		Action string `json:"action"`
 		Reason string `json:"reason"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Action == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_action", "action is required")
 		return
@@ -183,11 +196,14 @@ func (h *Handlers) ActionModerationItem(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusForbidden, "action_not_allowed", "This action exceeds your moderation scope")
 			return
 		}
+
 		if errors.Is(err, ErrAlreadyResolved) {
 			errpkg.WriteError(w, http.StatusConflict, "already_resolved", "This report has already been resolved")
 			return
 		}
+
 		writeServiceError(w, err)
+
 		return
 	}
 

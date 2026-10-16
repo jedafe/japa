@@ -117,18 +117,23 @@ func (r ResolvedMap) ForMethod(method string) (MethodResolution, bool) {
 		if !slices.Contains(e.Mapping.Methods, method) {
 			continue
 		}
+
 		found = true
 
 		for _, et := range e.Mapping.EntityTypes {
 			if et == "" || seenEntity[et] {
 				continue
 			}
+
 			seenEntity[et] = true
+
 			out.EntityTypes = append(out.EntityTypes, et)
 		}
+
 		if first == "" {
 			first = e.Mapping.Pipeline
 		}
+
 		if e.Mapping.Pipeline == PipelineExtract {
 			out.Pipeline = PipelineExtract
 		}
@@ -137,6 +142,7 @@ func (r ResolvedMap) ForMethod(method string) (MethodResolution, bool) {
 	if !found {
 		return MethodResolution{}, false
 	}
+
 	if out.Pipeline != PipelineExtract {
 		out.Pipeline = first
 	}
@@ -219,6 +225,7 @@ func ResolveCategoryMap(settingsJSON []byte, categories []string) ResolvedMap {
 	seenMethod := map[string]bool{}
 	seenTopic := map[string]bool{}
 	anyExtract := false
+
 	var firstPipeline Pipeline
 
 	for _, raw := range categories {
@@ -226,12 +233,14 @@ func ResolveCategoryMap(settingsJSON []byte, categories []string) ResolvedMap {
 		if cat == "" || seenCat[cat] {
 			continue
 		}
+
 		seenCat[cat] = true
 
 		mapping, ok := catMap[cat]
 		if ok {
 			resolved.Entries = append(resolved.Entries, CategoryEntry{Category: cat, Mapping: mapping})
 		}
+
 		if !ok {
 			// Categories absent from the map still resolve their entity
 			// type through the schemas registry (remittance, announcement,
@@ -243,32 +252,40 @@ func ResolveCategoryMap(settingsJSON []byte, categories []string) ResolvedMap {
 			if et := schemas.CategoryToEntityType(cat); et != "" {
 				resolved.Warnings = append(resolved.Warnings,
 					fmt.Sprintf("category %q not in category map; entity type resolved via schema registry", cat))
+
 				if !seenEntity[et] {
 					seenEntity[et] = true
+
 					resolved.EntityTypes = append(resolved.EntityTypes, et)
 				}
 			} else {
 				resolved.Warnings = append(resolved.Warnings,
 					fmt.Sprintf("unknown category %q skipped", cat))
 			}
+
 			continue
 		}
 
 		for _, et := range mapping.EntityTypes {
 			if !seenEntity[et] {
 				seenEntity[et] = true
+
 				resolved.EntityTypes = append(resolved.EntityTypes, et)
 			}
 		}
+
 		for _, m := range mapping.Methods {
 			if !seenMethod[m] {
 				seenMethod[m] = true
+
 				resolved.Methods = append(resolved.Methods, m)
 			}
 		}
+
 		for _, t := range mapping.Topics {
 			if !seenTopic[t] {
 				seenTopic[t] = true
+
 				resolved.Topics = append(resolved.Topics, t)
 			}
 		}
@@ -276,6 +293,7 @@ func ResolveCategoryMap(settingsJSON []byte, categories []string) ResolvedMap {
 		if firstPipeline == "" {
 			firstPipeline = mapping.Pipeline
 		}
+
 		if mapping.Pipeline == PipelineExtract {
 			anyExtract = true
 		}

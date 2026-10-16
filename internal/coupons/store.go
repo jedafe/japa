@@ -57,6 +57,7 @@ func (s *Store) getProviderByOrgID(ctx context.Context, orgID pgtype.UUID) (gen.
 	if err != nil {
 		return gen.AffiliateProvider{}, err
 	}
+
 	return rowToProvider(row), nil
 }
 
@@ -69,6 +70,7 @@ func (s *Store) getProviderByOrgIDForWrite(ctx context.Context, orgID pgtype.UUI
 	if err != nil {
 		return gen.AffiliateProvider{}, err
 	}
+
 	return rowToProvider(row), nil
 }
 
@@ -80,7 +82,6 @@ func (s *Store) listActiveDealPartners(ctx context.Context, limit int32) ([]gen.
 // needs inactive org providers visible for moderation — §55).
 func (s *Store) listProviders(ctx context.Context, isActive *bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
 	rows, err := s.read.ListAffiliateProviders(ctx, gen.ListAffiliateProvidersParams{
-
 		IsActive:   isActive,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -144,7 +145,6 @@ func (s *Store) couponSlugExists(ctx context.Context, slug string) (pgtype.UUID,
 
 func (s *Store) listCoupons(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsRow, error) {
 	return s.read.ListCoupons(ctx, gen.ListCouponsParams{
-
 		Status:     status,
 		CouponType: couponType,
 		ProviderID: providerID,
@@ -158,7 +158,6 @@ func (s *Store) listCoupons(ctx context.Context, status, couponType, search *str
 // pagination total (§55).
 func (s *Store) countCouponsFiltered(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID) (int64, error) {
 	return s.read.ListCouponsCount(ctx, gen.ListCouponsCountParams{
-
 		Status:     status,
 		CouponType: couponType,
 		ProviderID: providerID,
@@ -168,7 +167,6 @@ func (s *Store) countCouponsFiltered(ctx context.Context, status, couponType, se
 
 func (s *Store) listActiveCoupons(ctx context.Context, providerID pgtype.UUID, couponType, search *string, sort string, limit, offset int32) ([]gen.ListActiveCouponsRow, error) {
 	return s.read.ListActiveCoupons(ctx, gen.ListActiveCouponsParams{
-
 		ProviderID: providerID,
 		CouponType: couponType,
 		Search:     search,
@@ -239,6 +237,7 @@ func (s *Store) createSlugHistory(ctx context.Context, couponID pgtype.UUID, old
 		OldSlug:    oldSlug,
 		NewSlug:    newSlug,
 	})
+
 	return err
 }
 

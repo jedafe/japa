@@ -191,6 +191,7 @@ func NewService(database *db.DB, ticketSvc TicketService) *Service {
 		subjects: make(map[string]SubjectHooks),
 	}
 	s.registerBuiltins()
+
 	return s
 }
 
@@ -221,6 +222,7 @@ func (s *Service) Subjects() []string {
 	for k := range s.subjects {
 		out = append(out, k)
 	}
+
 	return out
 }
 
@@ -252,17 +254,21 @@ func appealFromRow(r appealRowData) Appeal {
 	if r.SubjectLabel != nil {
 		a.Label = *r.SubjectLabel
 	}
+
 	if r.TicketID.Valid {
 		a.TicketID = uuidStr(r.TicketID)
 	}
+
 	a.TicketNumber = r.TicketNumber
 	if r.ResolutionNote != nil {
 		a.ResolutionNote = *r.ResolutionNote
 	}
+
 	if r.ResolvedAt.Valid {
 		t := r.ResolvedAt.Time
 		a.ResolvedAt = &t
 	}
+
 	return a
 }
 
@@ -270,6 +276,7 @@ func uuidStr(id pgtype.UUID) string {
 	if !id.Valid {
 		return ""
 	}
+
 	return id.String()
 }
 
@@ -280,6 +287,7 @@ func namedLabel(prefix, name string) string {
 	if name = strings.TrimSpace(name); name != "" {
 		return fmt.Sprintf("%s — %s", prefix, name)
 	}
+
 	return prefix
 }
 
@@ -287,6 +295,7 @@ func namedLabelPtr(prefix string, name *string) string {
 	if name == nil {
 		return prefix
 	}
+
 	return namedLabel(prefix, *name)
 }
 
@@ -312,6 +321,7 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 	if reason == "" {
 		return Appeal{}, ErrReasonRequired
 	}
+
 	if len(reason) > maxReasonLen {
 		reason = reason[:maxReasonLen]
 	}
@@ -342,6 +352,7 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 	if err != nil {
 		return Appeal{}, fmt.Errorf("checking pending appeals: %w", err)
 	}
+
 	if pending > 0 {
 		return Appeal{}, ErrDuplicate
 	}
@@ -350,6 +361,7 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 	if label != "" {
 		subjectLabel = &label
 	}
+
 	row, err := s.write.CreateAppeal(ctx, gen.CreateAppealParams{
 		UserID:       userID,
 		EntityType:   entityType,
@@ -365,6 +377,7 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return Appeal{}, ErrDuplicate
 		}
+
 		return Appeal{}, fmt.Errorf("creating appeal: %w", err)
 	}
 
@@ -377,6 +390,7 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 		a.TicketID = tk.ID.String()
 		a.TicketNumber = tk.TicketNumber
 	}
+
 	return a, nil
 }
 
@@ -388,11 +402,13 @@ func (s *Service) createAppealTicket(ctx context.Context, userID pgtype.UUID, a 
 	if s.tickets == nil {
 		return nil
 	}
+
 	tt, err := s.tickets.GetTicketTypeBySlug(ctx, AppealTicketTypeSlug)
 	if err != nil {
 		slog.Error("appeals: appeal ticket type missing — run migration 000818", "error", err)
 		return nil
 	}
+
 	if label == "" {
 		label = a.EntityType
 	}
@@ -400,9 +416,10 @@ func (s *Service) createAppealTicket(ctx context.Context, userID pgtype.UUID, a 
 	// user-visible body carries only the human-readable label.
 	desc := fmt.Sprintf("Appeal by user.\n\nDecision: %s (%s)\n\nReason:\n%s",
 		label, a.EntityType, a.Reason)
+
 	tk, err := s.tickets.CreateTicket(ctx, tickets.CreateTicketInput{
 		TypeID:          tt.ID,
-		Subject:         fmt.Sprintf("Appeal: %s", label),
+		Subject:         "Appeal: " + label,
 		Description:     desc,
 		SubmitterUserID: userID,
 		FieldValues: map[string]any{
@@ -416,14 +433,17 @@ func (s *Service) createAppealTicket(ctx context.Context, userID pgtype.UUID, a 
 		slog.Error("appeals: staff ticket creation failed", "appeal_id", a.ID, "error", err)
 		return nil
 	}
+
 	var aid pgtype.UUID
 	if err := aid.Scan(a.ID); err != nil {
 		return nil
 	}
+
 	if err := s.write.SetAppealTicketID(ctx, gen.SetAppealTicketIDParams{TicketID: tk.ID, ID: aid}); err != nil {
 		slog.Error("appeals: linking ticket to appeal failed", "appeal_id", a.ID, "ticket_id", tk.ID.String(), "error", err)
 		return nil
 	}
+
 	return &tk
 }
 
@@ -432,6 +452,7 @@ func (s *Service) ListMine(ctx context.Context, userID pgtype.UUID, limit, offse
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	rows, err := s.read.ListAppealsByUser(ctx, gen.ListAppealsByUserParams{
 		UserID:     userID,
 		PageLimit:  limit,
@@ -440,6 +461,7 @@ func (s *Service) ListMine(ctx context.Context, userID pgtype.UUID, limit, offse
 	if err != nil {
 		return nil, fmt.Errorf("listing appeals: %w", err)
 	}
+
 	out := make([]Appeal, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, appealFromRow(appealRowData{
@@ -449,6 +471,7 @@ func (s *Service) ListMine(ctx context.Context, userID pgtype.UUID, limit, offse
 			ResolutionNote: r.ResolutionNote, CreatedAt: r.CreatedAt, ResolvedAt: r.ResolvedAt,
 		}))
 	}
+
 	return out, nil
 }
 
@@ -463,6 +486,7 @@ func (s *Service) Eligible(ctx context.Context, userID pgtype.UUID) ([]EligibleI
 	if err != nil {
 		return nil, fmt.Errorf("listing pending appeals: %w", err)
 	}
+
 	pendingSet := make(map[string]bool, len(pending))
 	for _, p := range pending {
 		pendingSet[p.EntityType+"/"+uuidStr(p.EntityID)] = true
@@ -476,30 +500,37 @@ func (s *Service) Eligible(ctx context.Context, userID pgtype.UUID) ([]EligibleI
 				return true
 			}
 		}
+
 		return false
 	}
 
 	types := s.Subjects()
 	sort.Strings(types)
+
 	var out []EligibleItem
+
 	for _, et := range types {
 		hook := s.subjects[et].ListEligible
 		if hook == nil {
 			continue
 		}
+
 		items, err := hook(ctx, userID)
 		if err != nil {
 			slog.Warn("appeals: eligible list failed", "entity_type", et, "error", err)
 			continue
 		}
+
 		for _, it := range items {
 			it.EntityType = et
 			if anyPending(et, it.EntityID) {
 				continue
 			}
+
 			out = append(out, it)
 		}
 	}
+
 	return out, nil
 }
 
@@ -515,9 +546,11 @@ func (s *Service) Resolve(ctx context.Context, appealID, reviewerID pgtype.UUID,
 	if err != nil {
 		return err
 	}
+
 	if row.Status != StatusPending {
 		return ErrAlreadyResolved
 	}
+
 	appeal := appealFromRow(appealRowData{
 		ID: row.ID, EntityType: row.EntityType, EntityID: row.EntityID,
 		Reason: row.Reason, SubjectLabel: row.SubjectLabel, Status: row.Status, TicketID: row.TicketID,
@@ -534,10 +567,12 @@ func (s *Service) Resolve(ctx context.Context, appealID, reviewerID pgtype.UUID,
 	}
 
 	var notePtr *string
+
 	if strings.TrimSpace(note) != "" {
 		n := strings.TrimSpace(note)
 		notePtr = &n
 	}
+
 	tag, err := s.write.ResolveAppeal(ctx, gen.ResolveAppealParams{
 		Status:         status,
 		ReviewedBy:     reviewerID,
@@ -547,6 +582,7 @@ func (s *Service) Resolve(ctx context.Context, appealID, reviewerID pgtype.UUID,
 	if err != nil {
 		return fmt.Errorf("resolving appeal: %w", err)
 	}
+
 	if tag == 0 {
 		return ErrAlreadyResolved
 	}
@@ -554,6 +590,7 @@ func (s *Service) Resolve(ctx context.Context, appealID, reviewerID pgtype.UUID,
 	if row.TicketID.Valid && s.tickets != nil {
 		s.resolveAppealTicket(ctx, row.TicketID, reviewerID, note, appeal.ID)
 	}
+
 	return nil
 }
 
@@ -573,7 +610,7 @@ func (s *Service) resolveAppealTicket(ctx context.Context, ticketID, reviewerID 
 	// The in_progress hop above is a write; ResolveTicket re-reads through
 	// the replica, which can lag the write by tens of ms — retry briefly.
 	var lastErr error
-	for attempt := 0; attempt < 4; attempt++ {
+	for range 4 {
 		_, lastErr = s.tickets.ResolveTicket(ctx, ticketID, tickets.ResolveTicketInput{
 			UserID:         reviewerID,
 			ResolutionNote: note,
@@ -647,7 +684,7 @@ func (s *Service) contentSubject(withList bool) SubjectHooks {
 			if row.AuthorID != userID {
 				return "", ErrNotEligible
 			}
-			return namedLabel(fmt.Sprintf("Removed %s", row.ContentType), row.Title), nil
+			return namedLabel("Removed "+row.ContentType, row.Title), nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -664,6 +701,7 @@ func (s *Service) contentSubject(withList bool) SubjectHooks {
 			if err != nil {
 				return nil, err
 			}
+
 			out := make([]EligibleItem, 0, len(rows))
 			for _, r := range rows {
 				out = append(out, EligibleItem{
@@ -671,9 +709,11 @@ func (s *Service) contentSubject(withList bool) SubjectHooks {
 					Label:    fmt.Sprintf("Removed %s: %s", r.ContentType, r.Title),
 				})
 			}
+
 			return out, nil
 		}
 	}
+
 	return h
 }
 
@@ -810,16 +850,20 @@ func (s *Service) finishUserLift(ctx context.Context, uid pgtype.UUID) {
 		slog.Error("appeals: status lookup failed", "user_id", uid.String(), "error", err)
 		return
 	}
+
 	if status == "deleted" {
 		return
 	}
+
 	newStatus := "active"
 	if remaining, err := s.read.CountActiveOperationBans(ctx, uid); err == nil && remaining > 0 {
 		newStatus = "restricted"
 	}
+
 	if err := s.write.UpdateUserStatus(ctx, gen.UpdateUserStatusParams{ID: uid, Status: newStatus}); err != nil {
 		slog.Error("appeals: status restore failed", "user_id", uid.String(), "error", err)
 	}
+
 	if s.invalidateUserAccess != nil {
 		s.invalidateUserAccess(ctx, uid)
 	}
@@ -863,7 +907,7 @@ func (s *Service) serviceClaimSubject() SubjectHooks {
 			for _, r := range rows {
 				label := "Rejected service listing claim"
 				if r.ListingTitle != nil && *r.ListingTitle != "" {
-					label = fmt.Sprintf("Rejected service listing claim — %s", *r.ListingTitle)
+					label = "Rejected service listing claim — " + *r.ListingTitle
 				}
 				out = append(out, EligibleItem{EntityID: uuidStr(r.ContentID), Label: label})
 			}
@@ -910,7 +954,7 @@ func (s *Service) orgClaimSubject() SubjectHooks {
 			for _, r := range rows {
 				label := "Rejected organization claim"
 				if r.OrganizationName != nil && *r.OrganizationName != "" {
-					label = fmt.Sprintf("Rejected organization claim — %s", *r.OrganizationName)
+					label = "Rejected organization claim — " + *r.OrganizationName
 				}
 				out = append(out, EligibleItem{EntityID: uuidStr(r.ID), Label: label})
 			}
@@ -947,7 +991,7 @@ func (s *Service) videoClaimSubject() SubjectHooks {
 			for _, r := range rows {
 				label := "Rejected video channel claim"
 				if r.VideoTitle != nil && *r.VideoTitle != "" {
-					label = fmt.Sprintf("Rejected video channel claim — %s", *r.VideoTitle)
+					label = "Rejected video channel claim — " + *r.VideoTitle
 				}
 				out = append(out, EligibleItem{EntityID: uuidStr(r.ID), Label: label})
 			}
@@ -972,7 +1016,7 @@ func (s *Service) operationBanSubject() SubjectHooks {
 			if row.UserID != userID {
 				return "", ErrNotEligible
 			}
-			return fmt.Sprintf("Restricted action: %s", row.Operation), nil
+			return "Restricted action: " + row.Operation, nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1025,7 +1069,7 @@ func (s *Service) operationBanSubject() SubjectHooks {
 			for _, r := range rows {
 				it := EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Restricted action: %s", r.Operation),
+					Label:    "Restricted action: " + r.Operation,
 				}
 				if r.Reason != nil {
 					it.Detail = *r.Reason
@@ -1138,7 +1182,7 @@ func (s *Service) mediaSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Media under review hold: %s", r.OriginalFilename),
+					Label:    "Media under review hold: " + r.OriginalFilename,
 				})
 			}
 			return out, nil
@@ -1181,7 +1225,7 @@ func (s *Service) wikiRevisionSubject() SubjectHooks {
 			for _, r := range rows {
 				label := "Rejected wiki edit"
 				if r.PageTitle != nil && *r.PageTitle != "" {
-					label = fmt.Sprintf("Rejected wiki edit — %s", *r.PageTitle)
+					label = "Rejected wiki edit — " + *r.PageTitle
 				}
 				out = append(out, EligibleItem{EntityID: uuidStr(r.ID), Label: label})
 			}
@@ -1248,7 +1292,7 @@ func (s *Service) scamReportSubject() SubjectHooks {
 			if row.ReporterID != userID || (row.Status != "debunked" && row.Status != "duplicate") {
 				return "", ErrNotEligible
 			}
-			return fmt.Sprintf("Closed scam report — %s", row.ScamType), nil
+			return "Closed scam report — " + row.ScamType, nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1267,7 +1311,7 @@ func (s *Service) scamReportSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Closed scam report — %s", r.ScamType),
+					Label:    "Closed scam report — " + r.ScamType,
 				})
 			}
 			return out, nil
@@ -1366,7 +1410,7 @@ func (s *Service) reviewSubject() SubjectHooks {
 			for _, r := range rows {
 				label := "Removed review"
 				if r.Title != nil && *r.Title != "" {
-					label = fmt.Sprintf("Removed review — %s", *r.Title)
+					label = "Removed review — " + *r.Title
 				}
 				out = append(out, EligibleItem{EntityID: uuidStr(r.ID), Label: label})
 			}
@@ -1409,7 +1453,7 @@ func (s *Service) mutualAidPostSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Removed mutual aid post — %s", r.Title),
+					Label:    "Removed mutual aid post — " + r.Title,
 				})
 			}
 			return out, nil
@@ -1432,7 +1476,7 @@ func (s *Service) videoSourceSubject() SubjectHooks {
 			if row.AuthorUserID != userID || row.Status != "removed" {
 				return "", ErrNotEligible
 			}
-			return fmt.Sprintf("removed video — %s", row.Title), nil
+			return "removed video — " + row.Title, nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1451,7 +1495,7 @@ func (s *Service) videoSourceSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Removed video — %s", r.Title),
+					Label:    "Removed video — " + r.Title,
 				})
 			}
 			return out, nil
@@ -1474,7 +1518,7 @@ func (s *Service) roadmapItemSubject() SubjectHooks {
 			if row.SubmittedBy != userID || row.Status != "declined" {
 				return "", ErrNotEligible
 			}
-			return fmt.Sprintf("declined roadmap item — %s", row.Title), nil
+			return "declined roadmap item — " + row.Title, nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1493,7 +1537,7 @@ func (s *Service) roadmapItemSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Declined roadmap item — %s", r.Title),
+					Label:    "Declined roadmap item — " + r.Title,
 				})
 			}
 			return out, nil
@@ -1516,7 +1560,7 @@ func (s *Service) organizationSubject() SubjectHooks {
 			if row.OwnerUserID != userID || (row.Status != "suspended" && !row.DeletedAt.Valid) {
 				return "", ErrNotEligible
 			}
-			return fmt.Sprintf("organization — %s", row.Name), nil
+			return "organization — " + row.Name, nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1535,7 +1579,7 @@ func (s *Service) organizationSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Suspended/removed organization — %s", r.Name),
+					Label:    "Suspended/removed organization — " + r.Name,
 				})
 			}
 			return out, nil
@@ -1559,7 +1603,7 @@ func (s *Service) spaceSubject() SubjectHooks {
 				return "", ErrNotEligible
 			}
 			if row.CreatorUserID == userID {
-				return fmt.Sprintf("space — %s", row.Name), nil
+				return "space — " + row.Name, nil
 			}
 			owner, err := s.read.IsSpaceOwnerMember(ctx, gen.IsSpaceOwnerMemberParams{
 				SpaceID: entityID,
@@ -1571,7 +1615,7 @@ func (s *Service) spaceSubject() SubjectHooks {
 			if !owner {
 				return "", ErrNotEligible
 			}
-			return fmt.Sprintf("space — %s", row.Name), nil
+			return "space — " + row.Name, nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1590,7 +1634,7 @@ func (s *Service) spaceSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Suspended/removed space — %s", r.Name),
+					Label:    "Suspended/removed space — " + r.Name,
 				})
 			}
 			return out, nil
@@ -1614,7 +1658,7 @@ func (s *Service) academyTrackSubject() SubjectHooks {
 			if row.InstructorUserID != userID || row.AcademySubmissionStatus != "rejected" {
 				return "", ErrNotEligible
 			}
-			return fmt.Sprintf("rejected academy track — %s", row.Title), nil
+			return "rejected academy track — " + row.Title, nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1633,7 +1677,7 @@ func (s *Service) academyTrackSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Rejected academy track — %s", r.Title),
+					Label:    "Rejected academy track — " + r.Title,
 				})
 			}
 			return out, nil
@@ -1656,7 +1700,7 @@ func (s *Service) affiliateMemberSubject() SubjectHooks {
 				}
 				return "", fmt.Errorf("fetching affiliate membership: %w", err)
 			}
-			return fmt.Sprintf("%s affiliate membership", row.Status), nil
+			return row.Status + " affiliate membership", nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1676,7 +1720,7 @@ func (s *Service) affiliateMemberSubject() SubjectHooks {
 			}
 			return []EligibleItem{{
 				EntityID: uuidStr(row.UserID),
-				Label:    fmt.Sprintf("%s affiliate membership", row.Status),
+				Label:    row.Status + " affiliate membership",
 			}}, nil
 		},
 	}
@@ -1779,7 +1823,7 @@ func (s *Service) adCampaignSubject() SubjectHooks {
 				return "", ErrNotEligible
 			}
 			if row.CreatedBy == userID {
-				return fmt.Sprintf("rejected ad campaign — %s", row.Name), nil
+				return "rejected ad campaign — " + row.Name, nil
 			}
 			if row.OrganizationID.Valid {
 				member, err := s.read.IsOrganizationMember(ctx, gen.IsOrganizationMemberParams{
@@ -1790,7 +1834,7 @@ func (s *Service) adCampaignSubject() SubjectHooks {
 					return "", fmt.Errorf("checking org membership: %w", err)
 				}
 				if member {
-					return fmt.Sprintf("rejected ad campaign — %s", row.Name), nil
+					return "rejected ad campaign — " + row.Name, nil
 				}
 			}
 			return "", ErrNotEligible
@@ -1824,7 +1868,7 @@ func (s *Service) adCampaignSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Rejected ad campaign — %s", r.Name),
+					Label:    "Rejected ad campaign — " + r.Name,
 				})
 			}
 			return out, nil
@@ -1867,7 +1911,7 @@ func (s *Service) contentReviewSubject() SubjectHooks {
 			for _, r := range rows {
 				label := "Rejected editorial review"
 				if r.Title != "" {
-					label = fmt.Sprintf("Rejected editorial review — %s", r.Title)
+					label = "Rejected editorial review — " + r.Title
 				}
 				out = append(out, EligibleItem{EntityID: uuidStr(r.ID), Label: label})
 			}
@@ -1892,7 +1936,7 @@ func (s *Service) communityOrgSubject() SubjectHooks {
 			if row.SubmittedBy != userID || (!row.DeletedAt.Valid && row.Status != "archived") {
 				return "", ErrNotEligible
 			}
-			return fmt.Sprintf("community organisation — %s", row.Name), nil
+			return "community organisation — " + row.Name, nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1911,7 +1955,7 @@ func (s *Service) communityOrgSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Removed community organisation — %s", r.Name),
+					Label:    "Removed community organisation — " + r.Name,
 				})
 			}
 			return out, nil
@@ -1936,7 +1980,7 @@ func (s *Service) communityOrgClaimSubject() SubjectHooks {
 			if !row.ClaimedByUserID.Valid || row.ClaimedByUserID != userID {
 				return "", ErrNotEligible
 			}
-			return fmt.Sprintf("rejected community organisation claim — %s", row.Name), nil
+			return "rejected community organisation claim — " + row.Name, nil
 		},
 		OnOverturn: func(ctx context.Context, a Appeal, _ pgtype.UUID) error {
 			var id pgtype.UUID
@@ -1955,7 +1999,7 @@ func (s *Service) communityOrgClaimSubject() SubjectHooks {
 			for _, r := range rows {
 				out = append(out, EligibleItem{
 					EntityID: uuidStr(r.ID),
-					Label:    fmt.Sprintf("Rejected community organisation claim — %s", r.Name),
+					Label:    "Rejected community organisation claim — " + r.Name,
 				})
 			}
 			return out, nil

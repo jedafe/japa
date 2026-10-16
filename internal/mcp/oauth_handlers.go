@@ -125,6 +125,7 @@ func oauthGrantableScopes() []string {
 	for _, s := range publicapi.SelfServiceScopes() {
 		out = append(out, s.Value)
 	}
+
 	out = append(out, oauthScopeOpenID)
 	sort.Strings(out)
 
@@ -143,17 +144,23 @@ func filterGrantableScopes(requested []string) []string {
 	}
 
 	var out []string
+
 	seen := map[string]struct{}{}
+
 	for _, s := range requested {
 		if _, ok := allowed[s]; !ok {
 			continue
 		}
+
 		if _, dup := seen[s]; dup {
 			continue
 		}
+
 		seen[s] = struct{}{}
+
 		out = append(out, s)
 	}
+
 	sort.Strings(out)
 
 	return out
@@ -187,16 +194,19 @@ func (h *OAuthHandlers) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_redirect_uri", "redirect_uris is required")
 		return
 	}
+
 	if len(req.RedirectURIs) > maxRedirectURIs {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_redirect_uri", "too many redirect_uris")
 		return
 	}
+
 	for _, u := range req.RedirectURIs {
 		if len(u) > maxRedirectURILen || !isValidRedirectURI(u) {
 			writeOAuthError(w, http.StatusBadRequest, "invalid_redirect_uri", "redirect_uris must be absolute https URLs (localhost allowed in dev)")
 			return
 		}
 	}
+
 	if len(req.Scope) > maxOAuthScopeField {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "scope field too long")
 		return
@@ -206,6 +216,7 @@ func (h *OAuthHandlers) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	if len(grantTypes) == 0 {
 		grantTypes = []string{"authorization_code", "refresh_token"}
 	}
+
 	for _, g := range grantTypes {
 		if g != "authorization_code" && g != "refresh_token" {
 			writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "unsupported grant_type: "+g)
@@ -222,6 +233,7 @@ func (h *OAuthHandlers) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "MCP Client"
 	}
+
 	if len(name) > maxClientNameLen {
 		name = name[:maxClientNameLen]
 	}
@@ -233,8 +245,10 @@ func (h *OAuthHandlers) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		if cerr != nil {
 			slog.Error("oauth: count clients", "error", cerr)
 			writeOAuthError(w, http.StatusInternalServerError, "server_error", "registration unavailable")
+
 			return
 		}
+
 		if n >= max {
 			writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "client registration limit reached")
 			return
@@ -258,6 +272,7 @@ func (h *OAuthHandlers) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.store.CreateClient(r.Context(), client); err != nil {
 		slog.Error("oauth: create client", "error", err)
 		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to register client")
+
 		return
 	}
 
@@ -289,9 +304,11 @@ func isValidRedirectURI(raw string) bool {
 	if err != nil || u.Host == "" || u.Fragment != "" || u.User != nil {
 		return false
 	}
+
 	if u.Scheme == "https" {
 		return true
 	}
+
 	if u.Scheme == "http" {
 		host := u.Hostname()
 		return host == "localhost" || host == "127.0.0.1" || host == "::1"
@@ -329,7 +346,9 @@ func (h *OAuthHandlers) HandleAuthorize(w http.ResponseWriter, r *http.Request) 
 			renderOAuthErrorPage(w, h.siteName, verr.desc)
 			return
 		}
+
 		h.redirectWithError(w, r, p, verr.code, verr.desc)
+
 		return
 	}
 
@@ -339,7 +358,9 @@ func (h *OAuthHandlers) HandleAuthorize(w http.ResponseWriter, r *http.Request) 
 			h.redirectToLogin(w, r)
 			return
 		}
+
 		renderOAuthErrorPage(w, h.siteName, "Your session has expired. Please try connecting again.")
+
 		return
 	}
 
@@ -388,11 +409,13 @@ func fatalReqErr(desc string) *oauthReqError {
 // proven (p non-nil), rejections are redirectable RFC 6749 error params.
 func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizeParams, *oauthReqError) {
 	var q url.Values
+
 	if r.Method == http.MethodPost {
 		r.Body = http.MaxBytesReader(nil, r.Body, maxOAuthFormBytes)
 		if err := r.ParseForm(); err != nil {
 			return nil, fatalReqErr("invalid request body")
 		}
+
 		q = r.PostForm
 	} else {
 		q = r.URL.Query()
@@ -402,9 +425,11 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 	// are proven against the registered set.
 	clientID := q.Get("client_id")
 	redirectURI := q.Get("redirect_uri")
+
 	if clientID == "" || redirectURI == "" {
 		return nil, fatalReqErr("client_id and redirect_uri are required")
 	}
+
 	if len(clientID) > 128 || len(redirectURI) > maxRedirectURILen {
 		return nil, fatalReqErr("client_id or redirect_uri is too long")
 	}
@@ -413,13 +438,16 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 	if err != nil {
 		return nil, fatalReqErr("unknown client_id")
 	}
+
 	matched := false
+
 	for _, ru := range client.RedirectURIs {
 		if ru == redirectURI {
 			matched = true
 			break
 		}
 	}
+
 	if !matched {
 		return nil, fatalReqErr("redirect_uri does not match the registered URIs for this client")
 	}
@@ -433,15 +461,19 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 	if len(p.State) > maxOAuthStateLen {
 		return p, reqErr("invalid_request", "state is too long")
 	}
+
 	if q.Get("response_type") != "code" {
 		return p, reqErr("unsupported_response_type", `only response_type "code" is supported`)
 	}
+
 	if q.Get("code_challenge_method") != "S256" {
 		return p, reqErr("invalid_request", "code_challenge_method must be S256")
 	}
+
 	if q.Get("code_challenge") == "" {
 		return p, reqErr("invalid_request", "code_challenge is required")
 	}
+
 	if len(q.Get("code_challenge")) > 512 || len(q.Get("scope")) > maxOAuthScopeField {
 		return p, reqErr("invalid_request", "request field too long")
 	}
@@ -449,12 +481,14 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 	// §120: a client registered without authorization_code (e.g. refresh-only)
 	// can never exchange the code — fail before rendering consent.
 	grantOK := false
+
 	for _, g := range client.GrantTypes {
 		if g == "authorization_code" {
 			grantOK = true
 			break
 		}
 	}
+
 	if !grantOK {
 		return p, reqErr("unauthorized_client", "client is not registered for the authorization_code grant")
 	}
@@ -468,6 +502,7 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 		for _, s := range client.Scopes {
 			clientSet[s] = struct{}{}
 		}
+
 		for _, s := range strings.Fields(scope) {
 			if _, ok := clientSet[s]; !ok {
 				return p, reqErr("invalid_scope", "requested scope exceeds what this client registered for")
@@ -500,6 +535,7 @@ func (h *OAuthHandlers) checkUserCapability(ctx context.Context, scope string, u
 	if !publicapi.HasScope(strings.Fields(scope), agentUsePermission) {
 		return nil
 	}
+
 	if h.perms == nil || !h.perms.HasPermission(ctx, userID, agentUsePermission) {
 		return errors.New("this application requires agent access, which is not enabled on your account")
 	}
@@ -512,17 +548,20 @@ func (h *OAuthHandlers) checkUserCapability(ctx context.Context, scope string, u
 // identically to RequireAuth.
 func (h *OAuthHandlers) authorizeUser(r *http.Request) *auth.AuthenticatedUser {
 	token := ""
+
 	if ah := r.Header.Get("Authorization"); ah != "" {
 		parts := strings.SplitN(ah, " ", 2)
 		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
 			token = parts[1]
 		}
 	}
+
 	if token == "" {
 		if c, err := r.Cookie("jc_token"); err == nil {
 			token = c.Value
 		}
 	}
+
 	if token == "" || h.kr == nil {
 		return nil
 	}
@@ -531,6 +570,7 @@ func (h *OAuthHandlers) authorizeUser(r *http.Request) *auth.AuthenticatedUser {
 	if err != nil {
 		return nil
 	}
+
 	if auth.IsTokenRevoked(r.Context(), claims.JTI, h.vk) {
 		return nil
 	}
@@ -558,6 +598,7 @@ func (h *OAuthHandlers) redirectToLogin(w http.ResponseWriter, r *http.Request) 
 	if u, err := url.Parse(h.siteURL); err == nil && u.Host != "" && strings.EqualFold(u.Host, r.Host) {
 		target = r.URL.RequestURI()
 	}
+
 	login := h.siteURL + "/login?redirect=" + url.QueryEscape(target)
 	http.Redirect(w, r, login, http.StatusFound)
 }
@@ -587,10 +628,12 @@ func (h *OAuthHandlers) verifyConsentToken(token string, p *authorizeParams, use
 	if len(parts) != 2 {
 		return false
 	}
+
 	exp, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil || time.Now().Unix() > exp {
 		return false
 	}
+
 	expected := h.consentTokenValue(p, userID, time.Unix(exp, 0))
 
 	return hmac.Equal([]byte(token), []byte(expected))
@@ -627,6 +670,7 @@ func (h *OAuthHandlers) handleConsentDecision(w http.ResponseWriter, r *http.Req
 	}); err != nil {
 		slog.Error("oauth: create authorization code", "error", err)
 		renderOAuthErrorPage(w, h.siteName, "Failed to issue an authorization code. Please try again.")
+
 		return
 	}
 
@@ -642,11 +686,14 @@ func (h *OAuthHandlers) handleConsentDecision(w http.ResponseWriter, r *http.Req
 		renderOAuthErrorPage(w, h.siteName, "Registered redirect URI is malformed. Please re-register the client.")
 		return
 	}
+
 	qq := target.Query()
 	qq.Set("code", code)
+
 	if p.State != "" {
 		qq.Set("state", p.State)
 	}
+
 	target.RawQuery = qq.Encode()
 	http.Redirect(w, r, target.String(), http.StatusFound) // #nosec G601 -- redirect_uri was exact-match validated against the registered client
 }
@@ -659,12 +706,15 @@ func (h *OAuthHandlers) redirectWithError(w http.ResponseWriter, r *http.Request
 		renderOAuthErrorPage(w, h.siteName, desc)
 		return
 	}
+
 	qq := target.Query()
 	qq.Set("error", code)
 	qq.Set("error_description", desc)
+
 	if p.State != "" {
 		qq.Set("state", p.State)
 	}
+
 	target.RawQuery = qq.Encode()
 	http.Redirect(w, r, target.String(), http.StatusFound) // #nosec G601 -- redirect_uri was exact-match validated against the registered client
 }
@@ -691,6 +741,7 @@ func (h *OAuthHandlers) HandleToken(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client_id is required")
 		return
 	}
+
 	client, err := h.svc.store.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client", "unknown client_id")
@@ -705,13 +756,16 @@ func (h *OAuthHandlers) HandleToken(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "grant_type is required")
 		return
 	}
+
 	grantAllowed := false
+
 	for _, g := range client.GrantTypes {
 		if g == grantType {
 			grantAllowed = true
 			break
 		}
 	}
+
 	if !grantAllowed {
 		writeOAuthError(w, http.StatusBadRequest, "unauthorized_client", "client is not registered for this grant_type")
 		return
@@ -780,6 +834,7 @@ func (h *OAuthHandlers) HandleListGrants(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		slog.Error("oauth: list grants", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list connected apps")
+
 		return
 	}
 
@@ -816,6 +871,7 @@ func (h *OAuthHandlers) HandleRevokeGrant(w http.ResponseWriter, r *http.Request
 	if err := h.svc.RevokeUserGrant(r.Context(), clientID, user.UserID); err != nil {
 		slog.Error("oauth: revoke grant", "error", err, "client_id", clientID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to disconnect the app")
+
 		return
 	}
 
@@ -838,15 +894,18 @@ func (h *OAuthHandlers) HandleUserinfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 
 	token := ""
+
 	if ah := r.Header.Get("Authorization"); ah != "" {
 		parts := strings.SplitN(ah, " ", 2)
 		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
 			token = parts[1]
 		}
 	}
+
 	if !strings.HasPrefix(token, oauthAccessTokenPrefix) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="userinfo"`)
 		writeOAuthError(w, http.StatusUnauthorized, "invalid_token", "a valid access token is required")
+
 		return
 	}
 
@@ -854,11 +913,14 @@ func (h *OAuthHandlers) HandleUserinfo(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="userinfo", error="invalid_token"`)
 		writeOAuthError(w, http.StatusUnauthorized, "invalid_token", "the access token is invalid, expired, or revoked")
+
 		return
 	}
+
 	if !publicapi.HasScope(scopes, oauthScopeOpenID) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="userinfo", error="insufficient_scope"`)
 		writeOAuthError(w, http.StatusForbidden, "insufficient_scope", "the openid scope is required")
+
 		return
 	}
 
@@ -866,6 +928,7 @@ func (h *OAuthHandlers) HandleUserinfo(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("oauth: userinfo lookup", "error", err, "client_id", clientID)
 		writeOAuthError(w, http.StatusInternalServerError, "server_error", "identity unavailable")
+
 		return
 	}
 
@@ -873,6 +936,7 @@ func (h *OAuthHandlers) HandleUserinfo(w http.ResponseWriter, r *http.Request) {
 	if ident.DisplayName != nil && *ident.DisplayName != "" {
 		name = *ident.DisplayName
 	}
+
 	claims := map[string]any{
 		"sub":                ident.UserID.String(),
 		"preferred_username": ident.Username,
@@ -894,6 +958,7 @@ func (h *OAuthHandlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+
 	if tok := r.PostForm.Get("token"); tok != "" {
 		// Tombstone access tokens; drop refresh tokens from the store path.
 		if strings.HasPrefix(tok, oauthAccessTokenPrefix) || strings.HasPrefix(tok, oauthRefreshTokenPrefix) {
@@ -904,6 +969,7 @@ func (h *OAuthHandlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 				if strings.HasPrefix(tok, oauthRefreshTokenPrefix) {
 					kind = "refresh"
 				}
+
 				if aerr := h.svc.store.AuditOAuthEvent(r.Context(), "oauth.token_revoke", pgtype.UUID{}, map[string]any{
 					"token_type": kind,
 				}, clientip.FromRequest(r)); aerr != nil {
@@ -912,6 +978,7 @@ func (h *OAuthHandlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -924,6 +991,7 @@ func (h *OAuthHandlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 func (h *OAuthHandlers) renderConsent(w http.ResponseWriter, r *http.Request, p *authorizeParams, user *auth.AuthenticatedUser) {
 	client, err := h.svc.store.GetClientByClientID(r.Context(), p.ClientID)
 	clientName := p.ClientID
+
 	if err == nil && client != nil && client.ClientName != "" {
 		clientName = client.ClientName
 	}
@@ -937,6 +1005,7 @@ func (h *OAuthHandlers) renderConsent(w http.ResponseWriter, r *http.Request, p 
 	}
 
 	var b strings.Builder
+
 	b.WriteString(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`)
 	b.WriteString(`<title>Authorize — ` + html.EscapeString(h.siteName) + `</title>`)
 	b.WriteString(`<style>
@@ -955,9 +1024,11 @@ button{flex:1;padding:.65rem 1rem;border-radius:8px;border:0;font-size:.95rem;cu
 </style></head><body><div class="card">`)
 	b.WriteString(`<h1>` + html.EscapeString(clientName) + `</h1>`)
 	b.WriteString(`<p class="muted">wants to connect to your ` + html.EscapeString(h.siteName) + ` account. It will be able to use these capabilities as you:</p><ul>`)
+
 	for _, s := range scopeLabels {
 		b.WriteString(`<li><span class="scope">` + html.EscapeString(s.Label) + `</span><br><span class="muted">` + html.EscapeString(s.Description) + `</span></li>`)
 	}
+
 	b.WriteString(`</ul><form method="post" action="/oauth/authorize">`)
 	b.WriteString(hidden("response_type", "code"))
 	b.WriteString(hidden("client_id", p.ClientID))
@@ -990,11 +1061,13 @@ func scopeDescriptions(scope string) []scopeLabel {
 	}
 
 	var out []scopeLabel
+
 	for _, s := range strings.Fields(scope) {
 		if s == oauthScopeOpenID {
 			out = append(out, scopeLabel{Label: "Know who you are", Description: "Read your basic profile (name, username, email)"})
 			continue
 		}
+
 		if opt, ok := catalog[s]; ok {
 			out = append(out, scopeLabel{Label: opt.Label, Description: opt.Description})
 		} else {
@@ -1030,6 +1103,7 @@ func writeOAuthError(w http.ResponseWriter, status int, code, desc string) {
 func writeOAuthJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Error("oauth: encode response", "error", err)
 	}

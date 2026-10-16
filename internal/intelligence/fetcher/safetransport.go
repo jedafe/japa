@@ -112,6 +112,7 @@ func newSafeTransport(allowPrivate bool) *safeTransport {
 			d := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 			base = d.DialContext
 		}
+
 		t.DialContext = guardedDialContext(base)
 	}
 
@@ -164,6 +165,7 @@ func guardedDialContext(base func(ctx context.Context, network, addr string) (ne
 		if err != nil {
 			return nil, fmt.Errorf("fetcher: dial host %q lookup failed (SSRF fail-closed): %w", host, err)
 		}
+
 		if len(ips) == 0 {
 			return nil, fmt.Errorf("fetcher: dial host %q resolved to no addresses (SSRF fail-closed)", host)
 		}

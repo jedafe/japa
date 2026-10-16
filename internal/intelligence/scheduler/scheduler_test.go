@@ -158,12 +158,16 @@ func TestSelectDueChannels_TunedIntervalSuppresses(t *testing.T) {
 	volatileID := mustChannelUUID(t, "44444444-4444-4444-8444-444444444444")
 
 	rows := []gen.IntelSourceChannel{
-		{ID: stableID, Label: "stable", EntryUrl: "https://a.example.com/feed",
+		{
+			ID: stableID, Label: "stable", EntryUrl: "https://a.example.com/feed",
 			CrawlMethod: "rss", CrawlFrequencyMins: 60,
-			LastCrawledAt: pgtype.Timestamptz{Time: time.Now().Add(-90 * time.Minute), Valid: true}},
-		{ID: volatileID, Label: "volatile", EntryUrl: "https://b.example.com/jobs",
+			LastCrawledAt: pgtype.Timestamptz{Time: time.Now().Add(-90 * time.Minute), Valid: true},
+		},
+		{
+			ID: volatileID, Label: "volatile", EntryUrl: "https://b.example.com/jobs",
 			CrawlMethod: "static", CrawlFrequencyMins: 60,
-			LastCrawledAt: pgtype.Timestamptz{Time: time.Now().Add(-90 * time.Minute), Valid: true}},
+			LastCrawledAt: pgtype.Timestamptz{Time: time.Now().Add(-90 * time.Minute), Valid: true},
+		},
 		{Label: "never", EntryUrl: "https://c.example.com", CrawlMethod: "static"},
 	}
 
@@ -184,6 +188,7 @@ func TestSelectDueChannels_TunedIntervalSuppresses(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("got %d channels, want 2 (tuned channel suppressed)", len(got))
 	}
+
 	for _, ch := range got {
 		if ch.Label == "stable" {
 			t.Error("tuner-suppressed channel returned as due")
@@ -208,6 +213,7 @@ func TestSelectDueChannels_NilValkeyPassesThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SelectDueChannels: %v", err)
 	}
+
 	if len(got) != 1 {
 		t.Fatalf("got %d channels, want 1 (batch cap without tuner)", len(got))
 	}

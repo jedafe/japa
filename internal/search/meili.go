@@ -195,6 +195,7 @@ func renderMeiliFilter(f FilterExpr) string {
 		return v.Field + " IS EMPTY"
 	case And:
 		parts := make([]string, 0, len(v.All))
+
 		for _, e := range v.All {
 			if s := renderMeiliFilter(e); s != "" {
 				parts = append(parts, "("+s+")")
@@ -204,6 +205,7 @@ func renderMeiliFilter(f FilterExpr) string {
 		return strings.Join(parts, " AND ")
 	case Or:
 		parts := make([]string, 0, len(v.Any))
+
 		for _, e := range v.Any {
 			if s := renderMeiliFilter(e); s != "" {
 				parts = append(parts, "("+s+")")

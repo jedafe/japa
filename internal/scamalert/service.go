@@ -501,6 +501,7 @@ func (s *Service) GetForViewer(ctx context.Context, id, callerID pgtype.UUID) (S
 	if err == nil || !callerID.Valid {
 		return dto, err
 	}
+
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return dto, err
 	}
@@ -510,11 +511,14 @@ func (s *Service) GetForViewer(ctx context.Context, id, callerID pgtype.UUID) (S
 		if errors.Is(rerr, pgx.ErrNoRows) {
 			return ScamReportDTO{}, pgx.ErrNoRows
 		}
+
 		return ScamReportDTO{}, fmt.Errorf("scamalert: get for viewer: %w", rerr)
 	}
+
 	if !row.ReporterID.Valid || row.ReporterID != callerID {
 		return ScamReportDTO{}, pgx.ErrNoRows
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -531,7 +535,6 @@ func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, scamType st
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListReports(ctx, ListReportsFilter{
-
 		DestinationSpaceID: destSpaceID,
 		ScamType:           scamType,
 		Limit:              limit,
@@ -556,6 +559,7 @@ func (s *Service) ListByOffset(ctx context.Context, destSpaceID pgtype.UUID, sca
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -611,7 +615,6 @@ func (s *Service) AdminList(ctx context.Context, status string, destSpaceID pgty
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminListReports(ctx, AdminListReportsFilter{
-
 		Status:             status,
 		DestinationSpaceID: destSpaceID,
 		ScamType:           scamType,
@@ -764,7 +767,6 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID pgtype.UUID) e
 			Reason      string `json:"reason"`
 			ReferenceID string `json:"reference_id,omitempty"`
 		}{
-
 			UserID:      reporterID.String(),
 			Points:      50, // baseline points for a confirmed scam report
 			Reason:      "scam_alert.confirmed",

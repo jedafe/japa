@@ -119,7 +119,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleSelector handles GET /checklist/selector — country + visa-type
 // options from published visa guides. Public, no auth required.
 func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
 		return
@@ -148,7 +147,6 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 // auth required (anonymous browse). Returns the ChecklistGuideResult shape
 // that matches the frontend ChecklistGuide type (§70 contract).
 func (h *Handlers) HandleGetItems(w http.ResponseWriter, r *http.Request) {
-
 	guideID, ok := scanUUIDParam(w, r, "guide_id")
 	if !ok {
 		return

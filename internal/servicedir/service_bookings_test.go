@@ -159,6 +159,7 @@ func TestValidatePackageDepartures(t *testing.T) {
 
 	t.Run("rejects non-positive capacity", func(t *testing.T) {
 		zero := int32(0)
+
 		_, err := validatePackageDepartures([]PackageDepartureInput{{
 			StartsOn: "2026-06-01",
 			Capacity: &zero,
@@ -179,6 +180,7 @@ func TestValidatePackageDepartures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error for 'full' status: %v", err)
 		}
+
 		if *params[0].Status != DepartureStatusFull {
 			t.Fatalf("status not preserved: %s", *params[0].Status)
 		}
@@ -196,6 +198,7 @@ func TestValidatePackageDepartures(t *testing.T) {
 
 	t.Run("accepts a well-formed open departure", func(t *testing.T) {
 		cap := int32(12)
+
 		params, err := validatePackageDepartures([]PackageDepartureInput{{
 			StartsOn: "2026-06-01",
 			EndsOn:   "2026-06-10",
@@ -205,6 +208,7 @@ func TestValidatePackageDepartures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+
 		if len(params) != 1 || params[0].Capacity == nil || *params[0].Capacity != 12 {
 			t.Fatalf("bad params: %+v", params)
 		}
@@ -212,7 +216,7 @@ func TestValidatePackageDepartures(t *testing.T) {
 }
 
 func TestComputeFee(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("percent fee", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{
@@ -253,7 +257,7 @@ func TestComputeFee(t *testing.T) {
 }
 
 func TestCancelFeeAction(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := &Service{settings: fakeSettings{"service_packages.refund_window_days": "7"}}
 
 	t.Run("inquiry bookings carry no fee", func(t *testing.T) {
@@ -399,7 +403,7 @@ func insertTestUser(t *testing.T, database *db.DB, username string) pgtype.UUID 
 	}
 
 	t.Cleanup(func() {
-		ctx := context.Background()
+		ctx := t.Context()
 		database.Writer.Exec(ctx, `DELETE FROM service_bookings WHERE booker_user_id = $1 OR provider_user_id = $1`, id)
 		database.Writer.Exec(ctx, `DELETE FROM user_profiles WHERE user_id = $1`, id)
 		database.Writer.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
@@ -442,7 +446,7 @@ func insertListing(t *testing.T, database *db.DB, authorID pgtype.UUID, kind, ca
 	}
 
 	t.Cleanup(func() {
-		ctx := context.Background()
+		ctx := t.Context()
 		database.Writer.Exec(ctx,
 			`DELETE FROM service_bookings WHERE listing_meta_id = $1`, metaID)
 		database.Writer.Exec(ctx, `DELETE FROM service_listing_meta WHERE id = $1`, metaID)
@@ -484,27 +488,35 @@ func TestMentorshipCreateBooking_LiveDB(t *testing.T) {
 		if b.ProviderUserID != mentorID.String() {
 			t.Errorf("provider_user_id = %q, want %q", b.ProviderUserID, mentorID.String())
 		}
+
 		if b.OrgID != "" {
 			t.Errorf("org_id = %q, want empty (user-provider booking)", b.OrgID)
 		}
+
 		if b.Intent != BookingIntentInquiry {
 			t.Errorf("intent = %q, want inquiry", b.Intent)
 		}
+
 		if b.PartySize != 1 {
 			t.Errorf("party_size = %d, want 1", b.PartySize)
 		}
+
 		if b.ExpiresAt != "" {
 			t.Errorf("expires_at = %q, want empty (mentorship is not SLA-bound)", b.ExpiresAt)
 		}
+
 		if b.Goals != "land a devops role" {
 			t.Errorf("goals = %q, want %q", b.Goals, "land a devops role")
 		}
+
 		if b.Status != BookingStatusPending {
 			t.Errorf("status = %q, want pending", b.Status)
 		}
+
 		if b.ListingKind != ListingKindMentorship {
 			t.Errorf("listing_kind = %q, want mentorship", b.ListingKind)
 		}
+
 		if b.ConnectionStatus != "pending" {
 			t.Errorf("connection_status = %q, want pending", b.ConnectionStatus)
 		}
@@ -514,13 +526,16 @@ func TestMentorshipCreateBooking_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get stored booking: %v", err)
 		}
+
 		var meta map[string]any
 		if err := json.Unmarshal(row.Meta, &meta); err != nil {
 			t.Fatalf("meta not valid json: %v", err)
 		}
+
 		if meta["goals"] != "land a devops role" {
 			t.Errorf("meta.goals = %v, want %q", meta["goals"], "land a devops role")
 		}
+
 		if row.Note == nil || *row.Note != "land a devops role" {
 			t.Errorf("note = %v, want goals text", row.Note)
 		}
@@ -571,6 +586,7 @@ func TestMentorshipCreateBooking_LiveDB(t *testing.T) {
 
 		// Room frees up → booking succeeds even with packages flag off.
 		setMentor(t, database, mentorID, 3, 1)
+
 		if _, err := svc.CreateBooking(ctx, otherID, contentID, CreateBookingInput{}); err != nil {
 			t.Fatalf("booking after capacity freed (packages flag off): %v", err)
 		}
@@ -593,6 +609,7 @@ func TestMentorshipCreateBooking_LiveDB(t *testing.T) {
 	// the dedupe sentinel the service layer maps to ErrDuplicateRequest.
 	t.Run("open duplicate insert hits the unique index", func(t *testing.T) {
 		var pgErr *pgconn.PgError
+
 		_, err := database.Writer.Exec(ctx,
 			`INSERT INTO service_bookings
 				(listing_meta_id, booker_user_id, provider_user_id, intent, party_size, status, purchase_mode)
@@ -601,12 +618,15 @@ func TestMentorshipCreateBooking_LiveDB(t *testing.T) {
 		if err == nil {
 			t.Fatal("second open booking inserted — idx_svc_bookings_mentorship_open_uniq did not fire")
 		}
+
 		if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
 			t.Fatalf("expected 23505 unique violation, got %v", err)
 		}
+
 		if pgErr.ConstraintName != "idx_svc_bookings_mentorship_open_uniq" {
 			t.Fatalf("violation came from %q, want idx_svc_bookings_mentorship_open_uniq", pgErr.ConstraintName)
 		}
+
 		if !isDuplicateMentorshipBookingErr(err) {
 			t.Fatal("isDuplicateMentorshipBookingErr did not classify the violation")
 		}
@@ -629,14 +649,17 @@ func TestMentorshipCreateBooking_LiveDB(t *testing.T) {
 			"t4org"+uniq, "T4 Org "+uniq, mentorID).Scan(&orgID); err != nil {
 			t.Fatalf("insert org: %v", err)
 		}
+
 		t.Cleanup(func() {
-			database.Writer.Exec(context.Background(),
+			database.Writer.Exec(t.Context(),
 				`DELETE FROM service_bookings WHERE org_id = $1`, orgID)
-			database.Writer.Exec(context.Background(),
+			database.Writer.Exec(t.Context(),
 				`DELETE FROM organizations WHERE id = $1`, orgID)
 		})
+
 		otherContentID, otherMetaID := insertListing(t, database, mentorID, ListingKindService, "other", "t4svc-"+uniq)
 		_ = otherContentID
+
 		if _, err := database.Writer.Exec(ctx,
 			`INSERT INTO service_bookings
 				(listing_meta_id, booker_user_id, org_id, intent, party_size, status, purchase_mode)
@@ -655,15 +678,19 @@ func TestIsDuplicateMentorshipBookingErr(t *testing.T) {
 	if !isDuplicateMentorshipBookingErr(dup) {
 		t.Error("expected true for the open dedupe index")
 	}
+
 	if !isDuplicateMentorshipBookingErr(fmt.Errorf("insert: %w", dup)) {
 		t.Error("expected true through wrapping")
 	}
+
 	if isDuplicateMentorshipBookingErr(&pgconn.PgError{Code: "23505", ConstraintName: "other_idx"}) {
 		t.Error("other unique violations must not classify as duplicate request")
 	}
+
 	if isDuplicateMentorshipBookingErr(&pgconn.PgError{Code: "23503"}) {
 		t.Error("FK violations must not classify as duplicate request")
 	}
+
 	if isDuplicateMentorshipBookingErr(errors.New("boom")) {
 		t.Error("plain errors must not classify")
 	}
@@ -679,6 +706,7 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 	svc := newTestService(database, fakeFlags{"mentorship.enabled": true})
 	queue := &fakeEnqueuer{}
 	dm := &fakeDMCreator{}
+
 	svc.SetEnqueuer(queue)
 	svc.SetDMCreator(dm)
 
@@ -692,12 +720,14 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed booking: %v", err)
 	}
+
 	bookingID := mustUUID(t, res.Booking.ID)
 
 	t.Run("stranger cannot respond or view", func(t *testing.T) {
 		if _, err := svc.RespondToBooking(ctx, strangerID, bookingID, "accept", ""); !errors.Is(err, ErrNotOwner) {
 			t.Fatalf("respond as stranger: expected ErrNotOwner, got %v", err)
 		}
+
 		if _, err := svc.GetBooking(ctx, bookingID, strangerID, false); !errors.Is(err, ErrNotOwner) {
 			t.Fatalf("get as stranger: expected ErrNotOwner, got %v", err)
 		}
@@ -708,6 +738,7 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get as provider: %v", err)
 		}
+
 		if dto.ProviderUserID != mentorID.String() {
 			t.Errorf("provider_user_id = %q, want %q", dto.ProviderUserID, mentorID.String())
 		}
@@ -716,15 +747,19 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("provider inbox: %v", err)
 		}
+
 		if total < 1 || len(rows) == 0 {
 			t.Fatalf("provider inbox empty, want the seeded booking")
 		}
+
 		found := false
+
 		for _, r := range rows {
 			if r.ID == res.Booking.ID {
 				found = true
 			}
 		}
+
 		if !found {
 			t.Errorf("provider inbox missing booking %s", res.Booking.ID)
 		}
@@ -734,6 +769,7 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("non-provider inbox: %v", err)
 		}
+
 		if len(other) != 0 {
 			t.Errorf("non-provider inbox has %d rows, want 0", len(other))
 		}
@@ -744,21 +780,27 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("accept: %v", err)
 		}
+
 		if dto.Status != BookingStatusConfirmed {
 			t.Errorf("status = %q, want confirmed", dto.Status)
 		}
+
 		if dto.ConnectionStatus != "active" {
 			t.Errorf("connection_status = %q, want active", dto.ConnectionStatus)
 		}
+
 		if dto.OrgResponseNote != "happy to help" {
 			t.Errorf("org_response_note = %q, want %q", dto.OrgResponseNote, "happy to help")
 		}
+
 		if !queue.hasTask(worker.TypeServiceBookingStatusChanged) {
 			t.Error("expected service:booking_status_changed task")
 		}
+
 		if !queue.hasTask(worker.TypeMentorUpdateMeilisearch) {
 			t.Error("expected mentor:update_meilisearch task on mentorship accept")
 		}
+
 		if len(dm.pairs) != 1 || dm.pairs[0][0] != mentorID || dm.pairs[0][1] != menteeID {
 			t.Errorf("expected DM open (mentor, mentee), got %+v", dm.pairs)
 		}
@@ -768,6 +810,7 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 		if _, err := svc.RespondToBooking(ctx, mentorID, bookingID, "accept", ""); !errors.Is(err, ErrInvalidBookingTransition) {
 			t.Fatalf("re-accept: expected ErrInvalidBookingTransition, got %v", err)
 		}
+
 		if _, err := svc.RespondToBooking(ctx, mentorID, bookingID, "bogus", ""); !errors.Is(err, ErrInvalidBookingTransition) {
 			t.Fatalf("bogus action: expected ErrInvalidBookingTransition, got %v", err)
 		}
@@ -778,9 +821,11 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("complete: %v", err)
 		}
+
 		if dto.Status != BookingStatusFulfilled {
 			t.Errorf("status = %q, want fulfilled", dto.Status)
 		}
+
 		if dto.ConnectionStatus != "completed" {
 			t.Errorf("connection_status = %q, want completed", dto.ConnectionStatus)
 		}
@@ -788,22 +833,27 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 
 	t.Run("decline moves pending to declined with response note", func(t *testing.T) {
 		declineeID := insertTestUser(t, database, "t4declinee"+uniq)
+
 		res, err := svc.CreateBooking(ctx, declineeID, contentID, CreateBookingInput{Goals: "g"})
 		if err != nil {
 			t.Fatalf("seed decline booking: %v", err)
 		}
+
 		dBookingID := mustUUID(t, res.Booking.ID)
 
 		dto, err := svc.RespondToBooking(ctx, mentorID, dBookingID, "decline", "no capacity this season")
 		if err != nil {
 			t.Fatalf("decline: %v", err)
 		}
+
 		if dto.Status != BookingStatusDeclined {
 			t.Errorf("status = %q, want declined", dto.Status)
 		}
+
 		if dto.ConnectionStatus != BookingStatusDeclined {
 			t.Errorf("connection_status = %q, want declined passthrough", dto.ConnectionStatus)
 		}
+
 		if dto.OrgResponseNote != "no capacity this season" {
 			t.Errorf("org_response_note = %q, want decline note", dto.OrgResponseNote)
 		}
@@ -823,9 +873,11 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("my bookings: %v", err)
 		}
+
 		if len(rows) != 1 {
 			t.Fatalf("my bookings returned %d rows, want 1", len(rows))
 		}
+
 		if rows[0].ProviderUserID != mentorID.String() {
 			t.Errorf("provider_user_id = %q, want %q", rows[0].ProviderUserID, mentorID.String())
 		}
@@ -835,6 +887,7 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("my bookings kind=service: %v", err)
 		}
+
 		for _, r := range rows2 {
 			if r.ID == res.Booking.ID {
 				t.Error("mentorship booking leaked into kind=service list")
@@ -860,15 +913,18 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 	// three and nothing else in the directory.
 	listIDs := func(svc *Service, kind string) map[string]bool {
 		t.Helper()
+
 		rows, _, err := svc.List(ctx, pgtype.UUID{}, pgtype.UUID{}, "", "", nil,
 			kind, nil, pgtype.Date{}, "T4 t4", "", 1, 100)
 		if err != nil {
 			t.Fatalf("list kind=%q: %v", kind, err)
 		}
+
 		out := map[string]bool{}
 		for _, r := range rows {
 			out[r.ID] = true
 		}
+
 		return out
 	}
 
@@ -877,15 +933,18 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 			"service_packages.enabled": true,
 			"mentorship.enabled":       true,
 		})
+
 		rows, _, err := svc.List(ctx, pgtype.UUID{}, pgtype.UUID{}, "", "", nil,
 			"", nil, pgtype.Date{}, "T4 t4", "", 1, 100)
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
+
 		got := map[string]bool{}
 		for _, r := range rows {
 			got[r.ID] = true
 		}
+
 		for _, id := range []pgtype.UUID{svcContentID, menContentID} {
 			if !got[id.String()] {
 				t.Errorf("unfiltered list missing %s", id)
@@ -900,13 +959,16 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 
 	t.Run("packages off + mentorship on: unfiltered shows service+mentorship", func(t *testing.T) {
 		svc := newTestService(database, fakeFlags{"mentorship.enabled": true})
+
 		got := listIDs(svc, "")
 		if !got[svcContentID.String()] {
 			t.Error("missing service listing")
 		}
+
 		if !got[menContentID.String()] {
 			t.Error("missing mentorship listing — should surface in unfiltered list")
 		}
+
 		if got[pkgContentID.String()] {
 			t.Error("package listing leaked into unfiltered list")
 		}
@@ -914,10 +976,12 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 
 	t.Run("mentorship off: unfiltered shows only service", func(t *testing.T) {
 		svc := newTestService(database, fakeFlags{"service_packages.enabled": true})
+
 		got := listIDs(svc, "")
 		if got[menContentID.String()] {
 			t.Error("mentorship listing leaked while mentorship.enabled off")
 		}
+
 		if !got[svcContentID.String()] {
 			t.Error("missing service listing")
 		}
@@ -930,10 +994,12 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 
 	t.Run("both off: unfiltered shows only service", func(t *testing.T) {
 		svc := newTestService(database, fakeFlags{})
+
 		got := listIDs(svc, "")
 		if !got[svcContentID.String()] {
 			t.Error("missing service listing")
 		}
+
 		if got[menContentID.String()] || got[pkgContentID.String()] {
 			t.Error("flag-gated listing leaked into unfiltered list")
 		}
@@ -941,12 +1007,14 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 
 	t.Run("kind=mentorship flag-gated", func(t *testing.T) {
 		svcOn := newTestService(database, fakeFlags{"mentorship.enabled": true})
+
 		got := listIDs(svcOn, ListingKindMentorship)
 		if !got[menContentID.String()] || len(got) != 1 {
 			t.Errorf("kind=mentorship returned %v, want only the mentorship listing", got)
 		}
 
 		svcOff := newTestService(database, fakeFlags{})
+
 		_, _, err := svcOff.List(ctx, pgtype.UUID{}, pgtype.UUID{}, "", "", nil,
 			ListingKindMentorship, nil, pgtype.Date{}, "T4 t4", "", 1, 100)
 		if !errors.Is(err, ErrMentorshipDisabled) {
@@ -963,24 +1031,30 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 	t.Run("handler gate: directory off keeps kind=mentorship reachable", func(t *testing.T) {
 		list := func(flags fakeFlags, rawQuery string) (int, map[string]bool) {
 			t.Helper()
+
 			h := &Handlers{service: newTestService(database, flags)}
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/services?"+rawQuery, nil)
 			rec := httptest.NewRecorder()
 			h.HandleList(rec, req)
+
 			got := map[string]bool{}
+
 			if rec.Code == http.StatusOK {
 				var body struct {
 					Data []struct {
 						ID string `json:"id"`
 					} `json:"data"`
 				}
+
 				if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 					t.Fatalf("decode list body: %v", err)
 				}
+
 				for _, row := range body.Data {
 					got[row.ID] = true
 				}
 			}
+
 			return rec.Code, got
 		}
 
@@ -989,6 +1063,7 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 		if code != http.StatusOK {
 			t.Fatalf("kind=mentorship with directory off + mentorship on: got %d, want 200", code)
 		}
+
 		if !got[menContentID.String()] || len(got) != 1 {
 			t.Errorf("kind=mentorship returned %v, want only the mentorship listing", got)
 		}
@@ -1072,6 +1147,7 @@ func TestMentorshipKindCreateEditGuard_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("shadow lookup: %v", err)
 		}
+
 		if row.ID != menContentID {
 			t.Fatalf("mentor has a second shadow %s — forged row was written", row.ID)
 		}
@@ -1090,6 +1166,7 @@ func TestMentorshipKindCreateEditGuard_LiveDB(t *testing.T) {
 
 	t.Run("edit refuses the author's own shadow", func(t *testing.T) {
 		title := "T4 rewritten shadow"
+
 		_, err := svc.EditOwn(ctx, menContentID, mentorID, EditServiceInput{Title: &title}, false, false)
 		if !errors.Is(err, ErrMentorshipListingManaged) {
 			t.Fatalf("expected ErrMentorshipListingManaged, got %v", err)
@@ -1098,6 +1175,7 @@ func TestMentorshipKindCreateEditGuard_LiveDB(t *testing.T) {
 
 	t.Run("edit refuses shadows for service.edit_any too", func(t *testing.T) {
 		title := "T4 rewritten shadow"
+
 		_, err := svc.EditOwn(ctx, menContentID, strangerID, EditServiceInput{Title: &title}, true, true)
 		if !errors.Is(err, ErrMentorshipListingManaged) {
 			t.Fatalf("expected ErrMentorshipListingManaged, got %v", err)
@@ -1106,6 +1184,7 @@ func TestMentorshipKindCreateEditGuard_LiveDB(t *testing.T) {
 
 	t.Run("non-owner edit on a service listing still returns not_owner", func(t *testing.T) {
 		title := "T4 hijack"
+
 		_, err := svc.EditOwn(ctx, svcContentID, strangerID, EditServiceInput{Title: &title}, false, false)
 		if !errors.Is(err, ErrNotOwner) {
 			t.Fatalf("expected ErrNotOwner, got %v", err)
@@ -1128,14 +1207,17 @@ func TestMentorshipKindCreateEditGuard_LiveDB(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("got %d, want 400: %s", rec.Code, rec.Body.String())
 		}
+
 		var body struct {
 			Error struct {
 				Code string `json:"code"`
 			} `json:"error"`
 		}
+
 		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 			t.Fatalf("decode error body: %v", err)
 		}
+
 		if body.Error.Code != "mentorship_listing_managed" {
 			t.Fatalf("error code = %q, want mentorship_listing_managed", body.Error.Code)
 		}
@@ -1145,10 +1227,12 @@ func TestMentorshipKindCreateEditGuard_LiveDB(t *testing.T) {
 // mustUUID parses a string id into pgtype.UUID for store calls in tests.
 func mustUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var id pgtype.UUID
 	if err := id.Scan(s); err != nil {
 		t.Fatalf("scan uuid %q: %v", s, err)
 	}
+
 	return id
 }
 
@@ -1156,17 +1240,21 @@ func mustUUID(t *testing.T, s string) pgtype.UUID {
 // a fake enqueuer captured and returns their audience fields in order.
 func statusChangedAudiences(queue *fakeEnqueuer) []string {
 	var out []string
+
 	for _, task := range queue.tasks {
 		if task.taskType != worker.TypeServiceBookingStatusChanged {
 			continue
 		}
+
 		var payload struct {
 			Audience string `json:"audience"`
 		}
+
 		if err := json.Unmarshal(task.payload, &payload); err == nil {
 			out = append(out, payload.Audience)
 		}
 	}
+
 	return out
 }
 
@@ -1193,6 +1281,7 @@ func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed booking: %v", err)
 	}
+
 	bookingID := mustUUID(t, res.Booking.ID)
 
 	t.Run("dedupe keys on provider, not listing meta", func(t *testing.T) {
@@ -1225,6 +1314,7 @@ func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
 
 	t.Run("overlong goals rejected", func(t *testing.T) {
 		fourthID := insertTestUser(t, database, "t4fourth"+uniq)
+
 		_, err := svc.CreateBooking(ctx, fourthID, contentID, CreateBookingInput{Goals: strings.Repeat("x", 4001)})
 		if !errors.Is(err, ErrInputTooLong) {
 			t.Fatalf("expected ErrInputTooLong, got %v", err)
@@ -1254,16 +1344,20 @@ func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
 
 	t.Run("provider cancel via respond", func(t *testing.T) {
 		queue.tasks = nil
+
 		dto, err := svc.RespondToBooking(ctx, mentorID, bookingID, "cancel", "moving abroad")
 		if err != nil {
 			t.Fatalf("provider cancel respond: %v", err)
 		}
+
 		if dto.Status != BookingStatusCancelled {
 			t.Errorf("status = %q, want cancelled", dto.Status)
 		}
+
 		if dto.CancelReason != "moving abroad" {
 			t.Errorf("cancel_reason = %q, want the provider note", dto.CancelReason)
 		}
+
 		if dto.ConnectionStatus != BookingStatusCancelled {
 			t.Errorf("connection_status = %q, want cancelled passthrough", dto.ConnectionStatus)
 		}
@@ -1280,25 +1374,31 @@ func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("seed booking 2: %v", err)
 		}
+
 		booking2 := mustUUID(t, res.Booking.ID)
 		if _, err := svc.RespondToBooking(ctx, mentorID, booking2, "accept", ""); err != nil {
 			t.Fatalf("accept booking 2: %v", err)
 		}
 
 		queue.tasks = nil
+
 		dto, err := svc.CompleteMyBooking(ctx, booking2, menteeID)
 		if err != nil {
 			t.Fatalf("mentee complete: %v", err)
 		}
+
 		if dto.Status != BookingStatusFulfilled {
 			t.Errorf("status = %q, want fulfilled", dto.Status)
 		}
+
 		if dto.ConnectionStatus != "completed" {
 			t.Errorf("connection_status = %q, want completed", dto.ConnectionStatus)
 		}
+
 		if !queue.hasTask(worker.TypeMentorUpdateMeilisearch) {
 			t.Error("expected mentor:update_meilisearch on leaving confirmed")
 		}
+
 		for _, a := range statusChangedAudiences(queue) {
 			if a != "provider" {
 				t.Errorf("status_changed audience = %q, want provider", a)
@@ -1311,22 +1411,27 @@ func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("seed booking 3: %v", err)
 		}
+
 		booking3 := mustUUID(t, res.Booking.ID)
 		if _, err := svc.RespondToBooking(ctx, mentorID, booking3, "accept", ""); err != nil {
 			t.Fatalf("accept booking 3: %v", err)
 		}
 
 		queue.tasks = nil
+
 		dto, err := svc.CancelMyBooking(ctx, booking3, menteeID, "found another mentor")
 		if err != nil {
 			t.Fatalf("mentee cancel: %v", err)
 		}
+
 		if dto.Status != BookingStatusCancelled {
 			t.Errorf("status = %q, want cancelled", dto.Status)
 		}
+
 		if !queue.hasTask(worker.TypeMentorUpdateMeilisearch) {
 			t.Error("expected mentor:update_meilisearch on leaving confirmed")
 		}
+
 		aud := statusChangedAudiences(queue)
 		if len(aud) != 1 || aud[0] != "provider" {
 			t.Errorf("status_changed audiences = %v, want exactly one provider task", aud)
@@ -1338,6 +1443,7 @@ func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("seed booking 4: %v", err)
 		}
+
 		booking4 := mustUUID(t, res.Booking.ID)
 
 		queue.tasks = nil
@@ -1345,6 +1451,7 @@ func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
 		if _, err := svc.AdminSetBookingStatus(ctx, booking4, AdminBookingActionInput{Status: BookingStatusConfirmed}); err != nil {
 			t.Fatalf("admin confirm: %v", err)
 		}
+
 		if !queue.hasTask(worker.TypeMentorUpdateMeilisearch) {
 			t.Error("expected mentor:update_meilisearch when admin moves booking into confirmed")
 		}
@@ -1354,6 +1461,7 @@ func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
 		if _, err := svc.AdminSetBookingStatus(ctx, booking4, AdminBookingActionInput{Status: BookingStatusCancelled, ResolutionNote: "policy"}); err != nil {
 			t.Fatalf("admin cancel: %v", err)
 		}
+
 		if !queue.hasTask(worker.TypeMentorUpdateMeilisearch) {
 			t.Error("expected mentor:update_meilisearch when admin moves booking out of confirmed")
 		}

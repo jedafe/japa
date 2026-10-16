@@ -51,7 +51,6 @@ func TestCacheKey(t *testing.T) {
 	if key == key3 {
 		t.Fatalf("different timestamps produced same key: %s", key)
 	}
-
 }
 
 func TestNew(t *testing.T) {

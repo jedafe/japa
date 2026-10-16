@@ -1052,7 +1052,7 @@ type WikiAgentService interface {
 	// prose — a mixed revision). ops is the raw ops array; the adapter
 	// decodes it via wiki.ParseOps. canManage flags wiki.fields.manage
 	// holders, whose submissions auto-apply.
-	SubmitFieldOps(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content json.RawMessage, ops json.RawMessage, summary string, canManage bool) (revID string, autoApproved bool, err error)
+	SubmitFieldOps(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content, ops json.RawMessage, summary string, canManage bool) (revID string, autoApproved bool, err error)
 	ApproveRevision(ctx context.Context, revID, reviewerID pgtype.UUID, notes string) error
 	RejectRevision(ctx context.Context, revID, reviewerID pgtype.UUID, notes string) error
 	// ListPages is the admin page index (wiki.Service.AdminListPages).

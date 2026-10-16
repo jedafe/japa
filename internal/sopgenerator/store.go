@@ -101,15 +101,18 @@ func (s *Store) ListTemplates(ctx context.Context, destSpaceID pgtype.UUID, purp
 		       ai_generated, created_at, updated_at
 		FROM sop_templates
 		WHERE status = 'published' AND is_active`
+
 	args := []any{}
 	if destSpaceID.Valid {
 		args = append(args, destSpaceID)
 		q += ` AND (destination_space_id = $1 OR destination_space_id IS NULL)`
 	}
+
 	if purpose != "" {
 		args = append(args, purpose)
 		q += ` AND purpose = $` + itoa(len(args))
 	}
+
 	q += ` ORDER BY title`
 
 	rows, err := s.pool.Reader.Query(ctx, q, args...)
@@ -119,6 +122,7 @@ func (s *Store) ListTemplates(ctx context.Context, destSpaceID pgtype.UUID, purp
 	defer rows.Close()
 
 	var out []TemplateRow
+
 	for rows.Next() {
 		var t TemplateRow
 		if err := rows.Scan(&t.ID, &t.DestinationSpaceID, &t.Purpose, &t.Title,
@@ -126,8 +130,10 @@ func (s *Store) ListTemplates(ctx context.Context, destSpaceID pgtype.UUID, purp
 			&t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
+
 		out = append(out, t)
 	}
+
 	return out, rows.Err()
 }
 
@@ -135,6 +141,7 @@ func (s *Store) ListTemplates(ctx context.Context, destSpaceID pgtype.UUID, purp
 func (s *Store) ListSamples(ctx context.Context, destSpaceID pgtype.UUID, level, field string, page, limit int32) ([]SampleRow, int64, error) {
 	where := ` WHERE p.status = 'published'`
 	args := []any{}
+
 	add := func(cond string, v any) {
 		args = append(args, v)
 		where += ` AND ` + cond + ` = $` + itoa(len(args))
@@ -142,9 +149,11 @@ func (s *Store) ListSamples(ctx context.Context, destSpaceID pgtype.UUID, level,
 	if destSpaceID.Valid {
 		add(`p.destination_space_id`, destSpaceID)
 	}
+
 	if level != "" {
 		add(`p.program_level`, level)
 	}
+
 	if field != "" {
 		add(`p.field_of_study`, field)
 	}
@@ -156,6 +165,7 @@ func (s *Store) ListSamples(ctx context.Context, destSpaceID pgtype.UUID, level,
 	}
 
 	args = append(args, limit, (page-1)*limit)
+
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT p.id, p.destination_space_id, s.name, p.program_level,
 		       p.field_of_study, p.title, p.body, p.word_count, p.status,
@@ -166,9 +176,11 @@ func (s *Store) ListSamples(ctx context.Context, destSpaceID pgtype.UUID, level,
 	if err != nil {
 		return nil, 0, err
 	}
+
 	defer rows.Close()
 
 	var out []SampleRow
+
 	for rows.Next() {
 		var r SampleRow
 		if err := rows.Scan(&r.ID, &r.DestinationSpaceID, &r.DestinationName,
@@ -176,8 +188,10 @@ func (s *Store) ListSamples(ctx context.Context, destSpaceID pgtype.UUID, level,
 			&r.Status, &r.AIGenerated, &r.IsJapabotIndexed, &r.CreatedAt); err != nil {
 			return nil, 0, err
 		}
+
 		out = append(out, r)
 	}
+
 	return out, total, rows.Err()
 }
 
@@ -194,6 +208,7 @@ func (s *Store) GetSample(ctx context.Context, id pgtype.UUID) (SampleRow, error
 		Scan(&r.ID, &r.DestinationSpaceID, &r.DestinationName,
 			&r.ProgramLevel, &r.FieldOfStudy, &r.Title, &r.Body, &r.WordCount,
 			&r.Status, &r.AIGenerated, &r.IsJapabotIndexed, &r.CreatedAt)
+
 	return r, err
 }
 
@@ -206,6 +221,7 @@ func (s *Store) CreateDraft(ctx context.Context, d DraftRow) (pgtype.UUID, error
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued')
 		RETURNING id`,
 		d.UserID, d.DestinationSpaceID, d.Purpose, d.Program, d.Institution, d.Title, d.Inputs, d.AIPromptHash).Scan(&id)
+
 	return id, err
 }
 
@@ -220,6 +236,7 @@ func (s *Store) GetDraft(ctx context.Context, id pgtype.UUID) (DraftRow, error) 
 		WHERE id = $1 AND deleted_at IS NULL`, id).
 		Scan(&d.ID, &d.UserID, &d.DestinationSpaceID, &d.Purpose, &d.Program, &d.Institution,
 			&d.Title, &d.Inputs, &d.GeneratedText, &d.Status, &d.AIModel, &d.AIPromptHash, &d.Version, &d.CreatedAt, &d.UpdatedAt)
+
 	return d, err
 }
 
@@ -244,14 +261,17 @@ func (s *Store) ListDrafts(ctx context.Context, userID pgtype.UUID, page, limit 
 	defer rows.Close()
 
 	var out []DraftRow
+
 	for rows.Next() {
 		var d DraftRow
 		if err := rows.Scan(&d.ID, &d.UserID, &d.DestinationSpaceID, &d.Purpose, &d.Program, &d.Institution,
 			&d.Title, &d.Inputs, &d.GeneratedText, &d.Status, &d.AIModel, &d.Version, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
+
 		out = append(out, d)
 	}
+
 	return out, total, rows.Err()
 }
 
@@ -271,9 +291,11 @@ func (s *Store) UpdateDraft(ctx context.Context, id, userID pgtype.UUID, title, 
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -285,9 +307,11 @@ func (s *Store) SoftDeleteDraft(ctx context.Context, id, userID pgtype.UUID) err
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -300,9 +324,11 @@ func (s *Store) MarkDraftGenerated(ctx context.Context, id pgtype.UUID, text str
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -311,6 +337,7 @@ func (s *Store) MarkDraftFailed(ctx context.Context, id pgtype.UUID) error {
 	_, err := s.pool.Writer.Exec(ctx, `
 		UPDATE sop_drafts SET status = 'failed', updated_at = now()
 		WHERE id = $1 AND status = 'queued'`, id)
+
 	return err
 }
 
@@ -322,6 +349,7 @@ func (s *Store) CountDraftsThisMonth(ctx context.Context, userID pgtype.UUID) (i
 		SELECT count(*) FROM sop_drafts
 		WHERE user_id = $1 AND deleted_at IS NULL
 		  AND created_at >= date_trunc('month', now())`, userID).Scan(&n)
+
 	return n, err
 }
 
@@ -331,6 +359,7 @@ func (s *Store) AdminListTemplates(ctx context.Context, page, limit int32) ([]Te
 	if err := s.pool.Reader.QueryRow(ctx, `SELECT count(*) FROM sop_templates`).Scan(&total); err != nil {
 		return nil, 0, err
 	}
+
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT id, destination_space_id, purpose, title, structure, status, is_active,
 		       ai_generated, created_at, updated_at
@@ -340,9 +369,11 @@ func (s *Store) AdminListTemplates(ctx context.Context, page, limit int32) ([]Te
 	if err != nil {
 		return nil, 0, err
 	}
+
 	defer rows.Close()
 
 	var out []TemplateRow
+
 	for rows.Next() {
 		var t TemplateRow
 		if err := rows.Scan(&t.ID, &t.DestinationSpaceID, &t.Purpose, &t.Title,
@@ -350,8 +381,10 @@ func (s *Store) AdminListTemplates(ctx context.Context, page, limit int32) ([]Te
 			&t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
+
 		out = append(out, t)
 	}
+
 	return out, total, rows.Err()
 }
 
@@ -365,6 +398,7 @@ func (s *Store) CreateTemplate(ctx context.Context, t TemplateRow) (pgtype.UUID,
 		VALUES ($1,$2,$3,$4,$5,$6)
 		RETURNING id`,
 		t.DestinationSpaceID, t.Purpose, t.Title, t.Structure, t.Status, t.AIGenerated).Scan(&id)
+
 	return id, err
 }
 
@@ -378,9 +412,11 @@ func (s *Store) ApproveSample(ctx context.Context, id, reviewerID pgtype.UUID, n
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -388,13 +424,16 @@ func itoa(i int) string {
 	if i < 1 {
 		return "1"
 	}
+
 	var buf [4]byte
+
 	p := len(buf)
 	for i > 0 {
 		p--
 		buf[p] = byte('0' + i%10)
 		i /= 10
 	}
+
 	return string(buf[p:])
 }
 
@@ -409,9 +448,11 @@ func (s *Store) ApproveTemplate(ctx context.Context, id, reviewerID pgtype.UUID,
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -423,9 +464,11 @@ func (s *Store) RejectTemplate(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -439,9 +482,11 @@ func (s *Store) RejectSample(ctx context.Context, id, reviewerID pgtype.UUID, no
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -461,9 +506,11 @@ func (s *Store) UpdateTemplate(ctx context.Context, id pgtype.UUID, t TemplateRo
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -475,20 +522,24 @@ func (s *Store) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
 // AdminListSamples returns all samples regardless of status (admin).
 func (s *Store) AdminListSamples(ctx context.Context, destSpaceID pgtype.UUID, status string, page, limit int32) ([]SampleRow, int64, error) {
 	where := ` WHERE true`
+
 	args := []any{}
 	if destSpaceID.Valid {
 		args = append(args, destSpaceID)
 		where += ` AND s.destination_space_id = $` + itoa(len(args))
 	}
+
 	if status != "" {
 		args = append(args, status)
 		where += ` AND s.status = $` + itoa(len(args))
@@ -501,6 +552,7 @@ func (s *Store) AdminListSamples(ctx context.Context, destSpaceID pgtype.UUID, s
 	}
 
 	args = append(args, limit, (page-1)*limit)
+
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT s.id, s.destination_space_id, sp.name, s.program_level,
 		       s.field_of_study, s.title, s.body, s.word_count, s.status,
@@ -511,9 +563,11 @@ func (s *Store) AdminListSamples(ctx context.Context, destSpaceID pgtype.UUID, s
 	if err != nil {
 		return nil, 0, err
 	}
+
 	defer rows.Close()
 
 	var out []SampleRow
+
 	for rows.Next() {
 		var r SampleRow
 		if err := rows.Scan(&r.ID, &r.DestinationSpaceID, &r.DestinationName,
@@ -522,8 +576,10 @@ func (s *Store) AdminListSamples(ctx context.Context, destSpaceID pgtype.UUID, s
 			&r.CreatedAt); err != nil {
 			return nil, 0, err
 		}
+
 		out = append(out, r)
 	}
+
 	return out, total, rows.Err()
 }
 
@@ -538,6 +594,7 @@ func (s *Store) CreateSample(ctx context.Context, r SampleRow) (pgtype.UUID, err
 		RETURNING id`,
 		r.DestinationSpaceID, r.ProgramLevel, r.FieldOfStudy, r.Title,
 		r.Body, r.WordCount, r.Status, r.AIGenerated).Scan(&id)
+
 	return id, err
 }
 
@@ -558,9 +615,11 @@ func (s *Store) UpdateSample(ctx context.Context, id pgtype.UUID, r SampleRow) e
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -572,9 +631,11 @@ func (s *Store) DeleteSample(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -583,6 +644,7 @@ func nullBytes(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
+
 	return b
 }
 
@@ -614,13 +676,16 @@ func (s *Store) ListActiveFields(ctx context.Context) ([]FieldRow, error) {
 	defer rows.Close()
 
 	var out []FieldRow
+
 	for rows.Next() {
 		var r FieldRow
 		if err := rows.Scan(&r.ID, &r.Name, &r.IsActive, &r.SortOrder, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
+
 		out = append(out, r)
 	}
+
 	return out, rows.Err()
 }
 
@@ -628,6 +693,7 @@ func (s *Store) ListActiveFields(ctx context.Context) ([]FieldRow, error) {
 // optional case-insensitive name search, with total count for pagination.
 func (s *Store) AdminListFields(ctx context.Context, q string, page, limit int32) ([]FieldRow, int64, error) {
 	where := ` WHERE true`
+
 	args := []any{}
 	if q != "" {
 		args = append(args, q)
@@ -641,6 +707,7 @@ func (s *Store) AdminListFields(ctx context.Context, q string, page, limit int32
 	}
 
 	args = append(args, limit, (page-1)*limit)
+
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT id, name, is_active, sort_order, created_at, updated_at
 		FROM sop_fields`+
@@ -648,16 +715,20 @@ func (s *Store) AdminListFields(ctx context.Context, q string, page, limit int32
 	if err != nil {
 		return nil, 0, err
 	}
+
 	defer rows.Close()
 
 	var out []FieldRow
+
 	for rows.Next() {
 		var r FieldRow
 		if err := rows.Scan(&r.ID, &r.Name, &r.IsActive, &r.SortOrder, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
+
 		out = append(out, r)
 	}
+
 	return out, total, rows.Err()
 }
 
@@ -669,6 +740,7 @@ func (s *Store) CreateField(ctx context.Context, r FieldRow) (pgtype.UUID, error
 		VALUES ($1, $2, $3)
 		RETURNING id`,
 		r.Name, r.IsActive, r.SortOrder).Scan(&id)
+
 	return id, err
 }
 
@@ -685,9 +757,11 @@ func (s *Store) UpdateField(ctx context.Context, id pgtype.UUID, name *string, i
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -699,6 +773,7 @@ func (s *Store) EnsureField(ctx context.Context, name string) error {
 		INSERT INTO sop_fields (name)
 		VALUES ($1)
 		ON CONFLICT DO NOTHING`, name)
+
 	return err
 }
 
@@ -709,8 +784,10 @@ func (s *Store) DeleteField(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+
 	if res.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

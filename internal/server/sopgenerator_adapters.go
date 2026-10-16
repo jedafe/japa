@@ -29,6 +29,7 @@ func (a *sopAIDispatcher) Dispatch(ctx context.Context, category string, req sop
 	if err != nil {
 		return sopgenerator.AIResponse{}, err
 	}
+
 	return sopgenerator.AIResponse{Text: ai.ExtractText(resp), Model: ai.ExtractModel(resp), Tokens: ai.ExtractTokens(resp)}, nil
 }
 
@@ -63,6 +64,7 @@ func dispatchToolAI(ctx context.Context, d *ai.Dispatcher, category, system, use
 	if err != nil {
 		return "", "", err
 	}
+
 	return ai.ExtractText(resp), ai.ExtractModel(resp), nil
 }
 

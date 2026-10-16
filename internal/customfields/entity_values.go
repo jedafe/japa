@@ -33,6 +33,7 @@ func EntityFieldValues(ctx context.Context, q *gen.Queries, entityType string, e
 	values := make(map[string]any, len(rows))
 
 	sources := make([]cfvComputedSource, 0, len(rows))
+
 	for _, row := range rows {
 		if row.FieldKey == "" {
 			continue
@@ -41,6 +42,7 @@ func EntityFieldValues(ctx context.Context, q *gen.Queries, entityType string, e
 		if v := FieldValueFromDefRow(row.ValueText, row.ValueNumber, row.ValueBool, row.ValueDate, row.ValueJson, row.FieldType); v != nil {
 			values[row.FieldKey] = v
 		}
+
 		sources = append(sources, cfvComputedSource{
 			groupID: row.FieldGroupID, key: row.FieldKey, typ: row.FieldType,
 			options: row.FieldOptions, valueJSON: row.ValueJson, valueNumber: row.ValueNumber,
@@ -76,6 +78,7 @@ func EntityFieldValuesForEntities(ctx context.Context, q *gen.Queries, entityTyp
 	}
 
 	sourcesByEntity := make(map[pgtype.UUID][]cfvComputedSource, len(entityIDs))
+
 	for _, row := range rows {
 		if row.FieldKey == "" {
 			continue
@@ -88,6 +91,7 @@ func EntityFieldValuesForEntities(ctx context.Context, q *gen.Queries, entityTyp
 
 			out[row.EntityID][row.FieldKey] = v
 		}
+
 		sourcesByEntity[row.EntityID] = append(sourcesByEntity[row.EntityID], cfvComputedSource{
 			groupID: row.FieldGroupID, key: row.FieldKey, typ: row.FieldType,
 			options: row.FieldOptions, valueJSON: row.ValueJson, valueNumber: row.ValueNumber,
@@ -189,10 +193,12 @@ func loadComputedOverlay(ctx context.Context, q *gen.Queries) *computedOverlay {
 	if q == nil {
 		return nil
 	}
+
 	defs, err := q.ListComputedFieldDefs(ctx)
 	if err != nil || len(defs) == 0 {
 		return nil
 	}
+
 	return &computedOverlay{ctx: ctx, q: q, defs: defs, groupIDs: make(map[string]pgtype.UUID)}
 }
 
@@ -212,14 +218,17 @@ func (o *computedOverlay) apply(sources []cfvComputedSource, values map[string]a
 		if !ComputedEligibleField(def.FieldType, def.Options) {
 			continue
 		}
+
 		spec := ComputedSpecFromOptions(def.Options)
 
 		scalars := make([]float64, 0, len(spec.Sources))
+
 		for _, src := range spec.Sources {
 			gid := o.resolveGroup(src.Group)
 			if !gid.Valid {
 				continue
 			}
+
 			if row, ok := byCoord[gid.String()+"/"+src.Key]; ok {
 				if f, ok := ComputedScalarFromValue(row.typ, row.options, row.valueJSON, row.valueNumber); ok {
 					scalars = append(scalars, f)
@@ -231,6 +240,7 @@ func (o *computedOverlay) apply(sources []cfvComputedSource, values map[string]a
 			delete(values, def.Key)
 			continue
 		}
+
 		values[def.Key] = ComputedDisplayValue(def.FieldType, def.Options, FoldComputedMetric(spec.Metric, scalars))
 	}
 }
@@ -241,12 +251,15 @@ func (o *computedOverlay) resolveGroup(slug string) pgtype.UUID {
 	if gid, ok := o.groupIDs[slug]; ok {
 		return gid
 	}
+
 	g, err := o.q.GetCustomFieldGroupBySlug(o.ctx, slug)
 	if err != nil {
 		o.groupIDs[slug] = pgtype.UUID{}
 		return pgtype.UUID{}
 	}
+
 	o.groupIDs[slug] = g.ID
+
 	return g.ID
 }
 

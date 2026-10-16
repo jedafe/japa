@@ -61,6 +61,7 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 				"media_id", mediaID)
 			return nil
 		}
+
 		return fmt.Errorf("media:scan: open file %s/%s: %w", m.StorageBucket, m.StoragePath, err)
 	}
 
@@ -78,6 +79,7 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 			slog.Error("media:scan: ClamAV error, confirming without scan",
 				"media_id", mediaID, "error", err)
 		}
+
 		return p.svc.confirmMediaByID(ctx, mid[:])
 	}
 

@@ -66,7 +66,9 @@ func ValidateLeaderboardScope(scope string) (scopeType, spaceID string, ok bool)
 
 	if strings.HasPrefix(scope, ScopeSpace+":") {
 		id := strings.TrimPrefix(scope, ScopeSpace+":")
+
 		var parsed pgtype.UUID
+
 		if err := parsed.Scan(id); err != nil || !parsed.Valid {
 			return "", "", false
 		}

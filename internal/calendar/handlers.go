@@ -140,7 +140,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // BUG-009: categories are served via the API (Rule 16), not hardcoded in
 // the frontend.
 func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
-
 	cats := h.service.Categories(r.Context())
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
 }
@@ -149,7 +148,6 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 // optional filters (dest, origin, category, from, to, view). Also accepts
 // ?destination_space_id= as legacy alias.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	var destSpaceID pgtype.UUID
 
 	destParam := r.URL.Query().Get("dest")
@@ -296,7 +294,6 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /calendar/:id — single approved calendar entry.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	entryID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -791,11 +788,14 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
 			return
 		}
+
 		if err != nil {
 			errpkg.HandleServiceError(w, err)
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
+
 		return
 	}
 

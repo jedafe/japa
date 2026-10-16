@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,12 +58,15 @@ func (f *WaybackFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRe
 	q.Set("fl", "timestamp,original,statuscode")
 	q.Set("filter", "statuscode:200")
 	q.Set("collapse", "digest") // one row per unique capture body
+
 	if since := stringFromCfg(cfg, "since"); since != "" {
 		q.Set("since", since)
 	}
+
 	if mt := stringFromCfg(cfg, "match_type"); mt != "" {
 		q.Set("matchType", mt)
 	}
+
 	if n := intFromCfg(cfg, "max_snapshots", 25); n > 0 {
 		// CDX limit=N returns the FIRST N (oldest) captures — a positive
 		// limit would pin the manifest to a page's earliest snapshots and
@@ -94,6 +98,7 @@ func (f *WaybackFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRe
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("fetcher: wayback read: %w", err)
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		return FetchResult{}, fmt.Errorf("fetcher: wayback cdx: status %d", resp.StatusCode)
 	}
@@ -127,16 +132,19 @@ func waybackManifest(body []byte) ([]byte, error) {
 	}
 
 	var b strings.Builder
+
 	for _, row := range rows {
 		if len(row) < 2 {
 			continue
 		}
+
 		ts, orig := row[0], row[1]
 		// Belt-and-braces with the filter param: a capture that 404'd at
 		// the Wayback edge is not a snapshot worth crawling.
 		if ts == "" || orig == "" || (len(row) >= 3 && row[2] != "" && row[2] != "200") {
 			continue
 		}
+
 		fmt.Fprintf(&b, "https://web.archive.org/web/%sid_/%s\t%s\n", ts, orig, ts)
 	}
 
@@ -153,21 +161,27 @@ func (f *WaybackFetcher) validateWaybackEndpoint(endpoint string) error {
 	if err != nil || u.Host == "" {
 		return fmt.Errorf("fetcher: wayback cdx_endpoint must be a valid URL: %q", endpoint)
 	}
+
 	if u.Scheme != "https" {
 		if !f.allowPrivate || u.Scheme != "http" {
 			return fmt.Errorf("fetcher: wayback cdx_endpoint must be https: %q", endpoint)
 		}
+
 		if !isLoopbackOrPrivateLiteral(u.Hostname()) {
 			return fmt.Errorf("fetcher: wayback cdx_endpoint must be https for non-local hosts: %q", endpoint)
 		}
+
 		return nil
 	}
+
 	if u.User != nil {
-		return fmt.Errorf("fetcher: wayback cdx_endpoint must not embed credentials")
+		return errors.New("fetcher: wayback cdx_endpoint must not embed credentials")
 	}
+
 	host := u.Hostname()
 	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
 		return fmt.Errorf("fetcher: wayback cdx_endpoint targets a private address: %q", endpoint)
 	}
+
 	return nil
 }

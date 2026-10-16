@@ -134,7 +134,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /attestation — lookup published attestation
 // pathways with filters. Query params: ?dest=&doc_type=&issuing=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
@@ -183,7 +182,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /attestation/:id — single published attestation
 // pathway detail.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
@@ -219,7 +217,6 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // pathway JSON so the client can render it to PDF. The Content-Disposition
 // filename uses .json to reflect the actual format. Public.
 func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return

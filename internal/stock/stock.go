@@ -433,12 +433,15 @@ func validateDownloadURL(rawURL string) error {
 	if err != nil || u.Host == "" || u.Scheme != "https" {
 		return fmt.Errorf("stock: download URL must be https: %q", rawURL)
 	}
+
 	if u.User != nil {
-		return fmt.Errorf("stock: download URL must not embed credentials")
+		return errors.New("stock: download URL must not embed credentials")
 	}
+
 	if ip := net.ParseIP(u.Hostname()); ip != nil && isReservedIP(ip) {
 		return fmt.Errorf("stock: download URL targets a private address: %q", rawURL)
 	}
+
 	return nil
 }
 
@@ -448,13 +451,16 @@ func isReservedIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
 		return true
 	}
+
 	if v4 := ip.To4(); v4 != nil {
 		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
 			return true
 		}
+
 		if v4[0] == 0 || v4[0] >= 240 {
 			return true
 		}
+
 		if (v4[0] == 192 && v4[1] == 0 && (v4[2] == 0 || v4[2] == 2)) ||
 			(v4[0] == 198 && v4[1] == 51 && v4[2] == 100) ||
 			(v4[0] == 203 && v4[1] == 0 && v4[2] == 113) ||
@@ -462,5 +468,6 @@ func isReservedIP(ip net.IP) bool {
 			return true
 		}
 	}
+
 	return false
 }

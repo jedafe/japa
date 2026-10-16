@@ -1,6 +1,7 @@
 package media
 
 import (
+	"errors"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -128,11 +129,13 @@ func isPublicIP(ip net.IP) bool {
 		ip.IsUnspecified() {
 		return false
 	}
+
 	for _, n := range nonPublicCIDRs {
 		if n.Contains(ip) {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -142,13 +145,15 @@ func isPublicIP(ip net.IP) bool {
 func (s *Service) ProxyRemote(ctx context.Context, rawURL string) (ProxyResult, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u == nil {
-		return ProxyResult{}, fmt.Errorf("media proxy: invalid url")
+		return ProxyResult{}, errors.New("media proxy: invalid url")
 	}
+
 	if u.Scheme != "https" && u.Scheme != "http" {
 		return ProxyResult{}, fmt.Errorf("media proxy: scheme %q not allowed", u.Scheme)
 	}
+
 	if u.User != nil || u.Host == "" {
-		return ProxyResult{}, fmt.Errorf("media proxy: invalid host")
+		return ProxyResult{}, errors.New("media proxy: invalid host")
 	}
 
 	cacheKey := proxyCacheKey(rawURL)
@@ -166,6 +171,7 @@ func (s *Service) ProxyRemote(ctx context.Context, rawURL string) (ProxyResult, 
 
 	maxBytes := int64(1 << 20) // 1 MiB
 	ttlSecs := 86400
+
 	if s.settings != nil {
 		maxBytes = int64(s.settings.GetIntOr(ctx, "media.proxy.max_bytes", int(maxBytes)))
 		ttlSecs = s.settings.GetIntOr(ctx, "media.proxy.ttl_secs", ttlSecs)
@@ -175,6 +181,7 @@ func (s *Service) ProxyRemote(ctx context.Context, rawURL string) (ProxyResult, 
 	if err != nil {
 		return ProxyResult{}, fmt.Errorf("media proxy: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect-MediaProxy/1.0")
 	req.Header.Set("Accept", "image/*")
 
@@ -197,6 +204,7 @@ func (s *Service) ProxyRemote(ctx context.Context, rawURL string) (ProxyResult, 
 	if err != nil {
 		return ProxyResult{}, err
 	}
+
 	if int64(len(body)) > maxBytes {
 		return ProxyResult{}, fmt.Errorf("media proxy: upstream body exceeds %d bytes", maxBytes)
 	}

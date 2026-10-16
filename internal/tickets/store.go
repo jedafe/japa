@@ -57,7 +57,6 @@ func (s *Store) listTicketTypesByPlatform(ctx context.Context, limit, offset int
 	}
 
 	rows, err := s.read.ListTicketTypes(ctx, gen.ListTicketTypesParams{
-
 		IsPublic:   isPublic,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -158,7 +157,6 @@ func (s *Store) listTicketsByPlatform(ctx context.Context, p gen.ListTicketsPara
 	}
 
 	total, err := s.read.CountTickets(ctx, gen.CountTicketsParams{
-
 		Status:     p.Status,
 		Priority:   p.Priority,
 		TypeID:     p.TypeID,

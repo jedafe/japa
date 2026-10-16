@@ -14,6 +14,7 @@ import (
 // returned the literal quotes, so search excerpts rendered as `""`.
 func TestTiptapPlainTextJSONStringBody(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct {
 		name string
 		body string
@@ -67,6 +68,7 @@ func TestAdminListSpacesZeroUUIDSentinel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AdminListSpaces with zero-UUID sentinel: %v", err)
 	}
+
 	if len(unfiltered) == 0 {
 		t.Fatal("AdminListSpaces returned 0 rows with the zero-UUID sentinel — spaces would never reindex")
 	}
@@ -79,6 +81,7 @@ func TestAdminListSpacesZeroUUIDSentinel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AdminListSpaces with NULL space_type_id: %v", err)
 	}
+
 	if len(nullFiltered) != 0 {
 		t.Fatal("NULL space_type_id unexpectedly matched rows — the sentinel semantics changed; check ReindexAll")
 	}

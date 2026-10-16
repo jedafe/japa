@@ -5,7 +5,6 @@
 package mentorship
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -79,7 +78,7 @@ func insertMentor(t *testing.T, database *db.DB, username string, capacity, acti
 	}
 
 	t.Cleanup(func() {
-		ctx := context.Background()
+		ctx := t.Context()
 		database.Writer.Exec(ctx, `DELETE FROM service_listing_meta WHERE content_id = $1`, contentID)
 		database.Writer.Exec(ctx, `DELETE FROM contents WHERE id = $1`, contentID)
 		database.Writer.Exec(ctx, `DELETE FROM user_profiles WHERE user_id = $1`, id)
@@ -109,6 +108,7 @@ func TestListMentorsIncludeUnavailable_LiveDB(t *testing.T) {
 				return true
 			}
 		}
+
 		return false
 	}
 
@@ -117,9 +117,11 @@ func TestListMentorsIncludeUnavailable_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("list mentors: %v", err)
 		}
+
 		if contains(mentors, full) {
 			t.Error("at-capacity mentor visible without include_unavailable")
 		}
+
 		if !contains(mentors, open) {
 			t.Error("available mentor missing from default list")
 		}
@@ -130,6 +132,7 @@ func TestListMentorsIncludeUnavailable_LiveDB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("list mentors: %v", err)
 		}
+
 		if !contains(mentors, full) {
 			t.Error("at-capacity mentor missing with include_unavailable")
 		}

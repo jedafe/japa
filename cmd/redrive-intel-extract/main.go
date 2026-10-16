@@ -34,6 +34,7 @@ func main() {
 		dryRun   = flag.Bool("dry-run", false, "list docs that would be enqueued without enqueueing")
 		limit    = flag.Int("limit", 0, "max docs to enqueue (0 = all)")
 	)
+
 	flag.Parse()
 
 	if *sourceID == "" {
@@ -50,6 +51,7 @@ func main() {
 	}
 
 	ctx := context.Background()
+
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	conn, err := pgx.Connect(ctx, resolveDatabaseURL())
@@ -87,14 +89,17 @@ func main() {
 	}
 
 	var docs []doc
+
 	for rows.Next() {
 		var d doc
 		if err := rows.Scan(&d.id, &d.channelID); err != nil {
 			slog.Warn("skipping row: scan error", "error", err)
 			continue
 		}
+
 		docs = append(docs, d)
 	}
+
 	if err := rows.Err(); err != nil {
 		slog.Error("row iteration error", "error", err)
 		os.Exit(1)
@@ -104,11 +109,13 @@ func main() {
 		slog.Info("no unprocessed documents found", "source_id", *sourceID)
 		return
 	}
+
 	if *limit > 0 && len(docs) > *limit {
 		docs = docs[:*limit]
 	}
 
 	slog.Info("documents to redrive", "count", len(docs), "source_id", *sourceID, "dry_run", *dryRun)
+
 	if *dryRun {
 		return
 	}
@@ -117,6 +124,7 @@ func main() {
 	defer client.Close()
 
 	enqueued, failed := 0, 0
+
 	for _, d := range docs {
 		p := map[string]string{
 			"version":    "v1",
@@ -129,17 +137,23 @@ func main() {
 		payload, err := json.Marshal(p)
 		if err != nil {
 			slog.Warn("skipping: marshal payload", "raw_doc_id", d.id, "error", err)
+
 			failed++
+
 			continue
 		}
 
 		info, err := client.Enqueue(asynq.NewTask("intel:extract", payload), asynq.Queue("default"))
 		if err != nil {
 			slog.Warn("enqueue failed", "raw_doc_id", d.id, "error", err)
+
 			failed++
+
 			continue
 		}
+
 		slog.Info("enqueued", "raw_doc_id", d.id, "task_id", info.ID)
+
 		enqueued++
 	}
 
@@ -154,12 +168,14 @@ func resolveDatabaseURL() string {
 			return url
 		}
 	}
+
 	if url := readEnvFile("JC_DATABASE_URL"); url != "" {
 		return url
 	}
 
 	slog.Error("no DATABASE_URL or JC_DATABASE_URL found")
 	os.Exit(1)
+
 	return ""
 }
 
@@ -172,11 +188,13 @@ func resolveRedisAddr() string {
 			return addr
 		}
 	}
+
 	for _, key := range []string{"JC_VALKEY_ADDR", "JC_REDIS_ADDR"} {
 		if addr := readEnvFile(key); addr != "" {
 			return addr
 		}
 	}
+
 	return "localhost:6379"
 }
 
@@ -193,5 +211,6 @@ func readEnvFile(key string) string {
 			return strings.TrimPrefix(strings.TrimSpace(line), prefix)
 		}
 	}
+
 	return ""
 }

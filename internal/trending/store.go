@@ -43,7 +43,6 @@ func (s *Store) UpsertTrendingSnapshot(
 	expiresAt time.Time,
 ) error {
 	return s.queries.UpsertTrendingSnapshot(ctx, gen.UpsertTrendingSnapshotParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 		Score:      score,
@@ -63,7 +62,6 @@ func (s *Store) GetTrendingByType(
 	limit int32,
 ) ([]gen.GetTrendingByTypeRow, error) {
 	return s.queries.GetTrendingByType(ctx, gen.GetTrendingByTypeParams{
-
 		EntityType: entityType,
 		Window:     window, Column3: geoCode, Limit: limit,
 	})
@@ -78,7 +76,6 @@ func (s *Store) GetTrendingContent(
 	limit int32,
 ) ([]gen.GetTrendingContentRow, error) {
 	return s.queries.GetTrendingContent(ctx, gen.GetTrendingContentParams{
-
 		Window: window, Column2: geoCode, Limit: limit,
 	})
 }
@@ -92,7 +89,6 @@ func (s *Store) GetTrendingTags(
 	limit int32,
 ) ([]gen.GetTrendingTagsRow, error) {
 	return s.queries.GetTrendingTags(ctx, gen.GetTrendingTagsParams{
-
 		Window: window, Column2: geoCode, Limit: limit,
 	})
 }
@@ -106,7 +102,6 @@ func (s *Store) GetTrendingSpaces(
 	limit int32,
 ) ([]gen.GetTrendingSpacesRow, error) {
 	return s.queries.GetTrendingSpaces(ctx, gen.GetTrendingSpacesParams{
-
 		Window: window, Column2: geoCode, Limit: limit,
 	})
 }
@@ -120,7 +115,6 @@ func (s *Store) GetTrendingUsers(
 	limit int32,
 ) ([]gen.GetTrendingUsersRow, error) {
 	return s.queries.GetTrendingUsers(ctx, gen.GetTrendingUsersParams{
-
 		Window: window, Column2: geoCode, Limit: limit,
 	})
 }
@@ -139,7 +133,6 @@ func (s *Store) DeleteTrendingSnapshotsByType(
 	geoCode string,
 ) error {
 	return s.queries.DeleteTrendingSnapshotsByType(ctx, gen.DeleteTrendingSnapshotsByTypeParams{
-
 		EntityType: entityType,
 		Window:     window, Column3: geoCode,
 	})
@@ -231,7 +224,6 @@ func (s *Store) GetSuggestedContent(
 	}
 
 	return s.queries.GetSuggestedContent(ctx, gen.GetSuggestedContentParams{
-
 		Window: window, Column2: gc, Column3: seedContentID, Limit: limit,
 	})
 }

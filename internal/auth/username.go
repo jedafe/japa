@@ -8,7 +8,7 @@ import "regexp"
 // underscore. Stored usernames that predate the rule are never
 // re-validated — the check guards writes only.
 //
-// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md.
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_]{3,30}$`)
 
 // ValidateUsername reports whether a user-supplied username satisfies the

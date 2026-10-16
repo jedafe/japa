@@ -157,7 +157,6 @@ func (h *Handlers) Enroll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	member, err := h.Service.Enroll(r.Context(), EnrollInput{
-
 		UserID: user.UserID,
 	})
 	if err != nil {
@@ -420,7 +419,6 @@ func sanitizeRedirectURL(dest string) string {
 // the sqlc ListAffiliateMembersFiltered query (no raw SQL, no hardcoded
 // limit). Money is rendered via pgtype.Numeric → string (never float).
 func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
-
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
 	limit, offset := paginate(page, pageSize)
@@ -454,7 +452,6 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMemberStatusAdmin handles PATCH /api/v1/admin/affiliate-program/members/:user_id.
 func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Request) {
-
 	userID, err := parseUUIDParam(r, "user_id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
@@ -488,7 +485,6 @@ func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Reques
 // (catalog). Uses the sqlc ListAllAffiliateLinksFiltered query (joins users
 // for the username column). Money is rendered via pgtype.Numeric → string.
 func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
-
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
 	limit, offset := paginate(page, pageSize)
@@ -540,7 +536,6 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 // management). Admin-scoped soft-delete (deactivate) — the row is retained for
 // audit. Guarded by affiliate.admin.manage.
 func (h *Handlers) DeleteLinkAdmin(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
@@ -577,7 +572,6 @@ var (
 // total links, total clicks, total conversions, total commissions.
 // Platform-scoped, guarded by affiliate.admin.view.
 func (h *Handlers) GetProgramStatsAdmin(w http.ResponseWriter, r *http.Request) {
-
 	stats, err := h.Service.GetProgramStats(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_error", "Failed to query program stats")
@@ -604,7 +598,6 @@ func (h *Handlers) GetCommissionRates(w http.ResponseWriter, r *http.Request) {
 // GetProgramInfo never read, so admin changes never reached users and the
 // worker credited at a different rate than displayed (BUG-004).
 func (h *Handlers) UpdateCommissionRates(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		ProMonthly *float64 `json:"pro_monthly"`
 		ProAnnual  *float64 `json:"pro_annual"`

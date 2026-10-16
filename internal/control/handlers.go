@@ -56,6 +56,7 @@ func encodeSettingValue(value any) []byte {
 	}
 
 	data, _ := json.Marshal(value)
+
 	return data
 }
 
@@ -114,6 +115,7 @@ func (h *Handlers) fireFlagEnabled(ctx context.Context, key string, wasEnabled, 
 	if h.onFlagEnabled == nil || wasEnabled || !nowEnabled {
 		return
 	}
+
 	go h.onFlagEnabled(context.WithoutCancel(ctx), key)
 }
 
@@ -252,6 +254,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 		if isDeprecatedSettingKey(s.Key) {
 			continue
 		}
+
 		s.Type = meta.Type
 		s.DefaultValue = meta.DefaultValue
 		s.Description = meta.Description
@@ -270,6 +273,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 				s.Options = opts
 			}
 		}
+
 		if opts, ok := currencyOpts[s.Key]; ok {
 			s.Options = opts
 		}
@@ -303,6 +307,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 				// opts parsed successfully; it will be assigned to Options below.
 			}
 		}
+
 		if cOpts, ok := currencyOpts[key]; ok {
 			opts = cOpts
 		}
@@ -341,18 +346,23 @@ func (h *Handlers) currencySettingOptions(ctx context.Context) map[string][]any 
 	if err != nil || len(currencies) == 0 {
 		return nil
 	}
+
 	opts := make([]any, 0, len(currencies))
+
 	for _, c := range currencies {
 		label := c.Name
 		if label == "" {
 			label = c.Code
 		}
+
 		opts = append(opts, map[string]any{"value": c.Code, "label": label + " (" + c.Code + ")"})
 	}
+
 	out := make(map[string][]any, len(currencySettingKeys))
 	for k := range currencySettingKeys {
 		out[k] = opts
 	}
+
 	return out
 }
 
@@ -1358,6 +1368,7 @@ func queueBulkTargetQueues(name string) []string {
 	case "all":
 		return []string{"critical", "default", "low"}
 	}
+
 	return nil
 }
 
@@ -1378,7 +1389,9 @@ func (h *Handlers) ArchiveAllQueueTasks(w http.ResponseWriter, r *http.Request) 
 	}
 
 	archived := 0
+
 	var failures []string
+
 	for _, queueName := range queues {
 		for _, fn := range []func(string) (int, error){
 			h.Inspector.ArchiveAllPendingTasks,
@@ -1389,8 +1402,10 @@ func (h *Handlers) ArchiveAllQueueTasks(w http.ResponseWriter, r *http.Request) 
 			if err != nil {
 				slog.Warn("queue archive-all: partial failure", "queue", queueName, "error", err)
 				failures = append(failures, queueName+": "+err.Error())
+
 				continue
 			}
+
 			archived += n
 		}
 	}
@@ -1422,7 +1437,9 @@ func (h *Handlers) RequeueAllQueueTasks(w http.ResponseWriter, r *http.Request) 
 	}
 
 	requeued := 0
+
 	var failures []string
+
 	for _, queueName := range queues {
 		for _, fn := range []func(string) (int, error){
 			h.Inspector.RunAllScheduledTasks,
@@ -1433,8 +1450,10 @@ func (h *Handlers) RequeueAllQueueTasks(w http.ResponseWriter, r *http.Request) 
 			if err != nil {
 				slog.Warn("queue requeue-all: partial failure", "queue", queueName, "error", err)
 				failures = append(failures, queueName+": "+err.Error())
+
 				continue
 			}
+
 			requeued += n
 		}
 	}
@@ -1475,17 +1494,22 @@ func (h *Handlers) PurgeQueueTasks(w http.ResponseWriter, r *http.Request) {
 	queueExists, lookupOK := existingQueues(h.Inspector)
 
 	purged := 0
+
 	var failures []string
+
 	for _, queueName := range queues {
 		if lookupOK && !queueExists[queueName] {
 			continue
 		}
+
 		n, err := h.Inspector.DeleteAllArchivedTasks(queueName)
 		if err != nil {
 			slog.Warn("queue purge: partial failure", "queue", queueName, "error", err)
 			failures = append(failures, queueName+": "+err.Error())
+
 			continue
 		}
+
 		purged += n
 	}
 
@@ -1735,6 +1759,7 @@ func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
 	if h.RBAC != nil {
 		h.RBAC.InvalidateAllCache(r.Context())
 	}
+
 	_, ok := requireUser(w, r)
 	if ok && h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context())
@@ -1930,7 +1955,6 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	createInput := spam.CreateIPBlockInput{
-
 		CIDR:      input.CIDR,
 		BlockType: input.BlockType,
 		Reason:    input.Reason,
@@ -3328,6 +3352,7 @@ func randomHex(n int) string {
 	if _, err := rand.Read(b); err != nil {
 		return ""
 	}
+
 	return hex.EncodeToString(b)
 }
 
@@ -3629,7 +3654,7 @@ func (h *Handlers) extensionRow(ctx context.Context, key string) (enabled bool, 
 // union ListExtensions returns). A row read error propagates so write
 // handlers fail the request (500) instead of merging onto an empty config
 // or misreporting a stored-but-unreadable custom key as not found (404).
-func (h *Handlers) extensionKnown(ctx context.Context, key string) (exists bool, enabled bool, cfg features.FlagConfig, err error) {
+func (h *Handlers) extensionKnown(ctx context.Context, key string) (exists, enabled bool, cfg features.FlagConfig, err error) {
 	storedEnabled, storedCfg, hasRow, err := h.extensionRow(ctx, key)
 	if err != nil {
 		return false, false, features.FlagConfig{}, err
@@ -3706,9 +3731,11 @@ func extensionPatchFields(input *extensionPatchInput) ([]byte, features.FlagConf
 		if p < 0 {
 			p = 0
 		}
+
 		if p > 100 {
 			p = 100
 		}
+
 		cfg.RolloutPercentage = p
 		patch["rolloutPercentage"] = p
 	}
@@ -3842,6 +3869,7 @@ func (h *Handlers) DeleteExtension(w http.ResponseWriter, r *http.Request) {
 	if err := h.FeatureChecker.DeleteFlag(r.Context(), key); err != nil {
 		slog.Error("control: delete extension flag", "error", err, "key", key)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete extension")
+
 		return
 	}
 

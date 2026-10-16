@@ -190,8 +190,10 @@ var stageLabels = map[string]string{
 	"returned":    "Returned",
 }
 
-var relocationIntentList = []string{"relocation", "study", "work", "family"}
-var tripIntentList = []string{"visit", "business"}
+var (
+	relocationIntentList = []string{"relocation", "study", "work", "family"}
+	tripIntentList       = []string{"visit", "business"}
+)
 
 // stageIntents maps each stage to the journey classes it applies to —
 // shared-arc stages list all six intents, terminal stages list only their
@@ -304,10 +306,12 @@ func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input Updat
 	// stored one applies. Needed to validate a submitted stage against the
 	// intent×stage rule even when the member did not resend the intent.
 	var currentIntent, currentStage string
+
 	if cur, err := s.store.GetUserProfile(ctx, userID); err == nil {
 		if cur.JapaIntent != nil {
 			currentIntent = *cur.JapaIntent
 		}
+
 		if cur.JapaStage != nil {
 			currentStage = *cur.JapaStage
 		}
@@ -321,11 +325,13 @@ func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input Updat
 	}
 
 	var stageParam *string
+
 	switch {
 	case input.Stage != "":
 		if !ValidStageForIntent(input.Stage, effectiveIntent) {
 			return ProfileDTO{}, ErrInvalidStageForIntent
 		}
+
 		stageParam = &input.Stage
 	case input.Intent != "" && currentStage != "" && !ValidStageForIntent(currentStage, effectiveIntent):
 		// The class switch makes the stored stage incompatible (e.g.
@@ -494,6 +500,7 @@ func (s *Service) resolveToolSlugs(ctx context.Context, stage, intent string) []
 		if v, ok := matrix[intent+":"+stage]; ok && len(v) > 0 {
 			return v
 		}
+
 		if v, ok := matrix[intent+":*"]; ok && len(v) > 0 {
 			return v
 		}

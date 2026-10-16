@@ -141,7 +141,6 @@ func (r *ComparisonResolver) Search(ctx context.Context, query string, filters m
 	}
 
 	rows, err := r.q.SearchComparisonContents(ctx, gen.SearchComparisonContentsParams{
-
 		Q:          query,
 		TypeSlugs:  typeSlugs,
 		PageLimit:  limit,

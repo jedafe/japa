@@ -48,15 +48,16 @@ func TestGuardedDialContext_BlocksPrivateLiterals(t *testing.T) {
 	}
 
 	for _, addr := range blocked {
-		addr := addr
 		t.Run(addr, func(t *testing.T) {
 			t.Parallel()
 
 			conn, err := dial(t.Context(), "tcp", addr)
 			if err == nil {
 				_ = conn.Close()
+
 				t.Fatalf("dial(%s) succeeded, want SSRF rejection", addr)
 			}
+
 			if !strings.Contains(err.Error(), "SSRF") {
 				t.Fatalf("dial(%s) error = %v, want SSRF rejection", addr, err)
 			}
@@ -70,6 +71,7 @@ func TestGuardedDialContext_PublicLiteralDials(t *testing.T) {
 	t.Parallel()
 
 	var gotAddr string
+
 	base := func(_ context.Context, _, addr string) (net.Conn, error) {
 		gotAddr = addr
 		return stubConn{}, nil
@@ -81,7 +83,9 @@ func TestGuardedDialContext_PublicLiteralDials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial(8.8.8.8:443) = %v, want success", err)
 	}
+
 	_ = conn.Close()
+
 	if gotAddr != "8.8.8.8:443" {
 		t.Errorf("base received %q, want 8.8.8.8:443", gotAddr)
 	}
@@ -95,6 +99,7 @@ func TestGuardedDialContext_PublicLiteralDials(t *testing.T) {
 func TestGuardedDialContext_DNSAnswers(t *testing.T) {
 	// Not parallel — stubs the package-level ipLookup var.
 	oldLookup := ipLookup
+
 	t.Cleanup(func() { ipLookup = oldLookup })
 
 	const host = "internal.example.com"
@@ -131,6 +136,7 @@ func TestGuardedDialContext_DNSAnswers(t *testing.T) {
 			}
 
 			var gotAddr string
+
 			dial := guardedDialContext(func(_ context.Context, _, addr string) (net.Conn, error) {
 				gotAddr = addr
 				return stubConn{}, nil
@@ -140,20 +146,25 @@ func TestGuardedDialContext_DNSAnswers(t *testing.T) {
 			if tc.wantErr != "" {
 				if err == nil {
 					_ = conn.Close()
+
 					t.Fatalf("dial(%s) succeeded, want error containing %q", host, tc.wantErr)
 				}
+
 				if !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("dial(%s) error = %v, want substring %q", host, err, tc.wantErr)
 				}
+
 				if gotAddr != "" {
 					t.Fatalf("base dialer ran with %q despite rejection", gotAddr)
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Fatalf("dial(%s) = %v, want success", host, err)
 			}
+
 			_ = conn.Close()
 			// The dial must target the VALIDATED address — the underlying
 			// dialer is not allowed to re-resolve the hostname.
@@ -179,9 +190,12 @@ func TestNewSafeClient_BlocksPrivateLiteralFetch(t *testing.T) {
 		resp, err := client.Get(u)
 		if err == nil {
 			_ = resp.Body.Close()
+
 			t.Errorf("GET %s succeeded, want SSRF rejection", u)
+
 			continue
 		}
+
 		if !strings.Contains(err.Error(), "SSRF") {
 			t.Errorf("GET %s error = %v, want SSRF rejection", u, err)
 		}
@@ -200,11 +214,14 @@ func TestNewSafeClientOpts_AllowPrivateReachesLoopback(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	client := NewSafeClientOpts(5*time.Second, 0, SafeClientOpts{AllowPrivate: true})
+
 	resp, err := client.Get(srv.URL)
 	if err != nil {
 		t.Fatalf("AllowPrivate GET %s = %v, want success", srv.URL, err)
 	}
+
 	_ = resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
 	}

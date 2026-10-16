@@ -352,7 +352,6 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 	active := true
 
 	rows, total, err := s.store.ListGuides(ctx, ListGuidesFilter{
-
 		DestSpaceID:       destSpaceID,
 		CitySpaceID:       citySpaceID,
 		AccommodationType: accommodationType,
@@ -401,6 +400,7 @@ func (s *Service) mergeGuideFieldValues(ctx context.Context, dtos []GuideDTO) {
 	}
 
 	ids := make([]pgtype.UUID, 0, len(dtos))
+
 	for _, d := range dtos {
 		var id pgtype.UUID
 		if err := id.Scan(d.ID); err == nil && id.Valid {
@@ -658,7 +658,6 @@ func (s *Service) AdminList(ctx context.Context, status, accommodationType, q st
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-
 		Status:            status,
 		AccommodationType: accommodationType,
 		DestSpaceID:       destSpaceID,

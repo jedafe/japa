@@ -24,6 +24,7 @@ func TestSelfServiceScopesExcludeAdminOnly(t *testing.T) {
 		if s.AdminOnly {
 			t.Errorf("admin-only scope %q leaked into self-service catalog", s.Value)
 		}
+
 		if strings.HasPrefix(s.Value, "api.write.") || s.Value == "*" {
 			t.Errorf("write/wildcard scope %q is self-service — must be admin-only", s.Value)
 		}
@@ -43,15 +44,18 @@ func TestAdminOnlyScopeMarks(t *testing.T) {
 		"api.read.me":         false,
 		"api.read.*":          false,
 	}
+
 	byValue := make(map[string]ScopeOption, len(ScopeCatalog))
 	for _, s := range ScopeCatalog {
 		byValue[s.Value] = s
 	}
+
 	for value, wantAdmin := range want {
 		s, ok := byValue[value]
 		if !ok {
 			t.Fatalf("scope %q missing from catalog", value)
 		}
+
 		if s.AdminOnly != wantAdmin {
 			t.Errorf("scope %q AdminOnly=%v, want %v", value, s.AdminOnly, wantAdmin)
 		}
@@ -103,17 +107,19 @@ func TestCreateAPIKeyScopeGating(t *testing.T) {
 
 	// No checker wired → fail closed on admin-only scopes.
 	svc := NewService(nil)
-	if _, err := svc.CreateAPIKey(context.Background(), owner, writeScopeInput); !errors.Is(err, ErrScopeRequiresAdmin) {
+	if _, err := svc.CreateAPIKey(t.Context(), owner, writeScopeInput); !errors.Is(err, ErrScopeRequiresAdmin) {
 		t.Errorf("nil checker + write scope: got %v, want ErrScopeRequiresAdmin", err)
 	}
-	if _, err := svc.CreateAPIKey(context.Background(), owner, CreateAPIKeyInput{Name: "k", Scopes: []string{"*"}}); !errors.Is(err, ErrScopeRequiresAdmin) {
+
+	if _, err := svc.CreateAPIKey(t.Context(), owner, CreateAPIKeyInput{Name: "k", Scopes: []string{"*"}}); !errors.Is(err, ErrScopeRequiresAdmin) {
 		t.Errorf("nil checker + wildcard: got %v, want ErrScopeRequiresAdmin", err)
 	}
 
 	// Non-admin checker → rejected.
 	svc = NewService(nil)
 	svc.SetAdminChecker(fakeAdminChecker{allow: false})
-	if _, err := svc.CreateAPIKey(context.Background(), owner, writeScopeInput); !errors.Is(err, ErrScopeRequiresAdmin) {
+
+	if _, err := svc.CreateAPIKey(t.Context(), owner, writeScopeInput); !errors.Is(err, ErrScopeRequiresAdmin) {
 		t.Errorf("non-admin + write scope: got %v, want ErrScopeRequiresAdmin", err)
 	}
 
@@ -121,7 +127,8 @@ func TestCreateAPIKeyScopeGating(t *testing.T) {
 	// read-only scopes.
 	other := pgtype.UUID{Valid: true}
 	other.Bytes[0] = 2
-	if _, err := svc.CreateAPIKeyForUser(context.Background(), owner, other, readScopeInput); !errors.Is(err, ErrScopeRequiresAdmin) {
+
+	if _, err := svc.CreateAPIKeyForUser(t.Context(), owner, other, readScopeInput); !errors.Is(err, ErrScopeRequiresAdmin) {
 		t.Errorf("non-admin cross-user mint: got %v, want ErrScopeRequiresAdmin", err)
 	}
 }
@@ -140,11 +147,14 @@ func (s stubBookmarkService) ListBookmarks(ctx context.Context, u pgtype.UUID, l
 	if s.listFn == nil {
 		return nil, nil
 	}
+
 	return s.listFn(ctx, u, l, o)
 }
+
 func (s stubBookmarkService) AddContentBookmark(ctx context.Context, u, c, f pgtype.UUID) (PublicBookmarkItem, error) {
 	return s.addFn(ctx, u, c, f)
 }
+
 func (s stubBookmarkService) RemoveContentBookmark(ctx context.Context, u, c pgtype.UUID) error {
 	return s.removeFn(ctx, u, c)
 }
@@ -157,6 +167,7 @@ func TestBookmarkHandlersRequireKey(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	h.ListMyBookmarks(rec, httptest.NewRequest(http.MethodGet, "/public/me/bookmarks", nil))
+
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("list without key: got %d, want 401", rec.Code)
 	}
@@ -177,6 +188,7 @@ func TestPutMyBookmark(t *testing.T) {
 	req := withChiParams(httptest.NewRequest(http.MethodPut, "/public/me/bookmarks/x", nil), map[string]string{"content_id": testContentID.String()})
 	rec := httptest.NewRecorder()
 	h.PutMyBookmark(rec, withAPIKeyUser(req, userID))
+
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("put: got %d, want 201 — %s", rec.Code, rec.Body.String())
 	}
@@ -193,6 +205,7 @@ func TestPutMyBookmarkInvisibleContent404(t *testing.T) {
 	req := withChiParams(httptest.NewRequest(http.MethodPut, "/public/me/bookmarks/x", nil), map[string]string{"content_id": testContentID.String()})
 	rec := httptest.NewRecorder()
 	h.PutMyBookmark(rec, withAPIKeyUser(req, pgtype.UUID{Valid: true}))
+
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("invisible content: got %d, want 404 — %s", rec.Code, rec.Body.String())
 	}
@@ -209,6 +222,7 @@ func TestDeleteMyBookmarkNotFound(t *testing.T) {
 	req := withChiParams(httptest.NewRequest(http.MethodDelete, "/public/me/bookmarks/x", nil), map[string]string{"content_id": testContentID.String()})
 	rec := httptest.NewRecorder()
 	h.DeleteMyBookmark(rec, withAPIKeyUser(req, pgtype.UUID{Valid: true}))
+
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("missing bookmark: got %d, want 404", rec.Code)
 	}
@@ -228,10 +242,12 @@ func (s stubDraftService) CreateDraft(ctx context.Context, o pgtype.UUID, in Cre
 
 func draftRequest(t *testing.T, body string, idemKey bool) *http.Request {
 	t.Helper()
+
 	req := httptest.NewRequest(http.MethodPost, "/public/content", strings.NewReader(body))
 	if idemKey {
 		req.Header.Set("Idempotency-Key", "test-key-1")
 	}
+
 	return withAPIKeyUser(req, pgtype.UUID{Valid: true})
 }
 
@@ -243,6 +259,7 @@ func TestCreatePublicDraftRequiresIdempotencyKey(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	h.CreatePublicDraft(rec, draftRequest(t, `{"title":"t","body":"b"}`, false))
+
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("missing Idempotency-Key: got %d, want 400", rec.Code)
 	}
@@ -257,9 +274,11 @@ func TestCreatePublicDraftRejectsPublishedStatus(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	h.CreatePublicDraft(rec, draftRequest(t, `{"title":"t","body":"b","status":"published"}`, true))
+
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status=published: got %d, want 400", rec.Code)
 	}
+
 	if !strings.Contains(rec.Body.String(), "status_not_allowed") {
 		t.Fatalf("status=published: want code status_not_allowed, got %s", rec.Body.String())
 	}
@@ -284,6 +303,7 @@ func TestCreatePublicDraftContentTypeAllowlist(t *testing.T) {
 	} {
 		rec := httptest.NewRecorder()
 		h.CreatePublicDraft(rec, draftRequest(t, `{"title":"t","body":"b","content_type":"`+tc.ctype+`"}`, true))
+
 		if rec.Code != tc.want {
 			t.Errorf("content_type=%q: got %d, want %d", tc.ctype, rec.Code, tc.want)
 		}
@@ -302,18 +322,23 @@ type stubWebhookService struct {
 func (s stubWebhookService) CreateUserEndpoint(ctx context.Context, o pgtype.UUID, n, u string, et []string) (PublicWebhookEndpoint, error) {
 	return s.createFn(ctx, o, n, u, et)
 }
+
 func (s stubWebhookService) ListUserEndpoints(context.Context, pgtype.UUID) ([]PublicWebhookEndpoint, error) {
 	return nil, nil
 }
+
 func (s stubWebhookService) CountUserEndpoints(context.Context, pgtype.UUID) (int64, error) {
 	return s.count, nil
 }
+
 func (s stubWebhookService) VerifyUserEndpoint(context.Context, pgtype.UUID, pgtype.UUID) error {
 	return nil
 }
+
 func (s stubWebhookService) DeleteUserEndpoint(context.Context, pgtype.UUID, pgtype.UUID) error {
 	return nil
 }
+
 func (s stubWebhookService) ListUserDeliveries(context.Context, pgtype.UUID, pgtype.UUID, int32, int32) ([]PublicWebhookDelivery, error) {
 	return nil, nil
 }
@@ -332,6 +357,7 @@ func TestCreateMyWebhookEventTypeRestriction(t *testing.T) {
 	// Non-allowlisted event type → 400.
 	rec := httptest.NewRecorder()
 	h.CreateMyWebhook(rec, webhookRequest(t, `{"url":"https://example.com/hook","event_types":["payment.completed"]}`))
+
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad event type: got %d, want 400 — %s", rec.Code, rec.Body.String())
 	}
@@ -339,6 +365,7 @@ func TestCreateMyWebhookEventTypeRestriction(t *testing.T) {
 	// Default (omitted) → content.published, succeeds.
 	rec = httptest.NewRecorder()
 	h.CreateMyWebhook(rec, webhookRequest(t, `{"url":"https://example.com/hook"}`))
+
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("default event type: got %d, want 201 — %s", rec.Code, rec.Body.String())
 	}
@@ -356,9 +383,11 @@ func TestCreateMyWebhookMaxPerKey(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	h.CreateMyWebhook(rec, webhookRequest(t, `{"url":"https://example.com/hook"}`))
+
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("at cap: got %d, want 403 — %s", rec.Code, rec.Body.String())
 	}
+
 	if !strings.Contains(rec.Body.String(), "webhook_limit_reached") {
 		t.Fatalf("at cap: want code webhook_limit_reached, got %s", rec.Body.String())
 	}
@@ -378,8 +407,10 @@ func (s stubCommentService) CreateComment(ctx context.Context, u, c, p pgtype.UU
 
 func commentRequest(t *testing.T, body string) *http.Request {
 	t.Helper()
+
 	req := httptest.NewRequest(http.MethodPost, "/public/content/x/comments", strings.NewReader(body))
 	req = withChiParams(req, map[string]string{"id": testContentID.String()})
+
 	return withAPIKeyUser(req, pgtype.UUID{Valid: true})
 }
 
@@ -402,6 +433,7 @@ func TestCreatePublicCommentValidation(t *testing.T) {
 	} {
 		rec := httptest.NewRecorder()
 		h.CreatePublicComment(rec, commentRequest(t, tc.body))
+
 		if rec.Code != tc.want {
 			t.Errorf("%s: got %d, want %d — %s", tc.name, rec.Code, tc.want, rec.Body.String())
 		}
@@ -422,11 +454,14 @@ func TestCreatePublicCommentPrivacyAndBlocking(t *testing.T) {
 		h.SetCommentService(stubCommentService{createFn: func(context.Context, pgtype.UUID, pgtype.UUID, pgtype.UUID, string, string) (PublicComment, error) {
 			return PublicComment{}, tc.err
 		}})
+
 		rec := httptest.NewRecorder()
 		h.CreatePublicComment(rec, commentRequest(t, `{"body":"hi"}`))
+
 		if rec.Code != tc.want {
 			t.Errorf("%s: got %d, want %d — %s", tc.name, rec.Code, tc.want, rec.Body.String())
 		}
+
 		if !strings.Contains(rec.Body.String(), tc.code) {
 			t.Errorf("%s: want code %q, got %s", tc.name, tc.code, rec.Body.String())
 		}
@@ -439,10 +474,12 @@ func TestCreatePublicCommentPrivacyAndBlocking(t *testing.T) {
 
 func TestPhase3PathsDocumented(t *testing.T) {
 	spec := GetPublicOpenAPISpec("https://api.test", "Test")
+
 	paths, ok := spec["paths"].(map[string]any)
 	if !ok {
 		t.Fatal("spec paths missing")
 	}
+
 	for _, p := range []string{
 		"/public/me/bookmarks",
 		"/public/me/bookmarks/{content_id}",
@@ -460,6 +497,7 @@ func TestPhase3PathsDocumented(t *testing.T) {
 	if !ok {
 		t.Fatal("/public/content missing")
 	}
+
 	if _, ok := content["post"]; !ok {
 		t.Error("POST /public/content not documented")
 	}

@@ -95,6 +95,7 @@ func (r *housingGuideResolver) Search(ctx context.Context, query string, filters
 
 	if r.queries != nil && len(guides) > 0 {
 		ids := make([]pgtype.UUID, 0, len(guides))
+
 		for _, g := range guides {
 			if id, perr := ParseUUID(g.ID); perr == nil {
 				ids = append(ids, id)
@@ -105,6 +106,7 @@ func (r *housingGuideResolver) Search(ctx context.Context, query string, filters
 	}
 
 	out := make([]ResolvedItem, 0, len(guides))
+
 	for _, g := range guides {
 		var cfv map[string]any
 
@@ -123,9 +125,11 @@ func housingGuideToResolvedItem(g housingguide.GuideDTO, cfv map[string]any) Res
 	if g.AccommodationType != "" {
 		title = g.AccommodationType
 	}
+
 	if g.DestSpaceName != "" {
 		title += " — " + g.DestSpaceName
 	}
+
 	if g.CitySpaceName != "" {
 		title += " / " + g.CitySpaceName
 	}
@@ -146,9 +150,11 @@ func housingGuideToResolvedItem(g housingguide.GuideDTO, cfv map[string]any) Res
 	if len(fields) > 0 {
 		meta["field_values"] = fields
 	}
+
 	if geo := guideGeoSpaceID(g); geo != "" {
 		meta["geo_space_id"] = geo
 	}
+
 	if g.DestSpaceCode != "" {
 		meta["country"] = g.DestSpaceCode
 	}

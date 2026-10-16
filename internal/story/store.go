@@ -34,7 +34,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // StoryMeta holds the structured fields for a single story.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type StoryMeta struct {
 	ID pgtype.UUID
 
@@ -60,7 +60,7 @@ type StoryMeta struct {
 
 // StoryRow is the joined result of contents + story_meta + space names,
 // returned by list and get-by-slug queries.
-// //nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional.
 type StoryRow struct {
 	ID pgtype.UUID
 
@@ -201,6 +201,7 @@ func (s *Store) GetCountrySpaceGeoCode(ctx context.Context, spaceID pgtype.UUID)
 	const q = `SELECT geo_code FROM spaces WHERE id = $1 AND level = 'country' AND deleted_at IS NULL`
 
 	var code *string
+
 	err := s.pool.Reader.QueryRow(ctx, q, spaceID).Scan(&code)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -393,6 +394,7 @@ func (s *Store) ListStories(ctx context.Context, f ListStoriesFilter) ([]StoryRo
 		OR (c.visibility = 'members' AND $%d)
 		OR (c.visibility = 'private' AND $%d)
 	)`, argIdx, argIdx+1, argIdx+2))
+
 	args = append(args, f.RequesterID, f.CanSeeMembers, f.CanSeePrivate)
 	argIdx += 3
 

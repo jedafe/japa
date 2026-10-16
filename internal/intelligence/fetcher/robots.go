@@ -57,7 +57,7 @@ func (c *RobotsChecker) Check(ctx context.Context, targetURL string) (RobotsPoli
 		return RobotsPolicy{}, fmt.Errorf("robots: empty domain in url %q", targetURL)
 	}
 
-	cacheKey := fmt.Sprintf("jc:intel:robots::%s", domain)
+	cacheKey := "jc:intel:robots::" + domain
 
 	// Try cache first. A corrupt cache entry falls through to the fetch below.
 	if cached, err := c.rdb.Get(ctx, cacheKey).Result(); err == nil {

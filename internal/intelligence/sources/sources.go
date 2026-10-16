@@ -197,6 +197,7 @@ func SubmittableCategories() []string {
 	for c := range submittableCategories {
 		out = append(out, string(c))
 	}
+
 	sort.Strings(out)
 
 	return out

@@ -149,6 +149,7 @@ func TestAsynqEventPublisher_SkipsDiscoveredEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Queues: %v", err)
 	}
+
 	if len(queues) != 0 {
 		t.Fatalf("expected no queues for skipped .discovered event, got %v", queues)
 	}
@@ -174,6 +175,7 @@ func TestAsynqEventPublisher_SkipsEntityLessEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Queues: %v", err)
 	}
+
 	if len(queues) != 0 {
 		t.Fatalf("expected no queues for entity-less event, got %v", queues)
 	}

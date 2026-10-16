@@ -18,6 +18,7 @@ func mapWriteErr(err error) error {
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return fmt.Errorf("%w: %s", errpkg.ErrDuplicate, pgErr.ConstraintName)
 	}
+
 	return err
 }
 
@@ -35,7 +36,6 @@ func NewStore(read, write *gen.Queries) *Store {
 // getBySlug returns a published doc page by audience and slug.
 func (s *Store) getBySlug(ctx context.Context, audience, slug string) (gen.DocPage, error) {
 	row, err := s.read.GetDocPageBySlug(ctx, gen.GetDocPageBySlugParams{
-
 		Audience: audience,
 		Slug:     slug,
 	})
@@ -179,7 +179,6 @@ func (s *Store) listPublished(ctx context.Context) ([]gen.ListPublishedDocPagesR
 // When audience is non-nil, results are filtered to that audience section.
 func (s *Store) search(ctx context.Context, query string, audience *string, limit int32) ([]gen.SearchDocPagesRow, error) {
 	rows, err := s.read.SearchDocPages(ctx, gen.SearchDocPagesParams{
-
 		Audience:    audience,
 		Query:       query,
 		ResultLimit: limit,
@@ -238,6 +237,7 @@ func (s *Store) delete(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.ClearDocPageParent(ctx, id); err != nil {
 		return fmt.Errorf("unlinking doc page children: %w", err)
 	}
+
 	if err := s.write.DeleteDocPage(ctx,
 		id,
 	); err != nil {

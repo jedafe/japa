@@ -124,8 +124,9 @@ func ValidateSort(sort string) error {
 
 	key := sort
 	dir := ""
+
 	if i := len(sort); i > 0 {
-		for j := 0; j < len(sort); j++ {
+		for j := range len(sort) {
 			if sort[j] == ':' {
 				key = sort[:j]
 				dir = sort[j+1:]

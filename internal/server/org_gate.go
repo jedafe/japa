@@ -17,7 +17,6 @@ import (
 func requireActiveOrgByID(orgSvc *organizations.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 			var orgID pgtype.UUID
 			if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
 				writeOrgGateError(w, http.StatusBadRequest, "invalid_org_id", "Invalid organization ID format")

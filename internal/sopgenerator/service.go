@@ -51,6 +51,7 @@ func validPurpose(p string) bool {
 	case "study_permit", "student_visa", "work_visa", "visitor_visa":
 		return true
 	}
+
 	return false
 }
 
@@ -59,6 +60,7 @@ func validProgramLevel(l string) bool {
 	case "diploma", "bachelors", "masters", "mba", "phd":
 		return true
 	}
+
 	return false
 }
 
@@ -234,10 +236,12 @@ func (s *Service) ListTemplates(ctx context.Context, destSpaceID pgtype.UUID, pu
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]TemplateDTO, 0, len(rows))
 	for _, t := range rows {
 		out = append(out, templateDTO(t))
 	}
+
 	return out, nil
 }
 
@@ -247,6 +251,7 @@ func (s *Service) ListSamples(ctx context.Context, destSpaceID pgtype.UUID, leve
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return sampleDTOs(rows), total, nil
 }
 
@@ -256,20 +261,24 @@ func (s *Service) GetSample(ctx context.Context, id pgtype.UUID) (SampleDTO, err
 	if err != nil {
 		return SampleDTO{}, err
 	}
+
 	return sampleDTOs([]SampleRow{r})[0], nil
 }
 
 // Quota returns the caller's remaining monthly generation quota.
 func (s *Service) Quota(ctx context.Context, userID pgtype.UUID) (QuotaDTO, error) {
 	limit := s.quotaLimit(ctx)
+
 	used, err := s.quotaUsed(ctx, userID)
 	if err != nil {
 		return QuotaDTO{}, err
 	}
+
 	remaining := int64(limit) - used
 	if remaining < 0 {
 		remaining = 0
 	}
+
 	return QuotaDTO{Limit: limit, Used: used, Remaining: remaining}, nil
 }
 
@@ -279,6 +288,7 @@ func (s *Service) Generate(ctx context.Context, userID pgtype.UUID, in GenerateR
 	if !validPurpose(in.Purpose) {
 		return "", ErrInvalidPurpose
 	}
+
 	if len(in.Inputs) == 0 {
 		return "", ErrInvalidInput
 	}
@@ -298,12 +308,15 @@ func (s *Service) Generate(ctx context.Context, userID pgtype.UUID, in GenerateR
 			return "", fmt.Errorf("invalid destination_space_id: %w", ErrInvalidInput)
 		}
 	}
+
 	if in.Program != "" {
 		row.Program = &in.Program
 	}
+
 	if in.Institution != "" {
 		row.Institution = &in.Institution
 	}
+
 	if in.Title != "" {
 		row.Title = &in.Title
 	}
@@ -344,8 +357,10 @@ func (s *Service) ProcessDraft(ctx context.Context, draftID pgtype.UUID) error {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
+
 		return fmt.Errorf("sopgenerator: process: load draft: %w", err)
 	}
+
 	if draft.Status != DraftQueued {
 		return nil
 	}
@@ -374,6 +389,7 @@ func (s *Service) ProcessDraft(ctx context.Context, draftID pgtype.UUID) error {
 	if err := s.store.MarkDraftGenerated(ctx, draftID, resp.Text, model); err != nil {
 		return fmt.Errorf("sopgenerator: process: update draft: %w", err)
 	}
+
 	return nil
 }
 
@@ -383,10 +399,12 @@ func (s *Service) ListDrafts(ctx context.Context, userID pgtype.UUID, page, limi
 	if err != nil {
 		return nil, 0, err
 	}
+
 	out := make([]DraftDTO, 0, len(rows))
 	for _, d := range rows {
 		out = append(out, draftDTO(d))
 	}
+
 	return out, total, nil
 }
 
@@ -396,9 +414,11 @@ func (s *Service) GetDraft(ctx context.Context, id, userID pgtype.UUID) (DraftDT
 	if err != nil {
 		return DraftDTO{}, err
 	}
+
 	if row.UserID != userID {
 		return DraftDTO{}, ErrNotOwner
 	}
+
 	return draftDTO(row), nil
 }
 
@@ -418,10 +438,12 @@ func (s *Service) AdminListTemplates(ctx context.Context, page, limit int32) ([]
 	if err != nil {
 		return nil, 0, err
 	}
+
 	out := make([]TemplateDTO, 0, len(rows))
 	for _, t := range rows {
 		out = append(out, templateDTO(t))
 	}
+
 	return out, total, nil
 }
 
@@ -431,6 +453,7 @@ func (s *Service) ApproveSample(ctx context.Context, id, reviewerID pgtype.UUID,
 	if err := s.store.ApproveSample(ctx, id, reviewerID, notes); err != nil {
 		return err
 	}
+
 	if s.enqueuer != nil {
 		payload, err := json.Marshal(map[string]string{
 			"entity_type": "sop_sample",
@@ -442,6 +465,7 @@ func (s *Service) ApproveSample(ctx context.Context, id, reviewerID pgtype.UUID,
 			slog.Error("sopgenerator: enqueue index task", "id", id.String(), "error", err)
 		}
 	}
+
 	return nil
 }
 
@@ -453,6 +477,7 @@ func (s *Service) quotaLimit(ctx context.Context) int {
 	if s.settings != nil {
 		return s.settings.GetIntOr(ctx, "sop_generator.quota_standard", 3)
 	}
+
 	return 3
 }
 
@@ -468,29 +493,36 @@ func (s *Service) quotaUsed(ctx context.Context, userID pgtype.UUID) (int64, err
 func (s *Service) consumeQuota(ctx context.Context, userID pgtype.UUID) (func(), error) {
 	noop := func() {}
 	limit := s.quotaLimit(ctx)
+
 	if limit <= 0 {
 		return noop, nil
 	}
 
 	if s.cache != nil {
 		key := sopQuotaKey(userID)
+
 		count, err := s.cache.INCR(ctx, key)
 		if err != nil {
 			count, err = s.store.CountDraftsThisMonth(ctx, userID)
 			if err != nil {
 				return noop, fmt.Errorf("sopgenerator: check quota: %w", err)
 			}
+
 			if count >= int64(limit) {
 				return noop, ErrQuotaExceeded
 			}
+
 			return noop, nil
 		}
+
 		if count == 1 {
 			_ = s.cache.Expire(ctx, key, timeUntilEndOfMonth())
 		}
+
 		if count > int64(limit) {
 			return noop, ErrQuotaExceeded
 		}
+
 		return func() { _, _ = s.cache.DECR(ctx, key) }, nil
 	}
 
@@ -498,9 +530,11 @@ func (s *Service) consumeQuota(ctx context.Context, userID pgtype.UUID) (func(),
 	if err != nil {
 		return noop, fmt.Errorf("sopgenerator: check quota: %w", err)
 	}
+
 	if count >= int64(limit) {
 		return noop, ErrQuotaExceeded
 	}
+
 	return noop, nil
 }
 
@@ -512,6 +546,7 @@ func sopQuotaKey(userID pgtype.UUID) string {
 func timeUntilEndOfMonth() time.Duration {
 	now := time.Now().UTC()
 	next := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+
 	return next.Sub(now)
 }
 
@@ -531,6 +566,7 @@ func (s *Service) systemPrompt(ctx context.Context, d DraftRow) string {
 			}
 		}
 	}
+
 	return "You are an expert statement-of-purpose writer for study and " +
 		"work visa applications. Write a first-person SOP that is honest, " +
 		"specific, and grounded in the applicant's stated background. " +
@@ -555,17 +591,21 @@ func templateDTO(t TemplateRow) TemplateDTO {
 	if len(t.Structure) > 0 {
 		out.Structure = json.RawMessage(t.Structure)
 	}
+
 	if t.CreatedAt.Valid {
 		out.CreatedAt = t.CreatedAt.Time.Format(time.RFC3339)
 	}
+
 	if t.UpdatedAt.Valid {
 		out.UpdatedAt = t.UpdatedAt.Time.Format(time.RFC3339)
 	}
+
 	return out
 }
 
 func sampleDTOs(rows []SampleRow) []SampleDTO {
 	out := make([]SampleDTO, 0, len(rows))
+
 	for _, r := range rows {
 		d := SampleDTO{
 			ID:           uuidStr(r.ID),
@@ -577,15 +617,19 @@ func sampleDTOs(rows []SampleRow) []SampleDTO {
 		if r.DestinationName != nil {
 			d.DestinationName = *r.DestinationName
 		}
+
 		if r.FieldOfStudy != nil {
 			d.FieldOfStudy = *r.FieldOfStudy
 		}
+
 		if r.WordCount.Valid {
 			v := r.WordCount.Int32
 			d.WordCount = &v
 		}
+
 		out = append(out, d)
 	}
+
 	return out
 }
 
@@ -601,24 +645,31 @@ func draftDTO(d DraftRow) DraftDTO {
 	if d.DestinationSpaceID.Valid {
 		out.DestinationSpaceID = uuidStr(d.DestinationSpaceID)
 	}
+
 	if d.Program != nil {
 		out.Program = *d.Program
 	}
+
 	if d.Institution != nil {
 		out.Institution = *d.Institution
 	}
+
 	if d.Title != nil {
 		out.Title = *d.Title
 	}
+
 	if len(d.Inputs) > 0 {
 		out.Inputs = json.RawMessage(d.Inputs)
 	}
+
 	if d.GeneratedText != nil {
 		out.GeneratedText = *d.GeneratedText
 	}
+
 	if d.AIModel != nil {
 		out.AIModel = *d.AIModel
 	}
+
 	return out
 }
 
@@ -626,7 +677,9 @@ func uuidStr(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
+
 	b := u.Bytes
+
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
@@ -651,26 +704,33 @@ func (s *Service) CreateTemplate(ctx context.Context, in TemplateRequest) (Templ
 	if !validPurpose(in.Purpose) {
 		return TemplateDTO{}, ErrInvalidPurpose
 	}
+
 	if in.Title == "" || len(in.Structure) == 0 {
 		return TemplateDTO{}, fmt.Errorf("title and structure are required: %w", ErrInvalidInput)
 	}
+
 	row := TemplateRow{
 		Purpose: in.Purpose, Title: in.Title, Structure: in.Structure,
 		Status: StatusDraft,
 	}
+
 	if in.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(in.DestinationSpaceID); err != nil {
 			return TemplateDTO{}, fmt.Errorf("invalid destination_space_id: %w", ErrInvalidInput)
 		}
+
 		row.DestinationSpaceID = sid
 	}
+
 	id, err := s.store.CreateTemplate(ctx, row)
 	if err != nil {
 		return TemplateDTO{}, err
 	}
+
 	row.ID = id
 	row.IsActive = pgtype.Bool{Bool: true, Valid: true}
+
 	return templateDTO(row), nil
 }
 
@@ -679,17 +739,22 @@ func (s *Service) UpdateTemplate(ctx context.Context, id pgtype.UUID, in Templat
 	if in.Purpose != "" && !validPurpose(in.Purpose) {
 		return ErrInvalidPurpose
 	}
+
 	row := TemplateRow{Purpose: in.Purpose, Title: in.Title, Structure: in.Structure}
+
 	if in.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(in.DestinationSpaceID); err != nil {
 			return fmt.Errorf("invalid destination_space_id: %w", ErrInvalidInput)
 		}
+
 		row.DestinationSpaceID = sid
 	}
+
 	if in.IsActive != nil {
 		row.IsActive = pgtype.Bool{Bool: *in.IsActive, Valid: true}
 	}
+
 	return s.store.UpdateTemplate(ctx, id, row)
 }
 
@@ -704,6 +769,7 @@ func (s *Service) AdminListSamples(ctx context.Context, destSpaceID pgtype.UUID,
 	if err != nil {
 		return nil, 0, err
 	}
+
 	out := sampleDTOs(rows)
 	for i, r := range rows {
 		out[i].Status = r.Status
@@ -711,6 +777,7 @@ func (s *Service) AdminListSamples(ctx context.Context, destSpaceID pgtype.UUID,
 			out[i].DestinationSpaceID = uuidStr(r.DestinationSpaceID)
 		}
 	}
+
 	return out, total, nil
 }
 
@@ -719,9 +786,11 @@ func (s *Service) CreateSample(ctx context.Context, in SampleRequest) (SampleDTO
 	if !validProgramLevel(in.ProgramLevel) {
 		return SampleDTO{}, ErrInvalidProgramLevel
 	}
+
 	if in.Title == "" || in.Body == "" {
 		return SampleDTO{}, fmt.Errorf("title and body are required: %w", ErrInvalidInput)
 	}
+
 	row := SampleRow{
 		ProgramLevel: in.ProgramLevel, Title: in.Title, Body: in.Body,
 		Status: StatusDraft,
@@ -729,26 +798,33 @@ func (s *Service) CreateSample(ctx context.Context, in SampleRequest) (SampleDTO
 	if in.FieldOfStudy != "" {
 		row.FieldOfStudy = &in.FieldOfStudy
 	}
+
 	if in.WordCount != nil {
 		row.WordCount = pgtype.Int4{Int32: *in.WordCount, Valid: true}
 	} else {
 		row.WordCount = pgtype.Int4{Int32: int32(len(strings.Fields(in.Body))), Valid: true}
 	}
+
 	if in.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(in.DestinationSpaceID); err != nil {
-			return SampleDTO{}, fmt.Errorf("invalid destination_space_id")
+			return SampleDTO{}, errors.New("invalid destination_space_id")
 		}
+
 		row.DestinationSpaceID = sid
 	}
+
 	id, err := s.store.CreateSample(ctx, row)
 	if err != nil {
 		return SampleDTO{}, err
 	}
+
 	s.ensureField(ctx, in.FieldOfStudy)
+
 	out := sampleDTOs([]SampleRow{row})[0]
 	out.ID = uuidStr(id)
 	out.Status = StatusDraft
+
 	return out, nil
 }
 
@@ -757,24 +833,31 @@ func (s *Service) UpdateSample(ctx context.Context, id pgtype.UUID, in SampleReq
 	if in.ProgramLevel != "" && !validProgramLevel(in.ProgramLevel) {
 		return ErrInvalidProgramLevel
 	}
+
 	row := SampleRow{ProgramLevel: in.ProgramLevel, Title: in.Title, Body: in.Body}
 	if in.FieldOfStudy != "" {
 		row.FieldOfStudy = &in.FieldOfStudy
 	}
+
 	if in.WordCount != nil {
 		row.WordCount = pgtype.Int4{Int32: *in.WordCount, Valid: true}
 	}
+
 	if in.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(in.DestinationSpaceID); err != nil {
-			return fmt.Errorf("invalid destination_space_id")
+			return errors.New("invalid destination_space_id")
 		}
+
 		row.DestinationSpaceID = sid
 	}
+
 	if err := s.store.UpdateSample(ctx, id, row); err != nil {
 		return err
 	}
+
 	s.ensureField(ctx, in.FieldOfStudy)
+
 	return nil
 }
 
@@ -797,9 +880,11 @@ func fieldDTO(r FieldRow) FieldDTO {
 	if r.CreatedAt.Valid {
 		out.CreatedAt = r.CreatedAt.Time.Format(time.RFC3339)
 	}
+
 	if r.UpdatedAt.Valid {
 		out.UpdatedAt = r.UpdatedAt.Time.Format(time.RFC3339)
 	}
+
 	return out
 }
 
@@ -816,10 +901,12 @@ func (s *Service) ListFields(ctx context.Context) ([]FieldDTO, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]FieldDTO, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, fieldDTO(r))
 	}
+
 	return out, nil
 }
 
@@ -830,10 +917,12 @@ func (s *Service) AdminListFields(ctx context.Context, q string, page, limit int
 	if err != nil {
 		return nil, 0, err
 	}
+
 	out := make([]FieldDTO, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, fieldDTO(r))
 	}
+
 	return out, total, nil
 }
 
@@ -843,21 +932,27 @@ func (s *Service) CreateField(ctx context.Context, in FieldRequest) (FieldDTO, e
 	if name == "" {
 		return FieldDTO{}, fmt.Errorf("name is required: %w", ErrInvalidInput)
 	}
+
 	row := FieldRow{Name: name, IsActive: true}
 	if in.IsActive != nil {
 		row.IsActive = *in.IsActive
 	}
+
 	if in.SortOrder != nil {
 		row.SortOrder = *in.SortOrder
 	}
+
 	id, err := s.store.CreateField(ctx, row)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return FieldDTO{}, ErrDuplicateField
 		}
+
 		return FieldDTO{}, err
 	}
+
 	row.ID = id
+
 	return fieldDTO(row), nil
 }
 
@@ -867,10 +962,12 @@ func (s *Service) UpdateField(ctx context.Context, id pgtype.UUID, in FieldReque
 	if n := strings.TrimSpace(in.Name); n != "" {
 		name = &n
 	}
+
 	err := s.store.UpdateField(ctx, id, name, in.IsActive, in.SortOrder)
 	if isUniqueViolation(err) {
 		return ErrDuplicateField
 	}
+
 	return err
 }
 
@@ -887,6 +984,7 @@ func (s *Service) ensureField(ctx context.Context, name string) {
 	if name == "" {
 		return
 	}
+
 	if err := s.store.EnsureField(ctx, name); err != nil {
 		slog.Warn("sopgenerator: ensure field failed", "name", name, "error", err)
 	}
@@ -903,14 +1001,17 @@ func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string)
 	if s.enqueuer == nil {
 		return errors.New("sopgenerator: task enqueuer not configured")
 	}
+
 	payload := map[string]string{"entity_type": "sop_template"}
 	for k, v := range params {
 		payload[k] = v
 	}
+
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
+
 	return s.enqueuer.Enqueue("tool:generate_draft", raw)
 }
 
@@ -941,9 +1042,11 @@ func (s *Service) GenerateTemplateDraft(ctx context.Context, params map[string]s
 		Title     string           `json:"title"`
 		Structure *json.RawMessage `json:"structure"`
 	}
+
 	if err := json.Unmarshal(extractJSON(resp.Text), &out); err != nil {
 		return fmt.Errorf("sopgenerator: generate draft: unparseable AI output: %w", err)
 	}
+
 	if out.Purpose == "" || out.Title == "" || out.Structure == nil {
 		return errors.New("sopgenerator: generate draft: AI output missing required fields")
 	}
@@ -955,15 +1058,19 @@ func (s *Service) GenerateTemplateDraft(ctx context.Context, params map[string]s
 		Status:      StatusAIDraft,
 		AIGenerated: true,
 	}
+
 	if !validPurpose(out.Purpose) {
 		return fmt.Errorf("sopgenerator: generate draft: AI purpose %q outside the §110 enum", out.Purpose)
 	}
+
 	if v := params["destination_space_id"]; v != "" {
 		if err := row.DestinationSpaceID.Scan(v); err != nil {
-			return fmt.Errorf("sopgenerator: generate draft: invalid destination_space_id")
+			return errors.New("sopgenerator: generate draft: invalid destination_space_id")
 		}
 	}
+
 	_, err = s.store.CreateTemplate(ctx, row)
+
 	return err
 }
 
@@ -975,14 +1082,17 @@ func extractJSON(s string) []byte {
 		if j := strings.Index(s, "\n"); j >= 0 {
 			s = s[j+1:]
 		}
+
 		if k := strings.LastIndex(s, "```"); k >= 0 {
 			s = s[:k]
 		}
 	}
+
 	start := strings.IndexAny(s, "{[")
 	if start < 0 {
 		return []byte(s)
 	}
+
 	return []byte(s[start:])
 }
 
@@ -991,10 +1101,14 @@ func formatParams(params map[string]string) string {
 	if len(params) == 0 {
 		return "Generate the template."
 	}
+
 	var b strings.Builder
+
 	b.WriteString("Generate an SOP template with these hints:\n")
+
 	for k, v := range params {
 		fmt.Fprintf(&b, "- %s: %s\n", k, v)
 	}
+
 	return b.String()
 }

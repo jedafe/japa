@@ -34,7 +34,6 @@ const botListCacheTTL = 5 * time.Minute
 func BotDetectionMiddleware(store *Store, rdb *valkey.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 			ua := r.UserAgent()
 			if ua == "" {
 				next.ServeHTTP(w, r)

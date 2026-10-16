@@ -91,23 +91,28 @@ func TestRegistryMatchesBaselineSeed(t *testing.T) {
 	for _, m := range seedFlagRowRe.FindAllStringSubmatch(string(raw), -1) {
 		seeded[m[1]] = m[2] == "true"
 	}
+
 	if len(seeded) == 0 {
 		t.Fatal("no feature_flags rows parsed from baseline seed — test may be broken")
 	}
 
 	var undocumented []string
+
 	for _, f := range Registry {
 		seedEnabled, ok := seeded[f.Key]
 		if !ok {
 			continue // not seeded — registry default governs fresh installs
 		}
+
 		if seedEnabled == f.Default {
 			continue // in agreement
 		}
+
 		if _, allowed := seedDefaultOverrides[f.Key]; !allowed {
 			undocumented = append(undocumented, f.Key)
 		}
 	}
+
 	if len(undocumented) > 0 {
 		sort.Strings(undocumented)
 		t.Errorf("registry defaults diverge from baseline seed without a documented override: %s\n"+
@@ -122,6 +127,7 @@ func TestRegistryMatchesBaselineSeed(t *testing.T) {
 			t.Errorf("seedDefaultOverrides[%q]: key not in Registry", key)
 			continue
 		}
+
 		if seedEnabled, seeded := seeded[key]; seeded && seedEnabled == f.Default {
 			t.Errorf("seedDefaultOverrides[%q]: no longer diverges (seed=%v, default=%v) — remove the entry",
 				key, seedEnabled, f.Default)
@@ -141,6 +147,7 @@ func TestRegistryDefaultSurfacesValid(t *testing.T) {
 			if !ValidSurface(surface) {
 				t.Errorf("%s: DefaultSurfaces surface %q is not a known client surface", f.Key, surface)
 			}
+
 			switch state {
 			case "visible", "hidden", "disabled":
 			default:

@@ -166,12 +166,14 @@ func (h *Handlers) indexSpaceRAG(ctx context.Context, spaceID pgtype.UUID, visib
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
+
 		err := rag.IndexWithRetry(bgCtx, "space", spaceID.String(), "index", func(ctx context.Context) error {
 			return h.ragIndexer.IndexEntity(ctx, "space", spaceID, visibility, spaceID, pgtype.UUID{}, text, language)
 		})
 		if err != nil {
 			slog.Warn("spaces: RAG index failed for space",
 				"space_id", spaceID.String(), "error", err)
+
 			if recErr := h.ragIndexer.RecordIndexFailure(bgCtx, "space", spaceID, "index", err); recErr != nil {
 				slog.Warn("spaces: RAG index failure record failed",
 					"space_id", spaceID.String(), "error", recErr)
@@ -188,12 +190,14 @@ func (h *Handlers) purgeSpaceRAG(ctx context.Context, spaceID pgtype.UUID) {
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
+
 		err := rag.IndexWithRetry(bgCtx, "space", spaceID.String(), "purge", func(ctx context.Context) error {
 			return h.ragIndexer.PurgeEntity(ctx, "space", spaceID)
 		})
 		if err != nil {
 			slog.Warn("spaces: RAG purge failed for space",
 				"space_id", spaceID.String(), "error", err)
+
 			if recErr := h.ragIndexer.RecordIndexFailure(bgCtx, "space", spaceID, "purge", err); recErr != nil {
 				slog.Warn("spaces: RAG purge failure record failed",
 					"space_id", spaceID.String(), "error", recErr)

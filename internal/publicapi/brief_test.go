@@ -25,19 +25,24 @@ type stubSpaceReader struct {
 func (s stubSpaceReader) GetSpaceTypeBySlug(_ context.Context, _ string) (gen.SpaceType, error) {
 	return gen.SpaceType{}, nil
 }
+
 func (s stubSpaceReader) ListSpacesByTypePaginated(_ context.Context, _ pgtype.UUID, _, _, _, _, _, _ string, _, _ int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	return nil, nil
 }
+
 func (s stubSpaceReader) CountSpacesByType(_ context.Context, _ pgtype.UUID, _, _, _, _, _ string) (int64, error) {
 	return 0, nil
 }
+
 func (s stubSpaceReader) GetPublicSpaceBySlug(ctx context.Context, slug string) (gen.GetPublicSpaceBySlugRow, error) {
 	return s.getBySlugFn(ctx, slug)
 }
+
 func (s stubSpaceReader) GetPublicSpaceByGeoCode(ctx context.Context, geoCode string) (gen.GetPublicSpaceByGeoCodeRow, error) {
 	if s.getByGeoCodeFn == nil {
 		return gen.GetPublicSpaceByGeoCodeRow{}, pgx.ErrNoRows
 	}
+
 	return s.getByGeoCodeFn(ctx, geoCode)
 }
 
@@ -48,6 +53,7 @@ func TestGetDestinationBriefUnknownSlug(t *testing.T) {
 			return gen.GetPublicSpaceBySlugRow{}, pgx.ErrNoRows
 		}},
 	})
+
 	h := NewHandlers(svc)
 
 	rec := httptest.NewRecorder()
@@ -56,6 +62,7 @@ func TestGetDestinationBriefUnknownSlug(t *testing.T) {
 	rctx.URLParams.Add("slug", "nowhere")
 	r = withAPIKey(r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx)))
 	h.GetDestinationBrief(rec, r)
+
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
@@ -71,6 +78,7 @@ func TestGetDestinationBriefPartialFailure(t *testing.T) {
 			return nil, 0, errors.New("boom")
 		}},
 	})
+
 	h := NewHandlers(svc)
 
 	rec := httptest.NewRecorder()
@@ -83,6 +91,7 @@ func TestGetDestinationBriefPartialFailure(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
+
 	if !strings.Contains(rec.Body.String(), `"visa"`) ||
 		!strings.Contains(rec.Body.String(), "sections_unavailable") {
 		t.Fatalf("expected visa in sections_unavailable; body: %s", rec.Body.String())

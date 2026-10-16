@@ -60,7 +60,6 @@ func (s *Store) toggleFollow(ctx context.Context, followerID pgtype.UUID, entity
 func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	// First check if the follow already exists.
 	existing, err := q.GetFollow(ctx, gen.GetFollowParams{
-
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -68,7 +67,6 @@ func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, followerID p
 	if err == nil && existing.ID.Valid {
 		// Already following — delete (unfollow).
 		if err := q.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
-
 			FollowerID: followerID,
 			EntityType: entityType,
 			EntityID:   entityID,
@@ -81,7 +79,6 @@ func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, followerID p
 
 	// Not following — insert.
 	if err := q.InsertFollow(ctx, gen.InsertFollowParams{
-
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -95,7 +92,6 @@ func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, followerID p
 // getFollow returns the follow row for a specific follower-entity pair.
 func (s *Store) getFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
 	follow, err := s.read.GetFollow(ctx, gen.GetFollowParams{
-
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -110,7 +106,6 @@ func (s *Store) getFollow(ctx context.Context, followerID pgtype.UUID, entityTyp
 // isFollowing returns true if the follower is following the entity.
 func (s *Store) isFollowing(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	result, err := s.read.IsFollowing(ctx, gen.IsFollowingParams{
-
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -127,7 +122,6 @@ func (s *Store) isFollowing(ctx context.Context, followerID pgtype.UUID, entityT
 // both directions for a true mutual connection (Section 31).
 func (s *Store) isMutualFollow(ctx context.Context, followerID, entityID pgtype.UUID) (bool, error) {
 	result, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
-
 		EntityID:   entityID,
 		FollowerID: followerID,
 	})
@@ -145,7 +139,6 @@ func (s *Store) getFollowers(ctx context.Context, entityType string, entityID pg
 	}
 
 	rows, err := s.read.GetFollowersByEntity(ctx, gen.GetFollowersByEntityParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 		PageOffset: offset,
@@ -165,7 +158,6 @@ func (s *Store) getFollowing(ctx context.Context, followerID pgtype.UUID, limit,
 	}
 
 	rows, err := s.read.GetFollowingByUser(ctx, gen.GetFollowingByUserParams{
-
 		FollowerID: followerID,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -185,7 +177,6 @@ func (s *Store) getFollowingByType(ctx context.Context, followerID pgtype.UUID, 
 	}
 
 	rows, err := s.read.GetFollowingByUserAndType(ctx, gen.GetFollowingByUserAndTypeParams{
-
 		FollowerID: followerID,
 		EntityType: entityType,
 		PageOffset: offset,
@@ -201,7 +192,6 @@ func (s *Store) getFollowingByType(ctx context.Context, followerID pgtype.UUID, 
 // countFollowers returns the number of followers for an entity.
 func (s *Store) countFollowers(ctx context.Context, entityType string, entityID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountFollowersByEntity(ctx, gen.CountFollowersByEntityParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 	})

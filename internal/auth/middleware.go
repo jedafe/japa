@@ -67,6 +67,7 @@ func RequireAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handl
 			}
 
 			var ()
+
 			if err := (error)(nil); err != nil {
 				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_token", "Token contains invalid platform ID")
 				return
@@ -122,6 +123,7 @@ func OptionalAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Hand
 			}
 
 			var ()
+
 			if err := (error)(nil); err != nil {
 				next.ServeHTTP(w, r)
 				return

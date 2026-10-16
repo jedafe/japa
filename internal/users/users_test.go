@@ -525,12 +525,14 @@ func (f fakeStringSettings) GetStringOr(_ context.Context, key, fallback string)
 	if v, ok := f[key]; ok {
 		return v
 	}
+
 	return fallback
 }
 
 func TestCheckAvatarMIMEAllowed(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+
+	ctx := t.Context()
 
 	var mid pgtype.UUID
 	if err := mid.Scan("11111111-1111-1111-1111-111111111111"); err != nil {
@@ -541,6 +543,7 @@ func TestCheckAvatarMIMEAllowed(t *testing.T) {
 	if err := (&Service{}).checkAvatarMIMEAllowed(ctx, mid); err != nil {
 		t.Errorf("unwired service returned %v, want nil", err)
 	}
+
 	svc := &Service{MediaResolver: fakeMediaResolver{mime: "image/png"}}
 	if err := svc.checkAvatarMIMEAllowed(ctx, mid); err != nil {
 		t.Errorf("image avatar with no settings reader returned %v, want nil", err)
@@ -597,7 +600,8 @@ func TestCheckAvatarMIMEAllowed(t *testing.T) {
 
 func TestCheckImageMedia(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+
+	ctx := t.Context()
 
 	var mid pgtype.UUID
 	if err := mid.Scan("22222222-2222-2222-2222-222222222222"); err != nil {

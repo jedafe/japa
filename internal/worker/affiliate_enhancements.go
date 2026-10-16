@@ -109,7 +109,6 @@ func creditAuthorCommissionTx(ctx context.Context, row gen.GetAffiliateContentCo
 	}
 
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-
 		UserID:     row.AuthorUserID,
 		LedgerType: affiliateLedgerTypeCredits,
 	})
@@ -124,7 +123,6 @@ func creditAuthorCommissionTx(ctx context.Context, row gen.GetAffiliateContentCo
 	reference := row.ID.String()
 
 	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-
 		UserID:           row.AuthorUserID,
 		LedgerType:       affiliateLedgerTypeCredits,
 		Operation:        affiliateOperationEarn,

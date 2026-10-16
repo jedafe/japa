@@ -136,7 +136,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /achievements — list published achievements with
 // filters. Query params: ?dest=&milestone=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
@@ -184,7 +183,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // published achievements are visible to anonymous viewers; an unpublished
 // (admin-moderated) achievement is visible only to its own author.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
@@ -391,7 +389,6 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 // HandleListBySpace handles GET /spaces/:slug/achievements — published
 // achievements filed in the given Space, for the Space widget.
 func (h *Handlers) HandleListBySpace(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return

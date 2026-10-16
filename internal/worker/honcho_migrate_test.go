@@ -12,6 +12,7 @@ import (
 
 func TestHandleAIMigrateConversations_MalformedPayload_Skips(t *testing.T) {
 	task := asynq.NewTask(TypeAIMigrateConversations, []byte("{not-json"))
+
 	err := HandleAIMigrateConversations(t.Context(), task)
 	if !errors.Is(err, asynq.SkipRetry) {
 		t.Fatalf("malformed payload should skip retry, got %v", err)
@@ -21,6 +22,7 @@ func TestHandleAIMigrateConversations_MalformedPayload_Skips(t *testing.T) {
 func TestHandleAIMigrateConversations_BadUserID_Skips(t *testing.T) {
 	payload, _ := json.Marshal(map[string]string{"user_id": "not-a-uuid"})
 	task := asynq.NewTask(TypeAIMigrateConversations, payload)
+
 	err := HandleAIMigrateConversations(t.Context(), task)
 	if err == nil || !errors.Is(err, asynq.SkipRetry) {
 		t.Fatalf("bad user_id should skip retry, got %v", err)
@@ -31,6 +33,7 @@ func TestHandleAIMigrateConversations_NoFetcher_NoOp(t *testing.T) {
 	// dbPool is required before the fetcher check, so this exercises the
 	// dbPool guard — with no registered pool the task errors for retry.
 	payload, _ := json.Marshal(map[string]string{"user_id": "00000000-0000-0000-0000-000000000001"})
+
 	task := asynq.NewTask(TypeAIMigrateConversations, payload)
 	if err := HandleAIMigrateConversations(t.Context(), task); err == nil {
 		t.Fatal("expected an error when the db pool is unregistered")
@@ -78,6 +81,7 @@ func TestLegacyMessageRole(t *testing.T) {
 		if c.role != nil {
 			m["role"] = c.role
 		}
+
 		if got := legacyMessageRole(honcho.ContextEntry{Metadata: m}); got != c.want {
 			t.Fatalf("role %v: got %q want %q", c.role, got, c.want)
 		}
@@ -90,6 +94,7 @@ func TestLegacyMessageRole(t *testing.T) {
 
 func TestMigrateTitle(t *testing.T) {
 	now := time.Now()
+
 	entries := []honcho.ContextEntry{
 		{Content: "assistant text", Metadata: map[string]any{"role": "assistant"}, CreatedAt: now},
 		{Content: "first user question", Metadata: map[string]any{"role": "user"}, CreatedAt: now.Add(time.Second)},

@@ -64,6 +64,7 @@ func SetEntityTypesInProviderConfig(raw []byte, types []string) ([]byte, error) 
 		if err != nil {
 			return nil, fmt.Errorf("sources: encode entity_types: %w", err)
 		}
+
 		doc[entityTypesKey] = encoded
 	}
 

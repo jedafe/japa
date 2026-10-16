@@ -28,9 +28,11 @@ func ComputedEligibleField(fieldType string, options []byte) bool {
 	if ComputedSpecFromOptions(options) == nil || !computedFieldTypes[fieldType] {
 		return false
 	}
+
 	if fieldType == FieldTypePriceParts && PrimaryPartFromOptions(options) == "" {
 		return false
 	}
+
 	return true
 }
 
@@ -47,34 +49,42 @@ func ComputedScalarFromValue(fieldType string, options, valueJSON []byte, valueN
 			Min *float64 `json:"min"`
 			Max *float64 `json:"max"`
 		}
+
 		if json.Unmarshal(valueJSON, &pr) != nil {
 			return 0, false
 		}
+
 		for _, p := range []*float64{pr.Avg, pr.Min, pr.Max} {
 			if p != nil && computedFinite(*p) {
 				return *p, true
 			}
 		}
+
 		return 0, false
 	case FieldTypePriceParts:
 		pp := PrimaryPartFromOptions(options)
 		if pp == "" {
 			return 0, false
 		}
+
 		var parts struct {
 			Parts map[string]json.RawMessage `json:"parts"`
 		}
+
 		if json.Unmarshal(valueJSON, &parts) != nil {
 			return 0, false
 		}
+
 		raw, ok := parts.Parts[pp]
 		if !ok {
 			return 0, false
 		}
+
 		var f float64
 		if json.Unmarshal(raw, &f) != nil || !computedFinite(f) {
 			return 0, false
 		}
+
 		return f, true
 	default:
 		f, ok := computedNumeric(valueNumber)
@@ -93,6 +103,7 @@ func FoldComputedMetric(metric string, scalars []float64) float64 {
 				m = x
 			}
 		}
+
 		return m
 	case "max":
 		m := scalars[0]
@@ -101,18 +112,21 @@ func FoldComputedMetric(metric string, scalars []float64) float64 {
 				m = x
 			}
 		}
+
 		return m
 	case "sum":
 		var s float64
 		for _, x := range scalars {
 			s += x
 		}
+
 		return s
 	default: // "avg" — also the parser's empty-metric default
 		var sum float64
 		for _, x := range scalars {
 			sum += x
 		}
+
 		return sum / float64(len(scalars))
 	}
 }
@@ -130,6 +144,7 @@ func ComputedDisplayValue(fieldType string, options []byte, v float64) any {
 		if pp == "" {
 			return nil
 		}
+
 		return map[string]any{"parts": map[string]any{pp: v}}
 	default:
 		return v
@@ -144,8 +159,10 @@ func computedNumeric(n pgtype.Numeric) (float64, bool) {
 	if !n.Valid {
 		return 0, false
 	}
+
 	if f, err := n.Float64Value(); err == nil && f.Valid {
 		return f.Float64, true
 	}
+
 	return 0, false
 }

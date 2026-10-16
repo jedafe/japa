@@ -144,9 +144,11 @@ func isInternalHost(host string) bool {
 		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
 			return true
 		}
+
 		if v4[0] == 0 || v4[0] >= 240 {
 			return true
 		}
+
 		if (v4[0] == 192 && v4[1] == 0 && (v4[2] == 0 || v4[2] == 2)) ||
 			(v4[0] == 198 && v4[1] == 51 && v4[2] == 100) ||
 			(v4[0] == 203 && v4[1] == 0 && v4[2] == 113) ||
@@ -177,6 +179,7 @@ func normalizeNumericIP(host string) net.IP {
 		if s == "" {
 			return 0, false
 		}
+
 		base := 10
 		if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
 			base = 16
@@ -185,13 +188,16 @@ func normalizeNumericIP(host string) net.IP {
 			base = 8
 			s = s[1:]
 		}
+
 		if s == "" {
 			return 0, false
 		}
+
 		n, err := strconv.ParseUint(s, base, bits)
 		if err != nil {
 			return 0, false
 		}
+
 		return n, true
 	}
 
@@ -200,17 +206,21 @@ func normalizeNumericIP(host string) net.IP {
 		if !ok {
 			return nil
 		}
+
 		return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
 	}
 
 	var b [4]byte
+
 	for i, p := range parts {
 		n, ok := parsePart(p, 8)
 		if !ok {
 			return nil
 		}
+
 		b[i] = byte(n)
 	}
+
 	return net.IPv4(b[0], b[1], b[2], b[3])
 }
 
@@ -228,6 +238,7 @@ func isLoopbackHost(host string) bool {
 	if ip == nil {
 		ip = normalizeNumericIP(host)
 	}
+
 	if ip == nil {
 		return false
 	}

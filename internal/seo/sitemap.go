@@ -117,8 +117,10 @@ func InvalidateSitemapCache(ctx context.Context, rdb sitemapCacheInvalidator) {
 		return
 	}
 
-	types := []string{"index", "content", "spaces", "tags", "users", "images", "deals", "roadmap",
-		"universities", "courses", "jobs", "scholarships", "services", "wiki", "calendar", "scam-alerts", "comparisons", "tools"}
+	types := []string{
+		"index", "content", "spaces", "tags", "users", "images", "deals", "roadmap",
+		"universities", "courses", "jobs", "scholarships", "services", "wiki", "calendar", "scam-alerts", "comparisons", "tools",
+	}
 	for _, t := range types {
 		if err := rdb.Del(ctx, sitemapCacheKey(t)).Err(); err != nil {
 			slog.Warn("sitemap: failed to invalidate cache", "type", t, "error", err)
@@ -203,7 +205,6 @@ type sitemapEntry struct {
 // invalidated by the sitemap:generate Asynq task.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
-
 	if h.cachedSitemapXML(w, r, "index") {
 		return
 	}
@@ -319,7 +320,6 @@ func (h *SitemapHandler) latestImagesLastMod(ctx context.Context) string {
 // so the on-demand and pre-generated sitemaps agree.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md, sections/43-bot-crawler-management.md.
 func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Request) {
-
 	if h.cachedSitemapXML(w, r, "content") {
 		return
 	}
@@ -375,7 +375,6 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 // forum_threads joined to the space's content.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Request) {
-
 	if h.cachedSitemapXML(w, r, "spaces") {
 		return
 	}
@@ -438,7 +437,6 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 
 // ServeTagsSitemap serves tag sitemap entries (P5.6 — Task 31).
 func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request) {
-
 	if h.cachedSitemapXML(w, r, "tags") {
 		return
 	}
@@ -491,7 +489,6 @@ func (h *SitemapHandler) latestDealsLastMod(ctx context.Context) string {
 // a provider use the reserved 'japaconnect' segment.
 // Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md (Deal Pages).
 func (h *SitemapHandler) ServeDealsSitemap(w http.ResponseWriter, r *http.Request) {
-
 	if h.cachedSitemapXML(w, r, "deals") {
 		return
 	}
@@ -501,7 +498,7 @@ func (h *SitemapHandler) ServeDealsSitemap(w http.ResponseWriter, r *http.Reques
 
 	// Deals index page (/deals) — canonical listing of all live deals.
 	entries = append(entries, urlEntry{
-		Loc:        fmt.Sprintf("%s/deals", base),
+		Loc:        base + "/deals",
 		LastMod:    h.latestDealsLastMod(r.Context()),
 		ChangeFreq: "daily",
 		Priority:   "0.6",
@@ -533,6 +530,7 @@ func (h *SitemapHandler) ServeDealsSitemap(w http.ResponseWriter, r *http.Reques
 			Priority:   "0.5",
 		})
 	}
+
 	rows.Close()
 
 	// Partner landing pages for active providers with at least one live deal.
@@ -643,7 +641,6 @@ func (h *SitemapHandler) ServeRoadmapSitemap(w http.ResponseWriter, r *http.Requ
 // allow_search_indexing = false are excluded.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Request) {
-
 	if h.cachedSitemapXML(w, r, "users") {
 		return
 	}
@@ -723,7 +720,6 @@ type imageItem struct {
 // ServeContentSitemap.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Request) {
-
 	if h.cachedSitemapXML(w, r, "images") {
 		return
 	}

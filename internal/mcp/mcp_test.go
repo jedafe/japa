@@ -25,9 +25,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-var (
-	testUserID = mustUUID("00000000-0000-0000-0000-000000000001")
-)
+var testUserID = mustUUID("00000000-0000-0000-0000-000000000001")
 
 type testDeps struct {
 	registry *ai.ToolHandlerRegistry
@@ -421,6 +419,7 @@ func TestMCP_UnsupportedMethod(t *testing.T) {
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", rr.Code)
 	}
+
 	if allow := rr.Header().Get("Allow"); allow != "GET, POST" {
 		t.Fatalf("expected Allow: GET, POST, got %q", allow)
 	}
@@ -450,6 +449,7 @@ func TestMCP_Initialize_2025_11_25(t *testing.T) {
 	if result["protocolVersion"] != "2025-11-25" {
 		t.Fatalf("expected negotiated protocol version 2025-11-25, got %q", result["protocolVersion"])
 	}
+
 	if result["instructions"] == "" {
 		t.Fatal("expected initialize to advertise server instructions")
 	}
@@ -476,6 +476,7 @@ func TestMCP_Initialize_2025_06_18_AndFallback(t *testing.T) {
 		"params": {"protocolVersion": "2099-01-01", "capabilities": {},
 			"clientInfo": {"name": "future", "version": "1.0"}}
 	}`)
+
 	res := out["result"].(map[string]any)
 	if res["protocolVersion"] != latestProtocolVersion {
 		t.Fatalf("expected fallback to %q, got %q", latestProtocolVersion, res["protocolVersion"])
@@ -490,6 +491,7 @@ func TestMCP_PingAndNotificationHandling(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("ping: expected 200, got %d", status)
 	}
+
 	if _, ok := out["result"]; !ok {
 		t.Fatalf("ping: expected empty result, got %v", out)
 	}
@@ -519,10 +521,12 @@ func TestMCP_BatchRequests(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("batch: expected 200, got %d", rec.Code)
 	}
+
 	var batch []map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&batch); err != nil {
 		t.Fatalf("batch: decode: %v", err)
 	}
+
 	if len(batch) != 2 {
 		t.Fatalf("batch: expected 2 responses (notification skipped), got %d", len(batch))
 	}
@@ -534,6 +538,7 @@ func TestMCP_BatchRequests(t *testing.T) {
 	]`))
 	rec = httptest.NewRecorder()
 	srv.ServeHTTP(rec, req.WithContext(ctx))
+
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("notification batch: expected 202, got %d", rec.Code)
 	}
@@ -543,6 +548,7 @@ func TestMCP_BatchRequests(t *testing.T) {
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/mcp", nil)
 	rec = httptest.NewRecorder()
 	srv.ServeHTTP(rec, req.WithContext(ctx))
+
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("DELETE: expected 405, got %d", rec.Code)
 	}
@@ -570,22 +576,28 @@ func TestAPIKeyCallerGetsReadOnlyCatalog(t *testing.T) {
 	srv.ServeHTTP(rec, req.WithContext(ctx))
 
 	var resp map[string]any
+
 	json.NewDecoder(rec.Body).Decode(&resp)
 	tools := resp["result"].(map[string]any)["tools"].([]any)
 	seen := map[string]bool{}
+
 	for _, tool := range tools {
 		name := tool.(map[string]any)["name"].(string)
 		seen[name] = true
+
 		if name == "content.create" {
 			t.Fatal("write tool leaked to API-key caller")
 		}
+
 		if name == "destination.brief" {
 			t.Fatal("premium tool leaked to under-scoped key")
 		}
 	}
+
 	if !seen["content.read"] {
 		t.Fatal("expected content.read to remain visible")
 	}
+
 	if !seen["persona_voices.list"] {
 		t.Fatal("expected persona_voices.list to remain visible to agent.use-scoped key")
 	}
@@ -601,6 +613,7 @@ func (s stubTierResolver) ResolveUserTier(_ context.Context, _ pgtype.UUID) (str
 // apiKeyCtx marks ctx as an API-key caller carrying the given scopes.
 func apiKeyCtx(ctx context.Context, scopes ...string) context.Context {
 	ctx = context.WithValue(ctx, apiKeyCallerKey, true)
+
 	return publicapi.WithAPIKeyContext(ctx, &publicapi.APIKeyContext{
 		UserID: testUserID, Scopes: scopes,
 	})
@@ -633,6 +646,7 @@ func TestPhase2ToolGateScopeFiltering(t *testing.T) {
 
 	tools := out["result"].(map[string]any)["tools"].([]any)
 	seen := map[string]bool{}
+
 	for _, tool := range tools {
 		seen[tool.(map[string]any)["name"].(string)] = true
 	}
@@ -640,6 +654,7 @@ func TestPhase2ToolGateScopeFiltering(t *testing.T) {
 	if !seen["feeds.explore"] {
 		t.Fatal("expected feeds.explore visible to api.read.content key")
 	}
+
 	for _, name := range []string{"feeds.for_you", "scam.list", "scam.get", "search.semantic"} {
 		if seen[name] {
 			t.Fatalf("tool %s leaked to under-scoped key", name)
@@ -665,6 +680,7 @@ func TestPhase2ToolGateScopeDenial(t *testing.T) {
 	if int(errObj["code"].(float64)) != -32602 {
 		t.Fatalf("expected -32602, got %v", errObj["code"])
 	}
+
 	data, _ := errObj["data"].(string)
 	if !strings.Contains(data, "api.read.safety") {
 		t.Fatalf("expected scope denial naming api.read.safety, got %q", data)
@@ -691,6 +707,7 @@ func TestPhase2SemanticTierDenialAPIKey(t *testing.T) {
 	if int(errObj["code"].(float64)) != -32602 {
 		t.Fatalf("expected -32602, got %v", errObj["code"])
 	}
+
 	data, _ := errObj["data"].(string)
 	if !strings.Contains(data, "pro") {
 		t.Fatalf("expected tier denial naming pro, got %q", data)
@@ -717,6 +734,7 @@ func TestPhase2SemanticTierDenialJWT(t *testing.T) {
 	if int(errObj["code"].(float64)) != -32602 {
 		t.Fatalf("expected -32602, got %v", errObj["code"])
 	}
+
 	data, _ := errObj["data"].(string)
 	if !strings.Contains(data, "pro") {
 		t.Fatalf("expected tier denial naming pro, got %q", data)
@@ -732,12 +750,14 @@ func TestRAGSearchGateForAPIKeys(t *testing.T) {
 
 	// Under-scoped key (content only): not visible in the catalog.
 	ctx := apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "api.read.content")
+
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}
 	}`)
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %v", status, out)
 	}
+
 	for _, tool := range out["result"].(map[string]any)["tools"].([]any) {
 		if tool.(map[string]any)["name"] == "rag.search" {
 			t.Fatal("rag.search leaked to api.read.content-scoped key")
@@ -746,15 +766,18 @@ func TestRAGSearchGateForAPIKeys(t *testing.T) {
 
 	// Scoped but regular tier: tools/call denied on minTier.
 	srv.SetTierResolver(stubTierResolver{tier: "regular"})
+
 	ctx = apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "api.read.search")
 	_, out = postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
 		"params": {"name": "rag.search", "arguments": {"query": "visa"}}
 	}`)
+
 	errObj := out["error"].(map[string]any)
 	if int(errObj["code"].(float64)) != -32602 {
 		t.Fatalf("expected -32602, got %v", errObj["code"])
 	}
+
 	if data, _ := errObj["data"].(string); !strings.Contains(data, "pro") {
 		t.Fatalf("expected tier denial naming pro, got %q", data)
 	}
@@ -764,6 +787,7 @@ func TestRAGSearchGateForAPIKeys(t *testing.T) {
 	deps.registry.RegisterHandler("rag.search", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ai.ToolResult, error) {
 		return &ai.ToolResult{Status: ai.ToolCallStatusSuccess, Content: `{"results":[]}`}, nil
 	})
+
 	_, out = postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
 		"params": {"name": "rag.search", "arguments": {"query": "visa"}}
@@ -771,6 +795,7 @@ func TestRAGSearchGateForAPIKeys(t *testing.T) {
 	if out["error"] != nil {
 		t.Fatalf("expected rag.search call to pass the gate, got %v", out["error"])
 	}
+
 	if res := out["result"].(map[string]any); res["isError"] == true {
 		t.Fatalf("expected successful result, got %v", res)
 	}
@@ -798,6 +823,7 @@ func TestPhase2SemanticTierAllowed(t *testing.T) {
 	if out["error"] != nil {
 		t.Fatalf("expected tool call to pass the gate, got %v", out["error"])
 	}
+
 	res := out["result"].(map[string]any)
 	if res["isError"] == true {
 		t.Fatalf("expected successful result, got %v", res)
@@ -828,6 +854,7 @@ func TestAgentWriteKeyGetsFullCatalog(t *testing.T) {
 	for _, tool := range out["result"].(map[string]any)["tools"].([]any) {
 		seen[tool.(map[string]any)["name"].(string)] = true
 	}
+
 	for _, name := range []string{"content.create", "content.read", "scam.list"} {
 		if !seen[name] {
 			t.Fatalf("expected %s visible to agent.write key", name)
@@ -857,6 +884,7 @@ func TestAgentWriteKeyCanCallWriteTool(t *testing.T) {
 	if out["error"] != nil {
 		t.Fatalf("expected write call to pass the gate, got %v", out["error"])
 	}
+
 	if res := out["result"].(map[string]any); res["isError"] == true {
 		t.Fatalf("expected successful write result, got %v", res)
 	}
@@ -865,6 +893,7 @@ func TestAgentWriteKeyCanCallWriteTool(t *testing.T) {
 		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
 		"params": {"name": "admin.thing", "arguments": {}}
 	}`)
+
 	errObj := out["error"].(map[string]any)
 	if int(errObj["code"].(float64)) != -32602 {
 		t.Fatalf("expected -32602 for RBAC-denied tool, got %v", errObj)
@@ -884,10 +913,12 @@ func TestAgentWriteKeyStillTierGated(t *testing.T) {
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": {"name": "destination.brief", "arguments": {}}
 	}`)
+
 	errObj := out["error"].(map[string]any)
 	if int(errObj["code"].(float64)) != -32602 {
 		t.Fatalf("expected -32602, got %v", errObj)
 	}
+
 	if data, _ := errObj["data"].(string); !strings.Contains(data, "pro") {
 		t.Fatalf("expected tier denial naming pro, got %q", data)
 	}
@@ -901,16 +932,19 @@ func TestAgentWriteStaysAdminOnly(t *testing.T) {
 	if !publicapi.AnyAdminOnly([]string{"agent.write"}) {
 		t.Fatal("agent.write must be AdminOnly in the scope catalog")
 	}
+
 	for _, s := range publicapi.SelfServiceScopes() {
 		if s.Value == "agent.write" {
 			t.Fatal("agent.write leaked into the self-serve scope catalog")
 		}
 	}
+
 	for _, s := range oauthGrantableScopes() {
 		if s == "agent.write" {
 			t.Fatal("agent.write leaked into OAuth grantable scopes")
 		}
 	}
+
 	granted := filterGrantableScopes([]string{"agent.use", "agent.write", "*"})
 	for _, s := range granted {
 		if s == "agent.write" {

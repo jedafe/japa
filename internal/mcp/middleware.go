@@ -34,10 +34,12 @@ func PublicCORS(next http.Handler) http.Handler {
 		// origin — drop it, since ACAO:* + ACAC:true is invalid for credentialed
 		// fetches and these endpoints are credential-free.
 		w.Header().Del("Access-Control-Allow-Credentials")
+
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -69,12 +71,15 @@ func AuthMiddleware(kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicA
 				if r.Header.Get("Authorization") != "" || r.Header.Get("X-API-Key") != "" {
 					challenge += `, error="invalid_token"`
 				}
+
 				w.Header().Set("WWW-Authenticate", challenge)
 				http.Error(w, `{"error":{"code":"unauthenticated","message":"Authentication required"}}`, http.StatusUnauthorized)
+
 				return
 			}
 
 			ctx := r.Context()
+
 			if apiKey != nil {
 				if !publicapi.HasScope(apiKey.Scopes, agentUsePermission) {
 					http.Error(w, `{"error":{"code":"forbidden","message":"API key lacks required scope: agent.use"}}`, http.StatusForbidden)
@@ -108,6 +113,7 @@ func authOrAPIKey(r *http.Request, kr *auth.KeyRotation, vkClient valkeycompat.C
 			if user, err := validateBearer(r.Context(), parts[1], kr, vkClient); err == nil {
 				return user, nil
 			}
+
 			if keyCtx, user, err := validateOAuthBearer(r.Context(), parts[1], oauthSvc); err == nil {
 				return user, keyCtx
 			}
@@ -162,6 +168,7 @@ func validateOAuthBearer(ctx context.Context, token string, oauthSvc *OAuthServi
 	if oauthSvc == nil {
 		return nil, nil, errors.New("oauth disabled")
 	}
+
 	keyCtx, err := oauthSvc.ResolveBearer(ctx, token)
 	if err != nil {
 		return nil, nil, err

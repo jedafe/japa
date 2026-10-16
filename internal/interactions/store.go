@@ -126,7 +126,6 @@ func (s *Service) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool
 // / VALKEY-001, BUG-003: platform-scoped).
 func (s *Service) MuteUser(ctx context.Context, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.MuteUser(ctx, gen.MuteUserParams{
-
 		UserID:      userID,
 		MutedUserID: mutedUserID,
 	}); err != nil {
@@ -143,7 +142,6 @@ func (s *Service) MuteUser(ctx context.Context, userID, mutedUserID pgtype.UUID)
 // / VALKEY-001, BUG-003: platform-scoped).
 func (s *Service) UnmuteUser(ctx context.Context, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.UnmuteUser(ctx, gen.UnmuteUserParams{
-
 		UserID:      userID,
 		MutedUserID: mutedUserID,
 	}); err != nil {
@@ -158,7 +156,6 @@ func (s *Service) UnmuteUser(ctx context.Context, userID, mutedUserID pgtype.UUI
 // IsUserMuted checks if a user is muted.
 func (s *Service) IsUserMuted(ctx context.Context, userID, mutedUserID pgtype.UUID) (bool, error) {
 	return s.read.IsUserMuted(ctx, gen.IsUserMutedParams{
-
 		UserID:      userID,
 		MutedUserID: mutedUserID,
 	})
@@ -177,7 +174,6 @@ type MutedUserInfo struct {
 // ListMutedUsers returns paginated muted users for the caller.
 func (s *Service) ListMutedUsers(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]MutedUserInfo, error) {
 	rows, err := s.read.ListMutedUsers(ctx, gen.ListMutedUsersParams{
-
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -222,7 +218,6 @@ type MutedSpaceInfo struct {
 // ListMutedSpaces returns paginated muted spaces for the caller.
 func (s *Service) ListMutedSpaces(ctx context.Context, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, limit, offset int32) ([]MutedSpaceInfo, error) {
 	rows, err := s.read.ListMutedSpaces(ctx, gen.ListMutedSpacesParams{
-
 		UserID:      userID,
 		Search:      search,
 		Level:       level,

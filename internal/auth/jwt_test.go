@@ -32,7 +32,6 @@ func TestMintAndValidateAccessToken(t *testing.T) {
 	if claims.UserID != userID.String() {
 		t.Errorf("UserID = %s, want %s", claims.UserID, userID.String())
 	}
-
 }
 
 func TestMintAccessToken_JTIIsPresent(t *testing.T) {

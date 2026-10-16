@@ -30,11 +30,14 @@ func TestParsePublishAtParam(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error for %q", tc.input)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("unexpected error for %q: %v", tc.input, err)
 			}
+
 			if !ts.Valid || !ts.Time.Equal(tc.want) {
 				t.Fatalf("got %v (valid=%v), want %v", ts.Time, ts.Valid, tc.want)
 			}

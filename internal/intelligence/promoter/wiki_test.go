@@ -167,9 +167,11 @@ func seedSpace(m *wikiMockStore, slug string) (spaceID, typeID pgtype.UUID) {
 	if m.spacesBySlug == nil {
 		m.spacesBySlug = map[string]gen.GetSpaceBySlugRow{}
 	}
+
 	if m.spacesByID == nil {
 		m.spacesByID = map[pgtype.UUID]gen.GetSpaceByIDRow{}
 	}
+
 	if m.typeRefs == nil {
 		m.typeRefs = map[pgtype.UUID]gen.GetSpaceTypeRefRow{}
 	}
@@ -185,6 +187,7 @@ func seedCategory(m *wikiMockStore, typeID pgtype.UUID, token, slug string) {
 	if m.categoryRows == nil {
 		m.categoryRows = map[pgtype.UUID]map[string]gen.WikiTypeCategory{}
 	}
+
 	if m.categoryRows[typeID] == nil {
 		m.categoryRows[typeID] = map[string]gen.WikiTypeCategory{}
 	}
@@ -212,19 +215,24 @@ func TestWikiPromoteCreateResolvesSpaceIDAndCategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
+
 	if res.Action != ActionCreated {
 		t.Fatalf("action = %q, want created", res.Action)
 	}
+
 	if len(m.created) != 1 {
 		t.Fatalf("created calls = %d, want 1", len(m.created))
 	}
+
 	got := m.created[0]
 	if got.SpaceID != spaceID {
 		t.Errorf("SpaceID = %v, want %v", got.SpaceID, spaceID)
 	}
+
 	if got.Category != "cost_of_living" {
 		t.Errorf("Category = %q, want cost_of_living", got.Category)
 	}
+
 	if len(m.statuses) != 1 || m.statuses[0].Status != "extracted" {
 		t.Errorf("statuses = %+v, want one 'extracted' write", m.statuses)
 	}
@@ -293,9 +301,11 @@ func TestWikiPromoteCreateSpaceHintFallbacks(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Promote: %v", err)
 			}
+
 			if res.Action != ActionCreated || len(m.created) != 1 {
 				t.Fatalf("action=%q created=%d, want created/1", res.Action, len(m.created))
 			}
+
 			if m.created[0].SpaceID != wantSpace {
 				t.Errorf("SpaceID = %v, want %v", m.created[0].SpaceID, wantSpace)
 			}
@@ -319,9 +329,11 @@ func TestWikiPromoteCreateSuffixesSlugCollision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
+
 	if res.Action != ActionCreated || len(m.created) != 1 {
 		t.Fatalf("action=%q created=%d", res.Action, len(m.created))
 	}
+
 	if got := m.created[0].Slug; got != "cost-of-living-2" {
 		t.Errorf("Slug = %q, want cost-of-living-2", got)
 	}
@@ -339,12 +351,15 @@ func TestWikiPromoteCreateUnresolvableSpaceRoutesToReview(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unresolvable space, got nil")
 	}
+
 	if !errors.Is(err, ErrRouteToReview) {
 		t.Errorf("err = %v, want wrapped ErrRouteToReview so the worker routes the record to the review queue", err)
 	}
+
 	if len(m.created) != 0 {
 		t.Errorf("no wiki_pages row should be written, got %d creates", len(m.created))
 	}
+
 	if len(m.statuses) != 0 {
 		t.Errorf("record status must stay untouched, got %+v", m.statuses)
 	}
@@ -373,6 +388,7 @@ func TestWikiPromoteCreateCategoryFallbacks(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &wikiMockStore{}
 			_, typeID := seedSpace(m, "lagos")
+
 			for _, tok := range tc.seed {
 				seedCategory(m, typeID, tok, tok)
 			}
@@ -381,12 +397,14 @@ func TestWikiPromoteCreateCategoryFallbacks(t *testing.T) {
 			if tc.extractCat != "" {
 				fields["category"] = tc.extractCat
 			}
+
 			m.record = wikiIntelRecord(t, fields)
 
 			_, err := NewWikiPromoter(m, wikiPgUUID()).Promote(t.Context(), pgToUUID(m.record.ID))
 			if err != nil {
 				t.Fatalf("Promote: %v", err)
 			}
+
 			if got := m.created[0].Category; got != tc.want {
 				t.Errorf("Category = %q, want %q", got, tc.want)
 			}
@@ -420,15 +438,19 @@ func TestWikiPromoteUpdateCanonicalizesCategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
+
 	if res.Action != ActionUpdated {
 		t.Fatalf("action = %q, want updated", res.Action)
 	}
+
 	if len(m.updated) != 1 {
 		t.Fatalf("updated calls = %d, want 1", len(m.updated))
 	}
+
 	if got := m.updated[0].Category; got != "banking" {
 		t.Errorf("Category = %q, want canonical banking", got)
 	}
+
 	if len(m.reviewLog) != 1 {
 		t.Fatalf("review log entries = %d, want 1", len(m.reviewLog))
 	}
@@ -461,9 +483,11 @@ func TestWikiPromoteUpdateSuppressesUnresolvableCategory(t *testing.T) {
 	if res.Action != ActionVerified {
 		t.Fatalf("action = %q, want verified", res.Action)
 	}
+
 	if len(m.updated) != 1 || m.updated[0].Category != "banking" {
 		t.Errorf("category must keep existing 'banking', got %+v", m.updated)
 	}
+
 	if len(m.reviewLog) != 0 {
 		t.Errorf("no review log expected, got %d", len(m.reviewLog))
 	}
@@ -491,9 +515,11 @@ func TestWikiPromoteUpdateEditorialOverrideWins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
+
 	if res.Action != ActionVerified {
 		t.Fatalf("action = %q, want verified (overrides suppress all changes)", res.Action)
 	}
+
 	if m.updated[0].Category != "overview" || m.updated[0].Title != "Editor Title" {
 		t.Errorf("overridden fields must keep existing values, got %+v", m.updated[0])
 	}

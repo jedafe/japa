@@ -150,6 +150,7 @@ func batchedSpaceFieldValues(ctx context.Context, deps *scoreDeps, entityType st
 	}
 
 	ids := make([]pgtype.UUID, 0, len(bases))
+
 	for _, b := range bases {
 		if b.ID.Valid {
 			ids = append(ids, b.ID)

@@ -95,7 +95,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /tax-calculator — list published tax obligation
 // guides with filters. Query params: ?dest=&origin=&employment=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
@@ -154,7 +153,6 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleTreaty handles GET /tax-calculator/treaty — treaty status for an
 // origin/destination pair. Query params: ?dest=&origin=.
 func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return

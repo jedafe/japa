@@ -94,9 +94,11 @@ func (h *Handlers) assessmentEnabled(ctx context.Context) bool {
 	if h.checker != nil {
 		return h.checker.IsEnabled(ctx, "assessment.enabled")
 	}
+
 	if h.settings == nil {
 		return true
 	}
+
 	return h.settings.GetBoolOr(ctx, "assessment.enabled", true)
 }
 
@@ -208,7 +210,6 @@ func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 // assessment form with scoring metadata (thresholds only, not weights —
 // weights are internal per ADR-071 §2). Public route.
 func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
@@ -270,7 +271,6 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 // answers. Anonymous users are allowed; authenticated users get persistent
 // history. Body: {"field_values": {...}}.
 func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
@@ -338,7 +338,6 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 // single assessment result with roadmap. Public if the result has no user_id
 // (anonymous); auth required for user results.
 func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
@@ -390,7 +389,6 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 // and no in-flight scoring is expected (treated as pending here — the caller
 // distinguishes via retry budget on the client).
 func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
@@ -442,7 +440,6 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 // visitor's journey context captured at submission time. Anonymous results are
 // public; user results require the owner.
 func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return

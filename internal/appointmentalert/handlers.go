@@ -96,7 +96,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleListEmbassies handles GET /embassies — list monitored embassies
 // with an optional destination filter. Query params: ?dest=&page=&limit=.
 func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return

@@ -40,9 +40,11 @@ func extensionTokenName(installID string) (string, error) {
 	if installID == "" {
 		return extensionTokenPrefix + uuid.NewString(), nil
 	}
+
 	if _, err := uuid.Parse(installID); err != nil {
 		return "", ErrInvalidInstallID
 	}
+
 	return extensionTokenPrefix + installID, nil
 }
 
@@ -77,10 +79,12 @@ func (s *Service) ListExtensionTokens(ctx context.Context, userID pgtype.UUID) (
 	}
 
 	out := make([]APIKey, 0, len(keys))
+
 	for _, k := range keys {
 		if isExtensionToken(k.Name) && k.Status == "active" {
 			out = append(out, k)
 		}
 	}
+
 	return out, nil
 }

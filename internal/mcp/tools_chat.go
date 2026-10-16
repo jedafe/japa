@@ -73,16 +73,19 @@ func (s *Server) handleJapaChat(ctx context.Context, user *auth.AuthenticatedUse
 			Enabled *bool `json:"enabled"`
 		} `json:"tools"`
 	}
+
 	if len(callReq.Arguments) > 0 && string(callReq.Arguments) != "null" {
 		if err := json.Unmarshal(callReq.Arguments, &args); err != nil {
 			return s.errorResp(req.ID, -32602, "Invalid params", err.Error()), false
 		}
 	}
+
 	if strings.TrimSpace(args.Message) == "" {
 		return s.errorResp(req.ID, -32602, "Invalid params", "message is required"), false
 	}
 
 	var convID *pgtype.UUID
+
 	if args.ConversationID != "" {
 		var u pgtype.UUID
 		if err := u.Scan(args.ConversationID); err == nil && u.Valid {
@@ -109,8 +112,11 @@ func (s *Server) handleJapaChat(ctx context.Context, user *auth.AuthenticatedUse
 	}
 
 	var reply, conversationID, messageID, sessionID string
+
 	var sources []ai.RAGChunk
+
 	var loopErr *ai.AgentEvent
+
 	for ev := range events {
 		switch ev.Type {
 		case ai.EventFinalResponse:
@@ -123,6 +129,7 @@ func (s *Server) handleJapaChat(ctx context.Context, user *auth.AuthenticatedUse
 			}
 		case ai.EventSessionStart:
 			sessionID = ev.SessionID
+
 			if ev.ConversationID != "" {
 				conversationID = ev.ConversationID
 			}
@@ -138,6 +145,7 @@ func (s *Server) handleJapaChat(ctx context.Context, user *auth.AuthenticatedUse
 
 	if loopErr != nil {
 		out, _ := json.Marshal(map[string]any{"error": loopErr.Error})
+
 		return &jsonRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -155,6 +163,7 @@ func (s *Server) handleJapaChat(ctx context.Context, user *auth.AuthenticatedUse
 		"sources":         sources,
 		"session_id":      sessionID,
 	})
+
 	return &jsonRPCResponse{
 		JSONRPC: "2.0",
 		ID:      req.ID,

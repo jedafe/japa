@@ -89,6 +89,7 @@ func (r *Renderer) Render(ctx context.Context, w Widget) (json.RawMessage, error
 		if sidebars.IsValidWidgetType(w.WidgetType) {
 			return configEcho(w.Config), nil
 		}
+
 		return nil, fmt.Errorf("unsupported widget type: %s", w.WidgetType)
 	}
 }
@@ -111,6 +112,7 @@ func configEcho(raw json.RawMessage) json.RawMessage {
 	if v, ok := props["content"].(string); ok {
 		props["content"] = content.SanitizeHTML(v)
 	}
+
 	if v, ok := props["html"].(string); ok {
 		props["html"] = content.SanitizeHTML(v)
 	}

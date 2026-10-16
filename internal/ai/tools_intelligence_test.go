@@ -239,9 +239,11 @@ func TestIntelRecordGetHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	if !strings.Contains(tr.Content, `"extracted"`) || !strings.Contains(tr.Content, "Chevening") {
 		t.Fatalf("expected extracted payload in result, got %s", tr.Content)
 	}
@@ -271,9 +273,11 @@ func TestIntelRecordListHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	if !strings.Contains(tr.Content, `"count":2`) {
 		t.Fatalf("expected 2 records in result, got %s", tr.Content)
 	}
@@ -298,9 +302,11 @@ func TestIntelSourceGetHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	if !strings.Contains(tr.Content, "Example Feed") {
 		t.Fatalf("expected source name in result, got %s", tr.Content)
 	}

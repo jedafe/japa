@@ -346,7 +346,6 @@ var toolCatalog = []toolCatalogDef{
 
 // ListTools returns the catalog of available Japa tools with record counts.
 func (r *agentToolsRegistry) ListTools(ctx context.Context) ([]ai.ToolCatalogEntry, error) {
-
 	entries := make([]ai.ToolCatalogEntry, 0, len(toolCatalog))
 
 	for _, def := range toolCatalog {
@@ -371,7 +370,6 @@ func (r *agentToolsRegistry) ListTools(ctx context.Context) ([]ai.ToolCatalogEnt
 
 // ReadTool reads a single record from a tool table by type + ID.
 func (r *agentToolsRegistry) ReadTool(ctx context.Context, toolType, id string) (map[string]any, error) {
-
 	var idUUID pgtype.UUID
 	if err := idUUID.Scan(id); err != nil {
 		return nil, fmt.Errorf("tools registry: invalid tool_id: %w", err)
@@ -482,27 +480,34 @@ func (r *agentToolsRegistry) ToolTypes() []string {
 // catalog-advertised dead tool.
 func (r *agentToolsRegistry) WritableToolOps() map[string]map[string]bool {
 	out := make(map[string]map[string]bool, len(r.writers))
+
 	for toolType, w := range r.writers {
 		if w == nil {
 			continue
 		}
+
 		ops := map[string]bool{}
 		if w.create != nil {
 			ops["create"] = true
 		}
+
 		if w.update != nil {
 			ops["update"] = true
 		}
+
 		if w.delete != nil {
 			ops["delete"] = true
 		}
+
 		if w.assignGeo != nil {
 			ops["assign_geo"] = true
 		}
+
 		if len(ops) > 0 {
 			out[toolType] = ops
 		}
 	}
+
 	return out
 }
 
@@ -517,7 +522,6 @@ func (r *agentToolsRegistry) findToolWriter(toolType string) (*toolWriter, error
 
 // CreateTool creates a new record in the named tool table.
 func (r *agentToolsRegistry) CreateTool(ctx context.Context, userID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error) {
-
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
 		return nil, err
@@ -532,7 +536,6 @@ func (r *agentToolsRegistry) CreateTool(ctx context.Context, userID pgtype.UUID,
 
 // UpdateTool updates an existing record in the named tool table.
 func (r *agentToolsRegistry) UpdateTool(ctx context.Context, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
-
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
 		return nil, err
@@ -547,7 +550,6 @@ func (r *agentToolsRegistry) UpdateTool(ctx context.Context, userID pgtype.UUID,
 
 // DeleteTool soft-deletes an existing record from the named tool table.
 func (r *agentToolsRegistry) DeleteTool(ctx context.Context, userID pgtype.UUID, toolType, id string) error {
-
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
 		return err
@@ -562,7 +564,6 @@ func (r *agentToolsRegistry) DeleteTool(ctx context.Context, userID pgtype.UUID,
 
 // AssignGeo updates the geo-scoping fields of an existing record in the named tool table.
 func (r *agentToolsRegistry) AssignGeo(ctx context.Context, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
-
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
 		return nil, err

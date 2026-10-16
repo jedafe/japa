@@ -162,6 +162,7 @@ func TestCreateCampaign_HouseRejectsPendingReview(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{}
+
 	_, err := svc.CreateCampaign(t.Context(), pgtype.UUID{}, CreateCampaignInput{
 		Name:         "House fallback",
 		SlotTypeName: "sidebar",
@@ -181,6 +182,7 @@ func TestCreateCampaign_RequiresNameAndSlot(t *testing.T) {
 	if _, err := svc.CreateCampaign(t.Context(), pgtype.UUID{}, CreateCampaignInput{SlotTypeName: "sidebar"}); err == nil {
 		t.Error("expected error for missing name")
 	}
+
 	if _, err := svc.CreateCampaign(t.Context(), pgtype.UUID{}, CreateCampaignInput{Name: "x"}); err == nil {
 		t.Error("expected error for missing slot_type_name")
 	}

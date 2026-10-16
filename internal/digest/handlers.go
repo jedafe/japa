@@ -88,7 +88,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleGetLatest handles GET /digest/latest — latest published digest.
 func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
-
 	var spaceID pgtype.UUID
 	// Accept ?dest= (geo-aware standard) or ?space_id= (legacy alias).
 	destParam := r.URL.Query().Get("dest")
@@ -121,7 +120,6 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /digest/:id — single published digest (public).
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -163,7 +161,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	// Parse filter/sort params.
 	f := AdminListFilter{
-
 		Status: r.URL.Query().Get("status"),
 		Query:  r.URL.Query().Get("q"),
 		Sort:   r.URL.Query().Get("sort"),
@@ -175,6 +172,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if destParam == "" {
 		destParam = r.URL.Query().Get("space_id")
 	}
+
 	if destParam != "" {
 		if err := f.SpaceID.Scan(destParam); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
@@ -254,6 +252,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_content", "Content must be a JSON object")
 			return
 		}
+
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not editable")
 			return

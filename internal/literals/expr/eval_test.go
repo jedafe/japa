@@ -1,7 +1,6 @@
 package expr
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -11,7 +10,7 @@ func TestEvalArithmetic(t *testing.T) {
 
 	n, _ := Parse("2025 + 1")
 
-	v, err := Eval(context.Background(), n, NewEnv(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+	v, err := Eval(t.Context(), n, NewEnv(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +25,7 @@ func TestEvalAdjective(t *testing.T) {
 
 	n, _ := Parse(`adjective("Nigeria")`)
 
-	v, err := Eval(context.Background(), n, NewEnv(time.Now()))
+	v, err := Eval(t.Context(), n, NewEnv(time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +40,7 @@ func TestEvalFormat(t *testing.T) {
 
 	n, _ := Parse(`format(Now, "YYYY")`)
 
-	v, err := Eval(context.Background(), n, NewEnv(time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)))
+	v, err := Eval(t.Context(), n, NewEnv(time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +55,7 @@ func TestEvalStringConcat(t *testing.T) {
 
 	n, _ := Parse(`"Hello" + " " + "World"`)
 
-	v, err := Eval(context.Background(), n, NewEnv(time.Now()))
+	v, err := Eval(t.Context(), n, NewEnv(time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +70,7 @@ func TestEvalNumberStringConcat(t *testing.T) {
 
 	n, _ := Parse(`"Year: " + 2026`)
 
-	v, err := Eval(context.Background(), n, NewEnv(time.Now()))
+	v, err := Eval(t.Context(), n, NewEnv(time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +85,7 @@ func TestEvalLeftAssociativeSubtraction(t *testing.T) {
 
 	n, _ := Parse("10 - 5 - 2")
 
-	v, err := Eval(context.Background(), n, NewEnv(time.Now()))
+	v, err := Eval(t.Context(), n, NewEnv(time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +100,7 @@ func TestEvalIf(t *testing.T) {
 
 	n, _ := Parse(`if(1 == 1, "yes", "no")`)
 
-	v, err := Eval(context.Background(), n, NewEnv(time.Now()))
+	v, err := Eval(t.Context(), n, NewEnv(time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -179,7 +179,7 @@ func (r *runState) detectSubPage(ctx context.Context, page *FetchedPage, out *Re
 // no riskier than the entry request itself, and tests serve fixtures from
 // 127.0.0.1. Named hosts pass here regardless of what they resolve to —
 // the fetcher safetransport's dial-time guard rejects private DNS answers.
-// (intel-channels final review C1d)
+// (intel-channels final review C1d).
 func (r *runState) blockedDiscoveredURL(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -214,6 +214,7 @@ func (r *runState) recheckFeeds(ctx context.Context, out *Report) {
 	for i, feedURL := range out.FeedURLs {
 		if r.blockedDiscoveredURL(feedURL) {
 			dead[feedURL] = true
+
 			out.Warnings = append(out.Warnings,
 				fmt.Sprintf("verify: feed %s targets a private/reserved address; dropped (SSRF)", feedURL))
 
@@ -241,7 +242,7 @@ func (r *runState) recheckFeeds(ctx context.Context, out *Report) {
 			continue
 		}
 
-		if !page.OK() || !(isFeedContent(page.ContentType) || looksLikeFeedBody(page.Body)) {
+		if !page.OK() || (!isFeedContent(page.ContentType) && !looksLikeFeedBody(page.Body)) {
 			dead[feedURL] = true
 
 			continue
@@ -314,6 +315,7 @@ func (r *runState) probeCategoryPaths(ctx context.Context, page *FetchedPage, ou
 		if p == "" || seen[p] {
 			continue
 		}
+
 		seen[p] = true
 
 		candidate := origin + p
@@ -395,6 +397,7 @@ func (r *runState) walkSitemaps(ctx context.Context, page *FetchedPage, maxURLs 
 		if seen[smURL] {
 			continue
 		}
+
 		seen[smURL] = true
 
 		if r.blockedDiscoveredURL(smURL) {
@@ -416,6 +419,7 @@ func (r *runState) walkSitemaps(ctx context.Context, page *FetchedPage, maxURLs 
 		if err != nil || !doc.OK() {
 			continue
 		}
+
 		fetched++
 
 		urls, children := parseSitemapLocs(doc.Body)

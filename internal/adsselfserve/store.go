@@ -88,7 +88,6 @@ func (s *Store) CreateCampaign(ctx context.Context, arg gen.CreateSelfServeAdCam
 // GetCampaign returns a single campaign scoped to the organisation.
 func (s *Store) GetCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
 	campaign, err := s.queries.GetSelfServeAdCampaign(ctx, gen.GetSelfServeAdCampaignParams{
-
 		ID:             campaignID,
 		OrganizationID: orgID,
 	})
@@ -103,7 +102,6 @@ func (s *Store) GetCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) 
 // optionally filtered by status. Pass an empty status string to return all.
 func (s *Store) ListCampaigns(ctx context.Context, orgID pgtype.UUID, status string, limit, offset int32) ([]gen.AdCampaign, error) {
 	rows, err := s.queries.ListOrgAdCampaigns(ctx, gen.ListOrgAdCampaignsParams{
-
 		OrganizationID: orgID,
 		Status:         status,
 		PageLimit:      limit,
@@ -120,7 +118,6 @@ func (s *Store) ListCampaigns(ctx context.Context, orgID pgtype.UUID, status str
 // optionally filtered by status.
 func (s *Store) CountCampaigns(ctx context.Context, orgID pgtype.UUID, status string) (int64, error) {
 	count, err := s.queries.CountOrgAdCampaigns(ctx, gen.CountOrgAdCampaignsParams{
-
 		OrganizationID: orgID,
 		Status:         status,
 	})
@@ -146,7 +143,6 @@ func (s *Store) UpdateCampaignCreative(ctx context.Context, arg gen.UpdateSelfSe
 // PauseCampaign transitions an active campaign to 'paused'.
 func (s *Store) PauseCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
 	campaign, err := s.writeQueries.PauseAdCampaign(ctx, gen.PauseAdCampaignParams{
-
 		ID:             campaignID,
 		OrganizationID: orgID,
 	})
@@ -160,7 +156,6 @@ func (s *Store) PauseCampaign(ctx context.Context, orgID, campaignID pgtype.UUID
 // ResumeCampaign transitions a paused campaign to 'active'.
 func (s *Store) ResumeCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
 	campaign, err := s.writeQueries.ResumeAdCampaign(ctx, gen.ResumeAdCampaignParams{
-
 		ID:             campaignID,
 		OrganizationID: orgID,
 	})
@@ -175,7 +170,6 @@ func (s *Store) ResumeCampaign(ctx context.Context, orgID, campaignID pgtype.UUI
 // scoped to the organisation.
 func (s *Store) GetCampaignStats(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.GetAdCampaignStatsRow, error) {
 	row, err := s.queries.GetAdCampaignStats(ctx, gen.GetAdCampaignStatsParams{
-
 		ID:             campaignID,
 		OrganizationID: orgID,
 	})

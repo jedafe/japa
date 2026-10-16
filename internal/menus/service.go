@@ -311,7 +311,6 @@ func (s *Service) CreateMenuItem(ctx context.Context, input CreateMenuItemInput)
 	}
 
 	return s.store.createMenuItem(ctx, gen.CreateMenuItemParams{
-
 		MenuID:           menuID,
 		ParentID:         parentID,
 		Label:            input.Label,

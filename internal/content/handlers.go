@@ -264,6 +264,7 @@ func isStoryModerator(r *http.Request, userID pgtype.UUID) bool {
 	if resolver == nil {
 		return false
 	}
+
 	return resolver.IsSuperAdmin(r.Context(), userID) ||
 		resolver.HasPermission(r.Context(), userID, "story.verify") ||
 		resolver.HasPermission(r.Context(), userID, "content.edit_any")
@@ -274,6 +275,7 @@ func isStoryModerator(r *http.Request, userID pgtype.UUID) bool {
 func handleServiceError(w http.ResponseWriter, err error) {
 	// §80 wiki-only space types reject community writes with 409.
 	var wikiOnly interface{ WikiOnlySpace() bool }
+
 	switch {
 	case errors.As(err, &wikiOnly):
 		errpkg.WriteError(w, http.StatusConflict, "wiki_only_space",
@@ -946,6 +948,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			allowed = resolver.IsSuperAdmin(r.Context(), user.UserID) ||
 				resolver.HasPermission(r.Context(), user.UserID, "story.create")
 		}
+
 		if !allowed {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden",
 				"You do not have permission to create stories")
@@ -962,25 +965,30 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 				"List creation is currently disabled")
 			return
 		}
+
 		allowed := false
 		if resolver := rbac.FromContext(r.Context()); resolver != nil {
 			allowed = resolver.IsSuperAdmin(r.Context(), user.UserID) ||
 				resolver.HasPermission(r.Context(), user.UserID, "list.create")
 		}
+
 		if !allowed {
 			errpkg.WriteError(w, http.StatusForbidden, "list_permission_required",
 				"You do not have permission to create lists")
 			return
 		}
+
 		maxItems := listDefaultMaxItems
 		if h.settings != nil {
 			maxItems = h.settings.GetIntOr(r.Context(), "list.max_items", listDefaultMaxItems)
 		}
+
 		fv, vErr := validateListFieldValues(input.FieldValues, maxItems)
 		if vErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, vErr.Code, vErr.Message)
 			return
 		}
+
 		input.FieldValues = fv
 	}
 
@@ -1072,7 +1080,9 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 						"This space is wiki-only")
 					return
 				}
+
 				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check space posting permission")
+
 				return
 			}
 
@@ -1227,7 +1237,6 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 // GetContent handles GET /api/v1/content/{slug}.
 func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
@@ -1440,6 +1449,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		if content.SourceTrustLevel != nil {
 			src["trust_level"] = *content.SourceTrustLevel
 		}
+
 		dto["source"] = src
 	}
 
@@ -1476,6 +1486,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		if content.ContentType == TypeList {
 			jsonLd = injectListItemListElements(jsonLd, content.FieldValues)
 		}
+
 		resp["json_ld"] = json.RawMessage(jsonLd)
 	} else if jErr != nil {
 		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", content.ContentType, "error", jErr)
@@ -1528,7 +1539,6 @@ func tsFormat(t pgtype.Timestamptz) string {
 
 // ListContent handles GET /api/v1/content with optional type and space filters.
 func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 
 	var cursor pgtype.Timestamptz
@@ -1604,6 +1614,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 		if sort != "popular" && sort != "roadmap" {
 			sort = ""
 		}
+
 		vctx := visitor.FromContext(r.Context())
 		contents, err = h.Service.ListContentsByType(r.Context(), contentType, guideCategory, cursor, cursorID, offset, limit, sort, vctx, filter)
 	} else if q != "" && h.Service.HasSearcher() {
@@ -1751,11 +1762,13 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		if h.settings != nil {
 			maxItems = h.settings.GetIntOr(r.Context(), "list.max_items", listDefaultMaxItems)
 		}
+
 		fv, vErr := validateListFieldValues(input.FieldValues, maxItems)
 		if vErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, vErr.Code, vErr.Message)
 			return
 		}
+
 		input.FieldValues = fv
 	}
 
@@ -1811,6 +1824,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expected_updated_at", "expected_updated_at must be RFC3339")
 			return
 		}
+
 		updateInput.ExpectedUpdatedAt = parsed
 	}
 
@@ -1840,6 +1854,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		} else {
 			hash = ComputeContentHash(body)
 		}
+
 		updateInput.ContentHash = &hash
 	}
 
@@ -1907,6 +1922,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// are also honoured so those moderators can use the unified composer.
 	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
 		letCanEdit := false
+
 		if resolver := rbac.FromContext(r.Context()); resolver != nil {
 			switch prevContent.ContentType {
 			case "story":
@@ -1915,6 +1931,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 				letCanEdit = resolver.HasPermission(r.Context(), user.UserID, "comparison.edit_any")
 			}
 		}
+
 		if !letCanEdit {
 			errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only edit your own content")
 			return
@@ -1953,12 +1970,14 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 					"This content was modified by someone else. Reload and retry.")
 				return
 			}
+
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"error": map[string]any{"code": "stale_write", "message": "This content was modified by someone else. Reload and retry."},
 				"data":  current,
 			})
+
 			return
 		}
 
@@ -2011,7 +2030,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 // GetAdminContent handles GET /api/v1/admin/content/{id} — returns a single
 // content row for the admin detail view (view slide-over, dashboard deep links).
-// Ref: .jeos/conventions/api-routes-catalog.md (Admin — Content)
+// Ref: .jeos/conventions/api-routes-catalog.md (Admin — Content).
 func (h *Handlers) GetAdminContent(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2114,7 +2133,9 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
+
 		return
 	}
 
@@ -2252,6 +2273,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 		h.enqueueScholarshipSyncFromGuide(id, updated.GuideCategory)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
+
 		return
 	}
 
@@ -2276,7 +2298,6 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 // for deduplication. The country_code is resolved server-side from the
 // client IP via the GeoIP middleware (Section 14 — view tracking).
 func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -2350,7 +2371,6 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 
 // GetContentShareCount handles GET /api/v1/content/{id}/share-count.
 func (h *Handlers) GetContentShareCount(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -2399,7 +2419,6 @@ func (h *Handlers) enqueueScheduledPublish(contentID pgtype.UUID, publishAt time
 // ListRevisions handles GET /api/v1/content/{id}/revisions.
 // Platform-scoped and permission-gated (BUG-012).
 func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -2552,7 +2571,6 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		// this reaction — treat as idempotent success, not a 404.
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-
 				"entity_type":     EntityContent,
 				"entity_id":       contentID,
 				"user_id":         user.UserID,
@@ -2653,7 +2671,6 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 
 // ListReactions handles GET /api/v1/content/{id}/reactions.
 func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
-
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -2705,12 +2722,14 @@ func (h *Handlers) ViewerContentStates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ids := make([]pgtype.UUID, 0, len(parts))
+
 	for _, p := range parts {
 		var id pgtype.UUID
 		if err := id.Scan(strings.TrimSpace(p)); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 			return
 		}
+
 		ids = append(ids, id)
 	}
 
@@ -2787,7 +2806,6 @@ func toJSONLDResponse(t gen.ContentTypeJsonldTemplate) jsonldTemplateResponse {
 
 // ListJSONLDTemplates handles GET /api/v1/content/jsonld-templates.
 func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
-
 	q := r.URL.Query().Get("q")
 
 	templates, err := h.Service.ListJSONLDTemplates(r.Context(), pgtype.Text{String: q, Valid: true})
@@ -2809,7 +2827,6 @@ func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
 
 // UpsertJSONLDTemplate handles PUT /api/v1/content/jsonld-templates.
 func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		ContentType string          `json:"content_type"`
 		Template    json.RawMessage `json:"template"`
@@ -2839,7 +2856,6 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 // It removes a single JSON-LD template by its primary key, scoped to the
 // caller's platform (§21 missing CRUD leg, §26 RBAC CRUD completeness).
 func (h *Handlers) DeleteJSONLDTemplate(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -3303,7 +3319,6 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 
 // GetRelatedContent handles GET /api/v1/content/{id}/related.
 func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
-
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")

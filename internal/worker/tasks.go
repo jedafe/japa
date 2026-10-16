@@ -145,6 +145,7 @@ const (
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
 	TypeScheduledPublishSweep   = "content:publish_sweep"
+	TypeBroadcastDispatch       = "broadcast:dispatch_scheduled" // §35 scheduled admin broadcasts
 	TypeGdprRetentionSweep      = "gdpr:retention_sweep"
 	TypeJceRefreshStale         = "jce:refresh_stale"
 	TypeSubscriptionExpirySweep = "subscription:expiry_sweep" // §17 webhook-miss safety net
@@ -293,6 +294,7 @@ var handlerRegistry = []struct {
 	{TypeWikiSeedAttractions, HandleWikiSeedAttractions},
 	// Periodic sweep handlers
 	{TypeScheduledPublishSweep, HandleScheduledPublishSweep},
+	{TypeBroadcastDispatch, HandleBroadcastDispatchScheduled},
 	{TypeGdprRetentionSweep, HandleGdprRetentionSweep},
 	{TypeOnboardingReminderSweep, HandleOnboardingReminderSweep},
 	{TypeJceRefreshStale, HandleJceRefreshStale},

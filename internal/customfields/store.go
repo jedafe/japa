@@ -102,7 +102,6 @@ func (s *Service) GetFieldGroupBySlug(ctx context.Context, slug string) (gen.Cus
 // seeded at install time; set isSystem to false for platform-created groups.
 func (s *Service) CreateFieldGroup(ctx context.Context, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error) {
 	group, err := s.write.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-
 		Name:        name,
 		Slug:        slug,
 		Description: description,
@@ -169,6 +168,7 @@ func (s *Service) DeleteFieldGroup(ctx context.Context, id pgtype.UUID, force bo
 		if errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "23001") {
 			return fmt.Errorf("%w: field group is still referenced by %s", errpkg.ErrInUse, pgErr.TableName)
 		}
+
 		return fmt.Errorf("deleting custom field group: %w", err)
 	}
 
@@ -356,7 +356,6 @@ func (s *Service) GetFieldValue(ctx context.Context, fieldID pgtype.UUID, entity
 // zero-value UUID would yield no rows.
 func (s *Service) ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error) {
 	values, err := s.read.ListCustomFieldValuesByEntity(ctx, gen.ListCustomFieldValuesByEntityParams{
-
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -499,12 +498,14 @@ func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.
 // downstream.
 func uuidsFromStrings(ids []string) []pgtype.UUID {
 	result := make([]pgtype.UUID, 0, len(ids))
+
 	for _, idStr := range ids {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err == nil {
 			result = append(result, id)
 		}
 	}
+
 	return result
 }
 
@@ -638,6 +639,7 @@ func (s *Service) ValidateFieldValueWriteForUser(ctx context.Context, fieldID, u
 		if pErr != nil {
 			return pErr
 		}
+
 		if !canEdit {
 			return fmt.Errorf("%w (field %s)", ErrFieldNotEditable, field.Key)
 		}
@@ -652,6 +654,7 @@ func (s *Service) ValidateFieldValueWriteForUser(ctx context.Context, fieldID, u
 		hasJSON := len(params.ValueJson) > 0 && string(params.ValueJson) != "null"
 
 		wrongCol := false
+
 		switch expectedCol {
 		case "value_text":
 			wrongCol = hasNumber || hasBool || hasDate || hasJSON
@@ -664,6 +667,7 @@ func (s *Service) ValidateFieldValueWriteForUser(ctx context.Context, fieldID, u
 		case "value_json":
 			wrongCol = hasText || hasNumber || hasBool || hasDate
 		}
+
 		if wrongCol {
 			return fmt.Errorf("%w: field type %q writes to %s — received a value for a different column", ErrInvalidFieldValue, field.FieldType, expectedCol)
 		}
@@ -817,7 +821,6 @@ func (s *Service) CreateFormWithFields(ctx context.Context, spaceID pgtype.UUID,
 	return db.WithTxResult(ctx, s.pool, func(q *gen.Queries) (gen.CreateFormRow, error) {
 		// 1. Create the form
 		form, err := q.CreateForm(ctx, gen.CreateFormParams{
-
 			SpaceID:     spaceID,
 			Name:        name,
 			Slug:        slug,
@@ -833,7 +836,6 @@ func (s *Service) CreateFormWithFields(ctx context.Context, spaceID pgtype.UUID,
 		groupSlug := "form-" + slug
 
 		group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-
 			Name:     "Form: " + name,
 			Slug:     groupSlug,
 			IsSystem: false,
@@ -940,7 +942,6 @@ func (s *Service) EnsureFormGroup(ctx context.Context, formID pgtype.UUID, formN
 	groupSlug := "form-" + formSlug
 
 	group, err := s.write.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-
 		Name:     "Form: " + formName,
 		Slug:     groupSlug,
 		IsSystem: false,
@@ -1046,7 +1047,6 @@ func (s *Service) CreateFormStep(ctx context.Context, formSlug string, params ge
 
 		// Create a backing field group for this step.
 		group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-
 			Name:     "Form step: " + params.Title,
 			Slug:     "form-" + formSlug + "-step-" + strconv.Itoa(int(params.Position)),
 			IsSystem: false,
@@ -1266,6 +1266,7 @@ func (s *Service) ReorderFormTriggers(ctx context.Context, formID pgtype.UUID, t
 				return fmt.Errorf("reordering form submission triggers (temp) at index %d: %w", i, err)
 			}
 		}
+
 		for i, id := range triggerIDs {
 			if err := q.UpdateFormSubmissionTriggerPosition(ctx, gen.UpdateFormSubmissionTriggerPositionParams{
 				ID:       id,

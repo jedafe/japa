@@ -12,6 +12,7 @@ func (h *Handlers) GetDigest(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	keyCtx := APIKeyFromContext(r.Context())
 
 	digest, err := h.Service.Digest(r.Context(), keyCtx.UserID)

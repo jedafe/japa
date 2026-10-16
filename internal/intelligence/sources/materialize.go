@@ -99,6 +99,7 @@ func resolveChannelMapForMethod(method CrawlMethod, resolved ResolvedMap) (entit
 		if len(m.EntityTypes) > 0 {
 			entityTypes = m.EntityTypes
 		}
+
 		if m.Pipeline.IsValid() {
 			pipeline = m.Pipeline
 		}
@@ -116,6 +117,7 @@ func channelPipelineForMethod(method CrawlMethod, resolved ResolvedMap) Pipeline
 	if platformProbeMethods[method] {
 		return defaultChannelPipeline(method)
 	}
+
 	if _, pipeline := resolveChannelMapForMethod(method, resolved); pipeline.IsValid() {
 		return pipeline
 	}
@@ -129,6 +131,7 @@ func sourceCategories(src Source) []string {
 	if len(src.Categories) > 0 {
 		return src.Categories
 	}
+
 	if src.Category != "" {
 		return []string{src.Category}
 	}
@@ -167,6 +170,7 @@ func (s *Service) MaterializeChannels(ctx context.Context, sourceID SourceID, pr
 		arg, skipReason := materializeProposal(sourceID, prop, resolved)
 		if skipReason != "" {
 			skipped++
+
 			slog.Debug("sources: materialize channels: proposal skipped",
 				"source_id", sourceID.String(), "reason", skipReason,
 				"entry_url", prop.EntryURL, "method", prop.CrawlMethod)
@@ -183,6 +187,7 @@ func (s *Service) MaterializeChannels(ctx context.Context, sourceID SourceID, pr
 			case errors.Is(err, errpkg.ErrInvalid), errors.Is(err, errpkg.ErrRequired):
 				// A proposal defect — skip it rather than failing the batch.
 				skipped++
+
 				slog.Warn("sources: materialize channels: proposal rejected",
 					"source_id", sourceID.String(), "entry_url", prop.EntryURL,
 					"method", prop.CrawlMethod, "error", err)
@@ -219,6 +224,7 @@ func (s *Service) materializeFallbackChannel(ctx context.Context, src Source, re
 			"source_id", src.ID.String(), "error", err)
 		return 0
 	}
+
 	if len(channels) > 0 {
 		return 0 // channels exist — re-probe dedupe, not a dead source
 	}
@@ -304,9 +310,11 @@ func materializeProposal(sourceID SourceID, prop ChannelProposalInput, resolved 
 			entityTypes = m.EntityTypes
 		}
 	}
+
 	if len(entityTypes) == 0 {
 		entityTypes = resolved.EntityTypes
 	}
+
 	if pipelineRequiresEntityTypes(pipeline) && len(entityTypes) == 0 {
 		return gen.CreateIntelSourceChannelParams{}, "entity_types empty after category-map fill"
 	}

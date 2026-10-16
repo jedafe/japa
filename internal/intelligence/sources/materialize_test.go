@@ -36,6 +36,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("channel_sync is routed away", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.CrawlMethod = "channel_sync"
 
@@ -46,6 +47,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("unknown method skipped", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.CrawlMethod = "telepathy"
 
@@ -62,18 +64,23 @@ func TestMaterializeProposal(t *testing.T) {
 		if reason != "" {
 			t.Fatalf("skip reason = %q, want none", reason)
 		}
+
 		if arg.Origin != "probe" {
 			t.Errorf("origin = %q, want probe", arg.Origin)
 		}
+
 		if arg.RelevanceMode != "filtered" {
 			t.Errorf("relevance_mode = %q, want filtered", arg.RelevanceMode)
 		}
+
 		if !arg.Enabled {
 			t.Error("enabled = false, want true")
 		}
+
 		if arg.SourceID != sourceID {
 			t.Errorf("source_id = %v, want %v", arg.SourceID, sourceID)
 		}
+
 		if !slices.Equal(arg.RelevanceTopics, []string{"migration"}) {
 			t.Errorf("relevance_topics = %v, want proposal's topics", arg.RelevanceTopics)
 		}
@@ -81,6 +88,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("empty entity_types fill from nominating categories", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.EntityTypes = nil
 
@@ -98,6 +106,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("unfillable entity_types skip record pipelines", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal() // pipeline=curate requires entity types
 		prop.EntityTypes = nil
 
@@ -110,6 +119,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("empty pipeline resolves from nominating category", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.Pipeline = ""
 
@@ -124,6 +134,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("method nominated by an extract category extracts", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.CrawlMethod = "api" // nominated by job (extract) on [job, news]
 		prop.EntityTypes = nil
@@ -133,6 +144,7 @@ func TestMaterializeProposal(t *testing.T) {
 		if arg.Pipeline != "extract" {
 			t.Errorf("pipeline = %q, want extract (job nominates api)", arg.Pipeline)
 		}
+
 		if !slices.Equal(arg.EntityTypes, []string{"job"}) {
 			t.Errorf("entity_types = %v, want [job]", arg.EntityTypes)
 		}
@@ -140,6 +152,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("method nominated by both categories merges", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.CrawlMethod = "jsonld" // nominated by job AND news on [job, news]
 		prop.EntityTypes = nil
@@ -149,6 +162,7 @@ func TestMaterializeProposal(t *testing.T) {
 		if arg.Pipeline != "extract" {
 			t.Errorf("pipeline = %q, want extract (any extract nominator wins)", arg.Pipeline)
 		}
+
 		if !slices.Equal(arg.EntityTypes, []string{"job", "news"}) {
 			t.Errorf("entity_types = %v, want [job news]", arg.EntityTypes)
 		}
@@ -156,6 +170,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("platform method uses method default pipeline + no topics", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.CrawlMethod = "social"
 		prop.Pipeline = ""
@@ -166,6 +181,7 @@ func TestMaterializeProposal(t *testing.T) {
 		if arg.Pipeline != "curate" {
 			t.Errorf("pipeline = %q, want curate (method default, not resolved extract)", arg.Pipeline)
 		}
+
 		if len(arg.RelevanceTopics) != 0 {
 			t.Errorf("relevance_topics = %v, want empty for platform method", arg.RelevanceTopics)
 		}
@@ -173,6 +189,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("category method falls back to resolved topics", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.RelevanceTopics = nil
 
@@ -184,6 +201,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("empty label falls back to method name", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.Label = ""
 
@@ -195,6 +213,7 @@ func TestMaterializeProposal(t *testing.T) {
 
 	t.Run("inbound webhook created enabled", func(t *testing.T) {
 		t.Parallel()
+
 		prop := rssProposal()
 		prop.CrawlMethod = "webhook"
 		prop.EntryURL = "https://example.com/topic"
@@ -204,6 +223,7 @@ func TestMaterializeProposal(t *testing.T) {
 		if reason != "" {
 			t.Fatalf("skip reason = %q, want none", reason)
 		}
+
 		if !arg.Enabled {
 			t.Error("inbound channel must be created enabled (never scheduled)")
 		}
@@ -221,9 +241,11 @@ func TestStampProbeConfidence(t *testing.T) {
 	if err := json.Unmarshal(got, &m); err != nil {
 		t.Fatalf("stamped config unparseable: %v", err)
 	}
+
 	if m["hub"] != "https://hub.example" {
 		t.Errorf("existing key lost: %v", m)
 	}
+
 	if m["probe_confidence"] != 0.8 {
 		t.Errorf("probe_confidence = %v, want 0.8", m["probe_confidence"])
 	}
@@ -279,6 +301,7 @@ func TestMaterializeChannels_Dedupe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create source: %v", err)
 	}
+
 	defer func() { _ = store.Delete(ctx, src.ID) }()
 
 	proposals := []ChannelProposalInput{
@@ -311,6 +334,7 @@ func TestMaterializeChannels_Dedupe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MaterializeChannels: %v", err)
 	}
+
 	if created != 2 || skipped != 1 {
 		t.Fatalf("created=%d skipped=%d, want 2/1", created, skipped)
 	}
@@ -319,13 +343,16 @@ func TestMaterializeChannels_Dedupe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list channels: %v", err)
 	}
+
 	if len(channels) != 2 {
 		t.Fatalf("channels = %d, want 2", len(channels))
 	}
+
 	for _, ch := range channels {
 		if ch.Origin != "probe" {
 			t.Errorf("channel %s origin = %q, want probe", ch.Label, ch.Origin)
 		}
+
 		if ch.RelevanceMode != "filtered" {
 			t.Errorf("channel %s relevance_mode = %q, want filtered", ch.Label, ch.RelevanceMode)
 		}
@@ -337,6 +364,7 @@ func TestMaterializeChannels_Dedupe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MaterializeChannels re-run: %v", err)
 	}
+
 	if created != 0 || skipped != 3 {
 		t.Fatalf("re-run created=%d skipped=%d, want 0/3", created, skipped)
 	}

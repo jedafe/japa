@@ -136,7 +136,6 @@ func (s *Store) Apply(ctx context.Context, userID pgtype.UUID, in ApplyInput) (g
 	}
 
 	row, err := s.write.UpsertInstructorApplication(ctx, gen.UpsertInstructorApplicationParams{
-
 		UserID:          userID,
 		DisplayName:     in.DisplayName,
 		Headline:        in.Headline,
@@ -208,7 +207,6 @@ func (s *Store) CountByStatus(ctx context.Context, status string, spaceID pgtype
 // UpdateSelf updates creator-editable fields on the caller's own profile.
 func (s *Store) UpdateSelf(ctx context.Context, userID pgtype.UUID, in UpdateSelfInput) (gen.AcademyInstructorProfile, error) {
 	return s.write.UpdateInstructorProfileSelf(ctx, gen.UpdateInstructorProfileSelfParams{
-
 		UserID:       userID,
 		DisplayName:  in.DisplayName,
 		Headline:     in.Headline,
@@ -792,7 +790,6 @@ type ListRevenueSplitsFilter struct {
 // revenue-split audit records with optional filters (ADR-063 §9).
 func (s *Store) ListRevenueSplits(ctx context.Context, f ListRevenueSplitsFilter, limit, offset int32) ([]gen.ListRevenueSplitsRow, error) {
 	return s.read.ListRevenueSplits(ctx, gen.ListRevenueSplitsParams{
-
 		InstructorID: f.InstructorID,
 		TrackID:      f.TrackID,
 		Source:       f.Source,
@@ -809,7 +806,6 @@ func (s *Store) ListRevenueSplits(ctx context.Context, f ListRevenueSplitsFilter
 // ListRevenueSplits, for the pagination meta envelope (ADR-063 §9).
 func (s *Store) CountRevenueSplits(ctx context.Context, f ListRevenueSplitsFilter) (int64, error) {
 	return s.read.CountRevenueSplits(ctx, gen.CountRevenueSplitsParams{
-
 		InstructorID: f.InstructorID,
 		TrackID:      f.TrackID,
 		Source:       f.Source,

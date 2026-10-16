@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"strconv"
 	"context"
 	"encoding/json"
 	"errors"
@@ -81,6 +82,7 @@ func intelWebSubSubscribe(ctx context.Context, raw []byte) error {
 		slog.Warn("task:intel:websub: dependencies not wired, skipping")
 		return nil
 	}
+
 	if intelSiteURL == "" {
 		slog.Warn("task:intel:websub: site URL not configured, skipping")
 		return nil
@@ -90,6 +92,7 @@ func intelWebSubSubscribe(ctx context.Context, raw []byte) error {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return fmt.Errorf("task:intel:websub: payload: %w", err)
 	}
+
 	channelID, err := scanUUID(p.ChannelID)
 	if err != nil {
 		return fmt.Errorf("task:intel:websub: channel_id: %w", err)
@@ -101,8 +104,10 @@ func intelWebSubSubscribe(ctx context.Context, raw []byte) error {
 			slog.Info("task:intel:websub: channel gone, ending chain", "channel_id", p.ChannelID)
 			return nil
 		}
+
 		return fmt.Errorf("task:intel:websub: load channel: %w", err)
 	}
+
 	if !ch.Enabled || ch.CrawlMethod != string(sources.CrawlMethodWebhook) {
 		slog.Info("task:intel:websub: channel disabled or repurposed, ending chain", "channel_id", p.ChannelID, "method", ch.CrawlMethod)
 		return nil
@@ -114,19 +119,23 @@ func intelWebSubSubscribe(ctx context.Context, raw []byte) error {
 		Secret       string `json:"secret"`
 		LeaseSeconds int64  `json:"lease_seconds"`
 	}
+
 	if err := json.Unmarshal(ch.ProviderConfig, &cfg); err != nil {
 		return fmt.Errorf("task:intel:websub: provider_config: %w", err)
 	}
+
 	if cfg.Hub == "" || cfg.Topic == "" {
 		slog.Info("task:intel:websub: channel missing hub/topic, skipping", "channel_id", ch.ID.String())
 		return nil
 	}
+
 	if u, perr := url.Parse(cfg.Hub); perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		slog.Warn("task:intel:websub: invalid hub URL, skipping", "channel_id", ch.ID.String(), "hub", cfg.Hub)
 		return nil
 	}
 
 	callback := fmt.Sprintf("%s/api/v1/intel/inbound/websub/%s", intelSiteURL, ch.ID.String())
+
 	leaseSecs := cfg.LeaseSeconds
 	if leaseSecs <= 0 {
 		leaseSecs = 864000 // 10 days — the common hub default
@@ -136,7 +145,7 @@ func intelWebSubSubscribe(ctx context.Context, raw []byte) error {
 		"hub.callback":      {callback},
 		"hub.mode":          {"subscribe"},
 		"hub.topic":         {cfg.Topic},
-		"hub.lease_seconds": {fmt.Sprintf("%d", leaseSecs)},
+		"hub.lease_seconds": {strconv.FormatInt(leaseSecs, 10)},
 	}
 	if cfg.Secret != "" {
 		form.Set("hub.secret", cfg.Secret)
@@ -146,12 +155,14 @@ func intelWebSubSubscribe(ctx context.Context, raw []byte) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:websub: build hub request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := webSubHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("task:intel:websub: hub request: %w", err)
 	}
+
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 

@@ -1,7 +1,6 @@
 package rag
 
 import (
-	"context"
 	"errors"
 	"os"
 	"testing"
@@ -20,10 +19,11 @@ func TestIndexFailureRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
+
 	t.Cleanup(database.Writer.Close)
 	t.Cleanup(database.Reader.Close)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewStore(database)
 
 	var entityID pgtype.UUID
@@ -32,7 +32,7 @@ func TestIndexFailureRoundtrip(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		_ = store.ClearIndexFailures(context.Background(), "")
+		_ = store.ClearIndexFailures(t.Context(), "")
 	})
 
 	if err := store.RecordIndexFailure(ctx, "space", entityID, "index", errors.New("smoke failure")); err != nil {
@@ -45,14 +45,17 @@ func TestIndexFailureRoundtrip(t *testing.T) {
 	}
 
 	found := false
+
 	for _, f := range failures {
 		if f.EntityID == entityID.String() && f.EntityType == "space" && f.Operation == "index" {
 			found = true
+
 			if f.Error != "smoke failure" {
 				t.Errorf("failure error = %q, want %q", f.Error, "smoke failure")
 			}
 		}
 	}
+
 	if !found {
 		t.Fatal("recorded failure not found in ListIndexFailures")
 	}
@@ -61,6 +64,7 @@ func TestIndexFailureRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CountIndexFailures24h: %v", err)
 	}
+
 	if n < 1 {
 		t.Errorf("CountIndexFailures24h = %d, want >= 1", n)
 	}
@@ -73,6 +77,7 @@ func TestIndexFailureRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListIndexFailures after clear: %v", err)
 	}
+
 	for _, f := range failures {
 		if f.EntityID == entityID.String() {
 			t.Fatal("failure row still present after ClearIndexFailure")

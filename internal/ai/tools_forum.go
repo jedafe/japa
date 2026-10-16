@@ -27,6 +27,7 @@
 package ai
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -53,16 +54,20 @@ func bodyToTipTap(raw json.RawMessage) ([]byte, error) {
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil, fmt.Errorf("body is not valid JSON: %w", err)
 	}
+
 	if _, isObj := probe.(map[string]any); isObj {
 		return raw, nil
 	}
+
 	if _, isArr := probe.([]any); isArr {
 		return []byte(fmt.Sprintf(`{"type":"doc","content":%s}`, raw)), nil
 	}
+
 	if s, isStr := probe.(string); isStr {
 		return tiptapFromText(s), nil
 	}
-	return nil, fmt.Errorf("body must be a string or TipTap JSON object")
+
+	return nil, errors.New("body must be a string or TipTap JSON object")
 }
 
 // tiptapFromText wraps plain text in a minimal TipTap document. Newlines
@@ -72,10 +77,12 @@ func tiptapFromText(s string) []byte {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}
+
 	type para struct {
 		Type    string     `json:"type"`
 		Content []textNode `json:"content,omitempty"`
 	}
+
 	type doc struct {
 		Type    string `json:"type"`
 		Content []para `json:"content"`
@@ -83,16 +90,19 @@ func tiptapFromText(s string) []byte {
 
 	d := doc{Type: "doc"}
 	start := 0
+
 	for i := 0; i <= len(s); i++ {
 		if i == len(s) || s[i] == '\n' {
 			p := para{Type: "paragraph"}
 			if line := s[start:i]; line != "" {
 				p.Content = []textNode{{Type: "text", Text: line}}
 			}
+
 			d.Content = append(d.Content, p)
 			start = i + 1
 		}
 	}
+
 	if len(d.Content) == 0 {
 		d.Content = []para{{Type: "paragraph"}}
 	}
@@ -101,6 +111,7 @@ func tiptapFromText(s string) []byte {
 	if err != nil {
 		return []byte(`{"type":"doc","content":[{"type":"paragraph"}]}`)
 	}
+
 	return b
 }
 
@@ -167,31 +178,39 @@ func ForumThreadsListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		var cursor pgtype.Timestamptz
+
 		if a.Cursor != "" {
 			ts, err := time.Parse(time.RFC3339, a.Cursor)
 			if err != nil {
 				return errorToolResult("invalid_cursor", "cursor must be an RFC3339 timestamp"), nil
 			}
+
 			cursor = pgtype.Timestamptz{Time: ts, Valid: true}
 		}
 
 		var threads []gen.ForumThread
+
 		var err error
+
 		if a.SpaceID != "" {
 			spaceID, scanErr := scanUUID(a.SpaceID)
 			if scanErr != nil {
 				return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
 			}
+
 			threads, err = deps.Forum.ListThreadsBySpace(ctx, spaceID, cursor, limit)
 		} else {
 			threads, err = deps.Forum.ListThreadsByPlatform(ctx, cursor, limit)
 		}
+
 		if err != nil {
 			return errorToolResult("forum_list_failed", err.Error()), nil
 		}
 
 		out := make([]map[string]any, 0, len(threads))
+
 		var nextCursor string
+
 		for _, t := range threads {
 			out = append(out, forumThreadToMap(t))
 			nextCursor = t.CreatedAt.Time.UTC().Format(time.RFC3339)
@@ -230,19 +249,23 @@ func ForumThreadsReadHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		var thread gen.ForumThread
+
 		var err error
+
 		switch {
 		case a.ThreadID != "":
 			id, scanErr := scanUUID(a.ThreadID)
 			if scanErr != nil {
 				return errorToolResult("invalid_thread_id", "thread_id is not a valid UUID"), nil
 			}
+
 			thread, err = deps.Forum.GetThread(ctx, id)
 		case a.Slug != "":
 			thread, err = deps.Forum.GetThreadBySlug(ctx, a.Slug)
 		default:
 			return errorToolResult("missing_identifier", "one of thread_id or slug is required"), nil
 		}
+
 		if err != nil {
 			return errorToolResult("thread_not_found", fmt.Sprintf("thread not found: %v", err)), nil
 		}
@@ -255,12 +278,15 @@ func ForumThreadsReadHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("replies_list_failed", err.Error()), nil
 			}
+
 			out := make([]map[string]any, 0, len(replies))
+
 			for _, r := range replies {
 				rm := forumReplyToMap(r)
 				rm["body"] = json.RawMessage(r.Body)
 				out = append(out, rm)
 			}
+
 			m["replies"] = out
 		}
 
@@ -300,6 +326,7 @@ func ForumThreadsCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Title == "" {
 			return errorToolResult("missing_title", "title is required"), nil
 		}
@@ -311,13 +338,16 @@ func ForumThreadsCreateHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
 			}
+
 			in.SpaceID = id
 		}
+
 		if a.ContentID != "" {
 			id, err := scanUUID(a.ContentID)
 			if err != nil {
 				return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
 			}
+
 			in.ContentID = id
 		}
 
@@ -325,6 +355,7 @@ func ForumThreadsCreateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_body", err.Error()), nil
 		}
+
 		in.Body = body
 
 		if a.Poll != nil {
@@ -332,16 +363,20 @@ func ForumThreadsCreateHandler(deps *ToolDeps) ToolHandler {
 				Question:      a.Poll.Question,
 				IsMultiSelect: a.Poll.IsMultiSelect,
 			}
+
 			if a.Poll.CloseAt != "" {
 				ts, err := time.Parse(time.RFC3339, a.Poll.CloseAt)
 				if err != nil {
 					return errorToolResult("invalid_poll_close_at", "poll.close_at must be an RFC3339 timestamp"), nil
 				}
+
 				p.CloseAt = pgtype.Timestamptz{Time: ts, Valid: true}
 			}
+
 			for i, label := range a.Poll.Options {
 				p.Options = append(p.Options, ForumPollOptionInput{Label: label, Position: int32(i)}) //nolint:gosec // bounded by validatePollInput
 			}
+
 			in.Poll = p
 		}
 
@@ -352,6 +387,7 @@ func ForumThreadsCreateHandler(deps *ToolDeps) ToolHandler {
 
 		m := forumThreadToMap(thread)
 		m["body"] = json.RawMessage(thread.Body)
+
 		return successToolResult(m), nil
 	}
 }
@@ -379,6 +415,7 @@ func ForumThreadsUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		id, err := scanUUID(a.ThreadID)
 		if err != nil {
 			return errorToolResult("invalid_thread_id", "thread_id is not a valid UUID"), nil
@@ -396,6 +433,7 @@ func ForumThreadsUpdateHandler(deps *ToolDeps) ToolHandler {
 
 		m := forumThreadToMap(thread)
 		m["body"] = json.RawMessage(thread.Body)
+
 		return successToolResult(m), nil
 	}
 }
@@ -412,9 +450,11 @@ func ForumThreadsDeleteHandler(deps *ToolDeps) ToolHandler {
 		var a struct {
 			ThreadID string `json:"thread_id"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		id, err := scanUUID(a.ThreadID)
 		if err != nil {
 			return errorToolResult("invalid_thread_id", "thread_id is not a valid UUID"), nil
@@ -423,6 +463,7 @@ func ForumThreadsDeleteHandler(deps *ToolDeps) ToolHandler {
 		if err := deps.Forum.DeleteThread(ctx, id, userID); err != nil {
 			return errorToolResult("thread_delete_failed", err.Error()), nil
 		}
+
 		return successToolResult(map[string]any{"deleted": true, "thread_id": a.ThreadID}), nil
 	}
 }
@@ -444,9 +485,11 @@ func ForumThreadsSolveHandler(deps *ToolDeps) ToolHandler {
 			AcceptedReplyID string `json:"accepted_reply_id,omitempty"`
 			Unsolve         bool   `json:"unsolve,omitempty"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		id, err := scanUUID(a.ThreadID)
 		if err != nil {
 			return errorToolResult("invalid_thread_id", "thread_id is not a valid UUID"), nil
@@ -456,6 +499,7 @@ func ForumThreadsSolveHandler(deps *ToolDeps) ToolHandler {
 			if err := deps.Forum.UnsolveThread(ctx, id, userID); err != nil {
 				return errorToolResult("thread_unsolve_failed", err.Error()), nil
 			}
+
 			return successToolResult(map[string]any{"solved": false, "thread_id": a.ThreadID}), nil
 		}
 
@@ -470,6 +514,7 @@ func ForumThreadsSolveHandler(deps *ToolDeps) ToolHandler {
 		if err := deps.Forum.SolveThread(ctx, id, userID, replyID); err != nil {
 			return errorToolResult("thread_solve_failed", err.Error()), nil
 		}
+
 		return successToolResult(map[string]any{"solved": true, "thread_id": a.ThreadID}), nil
 	}
 }
@@ -488,9 +533,11 @@ func ForumRepliesListHandler(deps *ToolDeps) ToolHandler {
 		var a struct {
 			ThreadID string `json:"thread_id"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		threadID, err := scanUUID(a.ThreadID)
 		if err != nil {
 			return errorToolResult("invalid_thread_id", "thread_id is not a valid UUID"), nil
@@ -500,12 +547,15 @@ func ForumRepliesListHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("replies_list_failed", err.Error()), nil
 		}
+
 		out := make([]map[string]any, 0, len(replies))
+
 		for _, r := range replies {
 			rm := forumReplyToMap(r)
 			rm["body"] = json.RawMessage(r.Body)
 			out = append(out, rm)
 		}
+
 		return successToolResult(map[string]any{"replies": out, "count": len(out)}), nil
 	}
 }
@@ -529,17 +579,20 @@ func ForumRepliesCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		threadID, err := scanUUID(a.ThreadID)
 		if err != nil {
 			return errorToolResult("invalid_thread_id", "thread_id is not a valid UUID"), nil
 		}
 
 		in := ForumReplyInput{IsAnonymous: a.IsAnonymous}
+
 		if a.ParentReplyID != "" {
 			id, err := scanUUID(a.ParentReplyID)
 			if err != nil {
 				return errorToolResult("invalid_parent_reply_id", "parent_reply_id is not a valid UUID"), nil
 			}
+
 			in.ParentReplyID = id
 		}
 
@@ -547,6 +600,7 @@ func ForumRepliesCreateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_body", err.Error()), nil
 		}
+
 		in.Body = body
 
 		reply, err := deps.Forum.CreateReply(ctx, threadID, userID, in)
@@ -556,6 +610,7 @@ func ForumRepliesCreateHandler(deps *ToolDeps) ToolHandler {
 
 		m := forumReplyToMap(reply)
 		m["body"] = json.RawMessage(reply.Body)
+
 		return successToolResult(m), nil
 	}
 }
@@ -572,9 +627,11 @@ func ForumRepliesUpdateHandler(deps *ToolDeps) ToolHandler {
 			ReplyID string          `json:"reply_id"`
 			Body    json.RawMessage `json:"body"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		id, err := scanUUID(a.ReplyID)
 		if err != nil {
 			return errorToolResult("invalid_reply_id", "reply_id is not a valid UUID"), nil
@@ -589,8 +646,10 @@ func ForumRepliesUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("reply_update_failed", err.Error()), nil
 		}
+
 		m := forumReplyToMap(reply)
 		m["body"] = json.RawMessage(reply.Body)
+
 		return successToolResult(m), nil
 	}
 }
@@ -606,9 +665,11 @@ func ForumRepliesDeleteHandler(deps *ToolDeps) ToolHandler {
 		var a struct {
 			ReplyID string `json:"reply_id"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		id, err := scanUUID(a.ReplyID)
 		if err != nil {
 			return errorToolResult("invalid_reply_id", "reply_id is not a valid UUID"), nil
@@ -617,6 +678,7 @@ func ForumRepliesDeleteHandler(deps *ToolDeps) ToolHandler {
 		if err := deps.Forum.DeleteReply(ctx, id, userID); err != nil {
 			return errorToolResult("reply_delete_failed", err.Error()), nil
 		}
+
 		return successToolResult(map[string]any{"deleted": true, "reply_id": a.ReplyID}), nil
 	}
 }
@@ -638,9 +700,11 @@ func ForumVoteHandler(deps *ToolDeps) ToolHandler {
 			EntityID   string `json:"entity_id"`
 			Value      int16  `json:"value"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		id, err := scanUUID(a.EntityID)
 		if err != nil {
 			return errorToolResult("invalid_entity_id", "entity_id is not a valid UUID"), nil
@@ -650,8 +714,10 @@ func ForumVoteHandler(deps *ToolDeps) ToolHandler {
 			if err := deps.Forum.RemoveVote(ctx, userID, a.EntityType, id); err != nil {
 				return errorToolResult("vote_remove_failed", err.Error()), nil
 			}
+
 			return successToolResult(map[string]any{"voted": false, "entity_type": a.EntityType, "entity_id": a.EntityID}), nil
 		}
+
 		if a.Value != 1 && a.Value != -1 {
 			return errorToolResult("invalid_vote_value", "value must be 1 (up), -1 (down), or 0 (remove)"), nil
 		}
@@ -660,6 +726,7 @@ func ForumVoteHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("vote_failed", err.Error()), nil
 		}
+
 		return successToolResult(map[string]any{
 			"voted":       true,
 			"vote_id":     uuidString(vote.ID),

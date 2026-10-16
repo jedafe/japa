@@ -131,9 +131,11 @@ func scanUUID(s string) (pgtype.UUID, bool) {
 	if strings.TrimSpace(s) == "" {
 		return id, false
 	}
+
 	if err := id.Scan(s); err != nil {
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -141,7 +143,9 @@ func uuidString(id pgtype.UUID) string {
 	if !id.Valid {
 		return ""
 	}
+
 	b, _ := id.MarshalJSON()
+
 	return strings.Trim(string(b), `"`)
 }
 
@@ -151,6 +155,7 @@ func nullableTime(t pgtype.Timestamptz) any {
 	if !t.Valid {
 		return nil
 	}
+
 	return t.Time
 }
 
@@ -158,10 +163,12 @@ func numericString(n pgtype.Numeric) any {
 	if !n.Valid {
 		return nil
 	}
+
 	f, err := n.Float64Value()
 	if err != nil {
 		return nil
 	}
+
 	return f.Float64
 }
 
@@ -227,19 +234,22 @@ func catalogToJSON(c CourseCatalog) map[string]any {
 
 // ListUniversityCourses handles GET /api/v1/universities/{slug}/courses —
 // published course offerings at a university, paginated. Honors
-// ?q=&degree_type=&page=&limit= per Section 39. [public]
+// ?q=&degree_type=&page=&limit= per Section 39. [public].
 func (h *Handlers) ListUniversityCourses(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
+
 	space, ok := h.resolveUniversitySpace(w, r, slug)
 	if !ok {
 		return
 	}
 
 	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+
 	limit := parseIntDefault(r.URL.Query().Get("limit"), 25)
 	if limit < 1 || limit > 100 {
 		limit = 25
 	}
+
 	if page < 1 {
 		page = 1
 	}
@@ -281,7 +291,7 @@ func (h *Handlers) ListUniversityCourses(w http.ResponseWriter, r *http.Request)
 // GetUniversityCourse handles
 // GET /api/v1/universities/{slug}/courses/{offeringSlug} — a single published
 // offering scoped to its university. The nested route is canonical: an
-// offering requested under a different university slug returns 404. [public]
+// offering requested under a different university slug returns 404. [public].
 func (h *Handlers) GetUniversityCourse(w http.ResponseWriter, r *http.Request) {
 	offering, err := h.svc.GetPublishedOfferingBySlugs(
 		r.Context(),
@@ -302,13 +312,15 @@ func (h *Handlers) GetUniversityCourse(w http.ResponseWriter, r *http.Request) {
 
 // AdminListCatalog handles GET /api/v1/admin/course-catalog — server-side
 // paginated catalog list with ?q=&degree_type=&is_published=&sort= filters.
-// [admin: universities.course_catalog.list]
+// [admin: universities.course_catalog.list].
 func (h *Handlers) AdminListCatalog(w http.ResponseWriter, r *http.Request) {
 	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+
 	limit := parseIntDefault(r.URL.Query().Get("limit"), 25)
 	if limit < 1 || limit > 200 {
 		limit = 25
 	}
+
 	if page < 1 {
 		page = 1
 	}
@@ -352,7 +364,7 @@ func (h *Handlers) AdminListCatalog(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminGetCatalog handles GET /api/v1/admin/course-catalog/{id}.
-// [admin: universities.course_catalog.view]
+// [admin: universities.course_catalog.view].
 func (h *Handlers) AdminGetCatalog(w http.ResponseWriter, r *http.Request) {
 	id, ok := scanUUID(chi.URLParam(r, "id"))
 	if !ok {
@@ -387,14 +399,16 @@ func numericFromFloat(f *float64) pgtype.Numeric {
 	if f == nil {
 		return n
 	}
+
 	if err := n.Scan(*f); err != nil {
 		return pgtype.Numeric{}
 	}
+
 	return n
 }
 
 // AdminCreateCatalog handles POST /api/v1/admin/course-catalog.
-// [admin: universities.course_catalog.create]
+// [admin: universities.course_catalog.create].
 func (h *Handlers) AdminCreateCatalog(w http.ResponseWriter, r *http.Request) {
 	var req catalogRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -438,7 +452,7 @@ func (h *Handlers) AdminCreateCatalog(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminUpdateCatalog handles PATCH /api/v1/admin/course-catalog/{id}.
-// [admin: universities.course_catalog.update]
+// [admin: universities.course_catalog.update].
 func (h *Handlers) AdminUpdateCatalog(w http.ResponseWriter, r *http.Request) {
 	id, ok := scanUUID(chi.URLParam(r, "id"))
 	if !ok {
@@ -530,7 +544,7 @@ func (h *Handlers) AdminUpdateCatalog(w http.ResponseWriter, r *http.Request) {
 // soft delete. Offerings referencing the catalog row stay admin-visible but
 // drop out of public joins (Section 39). ?force=true permanently removes an
 // already-soft-deleted row (409 not_deleted while live, 409 in_use while
-// offerings still reference it). [admin: universities.course_catalog.delete]
+// offerings still reference it). [admin: universities.course_catalog.delete].
 func (h *Handlers) AdminDeleteCatalog(w http.ResponseWriter, r *http.Request) {
 	id, ok := scanUUID(chi.URLParam(r, "id"))
 	if !ok {
@@ -544,6 +558,7 @@ func (h *Handlers) AdminDeleteCatalog(w http.ResponseWriter, r *http.Request) {
 	} else {
 		err = h.svc.SoftDeleteCatalog(r.Context(), id)
 	}
+
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -558,13 +573,15 @@ func (h *Handlers) AdminDeleteCatalog(w http.ResponseWriter, r *http.Request) {
 
 // AdminListOfferings handles GET /api/v1/admin/course-offerings — server-side
 // paginated list with ?q=&university_id=&course_id=&is_published=&sort=.
-// [admin: universities.course_offering.list]
+// [admin: universities.course_offering.list].
 func (h *Handlers) AdminListOfferings(w http.ResponseWriter, r *http.Request) {
 	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+
 	limit := parseIntDefault(r.URL.Query().Get("limit"), 25)
 	if limit < 1 || limit > 200 {
 		limit = 25
 	}
+
 	if page < 1 {
 		page = 1
 	}
@@ -580,6 +597,7 @@ func (h *Handlers) AdminListOfferings(w http.ResponseWriter, r *http.Request) {
 	if id, ok := scanUUID(r.URL.Query().Get("university_id")); ok {
 		f.UniversityID = id
 	}
+
 	if id, ok := scanUUID(r.URL.Query().Get("course_id")); ok {
 		f.CourseID = id
 	}
@@ -613,7 +631,7 @@ func (h *Handlers) AdminListOfferings(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminGetOffering handles GET /api/v1/admin/course-offerings/{id}.
-// [admin: universities.course_offering.view]
+// [admin: universities.course_offering.view].
 func (h *Handlers) AdminGetOffering(w http.ResponseWriter, r *http.Request) {
 	id, ok := scanUUID(chi.URLParam(r, "id"))
 	if !ok {
@@ -677,7 +695,7 @@ func (h *Handlers) defaultOfferingSlug(ctx context.Context, courseID, university
 }
 
 // AdminCreateOffering handles POST /api/v1/admin/course-offerings.
-// [admin: universities.course_offering.create]
+// [admin: universities.course_offering.create].
 func (h *Handlers) AdminCreateOffering(w http.ResponseWriter, r *http.Request) {
 	var req offeringRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -700,6 +718,7 @@ func (h *Handlers) AdminCreateOffering(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
 		var err error
+
 		slug, err = h.defaultOfferingSlug(r.Context(), courseID, universityID)
 		if err != nil {
 			errpkg.HandleServiceError(w, err)
@@ -740,7 +759,7 @@ func (h *Handlers) AdminCreateOffering(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminUpdateOffering handles PATCH /api/v1/admin/course-offerings/{id}.
-// [admin: universities.course_offering.update]
+// [admin: universities.course_offering.update].
 func (h *Handlers) AdminUpdateOffering(w http.ResponseWriter, r *http.Request) {
 	id, ok := scanUUID(chi.URLParam(r, "id"))
 	if !ok {
@@ -766,6 +785,7 @@ func (h *Handlers) AdminUpdateOffering(w http.ResponseWriter, r *http.Request) {
 	if v, ok := scanUUID(req.CourseID); ok {
 		courseID = v
 	}
+
 	universityID := current.UniversityID
 	if v, ok := scanUUID(req.UniversityID); ok {
 		universityID = v
@@ -849,7 +869,7 @@ func (h *Handlers) AdminUpdateOffering(w http.ResponseWriter, r *http.Request) {
 
 // AdminDeleteOffering handles DELETE /api/v1/admin/course-offerings/{id} —
 // soft delete. ?force=true permanently removes an already-soft-deleted row
-// (409 not_deleted while live). [admin: universities.course_offering.delete]
+// (409 not_deleted while live). [admin: universities.course_offering.delete].
 func (h *Handlers) AdminDeleteOffering(w http.ResponseWriter, r *http.Request) {
 	id, ok := scanUUID(chi.URLParam(r, "id"))
 	if !ok {
@@ -863,6 +883,7 @@ func (h *Handlers) AdminDeleteOffering(w http.ResponseWriter, r *http.Request) {
 	} else {
 		err = h.svc.SoftDeleteOffering(r.Context(), id)
 	}
+
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -879,7 +900,7 @@ type bulkOfferingRequest struct {
 
 // AdminBulkOfferings handles POST /api/v1/admin/course-offerings/bulk —
 // {action: publish|unpublish|delete, ids: []}.
-// [admin: universities.course_offering.update / .delete]
+// [admin: universities.course_offering.update / .delete].
 func (h *Handlers) AdminBulkOfferings(w http.ResponseWriter, r *http.Request) {
 	var req bulkOfferingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -893,16 +914,19 @@ func (h *Handlers) AdminBulkOfferings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ids := make([]pgtype.UUID, 0, len(req.IDs))
+
 	for _, raw := range req.IDs {
 		id, ok := scanUUID(raw)
 		if !ok {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "ids must be UUIDs")
 			return
 		}
+
 		ids = append(ids, id)
 	}
 
 	var affected int64
+
 	var err error
 	switch strings.ToLower(strings.TrimSpace(req.Action)) {
 	case "publish":
@@ -915,6 +939,7 @@ func (h *Handlers) AdminBulkOfferings(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "action must be publish, unpublish, or delete")
 		return
 	}
+
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return

@@ -117,13 +117,13 @@ func NewPreflight(checker FeatureChecker, settings SettingsReader, consents Cons
 const aiBudgetDailyTTL = 24 * time.Hour
 
 // aiQueriesKey is the unified per-user daily AI request counter.
-// Ref: conventions/valkey-keys-catalog.md — jc:ai:queries:{user_id}:{date}
+// Ref: conventions/valkey-keys-catalog.md — jc:ai:queries:{user_id}:{date}.
 func aiQueriesKey(userID pgtype.UUID) string {
 	return valkey.MustKey("ai:queries:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
 }
 
 // aiCostKey is the unified per-user daily AI spend accumulator (USD).
-// Ref: conventions/valkey-keys-catalog.md — jc:ai:cost:{user_id}:{date}
+// Ref: conventions/valkey-keys-catalog.md — jc:ai:cost:{user_id}:{date}.
 func aiCostKey(userID pgtype.UUID) string {
 	return valkey.MustKey("ai:cost:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
 }

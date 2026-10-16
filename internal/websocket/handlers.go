@@ -214,7 +214,6 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		userID = ticket.UserID
-
 	}
 
 	// Mark ticket as used in DB, validating alongside user_id so a
@@ -410,6 +409,7 @@ func (c *Client) handleTypingEvent(dmSvc typingLookup, event WSEvent) {
 	if err := convID.Scan(payload.ConversationID); err != nil {
 		return
 	}
+
 	_ = pgtype.UUID{}
 
 	var userID pgtype.UUID

@@ -111,7 +111,6 @@ type PaymentProviderInfo struct {
 // panel). If no rows exist yet, falls back to system_settings pricing config
 // and ultimately to compiled-in defaults (Rule 3).
 func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
-
 	// Try DB-managed plans first.
 	dbPlans, err := gen.New(h.Service.db.Reader).ListActiveSubscriptionPlans(r.Context())
 	if err == nil && len(dbPlans) > 0 {
@@ -440,7 +439,6 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 // HandlePaystackWebhook handles POST /api/v1/payments/webhook/paystack.
 // This endpoint is public (no auth required) as webhooks come from external services.
 func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
-
 	// Read raw body for signature verification.
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -499,7 +497,6 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 // HandleStripeWebhook handles POST /api/v1/payments/webhook/stripe.
 // This endpoint is public (no auth required) as webhooks come from external services.
 func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
-
 	// Read raw body for signature verification.
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -560,7 +557,6 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 // NOWPayments IPN sends HMAC-SHA256 of the payload using the IPN secret,
 // with the signature in the x-nowpayments-sig header.
 func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Request) {
-
 	// Read raw body for signature verification.
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -984,6 +980,7 @@ func (h *Handlers) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		default:
 			handleServiceError(w, err)
 		}
+
 		return
 	}
 
@@ -1321,7 +1318,6 @@ func verifyStripeSignature(payload []byte, header, secret string) error {
 
 // UpdateDiscountCode handles PATCH /admin/discount-codes/:id.
 func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid discount code ID")
@@ -1432,7 +1428,6 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 
 // GetDiscountCodeUsage handles GET /admin/discount-codes/:id/usage.
 func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) {
-
 	codeID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid discount code ID")
@@ -1623,7 +1618,6 @@ func toAdminPlanResponse(p gen.SubscriptionPlan) AdminPlanResponse {
 
 // ListAdminPlans handles GET /api/v1/admin/plans.
 func (h *Handlers) ListAdminPlans(w http.ResponseWriter, r *http.Request) {
-
 	plans, err := gen.New(h.Service.db.Reader).ListSubscriptionPlans(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list plans")
@@ -1640,7 +1634,6 @@ func (h *Handlers) ListAdminPlans(w http.ResponseWriter, r *http.Request) {
 
 // CreateAdminPlan handles POST /api/v1/admin/plans.
 func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
-
 	var input AdminPlanInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -1663,7 +1656,6 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 	featuresJSON, _ := json.Marshal(input.Features)
 
 	plan, err := gen.New(h.Service.db.Writer).CreateSubscriptionPlan(r.Context(), gen.CreateSubscriptionPlanParams{
-
 		Slug:          input.Slug,
 		Name:          input.Name,
 		Description:   input.Description,
@@ -1692,7 +1684,6 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 
 // UpdateAdminPlan handles PATCH /api/v1/admin/plans/{id}.
 func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
@@ -1738,7 +1729,6 @@ func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
 
 // DeleteAdminPlan handles DELETE /api/v1/admin/plans/{id}.
 func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
@@ -1760,7 +1750,6 @@ func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
 // Lists all payments across the platform with optional filters (JEOS §17
 // "Admin Payment Routes"). Gated by payments.refund permission (admin-only).
 func (h *Handlers) ListAdminPayments(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
@@ -1815,7 +1804,6 @@ func (h *Handlers) ListAdminPayments(w http.ResponseWriter, r *http.Request) {
 // GetAdminPayment handles GET /api/v1/admin/payments/:id.
 // Returns payment detail (JEOS §17 "Admin Payment Routes").
 func (h *Handlers) GetAdminPayment(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid payment ID")
@@ -1840,7 +1828,6 @@ type PlanTrackResponse struct {
 
 // AdminListPlanTracks handles GET /api/v1/admin/plans/{id}/tracks.
 func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
-
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
@@ -1866,7 +1853,6 @@ func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
 // AdminSetPlanTracks handles PUT /api/v1/admin/plans/{id}/tracks.
 // Replaces the entire track list for a plan.
 func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
-
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
@@ -1931,7 +1917,6 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 
 // AdminAddTrackToPlan handles POST /api/v1/admin/plans/{id}/tracks/{trackId}.
 func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
-
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
@@ -1957,7 +1942,6 @@ func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
 
 // AdminRemoveTrackFromPlan handles DELETE /api/v1/admin/plans/{id}/tracks/{trackId}.
 func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Request) {
-
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
@@ -1984,7 +1968,6 @@ func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Reque
 // PublicListPlanTracks handles GET /api/v1/pricing/plans/{slug}/tracks.
 // Returns the track IDs included in a plan (empty = all tracks).
 func (h *Handlers) PublicListPlanTracks(w http.ResponseWriter, r *http.Request) {
-
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Plan slug is required")

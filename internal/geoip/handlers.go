@@ -172,7 +172,6 @@ func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 // HandleListCountries returns every seeded country space.
 // // GET /api/v1/geo/countries.
 func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
-
 	countries, err := h.spaces.ListSpacesByLevel(r.Context(), pgtype.UUID{}, "country")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list countries")
@@ -191,7 +190,6 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 // up by its ISO geo_code.
 // // GET /api/v1/geo/countries/{code}/states.
 func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
-
 	code := chi.URLParam(r, "code")
 	if code == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_code", "country code is required")
@@ -215,7 +213,6 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 // HandleListCities returns the city spaces for a state.
 // // GET /api/v1/geo/states/{id}/cities.
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
-
 	stateIDStr := chi.URLParam(r, "id")
 
 	var stateID pgtype.UUID
@@ -243,7 +240,6 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 // completing a user's location, not creating an owned community.
 // // POST /api/v1/geo/states/{id}/cities.
 func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
-
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")

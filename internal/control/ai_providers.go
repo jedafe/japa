@@ -145,7 +145,6 @@ func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	provider, err := h.ProviderStore.CreateProvider(r.Context(), ai.CreateProviderInput{
-
 		Name:         input.Name,
 		ProviderType: input.ProviderType,
 		APIKey:       input.APIKey,
@@ -229,7 +228,6 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	provider, err := h.ProviderStore.UpdateProvider(r.Context(), ai.UpdateProviderInput{
-
 		ID:           id,
 		Name:         input.Name,
 		ProviderType: input.ProviderType,

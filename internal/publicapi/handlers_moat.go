@@ -18,6 +18,7 @@ func requireAPIKey(w http.ResponseWriter, r *http.Request) bool {
 		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return false
 	}
+
 	return true
 }
 
@@ -28,6 +29,7 @@ func parseUUIDQuery(r *http.Request, param string) (pgtype.UUID, error) {
 			return pgtype.UUID{}, err
 		}
 	}
+
 	return id, nil
 }
 
@@ -37,11 +39,13 @@ func (h *Handlers) ListVisaRoutes(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	dest, err := parseUUIDQuery(r, "dest")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dest space ID")
 		return
 	}
+
 	years, _ := strconv.ParseInt(r.URL.Query().Get("experience_years"), 10, 32)
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
@@ -54,6 +58,7 @@ func (h *Handlers) ListVisaRoutes(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": routes, "total": total, "limit": limit, "offset": offset,
 	})
@@ -64,16 +69,19 @@ func (h *Handlers) GetVisaRoute(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid visa route ID")
 		return
 	}
+
 	route, err := h.Service.GetVisaRoute(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": route})
 }
 
@@ -82,30 +90,37 @@ func (h *Handlers) CompareVisaRoutes(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	raw := r.URL.Query().Get("ids")
 	if raw == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_ids", "ids query param is required")
 		return
 	}
+
 	parts := strings.Split(raw, ",")
 	if len(parts) > 5 {
 		errpkg.WriteError(w, http.StatusBadRequest, "too_many_ids", "At most 5 route IDs may be compared")
 		return
 	}
+
 	ids := make([]pgtype.UUID, 0, len(parts))
+
 	for _, p := range parts {
 		var id pgtype.UUID
 		if err := id.Scan(strings.TrimSpace(p)); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid route ID in ids list")
 			return
 		}
+
 		ids = append(ids, id)
 	}
+
 	routes, err := h.Service.CompareVisaRoutes(r.Context(), ids)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": routes})
 }
 
@@ -115,28 +130,34 @@ func (h *Handlers) GetVisaTimelineStats(w http.ResponseWriter, r *http.Request) 
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	origin, err := parseUUIDQuery(r, "origin")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
 		return
 	}
+
 	dest, err := parseUUIDQuery(r, "dest")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dest space ID")
 		return
 	}
+
 	months := 0
+
 	if v := r.URL.Query().Get("months"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 60 {
 			months = n
 		}
 	}
+
 	stats, err := h.Service.GetVisaTimelineStats(r.Context(), origin, dest,
 		r.URL.Query().Get("visa"), r.URL.Query().Get("consulate"), months)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
@@ -145,23 +166,28 @@ func (h *Handlers) GetVisaTimelineTrend(w http.ResponseWriter, r *http.Request) 
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	dest, err := parseUUIDQuery(r, "dest")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dest space ID")
 		return
 	}
+
 	months := 12
+
 	if v := r.URL.Query().Get("months"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 60 {
 			months = n
 		}
 	}
+
 	trend, err := h.Service.GetVisaTimelineTrend(r.Context(), dest,
 		r.URL.Query().Get("visa"), r.URL.Query().Get("consulate"), months)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": trend})
 }
 
@@ -170,11 +196,13 @@ func (h *Handlers) ListCredentialProfessions(w http.ResponseWriter, r *http.Requ
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	profs, err := h.Service.ListCredentialProfessions(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profs})
 }
 
@@ -184,21 +212,25 @@ func (h *Handlers) ListCredentialPathways(w http.ResponseWriter, r *http.Request
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	dest, err := parseUUIDQuery(r, "dest")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dest space ID")
 		return
 	}
+
 	issuing, err := parseUUIDQuery(r, "issuing")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid issuing space ID")
 		return
 	}
+
 	profession, err := parseUUIDQuery(r, "profession")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profession ID")
 		return
 	}
+
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 	page := offset/limit + 1
@@ -208,6 +240,7 @@ func (h *Handlers) ListCredentialPathways(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": pathways, "total": total, "limit": limit, "offset": offset,
 	})
@@ -218,16 +251,19 @@ func (h *Handlers) GetCredentialPathway(w http.ResponseWriter, r *http.Request) 
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid pathway ID")
 		return
 	}
+
 	p, err := h.Service.GetCredentialPathway(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": p})
 }
 
@@ -236,11 +272,13 @@ func (h *Handlers) ListLanguageTests(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	tests, err := h.Service.ListLanguageTests(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tests})
 }
 
@@ -249,16 +287,19 @@ func (h *Handlers) GetLanguageTest(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+
 	test, err := h.Service.GetLanguageTest(r.Context(), slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": test})
 }
 
@@ -268,16 +309,19 @@ func (h *Handlers) ListLanguageTestRequirements(w http.ResponseWriter, r *http.R
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	dest, err := parseUUIDQuery(r, "dest")
 	if err != nil || !dest.Valid {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "A valid dest space ID is required")
 		return
 	}
+
 	reqs, err := h.Service.ListLanguageTestRequirements(r.Context(), dest, r.URL.Query().Get("visa"))
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reqs})
 }
 
@@ -287,6 +331,7 @@ func (h *Handlers) FindScholarships(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	q := r.URL.Query()
 	filters := scholarships.ScholarshipFilters{
 		Country:      q.Get("country"),
@@ -296,23 +341,28 @@ func (h *Handlers) FindScholarships(w http.ResponseWriter, r *http.Request) {
 		DeadlineFrom: q.Get("deadline_from"),
 		DeadlineTo:   q.Get("deadline_to"),
 	}
+
 	if v := q.Get("include_expired"); v != "" {
 		filters.IncludeExpired, _ = strconv.ParseBool(v)
 	}
+
 	if v := q.Get("min_amount"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			filters.MinAmount = f
 		}
 	}
+
 	if v := q.Get("max_amount"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			filters.MaxAmount = f
 		}
 	}
+
 	if v := q.Get("renewable"); v != "" {
 		b, _ := strconv.ParseBool(v)
 		filters.Renewable = &b
 	}
+
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 	filters.Page = int(offset/limit + 1)
@@ -323,6 +373,7 @@ func (h *Handlers) FindScholarships(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results, "total": total, "limit": limit, "offset": offset,
 	})
@@ -333,16 +384,19 @@ func (h *Handlers) GetScholarship(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid scholarship ID")
 		return
 	}
+
 	s, err := h.Service.GetScholarship(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": s})
 }
 
@@ -351,11 +405,13 @@ func (h *Handlers) ListScholarshipStatuses(w http.ResponseWriter, r *http.Reques
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	statuses, err := h.Service.ScholarshipStatuses()
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": statuses})
 }
 
@@ -364,11 +420,13 @@ func (h *Handlers) ListScholarshipLevels(w http.ResponseWriter, r *http.Request)
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	levels, err := h.Service.ScholarshipLevels(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": levels})
 }
 
@@ -378,8 +436,10 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
+
 	items, total, err := h.Service.ListUniversities(r.Context(),
 		strings.TrimSpace(r.URL.Query().Get("q")),
 		strings.TrimSpace(r.URL.Query().Get("country")),
@@ -389,6 +449,7 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items, "total": total, "limit": limit, "offset": offset,
 	})
@@ -399,19 +460,24 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+
 	uni, err := h.Service.GetUniversity(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, ErrDestinationNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": uni})
 }

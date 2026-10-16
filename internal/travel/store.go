@@ -86,7 +86,6 @@ func (s *Store) GetActiveProvider(ctx context.Context, providerType string) (gen
 // providerType filters by exact type (empty = all).
 func (s *Store) ListProviders(ctx context.Context, isActiveFilter, providerType, q string) ([]gen.TravelProvider, error) {
 	rows, err := s.queries.ListTravelProviders(ctx, gen.ListTravelProvidersParams{
-
 		IsActiveFilter: isActiveFilter,
 		ProviderType:   providerType,
 		Q:              q,
@@ -246,6 +245,7 @@ func (s *Store) UpsertTravelProviderAirline(ctx context.Context, arg gen.UpsertT
 func (s *Store) ListTravelAirlines(ctx context.Context, arg gen.ListTravelAirlinesParams) ([]gen.ListTravelAirlinesRow, error) {
 	arg.Q = ilikeEscaper.Replace(arg.Q)
 	arg.Country = ilikeEscaper.Replace(arg.Country)
+
 	return s.queries.ListTravelAirlines(ctx, arg)
 }
 
@@ -253,5 +253,6 @@ func (s *Store) ListTravelAirlines(ctx context.Context, arg gen.ListTravelAirlin
 func (s *Store) CountTravelAirlines(ctx context.Context, arg gen.CountTravelAirlinesParams) (int64, error) {
 	arg.Q = ilikeEscaper.Replace(arg.Q)
 	arg.Country = ilikeEscaper.Replace(arg.Country)
+
 	return s.queries.CountTravelAirlines(ctx, arg)
 }

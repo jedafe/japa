@@ -315,6 +315,7 @@ func TestValidateJobFieldValues(t *testing.T) {
 		if tc.wantErr && !errors.Is(err, ErrInvalidFieldValue) {
 			t.Errorf("%s: want ErrInvalidFieldValue, got %v", tc.name, err)
 		}
+
 		if !tc.wantErr && err != nil {
 			t.Errorf("%s: unexpected error %v", tc.name, err)
 		}
@@ -343,6 +344,7 @@ func TestValidateJobFieldValues_Typed(t *testing.T) {
 		if tc.wantErr && !errors.Is(err, ErrInvalidFieldValue) {
 			t.Errorf("%s: want ErrInvalidFieldValue, got %v", tc.name, err)
 		}
+
 		if !tc.wantErr && err != nil {
 			t.Errorf("%s: unexpected error %v", tc.name, err)
 		}
@@ -356,7 +358,9 @@ func TestUpdateJobListingInput_PointerSemantics(t *testing.T) {
 	if in.Title != nil || in.Body != nil || in.Slug != nil {
 		t.Fatal("zero UpdateJobListingInput must have nil Title/Body/Slug (nil=unchanged)")
 	}
+
 	title := ""
+
 	in.Title = &title
 	if in.Title == nil {
 		t.Fatal("explicit empty title must be non-nil")

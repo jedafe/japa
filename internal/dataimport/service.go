@@ -183,7 +183,6 @@ func (s *Service) CreateImport(ctx context.Context, userID pgtype.UUID, name, im
 	}
 
 	imp, err := s.store.Create(ctx, gen.CreatePlatformDataImportParams{
-
 		Name:       name,
 		ImportType: importType,
 		Format:     format,
@@ -265,6 +264,7 @@ func (s *Service) ProcessImport(ctx context.Context, importID pgtype.UUID) error
 		s.markFailed(ctx, importID, fmt.Sprintf("row count %d exceeds limit of %d", len(rows), maxImportRows))
 		s.auditImportEvent(ctx, auditActor(ctx), "data_import.row_cap_exceeded",
 			importID, map[string]any{"rows": len(rows), "limit": maxImportRows})
+
 		return fmt.Errorf("row count %d exceeds limit of %d", len(rows), maxImportRows)
 	}
 
@@ -476,6 +476,7 @@ func (s *Service) insertRow(ctx context.Context, importType, mode string, row ma
 	if importType == TypeTransactions {
 		return s.insertLedgerRow(ctx, mode, row)
 	}
+
 	query, args, err := buildImportQuery(importType, mode, row)
 	if err != nil {
 		return err
@@ -500,21 +501,26 @@ func (s *Service) insertRow(ctx context.Context, importType, mode string, row ma
 // read from the row map).
 func (s *Service) insertLedgerRow(ctx context.Context, mode string, row map[string]string) error {
 	_ = mode // ledger imports are insert-only; mode selects conflict handling below.
+
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning ledger import tx: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	username := strings.TrimSpace(row["user"])
+
 	ledgerType := strings.TrimSpace(row["ledger_type"])
 	if ledgerType == "" {
 		ledgerType = "points"
 	}
+
 	operation := strings.TrimSpace(row["operation"])
 	if operation == "" {
 		operation = "earn"
 	}
+
 	source := strings.TrimSpace(row["source"])
 	if source == "" {
 		source = "import"
@@ -524,6 +530,7 @@ func (s *Service) insertLedgerRow(ctx context.Context, mode string, row map[stri
 	// When the user has no ledger rows yet, fall back to locking the
 	// users row so two concurrent first-imports cannot both start at 0.
 	var current int64
+
 	err = tx.QueryRow(ctx, `
 		SELECT w.resulting_balance
 		FROM wallet_ledger w JOIN users u ON u.id = w.user_id
@@ -534,6 +541,7 @@ func (s *Service) insertLedgerRow(ctx context.Context, mode string, row map[stri
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			current = 0
+
 			var locked pgtype.UUID
 			if lerr := tx.QueryRow(ctx, `SELECT id FROM users WHERE username = $1 FOR UPDATE`, username).Scan(&locked); lerr != nil && !errors.Is(lerr, pgx.ErrNoRows) {
 				return fmt.Errorf("locking user row for ledger import: %w", lerr)
@@ -547,12 +555,15 @@ func (s *Service) insertLedgerRow(ctx context.Context, mode string, row map[stri
 	if err != nil {
 		return err
 	}
+
 	if _, err := tx.Exec(ctx, query, args...); err != nil {
 		return fmt.Errorf("inserting ledger row: %w", err)
 	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing ledger import: %w", err)
 	}
+
 	return nil
 }
 
@@ -563,13 +574,17 @@ func buildLedgerInsertQuery(row map[string]string, ledgerType, operation, source
 	if err != nil {
 		return "", nil, fmt.Errorf("transactions: %w", err)
 	}
+
 	if !validLedgerTypes[ledgerType] {
 		return "", nil, fmt.Errorf("transactions: invalid ledger_type %q (must be one of: points, credits)", ledgerType)
 	}
+
 	if !validWalletOperations[operation] {
 		return "", nil, fmt.Errorf("transactions: invalid operation %q (must be one of: earn, spend, purchase, convert, refund, clawback, admin_adjust)", operation)
 	}
+
 	resultingBalance := current + amount
+
 	return `
 		INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, reason)
 		SELECT u.id, $2, $3, $4, $5, $6, $7
@@ -686,6 +701,7 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 		// unusable bcrypt sentinel ('!' matches no bcrypt hash, so no
 		// password verifies) and must set a password via the reset flow.
 		const unusablePasswordHash = "!"
+
 		return "\n\t\t\tINSERT INTO users (username, email, profile_type, status, password_hash)\n\t\t\tVALUES ($1, $2, COALESCE(NULLIF($3, ''), 'regular'), COALESCE(NULLIF($4, ''), 'active'), $5)\n\t\t\t" + conflict,
 			[]any{username, email, row["profile_type"], row["status"], unusablePasswordHash},
 			nil
@@ -826,8 +842,10 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 // number of rows that contained at least one blocked column.
 func stripBlockedImportColumns(rows []map[string]string, importType string) int {
 	affected := 0
+
 	for _, row := range rows {
 		hit := false
+
 		for k := range row {
 			lk := strings.ToLower(strings.TrimSpace(k))
 			if !blockedImportColumns[lk] {
@@ -839,13 +857,17 @@ func stripBlockedImportColumns(rows []map[string]string, importType string) int 
 			if lk == "password_hash" && importType != TypeUsers {
 				continue
 			}
+
 			delete(row, k)
+
 			hit = true
 		}
+
 		if hit {
 			affected++
 		}
 	}
+
 	return affected
 }
 
@@ -860,6 +882,7 @@ func auditActor(_ context.Context) pgtype.UUID { return pgtype.UUID{} }
 // must not fail the import itself.
 func (s *Service) auditImportEvent(ctx context.Context, actor pgtype.UUID, action string, importID pgtype.UUID, metadata map[string]any) {
 	metaJSON, _ := json.Marshal(metadata)
+
 	_, err := s.db.Writer.Exec(ctx, `
 		INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata)
 		VALUES ($1, $2, 'data_import', $3, $4)

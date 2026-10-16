@@ -57,9 +57,11 @@
 		const primary = sym && sym !== code ? `${sym}${fmtNum(n)}` : `${code} ${fmtNum(n)}`;
 		if (!contextFx || !code || code === contextFx.base || !(contextFx.rate > 0)) return primary;
 		const baseSym = currencySymbol(contextFx.base, currencies);
-		const equiv = baseSym && baseSym !== contextFx.base
-			? `${baseSym}${fmtNum(n / contextFx.rate)}`
-			: `${contextFx.base} ${fmtNum(n / contextFx.rate)}`;
+		// Local fmtNum is 0-decimals (rolled-up sums are large); the base
+		// equivalent needs 2 decimals for sub-unit amounts like $0.28.
+		const amt = n / contextFx.rate;
+		const eq = amt.toLocaleString(undefined, { maximumFractionDigits: amt < 100 ? 2 : 0 });
+		const equiv = baseSym && baseSym !== contextFx.base ? `${baseSym}${eq}` : `${contextFx.base} ${eq}`;
 		return `${primary} (${equiv})`;
 	};
 

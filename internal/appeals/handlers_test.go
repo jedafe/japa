@@ -17,6 +17,7 @@ func TestHandleSubmitNoAuth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/appeals",
 		strings.NewReader(`{"entity_type":"service_claim","entity_id":"x","reason":"y"}`))
 	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	h.HandleSubmit(w, req)
@@ -34,6 +35,7 @@ func TestHandleSubmitInvalidBody(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/appeals", strings.NewReader(`{bad json`))
 	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	h.HandleSubmit(w, req)

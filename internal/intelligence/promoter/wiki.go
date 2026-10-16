@@ -134,6 +134,7 @@ func (p *WikiPromoter) wikiCreatePath(ctx context.Context, record gen.IntelRecor
 	if err != nil {
 		return PromoteResult{}, err
 	}
+
 	if !spaceID.Valid {
 		return PromoteResult{}, fmt.Errorf(
 			"promoter: wiki page requires a resolvable geo space but none matched: %w", ErrRouteToReview)
@@ -158,6 +159,7 @@ func (p *WikiPromoter) wikiCreatePath(ctx context.Context, record gen.IntelRecor
 		if err != nil {
 			return err
 		}
+
 		params.Slug = slug
 
 		wiki, err := tx.CreateWikiPageIntel(ctx, params)
@@ -237,7 +239,7 @@ func (p *WikiPromoter) wikiUpdatePath(ctx context.Context, record gen.IntelRecor
 // supplies nothing resolvable — §80 Intel ingestion → wiki_pages). guide_id
 // is always NULL on the create path so Studio can fill it in later
 // (Approach B).
-func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, authorID pgtype.UUID, spaceID pgtype.UUID, category string) gen.CreateWikiPageIntelParams {
+func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, authorID, spaceID pgtype.UUID, category string) gen.CreateWikiPageIntelParams {
 	title := stringField(ext, "title")
 	if title == "" {
 		title = stringField(ext, "name")
@@ -249,7 +251,6 @@ func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, aut
 	}
 
 	return gen.CreateWikiPageIntelParams{
-
 		SpaceID:            spaceID,
 		Slug:               slug,
 		Title:              title,
@@ -275,7 +276,6 @@ func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, aut
 // existing value (human edit wins).
 func buildWikiUpdateParams(existing gen.WikiPage, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateWikiPageIntelParams, []string) {
 	params := gen.UpdateWikiPageIntelParams{
-
 		ID:                 existing.ID,
 		Title:              existing.Title,
 		Category:           existing.Category,
@@ -350,25 +350,30 @@ func (p *WikiPromoter) resolveWikiSpace(ctx context.Context, record gen.IntelRec
 		if err == nil {
 			return row.ID, row.SpaceTypeID, nil
 		}
+
 		if !isNotFound(err) {
 			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("promoter: resolve space_id: %w", err)
 		}
 	}
 
 	slugHints := []string{stringField(ext, "space_slug")}
+
 	for _, key := range []string{"city", "state", "country"} {
 		if name := stringField(ext, key); name != "" {
 			slugHints = append(slugHints, slugify(name))
 		}
 	}
+
 	for _, slug := range slugHints {
 		if slug == "" {
 			continue
 		}
+
 		row, err := p.store.GetSpaceBySlug(ctx, slug)
 		if err == nil {
 			return row.ID, row.SpaceTypeID, nil
 		}
+
 		if !isNotFound(err) {
 			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("promoter: resolve space slug %q: %w", slug, err)
 		}
@@ -382,6 +387,7 @@ func (p *WikiPromoter) resolveWikiSpace(ctx context.Context, record gen.IntelRec
 			if refErr == nil {
 				return id, ref.SpaceTypeID, nil
 			}
+
 			if !isNotFound(refErr) {
 				return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("promoter: resolve country space type: %w", refErr)
 			}
@@ -396,6 +402,7 @@ func (p *WikiPromoter) resolveWikiSpace(ctx context.Context, record gen.IntelRec
 		if err == nil {
 			return record.GeoSpaceIds[0], ref.SpaceTypeID, nil
 		}
+
 		if !isNotFound(err) {
 			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("promoter: resolve geo_space_ids: %w", err)
 		}
@@ -448,6 +455,7 @@ func ensureUniqueWikiSlug(ctx context.Context, tx WikiTxStore, spaceID pgtype.UU
 		if err != nil {
 			return "", fmt.Errorf("promoter: checking wiki slug %q: %w", candidate, err)
 		}
+
 		if !exists {
 			return candidate, nil
 		}

@@ -7,7 +7,6 @@
 package servicedir
 
 import (
-	"context"
 	"errors"
 	"math"
 	"testing"
@@ -140,11 +139,12 @@ func TestCouponQuoteErrorCode(t *testing.T) {
 // before the store lookup — these Services carry a nil store, so reaching
 // getPackageTier would panic rather than pass.
 func TestPriceQuoteTiersFlagGate(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	tierID := "00000000-0000-0000-0000-000000000001"
 
 	t.Run("flag off rejects tier before store lookup", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{}} // flag unset = off
+
 		_, err := s.priceQuote(ctx, ServiceRow{}, pgtype.UUID{}, tierID, "")
 		if !errors.Is(err, ErrInvalidTier) {
 			t.Fatalf("expected ErrInvalidTier, got %v", err)
@@ -153,6 +153,7 @@ func TestPriceQuoteTiersFlagGate(t *testing.T) {
 
 	t.Run("nil settings rejects tier", func(t *testing.T) {
 		s := &Service{}
+
 		_, err := s.priceQuote(ctx, ServiceRow{}, pgtype.UUID{}, tierID, "")
 		if !errors.Is(err, ErrInvalidTier) {
 			t.Fatalf("expected ErrInvalidTier, got %v", err)
@@ -164,6 +165,7 @@ func TestPriceQuoteTiersFlagGate(t *testing.T) {
 			settings: fakeSettings{"service_packages.tiers_enabled": "true"},
 			checker:  fakeChecker{"service_packages.tiers_enabled": false},
 		}
+
 		_, err := s.priceQuote(ctx, ServiceRow{}, pgtype.UUID{}, tierID, "")
 		if !errors.Is(err, ErrInvalidTier) {
 			t.Fatalf("expected ErrInvalidTier, got %v", err)
@@ -172,6 +174,7 @@ func TestPriceQuoteTiersFlagGate(t *testing.T) {
 
 	t.Run("flag off rejects even a malformed tier id", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{}}
+
 		_, err := s.priceQuote(ctx, ServiceRow{}, pgtype.UUID{}, "not-a-uuid", "")
 		if !errors.Is(err, ErrInvalidTier) {
 			t.Fatalf("expected ErrInvalidTier, got %v", err)
@@ -184,12 +187,13 @@ func TestPriceQuoteTiersFlagGate(t *testing.T) {
 // the store lookup — these Services carry a nil store, so reaching
 // getListingCouponByCode would panic rather than pass.
 func TestPriceQuoteCouponsFlagGate(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	price := int64(100_000)
 	listing := ServiceRow{PriceAmount: &price}
 
 	t.Run("flag off rejects coupon before store lookup", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{}} // flag unset = off
+
 		_, err := s.priceQuote(ctx, listing, pgtype.UUID{}, "", "SAVE10")
 		if !errors.Is(err, ErrInvalidCoupon) {
 			t.Fatalf("expected ErrInvalidCoupon, got %v", err)
@@ -198,6 +202,7 @@ func TestPriceQuoteCouponsFlagGate(t *testing.T) {
 
 	t.Run("nil settings rejects coupon", func(t *testing.T) {
 		s := &Service{}
+
 		_, err := s.priceQuote(ctx, listing, pgtype.UUID{}, "", "SAVE10")
 		if !errors.Is(err, ErrInvalidCoupon) {
 			t.Fatalf("expected ErrInvalidCoupon, got %v", err)
@@ -209,6 +214,7 @@ func TestPriceQuoteCouponsFlagGate(t *testing.T) {
 			settings: fakeSettings{"service_coupons.enabled": "true"},
 			checker:  fakeChecker{"service_coupons.enabled": false},
 		}
+
 		_, err := s.priceQuote(ctx, listing, pgtype.UUID{}, "", "SAVE10")
 		if !errors.Is(err, ErrInvalidCoupon) {
 			t.Fatalf("expected ErrInvalidCoupon, got %v", err)
@@ -217,6 +223,7 @@ func TestPriceQuoteCouponsFlagGate(t *testing.T) {
 
 	t.Run("flag off rejects a whitespace-padded code", func(t *testing.T) {
 		s := &Service{settings: fakeSettings{}}
+
 		_, err := s.priceQuote(ctx, listing, pgtype.UUID{}, "", "  SAVE10  ")
 		if !errors.Is(err, ErrInvalidCoupon) {
 			t.Fatalf("expected ErrInvalidCoupon, got %v", err)

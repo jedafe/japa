@@ -645,14 +645,17 @@ func WidgetTypeAllowedForApp(widgetType, app string) bool {
 	if wt == nil {
 		return false
 	}
+
 	if len(wt.Apps) == 0 {
 		return true
 	}
+
 	for _, a := range wt.Apps {
 		if a == app {
 			return true
 		}
 	}
+
 	return false
 }
 

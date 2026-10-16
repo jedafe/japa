@@ -271,10 +271,12 @@ func bookingToDTO(r BookingRow) BookingDTO {
 		var meta struct {
 			Goals string `json:"goals"`
 		}
+
 		if err := json.Unmarshal(r.Meta, &meta); err == nil && meta.Goals != "" {
 			dto.Goals = meta.Goals
 		}
 	}
+
 	if dto.Goals == "" && r.ListingKind == ListingKindMentorship && r.Note != nil {
 		dto.Goals = *r.Note
 	}
@@ -302,9 +304,11 @@ func bookingToDTO(r BookingRow) BookingDTO {
 	if r.PaymentID.Valid {
 		dto.PaymentID = r.PaymentID.String()
 	}
+
 	if r.PaymentStatus != nil {
 		dto.PaymentStatus = *r.PaymentStatus
 	}
+
 	if r.PaymentProvider != nil {
 		dto.PaymentProvider = *r.PaymentProvider
 	}
@@ -376,6 +380,7 @@ func validatePreferredDates(d *PreferredDatesInput) error {
 		if err != nil {
 			return ErrInvalidPreferredDates
 		}
+
 		start = t
 	}
 
@@ -384,6 +389,7 @@ func validatePreferredDates(d *PreferredDatesInput) error {
 		if err != nil {
 			return ErrInvalidPreferredDates
 		}
+
 		end = t
 	}
 
@@ -455,8 +461,10 @@ func (s *Service) computeFee(ctx context.Context, priceAmount int64) int64 {
 		if fee > priceAmount {
 			return priceAmount
 		}
+
 		return fee
 	}
+
 	if s.settings.GetStringOr(ctx, "service_packages.fee_type", "percent") == "fixed" {
 		fee := int64(s.settings.GetIntOr(ctx, "service_packages.fee_fixed", 0))
 		if fee > priceAmount {
@@ -493,7 +501,7 @@ func (s *Service) bookingExpiresAt(ctx context.Context) pgtype.Timestamptz {
 // the §17 fee checkout; the org never sees paid bookings until the fee
 // payment succeeds (query-level filter + notification deferred to the
 // payment-success path).
-func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listingContentID pgtype.UUID, input CreateBookingInput) (BookingResult, error) {
+func (s *Service) CreateBooking(ctx context.Context, bookerID, listingContentID pgtype.UUID, input CreateBookingInput) (BookingResult, error) {
 	listing, err := s.store.GetByContentID(ctx, listingContentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -589,8 +597,10 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 	// checkout-field checks below can skip a zero configured fee
 	// (fee_pct=0 / fee_fixed=0 means no charge and no checkout).
 	var quote Quote
+
 	if intent == BookingIntentBooking {
 		var qerr error
+
 		quote, qerr = s.priceQuote(ctx, listing, bookerID, input.TierID, input.CouponCode)
 		if qerr != nil {
 			return BookingResult{}, qerr
@@ -653,6 +663,7 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 		if capacity == nil {
 			capacity = listing.Capacity
 		}
+
 		if capacity != nil && dep.BookedCount+partySize > *capacity {
 			return BookingResult{}, ErrDepartureFull
 		}
@@ -663,6 +674,7 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 	}
 
 	var preferredDates []byte
+
 	if input.PreferredDates != nil {
 		if err := validatePreferredDates(input.PreferredDates); err != nil {
 			return BookingResult{}, err
@@ -734,7 +746,9 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 	// booking — a failed redemption insert rolls the booking back rather
 	// than silently losing the recorded discount (spec §2.3).
 	var redemption *gen.CreateCouponRedemptionParams
+
 	var guard *couponCommitGuard
+
 	if quote.CouponID.Valid {
 		redemption = &gen.CreateCouponRedemptionParams{
 			CouponID:      quote.CouponID,
@@ -855,6 +869,7 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 	if input.Intent != "" && input.Intent != BookingIntentInquiry {
 		return BookingResult{}, ErrInvalidIntent
 	}
+
 	if input.TierID != "" || input.CouponCode != "" {
 		return BookingResult{}, ErrInvalidCoupon
 	}
@@ -875,6 +890,7 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 	if err != nil {
 		return BookingResult{}, err
 	}
+
 	if open {
 		return BookingResult{}, ErrDuplicateRequest
 	}
@@ -903,6 +919,7 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 		if cap.Active != nil {
 			active = *cap.Active
 		}
+
 		if active >= *cap.Capacity {
 			return BookingResult{}, ErrMentorAtCapacity
 		}
@@ -918,6 +935,7 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 		if err != nil {
 			return BookingResult{}, fmt.Errorf("servicedir: mentorship booking: space probe: %w", err)
 		}
+
 		if !exists {
 			return BookingResult{}, ErrInvalidID
 		}
@@ -944,14 +962,17 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 	if note == "" {
 		note = input.Note
 	}
+
 	if note != "" {
 		params.Note = &note
 	}
+
 	if input.Goals != "" {
 		meta, err := json.Marshal(map[string]string{"goals": input.Goals})
 		if err != nil {
 			return BookingResult{}, fmt.Errorf("servicedir: mentorship booking: meta encode: %w", err)
 		}
+
 		params.Meta = meta
 	}
 
@@ -1192,6 +1213,7 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 	}
 
 	var newStatus string
+
 	switch action {
 	case "accept":
 		newStatus = BookingStatusConfirmed
@@ -1224,6 +1246,7 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 	s.enqueueStatusChanged(row.ID, newStatus)
 
 	var dmConvID string
+
 	if action == "accept" && row.ListingKind == ListingKindMentorship {
 		// §48/ADR-110: auto-open the mentor↔mentee DM thread. Non-fatal —
 		// the booking is already confirmed. The conversation id rides the
@@ -1250,7 +1273,9 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 	if err != nil {
 		return dto, err
 	}
+
 	dto.DMConversationID = dmConvID
+
 	return dto, nil
 }
 
@@ -1576,11 +1601,13 @@ func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDSt
 			return nil, 0, ErrInvalidID
 		}
 	}
+
 	if bookerIDStr != "" {
 		if err := bookerID.Scan(bookerIDStr); err != nil {
 			return nil, 0, ErrInvalidID
 		}
 	}
+
 	if kind != "" && kind != ListingKindService && kind != ListingKindPackage && kind != ListingKindMentorship {
 		return nil, 0, ErrInvalidListingKind
 	}
@@ -1835,6 +1862,7 @@ func (s *Service) cancelFeeAction(ctx context.Context, row BookingRow) string {
 	if s.settings != nil {
 		window = s.settings.GetIntOr(ctx, "service_packages.refund_window_days", 7)
 	}
+
 	if row.ConfirmedAt.Valid && time.Since(row.ConfirmedAt.Time) <= time.Duration(window)*24*time.Hour {
 		return "refund"
 	}

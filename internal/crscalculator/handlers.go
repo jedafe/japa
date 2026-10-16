@@ -54,6 +54,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -63,21 +64,25 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page, limit = 1, 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -101,8 +106,10 @@ func (h *Handlers) HandleGetFactors(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "No matching CRS ruleset")
 			return
 		}
+
 		slog.Error("crscalculator: get factors failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "factors_failed", "Failed to load factors")
+
 		return
 	}
 
@@ -125,6 +132,7 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var userID *pgtype.UUID
+
 	if u := auth.FromContext(r.Context()); u != nil {
 		uid := u.UserID
 		userID = &uid
@@ -136,7 +144,9 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "No active CRS ruleset")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile", err.Error())
+
 		return
 	}
 
@@ -144,7 +154,7 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleListDraws handles GET /crs/draws — draw history, newest first.
-// Public. Query params: ?category=&limit=
+// Public. Query params: ?category=&limit=.
 func (h *Handlers) HandleListDraws(w http.ResponseWriter, r *http.Request) {
 	if h.service == nil {
 		unavailable(w)
@@ -153,6 +163,7 @@ func (h *Handlers) HandleListDraws(w http.ResponseWriter, r *http.Request) {
 
 	category := r.URL.Query().Get("category")
 	limit := int32(50)
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = int32(n) // #nosec
@@ -163,6 +174,7 @@ func (h *Handlers) HandleListDraws(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("crscalculator: list draws failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list draws")
+
 		return
 	}
 
@@ -181,6 +193,7 @@ func (h *Handlers) HandleLatestDraws(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("crscalculator: latest draws failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to load latest draws")
+
 		return
 	}
 
@@ -194,16 +207,19 @@ func (h *Handlers) HandleScoreHistory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
 	}
 
 	page, limit := parsePageParams(r)
+
 	history, total, err := h.service.ScoreHistory(r.Context(), user.UserID, page, limit)
 	if err != nil {
 		slog.Error("crscalculator: score history failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "history_failed", "Failed to load score history")
+
 		return
 	}
 
@@ -218,6 +234,7 @@ func (h *Handlers) HandleAdminListRulesets(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -227,6 +244,7 @@ func (h *Handlers) HandleAdminListRulesets(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		slog.Error("crscalculator: list rulesets failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list rulesets")
+
 		return
 	}
 
@@ -239,6 +257,7 @@ func (h *Handlers) HandleAdminCreateRuleset(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -265,6 +284,7 @@ func (h *Handlers) HandleAdminGetRuleset(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -281,10 +301,13 @@ func (h *Handlers) HandleAdminGetRuleset(w http.ResponseWriter, r *http.Request)
 			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "Ruleset not found")
 			return
 		}
+
 		slog.Error("crscalculator: get ruleset failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to load ruleset")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": detail})
 }
 
@@ -295,6 +318,7 @@ func (h *Handlers) HandleAdminUpdateRuleset(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -316,9 +340,12 @@ func (h *Handlers) HandleAdminUpdateRuleset(w http.ResponseWriter, r *http.Reque
 			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "Ruleset not found or is active/superseded")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -329,6 +356,7 @@ func (h *Handlers) HandleAdminDeleteRuleset(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -344,10 +372,13 @@ func (h *Handlers) HandleAdminDeleteRuleset(w http.ResponseWriter, r *http.Reque
 			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "Ruleset not found or is protected")
 			return
 		}
+
 		slog.Error("crscalculator: delete ruleset failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete ruleset")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -358,6 +389,7 @@ func (h *Handlers) HandleAdminRejectRuleset(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -371,6 +403,7 @@ func (h *Handlers) HandleAdminRejectRuleset(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		ReviewNotes string `json:"review_notes"`
 	}
+
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
@@ -380,10 +413,13 @@ func (h *Handlers) HandleAdminRejectRuleset(w http.ResponseWriter, r *http.Reque
 			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "Ruleset not found")
 			return
 		}
+
 		slog.Error("crscalculator: reject ruleset failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject ruleset")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "rejected"}})
 }
 
@@ -392,6 +428,7 @@ func (h *Handlers) HandleAdminDeleteDraw(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -407,10 +444,13 @@ func (h *Handlers) HandleAdminDeleteDraw(w http.ResponseWriter, r *http.Request)
 			errpkg.WriteError(w, http.StatusNotFound, "draw_not_found", "Draw not found")
 			return
 		}
+
 		slog.Error("crscalculator: delete draw failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete draw")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }
 
@@ -422,6 +462,7 @@ func (h *Handlers) HandleAdminGenerateRuleset(w http.ResponseWriter, r *http.Req
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -435,8 +476,10 @@ func (h *Handlers) HandleAdminGenerateRuleset(w http.ResponseWriter, r *http.Req
 	if err := h.service.EnqueueGenerate(r.Context(), body); err != nil {
 		slog.Error("crscalculator: enqueue generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "generate_unavailable", "Generation is not configured")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"status": "queued"}})
 }
 
@@ -447,6 +490,7 @@ func (h *Handlers) HandleAdminApproveRuleset(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -462,8 +506,10 @@ func (h *Handlers) HandleAdminApproveRuleset(w http.ResponseWriter, r *http.Requ
 			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "Ruleset not found")
 			return
 		}
+
 		slog.Error("crscalculator: approve ruleset failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve ruleset")
+
 		return
 	}
 
@@ -476,6 +522,7 @@ func (h *Handlers) HandleAdminListDraws(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -485,6 +532,7 @@ func (h *Handlers) HandleAdminListDraws(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Error("crscalculator: admin list draws failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list draws")
+
 		return
 	}
 
@@ -496,6 +544,7 @@ func (h *Handlers) HandleAdminCreateDraw(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -521,6 +570,7 @@ func (h *Handlers) HandleAdminUpdateDraw(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if h.service == nil {
 		unavailable(w)
 		return
@@ -542,8 +592,10 @@ func (h *Handlers) HandleAdminUpdateDraw(w http.ResponseWriter, r *http.Request)
 			errpkg.WriteError(w, http.StatusNotFound, "draw_not_found", "Draw not found")
 			return
 		}
+
 		slog.Error("crscalculator: update draw failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update draw")
+
 		return
 	}
 

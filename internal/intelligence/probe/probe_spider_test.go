@@ -12,10 +12,13 @@ import (
 // not count (asset, fragment, external).
 func linkIndexPage(base string, n int) string {
 	var b strings.Builder
+
 	b.WriteString("<html><body>")
-	for i := 0; i < n; i++ {
+
+	for i := range n {
 		fmt.Fprintf(&b, `<a href="/item/%d">Item %d</a>`, i, i)
 	}
+
 	fmt.Fprintf(&b, `<a href="%s/logo.png">logo</a><a href="#frag">frag</a><a href="https://other.example/x">ext</a>`, base)
 	b.WriteString("</body></html>")
 
@@ -28,6 +31,7 @@ func TestPreview_SpiderLinkIndex(t *testing.T) {
 	t.Parallel()
 
 	var srvURL string
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(linkIndexPage(srvURL, 12)))
@@ -43,10 +47,12 @@ func TestPreview_SpiderLinkIndex(t *testing.T) {
 	if _, ok := findMethod(report, "spider"); !ok {
 		t.Fatalf("methods missing spider on a 12-link index page: %+v", report.Methods)
 	}
+
 	prop, ok := findChannel(report, "spider")
 	if !ok {
 		t.Fatalf("channels missing spider proposal: %+v", report.Channels)
 	}
+
 	if prop.EntryURL != srv.URL+"/" {
 		t.Errorf("spider proposal entry_url = %q, want %q", prop.EntryURL, srv.URL+"/")
 	}
@@ -58,6 +64,7 @@ func TestPreview_SpiderBelowFloor(t *testing.T) {
 	t.Parallel()
 
 	var srvURL string
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(linkIndexPage(srvURL, 4)))

@@ -264,6 +264,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 				slog.Warn("oauth merge refused: unverified provider email",
 					"provider", providerName, "user_id", user.ID)
 				h.redirectOAuthPendingLink(w, r)
+
 				return
 			}
 
@@ -302,6 +303,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if redirectPath != "/" {
 		target += "?redirect=" + url.QueryEscape(redirectPath)
 	}
+
 	h.issueSessionAndRedirect(w, r, userID, target, true)
 }
 
@@ -325,7 +327,6 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo
 		}
 
 		userID, err := h.Queries.CreateUser(ctx, gen.CreateUserParams{
-
 			Email:        strings.ToLower(strings.TrimSpace(info.Email)),
 			Username:     candidate,
 			PasswordHash: nil, // OAuth-only account
@@ -446,7 +447,6 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(refreshTTL), Valid: true},
@@ -587,6 +587,7 @@ func safeRedirectTarget(path, allowedOrigin string) string {
 		if strings.Contains(path, "\\") || strings.Contains(path, "://") {
 			return "/"
 		}
+
 		return path
 	}
 
@@ -594,6 +595,7 @@ func safeRedirectTarget(path, allowedOrigin string) string {
 	if allowedOrigin != "" {
 		u, err := url.Parse(path)
 		ao, aerr := url.Parse(allowedOrigin)
+
 		if err == nil && aerr == nil && u.IsAbs() &&
 			(u.Scheme == "https" || u.Scheme == "http") &&
 			strings.EqualFold(u.Scheme, ao.Scheme) &&

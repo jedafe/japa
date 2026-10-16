@@ -51,8 +51,8 @@ func TestHandleCreateError_ActiveSession(t *testing.T) {
 
 	var got struct {
 		Error struct {
-			Code   string `json:"code"`
-			Data   struct {
+			Code string `json:"code"`
+			Data struct {
 				SessionID string `json:"session_id"`
 			} `json:"data"`
 		} `json:"error"`
@@ -84,8 +84,8 @@ func TestHandleCreateError_Cooldown(t *testing.T) {
 
 	var got struct {
 		Error struct {
-			Code   string `json:"code"`
-			Data   struct {
+			Code string `json:"code"`
+			Data struct {
 				RetryAfter string `json:"retry_after"`
 			} `json:"data"`
 		} `json:"error"`

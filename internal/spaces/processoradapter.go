@@ -162,10 +162,12 @@ func (a *ProcessorAdapter) storeSpaceImage(ctx context.Context, space *gen.GetSp
 	if imageURL == "" {
 		return
 	}
+
 	if a.mediaUploader == nil {
 		slog.Warn("space:auto_populate — skipping image store, no media uploader wired", "space_id", space.ID.String(), "kind", kind)
 		return
 	}
+
 	if !a.systemUserID.Valid {
 		slog.Warn("space:auto_populate — skipping image store, no system user ID", "space_id", space.ID.String(), "kind", kind)
 		return
@@ -188,6 +190,7 @@ func (a *ProcessorAdapter) storeSpaceImage(ctx context.Context, space *gen.GetSp
 			LogoMediaID: mediaID,
 		})
 	}
+
 	if err != nil {
 		slog.Warn("space:auto_populate — attaching image to space failed", "space_id", space.ID.String(), "kind", kind, "media_id", mediaID.String(), "error", err)
 		return
@@ -261,7 +264,9 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 	// prefer "{name} State" — the bare name often resolves to a same-named
 	// city or an unrelated topic ("Ogun" → the deity, "Lagos" → the city).
 	var wikiSummary *wikipediaSummary
+
 	var wikiErr error
+
 	title := space.Name
 
 	titles := []string{space.Name}
@@ -277,6 +282,7 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 	// geo space (SpaceIDsByWikidataIDs).
 	ent := a.geoWikidataEntity(ctx, space, spaceType)
 	qid := ""
+
 	if ent != nil {
 		qid = ent.WikidataID
 	}
@@ -322,6 +328,7 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 		}
 
 		headerURL = firstNonEmpty(wikiSummary.OriginalImage, wikiSummary.Thumbnail)
+
 		slog.Info("space:auto_populate — populated wiki content", "space_id", space.ID.String(), "type", spaceType, "name", space.Name)
 	}
 
@@ -343,13 +350,16 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 			if ent != nil {
 				logoURL = firstNonEmpty(ent.Flag, ent.CoatOfArms)
 			}
+
 			a.storeSpaceImage(ctx, space, logoURL, "logo")
 		}
 	}
+
 	if !space.HeaderImageID.Valid {
 		if ent != nil {
 			headerURL = firstNonEmpty(ent.Image, headerURL)
 		}
+
 		a.storeSpaceImage(ctx, space, headerURL, "header")
 	}
 
@@ -372,6 +382,7 @@ var geoTypeKeywords = map[string][]string{
 // enrichment is best-effort).
 func (a *ProcessorAdapter) geoWikidataEntity(ctx context.Context, space *gen.GetSpaceByIDRow, spaceType string) *wikidataUniversity {
 	parentName := ""
+
 	if space.ParentID.Valid {
 		if parent, err := a.svc.GetSpace(ctx, space.ParentID); err == nil {
 			parentName = strings.ToLower(parent.Name)
@@ -389,15 +400,18 @@ func (a *ProcessorAdapter) geoWikidataEntity(ctx context.Context, space *gen.Get
 	score := func(r wikidataSearchResult) int {
 		desc := strings.ToLower(r.Description)
 		s := 0
+
 		if parentName != "" && strings.Contains(desc, parentName) {
 			s += 2
 		}
+
 		for _, kw := range keywords {
 			if strings.Contains(desc, kw) {
 				s++
 				break
 			}
 		}
+
 		return s
 	}
 
@@ -407,11 +421,14 @@ func (a *ProcessorAdapter) geoWikidataEntity(ctx context.Context, space *gen.Get
 			if score(r) != want || probed >= 2 {
 				continue
 			}
+
 			probed++
+
 			ent, err := fetchWikidataEntity(ctx, r.ID)
 			if err != nil {
 				continue
 			}
+
 			if ent.Flag != "" || ent.CoatOfArms != "" || ent.Image != "" {
 				return ent
 			}
@@ -673,7 +690,6 @@ func (a *ProcessorAdapter) enqueueUniversityLogo(ctx context.Context, space *gen
 	}
 
 	payload, err := json.Marshal(map[string]string{
-
 		"space_id":    space.ID.String(),
 		"logo_url":    logoURL,
 		"uploaded_by": a.systemUserID.String(),
@@ -1055,9 +1071,11 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 		var obj struct {
 			ID string `json:"id"`
 		}
+
 		if err := json.Unmarshal(raw, &obj); err == nil { // #nosec G104 -- best-effort Wikidata parse
 			return obj.ID
 		}
+
 		return ""
 	}
 	for _, c := range entity.Claims["P31"] {
@@ -1065,21 +1083,25 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 			uni.InstanceOf = append(uni.InstanceOf, id)
 		}
 	}
+
 	for _, c := range entity.Claims["P131"] {
 		if id := extractQID(c.Mainsnak.Datavalue.Value); id != "" {
 			uni.LocatedIn = append(uni.LocatedIn, id)
 		}
 	}
+
 	if claims, ok := entity.Claims["P625"]; ok && len(claims) > 0 {
 		var coord struct {
 			Latitude  float64 `json:"latitude"`
 			Longitude float64 `json:"longitude"`
 		}
+
 		if err := json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &coord); err == nil { // #nosec G104 -- best-effort Wikidata parse
 			uni.Coords = strconv.FormatFloat(coord.Latitude, 'f', -1, 64) + "," +
 				strconv.FormatFloat(coord.Longitude, 'f', -1, 64)
 		}
 	}
+
 	if sl, ok := entity.Sitelinks["enwiki"]; ok {
 		uni.Sitelink = sl.Title
 	}

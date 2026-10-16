@@ -89,7 +89,6 @@ func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.U
 	// BUG-001: pass so the batch window carries platform context
 	// through to DispatchBatch, which needs it for the notifications insert.
 	if err := s.store.createBatchWindow(ctx, gen.CreateBatchWindowParams{
-
 		RecipientID:      recipientID,
 		NotificationType: nType,
 		SubjectType:      subjectType,
@@ -200,7 +199,6 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	var actionURLPtr *string
 
 	notifID, err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
-
 		RecipientID:      window.RecipientID,
 		NotificationType: window.NotificationType,
 		ActorType:        stringPtr(ActorTypeUser),
@@ -239,6 +237,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	if label := s.notificationTypeLabel(ctx, window.NotificationType); label != "" {
 		payload["type_label"] = label
 	}
+
 	s.broadcastNotification(ctx, window.RecipientID, payload)
 
 	// BUG-013: invalidate the unread count cache so the badge updates.
@@ -335,7 +334,6 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 
 	// BUG-005: capture the returned ID for the WebSocket broadcast.
 	notifID, err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
-
 		RecipientID:      recipientID,
 		NotificationType: nType,
 		ActorType:        actorTypePtr,
@@ -369,6 +367,7 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 	if label := s.notificationTypeLabel(ctx, nType); label != "" {
 		payload["type_label"] = label
 	}
+
 	s.broadcastNotification(ctx, recipientID, payload)
 
 	// BUG-013: invalidate the unread count cache so the badge updates.
@@ -644,9 +643,11 @@ func (s *Service) UpdatePreferencePartial(ctx context.Context, userID pgtype.UUI
 	if inApp != nil {
 		base.InApp = *inApp
 	}
+
 	if email != nil {
 		base.Email = *email
 	}
+
 	if push != nil {
 		base.Push = *push
 	}

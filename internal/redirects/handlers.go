@@ -134,7 +134,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListRedirects is an exported method.
 func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
-
 	var isActive *bool
 
 	if v := r.URL.Query().Get("status"); v == "active" || v == "inactive" {
@@ -164,7 +163,6 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 
 // GetRedirect is an exported method.
 func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
@@ -182,7 +180,6 @@ func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
 
 // CreateRedirect is an exported method.
 func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
-
 	var input struct {
 		SourcePath string  `json:"source_path"`
 		TargetURL  string  `json:"target_url"`
@@ -215,7 +212,6 @@ func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRedirect is an exported method.
 func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
@@ -250,7 +246,6 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 
 // DeleteRedirect is an exported method.
 func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
@@ -267,7 +262,6 @@ func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 
 // BulkAction is an exported method.
 func (h *Handlers) BulkAction(w http.ResponseWriter, r *http.Request) {
-
 	var input BulkActionInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")

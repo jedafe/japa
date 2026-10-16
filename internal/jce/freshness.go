@@ -54,7 +54,7 @@ func defaultFreshnessSettings() freshnessSettings {
 
 // freshnessCacheKey returns the Valkey cache key for a comparison freshness summary.
 func freshnessCacheKey(contentID pgtype.UUID) string {
-	return fmt.Sprintf("jc:jce:freshness:%s", contentID.String())
+	return "jc:jce:freshness:" + contentID.String()
 }
 
 // cellFreshness computes a 0–100 freshness score and stale flag for a single comparison value.
@@ -65,7 +65,7 @@ func freshnessCacheKey(contentID pgtype.UUID) string {
 // decay = max(0, age_hours) * decay_per_hour
 // confidence = 1.0 (high), 0.75 (medium or missing), 0.5 (low)
 // estimate_penalty = 0.85 if is_estimate else 1.0
-// freshness_score = clamp(0, 100, (100 - decay) * base * trust * confidence * estimate_penalty)
+// freshness_score = clamp(0, 100, (100 - decay) * base * trust * confidence * estimate_penalty).
 func (s *Service) cellFreshness(
 	ctx context.Context,
 	v gen.ComparisonValue,

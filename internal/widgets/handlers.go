@@ -90,12 +90,12 @@ func parseUUIDParam(r *http.Request, key string) (pgtype.UUID, error) {
 
 // ListWidgets handles GET /api/v1/admin/widgets.
 func (h *Handlers) ListWidgets(w http.ResponseWriter, r *http.Request) {
-
 	page, limit := parsePageParams(r)
 
 	// is_active is a tri-state filter: absent → all, "true" → active only,
 	// "false" → inactive only.
 	var isActive *bool
+
 	if v := r.URL.Query().Get("is_active"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			isActive = &b
@@ -119,7 +119,6 @@ func (h *Handlers) ListWidgets(w http.ResponseWriter, r *http.Request) {
 
 // GetWidget handles GET /api/v1/admin/widgets/{id}.
 func (h *Handlers) GetWidget(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -137,7 +136,6 @@ func (h *Handlers) GetWidget(w http.ResponseWriter, r *http.Request) {
 
 // CreateWidget handles POST /api/v1/admin/widgets.
 func (h *Handlers) CreateWidget(w http.ResponseWriter, r *http.Request) {
-
 	var input CreateWidgetInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
@@ -155,7 +153,6 @@ func (h *Handlers) CreateWidget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateWidget handles PATCH /api/v1/admin/widgets/{id}.
 func (h *Handlers) UpdateWidget(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -179,7 +176,6 @@ func (h *Handlers) UpdateWidget(w http.ResponseWriter, r *http.Request) {
 
 // DeleteWidget handles DELETE /api/v1/admin/widgets/{id}.
 func (h *Handlers) DeleteWidget(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")

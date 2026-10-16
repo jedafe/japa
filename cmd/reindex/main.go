@@ -42,6 +42,7 @@ func run() error {
 	}
 
 	var ()
+
 	if err := (error)(nil); err != nil {
 		return fmt.Errorf("invalid platform UUID %q: %w", platformStr, err)
 	}

@@ -87,10 +87,12 @@ func (s *Service) sourceAutoCreateEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	enabled, err := s.settings.GetSettingBool(ctx, "sources.auto_create_for_organizations")
 	if err != nil {
 		return false
 	}
+
 	return enabled
 }
 
@@ -166,7 +168,6 @@ func (s *Service) CreateOrganization(ctx context.Context, userID pgtype.UUID, in
 	qtx := s.store.write.WithTx(tx)
 
 	org, err := qtx.CreateOrganization(ctx, gen.CreateOrganizationParams{
-
 		OwnerUserID: userID,
 		Name:        input.Name,
 		Slug:        input.Slug,
@@ -213,11 +214,13 @@ func (s *Service) CreateOrganization(ctx context.Context, userID pgtype.UUID, in
 	// when the platform setting is enabled (default false).
 	if s.sources != nil && s.sourceAutoCreateEnabled(ctx) {
 		category := "community_organisation"
-		if org.OrgType == "university" {
+		switch org.OrgType {
+		case "university":
 			category = "university"
-		} else if org.OrgType == "business" || org.OrgType == "media" {
+		case "business", "media":
 			category = org.OrgType
 		}
+
 		source, sErr := s.sources.CreateSourceFromEntity(ctx, org.ID, userID, "organization", org.Name, org.Slug, maybeString(org.WebsiteUrl), category)
 		if sErr != nil {
 			slog.Warn("organizations: failed to create source for org", "org_id", org.ID, "error", sErr)
@@ -598,6 +601,7 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 	if err != nil {
 		return fmt.Errorf("checking membership: %w", err)
 	}
+
 	if isMember {
 		return fmt.Errorf("%w: user is already a member", errpkg.ErrAlreadyExists)
 	}
@@ -792,7 +796,6 @@ func (s *Service) ClaimOwnership(ctx context.Context, userID, orgID pgtype.UUID,
 	}
 
 	return s.store.CreateOwnershipClaim(ctx, gen.CreateOwnershipClaimParams{
-
 		ClaimantUserID:   userID,
 		OrganizationID:   orgID,
 		EvidenceUrl:      strPtr(input.EvidenceURL),
@@ -1019,6 +1022,7 @@ func strPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -1026,6 +1030,7 @@ func maybeString(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }
 
@@ -1107,6 +1112,7 @@ func (s *Service) AdminDeleteOrganization(ctx context.Context, id pgtype.UUID, f
 	} else {
 		err = s.store.SoftDeleteOrganization(ctx, id)
 	}
+
 	if err != nil {
 		return err
 	}

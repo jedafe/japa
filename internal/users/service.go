@@ -614,12 +614,14 @@ func (s *Service) UpdateJourney(ctx context.Context, userID pgtype.UUID, req *Up
 		if req.Purpose != nil {
 			rawIntent = *req.Purpose
 		}
+
 		if req.JapaStage != nil {
 			// The japa_status custom field stores legacy vocabulary
 			// (newly_japa, settling_in…); the column wants canonical §87
 			// stages.
 			stage = visitor.NormalizeJourneyStage(normalizeJourneyValue(*req.JapaStage))
 		}
+
 		if err := s.journeyWriter.ApplyJourneyClass(ctx, userID, rawIntent, stage, "me/journey"); err != nil {
 			slog.Warn("users: failed to apply journey class", "error", err)
 		}
@@ -725,7 +727,7 @@ func (s *Service) SetCurrentGeoSpace(ctx context.Context, userID, spaceID pgtype
 // BUG-021). These are platform constants sourced from the schema CHECK
 // constraints and the moderation subsystem's canonical value sets.
 // Ref: japaconnect-engineering/sections/03-rbac.md (user statuses/profile types)
-// //	japaconnect-engineering/sections/46-impersonation.md (moderation)
+// //	japaconnect-engineering/sections/46-impersonation.md (moderation).
 func (s *Service) GetUserModerationConfig(ctx context.Context) (*UserModerationConfig, error) {
 	return &UserModerationConfig{
 		// User statuses — mirrors the values used by the users.status column
@@ -800,6 +802,7 @@ func (s *Service) ListUsers(ctx context.Context, search, status, groupSlug, sort
 	if !adminUserSortKeys[sortKey] {
 		sortKey = ""
 	}
+
 	if sortDir != "asc" {
 		sortDir = "desc"
 	}
@@ -858,7 +861,7 @@ var publicUserSortKeys = map[string]bool{
 // surfaces prominent users first). Returns items + pagination metadata
 // (total, page, total_pages).
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
-// //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+// //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out).
 func (s *Service) ListPublicUsers(ctx context.Context, search, profileType, sortKey string, limit, offset int32) (*PublicUserListResponse, error) {
 	if limit <= 0 {
 		limit = 20
@@ -1174,12 +1177,15 @@ func (s *Service) listUserContentInternal(ctx context.Context, userID pgtype.UUI
 	}
 
 	result := make([]ContentListItem, len(content))
+
 	for i, c := range content {
 		var publishAt *string
+
 		if c.PublishAt.Valid {
 			s := c.PublishAt.Time.Format(time.RFC3339)
 			publishAt = &s
 		}
+
 		result[i] = ContentListItem{
 			ID:           c.ID.String(),
 			Title:        c.Title,
@@ -1437,7 +1443,6 @@ func (s *Service) CreateBookmark(ctx context.Context, userID, entityID, folderID
 	}
 
 	bm, err := s.store.write.CreateBookmark(ctx, gen.CreateBookmarkParams{
-
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -1692,7 +1697,6 @@ func (s *Service) UpdateProfileType(ctx context.Context, userID pgtype.UUID, pro
 	}
 
 	return s.store.write.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
-
 		ID:          userID,
 		ProfileType: profileType,
 	})
@@ -1914,12 +1918,12 @@ func (s *Service) EnsureSyntheticUser(ctx context.Context, input SyntheticUserIn
 			userID = existing
 			return nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("looking up synthetic user: %w", err)
 		}
 
 		newID, err := q.CreateSyntheticUser(ctx, gen.CreateSyntheticUserParams{
-
 			Email:           input.Email,
 			Username:        input.Username,
 			SyntheticSource: &input.SourceType,
@@ -1935,7 +1939,6 @@ func (s *Service) EnsureSyntheticUser(ctx context.Context, input SyntheticUserIn
 		location := stringOrNil(input.Location)
 
 		if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-
 			UserID:        newID,
 			DisplayName:   displayName,
 			Bio:           bio,
@@ -1948,6 +1951,7 @@ func (s *Service) EnsureSyntheticUser(ctx context.Context, input SyntheticUserIn
 		}
 
 		userID = newID
+
 		return nil
 	})
 	if err != nil {
@@ -1961,5 +1965,6 @@ func stringOrNil(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }

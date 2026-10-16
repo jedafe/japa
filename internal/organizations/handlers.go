@@ -211,7 +211,7 @@ type createOrganizationRequest struct {
 // to the organization_fields group). When the custom field lookup is not
 // injected or the field doesn't exist, hardcoded constants are used as fallback.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
-// //	japaconnect-engineering/sections/08-custom-field-architecture.md
+// //	japaconnect-engineering/sections/08-custom-field-architecture.md.
 func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
 	orgTypes := []map[string]string{
 		{"value": OrgTypeBusiness, "label": "Business"},
@@ -337,6 +337,7 @@ func (h *Handlers) ListMyOrganizations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
@@ -453,7 +454,9 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You are not a member of this organization")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -609,6 +612,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -690,6 +694,7 @@ func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var req claimOwnershipRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
@@ -720,6 +725,7 @@ func (h *Handlers) ListMyClaims(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	result, err := h.service.ListMyClaims(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -751,6 +757,7 @@ func (h *Handlers) GetClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	claimID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid claim ID")
@@ -788,6 +795,7 @@ func (h *Handlers) WithdrawClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	claimID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid claim ID")

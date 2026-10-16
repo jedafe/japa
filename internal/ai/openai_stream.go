@@ -111,6 +111,7 @@ func streamChatCompletions(
 		order int
 		tc    openAIToolCall
 	}
+
 	toolAccums := map[int]*toolAccum{}
 	nextOrder := 0
 
@@ -136,9 +137,11 @@ func streamChatCompletions(
 					if chunk.ID != "" {
 						refID = chunk.ID
 					}
+
 					if chunk.Model != "" {
 						model = chunk.Model
 					}
+
 					if chunk.Usage != nil {
 						usage = TokenUsage{
 							PromptTokens:     chunk.Usage.PromptTokens,
@@ -153,9 +156,11 @@ func streamChatCompletions(
 						}
 
 						d := choice.Delta
+
 						switch {
 						case d.Content != "":
 							content.WriteString(d.Content)
+
 							if sink != nil {
 								sink(d.Content)
 							}
@@ -172,12 +177,15 @@ func streamChatCompletions(
 								nextOrder++
 								toolAccums[tc.Index] = acc
 							}
+
 							if tc.ID != "" {
 								acc.tc.ID = tc.ID
 							}
+
 							if tc.Function.Name != "" && acc.tc.Function.Name == "" {
 								acc.tc.Function.Name = tc.Function.Name
 							}
+
 							acc.tc.Function.Arguments += tc.Function.Arguments
 						}
 					}
@@ -192,8 +200,10 @@ func streamChatCompletions(
 				if finish == "" {
 					return ChatWithToolsResponse{}, errors.New("stream ended before a finish_reason was received")
 				}
+
 				break
 			}
+
 			return ChatWithToolsResponse{}, fmt.Errorf("reading stream: %w", readErr)
 		}
 	}
@@ -229,8 +239,10 @@ func streamChatCompletions(
 			}
 		}
 	}
+
 	for _, idx := range ordered {
 		tc := toolAccums[idx].tc
+
 		args := json.RawMessage(tc.Function.Arguments)
 		if len(args) == 0 || string(args) == "null" {
 			args = json.RawMessage("{}")

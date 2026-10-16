@@ -96,6 +96,7 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 
 	if r.queries != nil && len(offerings) > 0 {
 		ids := make([]pgtype.UUID, 0, len(offerings))
+
 		for _, o := range offerings {
 			if o.ID.Valid {
 				ids = append(ids, o.ID)

@@ -853,6 +853,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]OrgRow, int
 			"(co.name ILIKE $%d OR co.slug ILIKE $%d OR co.origin_community ILIKE $%d)",
 			argIdx, argIdx+1, argIdx+2,
 		))
+
 		args = append(args, "%"+f.Q+"%", "%"+f.Q+"%", "%"+f.Q+"%")
 		argIdx += 3
 	}

@@ -163,33 +163,42 @@ func projectScholarshipFields(r *ScholarshipResult) {
 		if v, ok := r.FieldValues[key]; ok {
 			return v
 		}
+
 		return ""
 	}
 
 	if r.Institution == "" {
 		r.Institution = get("provider_institution")
 	}
+
 	if r.Country == "" {
 		r.Country = get("countries_eligible")
 	}
+
 	if r.LevelOfStudy == "" {
 		r.LevelOfStudy = get("level_of_study")
 	}
+
 	if r.ApplicationDeadline == "" {
 		r.ApplicationDeadline = get("application_deadline")
 	}
+
 	if r.ApplicationURL == "" {
 		r.ApplicationURL = get("application_link")
 	}
+
 	if r.Eligibility == "" {
 		r.Eligibility = get("eligibility_criteria")
 	}
+
 	if r.HowToApply == "" {
 		r.HowToApply = get("how_to_apply")
 	}
+
 	if r.ContactEmail == "" {
 		r.ContactEmail = get("contact_email")
 	}
+
 	if r.Description == "" {
 		r.Description = get("description")
 	}
@@ -236,6 +245,7 @@ func renewableFromFunding(funding []byte) (bool, bool) {
 		if err != nil {
 			return false, false
 		}
+
 		return b, true
 	}
 
@@ -262,6 +272,7 @@ func mergeContentFieldValues(dst map[string]string, fieldValues []byte) {
 		if v == nil {
 			continue
 		}
+
 		switch t := v.(type) {
 		case string:
 			if s := strings.TrimSpace(t); s != "" {
@@ -556,7 +567,8 @@ func findScholarshipsQuery(filters ScholarshipFilters, now time.Time) (string, [
 	// match. A safe regex guard prevents non-numeric values from breaking the
 	// cast.
 	const numericRE = `'^[0-9]+(\.[0-9]+)?$'`
-	amountValue := fmt.Sprintf("COALESCE(s.funding->>'award_amount_usd', c.field_values->>'award_amount_usd', '')")
+
+	amountValue := "COALESCE(s.funding->>'award_amount_usd', c.field_values->>'award_amount_usd', '')"
 
 	if filters.MinAmount > 0 {
 		conditions = append(conditions, fmt.Sprintf("(%s ~ %s AND (%s)::numeric >= $%d)", amountValue, numericRE, amountValue, argIdx))
@@ -571,7 +583,7 @@ func findScholarshipsQuery(filters ScholarshipFilters, now time.Time) (string, [
 	}
 
 	if filters.Renewable != nil {
-		renewableValue := fmt.Sprintf("COALESCE(s.funding->>'is_renewable', c.field_values->>'is_renewable', '')")
+		renewableValue := "COALESCE(s.funding->>'is_renewable', c.field_values->>'is_renewable', '')"
 		if *filters.Renewable {
 			conditions = append(conditions, fmt.Sprintf("(LOWER(%s) = 'true' OR %s = '1')", renewableValue, renewableValue))
 		} else {
@@ -727,6 +739,7 @@ func (s *Service) FindScholarships(ctx context.Context, filters ScholarshipFilte
 
 	// Attach source attribution in a single batch query.
 	recordIDs := make([]pgtype.UUID, 0, len(results))
+
 	for _, r := range results {
 		if r.IntelRecordID != "" {
 			recordIDs = append(recordIDs, pgtypeUUID(r.IntelRecordID))
@@ -835,9 +848,11 @@ func sourceAttributionFromRow(src gen.ListSourcesByRecordIDsRow) SourceAttributi
 	if src.Slug != nil {
 		a.Slug = *src.Slug
 	}
+
 	if src.LogoUrl != nil {
 		a.LogoURL = *src.LogoUrl
 	}
+
 	return a
 }
 
@@ -859,7 +874,6 @@ func (s *Service) SaveScholarship(ctx context.Context, userID, guideID pgtype.UU
 	}
 
 	saved, err := s.store.SaveScholarship(ctx, gen.SaveScholarshipParams{
-
 		UserID:           userID,
 		GuideID:          guideID,
 		RemindBeforeDays: defaultReminderDays,
@@ -870,7 +884,6 @@ func (s *Service) SaveScholarship(ctx context.Context, userID, guideID pgtype.UU
 		// row so a repeat save is idempotent rather than a 400.
 		if errors.Is(err, pgx.ErrNoRows) {
 			existing, gerr := s.store.GetSavedScholarship(ctx, gen.GetSavedScholarshipParams{
-
 				UserID:  userID,
 				GuideID: guideID,
 			})
@@ -890,9 +903,9 @@ func (s *Service) SaveScholarship(ctx context.Context, userID, guideID pgtype.UU
 		if s.settings != nil {
 			completionPoints = s.settings.GetIntOr(ctx, "scholarship_finder.completion_points", 10)
 		}
+
 		if completionPoints > 0 {
 			payload, _ := json.Marshal(map[string]interface{}{
-
 				"user_id": userID.String(),
 				"amount":  completionPoints,
 				"reason":  "scholarship_saved",
@@ -925,7 +938,6 @@ func (s *Service) UpdateSavedScholarship(ctx context.Context, userID, guideID pg
 	}
 
 	return s.store.UpdateSavedScholarship(ctx, gen.UpdateSavedScholarshipParams{
-
 		UserID:           userID,
 		GuideID:          guideID,
 		Status:           statusArg,
@@ -939,7 +951,6 @@ func (s *Service) UpdateSavedScholarship(ctx context.Context, userID, guideID pg
 // response contract.
 func (s *Service) SavedScholarshipResponse(ctx context.Context, userID, guideID pgtype.UUID) (SavedScholarshipResponse, error) {
 	row, err := s.store.GetSavedScholarship(ctx, gen.GetSavedScholarshipParams{
-
 		UserID:  userID,
 		GuideID: guideID,
 	})
@@ -975,7 +986,6 @@ func (s *Service) SavedScholarshipResponse(ctx context.Context, userID, guideID 
 // DeleteSavedScholarship removes a scholarship from the tracker.
 func (s *Service) DeleteSavedScholarship(ctx context.Context, userID, guideID pgtype.UUID) error {
 	return s.store.DeleteSavedScholarship(ctx, gen.DeleteSavedScholarshipParams{
-
 		UserID:  userID,
 		GuideID: guideID,
 	})
@@ -1002,13 +1012,16 @@ func (s *Service) ListLevels(ctx context.Context) ([]Option, error) {
 	defer rows.Close()
 
 	out := []Option{}
+
 	for rows.Next() {
 		var level string
 		if err := rows.Scan(&level); err != nil {
 			return nil, fmt.Errorf("scholarships: scan level: %w", err)
 		}
+
 		out = append(out, Option{Value: level, Label: level})
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("scholarships: iterate levels: %w", err)
 	}
@@ -1020,7 +1033,6 @@ func (s *Service) ListLevels(ctx context.Context) ([]Option, error) {
 // Returns false (not an error) when no saved-tracker row exists.
 func (s *Service) IsSavedScholarship(ctx context.Context, userID, guideID pgtype.UUID) (bool, error) {
 	_, err := s.store.GetSavedScholarship(ctx, gen.GetSavedScholarshipParams{
-
 		UserID:  userID,
 		GuideID: guideID,
 	})
@@ -1060,7 +1072,6 @@ func (s *Service) ListSavedScholarships(ctx context.Context, userID pgtype.UUID,
 	}
 
 	rows, err := s.store.ListSavedScholarships(ctx, gen.ListSavedScholarshipsParams{
-
 		UserID:     userID,
 		Status:     status,
 		GuideID:    guideFilter,
@@ -1072,7 +1083,6 @@ func (s *Service) ListSavedScholarships(ctx context.Context, userID pgtype.UUID,
 	}
 
 	total, err := s.store.CountSavedScholarships(ctx, gen.CountSavedScholarshipsParams{
-
 		UserID:  userID,
 		Status:  status,
 		GuideID: guideFilter,
@@ -1122,6 +1132,7 @@ func savedGuideIDs(rows []gen.ListSavedScholarshipsRow) []pgtype.UUID {
 	for _, row := range rows {
 		ids = append(ids, row.GuideID)
 	}
+
 	return ids
 }
 
@@ -1158,6 +1169,7 @@ func (s *Service) getScholarshipDetails(ctx context.Context, guideIDs []pgtype.U
 	defer rows.Close()
 
 	var intelIDs []pgtype.UUID
+
 	for rows.Next() {
 		var (
 			r                 ScholarshipResult
@@ -1178,6 +1190,7 @@ func (s *Service) getScholarshipDetails(ctx context.Context, guideIDs []pgtype.U
 			description       *string
 			fieldValues       []byte
 		)
+
 		if err := rows.Scan(
 			&id, &intelRecordID, &gID, &r.Title, &slug, &summary,
 			&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
@@ -1191,21 +1204,26 @@ func (s *Service) getScholarshipDetails(ctx context.Context, guideIDs []pgtype.U
 		r.GuideID = pgtypeUUIDString(gID)
 		r.CountrySpaceID = pgtypeUUIDString(countrySpaceID)
 		r.FieldsOfStudy = fieldsOfStudy
+
 		if slug != nil {
 			r.Slug = *slug
 		}
+
 		if summary != nil && *summary != "" {
 			r.Summary = *summary
 		} else if description != nil && *description != "" {
 			r.Summary = *description
 		}
+
 		populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description, fieldValues)
 
 		out[gID] = r
+
 		if intelRecordID.Valid {
 			intelIDs = append(intelIDs, intelRecordID)
 		}
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("scholarships: iterate details: %w", err)
 	}
@@ -1217,6 +1235,7 @@ func (s *Service) getScholarshipDetails(ctx context.Context, guideIDs []pgtype.U
 				if r.IntelRecordID == "" {
 					continue
 				}
+
 				if src, ok := srcMap[r.IntelRecordID]; ok {
 					r.Source = sourceAttributionFromRow(src)
 					out[gID] = r
@@ -1282,7 +1301,6 @@ func (s *Service) AdminDeadlines(ctx context.Context, page, limit int) ([]AdminD
 	offset := safeOffset(page, limit)
 
 	rows, err := s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
-
 		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
@@ -1409,7 +1427,6 @@ func (s *Service) AdminTopSaved(ctx context.Context, page, limit int) ([]gen.Adm
 	offset := safeOffset(page, limit)
 
 	return s.store.AdminTopSaved(ctx, gen.AdminScholarshipTopSavedParams{
-
 		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
@@ -1428,7 +1445,6 @@ func (s *Service) AdminUpcomingDeadlines(ctx context.Context, page, limit int) (
 	offset := safeOffset(page, limit)
 
 	return s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
-
 		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
@@ -1447,7 +1463,6 @@ func (s *Service) AdminReminderLog(ctx context.Context, page, limit int) ([]gen.
 	offset := safeOffset(page, limit)
 
 	return s.store.AdminReminderLog(ctx, gen.AdminScholarshipReminderLogParams{
-
 		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})

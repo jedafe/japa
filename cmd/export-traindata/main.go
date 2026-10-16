@@ -92,12 +92,15 @@ type labeledExample struct {
 func newExample(system, user, assistant string) (example, bool) {
 	u := strings.TrimSpace(user)
 	a := strings.TrimSpace(assistant)
+
 	if len(u) < minTextLen || len(a) < minTextLen {
 		return example{}, false
 	}
+
 	if len(a) > maxTextLen {
 		a = strings.TrimSpace(a[:maxTextLen])
 	}
+
 	return example{Messages: []message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: u},
@@ -113,6 +116,7 @@ func finalAnswer(ex example) string {
 			return ex.Messages[i].Content
 		}
 	}
+
 	return ""
 }
 
@@ -125,6 +129,7 @@ func bodyText(raw string) string {
 	if strings.HasPrefix(raw, "[") {
 		raw = `{"type":"doc","content":` + raw + `}`
 	}
+
 	return rag.ExtractPlainText(raw)
 }
 
@@ -134,7 +139,9 @@ func bodyText(raw string) string {
 // into fixed structs. Map keys are sorted so output is deterministic.
 func renderJSON(v any, depth int) string {
 	var b strings.Builder
+
 	renderValue(&b, v, depth)
+
 	return b.String()
 }
 
@@ -149,10 +156,12 @@ func renderValue(b *strings.Builder, v any, depth int) {
 				fmt.Fprintf(b, "%s- %s", indent, inlineObject(obj))
 				continue
 			}
+
 			if arr, ok := item.([]any); ok {
 				renderValue(b, arr, depth)
 				continue
 			}
+
 			fmt.Fprintf(b, "%s- %v\n", indent, item)
 		}
 	case map[string]any:
@@ -178,6 +187,7 @@ func inlineObject(obj map[string]any) string {
 	var b strings.Builder
 
 	first := true
+
 	for _, k := range sortedKeys(obj) {
 		val := obj[k]
 		switch val.(type) {
@@ -187,10 +197,13 @@ func inlineObject(obj map[string]any) string {
 			if !first {
 				b.WriteString(", ")
 			}
+
 			fmt.Fprintf(&b, "%s: %v", k, val)
+
 			first = false
 		}
 	}
+
 	b.WriteString("\n")
 
 	for _, k := range sortedKeys(obj) {
@@ -216,6 +229,7 @@ func sortedKeys(m map[string]any) []string {
 func stripTitlePrefix(text, title string) string {
 	titleWords := strings.Fields(title)
 	textWords := strings.Fields(text)
+
 	if len(titleWords) == 0 {
 		return text
 	}
@@ -228,6 +242,7 @@ func stripTitlePrefix(text, title string) string {
 	for n < len(titleWords) && n < len(textWords) && norm(titleWords[n]) == norm(textWords[n]) {
 		n++
 	}
+
 	if n < 3 {
 		return text
 	}
@@ -240,6 +255,7 @@ func jsonField(raw []byte) any {
 	if len(raw) == 0 || json.Unmarshal(raw, &v) != nil {
 		return nil
 	}
+
 	return v
 }
 
@@ -331,6 +347,7 @@ func run(outPath, evalPath string, evalFrac float64, minVotes int, dedupThreshol
 	}
 
 	var all []labeledExample
+
 	for _, src := range sources {
 		if enabled != nil && !enabled[src.name] {
 			continue
@@ -344,11 +361,13 @@ func run(outPath, evalPath string, evalFrac float64, minVotes int, dedupThreshol
 		for _, ex := range exs {
 			all = append(all, labeledExample{ex: ex, src: src.name})
 		}
+
 		slog.Info("source extracted", "source", src.name, "examples", len(exs))
 	}
 
 	if dedupThreshold > 0 {
 		var dropped map[string]int
+
 		all, dropped = dedup(all, dedupThreshold)
 		for src, n := range dropped {
 			if n > 0 {
@@ -360,6 +379,7 @@ func run(outPath, evalPath string, evalFrac float64, minVotes int, dedupThreshol
 	// Deterministic eval holdout — hash the user turn so re-runs split
 	// identically regardless of row ordering or added sources.
 	var train, eval []example
+
 	for _, l := range all {
 		if evalFrac > 0 && float64(fnvString(l.ex.Messages[1].Content)%1000)/1000 < evalFrac {
 			eval = append(eval, l.ex)
@@ -371,12 +391,14 @@ func run(outPath, evalPath string, evalFrac float64, minVotes int, dedupThreshol
 	if err := writeJSONL(outPath, train); err != nil {
 		return err
 	}
+
 	slog.Info("train written", "file", outPath, "examples", len(train))
 
 	if evalFrac > 0 {
 		if err := writeJSONL(evalPath, eval); err != nil {
 			return err
 		}
+
 		slog.Info("eval written", "file", evalPath, "examples", len(eval))
 	}
 
@@ -396,6 +418,7 @@ func writeJSONL(path string, exs []example) error {
 			return fmt.Errorf("writing example: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -406,7 +429,9 @@ func writeJSONL(path string, exs []example) error {
 
 func dedup(in []labeledExample, threshold float64) ([]labeledExample, map[string]int) {
 	var kept []labeledExample
+
 	var keptShingles []map[uint64]struct{}
+
 	index := map[uint64][]int{} // shingle hash → kept example indexes
 	dropped := map[string]int{}
 
@@ -415,6 +440,7 @@ func dedup(in []labeledExample, threshold float64) ([]labeledExample, map[string
 
 		// Only compare against examples sharing at least one shingle.
 		candidates := map[int]struct{}{}
+
 		for h := range sh {
 			for _, i := range index[h] {
 				candidates[i] = struct{}{}
@@ -422,12 +448,14 @@ func dedup(in []labeledExample, threshold float64) ([]labeledExample, map[string
 		}
 
 		dup := false
+
 		for i := range candidates {
 			if jaccard(sh, keptShingles[i]) >= threshold {
 				dup = true
 				break
 			}
 		}
+
 		if dup {
 			dropped[l.src]++
 			continue
@@ -436,6 +464,7 @@ func dedup(in []labeledExample, threshold float64) ([]labeledExample, map[string
 		idx := len(kept)
 		kept = append(kept, l)
 		keptShingles = append(keptShingles, sh)
+
 		for h := range sh {
 			index[h] = append(index[h], idx)
 		}
@@ -456,17 +485,21 @@ func normalizeWords(s string) []string {
 // the window collapse to a single shingle of the whole text.
 func shingleSet(words []string) map[uint64]struct{} {
 	const n = 5
+
 	out := map[uint64]struct{}{}
 	if len(words) == 0 {
 		return out
 	}
+
 	if len(words) <= n {
 		out[fnvString(strings.Join(words, " "))] = struct{}{}
 		return out
 	}
+
 	for i := 0; i+n <= len(words); i++ {
 		out[fnvString(strings.Join(words[i:i+n], " "))] = struct{}{}
 	}
+
 	return out
 }
 
@@ -474,22 +507,27 @@ func jaccard(a, b map[uint64]struct{}) float64 {
 	if len(a) == 0 || len(b) == 0 {
 		return 0
 	}
+
 	smaller, larger := a, b
 	if len(smaller) > len(larger) {
 		smaller, larger = larger, smaller
 	}
+
 	inter := 0
+
 	for k := range smaller {
 		if _, ok := larger[k]; ok {
 			inter++
 		}
 	}
+
 	return float64(inter) / float64(len(a)+len(b)-inter)
 }
 
 func fnvString(s string) uint64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(s))
+
 	return h.Sum64()
 }
 
@@ -519,6 +557,7 @@ func forumQA(ctx context.Context, pool *pgxpool.Pool, system string, minVotes in
 	defer rows.Close()
 
 	var exs []example
+
 	for rows.Next() {
 		var title, qBody, aBody string
 		if err := rows.Scan(&title, &qBody, &aBody); err != nil {
@@ -530,6 +569,7 @@ func forumQA(ctx context.Context, pool *pgxpool.Pool, system string, minVotes in
 			exs = append(exs, ex)
 		}
 	}
+
 	return exs, rows.Err()
 }
 
@@ -553,10 +593,14 @@ func housingGuides(ctx context.Context, pool *pgxpool.Pool, system string, _ int
 	defer rows.Close()
 
 	var exs []example
+
 	for rows.Next() {
 		var dest string
+
 		var city, accType, landlordReqs, tips *string
+
 		var rentRanges, platforms []byte
+
 		var scamCats []string
 		if err := rows.Scan(&dest, &city, &accType, &rentRanges, &landlordReqs, &platforms, &scamCats, &tips); err != nil {
 			return nil, err
@@ -571,18 +615,23 @@ func housingGuides(ctx context.Context, pool *pgxpool.Pool, system string, _ int
 		if accType != nil && *accType != "" {
 			fmt.Fprintf(&ans, "Accommodation type: %s\n\n", *accType)
 		}
+
 		if rent := renderJSON(jsonField(rentRanges), 0); rent != "" {
 			fmt.Fprintf(&ans, "Typical rent ranges:\n%s\n", rent)
 		}
+
 		if landlordReqs != nil && *landlordReqs != "" {
 			fmt.Fprintf(&ans, "What landlords usually require: %s\n\n", *landlordReqs)
 		}
+
 		if p := renderJSON(jsonField(platforms), 0); p != "" {
 			fmt.Fprintf(&ans, "Where to search:\n%s\n", p)
 		}
+
 		if len(scamCats) > 0 {
 			fmt.Fprintf(&ans, "Scams to watch for: %s\n\n", strings.Join(scamCats, ", "))
 		}
+
 		if tips != nil && *tips != "" {
 			fmt.Fprintf(&ans, "Tips: %s\n", *tips)
 		}
@@ -597,6 +646,7 @@ func housingGuides(ctx context.Context, pool *pgxpool.Pool, system string, _ int
 			}
 		}
 	}
+
 	return exs, rows.Err()
 }
 
@@ -620,19 +670,25 @@ func ecaGuides(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([
 	defer rows.Close()
 
 	var exs []example
+
 	for rows.Next() {
 		var dest, provider, purpose string
+
 		var fee, currency, timeline, officialURL *string
+
 		var steps, docs []byte
 		if err := rows.Scan(&dest, &provider, &purpose, &steps, &fee, &currency, &timeline, &docs, &officialURL); err != nil {
 			return nil, err
 		}
 
 		var ans strings.Builder
+
 		fmt.Fprintf(&ans, "For %s in %s, you can use %s.\n\n", purpose, dest, provider)
+
 		if s := renderJSON(jsonField(steps), 0); s != "" {
 			fmt.Fprintf(&ans, "Steps:\n%s\n", s)
 		}
+
 		if fee != nil && *fee != "" {
 			feeStr := *fee
 			// fee_estimate often already embeds the currency ("CAD 258") —
@@ -640,14 +696,18 @@ func ecaGuides(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([
 			if currency != nil && *currency != "" && !strings.ContainsFunc(feeStr, unicode.IsLetter) {
 				feeStr = *currency + " " + feeStr
 			}
+
 			fmt.Fprintf(&ans, "Estimated fee: %s (verify the current fee — these change).\n", feeStr)
 		}
+
 		if timeline != nil && *timeline != "" {
 			fmt.Fprintf(&ans, "Typical timeline: %s\n", *timeline)
 		}
+
 		if d := renderJSON(jsonField(docs), 0); d != "" {
 			fmt.Fprintf(&ans, "Documents required:\n%s\n", d)
 		}
+
 		if officialURL != nil && *officialURL != "" {
 			fmt.Fprintf(&ans, "Official source: %s\n", *officialURL)
 		}
@@ -657,6 +717,7 @@ func ecaGuides(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([
 			exs = append(exs, ex)
 		}
 	}
+
 	return exs, rows.Err()
 }
 
@@ -679,20 +740,27 @@ func taxGuides(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([
 	defer rows.Close()
 
 	var exs []example
+
 	for rows.Next() {
 		var origin, dest, empStatus string
+
 		var trigger, firstYear *string
+
 		var worldwide *bool
+
 		var checklist []byte
 		if err := rows.Scan(&origin, &dest, &empStatus, &trigger, &worldwide, &firstYear, &checklist); err != nil {
 			return nil, err
 		}
 
 		var ans strings.Builder
+
 		fmt.Fprintf(&ans, "Moving from %s to %s as %s:\n\n", origin, dest, empStatus)
+
 		if trigger != nil && *trigger != "" {
 			fmt.Fprintf(&ans, "Tax residency trigger: %s\n", *trigger)
 		}
+
 		if worldwide != nil {
 			if *worldwide {
 				ans.WriteString("Your worldwide income may be taxable in your destination country.\n")
@@ -700,12 +768,15 @@ func taxGuides(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([
 				ans.WriteString("Generally only income sourced in your destination country is taxed there.\n")
 			}
 		}
+
 		if firstYear != nil && *firstYear != "" {
 			fmt.Fprintf(&ans, "\nFirst-year obligations: %s\n", *firstYear)
 		}
+
 		if c := renderJSON(jsonField(checklist), 0); c != "" {
 			fmt.Fprintf(&ans, "\nAction checklist:\n%s", c)
 		}
+
 		ans.WriteString("\nTax rules change — confirm with the official tax authority or a licensed adviser.")
 
 		q := fmt.Sprintf("Do I still pay tax in %s after moving to %s as %s?", origin, dest, empStatus)
@@ -713,6 +784,7 @@ func taxGuides(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([
 			exs = append(exs, ex)
 		}
 	}
+
 	return exs, rows.Err()
 }
 
@@ -737,29 +809,39 @@ func arrivalChecklists(ctx context.Context, pool *pgxpool.Pool, system string, _
 	type item struct {
 		phase, title, desc, link string
 	}
+
 	var exs []example
+
 	var curID, curDest string
+
 	var curVisa *string
+
 	var items []item
 
 	flush := func() {
 		if len(items) == 0 {
 			return
 		}
+
 		var ans strings.Builder
+
 		lastPhase := ""
 		for _, it := range items {
 			if it.phase != lastPhase {
 				fmt.Fprintf(&ans, "\n%s:\n", it.phase)
 				lastPhase = it.phase
 			}
+
 			fmt.Fprintf(&ans, "- %s", it.title)
+
 			if it.desc != "" {
 				fmt.Fprintf(&ans, " — %s", it.desc)
 			}
+
 			if it.link != "" {
 				fmt.Fprintf(&ans, " (%s)", it.link)
 			}
+
 			ans.WriteString("\n")
 		}
 
@@ -767,32 +849,41 @@ func arrivalChecklists(ctx context.Context, pool *pgxpool.Pool, system string, _
 		if curVisa != nil && *curVisa != "" {
 			visa = " on a " + *curVisa + " visa"
 		}
+
 		q := fmt.Sprintf("I just arrived in %s%s. What do I need to do first?", curDest, visa)
 		if ex, ok := newExample(system, q, ans.String()); ok {
 			exs = append(exs, ex)
 		}
+
 		items = items[:0]
 	}
 
 	for rows.Next() {
 		var id, dest, phase, title string
+
 		var visa, desc, link *string
 		if err := rows.Scan(&id, &dest, &visa, &phase, &title, &desc, &link); err != nil {
 			return nil, err
 		}
+
 		if id != curID {
 			flush()
+
 			curID, curDest, curVisa = id, dest, visa
 		}
+
 		it := item{phase: phase, title: title}
 		if desc != nil {
 			it.desc = *desc
 		}
+
 		if link != nil {
 			it.link = *link
 		}
+
 		items = append(items, it)
 	}
+
 	flush()
 
 	return exs, rows.Err()
@@ -819,23 +910,30 @@ func scamReports(ctx context.Context, pool *pgxpool.Pool, system string, _ int) 
 	defer rows.Close()
 
 	var exs []example
+
 	for rows.Next() {
 		var scamType, dest string
+
 		var n int
+
 		var descs []string
 		if err := rows.Scan(&scamType, &dest, &n, &descs); err != nil {
 			return nil, err
 		}
 
 		var ans strings.Builder
+
 		fmt.Fprintf(&ans, "There %s %d confirmed report(s) of %s scams targeting people relocating to %s.\n\nCommon patterns:\n",
 			map[bool]string{true: "is", false: "are"}[n == 1], n, scamType, dest)
+
 		for i, d := range descs {
 			if i >= 5 {
 				break
 			}
+
 			fmt.Fprintf(&ans, "- %s\n", strings.TrimSpace(d))
 		}
+
 		ans.WriteString("\nIf you've encountered this scam, report it on the JapaConnect scam alert board so others are warned.")
 
 		q := fmt.Sprintf("What do %s scams look like in %s?", scamType, dest)
@@ -843,6 +941,7 @@ func scamReports(ctx context.Context, pool *pgxpool.Pool, system string, _ int) 
 			exs = append(exs, ex)
 		}
 	}
+
 	return exs, rows.Err()
 }
 
@@ -868,8 +967,10 @@ func wikiPages(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([
 	defer rows.Close()
 
 	var exs []example
+
 	for rows.Next() {
 		var title, dest string
+
 		var content []byte
 		if err := rows.Scan(&title, &content, &dest); err != nil {
 			return nil, err
@@ -880,6 +981,7 @@ func wikiPages(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([
 			exs = append(exs, ex)
 		}
 	}
+
 	return exs, rows.Err()
 }
 
@@ -902,12 +1004,15 @@ func lessons(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([]e
 	defer rows.Close()
 
 	var exs []example
+
 	for rows.Next() {
 		var title, trackTitle string
+
 		var content *string
 		if err := rows.Scan(&title, &content, &trackTitle); err != nil {
 			return nil, err
 		}
+
 		if content == nil {
 			continue
 		}
@@ -917,6 +1022,7 @@ func lessons(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([]e
 			exs = append(exs, ex)
 		}
 	}
+
 	return exs, rows.Err()
 }
 
@@ -938,6 +1044,7 @@ func publishedContents(ctx context.Context, pool *pgxpool.Pool, system string, _
 	defer rows.Close()
 
 	var exs []example
+
 	for rows.Next() {
 		var title, body string
 		if err := rows.Scan(&title, &body); err != nil {
@@ -949,6 +1056,7 @@ func publishedContents(ctx context.Context, pool *pgxpool.Pool, system string, _
 			exs = append(exs, ex)
 		}
 	}
+
 	return exs, rows.Err()
 }
 
@@ -1009,15 +1117,18 @@ func sessionSource(includeStaff bool) func(context.Context, *pgxpool.Pool, strin
 		defer rows.Close()
 
 		var exs []example
+
 		for rows.Next() {
 			var prompt, summary string
 			if err := rows.Scan(&prompt, &summary); err != nil {
 				return nil, err
 			}
+
 			if ex, ok := newExample(system, prompt, summary); ok {
 				exs = append(exs, ex)
 			}
 		}
+
 		return exs, rows.Err()
 	}
 }
@@ -1031,6 +1142,7 @@ func isReadOnlyTool(name string) bool {
 			return true
 		}
 	}
+
 	return strings.HasPrefix(name, "external.") ||
 		strings.HasPrefix(name, "knowledge.") ||
 		strings.HasPrefix(name, "presearch")
@@ -1043,6 +1155,7 @@ func truncateRunes(s string, n int) string {
 	if len(r) <= n {
 		return s
 	}
+
 	return string(r[:n]) + "…"
 }
 
@@ -1078,47 +1191,58 @@ func traceSource(includeStaff bool, toolRole string) func(context.Context, *pgxp
 			status string
 			errMsg string
 		}
+
 		type sess struct {
 			prompt, summary string
 			calls           []call
 		}
 
 		var sessions []sess
+
 		var curID string
 
 		for rows.Next() {
 			var id, prompt, summary, name, status string
+
 			var args, result []byte
+
 			var errMsg *string
 			if err := rows.Scan(&id, &prompt, &summary, &name, &args, &result, &status, &errMsg); err != nil {
 				return nil, err
 			}
+
 			if id != curID {
 				sessions = append(sessions, sess{prompt: prompt, summary: summary})
 				curID = id
 			}
+
 			c := call{name: name, args: args, result: result, status: status}
 			if errMsg != nil {
 				c.errMsg = *errMsg
 			}
+
 			cur := &sessions[len(sessions)-1]
 			cur.calls = append(cur.calls, c)
 		}
+
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
 
 		var exs []example
+
 		for _, s := range sessions {
 			// Trajectories only when every call is read-only — mixed or
 			// mutating sessions fall back to the plain sessions source.
 			readOnly := true
+
 			for _, c := range s.calls {
 				if !isReadOnlyTool(c.name) {
 					readOnly = false
 					break
 				}
 			}
+
 			if !readOnly {
 				continue
 			}
@@ -1132,9 +1256,11 @@ func traceSource(includeStaff bool, toolRole string) func(context.Context, *pgxp
 				tc := toolCall{ID: fmt.Sprintf("call_%d", i+1), Type: "function"}
 				tc.Function.Name = c.name
 				tc.Function.ArgumentsJSON = json.RawMessage(c.args)
+
 				if len(tc.Function.ArgumentsJSON) == 0 {
 					tc.Function.ArgumentsJSON = json.RawMessage(`{}`)
 				}
+
 				msgs = append(msgs, message{Role: "assistant", ToolCalls: []toolCall{tc}})
 
 				// Uniform result envelope — status is always visible so
@@ -1143,6 +1269,7 @@ func traceSource(includeStaff bool, toolRole string) func(context.Context, *pgxp
 				if len(c.result) > 0 {
 					resultText = string(c.result)
 				}
+
 				envelope, _ := json.Marshal(map[string]any{
 					"status": c.status,
 					"result": json.RawMessage(resultText),
@@ -1155,12 +1282,14 @@ func traceSource(includeStaff bool, toolRole string) func(context.Context, *pgxp
 			if len(summary) > maxTextLen {
 				summary = strings.TrimSpace(summary[:maxTextLen])
 			}
+
 			msgs = append(msgs, message{Role: "assistant", Content: summary})
 
 			if len(s.prompt) >= minTextLen && len(summary) >= minTextLen {
 				exs = append(exs, example{Messages: msgs})
 			}
 		}
+
 		return exs, nil
 	}
 }

@@ -61,7 +61,7 @@ func TestPrivateSpaceGate_GetSpace(t *testing.T) {
 	ctx := t.Context()
 	// t.Context() is cancelled before Cleanup funcs run — teardown
 	// deletes need a live context or they silently no-op.
-	bg := context.Background()
+	bg := t.Context()
 	q := gen.New(database.Writer)
 
 	community, err := q.GetSpaceTypeBySlug(ctx, "community")
@@ -73,8 +73,10 @@ func TestPrivateSpaceGate_GetSpace(t *testing.T) {
 	seq := 0
 	mkUser := func(tag string) pgtype.UUID {
 		t.Helper()
+
 		seq++
 		hash := "x"
+
 		id, err := q.CreateUser(ctx, gen.CreateUserParams{
 			Email:        fmt.Sprintf("priv-gate-%s-%d-%d@example.invalid", tag, uniq, seq),
 			Username:     fmt.Sprintf("priv-gate-%s-%d-%d", tag, uniq, seq),
@@ -83,14 +85,17 @@ func TestPrivateSpaceGate_GetSpace(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create user %s: %v", tag, err)
 		}
+
 		t.Cleanup(func() {
 			_, _ = database.Writer.Exec(bg, `DELETE FROM users WHERE id = $1`, id)
 		})
+
 		return id
 	}
 
 	mkSpace := func(vis, slug string, owner pgtype.UUID) gen.CreateSpaceRow {
 		t.Helper()
+
 		sp, err := svc.CreateSpaceWithOwner(ctx, gen.CreateSpaceParams{
 			SpaceTypeID:    community.ID,
 			Name:           "Gate " + slug,
@@ -106,9 +111,11 @@ func TestPrivateSpaceGate_GetSpace(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create space %s: %v", slug, err)
 		}
+
 		t.Cleanup(func() {
 			_, _ = database.Writer.Exec(bg, `DELETE FROM spaces WHERE id = $1`, sp.ID)
 		})
+
 		return sp
 	}
 
@@ -148,15 +155,19 @@ func TestPrivateSpaceGate_GetSpace(t *testing.T) {
 
 	callGetSpace := func(h *Handlers, slug string, viewer *pgtype.UUID) int {
 		t.Helper()
+
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/spaces/"+slug, nil)
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("slug", slug)
+
 		rctxCtx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 		if viewer != nil {
 			rctxCtx = context.WithValue(rctxCtx, auth.UserContextKey, &auth.AuthenticatedUser{UserID: *viewer})
 		}
+
 		rec := httptest.NewRecorder()
 		h.GetSpace(rec, req.WithContext(rctxCtx))
+
 		return rec.Code
 	}
 

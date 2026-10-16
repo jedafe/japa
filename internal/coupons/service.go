@@ -91,8 +91,8 @@ func (s *Service) CreateProvider(ctx context.Context, input CreateProviderInput)
 	if err := validateOutboundURL("base_url", input.BaseURL); err != nil {
 		return gen.AffiliateProvider{}, err
 	}
-	p, err := s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
 
+	p, err := s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
 		Name:           input.Name,
 		Slug:           input.Slug,
 		Description:    input.Description,
@@ -150,6 +150,7 @@ func (s *Service) UpdateProvider(ctx context.Context, id pgtype.UUID, input Upda
 
 		return gen.AffiliateProvider{}, fmt.Errorf("checking provider: %w", err)
 	}
+
 	if err := validateOutboundURL("base_url", input.BaseURL); err != nil {
 		return gen.AffiliateProvider{}, err
 	}
@@ -241,9 +242,11 @@ func validateCouponDetails(raw json.RawMessage) error {
 	if len(raw) == 0 {
 		return nil
 	}
+
 	if len(raw) > maxCouponDetailsBytes {
 		return ErrInvalidDetails
 	}
+
 	var v map[string]any
 	if err := json.Unmarshal(raw, &v); err != nil || v == nil {
 		return ErrInvalidDetails
@@ -254,6 +257,7 @@ func validateCouponDetails(raw json.RawMessage) error {
 	if _, err := json.Marshal(v); err != nil {
 		return ErrInvalidDetails
 	}
+
 	return nil
 }
 
@@ -266,10 +270,12 @@ func validateOutboundURL(field string, u *string) error {
 	if u == nil || strings.TrimSpace(*u) == "" {
 		return nil
 	}
+
 	parsed, err := url.Parse(strings.TrimSpace(*u))
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalidURL, field)
 	}
+
 	return nil
 }
 
@@ -281,9 +287,11 @@ func httpURLOrNil(u *string) *string {
 	if u == nil || strings.TrimSpace(*u) == "" {
 		return nil
 	}
+
 	if validateOutboundURL("url", u) != nil {
 		return nil
 	}
+
 	return u
 }
 
@@ -294,6 +302,7 @@ func detailsParam(raw json.RawMessage) *json.RawMessage {
 	if len(raw) == 0 {
 		return nil
 	}
+
 	return &raw
 }
 
@@ -305,14 +314,17 @@ func validateCouponWrite(input CreateCouponInput) error {
 	if strings.TrimSpace(input.Title) == "" {
 		return fmt.Errorf("%w: title", errpkg.ErrRequired)
 	}
+
 	switch CouponStatus(input.Status) {
 	case CouponStatusActive, CouponStatusExpired, CouponStatusSuspended, CouponStatusPending:
 	default:
 		return fmt.Errorf("%w: %q", ErrInvalidStatus, input.Status)
 	}
+
 	if err := validateOutboundURL("terms_url", input.TermsURL); err != nil {
 		return err
 	}
+
 	return validateOutboundURL("referral_url", input.ReferralURL)
 }
 
@@ -326,6 +338,7 @@ func mapCouponWriteErr(err error) error {
 		(pgErr.ConstraintName == "idx_coupons_slug" || pgErr.ConstraintName == "coupons_code_key") {
 		return ErrCouponAlreadyExists
 	}
+
 	return err
 }
 
@@ -335,6 +348,7 @@ func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input Cr
 	if err := validateCouponWrite(input); err != nil {
 		return gen.CreateCouponRow{}, err
 	}
+
 	if err := validateCouponDetails(input.Details); err != nil {
 		return gen.CreateCouponRow{}, err
 	}
@@ -386,6 +400,7 @@ func (s *Service) resolveCouponSlug(ctx context.Context, input *string, title st
 	if input != nil && *input != "" {
 		base = content.Slugify(*input)
 	}
+
 	if base == "" {
 		// A title made entirely of non-ASCII/punctuation slugifies to "" —
 		// fall back to a generic base (mirrors providerForOrg's empty-slug
@@ -394,11 +409,12 @@ func (s *Service) resolveCouponSlug(ctx context.Context, input *string, title st
 		base = "deal"
 	}
 
-	for i := 0; i < maxCouponSlugAttempts; i++ {
+	for i := range maxCouponSlugAttempts {
 		candidate := base
 		if i > 0 {
 			candidate = fmt.Sprintf("%s-%d", base, i+1)
 		}
+
 		if reservedCouponSlugs[candidate] {
 			continue
 		}
@@ -411,6 +427,7 @@ func (s *Service) resolveCouponSlug(ctx context.Context, input *string, title st
 
 			return "", fmt.Errorf("checking coupon slug: %w", err)
 		}
+
 		if excludeID.Valid && existingID == excludeID {
 			return candidate, nil
 		}
@@ -541,6 +558,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 	if err := validateCouponWrite(input); err != nil {
 		return gen.UpdateCouponRow{}, err
 	}
+
 	if err := validateCouponDetails(input.Details); err != nil {
 		return gen.UpdateCouponRow{}, err
 	}
@@ -557,6 +575,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 	}
 
 	slug := current.Slug
+
 	if input.Slug != nil && *input.Slug != "" && content.Slugify(*input.Slug) != current.Slug {
 		if slug, err = s.resolveCouponSlug(ctx, input.Slug, input.Title, id); err != nil {
 			return gen.UpdateCouponRow{}, err
@@ -629,11 +648,13 @@ func (s *Service) invalidateCouponCaches(ctx context.Context, couponID pgtype.UU
 	}
 
 	keys := []string{valkey.MustKey("coupon:%s", couponID.String())}
+
 	for _, slug := range slugs {
 		if slug != "" {
 			keys = append(keys, valkey.MustKey("coupon_slug:%s", slug))
 		}
 	}
+
 	if err := s.vk.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("coupons: failed to invalidate caches", "keys", keys, "error", err)
 	}
@@ -791,6 +812,7 @@ func (s *Service) ResolveDealClick(ctx context.Context, slug string) (target str
 	if live && coupon.ValidFrom.Valid && coupon.ValidFrom.Time.After(time.Now()) {
 		live = false
 	}
+
 	if live && coupon.ExpiresAt.Valid && coupon.ExpiresAt.Time.Before(time.Now()) {
 		live = false
 	}
@@ -872,6 +894,7 @@ func (s *Service) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*
 	if r.ValidFrom.Valid && r.ValidFrom.Time.After(time.Now()) {
 		isExpired = true
 	}
+
 	if r.ExpiresAt.Valid && r.ExpiresAt.Time.Before(time.Now()) {
 		isExpired = true
 	}
@@ -1074,7 +1097,6 @@ func (s *Service) RecordAffiliateCommission(ctx context.Context, in RecordAffili
 
 	// 4. Insert the commission row.
 	commission, err := s.store.write.InsertAffiliateContentCommission(ctx, gen.InsertAffiliateContentCommissionParams{
-
 		ContentID:           in.ContentID,
 		ProviderID:          in.ProviderID,
 		AuthorUserID:        content.AuthorID,
@@ -1124,26 +1146,31 @@ type SubmitDealInput = CreateCouponInput
 
 // SubmitOrgDeal creates a pending coupon under the organization's own
 // affiliate provider (auto-created from the org on first submission).
-// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
+// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md.
 func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userID pgtype.UUID, input SubmitDealInput) (gen.CreateCouponRow, error) {
 	input.Title = strings.TrimSpace(input.Title)
 	if err := validateCouponDetails(input.Details); err != nil {
 		return gen.CreateCouponRow{}, err
 	}
+
 	if err := validateOutboundURL("terms_url", input.TermsURL); err != nil {
 		return gen.CreateCouponRow{}, err
 	}
+
 	if err := validateOutboundURL("referral_url", input.ReferralURL); err != nil {
 		return gen.CreateCouponRow{}, err
 	}
+
 	provider, err := s.providerForOrg(ctx, org)
 	if err != nil {
 		return gen.CreateCouponRow{}, err
 	}
+
 	slug, err := s.resolveCouponSlug(ctx, input.Slug, input.Title, pgtype.UUID{})
 	if err != nil {
 		return gen.CreateCouponRow{}, err
 	}
+
 	c, err := s.store.createCoupon(ctx, gen.CreateCouponParams{
 		ProviderID: provider.ID, CouponType: string(CouponTypeExternal),
 		Title: input.Title, Slug: slug, Description: input.Description,
@@ -1157,7 +1184,9 @@ func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userI
 	if err != nil {
 		return gen.CreateCouponRow{}, mapCouponWriteErr(err)
 	}
+
 	s.invalidateCouponCaches(ctx, c.ID, c.Slug)
+
 	return c, nil
 }
 
@@ -1169,23 +1198,28 @@ func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen
 	if err == nil {
 		return p, nil
 	}
+
 	if !isNoRows(err) {
 		return gen.AffiliateProvider{}, fmt.Errorf("getting org provider: %w", err)
 	}
+
 	base := content.Slugify(org.Slug)
 	if base == "" {
 		base = content.Slugify(org.Name)
 	}
+
 	if base == "" {
 		// Slugify can yield "" for a slug/name made entirely of non-ASCII or
 		// punctuation — refuse rather than create a provider with slug "".
 		return gen.AffiliateProvider{}, fmt.Errorf("organization %s has no slugifiable slug or name", org.ID.String())
 	}
-	for i := 0; i < maxCouponSlugAttempts; i++ {
+
+	for i := range maxCouponSlugAttempts {
 		candidate := base
 		if i > 0 {
 			candidate = fmt.Sprintf("%s-%d", base, i+1)
 		}
+
 		if _, err := s.store.getProviderBySlug(ctx, candidate); err == nil {
 			continue
 		} else if !isNoRows(err) {
@@ -1217,10 +1251,13 @@ func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen
 					continue
 				}
 			}
+
 			return gen.AffiliateProvider{}, fmt.Errorf("creating org provider: %w", err)
 		}
+
 		return p, nil
 	}
+
 	return gen.AffiliateProvider{}, fmt.Errorf("could not find unique provider slug after %d attempts", maxCouponSlugAttempts)
 }
 
@@ -1236,9 +1273,11 @@ func (s *Service) activateOrgProvider(ctx context.Context, providerID pgtype.UUI
 			"provider_id", providerID.String(), "error", err)
 		return
 	}
+
 	if !p.OrganizationID.Valid || p.IsActive {
 		return
 	}
+
 	if _, err := s.store.updateProvider(ctx, gen.UpdateAffiliateProviderParams{
 		ID: p.ID, Name: p.Name, Description: p.Description,
 		ProviderType: p.ProviderType, LogoMediaID: p.LogoMediaID,
@@ -1268,10 +1307,12 @@ func (s *Service) ListDealPartners(ctx context.Context, pageSize int32) ([]DealP
 	if pageSize <= 0 || pageSize > MaxPageSize {
 		pageSize = MaxPageSize
 	}
+
 	rows, err := s.store.listActiveDealPartners(ctx, pageSize)
 	if err != nil {
 		return nil, err
 	}
+
 	refs := make([]DealPartnerRef, 0, len(rows))
 	for _, r := range rows {
 		refs = append(refs, DealPartnerRef{
@@ -1280,5 +1321,6 @@ func (s *Service) ListDealPartners(ctx context.Context, pageSize int32) ([]DealP
 			IsFeatured: r.IsFeatured, OrganizationID: r.OrganizationID,
 		})
 	}
+
 	return refs, nil
 }

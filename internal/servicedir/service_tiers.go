@@ -84,10 +84,11 @@ func (s *Service) validatePackageTiers(ctx context.Context, tiers []TierInput) (
 		return nil, nil
 	}
 
-	maxTiers := int32(5) //nolint:gosec // default cap
+	maxTiers := int32(5)
 	if s.settings != nil {
 		maxTiers = int32(s.settings.GetIntOr(ctx, "service_packages.tiers.max_count", 5)) //nolint:gosec // configured bound
 	}
+
 	if int32(len(tiers)) > maxTiers { //nolint:gosec // slice length is bounded by request body
 		return nil, fmt.Errorf("tiers: exceeds service_packages.tiers.max_count (%d): %w", maxTiers, ErrInvalidTiers)
 	}

@@ -64,10 +64,12 @@ func validateEntityTypes(types []string) string {
 		if et == "" {
 			return "(empty)"
 		}
+
 		if _, ok := schemas.ForEntityType(et); !ok {
 			return et
 		}
 	}
+
 	return ""
 }
 
@@ -79,11 +81,14 @@ func providerConfigWithEntityTypes(existing []byte, types []string) []byte {
 	out, err := sources.SetEntityTypesInProviderConfig(existing, types)
 	if err != nil {
 		slog.Warn("intel: provider_config merge failed; resetting to entity_types only", "error", err)
+
 		out, _ = sources.SetEntityTypesInProviderConfig(nil, types)
 	}
+
 	if len(out) == 0 {
 		out = []byte(`{}`)
 	}
+
 	return out
 }
 
@@ -182,15 +187,18 @@ func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody)
 	if body.Slug != nil && *body.Slug != "" {
 		slug = *body.Slug
 	}
+
 	slug = slugifySourceName(slug)
 
 	description := body.Description
 	logoURL := body.LogoURL
+
 	sourceKind := body.SourceKind
 	if sourceKind == nil || *sourceKind == "" {
 		k := "publisher"
 		sourceKind = &k
 	}
+
 	if !sources.SourceKind(*sourceKind).IsValid() {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_kind", "source_kind is not a recognized value")
 		return gen.CreateIntelSourceParams{}, false
@@ -388,7 +396,9 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	// update (the query's COALESCE can't express "set empty"), so it goes
 	// through the dedicated UpdateCategories after the scalar write.
 	categoriesPresent := false
+
 	var newCategories []string
+
 	if _, present := presence["categories"]; present {
 		categoriesPresent = true
 		newCategories = sources.NormalizeCategories(body.Categories)
@@ -447,6 +457,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		}); uerr != nil {
 			slog.Error("intel: provider_config update failed", "source_id", sourceID.String(), "error", uerr)
 			errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source entity types")
+
 			return
 		}
 		// src predates the provider_config write — stamp the merged document
@@ -476,12 +487,15 @@ func mergeSourcePatch(params *gen.UpdateIntelSourceParams, body *handleSourceCre
 		slug := slugifySourceName(*body.Slug)
 		params.Slug = &slug
 	}
+
 	if body.Description != nil {
 		params.Description = body.Description
 	}
+
 	if body.SourceKind != nil && *body.SourceKind != "" {
 		params.SourceKind = body.SourceKind
 	}
+
 	if body.LogoURL != nil {
 		params.LogoUrl = body.LogoURL
 	}
@@ -727,6 +741,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	// the edit into its editorial_overrides so the published projection is
 	// corrected too and re-crawl does not overwrite the edited fields.
 	var scholarshipID string
+
 	var overrideSource string
 
 	if record.EntityType == "scholarship" {
@@ -817,6 +832,7 @@ func slugifySourceName(name string) string {
 	re := regexp.MustCompile(`[^a-zA-Z0-9]+`)
 	slug := re.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-")
 	slug = strings.Trim(slug, "-")
+
 	return slug
 }
 
@@ -949,6 +965,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 	}
 
 	entries := make([]map[string]interface{}, 0, len(rows))
+
 	for _, s := range rows {
 		entry := sourceToFullEntry(s.Source)
 		entry["proposer_name"] = s.ProposerName
@@ -1024,7 +1041,7 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 // the provenance and let the same URL be re-proposed silently. A row no
 // longer in 'proposed' returns 404, mirroring the approve precondition.
 // // POST /api/v1/intel/sources/{id}/reject
-// // Requires: intel.sources.manage
+// // Requires: intel.sources.manage.
 func (h *Handlers) HandleRejectProposedSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -1068,7 +1085,7 @@ func (h *Handlers) HandleRejectProposedSource(w http.ResponseWriter, r *http.Req
 // /sources/{slug} detail. The review detail page uses it to resolve a
 // record's source without scanning the whole registry.
 // // GET /api/v1/intel/sources/{id}
-// // Requires: intel.sources.view or intel.sources.manage
+// // Requires: intel.sources.view or intel.sources.manage.
 func (h *Handlers) HandleGetSourceByID(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -1180,10 +1197,12 @@ func channelToAdminEntry(ch sources.Channel) map[string]interface{} {
 	if entityTypes == nil {
 		entityTypes = []string{}
 	}
+
 	topics := ch.RelevanceTopics
 	if topics == nil {
 		topics = []string{}
 	}
+
 	patterns := ch.RelevanceUrlPatterns
 	if patterns == nil {
 		patterns = []string{}
@@ -1261,7 +1280,7 @@ func parseProviderConfigRaw(w http.ResponseWriter, raw json.RawMessage) ([]byte,
 // source detail page and by the proposal-review surface (probe-materialized
 // channels appear here with origin='probe').
 // // GET /api/v1/admin/intel/sources/{id}/channels
-// // Requires: intel.channels.list
+// // Requires: intel.channels.list.
 func (h *Handlers) HandleAdminListSourceChannels(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -1336,7 +1355,7 @@ type handleChannelCreateBody struct {
 // entity_types required for extract|curate pipelines) lives in
 // sources.Service.CreateChannel.
 // // POST /api/v1/admin/intel/sources/{id}/channels
-// // Requires: intel.channels.create
+// // Requires: intel.channels.create.
 func (h *Handlers) HandleAdminCreateChannel(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -1399,6 +1418,7 @@ func (h *Handlers) HandleAdminCreateChannel(w http.ResponseWriter, r *http.Reque
 		if !ok {
 			return
 		}
+
 		params.ProviderConfig = pc
 	}
 
@@ -1427,6 +1447,7 @@ func (h *Handlers) enqueueWebSubSubscribe(ctx context.Context, channelID string)
 	if h.asynqClient == nil {
 		return
 	}
+
 	payload, _ := json.Marshal(map[string]string{
 		"version":    "v1",
 		"channel_id": channelID,
@@ -1440,7 +1461,7 @@ func (h *Handlers) enqueueWebSubSubscribe(ctx context.Context, channelID string)
 // HandleAdminGetChannel returns a single channel with its full config and
 // crawl bookkeeping. Used by the channels editor to prefill the edit form.
 // // GET /api/v1/admin/intel/channels/{id}
-// // Requires: intel.channels.view
+// // Requires: intel.channels.view.
 func (h *Handlers) HandleAdminGetChannel(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -1501,7 +1522,7 @@ var channelRelevanceKeys = []string{"relevance_mode", "relevance_topics", "relev
 // simultaneous pipeline switch sees the new types), then relevance, then
 // scalar fields.
 // // PATCH /api/v1/admin/intel/channels/{id}
-// // Requires: intel.channels.update
+// // Requires: intel.channels.update.
 func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -1538,6 +1559,7 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 	entityTypesPresent := false
 	if _, ok := presence["entity_types"]; ok {
 		entityTypesPresent = true
+
 		if bad := validateEntityTypes(body.EntityTypes); bad != "" {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_types contains an unregistered type: "+bad)
 			return
@@ -1545,6 +1567,7 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 	}
 
 	relevancePresent := false
+
 	for _, k := range channelRelevanceKeys {
 		if _, ok := presence[k]; ok {
 			relevancePresent = true
@@ -1554,38 +1577,47 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 
 	scalar := gen.UpdateIntelSourceChannelParams{ID: channelID}
 	scalarPresent := false
+
 	if body.Label != nil {
 		scalar.Label = body.Label
 		scalarPresent = true
 	}
+
 	if body.EntryURL != nil {
 		scalar.EntryUrl = body.EntryURL
 		scalarPresent = true
 	}
+
 	if body.CrawlMethod != nil {
 		scalar.CrawlMethod = body.CrawlMethod
 		scalarPresent = true
 	}
+
 	if body.Pipeline != nil {
 		scalar.Pipeline = body.Pipeline
 		scalarPresent = true
 	}
+
 	if raw, ok := presence["provider_config"]; ok {
 		pc, ok := parseProviderConfigRaw(w, raw)
 		if !ok {
 			return
 		}
+
 		scalar.ProviderConfig = pc
 		scalarPresent = true
 	}
+
 	if body.CrawlFrequencyMins != nil {
 		if *body.CrawlFrequencyMins <= 0 {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "crawl_frequency_mins must be positive")
 			return
 		}
+
 		scalar.CrawlFrequencyMins = body.CrawlFrequencyMins
 		scalarPresent = true
 	}
+
 	if body.Enabled != nil {
 		scalar.Enabled = body.Enabled
 		scalarPresent = true
@@ -1614,6 +1646,7 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 		if types == nil { // explicit null → clear
 			types = []string{}
 		}
+
 		updated, err = h.intelSources.UpdateChannelEntityTypes(r.Context(), gen.UpdateIntelChannelEntityTypesParams{
 			ID:          channelID,
 			EntityTypes: types,
@@ -1634,12 +1667,14 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 		if body.RelevanceMode != nil {
 			relParams.RelevanceMode = *body.RelevanceMode
 		}
+
 		if _, ok := presence["relevance_topics"]; ok {
 			relParams.RelevanceTopics = body.RelevanceTopics
 			if relParams.RelevanceTopics == nil { // explicit null → clear
 				relParams.RelevanceTopics = []string{}
 			}
 		}
+
 		if _, ok := presence["relevance_url_patterns"]; ok {
 			relParams.RelevanceUrlPatterns = body.RelevanceURLPatterns
 			if relParams.RelevanceUrlPatterns == nil {
@@ -1682,7 +1717,7 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 // reference the channel with ON DELETE SET NULL and inbound events cascade,
 // so deleting a channel never orphans pipeline state.
 // // DELETE /api/v1/admin/intel/channels/{id}
-// // Requires: intel.channels.delete
+// // Requires: intel.channels.delete.
 func (h *Handlers) HandleAdminDeleteChannel(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -1724,7 +1759,7 @@ func (h *Handlers) HandleAdminDeleteChannel(w http.ResponseWriter, r *http.Reque
 // webhook — the same set ListDueChannels excludes and HandleIntelFetchChannel
 // skips) are rejected with 409 so a queued-but-no-op enqueue never misleads.
 // // POST /api/v1/admin/intel/channels/{id}/crawl
-// // Requires: intel.channels.crawl
+// // Requires: intel.channels.crawl.
 func (h *Handlers) HandleAdminCrawlChannel(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil || h.asynqClient == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -1796,7 +1831,7 @@ func (h *Handlers) HandleAdminCrawlChannel(w http.ResponseWriter, r *http.Reques
 // are deduped on source_id+entry_url+entity_types). The worker still applies
 // its own gates (disabled source, verify-exempt source_type).
 // // POST /api/v1/admin/intel/sources/{id}/reprobe
-// // Requires: intel.sources.probe
+// // Requires: intel.sources.probe.
 func (h *Handlers) HandleAdminReprobeSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil || h.asynqClient == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")

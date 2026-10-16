@@ -140,6 +140,7 @@ func (s *Store) HardDeleteMedia(ctx context.Context, id pgtype.UUID) error {
 		if _, err := s.read.GetMediaByIDAny(ctx, id); err != nil {
 			return pgx.ErrNoRows
 		}
+
 		return errpkg.ErrNotDeleted
 	}
 
@@ -153,7 +154,6 @@ func (s *Store) ListMediaByUploader(ctx context.Context, uploaderID pgtype.UUID,
 	}
 
 	items, err := s.read.ListMediaByUploader(ctx, gen.ListMediaByUploaderParams{
-
 		UploaderUserID: uploaderID,
 		PageOffset:     offset,
 		PageLimit:      limit,
@@ -172,7 +172,6 @@ func (s *Store) ListMedia(ctx context.Context, limit, offset int32) ([]gen.Mediu
 	}
 
 	items, err := s.read.ListMedia(ctx, gen.ListMediaParams{
-
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -190,7 +189,6 @@ func (s *Store) ListMediaByType(ctx context.Context, mimePattern string, limit, 
 	}
 
 	items, err := s.read.ListMediaByType(ctx, gen.ListMediaByTypeParams{
-
 		MimePattern: &mimePattern,
 		PageOffset:  offset,
 		PageLimit:   limit,
@@ -209,7 +207,6 @@ func (s *Store) SearchMedia(ctx context.Context, query string, limit, offset int
 	}
 
 	items, err := s.read.SearchMedia(ctx, gen.SearchMediaParams{
-
 		Query:      &query,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -279,7 +276,6 @@ func (s *Store) ListMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, m
 	}
 
 	items, err := s.read.ListMediaFiltered(ctx, gen.ListMediaFilteredParams{
-
 		Deleted:        deleted,
 		UploaderUserID: uploaderID,
 		MimePattern:    mimePattern,
@@ -300,7 +296,6 @@ func (s *Store) ListMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, m
 // ignoring limit/offset. Used to compute total_pages for the admin list.
 func (s *Store) CountMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged, deleted string) (int32, error) {
 	count, err := s.read.CountMediaFiltered(ctx, gen.CountMediaFilteredParams{
-
 		Deleted:        deleted,
 		UploaderUserID: uploaderID,
 		MimePattern:    mimePattern,
@@ -325,7 +320,6 @@ func (s *Store) ListMediaFromPublicPostsByUser(ctx context.Context, authorID pgt
 	}
 
 	items, err := s.read.ListMediaFromPublicPostsByUser(ctx, gen.ListMediaFromPublicPostsByUserParams{
-
 		AuthorID:   authorID,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -359,7 +353,6 @@ func (s *Store) ListMediaFromOrgPublicPosts(ctx context.Context, orgID pgtype.UU
 	}
 
 	items, err := s.read.ListMediaFromOrgPublicPosts(ctx, gen.ListMediaFromOrgPublicPostsParams{
-
 		OrganizationID: orgID,
 		PageOffset:     offset,
 		PageLimit:      limit,
@@ -408,7 +401,6 @@ func (s *Store) BulkSoftDeleteMediaOwn(ctx context.Context, uploaderID pgtype.UU
 	}
 
 	if err := s.write.BulkSoftDeleteMediaOwn(ctx, gen.BulkSoftDeleteMediaOwnParams{
-
 		UploaderUserID: uploaderID,
 		MediaIds:       mediaIDs,
 	}); err != nil {
@@ -599,7 +591,6 @@ func (s *Store) ListQuarantined(ctx context.Context, limit, offset int32) ([]Qua
 	}
 
 	rows, err := s.read.ListQuarantinedMedia(ctx, gen.ListQuarantinedMediaParams{
-
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

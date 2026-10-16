@@ -37,6 +37,7 @@ func TestSourceCrawlable(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := sourceCrawlable(tt.src); got != tt.want {
 				t.Errorf("sourceCrawlable(%s) = %v, want %v", tt.name, got, tt.want)
 			}
@@ -56,7 +57,7 @@ func TestServiceCreate_DefaultChannel_LiveDB(t *testing.T) {
 		t.Skip("JC_TEST_DATABASE_URL not set — skipping live Postgres test")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	database, err := db.New(ctx, dsn)
 	if err != nil {
@@ -103,12 +104,14 @@ func TestServiceCreate_DefaultChannel_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create active source: %v", err)
 	}
+
 	defer func() { _ = svc.Delete(ctx, src.ID) }()
 
 	channels, err := store.ListChannels(ctx, src.ID)
 	if err != nil {
 		t.Fatalf("list channels: %v", err)
 	}
+
 	if len(channels) != 1 {
 		t.Fatalf("channels = %d, want exactly the Default channel", len(channels))
 	}
@@ -117,21 +120,27 @@ func TestServiceCreate_DefaultChannel_LiveDB(t *testing.T) {
 	if ch.Label != "Default" || ch.EntryUrl != src.SourceUrl || ch.CrawlMethod != "static" {
 		t.Errorf("default channel shape wrong: %+v", ch)
 	}
+
 	if !ch.Enabled {
 		t.Error("default channel disabled for an enabled source")
 	}
+
 	if ch.Origin != "admin" {
 		t.Errorf("origin = %q, want admin", ch.Origin)
 	}
+
 	if ch.Pipeline != "extract" {
 		t.Errorf("pipeline = %q, want extract (job/news map default)", ch.Pipeline)
 	}
+
 	if ch.RelevanceMode != "filtered" {
 		t.Errorf("relevance_mode = %q, want filtered", ch.RelevanceMode)
 	}
+
 	if !slices.Contains(ch.EntityTypes, "job") || !slices.Contains(ch.EntityTypes, "news") {
 		t.Errorf("entity_types = %v, want job+news from ResolveCategoryMap", ch.EntityTypes)
 	}
+
 	if len(ch.RelevanceTopics) == 0 {
 		t.Error("relevance_topics empty, want map topics")
 	}
@@ -139,6 +148,7 @@ func TestServiceCreate_DefaultChannel_LiveDB(t *testing.T) {
 	if !slices.Contains(probed, src.ID.String()) {
 		t.Errorf("probe queue not called for %s (calls: %v)", src.ID, probed)
 	}
+
 	if !slices.Contains(metas, src.ID.String()) {
 		t.Errorf("metadata queue not called for %s", src.ID)
 	}
@@ -148,12 +158,15 @@ func TestServiceCreate_DefaultChannel_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list due channels: %v", err)
 	}
+
 	foundDue := false
+
 	for _, d := range due {
 		if d.ID == ch.ID {
 			foundDue = true
 		}
 	}
+
 	if !foundDue {
 		t.Error("enabled Default channel not due — scheduler would never crawl the source")
 	}
@@ -170,17 +183,20 @@ func TestServiceCreate_DefaultChannel_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create disabled source: %v", err)
 	}
+
 	defer func() { _ = svc.Delete(ctx, src2.ID) }()
 
 	channels2, err := store.ListChannels(ctx, src2.ID)
 	if err != nil {
 		t.Fatalf("list channels (disabled): %v", err)
 	}
+
 	for _, c := range channels2 {
 		if c.Enabled {
 			t.Errorf("disabled source produced enabled channel %s", c.ID)
 		}
 	}
+
 	if slices.Contains(probed, src2.ID.String()) {
 		t.Error("probe queue fired for a disabled source")
 	}
@@ -198,15 +214,18 @@ func TestServiceCreate_DefaultChannel_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create manual source: %v", err)
 	}
+
 	defer func() { _ = svc.Delete(ctx, src3.ID) }()
 
 	channels3, err := store.ListChannels(ctx, src3.ID)
 	if err != nil {
 		t.Fatalf("list channels (manual): %v", err)
 	}
+
 	if len(channels3) != 0 {
 		t.Errorf("manual source got %d channels, want none (probe materializes)", len(channels3))
 	}
+
 	if slices.Contains(probed, src3.ID.String()) {
 		t.Error("probe queue fired for a manual source")
 	}
@@ -221,12 +240,14 @@ func TestServiceCreate_DefaultChannel_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create private-literal source: %v", err)
 	}
+
 	defer func() { _ = svc.Delete(ctx, src4.ID) }()
 
 	channels4, err := store.ListChannels(ctx, src4.ID)
 	if err != nil {
 		t.Fatalf("list channels (ssrf): %v", err)
 	}
+
 	if len(channels4) != 0 {
 		t.Errorf("private-literal source_url produced %d channels — C1c guard must reject", len(channels4))
 	}
@@ -240,6 +261,7 @@ func TestServiceCreate_DefaultChannel_LiveDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list channels after dedupe re-run: %v", err)
 	}
+
 	if len(after) != 1 {
 		t.Errorf("dedupe re-run changed channel count to %d, want 1", len(after))
 	}

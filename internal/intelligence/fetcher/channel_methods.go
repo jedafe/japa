@@ -62,6 +62,7 @@ func (c *Composite) fetchJSONLD(ctx context.Context, src sources.Source) (FetchR
 	if err != nil {
 		return FetchResult{}, err
 	}
+
 	if len(blocks) == 0 {
 		return FetchResult{}, errors.New("fetcher: jsonld: no application/ld+json blocks found")
 	}
@@ -87,6 +88,7 @@ func extractLDJSONBlocks(body []byte) ([]string, error) {
 	}
 
 	var blocks []string
+
 	doc.Find(`script[type="application/ld+json"]`).Each(func(_ int, s *goquery.Selection) {
 		if text := strings.TrimSpace(s.Text()); text != "" {
 			blocks = append(blocks, text)
@@ -154,9 +156,11 @@ func (c *Composite) fetchSitemapManifest(ctx context.Context, src sources.Source
 	if err != nil {
 		return FetchResult{}, err
 	}
+
 	if res.Headers == nil {
 		res.Headers = map[string]string{}
 	}
+
 	res.Headers[ManifestKindHeader] = kind
 
 	return FetchResult{
@@ -180,6 +184,7 @@ func ParseManifest(body []byte) map[string]string {
 		if line == "" {
 			continue
 		}
+
 		u, stamp, _ := strings.Cut(line, "\t")
 		if u = strings.TrimSpace(u); u != "" {
 			out[u] = strings.TrimSpace(stamp)
@@ -196,6 +201,7 @@ func DiffManifest(cur, prev []byte) []string {
 	prevMap := ParseManifest(prev)
 
 	var changed []string
+
 	seen := map[string]bool{}
 
 	for _, line := range strings.Split(string(cur), "\n") {
@@ -203,6 +209,7 @@ func DiffManifest(cur, prev []byte) []string {
 		if u = strings.TrimSpace(u); u == "" || seen[u] {
 			continue
 		}
+
 		seen[u] = true
 
 		if old, ok := prevMap[u]; !ok || old != strings.TrimSpace(stamp) {

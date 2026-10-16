@@ -19,7 +19,7 @@ import (
 // back, and converse on the linked §38 staff ticket. Everything else
 // stays blocked.
 //
-// Ref: japaconnect-engineering/sections/22-admin-panel.md (Appeals)
+// Ref: japaconnect-engineering/sections/22-admin-panel.md (Appeals).
 var banExemptPrefixes = []string{
 	"/api/v1/appeals",
 	"/api/v1/me/appeals",
@@ -43,11 +43,13 @@ func isBanExemptPath(path string) bool {
 	if banExemptExact[path] {
 		return true
 	}
+
 	for _, p := range banExemptPrefixes {
 		if strings.HasPrefix(path, p) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -81,6 +83,7 @@ func BanEnforcement(rdb valkeycompat.Cmdable, isBanned func(ctx context.Context,
 			if !effectiveID.Valid {
 				effectiveID = user.UserID
 			}
+
 			userID := effectiveID.String()
 			cacheKey := valkey.MustKey("ban:%s", userID)
 

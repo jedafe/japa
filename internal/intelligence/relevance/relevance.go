@@ -170,11 +170,14 @@ func (g Gate) Evaluate(ctx context.Context, item ItemInput, ch sources.Channel, 
 
 	// Step 1: relevance_url_patterns glob match on the item URL.
 	hasPatterns := false
+
 	for _, p := range ch.RelevanceUrlPatterns {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
+
 		hasPatterns = true
+
 		if matchURLPattern(p, item.URL) {
 			return VerdictOnTopic, nil
 		}
@@ -186,6 +189,7 @@ func (g Gate) Evaluate(ctx context.Context, item ItemInput, ch sources.Channel, 
 	if mode != sources.RelevanceCustom {
 		topics = dedupTopics(append(topics, mapTopics...))
 	}
+
 	if len(topics) == 0 {
 		// Nothing to score against. When patterns are configured the
 		// channel explicitly whitelists URLs — a miss is off-topic.
@@ -225,10 +229,12 @@ func (g Gate) thresholds() (on, off float64) {
 	if on <= 0 {
 		on = DefaultOnTopicThreshold
 	}
+
 	off = g.OffTopicThreshold
 	if off <= 0 {
 		off = DefaultOffTopicThreshold
 	}
+
 	if off > on {
 		// Pathological config (off >= on collapses the band) — clamp so
 		// the band order holds: below off → off_topic, else on_topic.
@@ -275,9 +281,11 @@ func (g Gate) borderline(ctx context.Context, item ItemInput, ch sources.Channel
 
 		return VerdictBorderline, nil
 	}
+
 	if n == 1 {
 		_ = g.Cache.Expire(ctx, capKey, crawlCounterTTL)
 	}
+
 	if cap := int64(g.BorderlineRateCap); cap <= 0 || n > cap {
 		return VerdictBorderline, nil
 	}
@@ -320,6 +328,7 @@ func (g Gate) crawlCounterKey(ch sources.Channel) string {
 	if g.Now != nil {
 		now = g.Now
 	}
+
 	scope := ch.ID.String()
 	if scope == "" {
 		scope = "no-channel"
@@ -364,9 +373,11 @@ func scoreItem(item ItemInput, topics []string) (score float64, scorable bool) {
 		if containsPhrase(titleTok, tt) {
 			hits += 2 * n
 		}
+
 		if containsPhrase(sumTok, tt) {
 			hits += n
 		}
+
 		if containsPhrase(urlTok, tt) {
 			hits += n
 		}
@@ -383,6 +394,7 @@ func tokenize(s string) []string {
 	var out []string
 
 	var b strings.Builder
+
 	b.Grow(len(s))
 
 	for _, r := range strings.ToLower(s) {
@@ -390,11 +402,13 @@ func tokenize(s string) []string {
 			b.WriteRune(r)
 			continue
 		}
+
 		if b.Len() > 0 {
 			out = append(out, b.String())
 			b.Reset()
 		}
 	}
+
 	if b.Len() > 0 {
 		out = append(out, b.String())
 	}
@@ -411,12 +425,14 @@ func containsPhrase(haystack, needle []string) bool {
 
 	for i := 0; i+len(needle) <= len(haystack); i++ {
 		match := true
+
 		for j := range needle {
 			if haystack[i+j] != needle[j] {
 				match = false
 				break
 			}
 		}
+
 		if match {
 			return true
 		}
@@ -449,11 +465,14 @@ func dedupTopics(in []string) []string {
 		if t == "" {
 			continue
 		}
+
 		key := strings.ToLower(t)
 		if _, ok := seen[key]; ok {
 			continue
 		}
+
 		seen[key] = struct{}{}
+
 		out = append(out, t)
 	}
 
@@ -484,6 +503,7 @@ var globChar = regexp.MustCompile(`[*?]`)
 func matchURLPattern(pattern, rawURL string) bool {
 	p := normalizePatternURL(pattern)
 	u := normalizePatternURL(rawURL)
+
 	if p == "" || u == "" {
 		return false
 	}
@@ -529,6 +549,7 @@ func normalizePatternURL(s string) string {
 // globRegexp translates the small glob dialect to an anchored regexp.
 func globRegexp(pattern string) *regexp.Regexp {
 	var b strings.Builder
+
 	b.WriteByte('^')
 
 	for _, r := range pattern {
@@ -541,6 +562,7 @@ func globRegexp(pattern string) *regexp.Regexp {
 			b.WriteString(regexp.QuoteMeta(string(r)))
 		}
 	}
+
 	b.WriteByte('$')
 
 	// Pattern text is admin-controlled config; a compile failure is

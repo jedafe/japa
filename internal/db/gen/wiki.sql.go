@@ -535,6 +535,26 @@ func (q *Queries) CountPendingRevisionsByTarget(ctx context.Context, arg CountPe
 }
 
 const countWikiDestinations = `-- name: CountWikiDestinations :one
+WITH RECURSIVE subtree AS (
+    SELECT e.cid AS id, 1 AS depth
+    FROM (
+        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+        UNION ALL
+        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
+    ) e
+    JOIN spaces t ON t.id = e.pid AND t.slug = $5 AND t.deleted_at IS NULL
+    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+    UNION ALL
+    SELECT e.cid, st.depth + 1
+    FROM subtree st
+    JOIN (
+        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+        UNION ALL
+        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
+    ) e ON e.pid = st.id
+    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+    WHERE st.depth < 3
+)
 SELECT COUNT(*) FROM (
     SELECT sp.id
     FROM spaces sp
@@ -542,50 +562,13 @@ SELECT COUNT(*) FROM (
     LEFT JOIN space_types st ON st.id = sp.space_type_id
     LEFT JOIN wiki_pages wp ON wp.space_id = sp.id
     WHERE sp.status = 'active'
+      AND sp.deleted_at IS NULL
       AND ($1::text = '' OR sp.level = $1 OR st.slug = $1)
       AND ($2::text = '' OR sp.region = $2)
       AND ($3::text = '' OR sp.name ILIKE '%' || $3 || '%')
       AND ($4::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = $4))
       AND ($5::text = '' OR sp.slug <> $5)
-      AND ($5::text = '' OR EXISTS (
-            SELECT 1
-            FROM (
-                SELECT sps.parent_space_id AS pid
-                FROM space_parent_spaces sps
-                WHERE sps.space_id = sp.id
-                UNION
-                SELECT sp.parent_id
-                WHERE sp.parent_id IS NOT NULL
-            ) l1
-            JOIN spaces g ON g.id = l1.pid AND g.deleted_at IS NULL
-            WHERE g.slug = $5
-               OR EXISTS (
-                   SELECT 1
-                   FROM (
-                       SELECT sps2.parent_space_id AS pid
-                       FROM space_parent_spaces sps2
-                       WHERE sps2.space_id = g.id
-                       UNION
-                       SELECT g.parent_id
-                       WHERE g.parent_id IS NOT NULL
-                   ) l2
-                   JOIN spaces gp ON gp.id = l2.pid AND gp.deleted_at IS NULL
-                   WHERE gp.slug = $5
-                      OR EXISTS (
-                          SELECT 1
-                          FROM (
-                              SELECT sps3.parent_space_id AS pid
-                              FROM space_parent_spaces sps3
-                              WHERE sps3.space_id = gp.id
-                              UNION
-                              SELECT gp.parent_id
-                              WHERE gp.parent_id IS NOT NULL
-                          ) l3
-                          JOIN spaces ggp ON ggp.id = l3.pid AND ggp.deleted_at IS NULL
-                          WHERE ggp.slug = $5
-                      )
-               )
-          ))
+      AND ($5::text = '' OR sp.id IN (SELECT DISTINCT id FROM subtree))
     GROUP BY sp.id
     HAVING (NOT $6::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
 ) counted
@@ -1200,6 +1183,30 @@ func (q *Queries) IsUniversitySpaceBySlug(ctx context.Context, slug string) (*bo
 }
 
 const listWikiDestinations = `-- name: ListWikiDestinations :many
+WITH RECURSIVE subtree AS (
+    -- Non-recursive: direct children of the target over both edge kinds.
+    -- One unified edge list keeps a single self-reference term — Postgres
+    -- rejects mixed multi-branch shapes (SQLSTATE 42P19).
+    SELECT e.cid AS id, 1 AS depth
+    FROM (
+        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+        UNION ALL
+        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
+    ) e
+    JOIN spaces t ON t.id = e.pid AND t.slug = $5 AND t.deleted_at IS NULL
+    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+    UNION ALL
+    -- Recursive: children of any node already in the subtree.
+    SELECT e.cid, st.depth + 1
+    FROM subtree st
+    JOIN (
+        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+        UNION ALL
+        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
+    ) e ON e.pid = st.id
+    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+    WHERE st.depth < 3
+)
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
        sp.logo_media_id, sp.description,
        COUNT(wp.id) FILTER (WHERE wp.is_active = true) AS page_count
@@ -1208,6 +1215,10 @@ JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabl
 LEFT JOIN space_types st ON st.id = sp.space_type_id
 LEFT JOIN wiki_pages wp ON wp.space_id = sp.id
 WHERE sp.status = 'active'
+  -- Soft-deleted spaces stay active-status in some rows — exclude them
+  -- (ancestor hops were already deleted-checked; the candidate itself
+  -- was not, leaking e.g. deleted cities into Popular widgets).
+  AND sp.deleted_at IS NULL
   AND ($1::text = '' OR sp.level = $1 OR st.slug = $1)
   AND ($2::text = '' OR sp.region = $2)
   AND ($3::text = '' OR sp.name ILIKE '%' || $3 || '%')
@@ -1215,54 +1226,10 @@ WHERE sp.status = 'active'
   -- A space is never "within" itself — also guards a cyclic link that
   -- would otherwise let the target match its own ancestor walk.
   AND ($5::text = '' OR sp.slug <> $5)
-  AND ($5::text = '' OR EXISTS (
-        -- §80 directories: ancestor walk (≤3 hops) over
-        -- space_parent_spaces ∪ parent_id — the same edges
-        -- ListWikiDirectoryChildren descends, so ?within= search and the
-        -- embedded directory listing agree (the old form followed
-        -- parent_id only past hop 1, silently missing junction-only
-        -- grandchildren). Every hop's ancestor must be non-deleted;
-        -- any linked ancestor slug scopes the list — the former
-        -- geo-level guard excluded directory parents like university
-        -- or custom types.
-        SELECT 1
-        FROM (
-            SELECT sps.parent_space_id AS pid
-            FROM space_parent_spaces sps
-            WHERE sps.space_id = sp.id
-            UNION
-            SELECT sp.parent_id
-            WHERE sp.parent_id IS NOT NULL
-        ) l1
-        JOIN spaces g ON g.id = l1.pid AND g.deleted_at IS NULL
-        WHERE g.slug = $5
-           OR EXISTS (
-               SELECT 1
-               FROM (
-                   SELECT sps2.parent_space_id AS pid
-                   FROM space_parent_spaces sps2
-                   WHERE sps2.space_id = g.id
-                   UNION
-                   SELECT g.parent_id
-                   WHERE g.parent_id IS NOT NULL
-               ) l2
-               JOIN spaces gp ON gp.id = l2.pid AND gp.deleted_at IS NULL
-               WHERE gp.slug = $5
-                  OR EXISTS (
-                      SELECT 1
-                      FROM (
-                          SELECT sps3.parent_space_id AS pid
-                          FROM space_parent_spaces sps3
-                          WHERE sps3.space_id = gp.id
-                          UNION
-                          SELECT gp.parent_id
-                          WHERE gp.parent_id IS NOT NULL
-                      ) l3
-                      JOIN spaces ggp ON ggp.id = l3.pid AND ggp.deleted_at IS NULL
-                      WHERE ggp.slug = $5
-                  )
-           )
-      ))
+  -- §80 directories: ?within= membership is the subtree CTE above — the
+  -- same ≤3-hop edges over space_parent_spaces ∪ parent_id as
+  -- ListWikiDirectoryChildren descends, resolved once for the whole scan.
+  AND ($5::text = '' OR sp.id IN (SELECT DISTINCT id FROM subtree))
 GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
          sp.logo_media_id, sp.description
 HAVING (NOT $6::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
@@ -1302,6 +1269,9 @@ type ListWikiDestinationsRow struct {
 // hardcoded (level IN geo+university) predicate is gone so new wiki types
 // appear automatically. ?level matches sp.level OR st.slug so legacy
 // level='university' spaces and future type slugs both resolve.
+// ?within= descendant set: walk DOWN from the target (≤3 hops over
+// space_parent_spaces ∪ parent_id) once — the old form ran a 3-level
+// correlated ancestor EXISTS per candidate row (~2s on a full scan).
 // §80 Reader UX: ?sort=name (default, A–Z) or page_count (most guides
 // first). Each non-selected CASE collapses to all-NULL, so only the
 // picked key orders; sp.name is the stable tiebreak.

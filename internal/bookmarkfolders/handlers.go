@@ -62,7 +62,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 // ListFolders handles GET /api/v1/me/bookmark-folders.
 func (h *Handlers) ListFolders(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -83,7 +82,6 @@ func (h *Handlers) ListFolders(w http.ResponseWriter, r *http.Request) {
 
 // CreateFolder handles POST /api/v1/me/bookmark-folders.
 func (h *Handlers) CreateFolder(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -126,7 +124,6 @@ func (h *Handlers) CreateFolder(w http.ResponseWriter, r *http.Request) {
 
 // UpdateFolder handles PATCH /api/v1/me/bookmark-folders/{id}.
 func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -180,7 +177,6 @@ func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFolder handles DELETE /api/v1/me/bookmark-folders/{id}.
 func (h *Handlers) DeleteFolder(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -221,7 +217,6 @@ func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 // position. Unknown/non-owned folder IDs are silently skipped (the UPDATE
 // is platform+owner scoped). BUG-008: §08 spec supports manual folder ordering.
 func (h *Handlers) ReorderFolders(w http.ResponseWriter, r *http.Request) {
-
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return

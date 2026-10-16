@@ -38,6 +38,7 @@ func decodeData(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	var env struct {
 		Data json.RawMessage `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatalf("unmarshal envelope: %v", err)
 	}
@@ -81,6 +82,7 @@ func TestHandleGetFeatureFlags_ScopedMap(t *testing.T) {
 			h.HandleGetFeatureFlags(rec, flagReq(tt.surface))
 
 			var flags map[string]bool
+
 			decodeData(t, rec, &flags)
 
 			if got, ok := flags[tt.key]; !ok || got != tt.want {
@@ -156,6 +158,7 @@ func TestHandleGetFeatureFlagDetails(t *testing.T) {
 	}
 
 	var details []FeatureFlagDetail
+
 	decodeData(t, rec, &details)
 
 	byKey := make(map[string]FeatureFlagDetail, len(details))
@@ -209,6 +212,7 @@ func TestHandleGetFeatureFlagDetails_OtherSurface(t *testing.T) {
 	h.HandleGetFeatureFlagDetails(rec, flagReq("tools"))
 
 	var details []FeatureFlagDetail
+
 	decodeData(t, rec, &details)
 
 	byKey := make(map[string]FeatureFlagDetail, len(details))
@@ -286,6 +290,7 @@ func TestHandleGetFeatureFlagDetail(t *testing.T) {
 			}
 
 			var d FeatureFlagDetail
+
 			decodeData(t, rec, &d)
 
 			if d.Key != tt.key || d.Enabled != tt.enabled || d.Phase != tt.phase ||
@@ -352,6 +357,7 @@ func TestGate_CallerScoped(t *testing.T) {
 			nextCalled := false
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				nextCalled = true
+
 				w.WriteHeader(http.StatusNoContent)
 			})
 
@@ -394,6 +400,7 @@ func TestGate_ResolverUsed(t *testing.T) {
 	// Authenticated beta member on main → passes.
 	r := scopeTestReq(true, false)
 	r.Header.Set(SurfaceHeader, "main")
+
 	rec := httptest.NewRecorder()
 	Gate(c, "feature.test")(next).ServeHTTP(rec, r)
 
@@ -608,12 +615,15 @@ func TestFlagConfigPatch(t *testing.T) {
 		if _, ok := m["phase"]; ok {
 			t.Error("phase present in patch, want omitted")
 		}
+
 		if _, ok := m["showOnRoadmap"]; ok {
 			t.Error("showOnRoadmap present in patch, want omitted")
 		}
+
 		if _, ok := m["surfaces"]; ok {
 			t.Error("surfaces present in patch, want omitted")
 		}
+
 		if string(m["name"]) != `"Blog"` || string(m["rolloutPercentage"]) != `100` {
 			t.Errorf("scalar fields missing from patch: %v", m)
 		}
@@ -626,9 +636,11 @@ func TestFlagConfigPatch(t *testing.T) {
 		if string(m["phase"]) != `"shipped"` {
 			t.Errorf("phase = %s, want shipped", m["phase"])
 		}
+
 		if string(m["showOnRoadmap"]) != `true` {
 			t.Errorf("showOnRoadmap = %s, want true (cfg value)", m["showOnRoadmap"])
 		}
+
 		if _, ok := m["surfaces"]; !ok {
 			t.Error("surfaces missing from patch")
 		}
@@ -638,7 +650,9 @@ func TestFlagConfigPatch(t *testing.T) {
 		t.Parallel()
 
 		nilCfg := FlagConfig{Name: "Blog"}
+
 		var m map[string]json.RawMessage
+
 		if err := json.Unmarshal(flagConfigPatch(nilCfg, []byte(`{"surfaces":null}`)), &m); err != nil {
 			t.Fatalf("patch unmarshal: %v", err)
 		}

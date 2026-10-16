@@ -76,6 +76,7 @@ func optimizeImage(data []byte, mimeType string) ([]byte, string) {
 
 	img := src
 	b := src.Bounds()
+
 	w, h := b.Dx(), b.Dy()
 	if w > OptimizeMaxDimension || h > OptimizeMaxDimension {
 		scale := float64(OptimizeMaxDimension) / float64(max(w, h))
@@ -132,8 +133,10 @@ func (s *Service) OptimizeMedia(ctx context.Context, mediaID pgtype.UUID) error 
 			slog.Warn("media: optimize skipped — stored object missing",
 				"media_id", mediaID.String(),
 				"storage_path", m.StoragePath)
+
 			return nil
 		}
+
 		return fmt.Errorf("reading stored object %s/%s: %w", m.StorageBucket, m.StoragePath, err)
 	}
 
@@ -150,6 +153,7 @@ func (s *Service) OptimizeMedia(ctx context.Context, mediaID pgtype.UUID) error 
 	}
 
 	stored := false
+
 	if s.s3 != nil {
 		if err := s.s3.putObject(ctx, m.StorageBucket, newPath, outMIME, optimized); err != nil {
 			slog.Warn("media: optimize s3 put failed, trying local fallback",
@@ -158,6 +162,7 @@ func (s *Service) OptimizeMedia(ctx context.Context, mediaID pgtype.UUID) error 
 			stored = true
 		}
 	}
+
 	if !stored {
 		if err := storeLocalMediaFile(m.StorageBucket, newPath, optimized); err != nil {
 			return fmt.Errorf("storing optimized object: %w", err)
@@ -195,11 +200,13 @@ func (s *Service) OptimizeMedia(ctx context.Context, mediaID pgtype.UUID) error 
 func (s *Service) fetchObjectBytes(ctx context.Context, bucket, path string, limit int64) ([]byte, error) {
 	if s.s3 != nil {
 		objectURL := fmt.Sprintf("%s/%s/%s", s.s3.endpoint, bucket, path)
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, objectURL, nil)
 		if err == nil {
 			resp, err := s.s3.httpClient.Do(req)
 			if err == nil {
 				defer resp.Body.Close()
+
 				if resp.StatusCode == http.StatusOK {
 					return readLimited(resp.Body, limit)
 				}
@@ -213,8 +220,10 @@ func (s *Service) fetchObjectBytes(ctx context.Context, bucket, path string, lim
 		if os.IsNotExist(err) {
 			return nil, errObjectMissing
 		}
+
 		return nil, fmt.Errorf("open file %s/%s: %w", bucket, path, err)
 	}
+
 	defer func() { _ = f.Close() }()
 
 	return readLimited(f, limit)
@@ -225,9 +234,11 @@ func readLimited(r io.Reader, limit int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if int64(len(data)) > limit {
 		return nil, fmt.Errorf("object exceeds read limit of %d bytes", limit)
 	}
+
 	return data, nil
 }
 

@@ -84,7 +84,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 // ListWebhooks returns all webhook endpoints for the platform.
 // GET /admin/webhooks.
 func (h *Handlers) ListWebhooks(w http.ResponseWriter, r *http.Request) {
-
 	endpoints, err := h.Service.ListEndpoints(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
@@ -100,7 +99,6 @@ func (h *Handlers) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 // GetWebhook returns a single webhook endpoint by ID.
 // GET /admin/webhooks/{id}.
 func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
@@ -120,7 +118,6 @@ func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
 // server-generated and returned exactly once in the response (§12).
 // POST /admin/webhooks.
 func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
-
 	userID, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -160,7 +157,6 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 // UpdateWebhook updates an existing webhook endpoint.
 // PUT/PATCH /admin/webhooks/{id}.
 func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
@@ -185,7 +181,6 @@ func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 // DeleteWebhook removes a webhook endpoint.
 // DELETE /admin/webhooks/{id}.
 func (h *Handlers) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
@@ -203,7 +198,6 @@ func (h *Handlers) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 // TestWebhook sends a test event to a webhook endpoint.
 // POST /admin/webhooks/{id}/test.
 func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
@@ -239,7 +233,6 @@ func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
 // back. On success, marks the endpoint as verified and active.
 // POST /admin/webhooks/{id}/verify.
 func (h *Handlers) VerifyWebhook(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
@@ -258,7 +251,6 @@ func (h *Handlers) VerifyWebhook(w http.ResponseWriter, r *http.Request) {
 
 // ListDeliveries handles GET /admin/webhooks/{id}/deliveries.
 func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
@@ -282,7 +274,6 @@ func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
 // URL path before retrying (BUG-025: previously ignored {id}, allowing a
 // user to retry a delivery from any webhook by guessing the delivery_id).
 func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
-
 	endpointID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")

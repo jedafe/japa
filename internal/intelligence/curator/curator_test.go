@@ -1,7 +1,6 @@
 package curator
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -59,11 +58,13 @@ func fieldStrings(t *testing.T, ext extractor.Extraction, name string) []string 
 		return arr
 	case []any:
 		out := make([]string, 0, len(arr))
+
 		for _, el := range arr {
 			s, ok := el.(string)
 			if !ok {
 				t.Fatalf("field %q element is %T, want string", name, el)
 			}
+
 			out = append(out, s)
 		}
 
@@ -104,10 +105,11 @@ func TestRSSNewsCurate(t *testing.T) {
 	body := fixture(t, "feed.rss")
 	ch := rssChannel(schemas.EntityTypeNews)
 
-	recs, err := RSSNews{}.Curate(context.Background(), body, "application/rss+xml", ch)
+	recs, err := RSSNews{}.Curate(t.Context(), body, "application/rss+xml", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 3 {
 		t.Fatalf("records = %d, want 3", len(recs))
 	}
@@ -116,9 +118,11 @@ func TestRSSNewsCurate(t *testing.T) {
 	if got := recs[0].ExternalKey; got != "https://news.example.com/canada-express-entry-draw" {
 		t.Errorf("item 1 external key = %q, want guid", got)
 	}
+
 	if got := recs[1].ExternalKey; got != "https://news.example.com/uk-student-funds" {
 		t.Errorf("item 2 external key = %q, want link fallback", got)
 	}
+
 	if got := recs[2].ExternalKey; len(got) < 5 || got[:5] != "hash:" {
 		t.Errorf("item 3 external key = %q, want hash: fallback", got)
 	}
@@ -127,6 +131,7 @@ func TestRSSNewsCurate(t *testing.T) {
 		if rec.EntityType != schemas.EntityTypeNews {
 			t.Errorf("record %d entity type = %q, want news", i, rec.EntityType)
 		}
+
 		fieldConfidences(t, rec.Extraction)
 	}
 
@@ -134,15 +139,19 @@ func TestRSSNewsCurate(t *testing.T) {
 	if got := fieldString(t, first, "title"); got != "Canada opens new Express Entry draw" {
 		t.Errorf("title = %q", got)
 	}
+
 	if got := fieldString(t, first, "published_date"); got != "2025-09-15" {
 		t.Errorf("published_date = %q, want 2025-09-15", got)
 	}
+
 	if got := fieldString(t, first, "article_url"); got != "https://news.example.com/canada-express-entry-draw" {
 		t.Errorf("article_url = %q", got)
 	}
+
 	if got := fieldString(t, first, "author"); got != "Ada Obi" {
 		t.Errorf("author = %q, want dc:creator name", got)
 	}
+
 	if topics := fieldStrings(t, first, "topics"); len(topics) != 2 {
 		t.Errorf("topics = %v, want 2 categories", topics)
 	}
@@ -162,10 +171,11 @@ func TestRSSNewsCurate_ArticleChannel(t *testing.T) {
 	body := fixture(t, "feed.rss")
 	ch := rssChannel(schemas.EntityTypeArticle)
 
-	recs, err := RSSNews{}.Curate(context.Background(), body, "application/rss+xml", ch)
+	recs, err := RSSNews{}.Curate(t.Context(), body, "application/rss+xml", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 3 {
 		t.Fatalf("records = %d, want 3", len(recs))
 	}
@@ -173,6 +183,7 @@ func TestRSSNewsCurate_ArticleChannel(t *testing.T) {
 	if recs[0].EntityType != schemas.EntityTypeArticle {
 		t.Fatalf("entity type = %q, want article", recs[0].EntityType)
 	}
+
 	if got := fieldString(t, recs[0].Extraction, "body"); got == "" {
 		t.Error("body empty — content:encoded should map onto the article schema")
 	}
@@ -197,16 +208,19 @@ func TestRSSNewsCurate_Atom(t *testing.T) {
   </entry>
 </feed>`
 
-	recs, err := RSSNews{}.Curate(context.Background(), []byte(atom), "application/atom+xml", rssChannel(schemas.EntityTypeNews))
+	recs, err := RSSNews{}.Curate(t.Context(), []byte(atom), "application/atom+xml", rssChannel(schemas.EntityTypeNews))
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 1 {
 		t.Fatalf("records = %d, want 1", len(recs))
 	}
+
 	if recs[0].ExternalKey != "urn:uuid:entry-1" {
 		t.Errorf("external key = %q, want atom id", recs[0].ExternalKey)
 	}
+
 	if got := fieldString(t, recs[0].Extraction, "article_url"); got != "https://example.com/entry-1" {
 		t.Errorf("article_url = %q", got)
 	}
@@ -225,10 +239,11 @@ func TestJSONLDCurate(t *testing.T) {
 		EntryUrl:    "https://example.com/page",
 	}
 
-	recs, err := JSONLD{}.Curate(context.Background(), body, "application/ld+json", ch)
+	recs, err := JSONLD{}.Curate(t.Context(), body, "application/ld+json", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 4 {
 		t.Fatalf("records = %d, want 4 (BreadcrumbList skipped): %+v", len(recs), recs)
 	}
@@ -243,24 +258,31 @@ func TestJSONLDCurate(t *testing.T) {
 	if got := fieldString(t, job.Extraction, "title"); got != "Registered Nurse — Lagos to Leeds" {
 		t.Errorf("job title = %q", got)
 	}
+
 	if job.ExternalKey != "job:job-7712" {
 		t.Errorf("job external key = %q, want identifier-derived", job.ExternalKey)
 	}
+
 	if got := fieldString(t, job.Extraction, "employer"); got != "Leeds Teaching Hospitals" {
 		t.Errorf("employer = %q", got)
 	}
+
 	if got := fieldString(t, job.Extraction, "job_type"); got != "full_time" {
 		t.Errorf("job_type = %q, want full_time", got)
 	}
+
 	if got := fieldString(t, job.Extraction, "city"); got != "Leeds" {
 		t.Errorf("city = %q", got)
 	}
+
 	if got := fieldString(t, job.Extraction, "deadline"); got != "2025-12-31" {
 		t.Errorf("deadline = %q, want 2025-12-31", got)
 	}
+
 	if got := fieldString(t, job.Extraction, "remote"); got != "true" {
 		t.Errorf("remote = %q, want true (TELECOMMUTE)", got)
 	}
+
 	if n, ok := fieldValue(t, job.Extraction, "salary_min").(float64); !ok || n != 32000 {
 		t.Errorf("salary_min = %v, want 32000", fieldValue(t, job.Extraction, "salary_min"))
 	}
@@ -269,6 +291,7 @@ func TestJSONLDCurate(t *testing.T) {
 	if news.ExternalKey != "https://news.example.com/diaspora-bond" {
 		t.Errorf("news external key = %q, want url", news.ExternalKey)
 	}
+
 	if got := fieldString(t, news.Extraction, "published_date"); got != "2025-09-12" {
 		t.Errorf("news published_date = %q", got)
 	}
@@ -277,9 +300,11 @@ func TestJSONLDCurate(t *testing.T) {
 	if got := fieldString(t, event.Extraction, "title"); got != "Pre-departure orientation — Lagos" {
 		t.Errorf("event title = %q", got)
 	}
+
 	if got := fieldString(t, event.Extraction, "starts_at"); got != "2025-10-04T10:00:00+01:00" {
 		t.Errorf("starts_at = %q", got)
 	}
+
 	if got := fieldString(t, event.Extraction, "organizer"); got != "JapaConnect" {
 		t.Errorf("organizer = %q", got)
 	}
@@ -288,6 +313,7 @@ func TestJSONLDCurate(t *testing.T) {
 	if got := fieldString(t, article.Extraction, "body"); got == "" {
 		t.Error("article body empty — articleBody should map")
 	}
+
 	if got := fieldString(t, article.Extraction, "image_url"); got != "https://blog.example.com/img/sa.png" {
 		t.Errorf("image_url = %q", got)
 	}
@@ -304,10 +330,11 @@ func TestJSONLDCurate_ChannelTypeFilter(t *testing.T) {
 		EntityTypes: []string{schemas.EntityTypeJob},
 	}
 
-	recs, err := JSONLD{}.Curate(context.Background(), body, "application/ld+json", ch)
+	recs, err := JSONLD{}.Curate(t.Context(), body, "application/ld+json", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 1 || recs[0].EntityType != schemas.EntityTypeJob {
 		t.Fatalf("records = %+v, want the single JobPosting", recs)
 	}
@@ -326,10 +353,11 @@ func TestICalCurate(t *testing.T) {
 		EntryUrl:    "https://events.example.com/feed.ics",
 	}
 
-	recs, err := ICal{}.Curate(context.Background(), body, "text/calendar", ch)
+	recs, err := ICal{}.Curate(t.Context(), body, "text/calendar", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 2 {
 		t.Fatalf("records = %d, want 2", len(recs))
 	}
@@ -339,6 +367,7 @@ func TestICalCurate(t *testing.T) {
 	if first.ExternalKey != "embassy-orientation-2025-10@events.example.com" {
 		t.Errorf("external key = %q, want UID", first.ExternalKey)
 	}
+
 	if got := fieldString(t, first.Extraction, "title"); got != "Pre-departure orientation — Toronto" {
 		t.Errorf("title = %q", got)
 	}
@@ -346,9 +375,11 @@ func TestICalCurate(t *testing.T) {
 	if got := fieldString(t, first.Extraction, "starts_at"); got != "2025-10-04T18:00:00Z" {
 		t.Errorf("starts_at = %q, want 2025-10-04T18:00:00Z (TZID applied)", got)
 	}
+
 	if got := fieldString(t, first.Extraction, "location"); got != "North York Civic Centre, Toronto" {
 		t.Errorf("location = %q (escaped comma should decode)", got)
 	}
+
 	if got := fieldString(t, first.Extraction, "organizer"); got != "JapaConnect" {
 		t.Errorf("organizer = %q, want CN param", got)
 	}
@@ -361,10 +392,12 @@ func TestICalCurate(t *testing.T) {
 	if got := fieldString(t, first.Extraction, "recurrence"); got != "FREQ=WEEKLY;COUNT=4" {
 		t.Errorf("recurrence = %q", got)
 	}
+
 	occ := fieldStrings(t, first.Extraction, "occurrences")
 	if len(occ) != 4 {
 		t.Fatalf("occurrences = %v, want 4 weekly instances", occ)
 	}
+
 	if occ[0] != "2025-10-04T18:00:00Z" || occ[3] != "2025-10-25T18:00:00Z" {
 		t.Errorf("occurrences = %v, want 4 weekly steps from Oct 4", occ)
 	}
@@ -372,9 +405,11 @@ func TestICalCurate(t *testing.T) {
 	if second.ExternalKey != "visa-webinar-2025-11@events.example.com" {
 		t.Errorf("second external key = %q, want UID", second.ExternalKey)
 	}
+
 	if got := fieldString(t, second.Extraction, "starts_at"); got != "2025-11-05T18:00:00Z" {
 		t.Errorf("second starts_at = %q", got)
 	}
+
 	if got := fieldString(t, second.Extraction, "description"); got != "Live session with an immigration adviser; bring questions." {
 		t.Errorf("second description = %q (escaped semicolon should decode)", got)
 	}
@@ -396,10 +431,11 @@ func TestTabularCurate(t *testing.T) {
 		}`),
 	}
 
-	recs, err := Tabular{}.Curate(context.Background(), body, "text/csv", ch)
+	recs, err := Tabular{}.Curate(t.Context(), body, "text/csv", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 3 {
 		t.Fatalf("records = %d, want 3 data rows", len(recs))
 	}
@@ -408,15 +444,19 @@ func TestTabularCurate(t *testing.T) {
 	if first.EntityType != schemas.EntityTypeDataset {
 		t.Errorf("entity type = %q, want dataset", first.EntityType)
 	}
+
 	if len(first.ExternalKey) < 4 || first.ExternalKey[:4] != "row:" {
 		t.Errorf("external key = %q, want row: hash", first.ExternalKey)
 	}
+
 	if got := fieldString(t, first.Extraction, "title"); got != "Express Entry application" {
 		t.Errorf("title = %q", got)
 	}
+
 	if got := fieldString(t, first.Extraction, "value"); got != "1525" {
 		t.Errorf("value = %q", got)
 	}
+
 	if got := fieldString(t, first.Extraction, "unit"); got != "CAD" {
 		t.Errorf("unit = %q", got)
 	}
@@ -426,10 +466,11 @@ func TestTabularCurate(t *testing.T) {
 	}
 
 	// Key stability: re-curating produces identical external keys.
-	recs2, err := Tabular{}.Curate(context.Background(), body, "text/csv", ch)
+	recs2, err := Tabular{}.Curate(t.Context(), body, "text/csv", ch)
 	if err != nil {
 		t.Fatalf("Curate again: %v", err)
 	}
+
 	for i := range recs {
 		if recs[i].ExternalKey != recs2[i].ExternalKey {
 			t.Errorf("row %d external key unstable: %q vs %q", i, recs[i].ExternalKey, recs2[i].ExternalKey)
@@ -450,13 +491,15 @@ func TestTabularCurate_NoConfig(t *testing.T) {
 		EntryUrl:    "https://data.example.com/fees.csv",
 	}
 
-	recs, err := Tabular{}.Curate(context.Background(), body, "text/csv", ch)
+	recs, err := Tabular{}.Curate(t.Context(), body, "text/csv", ch)
 	if err != nil {
 		t.Fatalf("Curate: %v", err)
 	}
+
 	if len(recs) != 3 {
 		t.Fatalf("records = %d, want 3", len(recs))
 	}
+
 	if got := fieldString(t, recs[0].Extraction, "title"); got != "Express Entry application" {
 		t.Errorf("title = %q, want first-column fallback", got)
 	}
@@ -469,15 +512,16 @@ func TestRegistryDispatch(t *testing.T) {
 
 	reg := Default()
 
-	recs, err := reg.Curate(context.Background(), fixture(t, "feed.rss"), "application/rss+xml", rssChannel(schemas.EntityTypeNews))
+	recs, err := reg.Curate(t.Context(), fixture(t, "feed.rss"), "application/rss+xml", rssChannel(schemas.EntityTypeNews))
 	if err != nil {
 		t.Fatalf("registry Curate(rss): %v", err)
 	}
+
 	if len(recs) != 3 {
 		t.Fatalf("records = %d, want 3", len(recs))
 	}
 
-	_, err = reg.Curate(context.Background(), []byte("https://example.com/a\t2025-01-01\n"), "text/plain", sources.Channel{CrawlMethod: "sitemap"})
+	_, err = reg.Curate(t.Context(), []byte("https://example.com/a\t2025-01-01\n"), "text/plain", sources.Channel{CrawlMethod: "sitemap"})
 	if !errors.Is(err, ErrNoCurator) {
 		t.Errorf("sitemap Curate err = %v, want ErrNoCurator", err)
 	}

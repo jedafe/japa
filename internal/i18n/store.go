@@ -55,7 +55,6 @@ func (s *Store) ListByKeyPrefix(ctx context.Context, prefix string) ([]gen.Trans
 // Get returns a single translation by locale and key.
 func (s *Store) Get(ctx context.Context, locale, key string) (gen.Translation, error) {
 	row, err := s.read.GetTranslation(ctx, gen.GetTranslationParams{
-
 		Locale: locale,
 		Key:    key,
 	})

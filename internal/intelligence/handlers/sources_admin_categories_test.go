@@ -44,11 +44,13 @@ func TestBuildCreateSourceParams_Categories(t *testing.T) {
 		if len(params.Categories) != len(want) {
 			t.Fatalf("categories = %v, want %v", params.Categories, want)
 		}
+
 		for i := range want {
 			if params.Categories[i] != want[i] {
 				t.Errorf("categories[%d] = %q, want %q", i, params.Categories[i], want[i])
 			}
 		}
+
 		if params.Category != "news" {
 			t.Errorf("category = %q, want news (explicit category kept)", params.Category)
 		}
@@ -65,9 +67,11 @@ func TestBuildCreateSourceParams_Categories(t *testing.T) {
 		if !ok {
 			t.Fatal("buildCreateSourceParams = false, want true (categories satisfy the category requirement)")
 		}
+
 		if params.Category != "visa" {
 			t.Errorf("category = %q, want visa (dual-write of categories[0])", params.Category)
 		}
+
 		if len(params.Categories) != 2 || params.Categories[0] != "visa" {
 			t.Errorf("categories = %v, want [visa news]", params.Categories)
 		}
@@ -84,6 +88,7 @@ func TestBuildCreateSourceParams_Categories(t *testing.T) {
 		if !ok {
 			t.Fatal("buildCreateSourceParams = false, want true")
 		}
+
 		if params.Category != "scholarship" {
 			t.Errorf("category = %q, want scholarship", params.Category)
 		}
@@ -98,6 +103,7 @@ func TestBuildCreateSourceParams_Categories(t *testing.T) {
 		if !ok {
 			t.Fatal("buildCreateSourceParams = false, want true")
 		}
+
 		if params.Categories != nil {
 			t.Errorf("categories = %v, want nil (INSERT derives ARRAY[category])", params.Categories)
 		}
@@ -113,6 +119,7 @@ func TestBuildCreateSourceParams_Categories(t *testing.T) {
 		if !ok {
 			t.Fatal("buildCreateSourceParams = false, want true")
 		}
+
 		if params.Categories != nil {
 			t.Errorf("categories = %v, want nil (ARRAY[category] fallback)", params.Categories)
 		}
@@ -135,6 +142,7 @@ func TestBuildCreateSourceParams_SourceKind(t *testing.T) {
 		if _, ok := buildCreateSourceParams(rr, body); ok {
 			t.Fatal("buildCreateSourceParams = true, want false for unknown source_kind")
 		}
+
 		assertErrorCode(t, rr, http.StatusBadRequest, "invalid_source_kind")
 	})
 
@@ -163,6 +171,7 @@ func TestBuildCreateSourceParams_SourceKind(t *testing.T) {
 		if !ok {
 			t.Fatal("buildCreateSourceParams = false, want true")
 		}
+
 		sk, _ := params.SourceKind.(*string)
 		if sk == nil || *sk != "publisher" {
 			t.Errorf("source_kind = %v, want publisher", params.SourceKind)
@@ -200,25 +209,31 @@ func TestAdminSourceCategories_LiveDB(t *testing.T) {
 	}
 
 	created := decodeChannelData(t, rr)
+
 	sourceIDStr, _ := created["id"].(string)
 	if sourceIDStr == "" {
 		t.Fatalf("create: no id in response (body=%s)", rr.Body.String())
 	}
+
 	sourceID := mustUUID(t, sourceIDStr)
+
 	defer func() { _ = svc.Delete(ctx, sourceID) }()
 
 	if created["category"] != "news" {
 		t.Errorf("create: category = %v, want news (dual-write of categories[0])", created["category"])
 	}
+
 	assertStringArray(t, created["categories"], []string{"news", "job"})
 
 	src, err := svc.Get(ctx, sourceID)
 	if err != nil {
 		t.Fatalf("get created source: %v", err)
 	}
+
 	if len(src.Categories) != 2 || src.Categories[0] != "news" || src.Categories[1] != "job" {
 		t.Errorf("persisted categories = %v, want [news job]", src.Categories)
 	}
+
 	if src.Category != "news" {
 		t.Errorf("persisted category = %q, want news", src.Category)
 	}
@@ -231,8 +246,10 @@ func TestAdminSourceCategories_LiveDB(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("patch categories: status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	patched := decodeChannelData(t, rr)
 	assertStringArray(t, patched["categories"], []string{"visa", "travel_alert"})
+
 	if patched["category"] != "visa" {
 		t.Errorf("patch: category = %v, want visa (dual-write)", patched["category"])
 	}
@@ -245,10 +262,12 @@ func TestAdminSourceCategories_LiveDB(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("patch name: status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	src, err = svc.Get(ctx, sourceID)
 	if err != nil {
 		t.Fatalf("get after name patch: %v", err)
 	}
+
 	if len(src.Categories) != 2 || src.Categories[0] != "visa" || src.Categories[1] != "travel_alert" {
 		t.Errorf("categories after unrelated patch = %v, want [visa travel_alert] (untouched)", src.Categories)
 	}
@@ -261,13 +280,16 @@ func TestAdminSourceCategories_LiveDB(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("patch categories+category: status = %d (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	src, err = svc.Get(ctx, sourceID)
 	if err != nil {
 		t.Fatalf("get after category patch: %v", err)
 	}
+
 	if src.Category != "scholarship" {
 		t.Errorf("category = %q, want scholarship (explicit key wins)", src.Category)
 	}
+
 	if len(src.Categories) != 1 || src.Categories[0] != "news" {
 		t.Errorf("categories = %v, want [news]", src.Categories)
 	}
@@ -280,13 +302,16 @@ func TestAdminSourceCategories_LiveDB(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("patch clear: status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	src, err = svc.Get(ctx, sourceID)
 	if err != nil {
 		t.Fatalf("get after clear: %v", err)
 	}
+
 	if len(src.Categories) != 0 {
 		t.Errorf("categories after clear = %v, want []", src.Categories)
 	}
+
 	if src.Category != "scholarship" {
 		t.Errorf("category after clear = %q, want scholarship (untouched)", src.Category)
 	}
@@ -305,10 +330,12 @@ func TestAdminSourceCategories_LiveDB(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("patch source_kind: status = %d (body=%s)", rr.Code, rr.Body.String())
 	}
+
 	src, err = svc.Get(ctx, sourceID)
 	if err != nil {
 		t.Fatalf("get after kind patch: %v", err)
 	}
+
 	if src.SourceKind != "job_board" {
 		t.Errorf("source_kind = %q, want job_board", src.SourceKind)
 	}
@@ -322,9 +349,11 @@ func assertStringArray(t *testing.T, v any, want []string) {
 	if !ok {
 		t.Fatalf("value = %v (%T), want []any", v, v)
 	}
+
 	if len(arr) != len(want) {
 		t.Fatalf("array = %v, want %v", arr, want)
 	}
+
 	for i := range want {
 		if arr[i] != want[i] {
 			t.Errorf("array[%d] = %v, want %q", i, arr[i], want[i])

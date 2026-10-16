@@ -224,6 +224,7 @@ func (s *Service) CreateUserEndpoint(ctx context.Context, ownerID pgtype.UUID, i
 	if err != nil {
 		return WebhookEndpointWithSecret{}, err
 	}
+
 	return s.store.CreateUserEndpoint(ctx, ownerID, input.Name, input.URL, secret, input.EventTypes)
 }
 
@@ -245,9 +246,11 @@ func (s *Service) DeleteUserEndpoint(ctx context.Context, ownerID, id pgtype.UUI
 	if err != nil {
 		return err
 	}
+
 	if n == 0 {
 		return fmt.Errorf("%w: webhook endpoint", errpkg.ErrNotFound)
 	}
+
 	return nil
 }
 
@@ -269,7 +272,7 @@ func (s *Service) VerifyUserEndpoint(ctx context.Context, ownerID, id pgtype.UUI
 
 	if err := PerformChallenge(challengeCtx, ep.URL, token); err != nil {
 		slog.Warn("user webhook challenge/response failed", "endpoint_id", id, "url", ep.URL, "error", err)
-		return fmt.Errorf("%w: %v", ErrChallengeFailed, err)
+		return fmt.Errorf("%w: %w", ErrChallengeFailed, err)
 	}
 
 	if n, err := s.store.VerifyUserEndpoint(ctx, ownerID, id); err != nil {
@@ -279,6 +282,7 @@ func (s *Service) VerifyUserEndpoint(ctx context.Context, ownerID, id pgtype.UUI
 	}
 
 	slog.Info("user webhook endpoint verified", "endpoint_id", id, "url", ep.URL)
+
 	return nil
 }
 
@@ -288,6 +292,7 @@ func (s *Service) ListUserDeliveries(ctx context.Context, ownerID, endpointID pg
 	if _, err := s.store.GetUserEndpoint(ctx, ownerID, endpointID); err != nil {
 		return nil, fmt.Errorf("%w: webhook endpoint", errpkg.ErrNotFound)
 	}
+
 	return s.ListDeliveries(ctx, endpointID, limit, offset)
 }
 
@@ -440,7 +445,7 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 
 	// Delivery failed. If retries remain, record 'retrying' with next_attempt_at
 	// and return an error so Asynq re-enqueues (BUG-017).
-	// nolint:gosec // G115: bounded
+	//nolint:gosec // G115: bounded
 	if attempt < int32(maxAttempts) { // #nosec //nolint:gosec // G115: bounded
 		nextAttempt := time.Now().Add(backoffDuration(int(attempt)))
 		errMsg := deliverErr.Error()
@@ -621,6 +626,7 @@ func (s *Service) userEndpointMayReceive(ctx context.Context, ep WebhookEndpoint
 	if !ep.CreatedBy.Valid {
 		return false
 	}
+
 	if !strings.HasPrefix(eventType, "content.") {
 		return false
 	}
@@ -631,9 +637,11 @@ func (s *Service) userEndpointMayReceive(ctx context.Context, ep WebhookEndpoint
 	if err != nil {
 		return false
 	}
+
 	var body struct {
 		ContentID string `json:"content_id"`
 	}
+
 	if err := json.Unmarshal(raw, &body); err != nil || body.ContentID == "" {
 		return false
 	}
@@ -649,6 +657,7 @@ func (s *Service) userEndpointMayReceive(ctx context.Context, ep WebhookEndpoint
 			"endpoint_id", ep.ID, "content_id", body.ContentID, "error", err)
 		return false
 	}
+
 	return visible
 }
 

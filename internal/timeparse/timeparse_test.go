@@ -58,14 +58,18 @@ func TestParseTimestamptz(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error for %q", tc.input)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if !ts.Valid {
 				t.Fatal("expected Valid timestamptz")
 			}
+
 			if tc.check != nil {
 				tc.check(t, ts.Time)
 			}
@@ -100,14 +104,18 @@ func TestParseDate(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error for %q", tc.input)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if !d.Valid {
 				t.Fatal("expected Valid date")
 			}
+
 			if got := d.Time.Format("2006-01-02"); got != tc.want {
 				t.Fatalf("got %s, want %s", got, tc.want)
 			}

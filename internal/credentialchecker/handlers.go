@@ -115,7 +115,6 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleListProfessions handles GET /credentials/professions — list all
 // credential professions. Public.
 func (h *Handlers) HandleListProfessions(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
@@ -138,7 +137,6 @@ func (h *Handlers) HandleListProfessions(w http.ResponseWriter, r *http.Request)
 // with filters. Query params: ?dest=&profession=&issuing=&page=&limit=
 // Public.
 func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
@@ -186,7 +184,6 @@ func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
 // HandleGetPathway handles GET /credentials/:id — pathway detail plus
 // published community notes. Public.
 func (h *Handlers) HandleGetPathway(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return

@@ -24,10 +24,12 @@ import (
 
 func numericVal(t *testing.T, s string) pgtype.Numeric {
 	t.Helper()
+
 	var n pgtype.Numeric
 	if err := n.Scan(s); err != nil {
 		t.Fatalf("scan numeric %q: %v", s, err)
 	}
+
 	return n
 }
 
@@ -43,19 +45,23 @@ func valueRow(fieldID, entityID pgtype.UUID, fieldType string, num pgtype.Numeri
 
 func rollupDefs(t *testing.T, defs map[string]rollupFieldDef) (map[pgtype.UUID]rollupFieldDef, map[string]rollupFieldDef, []string, map[string]pgtype.UUID) {
 	t.Helper()
+
 	byID := map[pgtype.UUID]rollupFieldDef{}
 	byKey := map[string]rollupFieldDef{}
 	order := []string{}
+
 	ids := map[string]pgtype.UUID{}
 	for name, def := range defs {
 		id := pgtype.UUID{Valid: true, Bytes: [16]byte{byte(len(ids) + 1)}}
 		ids[name] = id
 		byID[id] = def
+
 		if _, seen := byKey[def.key]; !seen {
 			byKey[def.key] = def
 			order = append(order, def.key)
 		}
 	}
+
 	return byID, byKey, order, ids
 }
 
@@ -65,12 +71,15 @@ func allMetrics() map[string]bool {
 
 func fieldByKey(t *testing.T, fields []WikiRollupFieldDTO, key string) WikiRollupFieldDTO {
 	t.Helper()
+
 	for _, f := range fields {
 		if f.Key == key {
 			return f
 		}
 	}
+
 	t.Fatalf("field %q missing from rollup output (%d fields)", key, len(fields))
+
 	return WikiRollupFieldDTO{}
 }
 
@@ -86,10 +95,12 @@ func TestAggregateRollupValues_Scalars(t *testing.T) {
 	}
 
 	fields, rows := aggregateRollupValues(vals, byID, byKey, order, allMetrics())
+
 	f := fieldByKey(t, fields, "rent")
 	if f.Samples != 2 || *f.Metrics.Min != 1000 || *f.Metrics.Avg != 1500 || *f.Metrics.Max != 2000 {
 		t.Fatalf("scalar aggregate wrong: %+v", f)
 	}
+
 	if len(rows) != 2 || rows[entityA]["rent"] == nil {
 		t.Fatalf("rowsBySpace missing values: %#v", rows)
 	}
@@ -111,6 +122,7 @@ func TestAggregateRollupValues_NullScalar(t *testing.T) {
 	if len(fields) != 0 {
 		t.Fatalf("NULL-only field should be skipped, got %+v", fields)
 	}
+
 	if len(rows[entityA]) != 1 {
 		t.Fatalf("row value should still surface in children: %#v", rows)
 	}
@@ -158,6 +170,7 @@ func TestAggregateRollupValues_PriceRangePartials(t *testing.T) {
 				if len(fields) != 0 {
 					t.Fatalf("expected no field output, got %+v", fields)
 				}
+
 				return
 			}
 
@@ -165,6 +178,7 @@ func TestAggregateRollupValues_PriceRangePartials(t *testing.T) {
 			if f.Samples != tc.wantN {
 				t.Fatalf("samples: got %d want %d", f.Samples, tc.wantN)
 			}
+
 			checkPtr(t, "min", f.Metrics.Min, tc.wantMin)
 			checkPtr(t, "avg", f.Metrics.Avg, tc.wantAvg)
 			checkPtr(t, "max", f.Metrics.Max, tc.wantMax)
@@ -174,12 +188,15 @@ func TestAggregateRollupValues_PriceRangePartials(t *testing.T) {
 
 func checkPtr(t *testing.T, name string, got, want *float64) {
 	t.Helper()
+
 	if want == nil {
 		if got != nil {
 			t.Fatalf("%s: got %v want nil", name, *got)
 		}
+
 		return
 	}
+
 	if got == nil || *got != *want {
 		t.Fatalf("%s: got %v want %v", name, got, *want)
 	}
@@ -200,15 +217,18 @@ func TestAggregateRollupValues_NonFiniteAndMarshal(t *testing.T) {
 	}
 
 	fields, _ := aggregateRollupValues(vals, byID, byKey, order, allMetrics())
+
 	f := fieldByKey(t, fields, "score")
 	if f.Samples != 1 {
 		t.Fatalf("NaN row counted as a sample: %+v", f)
 	}
+
 	for name, p := range map[string]*float64{"min": f.Metrics.Min, "avg": f.Metrics.Avg, "max": f.Metrics.Max} {
 		if p != nil && math.IsNaN(*p) {
 			t.Fatalf("%s emitted NaN", name)
 		}
 	}
+
 	if _, err := json.Marshal(fields); err != nil {
 		t.Fatalf("rollup output failed to marshal: %v", err)
 	}
@@ -230,6 +250,7 @@ func TestAggregateRollupValues_MixedTypeKey(t *testing.T) {
 	// map iteration order varies — run both orders; the first-seen def
 	// (insertion order into defsByKey) always owns the emitted metadata.
 	fields, _ := aggregateRollupValues(vals, byID, byKey, order, allMetrics())
+
 	f := fieldByKey(t, fields, "price")
 	if f.Samples < 1 {
 		t.Fatalf("expected contributions under shared key, got %+v", f)
@@ -244,9 +265,11 @@ func TestParseRollupConfig(t *testing.T) {
 	if parseRollupConfig(nil) != nil {
 		t.Fatal("nil config should parse to nil")
 	}
+
 	if parseRollupConfig([]byte(`{not json`)) != nil {
 		t.Fatal("malformed config should parse to nil")
 	}
+
 	if parseRollupConfig([]byte(`{"enabled":false,"metrics":["min"]}`)) != nil {
 		t.Fatal("disabled config should parse to nil")
 	}
@@ -273,13 +296,16 @@ func TestValidateRollupInput(t *testing.T) {
 	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"section_limit":-1}`)); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("negative section_limit: want ErrInvalidInput, got %v", err)
 	}
+
 	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"metrics":["p99"]}`)); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("unknown metric: want ErrInvalidInput, got %v", err)
 	}
+
 	out, err := validateRollupInput(json.RawMessage(`{"enabled":true,"metrics":["avg"],"section_limit":8}`))
 	if err != nil || out == nil {
 		t.Fatalf("valid config rejected: %v", err)
 	}
+
 	out, err = validateRollupInput(json.RawMessage(`null`))
 	if err != nil || out != nil {
 		t.Fatalf("null should clear config: out=%s err=%v", out, err)
@@ -288,6 +314,7 @@ func TestValidateRollupInput(t *testing.T) {
 	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"mode":"sidebar"}`)); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("unknown mode: want ErrInvalidInput, got %v", err)
 	}
+
 	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"mode":"directory","levels":["state","university"]}`)); err != nil {
 		t.Fatalf("directory config rejected: %v", err)
 	}
@@ -300,18 +327,22 @@ func TestValidateRollupInput(t *testing.T) {
 func TestNormalizePriceRange(t *testing.T) {
 	ok := func(s string) map[string]float64 {
 		t.Helper()
+
 		out, err := normalizePriceRange(json.RawMessage(s), "price")
 		if err != nil {
 			t.Fatalf("normalizePriceRange(%s): %v", s, err)
 		}
+
 		var m map[string]float64
 		if err := json.Unmarshal(out, &m); err != nil {
 			t.Fatalf("normalized output not a number map: %s", s)
 		}
+
 		return m
 	}
 	bad := func(s string) {
 		t.Helper()
+
 		if _, err := normalizePriceRange(json.RawMessage(s), "price"); err == nil {
 			t.Fatalf("normalizePriceRange(%s) should reject", s)
 		}
@@ -320,12 +351,15 @@ func TestNormalizePriceRange(t *testing.T) {
 	if m := ok(`{"avg":2.29,"min":1.79,"max":2.99}`); len(m) != 3 || m["avg"] != 2.29 {
 		t.Fatalf("full triple wrong: %v", m)
 	}
+
 	if m := ok(`{"min":1,"max":2}`); len(m) != 2 {
 		t.Fatalf("partial {min,max} wrong: %v", m)
 	}
+
 	if m := ok(`{"max":10}`); len(m) != 1 || m["max"] != 10 {
 		t.Fatalf("max-only wrong: %v", m)
 	}
+
 	if m := ok(`{"avg":5}`); len(m) != 1 {
 		t.Fatalf("avg-only wrong: %v", m)
 	}
@@ -353,22 +387,27 @@ var taxiPartsOptions = []byte(`{"parts":[` +
 func TestNormalizePriceParts(t *testing.T) {
 	ok := func(s string) map[string]json.RawMessage {
 		t.Helper()
+
 		out, err := normalizePriceParts(json.RawMessage(s), "taxi", taxiPartsOptions)
 		if err != nil {
 			t.Fatalf("normalizePriceParts(%s): %v", s, err)
 		}
+
 		var m map[string]json.RawMessage
 		if err := json.Unmarshal(out, &m); err != nil {
 			t.Fatalf("normalized output not an object: %s", s)
 		}
+
 		var parts map[string]json.RawMessage
 		if err := json.Unmarshal(m["parts"], &parts); err != nil {
 			t.Fatalf("canonical output missing parts member: %s", out)
 		}
+
 		return parts
 	}
 	bad := func(s string) {
 		t.Helper()
+
 		if _, err := normalizePriceParts(json.RawMessage(s), "taxi", taxiPartsOptions); err == nil {
 			t.Fatalf("normalizePriceParts(%s) should reject", s)
 		}
@@ -380,10 +419,13 @@ func TestNormalizePriceParts(t *testing.T) {
 	}
 	// Bare parts map is accepted and wrapped.
 	p := ok(`{"base_fare":"4.50","service":"UberX"}`)
+
 	var fare float64
+
 	if err := json.Unmarshal(p["base_fare"], &fare); err != nil || fare != 4.5 {
 		t.Fatalf("numeric-string part did not coerce: %s", p["base_fare"])
 	}
+
 	var svc string
 	if err := json.Unmarshal(p["service"], &svc); err != nil || svc != "UberX" {
 		t.Fatalf("text part did not coerce: %s", p["service"])
@@ -424,9 +466,11 @@ func TestFieldSections(t *testing.T) {
 	if got := fieldSections(nil); got == nil || len(got) != 0 {
 		t.Fatalf("nil input should yield empty sections, got %+v", got)
 	}
+
 	if got := fieldSections([]EntityFieldDTO{fld("a", ""), fld("b", "")}); len(got) != 1 || got[0].Key != "" {
 		t.Fatalf("single implicit section should be emitted, got %+v", got)
 	}
+
 	if got := fieldSections([]EntityFieldDTO{fld("a", "food"), fld("b", "food")}); len(got) != 1 || got[0].Key != "food" {
 		t.Fatalf("single named section should be emitted, got %+v", got)
 	}
@@ -438,6 +482,7 @@ func TestFieldSections(t *testing.T) {
 	if len(got) != 3 || got[0].Key != "" || got[1].Key != "housing" || got[2].Key != "food" {
 		t.Fatalf("section order wrong: %+v", got)
 	}
+
 	if len(got[2].Fields) != 2 || got[2].Fields[0].Key != "milk" {
 		t.Fatalf("section members wrong: %+v", got[2].Fields)
 	}
@@ -502,11 +547,12 @@ func seedHierarchyFixture(t *testing.T, ctx context.Context, database *db.DB) hi
 		VALUES ($1,'other','other','Other',$2) RETURNING id`, fx.typeID, gB)
 
 	t.Cleanup(func() {
-		cctx := context.Background()
+		cctx := t.Context()
 		// categories cascade with the type config row; groups must outlive
 		// nothing else — delete them explicitly (ON DELETE RESTRICT).
 		database.Writer.Exec(cctx, `DELETE FROM wiki_type_configs WHERE space_type_id = $1`, fx.typeID)
 		database.Writer.Exec(cctx, `DELETE FROM space_types WHERE id = $1`, fx.typeID)
+
 		for _, g := range fx.groupIDs {
 			database.Writer.Exec(cctx, `DELETE FROM custom_field_groups WHERE id = $1`, g)
 		}
@@ -529,8 +575,9 @@ func TestListPageSiblings_ExcludesSoftDeleted(t *testing.T) {
 			fx.spaceID, slug, slug, cat, fx.userID)
 	}
 	live1, dead, live2 := mk("sib-a"), mk("sib-b"), mk("sib-c")
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(),
+		database.Writer.Exec(t.Context(),
 			`DELETE FROM wiki_pages WHERE space_id = $1 AND category = $2`, fx.spaceID, cat)
 	})
 
@@ -542,14 +589,17 @@ func TestListPageSiblings_ExcludesSoftDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListPageSiblings: %v", err)
 	}
+
 	if len(siblings) != 2 {
 		t.Fatalf("siblings: got %d want 2: %+v", len(siblings), siblings)
 	}
+
 	for _, s := range siblings {
 		if s.Slug == "sib-b" {
 			t.Fatal("soft-deleted page leaked into siblings")
 		}
 	}
+
 	_ = live1
 	_ = live2
 }
@@ -567,20 +617,23 @@ func TestGetPageTemplateForSpace_CategoryScoped(t *testing.T) {
 		`INSERT INTO spaces (id,space_type_id,name,slug,level,visibility,status)
 		 VALUES (gen_random_uuid(),$1,$2,$2,'custom','public','active') RETURNING id`,
 		hf.typeID, "wop-tmpl-"+strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:12])
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM spaces WHERE id = $1`, spaceID)
+		database.Writer.Exec(t.Context(), `DELETE FROM spaces WHERE id = $1`, spaceID)
 	})
 
 	tmplA, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create template A: %v", err)
 	}
+
 	tmplB, err := store.CreatePageTemplate(ctx, hf.catBID, "prices", "Prices alt", hf.groupIDs[1], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create template B: %v", err)
 	}
+
 	t.Cleanup(func() {
-		cctx := context.Background()
+		cctx := t.Context()
 		database.Writer.Exec(cctx, `DELETE FROM wiki_type_page_templates WHERE id IN ($1,$2)`, tmplA.ID, tmplB.ID)
 	})
 
@@ -588,6 +641,7 @@ func TestGetPageTemplateForSpace_CategoryScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve (cost_of_living, prices): %v", err)
 	}
+
 	if gotA.ID != tmplA.ID || gotA.Label != "Prices in {name}" {
 		t.Fatalf("wrong template bound for cost_of_living: %+v", gotA)
 	}
@@ -596,6 +650,7 @@ func TestGetPageTemplateForSpace_CategoryScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve (other, prices): %v", err)
 	}
+
 	if gotB.ID != tmplB.ID {
 		t.Fatalf("category scoping failed — resolved wrong category's template: %+v", gotB)
 	}
@@ -628,8 +683,9 @@ func TestDeleteWikiPageTemplate_Guards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create system template: %v", err)
 	}
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, sys.ID)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, sys.ID)
 	})
 
 	if err := svc.DeleteWikiPageTemplate(ctx, sys.ID.String()); !errors.Is(err, ErrWikiPageTemplateProtected) {
@@ -641,16 +697,18 @@ func TestDeleteWikiPageTemplate_Guards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create prose template: %v", err)
 	}
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, prose.ID)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, prose.ID)
 	})
 
 	pageID := mustIDF(t, ctx, database,
 		`INSERT INTO wiki_pages (id,space_id,slug,title,category,created_by,page_template_id)
 		 VALUES (gen_random_uuid(),$1,$2,'Bound','cost_of_living',$3,$4) RETURNING id`,
 		fx.spaceID, "wop-bound-"+strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:8], fx.userID, prose.ID)
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_pages WHERE id = $1`, pageID)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_pages WHERE id = $1`, pageID)
 	})
 
 	revID, err := store.SubmitRevision(ctx, pageID, fx.userID, "content",
@@ -658,6 +716,7 @@ func TestDeleteWikiPageTemplate_Guards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit revision: %v", err)
 	}
+
 	if _, err := store.ApproveRevisionByID(ctx, revID, fx.userID, ""); err != nil {
 		t.Fatalf("approve revision: %v", err)
 	}
@@ -671,6 +730,7 @@ func TestDeleteWikiPageTemplate_Guards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create free template: %v", err)
 	}
+
 	if err := svc.DeleteWikiPageTemplate(ctx, free.ID.String()); err != nil {
 		t.Fatalf("clean delete: %v", err)
 	}
@@ -698,8 +758,9 @@ func seedSpaceOfType(t *testing.T, ctx context.Context, database *db.DB, typeID 
 		`INSERT INTO spaces (id,space_type_id,name,slug,level,visibility,status)
 		 VALUES (gen_random_uuid(),$1,$2,$3,'custom','public','active') RETURNING id`,
 		typeID, namePrefix+" "+slug, slug)
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM spaces WHERE id = $1`, spaceID)
+		database.Writer.Exec(t.Context(), `DELETE FROM spaces WHERE id = $1`, spaceID)
 	})
 
 	return spaceID, slug
@@ -720,8 +781,9 @@ func TestGetWikiPage_LazyTemplatePage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
 	})
 
 	svc := NewService(store, nil)
@@ -732,6 +794,7 @@ func TestGetWikiPage_LazyTemplatePage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lazy template page: %v", err)
 	}
+
 	if !page.Lazy {
 		t.Fatal("want lazy=true on an unmaterialized template page")
 	}
@@ -743,21 +806,27 @@ func TestGetWikiPage_LazyTemplatePage(t *testing.T) {
 		t.Fatalf("display name not substituted: title=%q space_name=%q want_name=%q",
 			page.Title, page.SpaceName, wantName)
 	}
+
 	if page.Category != "cost_of_living" {
 		t.Fatalf("category: got %q want cost_of_living", page.Category)
 	}
+
 	if page.PageTemplateID != tmpl.ID.String() {
 		t.Fatalf("page_template_id: got %q want %s", page.PageTemplateID, tmpl.ID.String())
 	}
+
 	if page.FieldGroupID != hf.groupIDs[0].String() {
 		t.Fatalf("field_group_id: got %q want %s", page.FieldGroupID, hf.groupIDs[0].String())
 	}
+
 	if page.Position != 3 {
 		t.Fatalf("position: got %d want 3", page.Position)
 	}
+
 	if len(page.PageTemplates) == 0 {
 		t.Fatal("page_templates discovery list empty")
 	}
+
 	for _, pt := range page.PageTemplates {
 		if strings.Contains(pt.Label, "{name}") {
 			t.Fatalf("literal {name} leaked in template label %q", pt.Label)
@@ -770,6 +839,7 @@ func TestGetWikiPage_LazyTemplatePage(t *testing.T) {
 		`SELECT COUNT(*) FROM wiki_pages WHERE space_id = $1 AND slug = 'prices'`, spaceID).Scan(&n); err != nil {
 		t.Fatalf("count pages: %v", err)
 	}
+
 	if n != 0 {
 		t.Fatal("lazy render must not persist a wiki_pages row")
 	}
@@ -794,24 +864,28 @@ func TestSubmitRevision_MaterializesLazyTemplatePage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}
+
 	t.Cleanup(func() {
-		cctx := context.Background()
+		cctx := t.Context()
 		database.Writer.Exec(cctx, `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
 		database.Writer.Exec(cctx, `DELETE FROM wiki_pages WHERE space_id = $1 AND slug = 'prices'`, spaceID)
 	})
 
 	svc := NewService(store, nil)
+
 	revID, _, _, err := svc.SubmitRevision(ctx, fx.userID, spaceSlug, "prices", SubmitRevisionInput{
 		Content: []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Milk is cheap."}]}]}`),
 	})
 	if err != nil {
 		t.Fatalf("submit on lazy page: %v", err)
 	}
+
 	if revID == "" {
 		t.Fatal("empty revision id")
 	}
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_revisions WHERE wiki_page_id IN (SELECT id FROM wiki_pages WHERE space_id = $1 AND slug = 'prices')`, spaceID)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_revisions WHERE wiki_page_id IN (SELECT id FROM wiki_pages WHERE space_id = $1 AND slug = 'prices')`, spaceID)
 	})
 
 	var (
@@ -821,24 +895,30 @@ func TestSubmitRevision_MaterializesLazyTemplatePage(t *testing.T) {
 		title    string
 		position int32
 	)
+
 	if err := database.Reader.QueryRow(ctx,
 		`SELECT page_template_id, field_group_id, category, title, position
 		 FROM wiki_pages WHERE space_id = $1 AND slug = 'prices'`, spaceID).
 		Scan(&tmplID, &groupID, &category, &title, &position); err != nil {
 		t.Fatalf("materialized row: %v", err)
 	}
+
 	if tmplID != tmpl.ID {
 		t.Fatalf("page_template_id: got %v want %v", tmplID, tmpl.ID)
 	}
+
 	if groupID != hf.groupIDs[0] {
 		t.Fatalf("field_group_id: got %v want %v", groupID, hf.groupIDs[0])
 	}
+
 	if category != "cost_of_living" {
 		t.Fatalf("category: got %q want cost_of_living", category)
 	}
+
 	if strings.Contains(title, "{name}") {
 		t.Fatalf("materialized title still carries the token: %q", title)
 	}
+
 	if position != 2 {
 		t.Fatalf("position: got %d want 2", position)
 	}
@@ -861,8 +941,9 @@ func TestSubmitPageFieldOps_ValidatesBeforeMaterializing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}
+
 	t.Cleanup(func() {
-		cctx := context.Background()
+		cctx := t.Context()
 		database.Writer.Exec(cctx, `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
 		database.Writer.Exec(cctx, `DELETE FROM wiki_revisions WHERE wiki_page_id IN (SELECT id FROM wiki_pages WHERE space_id = $1 AND slug = 'prices')`, spaceID)
 		database.Writer.Exec(cctx, `DELETE FROM wiki_pages WHERE space_id = $1 AND slug = 'prices'`, spaceID)
@@ -878,6 +959,7 @@ func TestSubmitPageFieldOps_ValidatesBeforeMaterializing(t *testing.T) {
 			`SELECT COUNT(*) FROM wiki_pages WHERE space_id = $1 AND slug = 'prices'`, spaceID).Scan(&n); err != nil {
 			t.Fatalf("count pages: %v", err)
 		}
+
 		return n
 	}
 
@@ -887,6 +969,7 @@ func TestSubmitPageFieldOps_ValidatesBeforeMaterializing(t *testing.T) {
 		[]FieldOp{{Op: "bogus"}}, "", false); err == nil {
 		t.Fatal("want validation error on unknown op")
 	}
+
 	if n := countPages(); n != 0 {
 		t.Fatalf("rejected ops submission materialized the lazy page (%d rows)", n)
 	}
@@ -901,9 +984,11 @@ func TestSubmitPageFieldOps_ValidatesBeforeMaterializing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid ops on lazy page: %v", err)
 	}
+
 	if revID == "" || autoApproved {
 		t.Fatalf("want pending revision id, got rev=%q auto=%v", revID, autoApproved)
 	}
+
 	if n := countPages(); n != 1 {
 		t.Fatalf("valid ops submission should materialize the page once, got %d rows", n)
 	}
@@ -927,33 +1012,39 @@ func TestComputeRollup_IncludesTemplateGroupFields(t *testing.T) {
 	childTypeID := mk(`INSERT INTO space_types (id,name,slug) VALUES (gen_random_uuid(),$1,$1) RETURNING id`, "wop-child-"+uniq)
 	mk(`INSERT INTO wiki_type_configs (space_type_id,enabled,label) VALUES ($1,true,$2) RETURNING space_type_id`,
 		childTypeID, "Wop Child "+uniq)
+
 	childCatGroup := mk(`INSERT INTO custom_field_groups (name,slug,is_system) VALUES ($1,$2,false) RETURNING id`,
 		"Wop Child Cat "+uniq, "wop_child_cat_"+uniq)
 	tmplGroup := mk(`INSERT INTO custom_field_groups (name,slug,is_system) VALUES ($1,$2,false) RETURNING id`,
 		"Wop Child Prices "+uniq, "wop_child_prices_"+uniq)
 	childCat := mk(`INSERT INTO wiki_type_categories (space_type_id,slug,category,label,field_group_id)
 		VALUES ($1,'cost-of-living','cost_of_living','Cost of Living',$2) RETURNING id`, childTypeID, childCatGroup)
+
 	tmpl, err := store.CreatePageTemplate(ctx, childCat, "prices", "Prices in {name}", tmplGroup, pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create child template: %v", err)
 	}
+
 	milkField := mk(`INSERT INTO custom_fields (group_id,key,label,field_type,section,position)
 		VALUES ($1,'milk_1l','Milk 1L','price_range','groceries',0) RETURNING id`, tmplGroup)
 
 	parentSpace, _ := seedSpaceOfType(t, ctx, database, hf.typeID, "parent")
 	childSpace, _ := seedSpaceOfType(t, ctx, database, childTypeID, "child")
+
 	if _, err := database.Writer.Exec(ctx,
 		`UPDATE spaces SET parent_id = $1 WHERE id = $2`, parentSpace, childSpace); err != nil {
 		t.Fatalf("link child space: %v", err)
 	}
+
 	mk(`INSERT INTO custom_field_values (field_id,entity_type,entity_id,value_json)
 		VALUES ($1,'space',$2,'{"avg":2.29}') RETURNING id`, milkField, childSpace)
 
 	t.Cleanup(func() {
-		cctx := context.Background()
+		cctx := t.Context()
 		database.Writer.Exec(cctx, `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
 		database.Writer.Exec(cctx, `DELETE FROM wiki_type_configs WHERE space_type_id = $1`, childTypeID)
 		database.Writer.Exec(cctx, `DELETE FROM space_types WHERE id = $1`, childTypeID)
+
 		for _, g := range []pgtype.UUID{childCatGroup, tmplGroup} {
 			database.Writer.Exec(cctx, `DELETE FROM custom_field_groups WHERE id = $1`, g)
 		}
@@ -964,6 +1055,7 @@ func TestComputeRollup_IncludesTemplateGroupFields(t *testing.T) {
 	svc.SetCustomFields(customfields.NewService(database))
 
 	cfg := &WikiRollupConfig{Enabled: true, Metrics: []string{"min", "avg", "max"}, Levels: []string{"wop-child-" + uniq}}
+
 	rollup := svc.computeRollup(ctx, pgtype.UUID{}, parentSpace, hf.typeID, cfg, "cost_of_living")
 	if rollup == nil {
 		t.Fatal("rollup is nil — descendants or source fields unresolved")
@@ -973,9 +1065,11 @@ func TestComputeRollup_IncludesTemplateGroupFields(t *testing.T) {
 	if f.FieldType != customfields.FieldTypePriceRange {
 		t.Fatalf("field_type: got %q want price_range", f.FieldType)
 	}
+
 	if f.Section != "groceries" {
 		t.Fatalf("section: got %q want groceries", f.Section)
 	}
+
 	if f.Metrics.Avg == nil || *f.Metrics.Avg != 2.29 {
 		t.Fatalf("avg metric: got %+v want 2.29", f.Metrics.Avg)
 	}
@@ -983,6 +1077,7 @@ func TestComputeRollup_IncludesTemplateGroupFields(t *testing.T) {
 	if f.Metrics.Min == nil || *f.Metrics.Min != 2.29 || f.Metrics.Max == nil || *f.Metrics.Max != 2.29 {
 		t.Fatalf("avg-standin bounds: min %+v max %+v", f.Metrics.Min, f.Metrics.Max)
 	}
+
 	if len(rollup.Rows) != 1 || rollup.Rows[0].Values["milk_1l"] == nil {
 		t.Fatalf("row set: %+v", rollup.Rows)
 	}
@@ -1004,16 +1099,20 @@ func TestAggregateRollupValues_AvgStandinMixed(t *testing.T) {
 	}
 
 	fields, _ := aggregateRollupValues(vals, byID, byKey, order, allMetrics())
+
 	f := fieldByKey(t, fields, "price")
 	if f.Metrics.Min == nil || *f.Metrics.Min != 2 {
 		t.Fatalf("min: got %+v want 2 (avg stands in per record)", f.Metrics.Min)
 	}
+
 	if f.Metrics.Max == nil || *f.Metrics.Max != 2 {
 		t.Fatalf("max: got %+v want 2 (avg stands in per record)", f.Metrics.Max)
 	}
+
 	if f.Metrics.Avg == nil || *f.Metrics.Avg != 2 {
 		t.Fatalf("avg: got %+v want 2", f.Metrics.Avg)
 	}
+
 	if f.Samples != 2 {
 		t.Fatalf("samples: got %d want 2", f.Samples)
 	}
@@ -1048,11 +1147,13 @@ func TestAggregateRollupValues_PricePartsPrimary(t *testing.T) {
 	if len(fields) != 1 || fields[0].Key != "taxi" {
 		t.Fatalf("expected only taxi aggregated, got %+v", fields)
 	}
+
 	if f := fields[0]; f.Metrics.Min == nil || *f.Metrics.Min != 3.25 ||
 		f.Metrics.Avg == nil || *f.Metrics.Avg != 3.25 ||
 		f.Metrics.Max == nil || *f.Metrics.Max != 3.25 {
 		t.Fatalf("primary_part projection wrong: %+v", f.Metrics)
 	}
+
 	if fields[0].Samples != 1 {
 		t.Fatalf("samples wrong: %+v", fields[0])
 	}
@@ -1078,6 +1179,7 @@ func TestChildTemplates(t *testing.T) {
 	if len(got) != 2 || got[0].Slug != "food-groceries-prices" || got[1].Slug != "transportation-prices" {
 		t.Fatalf("children wrong: %+v", got)
 	}
+
 	if got := childTemplates(templates, pgtype.UUID{}); got != nil {
 		t.Fatalf("invalid parent must yield nil, got %+v", got)
 	}
@@ -1101,7 +1203,7 @@ func TestGetSiblings_NestedScope(t *testing.T) {
 	}
 
 	s := &Service{}
-	got := s.getSiblings(context.Background(), pgtype.UUID{}, "Toronto", cat, "cost_of_living", "transportation-prices", parentID, templates)
+	got := s.getSiblings(t.Context(), pgtype.UUID{}, "Toronto", cat, "cost_of_living", "transportation-prices", parentID, templates)
 
 	if len(got) != 3 {
 		t.Fatalf("expected the 3 topic siblings, got %+v", got)
@@ -1113,9 +1215,11 @@ func TestGetSiblings_NestedScope(t *testing.T) {
 			t.Fatalf("sibling %d = %q, want %q (%+v)", i, got[i].Slug, w, got)
 		}
 	}
+
 	if !got[2].Current || got[0].Current || got[1].Current {
 		t.Fatalf("current flag wrong: %+v", got)
 	}
+
 	if got[0].Title != "Food & Groceries Prices in Toronto" {
 		t.Fatalf("{name} not substituted: %q", got[0].Title)
 	}
@@ -1129,6 +1233,7 @@ func TestDirectoryChildRows_SortAndCap(t *testing.T) {
 		var u pgtype.UUID
 		u.Valid = true
 		u.Bytes[15] = b
+
 		return u
 	}
 	strPtr := func(s string) *string { return &s }
@@ -1141,14 +1246,17 @@ func TestDirectoryChildRows_SortAndCap(t *testing.T) {
 	}
 
 	sortDirectoryChildren(children)
+
 	rows := directoryChildDTOs(children[:3], nil, nil)
 	if len(rows) != 3 {
 		t.Fatalf("cap: got %d want 3", len(rows))
 	}
+
 	if rows[0].Slug != "a-state" || rows[1].Slug != "z-state" || rows[2].Slug != "a-city" {
 		t.Fatalf("order: got %q %q %q want a-state, z-state, a-city",
 			rows[0].Slug, rows[1].Slug, rows[2].Slug)
 	}
+
 	if rows[0].GeoCode == nil || *rows[0].GeoCode != "LA" || rows[0].PageCount != 3 {
 		t.Fatalf("geo/page_count not carried: %+v", rows[0])
 	}
@@ -1161,6 +1269,7 @@ func TestDirectoryChildRows_SortAndCap(t *testing.T) {
 	if rows[0].ImageURL != "https://img/img.webp" || rows[0].Kind != "waterfall" {
 		t.Fatalf("enrichment not carried: %+v", rows[0])
 	}
+
 	if rows[1].ImageURL != "" || rows[1].Kind != "" {
 		t.Fatalf("enrichment leaked to a child without values: %+v", rows[1])
 	}
@@ -1195,8 +1304,10 @@ func TestChoiceValueJSON(t *testing.T) {
 			if got != nil {
 				t.Fatalf("%s: got %s want nil", tc.name, got)
 			}
+
 			continue
 		}
+
 		if string(got) != tc.want {
 			t.Fatalf("%s: got %s want %s", tc.name, got, tc.want)
 		}
@@ -1209,12 +1320,15 @@ func TestSelectValueJSON(t *testing.T) {
 	if got := selectValueJSON([]byte(`{"value":"museum"}`)); got != "museum" {
 		t.Fatalf("got %q want museum", got)
 	}
+
 	if got := selectValueJSON(nil); got != "" {
 		t.Fatalf("nil: got %q want empty", got)
 	}
+
 	if got := selectValueJSON([]byte(`{"value": 1}`)); got != "" {
 		t.Fatalf("non-string: got %q want empty", got)
 	}
+
 	if got := selectValueJSON([]byte(`not json`)); got != "" {
 		t.Fatalf("malformed: got %q want empty", got)
 	}
@@ -1237,9 +1351,11 @@ func TestComputeDirectory_ListsValuelessChildren(t *testing.T) {
 	childTypeID := mk(`INSERT INTO space_types (id,name,slug) VALUES (gen_random_uuid(),$1,$1) RETURNING id`, "wop-child-"+uniq)
 	mk(`INSERT INTO wiki_type_configs (space_type_id,enabled,label) VALUES ($1,true,$2) RETURNING space_type_id`,
 		childTypeID, "Wop Child "+uniq)
+
 	nonWikiTypeID := mk(`INSERT INTO space_types (id,name,slug) VALUES (gen_random_uuid(),$1,$1) RETURNING id`, "wop-plain-"+uniq)
+
 	t.Cleanup(func() {
-		cctx := context.Background()
+		cctx := t.Context()
 		database.Writer.Exec(cctx, `DELETE FROM wiki_type_configs WHERE space_type_id = $1`, childTypeID)
 		database.Writer.Exec(cctx, `DELETE FROM space_types WHERE id IN ($1,$2)`, childTypeID, nonWikiTypeID)
 	})
@@ -1252,6 +1368,7 @@ func TestComputeDirectory_ListsValuelessChildren(t *testing.T) {
 
 	link := func(kid pgtype.UUID) {
 		t.Helper()
+
 		if _, err := database.Writer.Exec(ctx,
 			`UPDATE spaces SET parent_id = $1 WHERE id = $2`, parentSpace, kid); err != nil {
 			t.Fatalf("link %v: %v", kid, err)
@@ -1262,6 +1379,7 @@ func TestComputeDirectory_ListsValuelessChildren(t *testing.T) {
 	// Junction-only link for childB — exercises the space_parent_spaces arm.
 	mk(`INSERT INTO space_parent_spaces (parent_space_id,space_id) VALUES ($1,$2) RETURNING space_id`,
 		parentSpace, childB)
+
 	_ = stray
 
 	// childA gets a geo_code and two pages (one active, one inactive) —
@@ -1269,6 +1387,7 @@ func TestComputeDirectory_ListsValuelessChildren(t *testing.T) {
 	if _, err := database.Writer.Exec(ctx, `UPDATE spaces SET geo_code = 'LA' WHERE id = $1`, childA); err != nil {
 		t.Fatalf("geo_code: %v", err)
 	}
+
 	pg := func(slug string, active bool) {
 		mk(`INSERT INTO wiki_pages (id,space_id,slug,title,category,is_active)
 			VALUES (gen_random_uuid(),$1,$2,$2,'stub',$3) RETURNING id`, childA, slug, active)
@@ -1276,15 +1395,17 @@ func TestComputeDirectory_ListsValuelessChildren(t *testing.T) {
 	pg("p1", true)
 	pg("p2", false)
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_pages WHERE space_id = $1`, childA)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_pages WHERE space_id = $1`, childA)
 	})
 
 	svc := NewService(store, nil)
 	cfg := &WikiRollupConfig{Enabled: true, Mode: "directory", Levels: []string{"wop-child-" + uniq}}
+
 	dir := svc.computeDirectory(ctx, parentSpace, hf.typeID, cfg)
 	if dir == nil {
 		t.Fatal("directory is nil")
 	}
+
 	if dir.Total != 2 || len(dir.Children) != 2 {
 		t.Fatalf("children: got total=%d len=%d want 2/2: %+v", dir.Total, len(dir.Children), dir.Children)
 	}
@@ -1293,13 +1414,16 @@ func TestComputeDirectory_ListsValuelessChildren(t *testing.T) {
 	for _, c := range dir.Children {
 		got[c.Slug] = c
 	}
+
 	a, ok := got[childASlug]
 	if !ok {
 		t.Fatalf("childA missing: %+v", dir.Children)
 	}
+
 	if a.PageCount != 1 || a.GeoCode == nil || *a.GeoCode != "LA" {
 		t.Fatalf("childA card: %+v", a)
 	}
+
 	if a.TypeSlug != "wop-child-"+uniq {
 		t.Fatalf("childA type slug: %q", a.TypeSlug)
 	}
@@ -1331,17 +1455,19 @@ func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
 	mk(`INSERT INTO wiki_type_configs (space_type_id,enabled,label) VALUES ($1,true,$2) RETURNING space_type_id`,
 		childTypeID, "Wop Child "+uniq)
 	t.Cleanup(func() {
-		cctx := context.Background()
+		cctx := t.Context()
 		database.Writer.Exec(cctx, `DELETE FROM wiki_type_configs WHERE space_type_id = $1`, childTypeID)
 		database.Writer.Exec(cctx, `DELETE FROM space_types WHERE id = $1`, childTypeID)
 	})
 
 	parentSpace, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "dirlazy")
 	childSpace, childSlug := seedSpaceOfType(t, ctx, database, childTypeID, "dirchild")
+
 	if _, err := database.Writer.Exec(ctx,
 		`UPDATE spaces SET parent_id = $1 WHERE id = $2`, parentSpace, childSpace); err != nil {
 		t.Fatalf("link child: %v", err)
 	}
+
 	_ = childSlug
 
 	// catA ('cost-of-living') becomes a directory over the child type.
@@ -1359,19 +1485,24 @@ func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lazy category page: %v", err)
 	}
+
 	if !page.Lazy || page.Directory == nil {
 		t.Fatalf("want lazy directory page, got lazy=%v dir=%v", page.Lazy, page.Directory)
 	}
+
 	if page.Category != "cost_of_living" || page.CategoryLabel != "Cost of Living" {
 		t.Fatalf("category identity: %+v", page.WikiPageDTO)
 	}
+
 	if len(page.Directory.Children) != 1 || page.Directory.Total != 1 {
 		t.Fatalf("directory children: %+v", page.Directory)
 	}
+
 	var slug string
 	if err := database.Reader.QueryRow(ctx, `SELECT slug FROM spaces WHERE id = $1`, childSpace).Scan(&slug); err != nil {
 		t.Fatalf("child slug: %v", err)
 	}
+
 	if page.Directory.Children[0].Slug != slug {
 		t.Fatalf("wrong child: %+v", page.Directory.Children[0])
 	}
@@ -1382,6 +1513,7 @@ func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
 	if err != nil || !plain.Lazy || plain.Directory != nil {
 		t.Fatalf("plain lazy category: page=%+v err=%v", plain, err)
 	}
+
 	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "no-such-slug"); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("unknown slug: want pgx.ErrNoRows, got %v", err)
 	}
@@ -1392,13 +1524,16 @@ func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create colliding template: %v", err)
 	}
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
 	})
+
 	collide, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "other")
 	if err != nil {
 		t.Fatalf("colliding slug: %v", err)
 	}
+
 	if !strings.HasPrefix(collide.Title, "Template ") {
 		t.Fatalf("template precedence broken — category stub won: title=%q", collide.Title)
 	}
@@ -1414,6 +1549,7 @@ func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
 	if _, err := store.CreatePage(ctx, parentSpace, pgtype.UUID{}, "cost-of-living", "Cost of Living", "cost_of_living"); err != nil {
 		t.Fatalf("materialize category page: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_, _ = database.Writer.Exec(context.WithoutCancel(t.Context()),
 			`DELETE FROM wiki_pages WHERE space_id = $1`, parentSpace)
@@ -1425,6 +1561,7 @@ func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
 	if err != nil || mat.Lazy || mat.Directory == nil {
 		t.Fatalf("materialized directory page: lazy=%v dir=%v err=%v", mat.Lazy, mat.Directory, err)
 	}
+
 	matViaToken, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "cost_of_living")
 	if err != nil || matViaToken.Lazy || matViaToken.Slug != "cost-of-living" || matViaToken.Directory == nil {
 		t.Fatalf("token URL after materialization: slug=%q lazy=%v dir=%v err=%v",
@@ -1434,6 +1571,7 @@ func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
 	if _, err := store.CreatePage(ctx, parentSpace, pgtype.UUID{}, "col-sibling", "Sibling", "cost_of_living"); err != nil {
 		t.Fatalf("create sibling: %v", err)
 	}
+
 	sib, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "col-sibling")
 	if err != nil || sib.Directory != nil {
 		t.Fatalf("sibling must not carry directory: dir=%v err=%v", sib.Directory, err)
@@ -1451,32 +1589,37 @@ func TestSubmitRevision_MaterializesLazyCategoryPage(t *testing.T) {
 
 	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "lazycat")
 	t.Cleanup(func() {
-		cctx := context.Background()
+		cctx := t.Context()
 		database.Writer.Exec(cctx, `DELETE FROM wiki_revisions WHERE wiki_page_id IN (SELECT id FROM wiki_pages WHERE space_id = $1 AND slug = 'other')`, spaceID)
 		database.Writer.Exec(cctx, `DELETE FROM wiki_pages WHERE space_id = $1 AND slug = 'other'`, spaceID)
 	})
 
 	svc := NewService(store, nil)
+
 	revID, _, _, err := svc.SubmitRevision(ctx, fx.userID, spaceSlug, "other", SubmitRevisionInput{
 		Content: []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Notes."}]}]}`),
 	})
 	if err != nil {
 		t.Fatalf("submit on lazy category: %v", err)
 	}
+
 	if revID == "" {
 		t.Fatal("empty revision id")
 	}
 
 	var tmplID, groupID pgtype.UUID
+
 	var category string
 	if err := database.Reader.QueryRow(ctx,
 		`SELECT page_template_id, field_group_id, category FROM wiki_pages WHERE space_id = $1 AND slug = 'other'`, spaceID).
 		Scan(&tmplID, &groupID, &category); err != nil {
 		t.Fatalf("materialized row: %v", err)
 	}
+
 	if tmplID.Valid {
 		t.Fatalf("category-stub page must not bind a template, got %v", tmplID)
 	}
+
 	if groupID != hf.groupIDs[1] || category != "other" {
 		t.Fatalf("binding: group=%v want %v, category=%q want other", groupID, hf.groupIDs[1], category)
 	}
@@ -1500,16 +1643,18 @@ func TestDeleteWikiPageTemplate_ValuesGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_type_page_templates WHERE id = $1`, tmpl.ID)
 	})
 
 	pageID := mustIDF(t, ctx, database,
 		`INSERT INTO wiki_pages (id,space_id,slug,title,category,created_by,page_template_id)
 		 VALUES (gen_random_uuid(),$1,$2,'Vals Bound','cost_of_living',$3,$4) RETURNING id`,
 		fx.spaceID, "wop-vals-"+strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:8], fx.userID, tmpl.ID)
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_pages WHERE id = $1`, pageID)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_pages WHERE id = $1`, pageID)
 	})
 
 	// No revision — a stored value in the template's bound group is enough.
@@ -1518,8 +1663,9 @@ func TestDeleteWikiPageTemplate_ValuesGuard(t *testing.T) {
 		 VALUES ($1,'space',$2,'{"avg":3.50}')`, fieldID, fx.spaceID); err != nil {
 		t.Fatalf("seed value: %v", err)
 	}
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM custom_field_values WHERE field_id = $1`, fieldID)
+		database.Writer.Exec(t.Context(), `DELETE FROM custom_field_values WHERE field_id = $1`, fieldID)
 	})
 
 	svc := NewService(store, nil)
@@ -1532,13 +1678,16 @@ func TestDeleteWikiPageTemplate_ValuesGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create empty template: %v", err)
 	}
+
 	pageID2 := mustIDF(t, ctx, database,
 		`INSERT INTO wiki_pages (id,space_id,slug,title,category,created_by,page_template_id)
 		 VALUES (gen_random_uuid(),$1,$2,'Empty Bound','other',$3,$4) RETURNING id`,
 		fx.spaceID, "wop-empty-"+strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:8], fx.userID, empty.ID)
+
 	t.Cleanup(func() {
-		database.Writer.Exec(context.Background(), `DELETE FROM wiki_pages WHERE id = $1`, pageID2)
+		database.Writer.Exec(t.Context(), `DELETE FROM wiki_pages WHERE id = $1`, pageID2)
 	})
+
 	if err := svc.DeleteWikiPageTemplate(ctx, empty.ID.String()); err != nil {
 		t.Fatalf("contentless bound template should delete: %v", err)
 	}
@@ -1614,6 +1763,7 @@ func TestListWikiDestinations_WithinJunctionDescendants(t *testing.T) {
 		 VALUES ($1,$2),($3,$4)`, childID, parentID, grandID, childID); err != nil {
 		t.Fatalf("junction insert: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_, _ = database.Writer.Exec(context.WithoutCancel(t.Context()),
 			`DELETE FROM space_parent_spaces WHERE space_id IN ($1,$2)`, childID, grandID)
@@ -1628,9 +1778,11 @@ func TestListWikiDestinations_WithinJunctionDescendants(t *testing.T) {
 	for _, d := range dests {
 		got[d.SpaceID] = true
 	}
+
 	if !got[childID] || !got[grandID] {
 		t.Fatalf("junction descendants missing: child=%v grandchild=%v", got[childID], got[grandID])
 	}
+
 	if got[parentID] {
 		t.Fatal("within target must not appear in its own descendant list")
 	}
@@ -1930,24 +2082,29 @@ func TestComputePageRollup_Basic(t *testing.T) {
 		{ID: pgid(0x02), Slug: "transportation-prices", Label: "Transportation Prices in {name}", FieldGroupID: groupB, Position: 2},
 	}
 
-	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+	out := s.computePageRollup(t.Context(), pgid(0x01), spaceID, "toronto", "Toronto",
 		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, Metrics: []string{"avg"}}, WikiCategory{}, templates)
 	if out == nil {
 		t.Fatal("rollup should resolve")
 	}
+
 	if out.Scope != rollupScopePages {
 		t.Fatalf("scope: got %q", out.Scope)
 	}
+
 	f := fieldByKey(t, out.Fields, "monthly_total")
 	if f.Samples != 2 || f.Metrics.Avg == nil || *f.Metrics.Avg != 150 {
 		t.Fatalf("avg across pages wrong: %+v", f)
 	}
+
 	if len(out.Rows) != 2 {
 		t.Fatalf("rows: got %d want 2", len(out.Rows))
 	}
+
 	if out.Rows[0].Page == nil || out.Rows[0].Page.Slug != "food-groceries-prices" {
 		t.Fatalf("row 0 page ref wrong: %+v", out.Rows[0])
 	}
+
 	if out.Rows[0].Values["monthly_total"] == nil || out.Rows[1].Values["monthly_total"] == nil {
 		t.Fatalf("row values missing: %+v", out.Rows)
 	}
@@ -1975,17 +2132,20 @@ func TestComputePageRollup_ConfiguredSubsetAndEmptyRow(t *testing.T) {
 	}
 
 	// Unknown slug skipped; value-less configured page still emits a row.
-	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+	out := s.computePageRollup(t.Context(), pgid(0x01), spaceID, "toronto", "Toronto",
 		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, Pages: []string{"food", "missing", "transport"}}, WikiCategory{}, templates)
 	if out == nil {
 		t.Fatal("rollup should resolve")
 	}
+
 	if len(out.Rows) != 2 {
 		t.Fatalf("rows: got %d want 2 (unknown slug skipped)", len(out.Rows))
 	}
+
 	if out.Rows[0].Page.Slug != "food" || out.Rows[1].Page.Slug != "transport" {
 		t.Fatalf("config order not preserved: %+v", out.Rows)
 	}
+
 	if len(out.Rows[1].Values) != 0 {
 		t.Fatalf("empty page row should carry no values: %+v", out.Rows[1])
 	}
@@ -2011,7 +2171,7 @@ func TestComputePageRollup_QuickFactsExcluded(t *testing.T) {
 	}
 	s := &Service{fields: ff, perms: fakePermChecker{granted: map[string]bool{}}}
 
-	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "x", "X",
+	out := s.computePageRollup(t.Context(), pgid(0x01), spaceID, "x", "X",
 		&WikiRollupConfig{Enabled: true, Mode: rollupModePages},
 		WikiCategory{}, []WikiPageTemplate{{Slug: "food", Label: "Food", FieldGroupID: groupA}})
 
@@ -2019,6 +2179,7 @@ func TestComputePageRollup_QuickFactsExcluded(t *testing.T) {
 	if *f.Metrics.Avg != 100 {
 		t.Fatalf("avg wrong: %+v", f)
 	}
+
 	for _, fo := range out.Fields {
 		if fo.Key == "pop" {
 			t.Fatal("quick_facts field must not aggregate")
@@ -2049,23 +2210,26 @@ func TestComputePageRollup_IncludeSelf(t *testing.T) {
 		{ID: pgid(0x01), Slug: "food", Label: "Food in {name}", FieldGroupID: groupA},
 	}
 
-	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+	out := s.computePageRollup(t.Context(), pgid(0x01), spaceID, "toronto", "Toronto",
 		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, IncludeSelf: true}, cat, templates)
 	if out == nil {
 		t.Fatal("rollup should resolve")
 	}
+
 	if len(out.Rows) != 2 {
 		t.Fatalf("rows: got %d want 2 (self + topic)", len(out.Rows))
 	}
+
 	if out.Rows[0].Page.Slug != "cost-of-living" || out.Rows[0].Page.Title != "Cost of Living in Toronto" {
 		t.Fatalf("self row wrong: %+v", out.Rows[0].Page)
 	}
+
 	if out.Rows[0].Values["exp_food"] == nil {
 		t.Fatalf("self row should carry category group values: %+v", out.Rows[0].Values)
 	}
 
 	// include_self off → topic rows only.
-	out = s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+	out = s.computePageRollup(t.Context(), pgid(0x01), spaceID, "toronto", "Toronto",
 		&WikiRollupConfig{Enabled: true, Mode: rollupModePages}, cat, templates)
 	if len(out.Rows) != 1 || out.Rows[0].Page.Slug != "food" {
 		t.Fatalf("include_self off must emit topic rows only: %+v", out.Rows)
@@ -2102,15 +2266,17 @@ func TestComputePageRollup_ComputedFields(t *testing.T) {
 		{ID: pgid(0x01), Slug: "food-prices", Label: "Food Prices", FieldGroupID: groupA},
 	}
 
-	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+	out := s.computePageRollup(t.Context(), pgid(0x01), spaceID, "toronto", "Toronto",
 		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, IncludeSelf: true}, cat, templates)
 	if out == nil {
 		t.Fatal("rollup should resolve")
 	}
+
 	got, ok := out.Rows[0].Values["exp_food"].(float64)
 	if !ok || got != 3 {
 		t.Fatalf("self row exp_food must be the folded 3, not the stale stored 999: %+v", out.Rows[0].Values)
 	}
+
 	f := fieldByKey(t, out.Fields, "exp_food")
 	if f.Samples != 1 || f.Metrics.Avg == nil || *f.Metrics.Avg != 3 {
 		t.Fatalf("column aggregate must fold the computed value once: %+v", f)
@@ -2123,9 +2289,11 @@ func TestValidateRollupInput_PagesMode(t *testing.T) {
 	if err != nil || raw == nil {
 		t.Fatalf("pages mode should validate: %v", err)
 	}
+
 	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"mode":"bogus"}`)); err == nil {
 		t.Fatal("unknown mode must be rejected")
 	}
+
 	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"mode":"pages","pages":["BAD SLUG"]}`)); err == nil {
 		t.Fatal("invalid page slug must be rejected")
 	}
@@ -2138,6 +2306,7 @@ func TestTopLevelTemplates_CategoryPageSet(t *testing.T) {
 		{Slug: "b", ParentTemplateID: parent},
 		{Slug: "c", ParentTemplateID: pgtype.UUID{}},
 	}
+
 	got := topLevelTemplates(templates)
 	if len(got) != 2 || got[0].Slug != "a" || got[1].Slug != "c" {
 		t.Fatalf("category-page composite set must be top-level templates: %+v", got)

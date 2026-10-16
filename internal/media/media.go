@@ -117,6 +117,7 @@ func (s *Service) enqueueScanTask(mediaID pgtype.UUID) {
 	if s.asynqClient == nil {
 		return
 	}
+
 	payload, _ := json.Marshal(map[string]string{"media_id": mediaID.String()})
 	if _, err := s.asynqClient.Enqueue(
 		asynq.NewTask(worker.TypeMediaScan, payload),
@@ -135,11 +136,13 @@ func (s *Service) storageBucket(ctx context.Context) string {
 	if s.s3 != nil {
 		return s.s3.bucket
 	}
+
 	if s.settings != nil {
 		if b := strings.TrimSpace(s.settings.GetStringOr(ctx, "media.storage.bucket", "")); b != "" {
 			return b
 		}
 	}
+
 	return DefaultBucket
 }
 

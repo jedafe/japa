@@ -130,7 +130,6 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 // HandleGetRates handles GET /api/v1/remittance/rates — latest rates for a
 // corridor. Query: send, receive.
 func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
-
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
 
@@ -160,7 +159,6 @@ func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
 // HandleCalculate handles GET /api/v1/remittance/calculate — send-amount
 // calculator. Query: send_amount, send, receive.
 func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
-
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
 	sendAmountStr := r.URL.Query().Get("send_amount")
@@ -197,7 +195,6 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 // HandleGetHistory handles GET /api/v1/remittance/history — rate history
 // time-series. Query: send, receive, days (default 30, max 365).
 func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
-
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
 
@@ -235,7 +232,6 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 // HandleGetProviders handles GET /api/v1/remittance/providers — list active
 // providers.
 func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
@@ -259,7 +255,6 @@ func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
 // HandleGetCorridors handles GET /api/v1/remittance/corridors — supported
 // currency pairs.
 func (h *Handlers) HandleGetCorridors(w http.ResponseWriter, r *http.Request) {
-
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
@@ -344,6 +339,7 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send_currency, receive_currency, target_rate, and direction are required")
 		return
 	}
+
 	if body.TargetRate < 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_target_rate", "target_rate must be positive")
 		return
@@ -569,7 +565,6 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	provider, err := h.service.CreateProvider(r.Context(), gen.CreateRemittanceProviderParams{
-
 		Name:         body.Name,
 		Slug:         body.Slug,
 		WebsiteUrl:   body.WebsiteURL,
@@ -638,7 +633,6 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	provider, err := h.service.UpdateProvider(r.Context(), gen.UpdateRemittanceProviderParams{
-
 		ID:           providerID,
 		Name:         body.Name,
 		WebsiteUrl:   body.WebsiteURL,

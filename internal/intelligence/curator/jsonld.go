@@ -104,6 +104,7 @@ func ldjsonNodes(body []byte) ([]map[string]any, error) {
 		}
 
 		decoded++
+
 		nodes = append(nodes, flattenLDJSON(v)...)
 	}
 
@@ -234,6 +235,7 @@ func jobNodeToExtraction(node map[string]any, ext extractor.Extraction) {
 			if city := ldjsonString(addr, "addressLocality"); city != "" {
 				field(ext, "city", city, city)
 			}
+
 			if country := ldjsonString(addr, "addressCountry", "addressCountry.name"); country != "" {
 				field(ext, "country", []string{country}, country)
 			}
@@ -251,15 +253,18 @@ func jobNodeToExtraction(node map[string]any, ext extractor.Extraction) {
 			if n, ok := v["minValue"].(float64); ok {
 				field(ext, "salary_min", n, fmt.Sprint(n))
 			}
+
 			if n, ok := v["maxValue"].(float64); ok {
 				field(ext, "salary_max", n, fmt.Sprint(n))
 			}
+
 			if n, ok := v["value"].(float64); ok {
 				field(ext, "salary_min", n, fmt.Sprint(n))
 			}
 		} else if n, ok := salary["value"].(float64); ok {
 			field(ext, "salary_min", n, fmt.Sprint(n))
 		}
+
 		if c := ldjsonString(salary, "currency"); c != "" {
 			field(ext, "currency", c, c)
 		}
@@ -292,6 +297,7 @@ func eventNodeToExtraction(node map[string]any, ext extractor.Extraction) {
 	if s := ldjsonString(node, "startDate"); s != "" {
 		field(ext, "starts_at", s, s)
 	}
+
 	if s := ldjsonString(node, "endDate"); s != "" {
 		field(ext, "ends_at", s, s)
 	}
@@ -316,9 +322,11 @@ func ldjsonKey(node map[string]any, entityType string) string {
 	if id := ldjsonIdentifier(node["identifier"]); id != "" {
 		return entityType + ":" + id
 	}
+
 	if u := ldjsonURL(node); u != "" {
 		return u
 	}
+
 	if id := ldjsonString(node, "@id"); id != "" {
 		return id
 	}
@@ -344,6 +352,7 @@ func ldjsonStrings(v any) []string {
 		}
 	case []any:
 		out := make([]string, 0, len(t))
+
 		for _, el := range t {
 			if s, ok := el.(string); ok && strings.TrimSpace(s) != "" {
 				out = append(out, s)
@@ -366,8 +375,10 @@ func ldjsonString(node map[string]any, keys ...string) string {
 					return s
 				}
 			}
+
 			continue
 		}
+
 		if s, _ := node[k].(string); strings.TrimSpace(s) != "" {
 			return s
 		}
@@ -411,6 +422,7 @@ func ldjsonLocation(v any) string {
 		if s := ldjsonNestedName(t); s != "" {
 			parts = append(parts, s)
 		}
+
 		if addr, ok := t["address"].(map[string]any); ok {
 			city := ldjsonString(addr, "addressLocality")
 			country := ldjsonString(addr, "addressCountry", "addressCountry.name")
@@ -510,14 +522,17 @@ func ldjsonFAQBody(v any) string {
 
 	walk := func(node map[string]any) {
 		q := ldjsonString(node, "name")
+
 		var a string
 		if ans, ok := node["acceptedAnswer"].(map[string]any); ok {
 			a = ldjsonString(ans, "text")
 		}
+
 		if q != "" && a != "" {
 			if b.Len() > 0 {
 				b.WriteString("\n\n")
 			}
+
 			fmt.Fprintf(&b, "Q: %s\nA: %s", q, stripHTMLTags(a))
 		}
 	}

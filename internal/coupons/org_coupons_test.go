@@ -14,6 +14,7 @@ func orgCouponNum(v string) *pgtype.Numeric {
 	if err := n.Scan(v); err != nil {
 		panic(err)
 	}
+
 	return n
 }
 
@@ -112,16 +113,20 @@ func TestValidateOrgCouponInput(t *testing.T) {
 			if tc.mutate != nil {
 				tc.mutate(&input)
 			}
+
 			err := validateOrgCouponInput(input)
 			if tc.wantErr == nil {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
+
 				return
 			}
+
 			if err == nil {
 				t.Fatalf("expected %v, got nil", tc.wantErr)
 			}
+
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("expected error matching %v, got %v", tc.wantErr, err)
 			}
@@ -181,14 +186,18 @@ func TestResolveOrgCouponStatus(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
+
 				if got != tc.want {
 					t.Fatalf("resolveOrgCouponStatus = %q, want %q", got, tc.want)
 				}
+
 				return
 			}
+
 			if err == nil {
 				t.Fatalf("expected %v, got nil (status %q)", tc.wantErr, got)
 			}
+
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("expected error matching %v, got %v", tc.wantErr, err)
 			}
@@ -228,6 +237,7 @@ func TestMergeOrgCouponInputFreeShipping(t *testing.T) {
 	storedFree := stored
 	storedFree.DiscountType = strPtrOrNil(string(DiscountTypeFreeShipping))
 	keep := OrgCouponInput{Code: "SAVE10"}
+
 	if err := validateOrgCouponInput(mergeOrgCouponInput(keep, storedFree)); !errors.Is(err, ErrUnsupportedDiscount) {
 		t.Fatalf("inherited free_shipping PATCH: expected ErrUnsupportedDiscount, got %v", err)
 	}

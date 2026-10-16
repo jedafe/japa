@@ -86,6 +86,7 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID [16]byte) error {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexPosts, contentID)
 		}
+
 		return fmt.Errorf("fetching content for index: %w", err)
 	}
 
@@ -369,6 +370,7 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID [16]byte) erro
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexForumThreads, threadID)
 		}
+
 		return fmt.Errorf("fetching forum thread for index: %w", err)
 	}
 
@@ -428,6 +430,7 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID [16]byte) error {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexSpaces, spaceID)
 		}
+
 		return fmt.Errorf("fetching space for index: %w", err)
 	}
 
@@ -512,6 +515,7 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID [16]byte) error {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexUsers, userID)
 		}
+
 		return fmt.Errorf("fetching user profile for index: %w", err)
 	}
 
@@ -584,6 +588,7 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID [16]byte) error {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexTags, tagID)
 		}
+
 		return fmt.Errorf("fetching tag for index: %w", err)
 	}
 
@@ -630,6 +635,7 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID [16]byte) error 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexTags, tagID)
 		}
+
 		return fmt.Errorf("fetching directory tag for index: %w", err)
 	}
 
@@ -696,6 +702,7 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID [16]byte) error 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexOrganizations, orgID)
 		}
+
 		return fmt.Errorf("fetching organization for index: %w", err)
 	}
 
@@ -765,7 +772,7 @@ type languageTestRequirementDocument struct {
 // not JapaBot-indexable (is_japabot_indexed = false) are deleted from the
 // index so stale drafts/rejected rows do not surface in RAG retrieval.
 // Ref: japaconnect-engineering/sections/99-language-test-hub.md
-// //	japaconnect-engineering/adr/ADR-107-language-test-hub.md
+// //	japaconnect-engineering/adr/ADR-107-language-test-hub.md.
 func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
@@ -925,6 +932,7 @@ func (ix *Indexer) IndexAcademyTrack(ctx context.Context, trackID [16]byte) erro
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
+
 	trID := pgtype.UUID{Bytes: trackID, Valid: true}
 
 	row, err := ix.read.GetInstructorTrackByID(ctx,
@@ -934,6 +942,7 @@ func (ix *Indexer) IndexAcademyTrack(ctx context.Context, trackID [16]byte) erro
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexAcademyTracks, trackID)
 		}
+
 		return fmt.Errorf("fetching learning track for index: %w", err)
 	}
 
@@ -1015,6 +1024,7 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID [16]byte) error {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexDocPages, pageID)
 		}
+
 		return fmt.Errorf("fetching doc page for index: %w", err)
 	}
 
@@ -1087,7 +1097,6 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 
 	for {
 		rows, err := ix.read.ListContents(ctx, gen.ListContentsParams{
-
 			Q:               "",
 			CursorCreatedAt: contentCursor,
 			PageLimit:       reindexBatchSize,
@@ -1124,7 +1133,6 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 
 	for {
 		rows, err := ix.read.ListForumThreads(ctx, gen.ListForumThreadsParams{
-
 			CursorCreatedAt: threadCursor,
 			PageLimit:       reindexBatchSize,
 		})
@@ -1158,7 +1166,6 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	// universal `tags` table, so this single pass covers both entity types.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.ListTagsPaginated(ctx, gen.ListTagsPaginatedParams{
-
 			Q:          "",
 			Sort:       "newest",
 			PageOffset: offset,
@@ -1193,7 +1200,6 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	// makes that comparison NULL, silently filtering out every space.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
-
 			Search:      "",
 			Status:      "",
 			Visibility:  "",
@@ -1227,7 +1233,6 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	// Users — offset-paginated with empty filters (all users).
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.ListUsers(ctx, gen.ListUsersParams{
-
 			Search:     "",
 			Status:     "",
 			GroupSlug:  "",
@@ -1262,7 +1267,6 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	// the full row via GetInstructorTrackByID.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.ListAcademyCatalog(ctx, gen.ListAcademyCatalogParams{
-
 			Category:   "",
 			Language:   "",
 			IsFree:     false,
@@ -1312,11 +1316,12 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 
 	// Organizations — offset-paginated via ListOrganizations with empty filters.
 	for offset := int32(0); ; offset += reindexBatchSize {
-		rows, err := ix.read.ListOrganizations(ctx, gen.ListOrganizationsParams{Column1: "", Column2: // org_type filter (empty = all)
-		"", Column3:// country_code filter (empty = all)
-		"", Column4:// name search (empty = all)
-		"", Column7:// verified filter (empty = all)
-		"", // deleted filter (empty = live rows only)
+		rows, err := ix.read.ListOrganizations(ctx, gen.ListOrganizationsParams{
+			Column1: "", Column2: // org_type filter (empty = all)
+			"", Column3:// country_code filter (empty = all)
+			"", Column4:// name search (empty = all)
+			"", Column7:// verified filter (empty = all)
+			"", // deleted filter (empty = live rows only)
 			Limit:  reindexBatchSize,
 			Offset: offset,
 		})
@@ -1373,6 +1378,7 @@ func (ix *Indexer) IndexPofRequirement(ctx context.Context, reqID [16]byte) erro
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
+
 	if ix.pool == nil {
 		return errors.New("search:index: no database pool for pof_requirements fetch")
 	}
@@ -1401,6 +1407,7 @@ func (ix *Indexer) IndexPofRequirement(ctx context.Context, reqID [16]byte) erro
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexPofRequirements, reqID)
 		}
+
 		return fmt.Errorf("fetching pof_requirement for index: %w", err)
 	}
 
@@ -1421,6 +1428,7 @@ func (ix *Indexer) IndexPofRequirement(ctx context.Context, reqID [16]byte) erro
 	if destName != nil {
 		doc.DestinationName = *destName
 	}
+
 	if notes != nil {
 		doc.Notes = *notes
 	}
@@ -1428,7 +1436,9 @@ func (ix *Indexer) IndexPofRequirement(ctx context.Context, reqID [16]byte) erro
 	if err := ix.engine.UpsertDocuments(ctx, IndexPofRequirements, []pofRequirementDocument{doc}); err != nil {
 		return fmt.Errorf("indexing pof_requirement %s: %w", doc.ID, err)
 	}
+
 	slog.Info("search:index: pof_requirement indexed", "id", doc.ID)
+
 	return nil
 }
 
@@ -1454,6 +1464,7 @@ func (ix *Indexer) IndexEcaGuide(ctx context.Context, guideID [16]byte) error {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
+
 	if ix.pool == nil {
 		return errors.New("search:index: no database pool for eca_guides fetch")
 	}
@@ -1481,6 +1492,7 @@ func (ix *Indexer) IndexEcaGuide(ctx context.Context, guideID [16]byte) error {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexEcaGuides, guideID)
 		}
+
 		return fmt.Errorf("fetching eca_guide for index: %w", err)
 	}
 
@@ -1499,15 +1511,19 @@ func (ix *Indexer) IndexEcaGuide(ctx context.Context, guideID [16]byte) error {
 	if destName != nil {
 		doc.DestinationName = *destName
 	}
+
 	if provSlug != nil {
 		doc.ProviderSlug = *provSlug
 	}
+
 	if provName != nil {
 		doc.ProviderName = *provName
 	}
+
 	if timeline != nil {
 		doc.TimelineEstimate = *timeline
 	}
+
 	if fee != nil {
 		doc.FeeEstimate = *fee
 	}
@@ -1515,7 +1531,9 @@ func (ix *Indexer) IndexEcaGuide(ctx context.Context, guideID [16]byte) error {
 	if err := ix.engine.UpsertDocuments(ctx, IndexEcaGuides, []ecaGuideDocument{doc}); err != nil {
 		return fmt.Errorf("indexing eca_guide %s: %w", doc.ID, err)
 	}
+
 	slog.Info("search:index: eca_guide indexed", "id", doc.ID)
+
 	return nil
 }
 
@@ -1541,6 +1559,7 @@ func (ix *Indexer) IndexSopSample(ctx context.Context, sampleID [16]byte) error 
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
+
 	if ix.pool == nil {
 		return errors.New("search:index: no database pool for sop_samples fetch")
 	}
@@ -1565,6 +1584,7 @@ func (ix *Indexer) IndexSopSample(ctx context.Context, sampleID [16]byte) error 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ix.DeleteDocument(ctx, IndexSopSamples, sampleID)
 		}
+
 		return fmt.Errorf("fetching sop_sample for index: %w", err)
 	}
 
@@ -1585,6 +1605,7 @@ func (ix *Indexer) IndexSopSample(ctx context.Context, sampleID [16]byte) error 
 	if destName != nil {
 		doc.DestinationName = *destName
 	}
+
 	if field != nil {
 		doc.FieldOfStudy = *field
 	}
@@ -1592,6 +1613,8 @@ func (ix *Indexer) IndexSopSample(ctx context.Context, sampleID [16]byte) error 
 	if err := ix.engine.UpsertDocuments(ctx, IndexSopSamples, []sopSampleDocument{doc}); err != nil {
 		return fmt.Errorf("indexing sop_sample %s: %w", doc.ID, err)
 	}
+
 	slog.Info("search:index: sop_sample indexed", "id", doc.ID)
+
 	return nil
 }

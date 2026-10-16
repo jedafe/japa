@@ -120,14 +120,17 @@ func TestToolWriterOpsMatrix(t *testing.T) {
 		if !ok {
 			expected = cuda
 		}
+
 		got := ops[toolType]
 		if got == nil {
 			got = map[string]bool{}
 		}
+
 		for _, op := range []string{"create", "update", "delete", "assign_geo"} {
 			if expected[op] && !got[op] {
 				t.Errorf("%s.%s: expected a resolved writer op, got none", toolType, op)
 			}
+
 			if !expected[op] && got[op] {
 				t.Errorf("%s.%s: writer op resolved but seeded row is disabled — re-enable the seed", toolType, op)
 			}

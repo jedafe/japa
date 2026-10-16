@@ -75,7 +75,6 @@ func (h *Handlers) enqueueReviewAggregateRecalc(entityType string, entityID pgty
 	}
 
 	payload, err := json.Marshal(map[string]string{
-
 		"entity_type": entityType,
 		"entity_id":   entityID.String(),
 	})
@@ -125,6 +124,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 			"You have already reviewed this entity")
 		return
 	}
+
 	errpkg.HandleServiceError(w, err)
 }
 
@@ -252,7 +252,6 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 // ListReviews handles GET /api/v1/reviews.
 // Supports ?entity_type=, ?entity_id=, ?reviewer_id=, ?page_size=, ?page_offset=.
 func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
@@ -322,7 +321,6 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 // reviews for entity_type='university' + entity_id={id} with author names joined.
 // Ref: Section 29 (polymorphic reviews), Section 39 (university as space).
 func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
-
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
@@ -373,7 +371,6 @@ func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
 // Supports ?status=, ?entity_type=, ?page_size=, ?page_offset=.
 // Returns {"data": [...], "total": N} envelope with entity_name resolved.
 func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
-
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 	status := r.URL.Query().Get("status")
@@ -427,7 +424,6 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 
 // GetReview handles GET /api/v1/reviews/{id}.
 func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
-
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
@@ -615,7 +611,6 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 // GetAggregate handles GET /api/v1/reviews/aggregate.
 // Supports ?entity_type= and ?entity_id=.
 func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
-
 	// catalog: GET /reviews/:entity_type/:entity_id/aggregate
 	entityType := chi.URLParam(r, "entity_type")
 	entityIDStr := chi.URLParam(r, "entity_id")

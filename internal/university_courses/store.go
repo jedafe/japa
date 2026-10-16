@@ -95,7 +95,6 @@ func toCourseOffering(row any) (CourseOffering, error) {
 // filtered by university, search query, and/or degree type.
 func (s *Store) SearchOfferings(ctx context.Context, universityID pgtype.UUID, query, degreeType string, limit, offset int32) ([]CourseOffering, error) {
 	rows, err := s.read.ListCourseOfferingsByUniversity(ctx, gen.ListCourseOfferingsByUniversityParams{
-
 		UniversityID: universityID,
 		Search:       query,
 		DegreeType:   degreeType,
@@ -240,11 +239,13 @@ func (s *Store) ListCatalogAdmin(ctx context.Context, f CatalogListFilters) ([]C
 	}
 
 	out := make([]CourseCatalog, 0, len(rows))
+
 	for _, r := range rows {
 		c, err := toCourseCatalog(r)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, c)
 	}
 
@@ -323,16 +324,20 @@ func (s *Store) HardDeleteCatalog(ctx context.Context, id pgtype.UUID) error {
 		if err != nil {
 			return fmt.Errorf("university_courses: check catalog exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		hasOfferings, err := s.read.CourseCatalogHasOfferings(ctx, id)
 		if err != nil {
 			return fmt.Errorf("university_courses: check catalog offerings: %w", err)
 		}
+
 		if hasOfferings {
 			return errpkg.ErrInUse
 		}
+
 		return errpkg.ErrNotDeleted
 	}
 
@@ -371,11 +376,13 @@ func (s *Store) ListOfferingsAdmin(ctx context.Context, f OfferingListFilters) (
 	}
 
 	out := make([]CourseOffering, 0, len(rows))
+
 	for _, r := range rows {
 		o, err := toCourseOffering(r)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, o)
 	}
 
@@ -440,9 +447,11 @@ func (s *Store) HardDeleteOffering(ctx context.Context, id pgtype.UUID) error {
 		if err != nil {
 			return fmt.Errorf("university_courses: check offering exists: %w", err)
 		}
+
 		if !exists {
 			return pgx.ErrNoRows
 		}
+
 		return errpkg.ErrNotDeleted
 	}
 

@@ -581,6 +581,7 @@ func (f fakeSettings) GetIntOr(_ context.Context, key string, fallback int) int 
 			return n
 		}
 	}
+
 	return fallback
 }
 
@@ -588,12 +589,14 @@ func (f fakeSettings) GetStringOr(_ context.Context, key, fallback string) strin
 	if v, ok := f[key]; ok {
 		return v
 	}
+
 	return fallback
 }
 
 func TestStorageBucket(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+
+	ctx := t.Context()
 
 	if got := (&Service{}).storageBucket(ctx); got != DefaultBucket {
 		t.Errorf("no config: storageBucket = %q, want %q", got, DefaultBucket)
@@ -696,7 +699,8 @@ func TestDetectStorageMIME(t *testing.T) {
 
 func TestIsAllowedMIMEContextSettingsGate(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+
+	ctx := t.Context()
 
 	// Unset setting — base context allowlist alone applies.
 	svc := &Service{settings: fakeSettings{}}
@@ -721,6 +725,7 @@ func TestIsAllowedMIMEContextSettingsGate(t *testing.T) {
 		{"application/pdf", false},
 		{"video/mp4", false}, // also fails the extension list
 	}
+
 	for _, tt := range tests {
 		if got := svc.isAllowedMIME(ctx, tt.mime, UploadContextMedia); got != tt.want {
 			t.Errorf("isAllowedMIME(%q, media) with csv=%q = %v, want %v",
@@ -742,6 +747,7 @@ func TestIsAllowedMIMEContextSettingsGate(t *testing.T) {
 	if svc.isAllowedMIME(ctx, "image/png", UploadContextAvatar) {
 		t.Error("avatar context must use users.allowed_avatar_types, not content.allowed_upload_types")
 	}
+
 	if !svc.isAllowedMIME(ctx, "image/webp", UploadContextAvatar) {
 		t.Error("webp avatar should be allowed when users.allowed_avatar_types=webp")
 	}
@@ -764,6 +770,7 @@ func TestIsAllowedMIMEContextSettingsGate(t *testing.T) {
 	if svc.isAllowedMIME(ctx, "video/mp4", UploadContextMedia) {
 		t.Error("mp4 allowed by ext list but blocked by media.allowed_video_types")
 	}
+
 	if !svc.isAllowedMIME(ctx, "video/webm", UploadContextMedia) {
 		t.Error("webm allowed by both lists should pass")
 	}
@@ -779,28 +786,35 @@ func TestOptimizeImage(t *testing.T) {
 	noiseImage := func(w, h int, opaque bool) []byte {
 		img := image.NewNRGBA(image.Rect(0, 0, w, h))
 		rnd := rand.New(rand.NewSource(42))
+
 		if _, err := rnd.Read(img.Pix); err != nil {
 			t.Fatalf("rand read: %v", err)
 		}
+
 		if opaque {
 			for i := 3; i < len(img.Pix); i += 4 {
 				img.Pix[i] = 255
 			}
 		}
+
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, img); err != nil {
 			t.Fatalf("png encode: %v", err)
 		}
+
 		return buf.Bytes()
 	}
 
 	decodeBounds := func(t *testing.T, data []byte) (string, int, int) {
 		t.Helper()
+
 		img, format, err := image.Decode(bytes.NewReader(data))
 		if err != nil {
 			t.Fatalf("decode output: %v", err)
 		}
+
 		b := img.Bounds()
+
 		return format, b.Dx(), b.Dy()
 	}
 
@@ -809,14 +823,17 @@ func TestOptimizeImage(t *testing.T) {
 		if len(orig) < OptimizeSkipBytes {
 			t.Fatalf("fixture too small: %d bytes", len(orig))
 		}
+
 		out, outMIME := optimizeImage(orig, "image/png")
 		if outMIME != OptimizeMIME {
 			t.Fatalf("expected %q output, got %q", OptimizeMIME, outMIME)
 		}
+
 		format, w, h := decodeBounds(t, out)
 		if format != "webp" || w != 800 || h != 600 {
 			t.Fatalf("unexpected output %s %dx%d", format, w, h)
 		}
+
 		if len(out) >= len(orig) {
 			t.Fatalf("expected smaller output: %d >= %d", len(out), len(orig))
 		}
@@ -825,10 +842,12 @@ func TestOptimizeImage(t *testing.T) {
 	t.Run("oversized dimensions downscale to OptimizeMaxDimension", func(t *testing.T) {
 		orig := noiseImage(3000, 200, true)
 		out, _ := optimizeImage(orig, "image/png")
+
 		_, w, h := decodeBounds(t, out)
 		if w != OptimizeMaxDimension {
 			t.Fatalf("expected width %d, got %d", OptimizeMaxDimension, w)
 		}
+
 		if h >= 200 {
 			t.Fatalf("expected proportional height < 200, got %d", h)
 		}
@@ -836,14 +855,17 @@ func TestOptimizeImage(t *testing.T) {
 
 	t.Run("alpha output is webp and keeps transparency", func(t *testing.T) {
 		orig := noiseImage(800, 600, false)
+
 		out, outMIME := optimizeImage(orig, "image/png")
 		if outMIME != OptimizeMIME {
 			t.Fatalf("expected %q preserving alpha, got %q", OptimizeMIME, outMIME)
 		}
+
 		img, format, err := image.Decode(bytes.NewReader(out))
 		if err != nil {
 			t.Fatalf("decode output: %v", err)
 		}
+
 		if format != "webp" {
 			t.Fatalf("expected webp output, got %s", format)
 		}
@@ -857,6 +879,7 @@ func TestOptimizeImage(t *testing.T) {
 				}
 			}
 		}
+
 		if !nonOpaque {
 			t.Fatal("expected non-opaque alpha to be preserved")
 		}
@@ -867,6 +890,7 @@ func TestOptimizeImage(t *testing.T) {
 		if len(small) >= OptimizeSkipBytes {
 			t.Fatalf("fixture unexpectedly large: %d", len(small))
 		}
+
 		out, outMIME := optimizeImage(small, "image/png")
 		if outMIME != "image/png" || !bytes.Equal(out, small) {
 			t.Fatal("small image must pass through unchanged")

@@ -8,6 +8,7 @@
 package wiki
 
 import (
+	"errors"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -119,11 +120,11 @@ func validateOp(op FieldOp) error {
 	switch op.Op {
 	case OpSetValue:
 		if op.EntityType == "" {
-			return fmt.Errorf("set_value requires entity_type")
+			return errors.New("set_value requires entity_type")
 		}
 
 		if op.EntityID == "" {
-			return fmt.Errorf("set_value requires entity_id")
+			return errors.New("set_value requires entity_id")
 		}
 
 		if _, err := uuid.Parse(op.EntityID); err != nil {
@@ -131,11 +132,11 @@ func validateOp(op FieldOp) error {
 		}
 
 		if op.FieldKey == "" {
-			return fmt.Errorf("set_value requires field_key")
+			return errors.New("set_value requires field_key")
 		}
 
 		if len(bytes.TrimSpace(op.Value)) == 0 {
-			return fmt.Errorf("set_value requires a non-empty value")
+			return errors.New("set_value requires a non-empty value")
 		}
 
 		return nil
@@ -149,19 +150,19 @@ func validateOp(op FieldOp) error {
 
 	case OpProposeGroup:
 		if op.Group == nil {
-			return fmt.Errorf("propose_group requires a group payload")
+			return errors.New("propose_group requires a group payload")
 		}
 
 		if op.Group.Slug == "" {
-			return fmt.Errorf("propose_group requires group.slug")
+			return errors.New("propose_group requires group.slug")
 		}
 
 		if op.Group.Name == "" {
-			return fmt.Errorf("propose_group requires group.name")
+			return errors.New("propose_group requires group.name")
 		}
 
 		if op.EntityClass == "" {
-			return fmt.Errorf("propose_group requires entity_class")
+			return errors.New("propose_group requires entity_class")
 		}
 
 		for j := range op.Group.Fields {
@@ -175,22 +176,22 @@ func validateOp(op FieldOp) error {
 
 	case OpAssignGroup:
 		if op.EntityClass == "" {
-			return fmt.Errorf("assign_group requires entity_class")
+			return errors.New("assign_group requires entity_class")
 		}
 
 		if op.GroupSlug == "" {
-			return fmt.Errorf("assign_group requires group_slug")
+			return errors.New("assign_group requires group_slug")
 		}
 
 		return nil
 
 	case OpDeleteField:
 		if op.GroupSlug == "" {
-			return fmt.Errorf("delete_field requires group_slug")
+			return errors.New("delete_field requires group_slug")
 		}
 
 		if op.FieldKey == "" {
-			return fmt.Errorf("delete_field requires field_key")
+			return errors.New("delete_field requires field_key")
 		}
 
 		return nil

@@ -25,6 +25,7 @@ func (m mapSettings) GetIntOr(_ context.Context, key string, fallback int) int {
 			return n
 		}
 	}
+
 	return fallback
 }
 
@@ -32,6 +33,7 @@ func (m mapSettings) GetStringOr(_ context.Context, key, fallback string) string
 	if v, ok := m[key]; ok {
 		return v
 	}
+
 	return fallback
 }
 
@@ -39,6 +41,7 @@ func signEmail(key, ts, token string) string {
 	mac := hmac.New(sha256.New, []byte(key))
 	mac.Write([]byte(ts))
 	mac.Write([]byte(token))
+
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
@@ -54,9 +57,11 @@ func TestVerifyInboundSignature(t *testing.T) {
 	if !verifyInboundSignature(key, ts, token, signEmail(key, ts, token)) {
 		t.Error("valid signature rejected")
 	}
+
 	if verifyInboundSignature("other-key", ts, token, signEmail(key, ts, token)) {
 		t.Error("signature accepted under wrong key")
 	}
+
 	if verifyInboundSignature(key, ts, "other-token", signEmail(key, ts, token)) {
 		t.Error("signature accepted under wrong token")
 	}
@@ -65,6 +70,7 @@ func TestVerifyInboundSignature(t *testing.T) {
 	if verifyInboundSignature(key, stale, token, signEmail(key, stale, token)) {
 		t.Error("stale timestamp accepted")
 	}
+
 	future := strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)
 	if verifyInboundSignature(key, future, token, signEmail(key, future, token)) {
 		t.Error("future timestamp beyond skew accepted")
@@ -92,15 +98,19 @@ func TestVerifyWebSubSignature(t *testing.T) {
 	if !verifyWebSubSignature(secret, good, body) {
 		t.Error("valid sha256= signature rejected")
 	}
+
 	if verifyWebSubSignature(secret, "sha256=deadbeef", body) {
 		t.Error("wrong hex accepted")
 	}
+
 	if verifyWebSubSignature(secret, "sha1="+strings.TrimPrefix(good, "sha256="), body) {
 		t.Error("sha1= scheme accepted — sha256 required")
 	}
+
 	if verifyWebSubSignature(secret, "", body) {
 		t.Error("empty signature accepted")
 	}
+
 	if verifyWebSubSignature("other", good, body) {
 		t.Error("signature accepted under wrong secret")
 	}
@@ -134,7 +144,7 @@ func TestInboundSenderAllowed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := inboundSenderAllowed(context.Background(), tc.settings, []byte(tc.cfg), tc.sender)
+			got := inboundSenderAllowed(t.Context(), tc.settings, []byte(tc.cfg), tc.sender)
 			if got != tc.wantAllow {
 				t.Errorf("inboundSenderAllowed(%q, cfg=%s) = %v, want %v", tc.sender, tc.cfg, got, tc.wantAllow)
 			}
@@ -173,15 +183,18 @@ func TestClaimInbound(t *testing.T) {
 	if dup || key == "" {
 		t.Error("first delivery flagged duplicate")
 	}
+
 	if _, dup := h.claimInbound(r, "email:ch-1:msg-1"); !dup {
 		t.Error("redelivery not flagged duplicate")
 	}
+
 	if _, dup := h.claimInbound(r, "email:ch-1:msg-2"); dup {
 		t.Error("distinct delivery flagged duplicate")
 	}
 
 	// Post-claim failure releases the slot so a provider retry reclaims it.
 	h.releaseInbound(r, key)
+
 	if _, dup := h.claimInbound(r, "email:ch-1:msg-1"); dup {
 		t.Error("released claim still flagged duplicate")
 	}
@@ -194,6 +207,7 @@ func TestClaimInbound_NilRDB(t *testing.T) {
 
 	h := &Handlers{}
 	r := httptest.NewRequest(http.MethodPost, "/x", nil)
+
 	if _, dup := h.claimInbound(r, "anything"); dup {
 		t.Error("nil rdb flagged duplicate")
 	}
@@ -210,9 +224,11 @@ func TestInboundMIMEHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inboundMIMEHeaders: %v", err)
 	}
+
 	if h.Get("From") != "Alice <a@b.example>" || h.Get("Message-Id") != "<m1@b>" {
 		t.Errorf("headers = %v", h)
 	}
+
 	if _, err := inboundMIMEHeaders([]byte("\x00\x01\x02")); err == nil {
 		t.Error("garbage accepted as MIME")
 	}

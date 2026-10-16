@@ -57,10 +57,12 @@ func validateProjectInput(w http.ResponseWriter, in projectInput, create bool) b
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return false
 	}
+
 	if in.Instructions != nil && len(*in.Instructions) > maxProjectInstructionsLen {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "instructions must be at most 4000 characters")
 		return false
 	}
+
 	for field, v := range map[string]*string{
 		"default_model":    in.DefaultModel,
 		"default_tone":     in.DefaultTone,
@@ -71,14 +73,18 @@ func validateProjectInput(w http.ResponseWriter, in projectInput, create bool) b
 			return false
 		}
 	}
+
 	if in.DefaultTools != nil {
 		raw := *in.DefaultTools
+
 		var obj map[string]any
+
 		if len(raw) > maxProjectToolsLen || !json.Valid(raw) || json.Unmarshal(raw, &obj) != nil || obj == nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "default_tools must be a JSON object")
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -90,9 +96,11 @@ func projectToJSON(p gen.AiProject) map[string]any {
 	if len(p.DefaultTools) > 0 {
 		_ = json.Unmarshal(p.DefaultTools, &tools)
 	}
+
 	if tools == nil {
 		tools = map[string]any{}
 	}
+
 	return map[string]any{
 		"id":               p.ID.String(),
 		"name":             p.Name,
@@ -111,21 +119,27 @@ func projectInputToService(in projectInput) ProjectInput {
 	if in.Name != nil {
 		out.Name = strings.TrimSpace(*in.Name)
 	}
+
 	if in.Instructions != nil {
 		out.Instructions = *in.Instructions
 	}
+
 	if in.DefaultModel != nil {
 		out.DefaultModel = strings.TrimSpace(*in.DefaultModel)
 	}
+
 	if in.DefaultTone != nil {
 		out.DefaultTone = strings.TrimSpace(*in.DefaultTone)
 	}
+
 	if in.DefaultVoiceID != nil {
 		out.DefaultVoiceID = strings.TrimSpace(*in.DefaultVoiceID)
 	}
+
 	if in.DefaultTools != nil {
 		out.DefaultTools = *in.DefaultTools
 	}
+
 	return out
 }
 
@@ -136,10 +150,12 @@ func (h *Handlers) requireProjectsReady(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	if h.Projects == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_configured", "AI projects are not configured")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -150,16 +166,19 @@ func (h *Handlers) requireProject(w http.ResponseWriter, r *http.Request) (*auth
 	if !ok {
 		return nil, gen.AiProject{}, false
 	}
+
 	projectID, parseErr := scanUUID(chi.URLParam(r, "id"))
 	if parseErr != nil || !projectID.Valid {
 		errpkg.WriteError(w, http.StatusNotFound, "project_not_found", "Project not found")
 		return nil, gen.AiProject{}, false
 	}
+
 	p, err := h.Projects.Get(r.Context(), user.UserID, projectID)
 	if err != nil {
 		writeProjectError(w, err, "Failed to load project")
 		return nil, gen.AiProject{}, false
 	}
+
 	return user, p, true
 }
 
@@ -168,14 +187,17 @@ func writeProjectError(w http.ResponseWriter, err error, fallback string) {
 		errpkg.WriteError(w, http.StatusNotFound, "project_not_found", "Project not found")
 		return
 	}
+
 	if errors.Is(err, ErrProjectNameTaken) {
 		errpkg.WriteError(w, http.StatusConflict, "project_name_taken", "A project with this name already exists")
 		return
 	}
+
 	if errors.Is(err, ErrInvalidVoicePin) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_voice_pin", "default_voice_id is not a known voice")
 		return
 	}
+
 	errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", fallback)
 }
 
@@ -186,6 +208,7 @@ func (h *Handlers) validateModelPin(model string) bool {
 	if model == "" || h.Dispatcher == nil {
 		return true
 	}
+
 	return h.isValidModelForCategory(model, "chat")
 }
 
@@ -207,6 +230,7 @@ func (h *Handlers) HandleListProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out := make([]map[string]any, 0, len(rows))
+
 	for _, row := range rows {
 		p := projectToJSON(gen.AiProject{
 			ID:             row.ID,
@@ -247,9 +271,11 @@ func (h *Handlers) HandleCreateProject(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if !validateProjectInput(w, in, true) {
 		return
 	}
+
 	if in.DefaultModel != nil && !h.validateModelPin(strings.TrimSpace(*in.DefaultModel)) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_model_pin", "default_model is not available for the chat category")
 		return
@@ -270,6 +296,7 @@ func (h *Handlers) HandleGetProject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": projectToJSON(p)})
 }
 
@@ -286,9 +313,11 @@ func (h *Handlers) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if !validateProjectInput(w, in, false) {
 		return
 	}
+
 	if in.DefaultModel != nil && !h.validateModelPin(strings.TrimSpace(*in.DefaultModel)) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_model_pin", "default_model is not available for the chat category")
 		return
@@ -305,18 +334,23 @@ func (h *Handlers) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	if in.Name != nil {
 		merged.Name = strings.TrimSpace(*in.Name)
 	}
+
 	if in.Instructions != nil {
 		merged.Instructions = *in.Instructions
 	}
+
 	if in.DefaultModel != nil {
 		merged.DefaultModel = strings.TrimSpace(*in.DefaultModel)
 	}
+
 	if in.DefaultTone != nil {
 		merged.DefaultTone = strings.TrimSpace(*in.DefaultTone)
 	}
+
 	if in.DefaultVoiceID != nil {
 		merged.DefaultVoiceID = strings.TrimSpace(*in.DefaultVoiceID)
 	}
+
 	if in.DefaultTools != nil {
 		merged.DefaultTools = *in.DefaultTools
 	}
@@ -365,6 +399,7 @@ func (h *Handlers) assignProject(w http.ResponseWriter, r *http.Request, convers
 	if !ok {
 		return
 	}
+
 	notFoundCode := "conversation_not_found"
 	if !conversation {
 		notFoundCode = "session_not_found"
@@ -383,12 +418,14 @@ func (h *Handlers) assignProject(w http.ResponseWriter, r *http.Request, convers
 	}
 
 	var projectID *pgtype.UUID
+
 	if in.ProjectID != nil && strings.TrimSpace(*in.ProjectID) != "" {
 		pid, err := scanUUID(strings.TrimSpace(*in.ProjectID))
 		if err != nil || !pid.Valid {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "project_id must be a UUID or null")
 			return
 		}
+
 		projectID = &pid
 	}
 
@@ -398,22 +435,27 @@ func (h *Handlers) assignProject(w http.ResponseWriter, r *http.Request, convers
 	} else {
 		err = h.Projects.SetSessionProject(r.Context(), user.UserID, targetID, projectID)
 	}
+
 	if err != nil {
 		if errors.Is(err, ErrProjectNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "project_not_found", "Project not found")
 			return
 		}
+
 		if errors.Is(err, ErrConversationNotFound) || errors.Is(err, ErrSessionNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, notFoundCode, "Not found")
 			return
 		}
+
 		if errors.Is(err, ErrSessionLinked) {
 			// §103 — linked sessions mirror their conversation's project;
 			// assigning them directly is a no-op that would only confuse.
 			errpkg.WriteError(w, http.StatusConflict, "session_linked_to_conversation", "Session belongs to a conversation — move the conversation instead")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to assign project")
+
 		return
 	}
 
@@ -421,6 +463,7 @@ func (h *Handlers) assignProject(w http.ResponseWriter, r *http.Request, convers
 	if projectID != nil {
 		resp = projectID.String()
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"project_id": resp}})
 }
 

@@ -73,6 +73,7 @@ func (h *Hub) Register(client *Client) {
 	}
 
 	h.clients[client.UserID][client] = struct{}{}
+
 	slog.Info("ws client registered", "user_id", client.UserID)
 }
 

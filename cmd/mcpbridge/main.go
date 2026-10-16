@@ -18,6 +18,7 @@
 package main
 
 import (
+	"errors"
 	"bufio"
 	"bytes"
 	"context"
@@ -51,22 +52,27 @@ func run() error {
 	if url == "" {
 		url = defaultMCPURL
 	}
+
 	apiKey := os.Getenv("JC_MCP_API_KEY")
 	token := os.Getenv("JC_MCP_TOKEN")
+
 	if apiKey == "" && token == "" {
-		return fmt.Errorf("set JC_MCP_API_KEY or JC_MCP_TOKEN — no credential configured")
+		return errors.New("set JC_MCP_API_KEY or JC_MCP_TOKEN — no credential configured")
 	}
 
 	client := &http.Client{}
+
 	out := bufio.NewWriter(os.Stdout)
 	defer out.Flush() //nolint:errcheck
 
 	in := bufio.NewReaderSize(os.Stdin, 64<<10)
+
 	for {
 		line, err := in.ReadBytes('\n')
 		if len(bytes.TrimSpace(line)) > 0 {
 			relay(client, url, apiKey, token, bytes.TrimSpace(line), out)
 		}
+
 		if err != nil {
 			return nil // EOF or read error — stdin closed, exit clean
 		}
@@ -89,10 +95,13 @@ func relay(client *http.Client, url, apiKey, token string, msg []byte, out *bufi
 	if err != nil {
 		slog.Error("mcpbridge: build request", "error", err)
 		writeSyntheticError(msg, out, "bridge request build failed")
+
 		return
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
+
 	if apiKey != "" {
 		req.Header.Set("X-API-Key", apiKey)
 	} else {
@@ -103,6 +112,7 @@ func relay(client *http.Client, url, apiKey, token string, msg []byte, out *bufi
 	if err != nil {
 		slog.Error("mcpbridge: upstream call", "error", err)
 		writeSyntheticError(msg, out, "upstream request failed")
+
 		return
 	}
 	defer resp.Body.Close() //nolint:errcheck
@@ -111,6 +121,7 @@ func relay(client *http.Client, url, apiKey, token string, msg []byte, out *bufi
 	if err != nil {
 		slog.Error("mcpbridge: read upstream body", "error", err)
 		writeSyntheticError(msg, out, "upstream response unreadable")
+
 		return
 	}
 
@@ -125,14 +136,18 @@ func relay(client *http.Client, url, apiKey, token string, msg []byte, out *bufi
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		slog.Error("mcpbridge: upstream status", "status", resp.Status)
 		writeSyntheticError(msg, out, fmt.Sprintf("upstream HTTP %d", resp.StatusCode))
+
 		return
 	}
+
 	var probe struct {
 		JSONRPC string `json:"jsonrpc"`
 	}
+
 	if json.Unmarshal(body, &probe) != nil || probe.JSONRPC != "2.0" {
 		slog.Error("mcpbridge: upstream body is not JSON-RPC")
 		writeSyntheticError(msg, out, "upstream returned a non-JSON-RPC response")
+
 		return
 	}
 
@@ -142,6 +157,7 @@ func relay(client *http.Client, url, apiKey, token string, msg []byte, out *bufi
 		slog.Error("mcpbridge: write stdout", "error", err)
 		return
 	}
+
 	if err := out.Flush(); err != nil {
 		slog.Error("mcpbridge: flush stdout", "error", err)
 	}
@@ -156,10 +172,12 @@ func writeSyntheticError(msg []byte, out *bufio.Writer, message string) {
 	if json.Unmarshal(msg, &probe) != nil {
 		probe = nil
 	}
+
 	id, hasID := probe["id"]
 	if !hasID {
 		return
 	}
+
 	if len(id) == 0 {
 		id = json.RawMessage("null")
 	}
@@ -173,5 +191,6 @@ func writeSyntheticError(msg []byte, out *bufio.Writer, message string) {
 		slog.Error("mcpbridge: write synthetic error", "error", err)
 		return
 	}
+
 	_ = out.Flush()
 }

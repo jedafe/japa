@@ -292,6 +292,7 @@ func editWindowExpired(windowMinutes int32, createdAt pgtype.Timestamptz) bool {
 	if windowMinutes <= 0 || !createdAt.Valid {
 		return false
 	}
+
 	return time.Since(createdAt.Time) > time.Duration(windowMinutes)*time.Minute
 }
 

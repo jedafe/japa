@@ -195,9 +195,11 @@ func (s *Service) EnsureFollow(ctx context.Context, followerID pgtype.UUID, enti
 	if err != nil {
 		return false, fmt.Errorf("checking follow status: %w", err)
 	}
+
 	if following {
 		return true, nil
 	}
+
 	return s.ToggleFollow(ctx, followerID, entityType, entityID)
 }
 
@@ -211,9 +213,11 @@ func (s *Service) EnsureUnfollow(ctx context.Context, followerID pgtype.UUID, en
 	if err != nil {
 		return false, fmt.Errorf("checking follow status: %w", err)
 	}
+
 	if !following {
 		return false, nil
 	}
+
 	return s.ToggleFollow(ctx, followerID, entityType, entityID)
 }
 
@@ -227,7 +231,7 @@ func (s *Service) GetFollow(ctx context.Context, followerID pgtype.UUID, entityT
 // avoid a DB hit on every profile page render. On cache miss or when Valkey
 // is not wired, falls back to the store query and populates the cache.
 // Ref: japaconnect-engineering/sections/31-follow-system.md
-// //	conventions/valkey-keys-catalog.md (Follow System section)
+// //	conventions/valkey-keys-catalog.md (Follow System section).
 func (s *Service) IsFollowing(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	// L3: try Valkey cache first (best-effort — never block on cache).
 	if s.vk != nil {

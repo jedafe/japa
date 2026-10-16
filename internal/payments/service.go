@@ -107,7 +107,6 @@ func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input C
 
 	if provider != nil {
 		resp, err := provider.InitiatePayment(ctx, PaymentRequest{
-
 			UserID:      userID.String(),
 			Email:       input.Email,
 			Amount:      netAmount,
@@ -203,6 +202,7 @@ func (s *Service) ResumePayment(ctx context.Context, paymentID, userID pgtype.UU
 			if errors.Is(err, pgx.ErrNoRows) {
 				return CreatePaymentResult{}, ErrPaymentNotPending
 			}
+
 			return CreatePaymentResult{}, fmt.Errorf("updating provider_ref: %w", err)
 		}
 	}
@@ -285,7 +285,6 @@ func (s *Service) createPaymentRow(ctx context.Context, userID pgtype.UUID, inpu
 	}
 
 	payment, err := s.store.createPayment(ctx, gen.CreatePaymentParams{
-
 		UserID:         userID,
 		Provider:       input.Provider,
 		ProviderRef:    ref,
@@ -366,6 +365,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, userID pgtype.UUID,
 		// Credit debits settle synchronously — no provider webhook will
 		// arrive, so dispatch §111 booking fan-out directly.
 		s.enqueueServiceBookingCreated(succeeded)
+
 		return succeeded, nil
 	}
 
@@ -446,7 +446,6 @@ func (s *Service) ProcessWebhook(ctx context.Context, provider string, event Web
 	// This collapses the previous read-check + insert + mark into a single
 	// atomic step that is race-free under concurrent delivery.
 	inserted, err := s.store.insertWebhookEventIfNew(ctx, gen.InsertWebhookEventParams{
-
 		Provider:   provider,
 		EventID:    event.EventID,
 		EventType:  event.EventType,
@@ -608,7 +607,6 @@ func (s *Service) CreateDiscountCode(ctx context.Context, input CreateDiscountCo
 	}
 
 	code, err := s.store.createDiscountCode(ctx, gen.CreateDiscountCodeParams{
-
 		Code:          input.Code,
 		DiscountType:  input.DiscountType,
 		DiscountValue: float64ToNumeric(input.DiscountValue),
@@ -809,7 +807,7 @@ func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (ge
 	}
 
 	if payment.Status != PaymentStatusSucceeded {
-		return gen.PaymentRefund{}, fmt.Errorf("payment must be in 'succeeded' status to be refunded")
+		return gen.PaymentRefund{}, errors.New("payment must be in 'succeeded' status to be refunded")
 	}
 
 	var reason *string

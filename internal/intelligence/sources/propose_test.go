@@ -37,6 +37,7 @@ func TestBuildProposeParams_Categories(t *testing.T) {
 	if len(arg.Categories) != 2 || arg.Categories[0] != "news" || arg.Categories[1] != "job" {
 		t.Errorf("categories = %v, want [news job]", arg.Categories)
 	}
+
 	if arg.Category != "news" {
 		t.Errorf("category = %q, want %q (dual-write of categories[0])", arg.Category, "news")
 	}
@@ -60,6 +61,7 @@ func TestBuildProposeParams_LegacyCategory(t *testing.T) {
 	if len(arg.Categories) != 1 || arg.Categories[0] != "news" {
 		t.Errorf("categories = %v, want [news]", arg.Categories)
 	}
+
 	if arg.Category != "news" {
 		t.Errorf("category = %q, want news", arg.Category)
 	}
@@ -97,6 +99,7 @@ func TestBuildProposeParams_CategoriesNormalized(t *testing.T) {
 	if len(arg.Categories) != len(want) {
 		t.Fatalf("categories = %v, want %v", arg.Categories, want)
 	}
+
 	for i := range want {
 		if arg.Categories[i] != want[i] {
 			t.Errorf("categories[%d] = %q, want %q", i, arg.Categories[i], want[i])
@@ -119,6 +122,7 @@ func TestBuildProposeParams_SourceKind(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildProposeParams = %v, want nil", err)
 		}
+
 		if arg.SourceKind != string(SourceKindPublisher) {
 			t.Errorf("source_kind = %v, want publisher", arg.SourceKind)
 		}
@@ -139,6 +143,7 @@ func TestBuildProposeParams_SourceKind(t *testing.T) {
 			if err != nil {
 				t.Fatalf("buildProposeParams(kind=%q) = %v, want nil", kind, err)
 			}
+
 			if arg.SourceKind != kind {
 				t.Errorf("source_kind = %v, want %q", arg.SourceKind, kind)
 			}
@@ -188,9 +193,11 @@ func TestBuildProposeParams_BareDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildProposeParams(bare domain) = %v, want nil", err)
 	}
+
 	if arg.SourceUrl != "https://jobberman.com" {
 		t.Errorf("source_url = %q, want %q", arg.SourceUrl, "https://jobberman.com")
 	}
+
 	if arg.Domain != "jobberman.com" {
 		t.Errorf("domain = %q, want %q", arg.Domain, "jobberman.com")
 	}
@@ -214,18 +221,23 @@ func TestBuildProposeParams_ManualCrawl(t *testing.T) {
 	if arg.CrawlMethod != string(CrawlMethodManual) {
 		t.Errorf("crawl_method = %q, want manual", arg.CrawlMethod)
 	}
+
 	if arg.CrawlFrequency != string(CrawlFrequencyManual) {
 		t.Errorf("crawl_frequency = %q, want manual", arg.CrawlFrequency)
 	}
+
 	if arg.CrawlFrequencyMins != 0 {
 		t.Errorf("crawl_frequency_mins = %d, want 0", arg.CrawlFrequencyMins)
 	}
+
 	if arg.SourceType != "auto" {
 		t.Errorf("source_type = %q, want auto", arg.SourceType)
 	}
+
 	if arg.Status != "proposed" {
 		t.Errorf("status = %v, want proposed", arg.Status)
 	}
+
 	if arg.Enabled {
 		t.Error("enabled = true, want false for proposed rows")
 	}
@@ -249,9 +261,11 @@ func TestBuildProposeParams_VideoChannelRouting(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildProposeParams = %v, want nil", err)
 		}
+
 		if arg.SourceType != string(SourceTypeVideoChannel) {
 			t.Errorf("source_type = %q, want video_channel", arg.SourceType)
 		}
+
 		if arg.CrawlMethod != string(CrawlMethodManual) || arg.CrawlFrequency != string(CrawlFrequencyManual) {
 			t.Errorf("crawl = %q/%q, want manual/manual", arg.CrawlMethod, arg.CrawlFrequency)
 		}
@@ -269,6 +283,7 @@ func TestBuildProposeParams_VideoChannelRouting(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildProposeParams = %v, want nil", err)
 		}
+
 		if arg.SourceType != "auto" {
 			t.Errorf("source_type = %q, want auto", arg.SourceType)
 		}
@@ -287,9 +302,11 @@ func TestBuildProposeParams_VideoChannelRouting(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildProposeParams = %v, want nil", err)
 		}
+
 		if arg.SourceKind != string(SourceKindChannelProfile) {
 			t.Errorf("source_kind = %v, want channel_profile", arg.SourceKind)
 		}
+
 		if arg.SourceType != string(SourceTypeVideoChannel) {
 			t.Errorf("source_type = %q, want video_channel", arg.SourceType)
 		}
@@ -327,6 +344,7 @@ func TestBuildProposeParams_ProbeSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildProposeParams = %v, want nil", err)
 		}
+
 		if string(arg.ProbeReport) != string(input.ProbeSnapshot) {
 			t.Errorf("probe_report = %s, want %s", arg.ProbeReport, input.ProbeSnapshot)
 		}
@@ -342,6 +360,7 @@ func TestBuildProposeParams_ProbeSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildProposeParams = %v, want nil", err)
 		}
+
 		if string(arg.ProbeReport) != `{}` {
 			t.Errorf("probe_report = %s, want {}", arg.ProbeReport)
 		}
@@ -377,6 +396,7 @@ func TestBuildProposeParams_ProbeSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildProposeParams = %v, want nil", err)
 		}
+
 		if arg.ProbeReport != nil {
 			t.Errorf("probe_report = %s, want nil (query COALESCEs '{}')", arg.ProbeReport)
 		}
@@ -456,26 +476,33 @@ func TestPropose_PersistsPayloadFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
+
 	defer func() { _ = svc.Delete(ctx, src.ID) }()
 
 	if src.Status != "proposed" {
 		t.Errorf("status = %q, want proposed", src.Status)
 	}
+
 	if len(src.Categories) != 2 || src.Categories[0] != "news" || src.Categories[1] != "job" {
 		t.Errorf("categories = %v, want [news job]", src.Categories)
 	}
+
 	if src.Category != "news" {
 		t.Errorf("category = %q, want news (dual-write)", src.Category)
 	}
+
 	if src.SourceKind != "aggregator" {
 		t.Errorf("source_kind = %q, want aggregator", src.SourceKind)
 	}
+
 	if string(src.ProbeReport) == "" || string(src.ProbeReport) == "{}" {
 		t.Errorf("probe_report = %s, want the submitted snapshot", src.ProbeReport)
 	}
+
 	if src.CrawlMethod != "manual" || src.CrawlFrequency != "manual" {
 		t.Errorf("crawl = %q/%q, want manual/manual", src.CrawlMethod, src.CrawlFrequency)
 	}
+
 	if src.SourceType != "auto" {
 		t.Errorf("source_type = %q, want auto", src.SourceType)
 	}

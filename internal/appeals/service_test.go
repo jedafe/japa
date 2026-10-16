@@ -11,9 +11,11 @@ func TestNamedLabel(t *testing.T) {
 	if got := namedLabel("Removed post", "Visa Help Lagos"); got != "Removed post — Visa Help Lagos" {
 		t.Fatalf("namedLabel with name = %q", got)
 	}
+
 	if got := namedLabel("Removed post", ""); got != "Removed post" {
 		t.Fatalf("namedLabel empty name = %q", got)
 	}
+
 	if got := namedLabel("Removed post", "   "); got != "Removed post" {
 		t.Fatalf("namedLabel blank name = %q", got)
 	}
@@ -26,6 +28,7 @@ func TestNamedLabelPtr(t *testing.T) {
 	if got := namedLabelPtr("Rejected organization claim", &name); got != "Rejected organization claim — Acme Relocation" {
 		t.Fatalf("namedLabelPtr with name = %q", got)
 	}
+
 	if got := namedLabelPtr("Rejected organization claim", nil); got != "Rejected organization claim" {
 		t.Fatalf("namedLabelPtr nil = %q", got)
 	}

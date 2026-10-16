@@ -221,10 +221,12 @@ func (r *ToolHandlerRegistry) Categories() map[string]string {
 	if r == nil {
 		return nil
 	}
+
 	out := make(map[string]string, len(r.configs))
 	for name, lt := range r.configs {
 		out[name] = lt.category
 	}
+
 	return out
 }
 
@@ -667,7 +669,6 @@ func (e *Executor) createHITL(ctx context.Context, p ExecuteParams, call ToolCal
 	}
 
 	review := HITLReview{
-
 		ContentType: contentType,
 		AIOutput:    aiOutput,
 		Source:      HITLSourceAgentTool,
@@ -777,7 +778,6 @@ func (e *Executor) finalizeToolCall(ctx context.Context, p ExecuteParams, call T
 	}
 
 	row, err := e.write.CreateAgentToolCall(logCtx, gen.CreateAgentToolCallParams{
-
 		SessionID:      p.SessionID,
 		ToolName:       call.Name,
 		Arguments:      args,

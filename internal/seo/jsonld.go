@@ -82,6 +82,7 @@ func pruneEmptyNodes(node any) any {
 	switch v := node.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(v))
+
 		for key, val := range v {
 			pruned := pruneEmptyNodes(val)
 			if isEmptyNode(pruned) {
@@ -94,6 +95,7 @@ func pruneEmptyNodes(node any) any {
 		return out
 	case []any:
 		out := make([]any, 0, len(v))
+
 		for _, val := range v {
 			pruned := pruneEmptyNodes(val)
 			if isEmptyNode(pruned) {
@@ -120,6 +122,7 @@ func isEmptyNode(node any) bool {
 		if len(v) == 0 {
 			return true
 		}
+
 		if len(v) == 1 {
 			_, onlyType := v["@type"]
 			return onlyType

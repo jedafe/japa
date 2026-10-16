@@ -316,6 +316,7 @@ func (s *Store) CountProposed(ctx context.Context, search string) (int64, error)
 	if err != nil {
 		return 0, fmt.Errorf("sources: count proposed: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -326,6 +327,7 @@ func (s *Store) ListFiltered(ctx context.Context, arg gen.ListIntelSourcesFilter
 	if err != nil {
 		return nil, fmt.Errorf("sources: list filtered: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -335,6 +337,7 @@ func (s *Store) CountFiltered(ctx context.Context, arg gen.CountIntelSourcesFilt
 	if err != nil {
 		return 0, fmt.Errorf("sources: count filtered: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -398,6 +401,7 @@ func (s *Store) BlockSource(ctx context.Context, blockerID, sourceID pgtype.UUID
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("sources: block: %w", err)
 	}
+
 	return row.ID, nil
 }
 
@@ -409,6 +413,7 @@ func (s *Store) UnblockSource(ctx context.Context, blockerID, sourceID pgtype.UU
 	}); err != nil {
 		return fmt.Errorf("sources: unblock: %w", err)
 	}
+
 	return nil
 }
 
@@ -422,6 +427,7 @@ func (s *Store) ListBlockedSourceIDs(ctx context.Context, blockerID pgtype.UUID)
 	if err != nil {
 		return nil, fmt.Errorf("sources: list blocked ids: %w", err)
 	}
+
 	return ids, nil
 }
 
@@ -434,6 +440,7 @@ func (s *Store) IsSourceBlocked(ctx context.Context, blockerID, sourceID pgtype.
 	if err != nil {
 		return false, fmt.Errorf("sources: is blocked: %w", err)
 	}
+
 	return blocked, nil
 }
 

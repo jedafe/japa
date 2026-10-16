@@ -530,6 +530,7 @@ func TestCreateHITLReview_MissingAIOutput(t *testing.T) {
 
 func TestApproveReview_MissingReviewID(t *testing.T) {
 	t.Parallel()
+
 	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
 	err := ApproveReview(t.Context(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true})
@@ -549,6 +550,7 @@ func TestApproveReview_MissingReviewerID(t *testing.T) {
 
 func TestRejectReview_MissingReviewID(t *testing.T) {
 	t.Parallel()
+
 	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
 	err := RejectReview(t.Context(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, "bad content")
@@ -559,6 +561,7 @@ func TestRejectReview_MissingReviewID(t *testing.T) {
 
 func TestRejectReview_MissingReviewerID(t *testing.T) {
 	t.Parallel()
+
 	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
 	err := RejectReview(t.Context(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{}, "bad content")
@@ -569,6 +572,7 @@ func TestRejectReview_MissingReviewerID(t *testing.T) {
 
 func TestRejectReview_MissingReason(t *testing.T) {
 	t.Parallel()
+
 	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
 	err := RejectReview(t.Context(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true}, "")

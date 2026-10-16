@@ -55,7 +55,6 @@ func toolWriteError(w http.ResponseWriter, status int, code, message string) {
 // ListTools returns all AI tools for the platform.
 // GET /admin/ai/tools.
 func (h *ToolHandlers) ListTools(w http.ResponseWriter, r *http.Request) {
-
 	tools, err := h.Registry.ListTools(r.Context())
 	if err != nil {
 		slog.Error("listing ai tools", "error", err)
@@ -73,7 +72,6 @@ func (h *ToolHandlers) ListTools(w http.ResponseWriter, r *http.Request) {
 // GetTool returns a single AI tool by ID.
 // GET /admin/ai/tools/{id}.
 func (h *ToolHandlers) GetTool(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		toolWriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tool ID")
@@ -92,7 +90,6 @@ func (h *ToolHandlers) GetTool(w http.ResponseWriter, r *http.Request) {
 // UpdateTool updates an existing AI tool's configuration.
 // PUT /admin/ai/tools/{id}.
 func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		toolWriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tool ID")
@@ -130,7 +127,6 @@ func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
 // DeleteTool removes an AI tool by ID.
 // DELETE /admin/ai/tools/{id}.
 func (h *ToolHandlers) DeleteTool(w http.ResponseWriter, r *http.Request) {
-
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		toolWriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tool ID")
@@ -152,7 +148,6 @@ func (h *ToolHandlers) DeleteTool(w http.ResponseWriter, r *http.Request) {
 // usage for ALL tools (used by the admin /ai usage tab).
 // GET /admin/ai/tools/usage?tool_id=...&days=30.
 func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
-
 	days := 30
 
 	if d := r.URL.Query().Get("days"); d != "" {

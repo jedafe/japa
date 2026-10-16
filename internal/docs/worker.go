@@ -13,6 +13,7 @@ import (
 // persists an AI-generated draft for HITL review.
 func (s *Service) GenerateDocsPage(ctx context.Context, req worker.GenerateDocsPageRequest) error {
 	var ()
+
 	if err := (error)(nil); err != nil {
 		return fmt.Errorf("docs: invalid the id %q: %w", "", err)
 	}

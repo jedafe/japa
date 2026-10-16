@@ -197,6 +197,7 @@ func TestGetComparisonMatrix_HydratesFromEntityField(t *testing.T) {
 	if dims[0].ValueRating == nil || *dims[0].ValueRating != 350.0 {
 		t.Fatalf("expected hydrated rating 350, got %+v", dims[0].ValueRating)
 	}
+
 	if dims[0].HydratedFrom != "entity_field" {
 		t.Fatalf("expected hydrated_from=entity_field, got %q", dims[0].HydratedFrom)
 	}
@@ -205,6 +206,7 @@ func TestGetComparisonMatrix_HydratesFromEntityField(t *testing.T) {
 	if dims[1].Value == nil || *dims[1].Value != "persisted overview" {
 		t.Fatalf("expected persisted value to win, got %+v", dims[1].Value)
 	}
+
 	if dims[1].HydratedFrom != "" {
 		t.Fatalf("persisted cell must not be marked hydrated, got %q", dims[1].HydratedFrom)
 	}
@@ -213,6 +215,7 @@ func TestGetComparisonMatrix_HydratesFromEntityField(t *testing.T) {
 	if dims[2].ValueBoolean == nil || *dims[2].ValueBoolean != true {
 		t.Fatalf("expected hydrated boolean true, got %+v", dims[2].ValueBoolean)
 	}
+
 	if dims[2].HydratedFrom != "entity_field" {
 		t.Fatalf("expected hydrated_from=entity_field, got %q", dims[2].HydratedFrom)
 	}
@@ -221,6 +224,7 @@ func TestGetComparisonMatrix_HydratesFromEntityField(t *testing.T) {
 	if dims[3].Value != nil || dims[3].ValueRating != nil || dims[3].ValueBoolean != nil {
 		t.Fatalf("expected empty cell for unknown field key, got %+v", dims[3])
 	}
+
 	if dims[3].HydratedFrom != "" {
 		t.Fatalf("unexpected hydrated_from for missing field, got %q", dims[3].HydratedFrom)
 	}

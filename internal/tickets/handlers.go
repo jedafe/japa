@@ -87,6 +87,7 @@ func (h *Handlers) parseTicketRef(w http.ResponseWriter, r *http.Request) (pgtyp
 		} else {
 			handleServiceError(w, err)
 		}
+
 		return pgtype.UUID{}, false
 	}
 
@@ -754,7 +755,6 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTicket handles DELETE /api/v1/admin/tickets/:id.
 func (h *Handlers) DeleteTicket(w http.ResponseWriter, r *http.Request) {
-
 	id, ok := h.parseTicketRef(w, r)
 	if !ok {
 		return
