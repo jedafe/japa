@@ -6,12 +6,44 @@ on:
     types: [completed]
     branches: [main]
 
+# Coolify deployment: each application in Coolify exposes a deploy webhook
+# (Applications → <app> → Webhooks → "Deploy Webhook"). CI calls the webhook;
+# Coolify pulls the repo, rebuilds the Dockerfile, and rolls the service.
+#
+# Required repo secrets (Settings → Secrets → Actions):
+#   COOLIFY_WEBHOOK_API        — api service    (Dockerfile at repo root)
+#   COOLIFY_WEBHOOK_MAIN       — apps/main
+#   COOLIFY_WEBHOOK_ADMIN      — apps/admin
+#   COOLIFY_WEBHOOK_CONTROL    — apps/control
+#   COOLIFY_WEBHOOK_ACADEMY    — apps/academy
+#   COOLIFY_WEBHOOK_DOCS       — apps/docs
+#   COOLIFY_WEBHOOK_TOOLS      — apps/tools
+#
+# Each secret holds the full webhook URL, e.g.
+#   https://coolify.example.com/api/v1/deploy?uuid=<app-uuid>&token=<token>&force=false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Deploy api
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API }}"
 
-      - name: Deploy
-        run: echo "Deploy step - configure with your deployment target"
+      - name: Deploy main
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_MAIN }}"
+
+      - name: Deploy admin
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ADMIN }}"
+
+      - name: Deploy control
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_CONTROL }}"
+
+      - name: Deploy academy
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ACADEMY }}"
+
+      - name: Deploy docs
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_DOCS }}"
+
+      - name: Deploy tools
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS }}"
