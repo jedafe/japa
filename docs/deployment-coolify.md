@@ -8,7 +8,8 @@ shared project network (reachable by service name).
 
 | Coolify app | Dockerfile | Notes |
 |---|---|---|
-| `api` | root `Dockerfile` | **HTTP + Asynq worker + scheduler run in one process** (`cmd/api/main.go` starts all three). One container covers web + background jobs. Scaling to >1 replica: set `JC_SCHEDULER_ENABLED=0` on all but one replica — only a single scheduler may run (duplicate schedulers enqueue duplicate periodic tasks). Workers and HTTP scale freely. |
+| `api` | root `Dockerfile` | **HTTP + Asynq worker + scheduler run in one process** (`cmd/api/main.go` starts all three). One container covers web + background jobs. |
+| `worker` *(optional)* | root `Dockerfile` | Worker-only node: same binary with `JC_HTTP_ENABLED=0`. Deploy when job load grows — see "Scaling the api" below. |
 | `main` | `apps/main/Dockerfile` | |
 | `admin` | `apps/admin/Dockerfile` | |
 | `control` | `apps/control/Dockerfile` | |
@@ -16,7 +17,19 @@ shared project network (reachable by service name).
 | `docs` | `apps/docs/Dockerfile` | |
 | `tools` | `apps/tools/Dockerfile` | |
 
-No separate `worker` app is needed — there is no `cmd/worker` binary.
+There is no `cmd/worker` binary — the worker shares `cmd/api`, gated by env flags.
+
+### Scaling the api
+
+All-in-one (default) is fine at launch. When job load grows, split out workers:
+
+| Replica | `JC_HTTP_ENABLED` | `JC_SCHEDULER_ENABLED` |
+|---|---|---|
+| api ×N | *(set)* | `0` on all but one |
+| worker ×N | `0` | `0` |
+
+Only ONE process may run the scheduler (duplicate schedulers enqueue duplicate
+periodic tasks). Workers/HTTP scale freely — Asynq distributes tasks.
 
 ## Infra services (Coolify "Docker Image" resources)
 

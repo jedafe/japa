@@ -124,17 +124,28 @@ func run() error {
 		server.Shutdown()
 	}()
 
-	// Start listening in a goroutine so we can handle shutdown signals.
-	errChan := make(chan error, 1)
-	go func() {
-		slog.Info("HTTP server listening", "port", cfg.Port)
+	// JC_HTTP_ENABLED=0 runs the process as a worker-only node (no HTTP
+	// listener) — pair with JC_SCHEDULER_ENABLED=0 on the api replicas for a
+	// split deployment: fat worker pods for heavy jobs, thin api pods for HTTP.
+	// Default stays all-in-one for single-node deploys.
+	httpEnabled := os.Getenv("JC_HTTP_ENABLED") != "0"
 
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errChan <- fmt.Errorf("HTTP server: %w", err)
-		}
+	var errChan chan error
+	if httpEnabled {
+		// Start listening in a goroutine so we can handle shutdown signals.
+		errChan = make(chan error, 1)
+		go func() {
+			slog.Info("HTTP server listening", "port", cfg.Port)
 
-		close(errChan)
-	}()
+			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errChan <- fmt.Errorf("HTTP server: %w", err)
+			}
+
+			close(errChan)
+		}()
+	} else {
+		slog.Info("worker-only mode — HTTP listener disabled")
+	}
 
 	// Wait for SIGINT or SIGTERM to trigger graceful shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -149,12 +160,14 @@ func run() error {
 		slog.Info("shutdown signal received, draining connections")
 	}
 
-	// Give in-flight requests up to 30 seconds to complete.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	if httpEnabled {
+		// Give in-flight requests up to 30 seconds to complete.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutting down HTTP server: %w", err)
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutting down HTTP server: %w", err)
+		}
 	}
 
 	slog.Info("shutdown complete")
