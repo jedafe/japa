@@ -5999,3 +5999,52 @@ func HandleHonchoRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:honcho:retention_sweep: complete", "entries_deleted", deleted, "cutoff", cutoff)
 	return nil
 }
+
+// HandleGeoPopulateScope fans out space:auto_populate to spaces inside a
+// scope — driven from Control → Seeds. Payload: {geo_code, level?, limit?}.
+// Selects spaces in the country at the given level that still lack header
+// media, then enqueues a populate task per space (deduped by the enqueuer's
+// per-space collapse).
+func HandleGeoPopulateScope(ctx context.Context, t *asynq.Task) error {
+	var p struct {
+		GeoCode string `json:"geo_code"`
+		Level   string `json:"level"`
+		Limit   int    `json:"limit"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil || p.GeoCode == "" {
+		return fmt.Errorf("geo:populate_scope: bad payload: %w", err)
+	}
+	if dbPool == nil || taskEnqueuer == nil {
+		return nil
+	}
+	if p.Level == "" {
+		p.Level = "city"
+	}
+	if p.Limit <= 0 || p.Limit > 500 {
+		p.Limit = 200
+	}
+	rows, err := dbPool.Reader.Query(ctx,
+		`SELECT id FROM spaces
+		 WHERE geo_code = $1 AND level = $2 AND header_image_id IS NULL
+		   AND deleted_at IS NULL AND status = 'active'
+		 ORDER BY created_at LIMIT $3`, p.GeoCode, p.Level, p.Limit)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			continue
+		}
+		payload, _ := json.Marshal(map[string]string{"version": "1", "space_id": id.String()})
+		if err := taskEnqueuer.Enqueue(TypeSpaceAutoPopulate, payload); err != nil {
+			slog.Warn("geo:populate_scope: enqueue failed", "space_id", id, "error", err)
+			continue
+		}
+		n++
+	}
+	slog.Info("geo:populate_scope complete", "geo_code", p.GeoCode, "level", p.Level, "enqueued", n)
+	return nil
+}

@@ -40,6 +40,7 @@
 		Settings,
 		DollarSign,
 		Clock,
+		Sprout,
 		Rocket,
 		KeyRound,
 		Puzzle,
@@ -203,6 +204,7 @@
 		{ href: '/ai-budget', icon: DollarSign },
 		{ href: '/ai-providers', icon: Cpu },
 		{ href: '/cron', icon: Clock },
+		{ href: '/seeds', icon: Sprout },
 		{ href: '/deployments', icon: Rocket },
 		{ href: '/currencies', icon: Coins },
 		{ href: '/intelligence', icon: BrainCircuit }
@@ -222,6 +224,7 @@
 		'/ai-budget': { label: 'nav.ai_budget', tooltip: 'nav.ai_budget_tooltip', defaultLabel: 'AI Budget', defaultTooltip: 'AI cost tracking & limits' },
 		'/ai-providers': { label: 'nav.ai_providers', tooltip: 'nav.ai_providers_tooltip', defaultLabel: 'AI Providers', defaultTooltip: 'Manage AI provider configurations' },
 		'/cron': { label: 'nav.cron', tooltip: 'nav.cron_tooltip', defaultLabel: 'Cron Jobs', defaultTooltip: 'Scheduled job management' },
+		'/seeds': { label: 'nav.seeds', tooltip: 'nav.seeds_tooltip', defaultLabel: 'Seeds', defaultTooltip: 'Seed & enrichment jobs (geo, wiki, attractions)' },
 		'/deployments': { label: 'nav.deployments', tooltip: 'nav.deployments_tooltip', defaultLabel: 'Deployments', defaultTooltip: 'Deployment version history' },
 		'/oauth-clients': { label: 'nav.oauth_clients', tooltip: 'nav.oauth_clients_tooltip', defaultLabel: 'OAuth Clients', defaultTooltip: 'OAuth provider client management' },
 		'/extensions': { label: 'nav.extensions', tooltip: 'nav.extensions_tooltip', defaultLabel: 'Extensions', defaultTooltip: 'Platform extensions and integrations' },

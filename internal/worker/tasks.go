@@ -147,6 +147,7 @@ const (
 	TypeScheduledPublishSweep   = "content:publish_sweep"
 	TypeBroadcastDispatch       = "broadcast:dispatch_scheduled" // §35 scheduled admin broadcasts
 	TypeHonchoRetentionSweep    = "honcho:retention_sweep"       // daily Honcho memory retention
+	TypeGeoPopulateScope        = "geo:populate_scope"           // Control → Seeds fan-out
 	TypeGdprRetentionSweep      = "gdpr:retention_sweep"
 	TypeJceRefreshStale         = "jce:refresh_stale"
 	TypeSubscriptionExpirySweep = "subscription:expiry_sweep" // §17 webhook-miss safety net
@@ -297,6 +298,7 @@ var handlerRegistry = []struct {
 	{TypeScheduledPublishSweep, HandleScheduledPublishSweep},
 	{TypeBroadcastDispatch, HandleBroadcastDispatchScheduled},
 	{TypeHonchoRetentionSweep, HandleHonchoRetentionSweep},
+	{TypeGeoPopulateScope, HandleGeoPopulateScope},
 	{TypeGdprRetentionSweep, HandleGdprRetentionSweep},
 	{TypeOnboardingReminderSweep, HandleOnboardingReminderSweep},
 	{TypeJceRefreshStale, HandleJceRefreshStale},

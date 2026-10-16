@@ -8252,6 +8252,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
 				Post("/system-settings/{key}/reset", controlHandlers.ResetSystemSetting)
 
+			// Seed / enrichment ops (Control → Seeds) — space creation +
+			// population, gated on the spaces management node.
+			r.With(rbac.RequirePermission(rbacResolver, "admin.spaces.manage")).
+				Get("/seeds", controlHandlers.ListSeedOps)
+			r.With(rbac.RequirePermission(rbacResolver, "admin.spaces.manage")).
+				Post("/seeds/enqueue", controlHandlers.EnqueueSeed)
+
 			// Infrastructure Health
 			r.Get("/health", controlHandlers.HealthCheck)
 			// Ref: japaconnect-engineering/sections/21-control-panel.md (Database Health Tooling)

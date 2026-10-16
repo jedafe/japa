@@ -499,6 +499,7 @@ var taskTypeCatalog = []struct {
 	{TypeMaintenanceCheckSLABreaches, "low", "Check ticket SLA breaches"},
 	{TypeMaintenanceUpdateGeoIPDB, "low", "Update GeoIP database"},
 	{TypeSpaceAutoPopulate, "low", "Auto-populate space content"},
+	{TypeGeoPopulateScope, "low", "Fan out auto_populate to a geo scope"},
 	{TypeWikiSeedAttractions, "low", "Bulk-seed attraction spaces from Wikidata"},
 	{TypeAnalyticsRefreshViews, "low", "Refresh analytics view counts"},
 	{TypeSecurityScan, "low", "Run security scan"},
