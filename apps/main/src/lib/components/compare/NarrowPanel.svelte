@@ -32,12 +32,11 @@
 </script>
 
 <section
-	class="rounded-[var(--radius-card)] border p-4 space-y-3"
-	style="background-color: var(--color-surface); border-color: var(--color-border)"
+	class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 	aria-label={t('jce.compare.scope.title')}
 >
 	<div class="flex items-center justify-between gap-3">
-		<h2 class="text-sm font-semibold" style="color: var(--color-text)">
+		<h2 class="text-sm font-semibold text-[var(--color-text)]">
 			{#if required && requiredStepLabel}
 				{t('jce.compare.narrow.required_prompt', 'Choose a {step} to see {label}.', {
 					step: requiredStepLabel,
@@ -49,12 +48,12 @@
 		</h2>
 		<div class="flex items-center gap-3">
 			{#if hasSelection}
-				<button type="button" onclick={onClear} class="text-xs" style="color: var(--color-muted)">
+				<button type="button" onclick={onClear} class="text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]">
 					{t('jce.common.clear')}
 				</button>
 			{/if}
 			{#if !required}
-				<button type="button" onclick={onSkip} class="text-xs" style="color: var(--color-muted)">
+				<button type="button" onclick={onSkip} class="text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]">
 					{t('jce.compare.narrow.skip')}
 				</button>
 			{/if}
@@ -68,8 +67,7 @@
 			<button
 				type="button"
 				onclick={onDone}
-				class="px-4 py-1.5 rounded-[var(--radius-button)] text-sm font-medium"
-				style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+				class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)]"
 			>
 				{t('jce.compare.narrow.done')}
 			</button>

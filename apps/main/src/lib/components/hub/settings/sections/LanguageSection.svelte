@@ -51,8 +51,9 @@
 	// API, not app data — Rule 16 safe). Falls back to the code itself.
 	const displayNames = (() => {
 		try {
-			// Use the browser's default locale for display names.
-			return new Intl.DisplayNames(undefined, { type: 'language' });
+			// Resolve in the active app locale, not the runtime default —
+			// keeps SSR and hydration producing identical labels.
+			return new Intl.DisplayNames([i18n.locale], { type: 'language' });
 		} catch {
 			return null;
 		}

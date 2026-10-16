@@ -43,6 +43,18 @@
 	let joinPending = $state(false);
 	let followPending = $state(false);
 
+	// Re-sync on client-side navigation between entities — the component
+	// persists across [slug] param changes, so without this the previous
+	// entity's join/follow state bleeds into the new page's buttons.
+	$effect(() => {
+		entityId;
+		joined = initiallyJoined;
+		requestPending = initiallyPending;
+		following = initiallyFollowing;
+		joinPending = false;
+		followPending = false;
+	});
+
 	/** POST /spaces/{slug}/join toggles membership (join ↔ leave). */
 	async function toggleJoin() {
 		if (joinPending || requestPending) return;

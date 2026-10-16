@@ -26,6 +26,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 func main() {
@@ -143,7 +144,7 @@ func main() {
 			continue
 		}
 
-		info, err := client.Enqueue(asynq.NewTask("intel:extract", payload), asynq.Queue("default"))
+		info, err := client.Enqueue(asynq.NewTask(worker.TypeIntelExtract, payload), worker.TaskOpts(worker.TypeIntelExtract)...)
 		if err != nil {
 			slog.Warn("enqueue failed", "raw_doc_id", d.id, "error", err)
 

@@ -1,3 +1,19 @@
+<script module lang="ts">
+	import { api as moduleApi } from '$lib/api/client';
+	type ApiGetResult<T> = Awaited<ReturnType<typeof moduleApi.get<T>>>;
+	// Deduplicate identical in-flight GETs across widget instances — two
+	// widgets of the same type resolving to the same URL share one request.
+	const inflightGets = new Map<string, Promise<ApiGetResult<unknown>>>();
+	function dedupedGet<T>(url: string): Promise<ApiGetResult<T>> {
+		const hit = inflightGets.get(url);
+		if (hit) return hit as Promise<ApiGetResult<T>>;
+		const p = moduleApi.get<T>(url);
+		inflightGets.set(url, p as Promise<ApiGetResult<unknown>>);
+		void p.finally(() => inflightGets.delete(url));
+		return p;
+	}
+</script>
+
 <script lang="ts">
 	// Ref: Section 59 (Sidebar Management System), ADR-066.
 	// Renders a single sidebar widget based on its widget_type. Each widget type
@@ -59,7 +75,10 @@
 	}: Props = $props();
 
 	const widgetProps = $derived(widget.props ?? {});
-	const limit = $derived(typeof widgetProps.limit === 'number' ? widgetProps.limit : 8);
+	// The widget form may store limit as a JSON string — coerce so a numeric
+	// string still applies instead of silently falling back to 8.
+	const limitNum = $derived(Number(widgetProps.limit));
+	const limit = $derived(Number.isFinite(limitNum) && limitNum > 0 ? Math.floor(limitNum) : 8);
 	const title = $derived(typeof widgetProps.title === 'string' ? widgetProps.title : '');
 	// Canonical slot name per §25/migration 000815 — 'sidebar_top' never
 	// existed in ad_slot_types, so widgets without a slot prop must fall
@@ -89,7 +108,7 @@
 			? siteLanguages.filter((l) => configuredLanguages.includes(l))
 			: siteLanguages
 	);
-	let showLanguageToggle = $derived(langList.length > 1);
+	const showLanguageToggle = $derived(langList.length > 1);
 
 	// Default language from site settings (for unprefixed URL generation).
 	// Ref: §18 — English unprefixed at root, other languages prefixed.
@@ -108,11 +127,19 @@
 
 	// Resolve locale codes to display names via Intl.DisplayNames (platform
 	// API, not app data — Rule 16 safe). Falls back to the code itself.
-	const displayNames = (() => {
-		try { return new Intl.DisplayNames(undefined, { type: 'language' }); }
-		catch { return null; }
-	})();
+	// Localize in the ACTIVE app locale — `undefined` would resolve the
+	// runtime's default locale, so SSR (server locale) and hydration
+	// (browser locale) can produce different labels → hydration mismatch.
+	let displayNames: Intl.DisplayNames | null = null;
+	let displayNamesLocale = '';
 	function localeLabel(code: string): string {
+		// Recreate when the active locale changes so labels follow a live
+		// locale switch instead of the locale captured at component init.
+		if (displayNamesLocale !== i18n.locale) {
+			displayNamesLocale = i18n.locale;
+			try { displayNames = new Intl.DisplayNames([i18n.locale], { type: 'language' }); }
+			catch { displayNames = null; }
+		}
 		return displayNames?.of(code) ?? code;
 	}
 
@@ -206,6 +233,12 @@
 	// client navigation without depending on this state directly. Includes the
 	// query string — upcoming_events reads ?dest= from search params.
 	let resolvedForUrl = $state(page.url.pathname + page.url.search);
+	// Last props fingerprint the widget's fetch resolved against — sees admin
+	// config edits that arrive with the same widget id on the same route.
+	let resolvedPropsKey = $state(untrack(() => JSON.stringify(widget.props ?? {})));
+	// Last ?dest= the upcoming_events fetch resolved against — that widget's
+	// data depends on the param alone, not the whole URL.
+	let resolvedDest = $state(page.url.searchParams.get('dest') ?? '');
 
 	// --- Learning widgets state ---
 	let featuredTrack = $state<CatalogTrack | null>(null);
@@ -523,18 +556,63 @@
 		'user_card', 'related_discussions', 'featured_content', 'upcoming_events'
 	]);
 
+	// Clear the rendered data for a path-dependent widget so the previous
+	// route's context (user card, discussions, featured list, events) never
+	// lingers while the new route resolves.
+	function clearWidgetData(wt: string) {
+		if (wt === 'user_card') userCardData = null;
+		else if (wt === 'related_discussions') relatedDiscussions = [];
+		else if (wt === 'featured_content') featuredPosts = [];
+		else if (wt === 'upcoming_events') events = [];
+	}
+
 	$effect(() => {
 		const wt = widget.widget_type;
 		const currentUrl = page.url.pathname + page.url.search;
+		const currentDest = page.url.searchParams.get('dest') ?? '';
 		if (untrack(() => resolvedForUrl) !== currentUrl) {
 			resolvedForUrl = currentUrl;
 			if (PATH_DEPENDENT_WIDGETS.has(wt)) {
+				// upcoming_events only reads the ?dest= param — skip the refetch
+				// when unrelated path/search changes happen.
+				if (wt !== 'upcoming_events' || untrack(() => resolvedDest) !== currentDest) {
+					if (wt === 'upcoming_events') resolvedDest = currentDest;
+					dataLoaded = { ...dataLoaded, [wt]: false };
+					clearWidgetData(wt);
+				}
+			}
+		}
+		// Refetch when the widget's own config changes (admin edit → same
+		// widget id, new props) — dataLoaded alone would keep stale data.
+		const propsKey = JSON.stringify(widget.props ?? {});
+		if (untrack(() => resolvedPropsKey) !== propsKey) {
+			resolvedPropsKey = propsKey;
+			if (dataLoaded[wt]) {
 				dataLoaded = { ...dataLoaded, [wt]: false };
+				clearWidgetData(wt);
 			}
 		}
 		if (dataLoaded[wt] || inflight.has(wt)) return;
 		inflight.add(wt);
-		const settled = () => inflight.delete(wt);
+		// `forUrl` pins the URL this request was issued for. If a navigation
+		// lands while the fetch is in flight, resolvedForUrl has already moved
+		// on and the effect's early return prevents a new request — mark the
+		// widget unloaded (and drop the stale payload) on settle so the effect
+		// re-fires for the current route instead of keeping the previous
+		// page's data permanently.
+		const forUrl = currentUrl;
+		const forDest = page.url.searchParams.get('dest') ?? '';
+		const settled = () => {
+			inflight.delete(wt);
+			const stale = wt === 'upcoming_events'
+				? untrack(() => resolvedDest) !== forDest
+				: untrack(() => resolvedForUrl) !== forUrl;
+			if (stale && PATH_DEPENDENT_WIDGETS.has(wt)) {
+				if (wt === 'upcoming_events') resolvedDest = page.url.searchParams.get('dest') ?? '';
+				dataLoaded = { ...dataLoaded, [wt]: false };
+				clearWidgetData(wt);
+			}
+		};
 
 		async function fetchFeatured() {
 			// Locale prefixes stay in page.url.pathname (reroute only rewrites
@@ -543,7 +621,7 @@
 			const endpoint = isForum
 				? `/content?type=forum_thread&featured=1&page_size=${limit}`
 				: '/blog/featured';
-			const res = await api.get<FeaturedPost[]>(endpoint);
+			const res = await dedupedGet<FeaturedPost[]>(endpoint);
 			// /blog/featured cards carry no content_type — default it so
 			// contentHref links straight to /blog/{slug} instead of 301ing
 			// through /content/{slug}.
@@ -557,7 +635,7 @@
 			// The registry advertises an optional `level` prop — /spaces accepts
 			// a level filter (e.g. country, city) so it must be forwarded.
 			const levelFilter = typeof widgetProps.level === 'string' ? widgetProps.level.trim() : '';
-			const res = await api.get<SpaceItem[]>(`/spaces?page_size=${limit}${levelFilter ? `&level=${encodeURIComponent(levelFilter)}` : ''}`);
+			const res = await dedupedGet<SpaceItem[]>(`/spaces?page_size=${limit}${levelFilter ? `&level=${encodeURIComponent(levelFilter)}` : ''}`);
 			spaces = res.data ?? [];
 			dataLoaded = { ...dataLoaded, space_list: true };
 		}
@@ -567,19 +645,19 @@
 			// (ORDER BY created_at DESC), which is what this widget wants. The
 			// registry's optional space_id prop scopes the list to one space.
 			const spaceID = typeof widgetProps.space_id === 'string' ? widgetProps.space_id.trim() : '';
-			const res = await api.get<RecentContentItem[]>(`/content?page_size=${limit}${spaceID ? `&space_id=${encodeURIComponent(spaceID)}` : ''}`);
+			const res = await dedupedGet<RecentContentItem[]>(`/content?page_size=${limit}${spaceID ? `&space_id=${encodeURIComponent(spaceID)}` : ''}`);
 			recentContent = res.data ?? [];
 			dataLoaded = { ...dataLoaded, recent_content: true };
 		}
 		async function fetchSuggestedContent() {
 			if (!user) { dataLoaded = { ...dataLoaded, suggested_content: true }; return; }
-			const res = await api.get<RecentContentItem[]>(`/suggestions/content?limit=${limit}`);
+			const res = await dedupedGet<RecentContentItem[]>(`/suggestions/content?limit=${limit}`);
 			suggestedContent = res.data ?? [];
 			dataLoaded = { ...dataLoaded, suggested_content: true };
 		}
 		async function fetchBookmarks() {
 			if (!user) { dataLoaded = { ...dataLoaded, bookmark_folders: true }; return; }
-			const res = await api.get<BookmarkFolderItem[]>('/me/bookmark-folders');
+			const res = await dedupedGet<BookmarkFolderItem[]>('/me/bookmark-folders');
 			bookmarkFolders = res.data ?? [];
 			dataLoaded = { ...dataLoaded, bookmark_folders: true };
 		}
@@ -595,7 +673,7 @@
 				progress_ring: true
 			};
 			if (!user) { dataLoaded = loaded; return; }
-			const res = await api.get<AcademyEnrollment[]>('/me/enrollments');
+			const res = await dedupedGet<AcademyEnrollment[]>('/me/enrollments');
 			academy_enrollments = res.data ?? [];
 			dataLoaded = loaded;
 		}
@@ -607,10 +685,10 @@
 					// /academy/tracks/{slug} returns the flat TrackDetail
 					// DTO (enrolled_count, not the catalog's total_enrolled) — the
 					// render reads both so either shape works.
-					const res = await api.get<CatalogTrack>(`/academy/tracks/${encodeURIComponent(configuredSlug)}`);
+					const res = await dedupedGet<CatalogTrack>(`/academy/tracks/${encodeURIComponent(configuredSlug)}`);
 					featuredTrack = res.data ?? null;
 				} else {
-					const res = await api.get<CatalogTrack[]>('/academy/catalog?limit=1');
+					const res = await dedupedGet<CatalogTrack[]>('/academy/catalog?limit=1');
 					featuredTrack = (res.data ?? [])[0] ?? null;
 				}
 			} catch {
@@ -636,7 +714,7 @@
 			}
 			// The response uses `points`/`user_id`; map into the widget's
 			// LeaderboardUser shape (score/id).
-			const res = await api.get<Array<{
+			const res = await dedupedGet<Array<{
 				user_id: string;
 				username: string;
 				display_name?: string;
@@ -677,7 +755,7 @@
 				|| user?.primary_space?.id
 				|| '';
 			const destParam = dest ? `&dest=${encodeURIComponent(dest)}` : '';
-			const res = await api.get<CalendarEntryLite[]>(
+			const res = await dedupedGet<CalendarEntryLite[]>(
 				`/calendar?view=list&from=${encodeURIComponent(from)}${destParam}&page_size=${limit}`
 			);
 			events = (res.data ?? []).map((e) => ({
@@ -694,14 +772,14 @@
 		// trendingTags prop. Before this split both widgets showed the same
 		// list.
 		async function fetchPopularTags() {
-			const res = await api.get<PopularTagItem[]>(`/tags?sort=popular&page_size=${limit}`);
+			const res = await dedupedGet<PopularTagItem[]>(`/tags?sort=popular&page_size=${limit}`);
 			popularTags = res.data ?? [];
 			dataLoaded = { ...dataLoaded, tag_cloud: true };
 		}
 		// space_categories fetches the platform's space types (Section 05/39) —
 		// the widget links each type to the filtered /spaces directory.
 		async function fetchSpaceCategories() {
-			const res = await api.get<SpaceTypeItem[]>('/space-types');
+			const res = await dedupedGet<SpaceTypeItem[]>('/space-types');
 			spaceTypes = res.data ?? [];
 			dataLoaded = { ...dataLoaded, space_categories: true };
 		}
@@ -715,7 +793,7 @@
 				dataLoaded = { ...dataLoaded, configured_widget: true };
 				return;
 			}
-			const res = await api.get<RenderedWidgetPayload>(`/widgets/${encodeURIComponent(widgetId)}`);
+			const res = await dedupedGet<RenderedWidgetPayload>(`/widgets/${encodeURIComponent(widgetId)}`);
 			configuredWidget = res.data ?? null;
 			dataLoaded = { ...dataLoaded, configured_widget: true };
 		}
@@ -730,7 +808,7 @@
 			// rendered "No user to display" everywhere else.
 			const configured = configuredUsername();
 			if (configured) {
-				const res = await api.get<UserCardData>(`/users/${encodeURIComponent(configured)}`);
+				const res = await dedupedGet<UserCardData>(`/users/${encodeURIComponent(configured)}`);
 				userCardData = res.data ?? null;
 				dataLoaded = { ...dataLoaded, user_card: true };
 				return;
@@ -749,7 +827,7 @@
 					dataLoaded = { ...dataLoaded, user_card: true };
 					return;
 				}
-				const orgRes = await api.get<{ owner?: UserCardData }>(`/organizations/${encodeURIComponent(orgSlug)}`);
+				const orgRes = await dedupedGet<{ owner?: UserCardData }>(`/organizations/${encodeURIComponent(orgSlug)}`);
 				userCardData = orgRes.data?.owner ?? null;
 				dataLoaded = { ...dataLoaded, user_card: true };
 				return;
@@ -769,7 +847,7 @@
 						bio: profileUser.bio ?? undefined
 					};
 				} else {
-					const res = await api.get<UserCardData>(`/users/${encodeURIComponent(pathParts[1])}`);
+					const res = await dedupedGet<UserCardData>(`/users/${encodeURIComponent(pathParts[1])}`);
 					userCardData = res.data ?? null;
 				}
 				dataLoaded = { ...dataLoaded, user_card: true };
@@ -797,9 +875,9 @@
 			const profileUsername = pathParts[0] === 'u' ? pathParts[1] : null;
 			if (orgSlug) {
 				try {
-					const orgRes = await api.get<{ id: string }>(`/organizations/${orgSlug}`);
+					const orgRes = await dedupedGet<{ id: string }>(`/organizations/${orgSlug}`);
 					if (!orgRes.data?.id) { dataLoaded = { ...dataLoaded, related_discussions: true }; return; }
-					const res = await api.get<RelatedDiscussion[]>(`/organizations/${orgRes.data.id}/content`);
+					const res = await dedupedGet<RelatedDiscussion[]>(`/organizations/${orgRes.data.id}/content`);
 					relatedDiscussions = (res.data ?? [])
 						.filter((item) => (item as unknown as Record<string, unknown>).content_type === 'discussion')
 						.slice(0, limit);
@@ -825,9 +903,9 @@
 						}));
 				} else {
 					try {
-						const userRes = await api.get<{ id: string }>(`/users/${profileUsername}`);
+						const userRes = await dedupedGet<{ id: string }>(`/users/${profileUsername}`);
 						if (!userRes.data?.id) { dataLoaded = { ...dataLoaded, related_discussions: true }; return; }
-						const res = await api.get<RelatedDiscussion[]>(`/users/${userRes.data.id}/content`);
+						const res = await dedupedGet<RelatedDiscussion[]>(`/users/${userRes.data.id}/content`);
 						relatedDiscussions = (res.data ?? [])
 							.filter((item) => (item as unknown as Record<string, unknown>).content_type === 'discussion')
 							.slice(0, limit);
@@ -851,7 +929,7 @@
 						thread_comment_count?: number;
 					}
 					try {
-						const res = await api.get<LinkedDiscussion[]>(`/content/${article.id}/discussions?page_size=${limit}`);
+						const res = await dedupedGet<LinkedDiscussion[]>(`/content/${article.id}/discussions?page_size=${limit}`);
 						relatedDiscussions = (res.data ?? []).map((d) => ({
 							id: d.thread_id,
 							title: d.thread_title,
@@ -998,6 +1076,16 @@
 			sandbox="allow-same-origin"
 			srcdoc={sanitizeSidebarHtml(widgetProps.html)}
 			title={widget.label || 'Custom HTML'}
+			onload={(e) => {
+				// srcdoc + allow-same-origin → the document is same-origin
+				// readable; auto-size to content so admin HTML isn't clipped
+				// at the iframe's 150px default height.
+				try {
+					const frame = e.currentTarget as HTMLIFrameElement;
+					const doc = frame.contentDocument;
+					if (doc) frame.style.height = `${doc.documentElement.scrollHeight}px`;
+				} catch { /* safety net — keep the default height */ }
+			}}
 		></iframe>
 	{/if}
 {:else if widget.widget_type === 'recent_content'}
@@ -1005,6 +1093,14 @@
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.recent_posts', 'Recent Posts')}</h2>
 		{#if !user}
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.sign_in_to_see', 'Sign in to see recent posts')}</p>
+		{:else if !dataLoaded['recent_content']}
+			<!-- Skeleton while the client fetch resolves — the empty state must
+			     not flash before real data lands. -->
+			<div class="space-y-2">
+				<div class="jc-skeleton h-4 w-full rounded"></div>
+				<div class="jc-skeleton h-4 w-3/4 rounded"></div>
+				<div class="jc-skeleton h-4 w-1/2 rounded"></div>
+			</div>
 		{:else if recentContent.length === 0}
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_content', 'No recent posts')}</p>
 		{:else}
@@ -1022,6 +1118,12 @@
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.suggested_content', 'Suggested for you')}</h2>
 		{#if !user}
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.sign_in_for_suggestions', 'Sign in to see suggestions')}</p>
+		{:else if !dataLoaded['suggested_content']}
+			<div class="space-y-2">
+				<div class="jc-skeleton h-4 w-full rounded"></div>
+				<div class="jc-skeleton h-4 w-3/4 rounded"></div>
+				<div class="jc-skeleton h-4 w-1/2 rounded"></div>
+			</div>
 		{:else if suggestedContent.length === 0}
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_suggestions', 'No suggestions right now')}</p>
 		{:else}
@@ -1037,7 +1139,13 @@
 {:else if widget.widget_type === 'space_list'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.spaces', 'Spaces')}</h2>
-		{#if spaces.length === 0}
+		{#if !dataLoaded['space_list']}
+			<div class="space-y-2">
+				<div class="jc-skeleton h-9 w-full rounded"></div>
+				<div class="jc-skeleton h-9 w-full rounded"></div>
+				<div class="jc-skeleton h-9 w-2/3 rounded"></div>
+			</div>
+		{:else if spaces.length === 0}
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_spaces', 'No spaces available')}</p>
 		{:else}
 			<ul class="space-y-2">
@@ -1251,7 +1359,7 @@
 						<a href={safeHref(event.url) || '#'} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
 							<span class="block truncate">{event.title}</span>
 							{#if event.starts_at}
-								<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{new Date(event.starts_at).toLocaleDateString()}</span>
+								<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{new Date(event.starts_at).toLocaleDateString(i18n.locale)}</span>
 							{/if}
 						</a>
 					</li>
@@ -1266,7 +1374,12 @@
 				<Bookmark size={18} class="text-[var(--color-text-subtle)]" />
 				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.bookmarks', 'Bookmarks')}</h2>
 			</div>
-			{#if nonEmptyBookmarkFolders.length === 0}
+			{#if !dataLoaded['bookmark_folders']}
+				<div class="space-y-2">
+					<div class="jc-skeleton h-4 w-full rounded"></div>
+					<div class="jc-skeleton h-4 w-3/4 rounded"></div>
+				</div>
+			{:else if nonEmptyBookmarkFolders.length === 0}
 				<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_bookmarks', 'No bookmark folders')}</p>
 			{:else}
 				<ul class="space-y-1.5">
@@ -1290,7 +1403,15 @@
 			<UserCircle size={18} class="text-[var(--color-text-subtle)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured_user', 'Featured User')}</h2>
 		</div>
-		{#if userCardData}
+		{#if !dataLoaded['user_card']}
+			<div class="flex items-center gap-3">
+				<div class="jc-skeleton h-10 w-10 shrink-0 rounded-full"></div>
+				<div class="min-w-0 flex-1 space-y-2">
+					<div class="jc-skeleton h-4 w-2/3 rounded"></div>
+					<div class="jc-skeleton h-3 w-1/3 rounded"></div>
+				</div>
+			</div>
+		{:else if userCardData}
 			<!-- Article authors may lack a username in the DTO — render without
 			     the /u/ link rather than linking to /u/ (empty). -->
 			<svelte:element
@@ -1322,7 +1443,13 @@
 			<FolderTree size={18} class="text-[var(--color-text-subtle)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.browse_spaces', 'Browse Spaces')}</h2>
 		</div>
-		{#if spaceTypes.length > 0}
+		{#if !dataLoaded['space_categories']}
+			<div class="flex flex-wrap gap-2">
+				<div class="jc-skeleton h-6 w-16 rounded-full"></div>
+				<div class="jc-skeleton h-6 w-20 rounded-full"></div>
+				<div class="jc-skeleton h-6 w-14 rounded-full"></div>
+			</div>
+		{:else if spaceTypes.length > 0}
 			<ul class="flex flex-wrap gap-2">
 				{#each spaceTypes.slice(0, limit) as st (st.id)}
 					<li>
@@ -1361,8 +1488,10 @@
 				     its registry contract; academy_enrollments shows the full list. -->
 				<ul class="space-y-2">
 					{#each academy_enrollments.slice(0, widget.widget_type === 'continue_learning' ? 1 : limit) as enr (enr.id)}
+						{@const enrHref = safeAcademyUrl(`/tracks/${encodeURIComponent(enr.track_slug)}`)}
 						<li>
-							<a href={safeAcademyUrl(`/tracks/${encodeURIComponent(enr.track_slug)}`) || '#'} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+							<!-- academyUrl unset → render non-link rather than a dead '#'. -->
+							<svelte:element this={enrHref ? 'a' : 'div'} href={enrHref || undefined} class="block text-sm text-[var(--color-text)] {enrHref ? 'hover:text-[var(--color-primary)]' : ''}">
 								<span class="block truncate">{enr.track_title}</span>
 								{#if (enr.lessons_total ?? 0) > 0}
 									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
@@ -1371,7 +1500,7 @@
 								{:else}
 									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{Math.round(enr.progress_pct ?? 0)}%</span>
 								{/if}
-							</a>
+							</svelte:element>
 						</li>
 					{/each}
 				</ul>
@@ -1392,12 +1521,14 @@
 					<ProgressRing value={0} />
 				</div>
 				<p class="mt-2 text-xs text-[var(--color-muted)]">{t('academy.empty', 'No learning tracks yet.')}</p>
-				<a
-					href={safeAcademyUrl('/tracks') || '#'}
-					class="mt-2 inline-block rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
-				>
-					{t('academy.view_track', 'View track')}
-				</a>
+				{#if safeAcademyUrl('/tracks')}
+					<a
+						href={safeAcademyUrl('/tracks')}
+						class="mt-2 inline-block rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+					>
+						{t('academy.view_track', 'View track')}
+					</a>
+				{/if}
 			{:else}
 				{@const totalCompleted = academy_enrollments.reduce((sum, e) => sum + (e.lessons_completed ?? 0), 0)}
 				{@const totalLessons = academy_enrollments.reduce((sum, e) => sum + (e.lessons_total ?? 0), 0)}
@@ -1424,9 +1555,11 @@
 			</div>
 		{:else if featuredTrack}
 			{@const enrolledCount = featuredTrack.total_enrolled ?? (featuredTrack as unknown as { enrolled_count?: number }).enrolled_count}
-			<a
-				href={safeAcademyUrl(`/tracks/${encodeURIComponent(featuredTrack.slug)}`) || '#'}
-				class="block rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]"
+			{@const trackHref = safeAcademyUrl(`/tracks/${encodeURIComponent(featuredTrack.slug)}`)}
+			<svelte:element
+				this={trackHref ? 'a' : 'div'}
+				href={trackHref || undefined}
+				class="block rounded-[var(--radius)] p-2 {trackHref ? 'hover:bg-[var(--color-surface-subtle)]' : ''}"
 			>
 				{#if featuredTrack.thumbnail_url}
 					<img
@@ -1447,7 +1580,7 @@
 				{#if featuredTrack.description}
 					<p class="mt-2 line-clamp-2 text-xs text-[var(--color-text-subtle)]">{featuredTrack.description}</p>
 				{/if}
-			</a>
+			</svelte:element>
 		{:else}
 			<p class="text-xs text-[var(--color-muted)]">{t('academy.empty', 'No learning tracks yet.')}</p>
 		{/if}
@@ -1465,6 +1598,7 @@
 			     the type's native branch (recursive self-render) with the echoed
 			     config as props. Data fetching runs inside the delegated render. -->
 			<SidebarWidgetRenderer
+				{searchTourTarget}
 				widget={{ ...widget, widget_type: configuredWidget.widget_type, props: delegatedProps }}
 				{user}
 				{trendingTags}
@@ -1488,10 +1622,11 @@
 			{:else}
 				<ul class="space-y-2">
 					{#each configuredItems as item, i (String(item.id ?? item.slug ?? item.username ?? i))}
+						{@const itemHref = configuredItemHref(item)}
 						<li>
-							<a href={configuredItemHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+							<svelte:element this={itemHref ? 'a' : 'div'} href={itemHref || undefined} class="block truncate text-sm text-[var(--color-text)] {itemHref ? 'hover:text-[var(--color-primary)]' : ''}">
 								{(item.title ?? item.name ?? item.tag ?? item.username) as string}
-							</a>
+							</svelte:element>
 						</li>
 					{/each}
 				</ul>

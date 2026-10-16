@@ -70,77 +70,85 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	// Tool catalog + geo context. Drives the composer's category chips +
-	// per-tool toggles (empty categories → plain chat). Best-effort —
-	// gated server-side by feature.ai_agent + agent.use, so a denied
-	// request renders the composer without tool controls.
-	let capabilities: AgentCapabilities | null = null;
-	try {
-		capabilities = await apiGet<AgentCapabilities>(ctx, '/ai/agent/capabilities');
-	} catch {
-		capabilities = null;
-	}
+	// Every call below is independent, so they all fire in one parallel
+	// batch — a serial waterfall here dominated SSR time. All best-effort:
+	// a denied/failed endpoint degrades its picker or sidebar, never the
+	// page. Empty picker lists hide the selects so the backend default
+	// applies.
+	const [
+		capsRes,
+		convsRes,
+		modelsRes,
+		voicesRes,
+		projectsRes,
+		prefsRes,
+		typesRes,
+		spacesRes,
+		seriesRes,
+		statusRes,
+		visRes,
+		assessmentRes
+	] = await Promise.allSettled([
+		// Tool catalog + geo context. Drives the composer's category chips +
+		// per-tool toggles (empty categories → plain chat). Gated server-side
+		// by feature.ai_agent + agent.use — a denied request renders the
+		// composer without tool controls.
+		apiGet<AgentCapabilities>(ctx, '/ai/agent/capabilities'),
+		// Conversation list (V2 unions ai_conversations with legacy Honcho
+		// threads).
+		apiList<ConversationSummary>(ctx, '/ai/conversations'),
+		apiList<ChatModelOption>(ctx, '/ai/models?category=chat'),
+		// ?slim=1 — the {id, name} picker projection; full rows carry
+		// voice_prompt (~1.7KB each → ~2.6MB).
+		apiList<ChatVoiceOption>(ctx, '/ai/voices?slim=1&page_size=5000'),
+		// §103 AI Projects — sidebar grouping collections. page_size=100
+		// matches the ai package's parsePageSize ceiling — anything larger
+		// is silently clamped server-side. An empty list renders a flat
+		// conversation sidebar.
+		apiList<AiProject>(ctx, '/ai/projects?page_size=100'),
+		// ADR-130: user AI preferences (default mode, disabled
+		// categories/tools) seed the composer's tools popover. Defaults are
+		// chat mode with nothing disabled.
+		apiGet<AIPrefs>(ctx, '/me/ai-preferences'),
+		// Chat template panel catalogs (content types, spaces, series,
+		// status/visibility options, assessment dimensions) — the same
+		// lists the studio prompt rail loads (Rule 16).
+		apiList<ContentTypeMeta>(ctx, '/content-types'),
+		// member_only cap — SpaceSelector live-searches via /me/spaces?q=
+		// anyway; the prop only seeds initial suggestions. Uncapped this
+		// returns every platform space (~10k rows / 1.7MB for admins).
+		apiList<MeSpace>(ctx, '/me/spaces?member_only=1&page_size=50'),
+		apiList<BlogSeries>(ctx, '/series'),
+		apiGet<{ value: string; label: string }[]>(ctx, '/content/status-options'),
+		apiGet<{ value: string; label: string }[]>(ctx, '/content/visibility-options'),
+		// §71 — active assessment form; dimensions populate the Journey
+		// tab's roadmap pickers.
+		apiGet<AssessmentForm>(ctx, '/assessment')
+	]);
 
-	// Conversation list (V2 unions ai_conversations with legacy Honcho
-	// threads) + composer picker options. All best-effort: empty picker
-	// lists just hide the selects so the backend default applies.
-	let conversations: ConversationSummary[] = [];
-	let models: ChatModelOption[] = [];
-	let voices: ChatVoiceOption[] = [];
-	let projects: AiProject[] = [];
-	try {
-		conversations = (await apiList<ConversationSummary>(ctx, '/ai/conversations')).items;
-	} catch {
-		conversations = [];
-	}
-	try {
-		models = (await apiList<ChatModelOption>(ctx, '/ai/models?category=chat')).items;
-	} catch {
-		models = [];
-	}
-	try {
-		// page_size=5000 = the handler's max (parsePaginationWithMax) — the
-		// full catalog is needed so client-side tone filtering sees every
-		// voice, not just the first alphabetical page.
-		voices = (await apiList<ChatVoiceOption>(ctx, '/ai/voices?page_size=5000')).items;
-	} catch {
-		voices = [];
-	}
-	// §103 AI Projects — sidebar grouping collections. Best-effort like
-	// the rest: an empty list renders a flat conversation sidebar.
-	try {
-		// page_size=100 matches the ai package's parsePageSize ceiling —
-		// anything larger is silently clamped server-side.
-		projects = (await apiList<AiProject>(ctx, '/ai/projects?page_size=100')).items;
-	} catch {
-		projects = [];
-	}
-
-	// ADR-130: user AI preferences (default mode, disabled categories/tools)
-	// seed the composer's tools popover. Best-effort — defaults are chat mode
-	// with nothing disabled.
-	let prefs: AIPrefs | null = null;
-	try {
-		prefs = await apiGet<AIPrefs>(ctx, '/me/ai-preferences');
-	} catch {
-		prefs = null;
-	}
-
-	// Chat template panel catalogs (content types, spaces, series,
-	// status/visibility options, assessment dimensions) — the same lists
-	// the studio prompt rail loads (Rule 16). All best-effort: empty
-	// lists degrade the picker rather than the page.
-	const [typesRes, spacesRes, seriesRes, statusRes, visRes, assessmentRes] =
-		await Promise.allSettled([
-			apiList<ContentTypeMeta>(ctx, '/content-types'),
-			apiList<MeSpace>(ctx, '/me/spaces'),
-			apiList<BlogSeries>(ctx, '/series'),
-			apiGet<{ value: string; label: string }[]>(ctx, '/content/status-options'),
-			apiGet<{ value: string; label: string }[]>(ctx, '/content/visibility-options'),
-			// §71 — active assessment form; dimensions populate the Journey
-			// tab's roadmap pickers.
-			apiGet<AssessmentForm>(ctx, '/assessment')
-		]);
+	// The composer reads only capabilities.categories (chips + toggles) and
+	// geo_context — the flat tools[] catalog ships a full JSON Schema per
+	// tool (~120KB serialized) that no UI element reads, so it is dropped
+	// before the data lands in the SSR payload.
+	const capabilities: AgentCapabilities | null =
+		capsRes.status === 'fulfilled' && capsRes.value
+			? { ...capsRes.value, tools: [] }
+			: null;
+	const conversations: ConversationSummary[] =
+		convsRes.status === 'fulfilled' ? convsRes.value.items : [];
+	const models: ChatModelOption[] =
+		modelsRes.status === 'fulfilled' ? modelsRes.value.items : [];
+	// page_size=5000 = the handler's max (parsePaginationWithMax) — the full
+	// catalog is needed so client-side tone filtering sees every voice, not
+	// just the first alphabetical page. The map stays as a cheap guard so
+	// only {id, name} ever lands in the SSR payload.
+	const voices: ChatVoiceOption[] =
+		voicesRes.status === 'fulfilled'
+			? voicesRes.value.items.map((v) => ({ id: v.id, name: v.name }))
+			: [];
+	const projects: AiProject[] =
+		projectsRes.status === 'fulfilled' ? projectsRes.value.items : [];
+	const prefs: AIPrefs | null = prefsRes.status === 'fulfilled' ? prefsRes.value : null;
 
 	return {
 		chatEnabled,

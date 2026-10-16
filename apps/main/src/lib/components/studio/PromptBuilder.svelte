@@ -86,12 +86,33 @@
 		})();
 	});
 
+	// The SSR voices list ships id+name only — the full catalog with
+	// voice_prompt is ~2.6MB. The selected voice's prompt is fetched on
+	// demand from the persona.view-gated admin read route (same gate as
+	// canPersona) and cached per id so switching voices never refetches.
+	const voicePrompts = $state<Record<string, string>>({});
+	const voicePromptPending = new Set<string>();
+	$effect(() => {
+		const id = values.voice_id;
+		if (!id || id in voicePrompts || voicePromptPending.has(id)) return;
+		voicePromptPending.add(id);
+		void (async () => {
+			const res = await api.get<{ voice_prompt?: string }>(
+				`/admin/persona-voices/${encodeURIComponent(id)}`
+			);
+			voicePromptPending.delete(id);
+			voicePrompts[id] = res.data?.voice_prompt ?? '';
+		})();
+	});
+
 	const lookups = $derived<PromptLookups>({
 		contentTypeName: selectedType?.label ?? '',
 		guideCategoryName: guideCategoryLabel,
 		personaName: personas.find((p) => p.id === values.persona_id)?.profile_name ?? '',
 		voiceName: voices.find((v) => v.id === values.voice_id)?.name ?? '',
-		voicePrompt: voices.find((v) => v.id === values.voice_id)?.voice_prompt,
+		voicePrompt:
+			voices.find((v) => v.id === values.voice_id)?.voice_prompt ??
+			voicePrompts[values.voice_id],
 		spaceName,
 		categoryFields: categoryFieldGroups.flatMap((g) => g.fields)
 	});

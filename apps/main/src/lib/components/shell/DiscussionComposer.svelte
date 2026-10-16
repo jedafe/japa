@@ -98,7 +98,9 @@
 	// Fetch the user's joined spaces on mount so the space selector is
 	// populated. The sheet is client-side, so this uses the client API.
 	onMount(async () => {
-		const res = await api.get<MeSpace[]>('/me/spaces');
+		// member_only — the picker means "spaces I belong to"; without it
+		// super admins get every platform space (~10k rows / 1.7MB).
+		const res = await api.get<MeSpace[]>('/me/spaces?member_only=1&page_size=50');
 		if (!res.error && res.data) {
 			spaces = res.data;
 			spaceId = untrack(() => spaces.find((s) => s.is_primary)?.id ?? spaces[0]?.id ?? '');

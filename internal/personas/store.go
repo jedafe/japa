@@ -186,6 +186,15 @@ func (s *Store) ListPersonaVoices(ctx context.Context, limit, offset int32) ([]g
 	})
 }
 
+// ListPersonaVoiceOptions lists the slim {id, name} picker projection of
+// shared voices — the multi-KB voice_prompt payload is skipped.
+func (s *Store) ListPersonaVoiceOptions(ctx context.Context, limit, offset int32) ([]gen.ListPersonaVoiceOptionsRow, error) {
+	return s.read.ListPersonaVoiceOptions(ctx, gen.ListPersonaVoiceOptionsParams{
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+}
+
 // CountPersonaVoices counts shared voices for a platform.
 func (s *Store) CountPersonaVoices(ctx context.Context) (int64, error) {
 	return s.read.CountPersonaVoices(ctx)

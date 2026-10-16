@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -265,8 +266,11 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 		}
 		body, _ := json.Marshal(payload)
 
-		task := asynq.NewTask("email:send", body)
-		if _, err := h.AsynqClient.Enqueue(task, asynq.Queue("default"), asynq.MaxRetry(3)); err != nil {
+		// Registered defaults (Unique, 30s timeout) plus the deliberate
+		// lower retry bound for one-off test sends.
+		task := asynq.NewTask(worker.TypeEmailSend, body)
+		opts := append(worker.TaskOpts(worker.TypeEmailSend), asynq.MaxRetry(3))
+		if _, err := h.AsynqClient.Enqueue(task, opts...); err != nil {
 			slog.Error("test_template: failed to enqueue email", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to queue test email")
 

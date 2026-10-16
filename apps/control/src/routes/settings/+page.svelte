@@ -10,6 +10,7 @@
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import AchievementReactionsEditor from '$lib/components/settings/AchievementReactionsEditor.svelte';
+	import SeedOpsEditor from '$lib/components/settings/SeedOpsEditor.svelte';
 	import ComparisonDimensionHintsEditor from '$lib/components/settings/ComparisonDimensionHintsEditor.svelte';
 	import CountryMultiSelect from '$lib/components/settings/CountryMultiSelect.svelte';
 	import KeyValueEditor from '$lib/components/settings/KeyValueEditor.svelte';
@@ -870,6 +871,9 @@
 		// Comma-separated list of allowed iframe hosts is much clearer as a
 		// repeater of individual domain inputs than a single CSV text field.
 		if (setting.key === 'content.sanitization.allowed_iframe_hosts') return 'csv-repeater';
+		// control.seed_ops stores a JSON array of seed/enrichment ops — render a
+		// structured editor instead of a raw JSON textarea.
+		if (setting.key === 'control.seed_ops') return 'seed-ops-editor';
 		// comparison.auto_dimension_hints stores a JSON object of default
 		// dimensions and keyword-based hint groups. Render a structured editor
 		// instead of raw JSON text (§30, system-settings-catalog).
@@ -1192,7 +1196,8 @@
 					{#each filtered as setting (setting.key)}
 						{@const componentType = getSettingComponentType(setting)}
 						{@const dirty = isSettingDirty(setting.key)}
-						<div class="flex items-center gap-4 px-5 py-3.5 transition-colors {dirty ? 'bg-amber-500/5' : 'hover:bg-muted/30'}">
+						{@const wide = componentType === 'seed-ops-editor' || componentType === 'comparison-dimension-hints-editor'}
+						<div class="flex gap-4 px-5 py-3.5 transition-colors {wide ? 'flex-col gap-2' : 'items-center'} {dirty ? 'bg-amber-500/5' : 'hover:bg-muted/30'}">
 							<!-- Label + description -->
 							<div class="min-w-0 flex-1">
 								<div class="flex items-center gap-2">
@@ -1348,6 +1353,15 @@
 							{:else if componentType === 'achievement-reactions'}
 								<div class="w-full max-w-md">
 									<AchievementReactionsEditor
+										value={setting.value ?? '[]'}
+										disabled={isSaving}
+										onchange={(next) => updateSetting(setting.key, next)}
+									/>
+								</div>
+
+							{:else if componentType === 'seed-ops-editor'}
+								<div class="w-full max-w-2xl">
+									<SeedOpsEditor
 										value={setting.value ?? '[]'}
 										disabled={isSaving}
 										onchange={(next) => updateSetting(setting.key, next)}
@@ -1603,7 +1617,8 @@
 							{#each catSettings.slice(0, 5) as setting (setting.key)}
 								{@const componentType = getSettingComponentType(setting)}
 								{@const dirty = isSettingDirty(setting.key)}
-								<div class="flex items-center gap-4 px-5 py-3 transition-colors {dirty ? 'bg-amber-500/5' : 'hover:bg-muted/30'}">
+								{@const wide = componentType === 'seed-ops-editor' || componentType === 'comparison-dimension-hints-editor'}
+								<div class="flex gap-4 px-5 py-3 transition-colors {wide ? 'flex-col gap-2' : 'items-center'} {dirty ? 'bg-amber-500/5' : 'hover:bg-muted/30'}">
 									<div class="min-w-0 flex-1">
 										<div class="flex items-center gap-2">
 											<label for="setting-{setting.key}" class="text-foreground text-sm font-medium">

@@ -1,37 +1,31 @@
 import type { Snippet } from 'svelte';
 
 /**
- * Reactive bridge for route-specific right-sidebar widgets.
+ * ADR-058 — registry for the route-specific right-sidebar snippet.
  *
- * The (app) layout owns the AppShell and its right sidebar. Child routes
- * (e.g. /tracks/[slug], /my-learning) set a sidebar snippet here so the layout
- * can render it above the global defaults — without the layout needing to know
- * which route is active.
+ * A module-level $state object is used instead of Svelte context: during
+ * SvelteKit client-side navigations the incoming page tree can be staged
+ * under a different component context than the mounted RightSidebar, so a
+ * context-carried snippet could be written to a context object the rail
+ * never reads — leaving the sidebar stuck empty until the next mount. One
+ * shared record makes mount/unmount order the only thing that matters.
  *
- * SSR safety: the snippet is set during component initialisation (before the
- * first render), so SSR and CSR render the same sidebar content. The store is
- * cleared on unmount via the $effect cleanup in setSidebar().
- *
- * Ref: ADR-058 (right sidebar — route-aware widgets via `sidebar` slot)
+ * `owner` must be a primitive (Symbol) — $state wraps stored plain objects
+ * in proxies, so an object token would never survive an `===` comparison.
+ * An outgoing page's destroy only clears the registry while it still owns
+ * it, so the incoming page's registration wins regardless of cleanup order.
  */
-let current = $state<Snippet | null>(null);
-
-export const sidebarStore = {
-	get current(): Snippet | null {
-		return current;
-	},
-	set(snippet: Snippet | null) {
-		current = snippet;
-	}
-};
+export const routeSidebar = $state<{ owner: symbol | null; snippet: Snippet | null }>({
+	owner: null,
+	snippet: null
+});
 
 /**
- * Set the route-specific sidebar snippet for the lifetime of the calling
- * component. Clears on cleanup so navigating away restores the global widgets.
+ * Back-compat shim — the app layout reads `sidebarStore.current`.
+ * Prefer `routeSidebar` for new code.
  */
-export function setSidebar(snippet: Snippet): void {
-	sidebarStore.set(snippet);
-	$effect(() => {
-		return () => sidebarStore.set(null);
-	});
-}
+export const sidebarStore = {
+	get current(): Snippet | null {
+		return routeSidebar.snippet;
+	}
+};

@@ -35,6 +35,7 @@
 	}
 
 	let campaign = $state<AdCampaign | null>(null);
+	let loading = $state(true);
 	let impressionTracked = $state(false);
 
 	let containerEl = $state<HTMLDivElement | null>(null);
@@ -56,7 +57,7 @@
 	let sizeClass = $derived(dimensions[format]);
 
 	async function fetchAds(): Promise<void> {
-		if (!adsEnabled) return;
+		if (!adsEnabled) { loading = false; return; }
 		try {
 			const result = await api.get<AdCampaign[]>(`/ads/serve?slot=${encodeURIComponent(slot)}`);
 			const campaigns = result.data;
@@ -69,6 +70,8 @@
 			campaign = campaigns[0];
 		} catch {
 			campaign = null;
+		} finally {
+			loading = false;
 		}
 	}
 
@@ -92,11 +95,27 @@
 		api.post('/ads/events', {
 			events: [{ campaign_id: campaign.id, event_type: 'click' }]
 		});
-		window.open(campaign.target_url, '_blank', 'noopener,noreferrer');
+		// Same-origin destinations carry the attribution param so the landing
+		// page fires the conversion event (§25 — mirrors main's trackedAdUrl).
+		try {
+			const url = new URL(campaign.target_url, window.location.origin);
+			const same = url.origin === window.location.origin;
+			if (same) url.searchParams.set('jc_ad_cid', campaign.id);
+			window.open(same ? url.pathname + url.search + url.hash : campaign.target_url, '_blank', 'noopener,noreferrer');
+		} catch {
+			window.open(campaign.target_url, '_blank', 'noopener,noreferrer');
+		}
 	}
 
+	// Non-reactive fetch guard — the effect re-runs when containerEl flips
+	// null→element post-hydration, which would issue /ads/serve twice.
+	let fetchedSlot = '';
+
 	$effect(() => {
-		fetchAds();
+		if (fetchedSlot !== slot) {
+			fetchedSlot = slot;
+			void fetchAds();
+		}
 
 		const observer = new IntersectionObserver(
 			(entries) => {
@@ -124,11 +143,16 @@
 <div
 	bind:this={containerEl}
 	class="grid place-items-center overflow-hidden rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-xs text-[var(--color-muted)] {sizeClass}"
-	class:hidden={!campaign}
+	class:hidden={!loading && !campaign}
 	data-ad-slot={slot}
 	aria-label={t('ads.label', 'Advertisement')}
 >
-	{#if campaign}
+	{#if loading}
+		<!-- Reserve the slot while the serve call resolves so a served ad
+		     swaps in place instead of popping in and shifting widgets below;
+		     a no-fill collapses the box on resolve. -->
+		<div class="h-full w-full animate-pulse"></div>
+	{:else if campaign}
 		<a
 			href={campaign.target_url ?? '#'}
 			onclick={handleClick}

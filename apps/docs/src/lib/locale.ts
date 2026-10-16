@@ -1,5 +1,6 @@
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
+import { i18n } from '$lib/i18n';
 
 /**
  * Locale helpers shared by the header language menu and the sidebar
@@ -25,10 +26,15 @@ export function defaultLanguage(): string {
 }
 
 let displayNames: Intl.DisplayNames | null | undefined;
+let displayNamesLocale = '';
 export function localeLabel(code: string): string {
-	if (displayNames === undefined) {
+	// Localize in the ACTIVE app locale — `undefined` would resolve the
+	// runtime's default locale, so SSR (server locale) and hydration
+	// (browser locale) can produce different labels → hydration mismatch.
+	if (displayNames === undefined || displayNamesLocale !== i18n.locale) {
+		displayNamesLocale = i18n.locale;
 		try {
-			displayNames = new Intl.DisplayNames(undefined, { type: 'language' });
+			displayNames = new Intl.DisplayNames([i18n.locale], { type: 'language' });
 		} catch {
 			displayNames = null;
 		}

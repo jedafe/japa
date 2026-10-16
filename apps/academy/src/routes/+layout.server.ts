@@ -163,6 +163,8 @@ export const load: LayoutServerLoad = async (event) => {
 		navCollapsed: user?.ui?.nav_collapsed ?? false,
 		// Platform logo from appearance.logo_url / appearance.logo_url_dark (control panel).
 		logoUrl: (siteSettings['appearance.logo_url'] as string | undefined) ?? '',
-		logoDarkUrl: (siteSettings['appearance.logo_url_dark'] as string | undefined) ?? ''
+		logoDarkUrl: (siteSettings['appearance.logo_url_dark'] as string | undefined) ?? '',
+		// Server-render timestamp for hydration-stable time-derived output.
+		serverNow: Date.now()
 	};
 };

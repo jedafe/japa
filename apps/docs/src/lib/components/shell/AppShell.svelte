@@ -81,11 +81,10 @@
 		// Explicit slot field on the widget (from the sidebar API)
 		if (w.slot === 'topbar') return true;
 		if (w.slot === 'content') return false;
-		// Check props.slot for widgets that store slot in their props (e.g., ad_slot)
-		const propsSlot = w.props?.slot;
-		if (propsSlot === 'topbar') return true;
-		if (propsSlot === 'content' || propsSlot === 'sidebar_top' || propsSlot === 'sidebar_bottom') return false;
-		// Fallback: known topbar widget types
+		// NOTE: props.slot is the ad-slot name for ad_slot widgets (e.g.
+		// 'sidebar', 'sidebar_sticky'), not a render position — it must NOT
+		// be consulted here, or an ad slot literally named 'topbar' would
+		// render in the header. Fallback: known topbar widget types.
 		return topbarWidgetTypes.has(w.widget_type);
 	}
 	let topbarWidgets = $derived(sidebarWidgets.filter((w) => isTopbar(w)));

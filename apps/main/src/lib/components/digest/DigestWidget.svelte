@@ -2,9 +2,8 @@
 	// DigestWidget — surfaces the latest community digest on the Space home
 	// page (§84, ADR-092). Fetches /digest/latest?dest={spaceId} and renders
 	// a compact card with a link to the full digest page.
-	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { Newspaper, ChevronRight } from 'lucide-svelte';
 
@@ -39,31 +38,39 @@
 	// for the client-side fetch to resolve.
 	const loading = $derived(ssrDigest === undefined && !clientResolved);
 
-	onMount(async () => {
-		if (!enabled) {
+	// $effect keyed on spaceId — the component persists across client-side
+	// space navigation, so a mount-only fetch would show the previous
+	// space's digest (or none) on the new page. Client-only, same as onMount.
+	$effect(() => {
+		const id = spaceId;
+		clientDigest = undefined;
+		errored = false;
+		if (!enabled || ssrDigest !== undefined) {
+			// Feature off, or SSR provided the digest — no client fetch needed.
 			clientResolved = true;
 			return;
 		}
-		// SSR provided the digest; skip the client fetch.
-		if (ssrDigest !== undefined) {
-			clientResolved = true;
-			return;
-		}
-		try {
-			const res = await api.get<DigestEdition>(`/digest/latest?dest=${encodeURIComponent(spaceId)}`);
-			if (res.data) {
-				clientDigest = res.data;
-			} else if (res.error?.code === 'no_digest' || res.status === 404) {
-				// No published digest for this destination yet — not a real error.
-				clientDigest = null;
-			} else if (res.error) {
-				errored = true;
+		clientResolved = false;
+		let cancelled = false;
+		(async () => {
+			try {
+				const res = await api.get<DigestEdition>(`/digest/latest?dest=${encodeURIComponent(id)}`);
+				if (cancelled) return;
+				if (res.data) {
+					clientDigest = res.data;
+				} else if (res.error?.code === 'no_digest' || res.status === 404) {
+					// No published digest for this destination yet — not a real error.
+					clientDigest = null;
+				} else if (res.error) {
+					errored = true;
+				}
+			} catch {
+				if (!cancelled) errored = true;
+			} finally {
+				if (!cancelled) clientResolved = true;
 			}
-		} catch {
-			errored = true;
-		} finally {
-			clientResolved = true;
-		}
+		})();
+		return () => { cancelled = true; };
 	});
 </script>
 
@@ -97,7 +104,7 @@
 				? t('digest.cadence_weekly', 'Weekly')
 				: t('digest.cadence_monthly', 'Monthly')}
 			{#if digest.published_at}
-				· {new Date(digest.published_at).toLocaleDateString()}
+				· {new Date(digest.published_at).toLocaleDateString(i18n.locale)}
 			{/if}
 		</p>
 	</a>

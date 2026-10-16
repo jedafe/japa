@@ -79,6 +79,14 @@ func (noopWikiSeedAttractionsProcessor) SeedAttractions(_ context.Context, _ str
 	return nil
 }
 
+// noopWikiFactsProcessor is a no-op WikiFactsProcessor.
+type noopWikiFactsProcessor struct{}
+
+func (noopWikiFactsProcessor) PopulateWikiFacts(_ context.Context, spaceID string, _, _ bool) error {
+	slog.Debug("worker: noop wiki facts processor", "space_id", spaceID)
+	return nil
+}
+
 // RegisterNoopProcessors registers no-op implementations for every
 // processor interface that hasn't already been registered. Call this
 // at startup after all real processors have been registered, so
@@ -114,6 +122,10 @@ func RegisterNoopProcessors() {
 
 	if wikiSeedAttractionsProcessor == nil {
 		RegisterWikiSeedAttractionsProcessor(noopWikiSeedAttractionsProcessor{})
+	}
+
+	if wikiFactsProcessor == nil {
+		RegisterWikiFactsProcessor(noopWikiFactsProcessor{})
 	}
 
 	if docsPageGenerator == nil {

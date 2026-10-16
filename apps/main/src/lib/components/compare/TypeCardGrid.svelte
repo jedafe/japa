@@ -18,24 +18,22 @@
 		<button
 			type="button"
 			onclick={() => onSelect(cmpType)}
-			class="flex items-start gap-3 rounded-[var(--radius-card)] border p-4 text-left transition-colors hover:border-[var(--color-text)]"
-			style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-text)"
+			class="flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
 			<span
-				class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-button)]"
-				style="background-color: var(--color-bg); color: var(--color-muted)"
+				class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)]"
 			>
 				<TypeIcon size={20} />
 			</span>
 			<span class="min-w-0 flex-1">
-				<span class="block font-medium" style="color: var(--color-text)">{cmpType.name}</span>
+				<span class="block font-medium text-[var(--color-text)]">{cmpType.name}</span>
 				{#if cmpType.description}
-					<span class="mt-0.5 block text-sm line-clamp-2" style="color: var(--color-muted)">
+					<span class="mt-0.5 line-clamp-2 block text-sm text-[var(--color-muted)]">
 						{cmpType.description}
 					</span>
 				{/if}
 				{#if cmpType.item_count}
-					<span class="mt-1 block text-xs" style="color: var(--color-muted)">
+					<span class="mt-1 block text-xs text-[var(--color-muted)]">
 						{t('jce.compare.landing.type_items', '{n} items', { n: String(cmpType.item_count) })}
 					</span>
 				{/if}

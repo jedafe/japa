@@ -59,16 +59,15 @@
 		</button>
 		{#if expanded}
 			<div
-				class="min-w-[16rem] max-w-sm rounded-[var(--radius-card)] border p-3 text-xs"
-				style="background-color: var(--color-surface); border-color: var(--color-border)"
+				class="min-w-[16rem] max-w-sm rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs"
 			>
-				<p class="mb-2 font-medium" style="color: var(--color-text)">
+				<p class="mb-2 font-medium text-[var(--color-text)]">
 					{t('jce.freshness.cells', 'Per-cell freshness')}
 				</p>
 				<div class="max-h-48 space-y-2 overflow-y-auto">
 					{#each summary.by_item as item (item.item_id)}
 						<div class="space-y-1">
-							<div class="font-medium" style="color: var(--color-text)">{item.item_title}</div>
+							<div class="font-medium text-[var(--color-text)]">{item.item_title}</div>
 							<div class="flex flex-wrap gap-1">
 								{#each item.cells as c (c.dimension_id)}
 									<Self cell={c} />
@@ -81,5 +80,5 @@
 		{/if}
 	</div>
 {:else}
-	<span class="text-xs" style="color: var(--color-muted)">—</span>
+	<span class="text-xs text-[var(--color-muted)]">—</span>
 {/if}

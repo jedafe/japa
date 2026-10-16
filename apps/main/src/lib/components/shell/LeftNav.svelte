@@ -3,9 +3,9 @@
 	import { page } from '$app/state';
 	import { Menu as UiMenu, MenuItem as UiMenuItem, MenuSeparator as UiMenuSeparator } from '$lib/components/ui';
 	import {
-		PanelLeftClose,
 		PanelLeftOpen,
 		PenSquare,
+		Pin,
 		Hash,
 		ChevronsUpDown,
 		ExternalLink
@@ -35,10 +35,14 @@
 		/** Render the brand row at the top of the nav. Mounts that already
 		 *  carry the logo elsewhere can pass showBrand={false}. */
 		showBrand?: boolean;
+		/** Whether the expanded state is pinned (persisted). False on
+		 *  transient expansions (hover peek/expand) — the toggle shows an
+		 *  outline pin that pins the nav open on click. */
+		pinned?: boolean;
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', features = {}, showBrand = true, onToggle }: Props = $props();
+	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', features = {}, showBrand = true, pinned = true, onToggle }: Props = $props();
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
@@ -174,16 +178,21 @@
 				</a>
 			{/if}
 			{#if !collapsed}
+				<!-- Pin state styling: filled primary = pinned open; outline
+				     muted = transient (hover) expansion, click to pin. -->
 				<button
 					type="button"
 					onclick={onToggle}
 					class={clsx(
-						'grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]',
+						'grid h-8 w-8 place-items-center rounded-[var(--radius)] transition-colors hover:bg-[var(--color-surface-subtle)]',
+						pinned ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]',
 						showBrand && 'ml-auto'
 					)}
-					aria-label={t('nav.collapse')}
+					aria-label={pinned ? t('nav.collapse') : t('nav.pin', 'Pin navigation open')}
+					aria-pressed={pinned}
+					title={pinned ? t('nav.collapse') : t('nav.pin', 'Pin navigation open')}
 				>
-					<PanelLeftClose size={18} />
+					<Pin size={18} fill={pinned ? 'currentColor' : 'none'} />
 				</button>
 			{/if}
 		</div>

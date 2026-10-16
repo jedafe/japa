@@ -16,7 +16,7 @@
 	import AiQuickPanel from '$lib/components/compare/AiQuickPanel.svelte';
 	import TypeCardGrid from '$lib/components/compare/TypeCardGrid.svelte';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
-	import { ListPageBar, PaginationControls, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { EmptyState, ListPageBar, PaginationControls, UrlTabs, type IconComponent, type UrlTab } from '$lib/components/ui';
 	import { Popover } from 'bits-ui';
 	import {
 		missingRequiredScope,
@@ -701,7 +701,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="max-w-6xl mx-auto p-4 space-y-6" style="--page-gutter: 0px">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('jce.compare.heading')}</h1>
 
 	{#if user && (!selectedType || mine)}
@@ -715,49 +715,46 @@
 		</ListPageBar>
 	{/if}
 
+	<div class="mx-auto w-full max-w-3xl space-y-6 p-4">
 	{#if error}
-		<div class="rounded-[var(--radius-button)] p-4 text-sm" role="alert" style="background-color: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2)">
+		<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
 			{t(error, undefined, errorParams)}
-		</div>
+		</p>
 	{/if}
 
 	{#if mine}
 		<div class="space-y-4">
 			{#if myComparisons.length === 0}
-				<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">
-					<p style="color: var(--color-muted)">{t('jce.compare.empty_mine_body')}</p>
+				<EmptyState icon={GitCompare} title={t('jce.compare.empty_mine_body')}>
 					<button
 						type="button"
 						onclick={() => setTab(false)}
-						class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-button)] text-sm font-medium"
-						style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+						class="mt-1 inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
 						<ArrowRight size={16} /> {t('jce.compare.empty_create_one')}
 					</button>
-				</div>
+				</EmptyState>
 			{:else}
 				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 					{#each myComparisons as item (item.id)}
 						<article
-							class="rounded-[var(--radius-card)] border p-4 space-y-3"
-							style="background-color: var(--color-surface); border-color: var(--color-border)"
+							class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 						>
 							<div>
-								<a href="/compare/{item.slug}" class="block font-semibold" style="color: var(--color-text)">{item.title}</a>
-								<div class="flex flex-wrap items-center gap-2 text-xs mt-2" style="color: var(--color-muted)">
+								<a href="/compare/{item.slug}" class="block font-semibold text-[var(--color-text)]">{item.title}</a>
+								<div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
 									{#if item.type_name}
-										<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{item.type_name}</span>
+										<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.type_name}</span>
 									{/if}
-									<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{item.depth}</span>
+									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.depth}</span>
 								</div>
-								<p class="text-xs mt-1" style="color: var(--color-muted)">{formatDate(item.created_at)}</p>
+								<p class="mt-1 text-xs text-[var(--color-muted)]">{formatDate(item.created_at)}</p>
 							</div>
 
-							<div class="flex flex-wrap items-center gap-2 pt-3 border-t" style="border-color: var(--color-border)">
+							<div class="flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
 								<a
 									href="/compare/{item.slug}"
-									class="inline-flex items-center gap-1 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium"
-									style="background-color: var(--color-bg); color: var(--color-text)"
+									class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)]"
 								>
 									<ExternalLink size={12} /> {t('jce.common.open')}
 								</a>
@@ -765,8 +762,7 @@
 									type="button"
 									disabled={promoting === item.id}
 									onclick={() => promote(item.id)}
-									class="inline-flex items-center gap-1 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium disabled:opacity-50"
-									style="background-color: var(--color-bg); color: var(--color-text)"
+									class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
 								>
 									<Sparkles size={12} /> {promoting === item.id ? t('jce.common.promoting') : t('jce.common.promote')}
 								</button>
@@ -774,8 +770,7 @@
 									type="button"
 									disabled={deleting === item.id}
 									onclick={() => removeComparison(item.id)}
-									class="inline-flex items-center gap-1 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium disabled:opacity-50"
-									style="background-color: rgba(239,68,68,0.1); color: #ef4444"
+									class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:opacity-50"
 								>
 									<Trash2 size={12} /> {deleting === item.id ? t('jce.common.deleting') : t('jce.common.delete')}
 								</button>
@@ -788,7 +783,7 @@
 	{:else if !selectedType}
 		<!-- Landing: comparison-type cards + popular comparisons strip -->
 		<section class="space-y-3">
-			<h2 class="text-sm font-semibold" style="color: var(--color-text)">
+			<h2 class="text-sm font-semibold text-[var(--color-text)]">
 				{t('jce.compare.choose_type')}
 			</h2>
 			<TypeCardGrid {types} iconFor={(t2) => typeIcon(t2)} onSelect={selectType} />
@@ -797,10 +792,10 @@
 		{#if popularComparisons.length > 0}
 			<section class="space-y-3">
 				<div class="flex items-center justify-between">
-					<h2 class="text-sm font-semibold" style="color: var(--color-text)">
+					<h2 class="text-sm font-semibold text-[var(--color-text)]">
 						{t('jce.compare.landing.popular')}
 					</h2>
-					<a href="/comparisons" class="text-xs" style="color: var(--color-muted)">
+					<a href="/comparisons" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]">
 						{t('jce.compare.landing.see_all')}
 					</a>
 				</div>
@@ -808,14 +803,12 @@
 					{#each popularComparisons as item (item.id)}
 						<a
 							href="/comparisons/{item.slug}"
-							class="min-w-0 rounded-[var(--radius-card)] border p-4 transition-colors hover:border-[var(--color-text)]"
-							style="background-color: var(--color-surface); border-color: var(--color-border)"
+							class="min-w-0 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
-							<p class="font-medium truncate" style="color: var(--color-text)">{item.title}</p>
+							<p class="truncate font-medium text-[var(--color-text)]">{item.title}</p>
 							{#if item.type_name}
 								<span
-									class="mt-2 inline-block rounded px-2 py-0.5 text-xs"
-									style="background-color: var(--color-bg); color: var(--color-muted)"
+									class="mt-2 inline-block rounded bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]"
 								>{item.type_name}</span>
 							{/if}
 						</a>
@@ -856,18 +849,17 @@
 		<!-- Unified filter row: search + source switch + sort/display popover -->
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
 			<div class="relative w-full sm:flex-1">
-				<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2" style="color: var(--color-muted)" />
+				<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 				<input
 					type="text"
 					value={query}
 					oninput={(e) => setSearch(e.currentTarget.value)}
 					placeholder={t('jce.compare.search_placeholder', 'Search {label}...', { label: sourcePlural(source) })}
-					class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] pl-9 pr-4 py-2 text-sm outline-none"
-					style="border-color: var(--color-border); color: var(--color-text)"
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-4 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 			</div>
 
-			<div class="flex flex-wrap gap-2 items-center">
+			<div class="flex flex-wrap items-center gap-2">
 				{#if itemRefTypes.length > 1}
 					<JceSelect
 						options={refTypeOptions}
@@ -879,29 +871,27 @@
 
 				<Popover.Root>
 					<Popover.Trigger
-						class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] border px-3 py-2 text-sm font-medium"
-						style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-text)"
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
 						{t('jce.compare.filters.sort_display')}
 					</Popover.Trigger>
 					<Popover.Portal>
 						<Popover.Content
-							class="z-50 w-56 space-y-3 rounded-[var(--radius-card)] border p-3"
-							style="background-color: var(--color-surface); border-color: var(--color-border)"
+							class="z-50 w-56 space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
 							sideOffset={6}
 						>
 							<div class="space-y-1.5">
-								<span class="text-xs font-medium" style="color: var(--color-muted)">{t('jce.comparisons.sort_placeholder')}</span>
+								<span class="text-xs font-medium text-[var(--color-muted)]">{t('jce.comparisons.sort_placeholder')}</span>
 								<JceSelect options={sortOptions} value={sortBy} onchange={(v) => setSort(v)} class="w-full" />
 							</div>
 							{#if isNestedSource && allowNestedComparisons && nestedTypeOptions.length > 1}
 								<div class="space-y-1.5">
-									<span class="text-xs font-medium" style="color: var(--color-muted)">{t('jce.compare.sources.comparison.label')}</span>
+									<span class="text-xs font-medium text-[var(--color-muted)]">{t('jce.compare.sources.comparison.label')}</span>
 									<JceSelect options={nestedTypeOptions} value={nestedType} onchange={(v) => setNestedType(v)} class="w-full" />
 								</div>
 							{/if}
 							<div class="space-y-1.5">
-								<span class="text-xs font-medium" style="color: var(--color-muted)">{t('jce.common.per_page')}</span>
+								<span class="text-xs font-medium text-[var(--color-muted)]">{t('jce.common.per_page')}</span>
 								<JceSelect options={pageSizeSelectOptions} value={String(pageSize)} onchange={(v) => setPageSize(parseInt(v, 10))} class="w-full" />
 							</div>
 						</Popover.Content>
@@ -911,7 +901,7 @@
 		</div>
 
 		<!-- Results count -->
-		<p class="text-sm" style="color: var(--color-muted)">
+		<p class="text-sm text-[var(--color-muted)]">
 			{t('jce.compare.available_count', '{count} {label} available', {
 				count: String(itemsTotal ?? pagedItems.length),
 				label: sourcePlural(source)
@@ -920,54 +910,48 @@
 
 		<!-- Card grid -->
 		{#if requiredScopeMissing}
-			<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">
-				<Icon size={40} class="mx-auto mb-3" style="color: var(--color-muted)" />
-				<p style="color: var(--color-muted)">
-					{t('jce.compare.narrow.required_prompt', undefined, {
-						step: missingScope ? sourceLabel(missingScope) : '',
-						label: sourcePlural(source)
-					})}
-				</p>
-			</div>
+			<EmptyState
+				icon={Icon as unknown as IconComponent}
+				title={t('jce.compare.narrow.required_prompt', undefined, {
+					step: missingScope ? sourceLabel(missingScope) : '',
+					label: sourcePlural(source)
+				})}
+			/>
 		{:else if pagedItems.length === 0}
-			<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">
-				<Icon size={40} class="mx-auto mb-3" style="color: var(--color-muted)" />
-				<p style="color: var(--color-muted)">
-					{t('jce.compare.no_match', 'No {label} match your search.', { label: sourcePlural(source) })}
-				</p>
-			</div>
+			<EmptyState
+				icon={Icon as unknown as IconComponent}
+				title={t('jce.compare.no_match', 'No {label} match your search.', { label: sourcePlural(source) })}
+			/>
 		{:else}
-			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				{#each pagedItems as item (item.id)}
 					{@const comparisonSlug = (item.metadata?.slug as string) ?? ''}
 					{#if source === 'comparison'}
 						<a
 							href="/comparisons/{comparisonSlug || item.id}"
-							class="rounded-[var(--radius-card)] border p-4 text-left transition-colors flex flex-col gap-3 hover:border-[var(--color-text)]"
-							style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-text)"
+							class="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<div class="flex items-start justify-between gap-3">
 								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-button)]"
-									style="background-color: var(--color-bg); color: var(--color-muted)"
+									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)]"
 								>
 									<Icon size={20} />
 								</span>
-								<span class="inline-flex items-center gap-1 text-xs font-medium" style="color: var(--color-text)">
+								<span class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-text)]">
 									{t('jce.common.view')}
 									<ArrowRight size={14} />
 								</span>
 							</div>
 
 							<div class="min-w-0 flex-1">
-								<p class="font-medium truncate" style="color: var(--color-text)">{item.title}</p>
+								<p class="truncate font-medium text-[var(--color-text)]">{item.title}</p>
 								{#if item.description}
-									<p class="text-sm line-clamp-2 mt-1" style="color: var(--color-muted)">{item.description}</p>
+									<p class="mt-1 line-clamp-2 text-sm text-[var(--color-muted)]">{item.description}</p>
 								{/if}
 								{#if getMetaChips(item).length > 0}
-									<div class="flex flex-wrap gap-2 mt-2 text-xs" style="color: var(--color-muted)">
+									<div class="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
 										{#each getMetaChips(item) as chip (chip)}
-											<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{chip}</span>
+											<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{chip}</span>
 										{/each}
 									</div>
 								{/if}
@@ -980,35 +964,33 @@
 							type="button"
 							onclick={() => toggleItem(item)}
 							disabled={!selected && !canSelect}
-							class="rounded-[var(--radius-card)] border p-4 text-left transition-colors flex flex-col gap-3 disabled:opacity-40"
-							style="border-color: {selected ? 'var(--color-text)' : 'var(--color-border)'}; background-color: {selected ? 'var(--color-bg)' : 'var(--color-surface)'}; color: var(--color-text)"
+							class="flex flex-col gap-3 rounded-[var(--radius-card)] border p-4 text-left text-[var(--color-text)] transition-colors disabled:opacity-40 {selected ? 'border-[var(--color-text)] bg-[var(--color-surface-subtle)]' : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'}"
 							aria-pressed={selected}
 						>
 							<div class="flex items-start justify-between gap-3">
 								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-button)]"
-									style="background-color: {selected ? 'var(--color-surface)' : 'var(--color-bg)'}; color: var(--color-muted)"
+									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] {selected ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-surface-subtle)]'}"
 								>
 									{#if selected}
-										<Check size={20} style="color: var(--color-text)" />
+										<Check size={20} class="text-[var(--color-text)]" />
 									{:else}
 										<Icon size={20} />
 									{/if}
 								</span>
 								{#if selected}
-									<span class="text-xs font-medium" style="color: var(--color-text)">{t('jce.compare.selected')}</span>
+									<span class="text-xs font-medium text-[var(--color-text)]">{t('jce.compare.selected')}</span>
 								{/if}
 							</div>
 
 							<div class="min-w-0 flex-1">
-								<p class="font-medium truncate" style="color: var(--color-text)">{item.title}</p>
+								<p class="truncate font-medium text-[var(--color-text)]">{item.title}</p>
 								{#if item.description}
-									<p class="text-sm line-clamp-2 mt-1" style="color: var(--color-muted)">{item.description}</p>
+									<p class="mt-1 line-clamp-2 text-sm text-[var(--color-muted)]">{item.description}</p>
 								{/if}
 								{#if getMetaChips(item).length > 0}
-									<div class="flex flex-wrap gap-2 mt-2 text-xs" style="color: var(--color-muted)">
+									<div class="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
 										{#each getMetaChips(item) as chip (chip)}
-											<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{chip}</span>
+											<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{chip}</span>
 										{/each}
 									</div>
 								{/if}
@@ -1026,7 +1008,7 @@
 
 		<!-- Sticky zone: AI quick panel + compare tray (hidden in nested browse mode) -->
 		{#if !isNestedSource}
-			<div class="sticky bottom-20 z-40 -mx-4 space-y-2 sm:bottom-0" style="background-color: var(--color-bg)">
+			<div class="sticky bottom-20 z-40 -mx-4 space-y-2 bg-[var(--color-bg)] sm:bottom-0">
 				{#if aiQuickOpen && aiQuickEnabled}
 					<div class="px-4">
 						<AiQuickPanel
@@ -1056,4 +1038,5 @@
 			</div>
 		{/if}
 	{/if}
+	</div>
 </div>

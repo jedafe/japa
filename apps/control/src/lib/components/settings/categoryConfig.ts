@@ -56,6 +56,7 @@ export const categoryIcons: Record<string, typeof Settings> = {
     linkpreview: Sliders,
     content: Sliders,
     onboarding: FolderOpen,
+    control: Wrench,
     // V2 categories
     rag: Brain,
     studio: Wand,
@@ -125,6 +126,7 @@ export const categoryNames: Record<string, string> = {
     linkpreview: 'Link Preview',
     content: 'Content',
     onboarding: 'Onboarding',
+    control: 'Seed Control',
     // V2 categories
     rag: 'RAG / JapaBot Knowledge',
     studio: 'AI Content Studio',

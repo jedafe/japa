@@ -5822,6 +5822,42 @@ func HandleWikiSeedAttractions(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// HandleWikiPopulateFacts enriches a space's wiki page custom fields with
+// Wikidata general-info facts (§11 task catalog). Delegates to the registered
+// WikiFactsProcessor (spaces.ProcessorAdapter).
+func HandleWikiPopulateFacts(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:wiki:populate_facts")
+
+	if wikiFactsProcessor == nil {
+		slog.Warn("task:wiki:populate_facts: no facts processor registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		SpaceID   string `json:"space_id"`
+		DryRun    bool   `json:"dry_run"`
+		Overwrite bool   `json:"overwrite"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:wiki:populate_facts: invalid payload", "error", err)
+		return err
+	}
+
+	if payload.SpaceID == "" {
+		return errors.New("wiki:populate_facts: space_id is required")
+	}
+
+	if err := wikiFactsProcessor.PopulateWikiFacts(ctx, payload.SpaceID, payload.DryRun, payload.Overwrite); err != nil {
+		slog.Error("task:wiki:populate_facts: failed", "space_id", payload.SpaceID, "error", err)
+		return err
+	}
+
+	slog.Info("task:wiki:populate_facts: completed", "space_id", payload.SpaceID)
+
+	return nil
+}
+
 // HandleWikiFieldsPropagate busts JCE comparison caches for one entity after a
 // wiki fields/mixed revision containing value-affecting ops (set_value,
 // upsert_field) is approved (§80 Community Field Ops, §30 Sub-spec 5).

@@ -5,7 +5,7 @@
 	// Renders only when the achievement feature is enabled and the space
 	// has at least one achievement — empty state is hidden to avoid
 	// cluttering the sidebar.
-	import { onMount, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
@@ -37,19 +37,31 @@
 	// instead of generating a guaranteed 404 (same pattern as DigestWidget).
 	const enabled = $derived(!!page.data.features?.['achievement.enabled']);
 
-	onMount(async () => {
+	// $effect keyed on spaceSlug — the component persists across client-side
+	// space navigation, so without re-running (and clearing the previous
+	// space's client-fetched rows) the last space's achievements would bleed
+	// into the new page. $effect only runs client-side, same as onMount.
+	$effect(() => {
+		const slug = spaceSlug;
+		clientAchievements = [];
+		loadError = false;
 		if (!enabled || (initialAchievements ?? []).length > 0) {
 			loading = false;
 			return;
 		}
-		const res = await api.get<Achievement[]>(`/spaces/${spaceSlug}/achievements?limit=5`);
-		if (res.error) {
-			// 404 means the feature is disabled — hide the widget silently.
-			if (res.error.status !== 404) loadError = true;
-		} else if (res.data) {
-			clientAchievements = res.data;
-		}
-		loading = false;
+		loading = true;
+		let cancelled = false;
+		void api.get<Achievement[]>(`/spaces/${slug}/achievements?limit=5`).then((res) => {
+			if (cancelled) return;
+			if (res.error) {
+				// 404 means the feature is disabled — hide the widget silently.
+				if (res.error.status !== 404) loadError = true;
+			} else if (res.data) {
+				clientAchievements = res.data;
+			}
+			loading = false;
+		});
+		return () => { cancelled = true; };
 	});
 
 	const milestoneLabel = (m?: string) => {

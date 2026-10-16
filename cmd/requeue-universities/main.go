@@ -16,6 +16,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 func main() {
@@ -95,15 +96,19 @@ func main() {
 			continue
 		}
 
+		// Payload shape matches the canonical space:auto_populate contract
+		// (version marker + space_id); TaskOpts restores the registered
+		// defaults (Unique dedup, 2m timeout, 10 retries) instead of the
+		// ad-hoc 25-retry/60s opts that let rate-limited tasks cycle far
+		// longer than designed.
 		payload, _ := json.Marshal(map[string]string{
+			"version":  "1",
 			"space_id": spaceID,
 		})
 
 		_, err := client.Enqueue(
-			asynq.NewTask("space:auto_populate", payload),
-			asynq.Queue("low"),
-			asynq.MaxRetry(25),
-			asynq.Timeout(60*1000*1000*1000), // 60s
+			asynq.NewTask(worker.TypeSpaceAutoPopulate, payload),
+			worker.TaskOpts(worker.TypeSpaceAutoPopulate)...,
 		)
 		if err != nil {
 			log.Printf("enqueue error for %s: %v", spaceID, err)

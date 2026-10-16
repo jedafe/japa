@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Search, Eye, MessageCircle, Share2, Plus, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { Search, Eye, MessageCircle, Share2, Plus, GitCompare } from 'lucide-svelte';
 	import { i18n, t } from '$lib/i18n';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
+	import { EmptyState, ListPageBar, PaginationControls, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -160,10 +160,10 @@
 	{/if}
 </svelte:head>
 
-<div class="max-w-6xl mx-auto p-4 space-y-6" style="--page-gutter: 0px">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('jce.comparisons.heading')}</h1>
 
-	<!-- Tab + filter bar: ListPageBar pattern, same as /guides -->
+	<!-- Tab + filter bar: ListPageBar pattern, same as /blog, /guides -->
 	<ListPageBar>
 		{#if user}
 			<UrlTabs
@@ -172,6 +172,10 @@
 				onValueChange={(value) => setTab(value === 'mine')}
 				class="!border-b-0 !bg-transparent"
 			/>
+		{:else}
+			<span class="flex items-center px-4 text-sm font-semibold text-[var(--color-text)]" style="min-height: var(--nav-height)">
+				{t('jce.comparisons.heading')}
+			</span>
 		{/if}
 		{#snippet actions()}
 			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="comparisons-filter-panel" />
@@ -183,127 +187,99 @@
 		{/snippet}
 	</ListPageBar>
 
-	{#if loadError}
-		<div class="rounded-[var(--radius-button)] p-4 text-sm" role="alert" style="background-color: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2)">
-			{t(loadError, undefined, loadErrorParams)}
-		</div>
-	{/if}
-
-	<div class="relative">
-		<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2" style="color: var(--color-muted)" />
-		<input
-			type="text"
-			bind:value={query}
-			oninput={onSearchInput}
-			placeholder={t('jce.comparisons.search_placeholder')}
-			class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] pl-9 pr-4 py-2 text-sm outline-none focus:border-[var(--color-text)]"
-			style="border-color: var(--color-border); color: var(--color-text)"
-		/>
-	</div>
-
-	{#if showFilters}
-		<div
-			id="comparisons-filter-panel"
-			class="grid gap-3 rounded-[var(--radius-card)] border p-3 sm:grid-cols-[auto_auto]"
-			style="border-color: var(--color-border); background-color: var(--color-surface)"
-		>
-			<JceSelect
-				options={sortOptions}
-				value={filters.sort || sortValues[0] || 'created_at'}
-				onchange={(value) => setSort(value)}
-				placeholder={t('jce.comparisons.sort_placeholder', 'Sort by')}
-			/>
-
-			<JceSelect
-				options={typeSelectOptions}
-				value={filters.filter_type || ''}
-				onchange={(value) => setFilterType(value)}
-			/>
-		</div>
-	{/if}
-
-	{#if items.length === 0}
-		<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">
-			<p style="color: var(--color-muted)">
-				{isMine ? t('jce.comparisons.empty_mine') : t('jce.comparisons.empty_public')}
+	<div class="mx-auto w-full max-w-3xl space-y-4 p-4">
+		{#if loadError}
+			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+				{t(loadError, undefined, loadErrorParams)}
 			</p>
-			{#if isMine}
-				<a href="/create?type=comparison" class="mt-4 inline-block text-sm underline" style="color: var(--color-text)">{t('jce.comparisons.create_detailed')}</a>
-			{:else}
-				<a href="/compare" class="mt-4 inline-block text-sm underline" style="color: var(--color-text)">{t('jce.comparisons.create_one')}</a>
-			{/if}
-		</div>
-	{:else}
-		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-			{#each items as item (item.id)}
-				<article
-					class="group rounded-[var(--radius-card)] border p-4 transition-colors hover:opacity-95"
-					style="background-color: var(--color-surface); border-color: var(--color-border)"
-				>
-					<a href={detailURL(item)} class="block space-y-3">
-						<div class="flex items-start justify-between gap-2">
-							<h2 class="font-semibold leading-snug" style="color: var(--color-text)">{item.title}</h2>
-						</div>
-						{#if item.excerpt}
-							<p class="text-sm line-clamp-2" style="color: var(--color-muted)">{item.excerpt}</p>
-						{:else}
-							<p class="text-sm line-clamp-2" style="color: var(--color-muted)">{excerpt(item.body)}</p>
-						{/if}
+		{/if}
 
-						<div class="flex flex-wrap items-center gap-2 text-xs" style="color: var(--color-muted)">
-							{#if item.type_name}
-								<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{item.type_name}</span>
-							{/if}
-							<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{item.depth}</span>
-							{#if isMine}
-								<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{item.status}</span>
-								<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{item.visibility}</span>
-							{/if}
-						</div>
-
-						<div class="flex items-center gap-4 text-xs" style="color: var(--color-muted)">
-							<span>{formatDate(item.created_at)}</span>
-							<span class="inline-flex items-center gap-1"><Eye size={12} /> {item.view_count ?? 0}</span>
-							<span class="inline-flex items-center gap-1"><MessageCircle size={12} /> {item.comment_count ?? 0}</span>
-							<span class="inline-flex items-center gap-1"><Share2 size={12} /> {item.share_count ?? 0}</span>
-						</div>
-					</a>
-				</article>
-			{/each}
+		<div class="relative">
+			<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+			<input
+				type="text"
+				bind:value={query}
+				oninput={onSearchInput}
+				placeholder={t('jce.comparisons.search_placeholder')}
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-4 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+			/>
 		</div>
 
-		<div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t" style="border-color: var(--color-border)">
-			<div class="flex items-center gap-2 text-sm" style="color: var(--color-muted)">
-				<span>{t('jce.common.page_of', undefined, { current: currentPage, total: totalPages })}</span>
-				<span>·</span>
+		{#if showFilters}
+			<div
+				id="comparisons-filter-panel"
+				class="grid gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:grid-cols-[auto_auto]"
+			>
+				<JceSelect
+					options={sortOptions}
+					value={filters.sort || sortValues[0] || 'created_at'}
+					onchange={(value) => setSort(value)}
+					placeholder={t('jce.comparisons.sort_placeholder', 'Sort by')}
+				/>
+
+				<JceSelect
+					options={typeSelectOptions}
+					value={filters.filter_type || ''}
+					onchange={(value) => setFilterType(value)}
+				/>
+			</div>
+		{/if}
+
+		{#if items.length === 0}
+			<EmptyState
+				icon={GitCompare}
+				title={isMine ? t('jce.comparisons.empty_mine') : t('jce.comparisons.empty_public')}
+				action={isMine
+					? { label: t('jce.comparisons.create_detailed'), href: '/create?type=comparison' }
+					: { label: t('jce.comparisons.create_one'), href: '/compare' }}
+			/>
+		{:else}
+			<div class="grid gap-3.5 sm:grid-cols-2">
+				{#each items as item (item.id)}
+					<article
+						class="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<a href={detailURL(item)} class="block space-y-3">
+							<div class="flex items-start justify-between gap-2">
+								<h2 class="font-semibold leading-snug text-[var(--color-text)]">{item.title}</h2>
+							</div>
+							{#if item.excerpt}
+								<p class="line-clamp-2 text-sm text-[var(--color-muted)]">{item.excerpt}</p>
+							{:else}
+								<p class="line-clamp-2 text-sm text-[var(--color-muted)]">{excerpt(item.body)}</p>
+							{/if}
+
+							<div class="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
+								{#if item.type_name}
+									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.type_name}</span>
+								{/if}
+								<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.depth}</span>
+								{#if isMine}
+									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.status}</span>
+									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.visibility}</span>
+								{/if}
+							</div>
+
+							<div class="flex items-center gap-4 text-xs text-[var(--color-muted)]">
+								<span>{formatDate(item.created_at)}</span>
+								<span class="inline-flex items-center gap-1"><Eye size={12} /> {item.view_count ?? 0}</span>
+								<span class="inline-flex items-center gap-1"><MessageCircle size={12} /> {item.comment_count ?? 0}</span>
+								<span class="inline-flex items-center gap-1"><Share2 size={12} /> {item.share_count ?? 0}</span>
+							</div>
+						</a>
+					</article>
+				{/each}
+			</div>
+
+			<div class="flex flex-col items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4 sm:flex-row">
 				<JceSelect
 					options={pageSizeSelectOptions}
 					value={String(filters.page_size || meta.limit || pageSizeOptions[0] || defaultPageSize)}
 					onchange={(value) => setPageSize(parseInt(value, 10))}
 					class="w-auto min-w-[6rem] py-1"
 				/>
+				<PaginationControls page={currentPage} {totalPages} onPageChange={setPage} />
 			</div>
-
-			<div class="flex items-center gap-2">
-				<button
-					type="button"
-					disabled={currentPage <= 1}
-					onclick={() => setPage(currentPage - 1)}
-					class="inline-flex items-center gap-1 px-3 py-1.5 rounded-[var(--radius-button)] border text-sm disabled:opacity-40"
-					style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-surface)"
-				>
-					<ChevronLeft size={14} /> {t('jce.common.previous')}
-				</button>
-				<button
-					type="button"
-					disabled={currentPage >= totalPages}
-					onclick={() => setPage(currentPage + 1)}
-					class="inline-flex items-center gap-1 px-3 py-1.5 rounded-[var(--radius-button)] border text-sm disabled:opacity-40"
-					style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-surface)"
-				>
-					{t('jce.common.next')} <ChevronRight size={14} />
-				</button>
-			</div>
-		</div>
-	{/if}
+		{/if}
+	</div>
 </div>

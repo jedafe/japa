@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { type Snippet } from 'svelte';
+	import { page } from '$app/state';
 	import { Menu as MenuIcon, Sun, Moon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
 	import RightSidebar from './RightSidebar.svelte';
@@ -60,8 +61,30 @@
 	}: Props = $props();
 
 	let mobileNavOpen = $state(false);
+	// Hover behavior on the collapsed rail: default = expand in place
+	// (grid column grows, content shifts — same as clicking expand). On the
+	// excepted utility surfaces it renders an overlay peek instead — no
+	// layout reflow on jump-heavy pages. The persisted nav_collapsed
+	// preference is untouched either way.
+	let navHoverExpand = $state(false);
+	let navHoverPeek = $state(false);
+	const overlayRoutes = ['/ai', '/settings', '/dashboard', '/services', '/studio'];
+	const overlayAllowed = $derived(
+		overlayRoutes.some(
+			(r) => page.url.pathname === r || page.url.pathname.startsWith(`${r}/`)
+		)
+	);
+	$effect(() => {
+		// Reset transient hover state on navigation and when the nav is
+		// pinned open — otherwise a stale peek could re-render when
+		// returning to an overlay route without touching the rail.
+		page.url.pathname;
+		if (!collapsed || !overlayAllowed) navHoverPeek = false;
+		if (!collapsed) navHoverExpand = false;
+	});
+	const effectiveCollapsed = $derived(collapsed && !navHoverExpand);
 	const navWidth = $derived(
-		collapsed ? 'var(--nav-width-collapsed)' : 'var(--nav-width-expanded)'
+		effectiveCollapsed ? 'var(--nav-width-collapsed)' : 'var(--nav-width-expanded)'
 	);
 
 	// Left rail (Section 59, ADR-066): an ad-only 160px column between the
@@ -83,10 +106,27 @@
 	routeSidebar.snippet = null;
 </script>
 
-<div class="shell" class:hide-sidebar={hideRightSidebar} class:show-left-rail={showLeftRail} style="--current-nav-width: {navWidth}" data-nav-collapsed={collapsed}>
-	<div class="shell-nav">
-		<LeftNav {menu} {user} {collapsed} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={onToggleCollapse} />
+<div class="shell" class:hide-sidebar={hideRightSidebar} class:show-left-rail={showLeftRail} style="--current-nav-width: {navWidth}" data-nav-collapsed={effectiveCollapsed}>
+	<div
+		class="shell-nav"
+		role="presentation"
+		onmouseenter={() => {
+			if (!collapsed) return;
+			if (overlayAllowed) navHoverPeek = true;
+			else navHoverExpand = true;
+		}}
+		onmouseleave={() => (navHoverExpand = false)}
+	>
+		<LeftNav {menu} {user} collapsed={effectiveCollapsed} pinned={!collapsed} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={onToggleCollapse} />
 	</div>
+
+	{#if collapsed && navHoverPeek && overlayAllowed}
+		<!-- Expanded overlay nav — covers the rail; closes on mouseleave. The
+		     LeftNav toggle inside calls onToggleCollapse, pinning it open. -->
+		<div class="nav-hover-peek" role="presentation" onmouseleave={() => (navHoverPeek = false)}>
+			<LeftNav {menu} {user} collapsed={false} pinned={false} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={onToggleCollapse} />
+		</div>
+	{/if}
 
 	{#if showLeftRail}
 		<LeftRail widgets={leftSidebarWidgets} />
@@ -123,11 +163,13 @@
 		{/if}
 	</main>
 
-	{#if !hideRightSidebar}
-		<div class="shell-sidebar" data-tour="sidebar">
-			<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {rightSidebarWidgets} />
-		</div>
-	{/if}
+	<!-- The rail stays mounted while hidden (hide-sidebar collapses the grid
+	     column) — unmounting on /ai rail toggles or exception routes would
+	     destroy every widget's loaded state and replay fetch + empty-state
+	     flashes on the way back. -->
+	<div class="shell-sidebar" class:hidden={hideRightSidebar} data-tour="sidebar" aria-hidden={hideRightSidebar || undefined}>
+		<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {rightSidebarWidgets} />
+	</div>
 </div>
 
 {#if mobileNavOpen}
@@ -138,7 +180,9 @@
 		onclick={() => (mobileNavOpen = false)}
 	></button>
 	<div class="drawer">
-		<LeftNav {menu} {user} collapsed={false} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={() => (mobileNavOpen = false)} />
+		<!-- Drawer nav is transient (dismissed via backdrop/button), so the
+		     toggle shows the unpinned outline state. -->
+		<LeftNav {menu} {user} collapsed={false} pinned={false} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={() => (mobileNavOpen = false)} />
 	</div>
 {/if}
 
@@ -218,6 +262,37 @@
 		width: var(--nav-width-expanded);
 		height: 100vh;
 		box-shadow: 0 0 40px rgb(0 0 0 / 0.25);
+	}
+
+	/* Hover-peek overlay for the collapsed rail on the excepted utility
+	   routes — slides over the content without a layout shift. */
+	.nav-hover-peek {
+		position: fixed;
+		top: 0;
+		left: 0;
+		z-index: 50;
+		width: var(--nav-width-expanded);
+		height: 100vh;
+		box-shadow: 8px 0 24px rgb(0 0 0 / 0.12);
+		animation: nav-hover-peek-in 0.15s ease-out;
+	}
+
+	@keyframes nav-hover-peek-in {
+		from {
+			opacity: 0.4;
+			transform: translateX(-8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+
+	/* No hover state on touch — the rail stays tap-to-expand there. */
+	@media (max-width: 767px) {
+		.nav-hover-peek {
+			display: none;
+		}
 	}
 
 	/* Below 1280px: drop the right sidebar and the left rail. */

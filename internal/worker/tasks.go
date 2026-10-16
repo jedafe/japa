@@ -141,6 +141,11 @@ const (
 	// TypeWikiSeedAttractions bulk-seeds attraction wiki spaces under a geo
 	// parent from Wikidata (§80 attractions amendment).
 	TypeWikiSeedAttractions = "wiki:seed_attractions"
+	// TypeWikiPopulateFacts enriches a space's wiki page custom fields with
+	// Wikidata general-info facts (population, languages, currency, postal
+	// codes, calling code, capital, founded, head of government, time zone;
+	// universities: founded year, students, website, initials).
+	TypeWikiPopulateFacts = "wiki:populate_facts"
 
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
@@ -294,6 +299,7 @@ var handlerRegistry = []struct {
 	{TypeWikiSeedStubPages, HandleWikiSeedStubPages},
 	{TypeWikiFieldsPropagate, HandleWikiFieldsPropagate},
 	{TypeWikiSeedAttractions, HandleWikiSeedAttractions},
+	{TypeWikiPopulateFacts, HandleWikiPopulateFacts},
 	// Periodic sweep handlers
 	{TypeScheduledPublishSweep, HandleScheduledPublishSweep},
 	{TypeBroadcastDispatch, HandleBroadcastDispatchScheduled},

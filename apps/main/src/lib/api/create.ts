@@ -74,8 +74,10 @@ export const searchSeries = (q: string) =>
 	api.get<BlogSeries[]>(`/series?q=${encodeURIComponent(q)}`);
 
 /* ---- spaces (debounced autocomplete search) ---- */
+// member_only scopes the search to the caller's joined spaces — without it
+// super admins search (and can pick from) every space on the platform.
 export const searchSpaces = (q: string, limit = 50) =>
-	api.get<MeSpace[]>(`/me/spaces?q=${encodeURIComponent(q)}&page_size=${limit}`);
+	api.get<MeSpace[]>(`/me/spaces?q=${encodeURIComponent(q)}&member_only=1&page_size=${limit}`);
 export const listSpaceTypes = () =>
 	api.get<SpaceType[]>('/space-types');
 export const createSpace = (input: {

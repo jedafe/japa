@@ -94,7 +94,7 @@ func main() {
 
 		task := asynq.NewTask(worker.TypeIntelSourceMetadata, payload)
 
-		info, err := client.Enqueue(task, asynq.Queue("default"))
+		info, err := client.Enqueue(task, worker.TaskOpts(worker.TypeIntelSourceMetadata)...)
 		if err != nil {
 			slog.Warn("skipping: failed to enqueue", "source_id", s.ID.String(), "error", err)
 

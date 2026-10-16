@@ -4,6 +4,7 @@
 	// fallback for rows predating the slug column), so external and uploaded
 	// videos alike stay inside JapaConnect (player + "Watch on …" link).
 	import { Play, ExternalLink } from 'lucide-svelte';
+	import { page } from '$app/state';
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
 	import { formatDuration } from '$lib/utils/duration';
@@ -65,7 +66,7 @@
 						<span>{t('profile.videos.channel_source', 'Channel import')}</span>
 					{/if}
 					{#if video.created_at}
-						<span class="ml-auto">{relativeTime(video.created_at, new Date(), i18n.locale)}</span>
+						<span class="ml-auto">{relativeTime(video.created_at, new Date(page.data.serverNow ?? Date.now()), i18n.locale)}</span>
 					{/if}
 				</span>
 			</span>

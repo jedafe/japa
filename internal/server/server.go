@@ -441,6 +441,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// processor (it owns the Wikidata fetches, media uploader, and custom
 	// fields enricher) and the dry-run candidate lister for the admin route.
 	worker.RegisterWikiSeedAttractionsProcessor(spaceAutoPopulateAdapter)
+	worker.RegisterWikiFactsProcessor(spaceAutoPopulateAdapter)
 	spaceHandlers.SetAttractionSeeder(spaceAutoPopulateAdapter)
 
 	// Geo HTTP handlers — /api/v1/geo/*. The hierarchy endpoints reuse
@@ -8258,6 +8259,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// population, gated on the spaces management node.
 			r.With(rbac.RequirePermission(rbacResolver, "admin.spaces.manage")).
 				Get("/seeds", controlHandlers.ListSeedOps)
+			r.With(rbac.RequirePermission(rbacResolver, "admin.spaces.manage")).
+				Get("/seeds/task-types", controlHandlers.ListSeedTaskTypes)
 			r.With(rbac.RequirePermission(rbacResolver, "admin.spaces.manage")).
 				Post("/seeds/enqueue", controlHandlers.EnqueueSeed)
 

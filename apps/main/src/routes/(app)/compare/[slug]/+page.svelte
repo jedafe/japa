@@ -187,18 +187,17 @@
 	{/if}
 </svelte:head>
 
-<div class="max-w-5xl mx-auto p-4 space-y-6">
-	<div class="flex items-start justify-between gap-4 flex-wrap">
+<div class="mx-auto max-w-5xl space-y-6 p-4">
+	<div class="flex flex-wrap items-start justify-between gap-4">
 		<div class="space-y-1">
 			<a
 				href="/compare"
-				class="inline-flex items-center gap-1 text-sm transition-colors hover:opacity-80"
-				style="color: var(--color-muted)"
+				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			>
-				<ArrowLeft size={14} /> {t('jce.compare.back')}
+				<ArrowLeft size={16} /> {t('jce.compare.back')}
 			</a>
-			<h1 class="text-2xl sm:text-3xl font-bold" style="color: var(--color-text)">{comparison.content.title}</h1>
-			<p class="text-sm capitalize" style="color: var(--color-muted)">
+			<h1 class="text-2xl font-bold text-[var(--color-text)] sm:text-3xl">{comparison.content.title}</h1>
+			<p class="text-sm capitalize text-[var(--color-muted)]">
 				{comparison.metadata.depth} · {comparison.content.status} · {comparison.content.visibility}
 			</p>
 		</div>
@@ -206,16 +205,14 @@
 			<div class="flex flex-wrap gap-2">
 				<button
 					type="button"
-					class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium transition-colors"
-					style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					onclick={edit}
 				>
 					<Pencil size={12} /> {t('jce.compare.edit_selection')}
 				</button>
 				<button
 					type="button"
-					class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium transition-colors disabled:opacity-50"
-					style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 					disabled={promoting}
 					onclick={promote}
 				>
@@ -223,8 +220,7 @@
 				</button>
 				<button
 					type="button"
-					class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium transition-colors disabled:opacity-50"
-					style="background-color: rgba(239,68,68,0.1); color: #ef4444"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:opacity-50"
 					disabled={deleting}
 					onclick={remove}
 				>
@@ -235,29 +231,27 @@
 	</div>
 
 	{#if error}
-		<div class="rounded-[var(--radius-button)] p-4 text-sm" role="alert" style="background-color: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2)">
+		<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
 			{t(error)}
-		</div>
+		</p>
 	{/if}
 
 	<section>
-		<h2 class="text-lg font-semibold mb-3" style="color: var(--color-text)">{t('jce.compare.items_heading')}</h2>
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+		<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('jce.compare.items_heading')}</h2>
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each resolvedItems as item (item.id)}
 				<div
-					class="rounded-[var(--radius-card)] border p-4 space-y-2"
-					style="background-color: var(--color-surface); border-color: var(--color-border)"
+					class="space-y-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 				>
-					<h3 class="font-medium" style="color: var(--color-text)">{item.title}</h3>
+					<h3 class="font-medium text-[var(--color-text)]">{item.title}</h3>
 					{#if item.description}
-						<p class="text-sm" style="color: var(--color-muted)">{item.description}</p>
+						<p class="text-sm text-[var(--color-muted)]">{item.description}</p>
 					{/if}
 					{#if item.url}
 						<a
 							href={item.url}
 							target="_blank"
-							class="inline-flex items-center gap-1 text-xs underline"
-							style="color: var(--color-text)"
+							class="inline-flex items-center gap-1 text-xs text-[var(--color-text)] underline"
 						>
 							<ExternalLink size={12} /> {t('jce.common.view')}
 						</a>
@@ -270,7 +264,7 @@
 	{#if matrix.length > 0}
 		<section>
 			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-				<h2 class="text-lg font-semibold" style="color: var(--color-text)">{t('jce.compare.matrix_heading')}</h2>
+				<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('jce.compare.matrix_heading')}</h2>
 				<div class="flex flex-wrap items-center gap-2">
 					{#if user && features['feature.jce.refresh']}
 						<RefreshButton comparisonID={comparison.content.id} />
@@ -284,9 +278,9 @@
 				<table class="text-sm">
 					<thead>
 						<tr>
-							<th style="color: var(--color-text)">{t('jce.compare.matrix_dimension')}</th>
+							<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
 							{#each matrix as item (item.id)}
-								<th style="color: var(--color-text)">
+								<th class="text-[var(--color-text)]">
 									<div>{item.title}</div>
 								</th>
 							{/each}
@@ -295,9 +289,9 @@
 					<tbody>
 						{#each uniqueDims as dim (dim.id)}
 							<tr>
-								<td class="font-medium" style="color: var(--color-text)">{dim.label}</td>
+								<td class="font-medium text-[var(--color-text)]">{dim.label}</td>
 								{#each matrix as item (item.id)}
-									<td style="color: var(--color-muted)">
+									<td class="text-[var(--color-muted)]">
 										{formatValue(cellFor(item, dim))}
 									</td>
 								{/each}
@@ -313,7 +307,7 @@
 		<!-- Localized notice; translations are admin-editable (untrusted) so the
 		composed HTML is re-sanitized before render. The <strong> wrapper is in
 		the allowlist so it survives; only the name payload is escaped. -->
-		<div class="rounded-[var(--radius-card)] border p-4 text-sm" style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-muted)">
+		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-muted)]">
 			{@html sanitizeContentHtml(t('jce.compare.quick_comparison_notice')
 				.replace('{promote}', '<strong style="color: var(--color-text)">' + t('jce.compare.promote_to_detailed') + '</strong>'))}
 		</div>

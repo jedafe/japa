@@ -211,6 +211,14 @@ SELECT * FROM persona_voices
 ORDER BY name ASC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- Slim {id, name} projection for picker options — skips the multi-KB
+-- voice_prompt payload picker consumers never read (GET /ai/voices?slim=1).
+-- name: ListPersonaVoiceOptions :many
+SELECT id, name FROM persona_voices
+
+ORDER BY name ASC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: CountPersonaVoices :one
 SELECT COUNT(*) AS count
 FROM persona_voices

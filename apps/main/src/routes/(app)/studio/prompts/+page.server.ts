@@ -29,7 +29,10 @@ export const load: PageServerLoad = async (event) => {
 	const [typesRes, spacesRes, draftsRes, permsRes, visibilityRes, statusRes, seriesRes, assessmentRes] =
 		await Promise.allSettled([
 			apiList<ContentTypeMeta>(ctx, '/content-types'),
-			apiList<MeSpace>(ctx, '/me/spaces'),
+			// member_only cap — SpaceSelector live-searches via /me/spaces?q=
+			// anyway; the prop only seeds initial suggestions. Uncapped this
+			// returns every platform space (~10k rows / 1.7MB for admins).
+			apiList<MeSpace>(ctx, '/me/spaces?member_only=1&page_size=50'),
 			// Advisory list for the slug-conflict check — the backend's slug
 			// handling is authoritative on save.
 			apiList<ContentRecord>(ctx, '/me/drafts?page_size=100'),
@@ -55,10 +58,18 @@ export const load: PageServerLoad = async (event) => {
 		// (same one AiDraftPanel uses); personas only exist behind the admin
 		// route, which persona.view holders are allowed to read.
 		const [voicesRes, personasRes] = await Promise.allSettled([
-			apiList<VoiceOption>(ctx, '/ai/voices?page_size=5000'),
+			// ?slim=1 — the {id, name} picker projection; full rows carry
+			// voice_prompt (~1.7KB each → ~2.6MB). PromptBuilder lazy-fetches
+			// the selected voice's prompt via GET /admin/persona-voices/{id}
+			// (same persona.view gate).
+			apiList<VoiceOption>(ctx, '/ai/voices?slim=1&page_size=5000'),
 			apiList<Persona>(ctx, '/admin/personas?page_size=200')
 		]);
-		voices = voicesRes.status === 'fulfilled' ? voicesRes.value.items : [];
+		// Strip stays as a cheap guard — only {id, name} lands in the page.
+		voices =
+			voicesRes.status === 'fulfilled'
+				? voicesRes.value.items.map((v) => ({ id: v.id, name: v.name }))
+				: [];
 		personas = personasRes.status === 'fulfilled' ? personasRes.value.items : [];
 	}
 

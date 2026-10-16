@@ -11,6 +11,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 func main() {
@@ -98,9 +99,11 @@ func main() {
 			continue
 		}
 
-		task := asynq.NewTask("content:fan_out_to_feeds", payload)
+		task := asynq.NewTask(worker.TypeContentFanOutToFeeds, payload)
 
-		info, err := client.Enqueue(task, asynq.Queue("default"))
+		// TaskOpts restores the task's registered tier + defaults rather
+		// than pinning a bare "default" queue.
+		info, err := client.Enqueue(task, worker.TaskOpts(worker.TypeContentFanOutToFeeds)...)
 		if err != nil {
 			slog.Warn("skipping: failed to enqueue", "content_id", item.ContentID.String(), "error", err)
 

@@ -96,6 +96,14 @@ export const load: LayoutServerLoad = async (event) => {
 	return {
 		rightSidebarWidgets: sidebarData?.widgets ?? [],
 		rightSidebarEnabled: sidebarData?.sidebar != null,
-		leftSidebarWidgets: leftSidebarData?.widgets ?? []
+		leftSidebarWidgets: leftSidebarData?.widgets ?? [],
+		// User's explicit pin on forced-collapse (exception) routes — stored in
+		// a cookie (not localStorage) so SSR renders the same nav width as the
+		// client; localStorage reads post-mount caused a post-hydration reflow.
+		navPinOverride: event.cookies.get('nav_pin_override') === '1',
+		// Server-render timestamp — client components render time-dependent
+		// values (footers, relative times) from this so SSR and hydration
+		// produce identical output instead of tick-over mismatches.
+		serverNow: Date.now()
 	};
 };

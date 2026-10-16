@@ -41,16 +41,14 @@
 >
 	<!-- Step 1: type -->
 	<span
-		class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-medium"
-		style="background-color: var(--color-bg); border-color: var(--color-border); color: var(--color-text)"
+		class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1 font-medium text-[var(--color-text)]"
 	>
 		{#if TypeIcon}<TypeIcon size={13} />{/if}
 		{typeName}
 		<button
 			type="button"
 			onclick={onChangeType}
-			class="rounded-full p-0.5"
-			style="color: var(--color-muted)"
+			class="rounded-full p-0.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 			aria-label={t('jce.compare.step.change_type')}
 		>
 			<X size={13} />
@@ -58,13 +56,12 @@
 	</span>
 
 	{#if showNarrow}
-		<ChevronRight size={14} style="color: var(--color-muted)" />
+		<ChevronRight size={14} class="text-[var(--color-muted)]" />
 		<!-- Step 2: narrow -->
 		<button
 			type="button"
 			onclick={onToggleNarrow}
-			class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-medium transition-colors"
-			style="background-color: {narrowOpen ? 'var(--color-bg)' : 'var(--color-surface)'}; border-color: var(--color-border); color: var(--color-text)"
+			class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1 font-medium text-[var(--color-text)] transition-colors {narrowOpen ? 'bg-[var(--color-surface-subtle)]' : 'bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'}"
 			aria-expanded={narrowOpen}
 			aria-label={t('jce.compare.step.edit_narrow')}
 		>
@@ -73,11 +70,10 @@
 		</button>
 	{/if}
 
-	<ChevronRight size={14} style="color: var(--color-muted)" />
+	<ChevronRight size={14} class="text-[var(--color-muted)]" />
 	<!-- Step 3: select / browse -->
 	<span
-		class="inline-flex items-center rounded-full border px-3 py-1 font-medium"
-		style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-text)"
+		class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-text)]"
 	>
 		{#if browseOnly}
 			{t('jce.compare.step.browse')}

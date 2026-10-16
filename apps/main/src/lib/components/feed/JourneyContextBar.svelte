@@ -63,7 +63,7 @@
 </script>
 
 {#if hasContext(ctx)}
-	<div class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-2">
+	<div class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-2" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<div class="flex items-center justify-between gap-3">
 			<div class="min-w-0">
 				<p class="text-sm text-[var(--color-text-subtle)]">
@@ -82,7 +82,7 @@
 		</div>
 	</div>
 {:else if ctx && !ctx.is_authenticated}
-	<div class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-2">
+	<div class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-2" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<div class="flex items-center justify-between gap-3">
 			<p class="text-sm text-[var(--color-text-subtle)]">
 				{t('journey.bar.prompt', 'Set your journey to see content that matches where you are going.')}

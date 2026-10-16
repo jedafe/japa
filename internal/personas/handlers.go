@@ -310,6 +310,8 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 // HandleListVoices handles GET /admin/persona-voices — paginated list of
 // shared persona voices. Gated by persona.view permission.
+// ?slim=1 returns the {id, name} picker projection — the multi-KB
+// voice_prompt payload picker consumers never read is skipped.
 func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -321,6 +323,23 @@ func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit, offset := parsePaginationWithMax(r, 5000)
+
+	if r.URL.Query().Get("slim") == "1" {
+		items, total, err := h.service.ListPersonaVoiceOptions(r.Context(), limit, offset)
+		if err != nil {
+			slog.Error("personas: list voice options failed", "error", err)
+			handleServiceError(w, err)
+
+			return
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+			"data": items,
+			"meta": map[string]int64{"total": total, "page_size": int64(limit), "page_offset": int64(offset)},
+		})
+
+		return
+	}
 
 	items, total, err := h.service.ListPersonaVoices(r.Context(), limit, offset)
 	if err != nil {

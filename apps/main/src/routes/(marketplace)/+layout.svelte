@@ -24,6 +24,14 @@
 	// the rail state follows the user across the shell boundary.
 	let collapsed = $state(untrack(() => data.navCollapsed));
 
+	// Hover-peek: /services is one of the overlay-peek routes — while the
+	// nav is collapsed, hovering the rail renders an expanded overlay nav
+	// (same UX as AppShell's .nav-hover-peek, no layout reflow).
+	let navHoverPeek = $state(false);
+	$effect(() => {
+		if (!collapsed) navHoverPeek = false;
+	});
+
 	async function toggleCollapse() {
 		const next = !collapsed;
 		collapsed = next; // optimistic
@@ -92,11 +100,17 @@
 		? 'var(--nav-width-collapsed)'
 		: 'var(--nav-width-expanded)'}"
 >
-	<aside class="marketplace-nav" data-nav-collapsed={collapsed}>
+	<aside
+		class="marketplace-nav"
+		data-nav-collapsed={collapsed}
+		role="presentation"
+		onmouseenter={() => { if (collapsed) navHoverPeek = true; }}
+	>
 		<LeftNav
 			menu={data.menu}
 			user={data.user}
 			{collapsed}
+			pinned={!collapsed}
 			userSpaces={data.userSpaces}
 			logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
 			logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
@@ -104,6 +118,23 @@
 			onToggle={toggleCollapse}
 		/>
 	</aside>
+
+	{#if collapsed && navHoverPeek}
+		<!-- Expanded overlay nav — covers the rail; closes on mouseleave. -->
+		<div class="nav-hover-peek" role="presentation" onmouseleave={() => (navHoverPeek = false)}>
+			<LeftNav
+				menu={data.menu}
+				user={data.user}
+				collapsed={false}
+				pinned={false}
+				userSpaces={data.userSpaces}
+				logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+				logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
+				features={data.features}
+				onToggle={toggleCollapse}
+			/>
+		</div>
+	{/if}
 	<main class="marketplace-center min-h-[60vh] px-4 py-6 sm:px-6 lg:px-8">
 		{@render children()}
 		{#if data.user}
@@ -136,6 +167,30 @@
 	.marketplace-center {
 		flex: 1;
 		min-width: 0;
+	}
+
+	/* Hover-peek overlay for the collapsed rail — same treatment as
+	   AppShell's .nav-hover-peek (fixed, no layout shift). */
+	.nav-hover-peek {
+		position: fixed;
+		top: 0;
+		left: 0;
+		z-index: 50;
+		width: var(--nav-width-expanded);
+		height: 100vh;
+		box-shadow: 8px 0 24px rgb(0 0 0 / 0.12);
+		animation: nav-hover-peek-in 0.15s ease-out;
+	}
+
+	@keyframes nav-hover-peek-in {
+		from {
+			opacity: 0.4;
+			transform: translateX(-8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
 	}
 
 	/* Sidebar is desktop-only — with the header/footer chrome gone there

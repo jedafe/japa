@@ -5,6 +5,7 @@
 	// Ref: ADR-054 — footer links are driven by the main_footer menu slug
 	// so admins can add/remove/reorder links from the admin panel without
 	// touching frontend code.
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import type { Menu, MenuItem } from '$lib/types';
 
@@ -47,7 +48,7 @@
 			     stale hardcoded links. The footer bottom (copyright) still renders. -->
 		{/if}
 		<div class="footer-bottom">
-			&copy; {new Date().getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
+			&copy; {new Date(page.data.serverNow ?? Date.now()).getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
 		</div>
 	</div>
 </footer>

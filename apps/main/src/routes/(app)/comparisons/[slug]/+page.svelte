@@ -261,23 +261,21 @@
 	{/if}
 
 	<section>
-		<h2 class="text-lg font-semibold mb-3" style="color: var(--color-text)">{t('jce.compare.items_heading')}</h2>
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+		<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('jce.compare.items_heading')}</h2>
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each resolvedItems as item (item.id)}
 				<div
-					class="rounded-[var(--radius-card)] border p-4 space-y-2"
-					style="background-color: var(--color-surface); border-color: var(--color-border)"
+					class="space-y-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 				>
-					<h3 class="font-medium" style="color: var(--color-text)">{item.title}</h3>
+					<h3 class="font-medium text-[var(--color-text)]">{item.title}</h3>
 					{#if item.description}
-						<p class="text-sm" style="color: var(--color-muted)">{item.description}</p>
+						<p class="text-sm text-[var(--color-muted)]">{item.description}</p>
 					{/if}
 					{#if item.url}
 						<a
 							href={item.url}
 							target="_blank"
-							class="inline-flex items-center gap-1 text-xs underline"
-							style="color: var(--color-text)"
+							class="inline-flex items-center gap-1 text-xs text-[var(--color-text)] underline"
 						>
 							<ExternalLink size={12} /> {t('jce.common.view')}
 						</a>
@@ -303,18 +301,18 @@
 				<table class="text-sm">
 					<thead>
 						<tr>
-							<th style="color: var(--color-text)">{t('jce.compare.matrix_dimension')}</th>
+							<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
 							{#each matrix as item (item.id)}
-								<th style="color: var(--color-text)">{item.title}</th>
+								<th class="text-[var(--color-text)]">{item.title}</th>
 							{/each}
 						</tr>
 					</thead>
 					<tbody>
 						{#each uniqueDims as dim (dim.id)}
 							<tr>
-								<td class="font-medium" style="color: var(--color-text)">{dim.label}</td>
+								<td class="font-medium text-[var(--color-text)]">{dim.label}</td>
 								{#each matrix as item (item.id)}
-									<td style="color: var(--color-muted)">
+									<td class="text-[var(--color-muted)]">
 										{formatValue(cellFor(item, dim))}
 									</td>
 								{/each}
@@ -365,8 +363,8 @@
 	</div>
 
 	<div class="mt-6 flex gap-4">
-		<a href="/comparisons" class="text-sm underline" style="color: var(--color-text)">← {t('jce.comparisons.back')}</a>
-		<a href="/compare" class="text-sm underline" style="color: var(--color-muted)">{t('jce.comparisons.create_your_own')}</a>
+		<a href="/comparisons" class="text-sm text-[var(--color-text)] underline">← {t('jce.comparisons.back')}</a>
+		<a href="/compare" class="text-sm text-[var(--color-muted)] underline">{t('jce.comparisons.create_your_own')}</a>
 	</div>
 </article>
 

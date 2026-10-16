@@ -21,9 +21,9 @@
 package worker
 
 import (
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"

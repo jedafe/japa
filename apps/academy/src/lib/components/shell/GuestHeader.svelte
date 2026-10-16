@@ -39,11 +39,19 @@
 	const showLanguageToggle = $derived(enabledLanguages.length > 1);
 	const currentPath = $derived(page.url.pathname.replace(/^\//, ''));
 
-	const displayNames = (() => {
-		try { return new Intl.DisplayNames(undefined, { type: 'language' }); }
-		catch { return null; }
-	})();
+	// Localize in the ACTIVE app locale — `undefined` would resolve the
+	// runtime's default locale, so SSR (server locale) and hydration
+	// (browser locale) can produce different labels → hydration mismatch.
+	let displayNames: Intl.DisplayNames | null = null;
+	let displayNamesLocale = '';
 	function localeLabel(code: string): string {
+		// Recreate when the active locale changes so labels follow a live
+		// locale switch instead of the locale captured at component init.
+		if (displayNamesLocale !== i18n.locale) {
+			displayNamesLocale = i18n.locale;
+			try { displayNames = new Intl.DisplayNames([i18n.locale], { type: 'language' }); }
+			catch { displayNames = null; }
+		}
 		return displayNames?.of(code) ?? code;
 	}
 	function localeHref(lang: string): string {

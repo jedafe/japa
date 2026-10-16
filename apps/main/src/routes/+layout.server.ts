@@ -248,7 +248,7 @@ export const load: LayoutServerLoad = async (event) => {
 		trendingTags,
 		suggestedSpaces,
 		userSpaces,
-		navCollapsed: user?.ui?.nav_collapsed ?? false,
+		navCollapsed: user?.ui?.nav_collapsed ?? true,
 		unreadNotifications,
 		features,
 		cardStyleConfig,

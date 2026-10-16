@@ -101,6 +101,12 @@ export const load: LayoutServerLoad = async (event) => {
 		leftSidebarWidgets,
 		audienceOrder: event.locals.audienceOrder,
 		navCollapsed: event.locals.navCollapsed,
+		// "New card" promo dismiss state — cookie so SSR suppresses the card
+		// for users who already dismissed it (was localStorage → post-mount
+		// flash of the card on every page load).
+		newCardDismissed: event.cookies.get('jc.docs.new_card_dismissed') === '1',
+		// Server-render timestamp for hydration-stable time-derived output.
+		serverNow: Date.now(),
 		tourDismissed,
 		tourSteps
 	};

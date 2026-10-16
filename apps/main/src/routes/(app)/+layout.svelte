@@ -100,6 +100,14 @@
 	// Seed from the server value once; thereafter this is user-controlled.
 	let collapsed = $state(untrack(() => data.navCollapsed));
 
+	// User pin override for exception routes (content single pages force the
+	// nav collapsed for layout). Clicking the nav toggle there must still
+	// work — an explicit pin expands the nav. Persisted in a cookie (not
+	// localStorage) so SSR renders the same nav width — a post-mount
+	// localStorage read forced a full three-column reflow on every load.
+	let navPinOverride = $state(untrack(() => data.navPinOverride));
+	const shownCollapsed = $derived(collapsed || (exception && !navPinOverride));
+
 	// Auto-collapse when entering settings, dashboard, roadmap or /ai (once
 	// per transition). The user can still expand via the toggle — we only
 	// collapse on entry, not force.
@@ -114,11 +122,21 @@
 
 
 	async function toggleCollapse() {
-		const next = !collapsed;
+		const prevCollapsed = collapsed;
+		const prevPinOverride = navPinOverride;
+		const next = !shownCollapsed;
 		collapsed = next; // optimistic
+		if (exception) {
+			navPinOverride = !next; // pin open / release on forced-collapse routes
+			document.cookie = `nav_pin_override=${navPinOverride ? '1' : '0'}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+		}
 		if (!data.user) return; // guests have nowhere to persist; keep it session-local
 		const res = await api.patch('/me/account', { ui: { nav_collapsed: next } });
-		if (res.error) collapsed = !next; // rollback on failure
+		if (res.error) {
+			collapsed = prevCollapsed;
+			navPinOverride = prevPinOverride;
+			document.cookie = `nav_pin_override=${prevPinOverride ? '1' : '0'}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+		}
 	}
 
 	// Phase 23 — Real-Time WebSocket: connect when an authenticated session is
@@ -178,8 +196,10 @@
 		else realtime.disconnect();
 	});
 
-	// Seed the realtime unread-notification counter from the SSR value, and
-	// re-sync whenever the server payload changes (e.g. after invalidateAll).
+	// Seed the realtime unread-notification counter at init (SSR + hydration
+	// render the same badge — a post-mount seed popped it in a frame late),
+	// then re-sync whenever the server payload changes (e.g. invalidateAll).
+	untrack(() => realtime.setUnreadCount(data.unreadNotifications));
 	$effect(() => {
 		realtime.setUnreadCount(data.unreadNotifications);
 	});
@@ -243,7 +263,7 @@
 	<AppShell
 		menu={data.menu}
 		user={data.user}
-		collapsed={exception || collapsed}
+		collapsed={shownCollapsed}
 		onToggleCollapse={toggleCollapse}
 		trendingTags={data.trendingTags}
 		suggestedSpaces={data.suggestedSpaces}

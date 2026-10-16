@@ -57,7 +57,10 @@ export const load: PageServerLoad = async (event) => {
 		assessmentRes
 	] = await Promise.allSettled([
 		apiList<ContentTypeMeta>(ctx, '/content-types'),
-		apiList<MeSpace>(ctx, '/me/spaces'),
+		// member_only cap — SpaceSelector live-searches via /me/spaces?q=
+		// anyway; the prop only seeds initial suggestions. Uncapped this
+		// returns every platform space (~10k rows / 1.7MB for admins).
+		apiList<MeSpace>(ctx, '/me/spaces?member_only=1&page_size=50'),
 		apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
 		apiList<BlogSeries>(ctx, '/series'),
 		// Post-as-org (ADR-062): the caller's org memberships, used by the

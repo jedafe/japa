@@ -66,18 +66,17 @@
 </script>
 
 {#if lastJob}
-	<p class="text-xs" style="color: var(--color-muted)">
+	<p class="text-xs text-[var(--color-muted)]">
 		{t('jce.refresh.status', 'Status: {status}', { status: lastJob.status })}
 		{#if lastJob.refreshed_count > 0}({lastJob.refreshed_count}){/if}
 	</p>
 {/if}
 {#if error}
-	<p class="text-xs text-red-400">{error}</p>
+	<p class="text-xs text-[var(--color-danger)]">{error}</p>
 {/if}
 <button
 	type="button"
-	class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
-	style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-text)"
+	class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 	onclick={onClick}
 	disabled={refreshing}
 >

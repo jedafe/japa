@@ -87,6 +87,7 @@ var idempotentTasks = map[string]bool{
 	TypeServiceBookingCreated:           true, // §111 — one org notification fan-out per booking
 	TypeServiceBookingStatusChanged:     true, // §111 — dedupe same-status transitions
 	TypeSpaceAutoPopulate:               true, // enrichment fan-out — collapse repeat enqueues for the same space_id
+	TypeWikiPopulateFacts:               true, // enrichment — collapse repeat fact-fetches for the same space_id
 }
 
 func taskDefaults(taskType string) []asynq.Option {
@@ -158,6 +159,11 @@ func taskDefaults(taskType string) []asynq.Option {
 	// process-wide 2s pacing limiter — bounded retries so a sustained
 	// upstream rate limit does not keep one task cycling forever.
 	case TypeSpaceAutoPopulate:
+		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(10))
+	// Wiki facts enrichment: 2 wbgetentities calls (claims + label resolution)
+	// behind the same pacing limiter — same bounded-retry posture as
+	// space:auto_populate against sustained upstream 429s.
+	case TypeWikiPopulateFacts:
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(10))
 	// ADR-130 Phase 4 conversation backfill: one Honcho HTTP fetch plus a
 	// transaction per thread group — bounded timeout, few retries since a
@@ -501,6 +507,7 @@ var taskTypeCatalog = []struct {
 	{TypeSpaceAutoPopulate, "low", "Auto-populate space content"},
 	{TypeGeoPopulateScope, "low", "Fan out auto_populate to a geo scope"},
 	{TypeWikiSeedAttractions, "low", "Bulk-seed attraction spaces from Wikidata"},
+	{TypeWikiPopulateFacts, "low", "Enrich space wiki fields from Wikidata facts"},
 	{TypeAnalyticsRefreshViews, "low", "Refresh analytics view counts"},
 	{TypeSecurityScan, "low", "Run security scan"},
 	{TypeMaintenanceRegenerateLLMsTxt, "low", "Regenerate llms.txt file"},

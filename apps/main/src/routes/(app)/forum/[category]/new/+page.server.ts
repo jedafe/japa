@@ -26,9 +26,13 @@ export const load: PageServerLoad = async (event) => {
 	const category = event.params.category;
 	const isQuestion = event.url.searchParams.get('type') === 'question';
 
+	// member_only — the picker lists joined spaces ("Join a space before
+	// starting a discussion"); without it super admins get every platform
+	// space (~10k rows / 1.7MB). The page filters this list client-side,
+	// so the cap is generous enough to cover heavy joiners.
 	let spaces: MeSpace[] = [];
 	try {
-		spaces = (await apiList<MeSpace>(ctx, '/me/spaces')).items;
+		spaces = (await apiList<MeSpace>(ctx, '/me/spaces?member_only=1&page_size=500')).items;
 	} catch {
 		spaces = [];
 	}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { PanelLeftClose, PanelLeft, ChevronDown, BookOpen, Plus, House, ArrowRight, Compass, FileText, Rocket, Star, User, X } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -81,21 +81,17 @@
 	);
 	const quickstartHref = $derived(pins[0]?.href ?? null);
 
-	// "New to JapaConnect?" card dismissal — per-device preference stored in
-	// localStorage (same persistence pattern as guest vote state). Starts
-	// hidden=false and hydrates on mount so SSR output stays deterministic.
+	// "New to JapaConnect?" card dismissal — per-device preference persisted
+	// in a cookie (SSR-readable; localStorage kept as a fallback write).
 	const NEW_CARD_DISMISS_KEY = 'jc.docs.new_card_dismissed';
-	let newCardDismissed = $state(false);
-	onMount(() => {
-		try {
-			newCardDismissed = localStorage.getItem(NEW_CARD_DISMISS_KEY) === '1';
-		} catch {
-			// Storage unavailable (private mode) — card shows, dismiss is a no-op.
-		}
-	});
+	// Dismiss state is persisted in a cookie (readable SSR via +layout.server)
+	// so the card never flashes for users who already dismissed it — the old
+	// localStorage read happened post-mount and always showed it once first.
+	let newCardDismissed = $state(untrack(() => page.data.newCardDismissed === true));
 	function dismissNewCard() {
 		newCardDismissed = true;
 		try {
+			document.cookie = `${NEW_CARD_DISMISS_KEY}=1; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
 			localStorage.setItem(NEW_CARD_DISMISS_KEY, '1');
 		} catch {
 			// Ignore — the card just reappears next visit.

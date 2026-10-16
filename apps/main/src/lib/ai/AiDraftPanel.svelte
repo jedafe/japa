@@ -128,7 +128,9 @@
 		(async () => {
 			const [modelRes, voicesRes, localesRes] = await Promise.all([
 				api.get<{ id: string; label: string }[]>('/ai/models?category=content_generation'),
-				api.get<{ id: string; name: string }[]>('/ai/voices?page_size=5000'),
+				// ?slim=1 — the picker needs id+name only; full rows carry
+				// voice_prompt (~1.7KB each → ~2.6MB per fetch).
+				api.get<{ id: string; name: string }[]>('/ai/voices?slim=1&page_size=5000'),
 				// Enabled platform locales for the translate action (Rule 16 —
 				// the option list comes from the API, not a hardcoded constant).
 				api.get<string[]>('/i18n/packs')

@@ -3,6 +3,7 @@
 	// Ref: ADR-054 — footer links are driven by the docs_footer menu slug
 	// so admins can add/remove/reorder links from the admin panel without
 	// touching frontend code.
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { env } from '$env/dynamic/public';
 	import { resolveMenuHref } from '$lib/utils/safeHtml';
@@ -33,7 +34,7 @@
 <footer class="guest-footer">
 	<div class="guest-footer-inner">
 		<div class="footer-copy">
-			&copy; {new Date().getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
+			&copy; {new Date(page.data.serverNow ?? Date.now()).getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
 		</div>
 		{#if footerItems.length > 0}
 			<nav class="footer-nav" aria-label={t('landing.footer_nav', 'Footer navigation')}>

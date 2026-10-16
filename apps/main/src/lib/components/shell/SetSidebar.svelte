@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount, type Snippet } from 'svelte';
+	import { onMount, untrack, type Snippet } from 'svelte';
+	import { navigating } from '$app/state';
 	import { routeSidebar } from './routeSidebar.svelte';
 
 	/**
@@ -24,9 +25,14 @@
 	// initial HTML instead of popping in after mount. During client
 	// navigations the outgoing page's registration is still in place here,
 	// so this is a no-op and onMount below remains the commit-safe write.
-	if (routeSidebar.snippet == null) {
-		routeSidebar.owner = owner;
-		routeSidebar.snippet = children;
+	// Don't seed while a navigation is in flight — if this staged tree is
+	// discarded the write would leave a stale snippet nothing can clean up;
+	// onMount remains the commit-safe registration path.
+	if (routeSidebar.snippet == null && !navigating?.to) {
+		untrack(() => {
+			routeSidebar.owner = owner;
+			routeSidebar.snippet = children;
+		});
 	}
 
 	onMount(() => {

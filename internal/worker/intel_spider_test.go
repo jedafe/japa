@@ -1,8 +1,8 @@
 package worker
 
 import (
-	"strconv"
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"

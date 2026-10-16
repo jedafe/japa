@@ -928,6 +928,34 @@ func (s *Service) GetVoicePrompt(ctx context.Context, userID, voiceID pgtype.UUI
 	return voice.VoicePrompt, nil
 }
 
+// PersonaVoiceOption is the slim {id, name} picker shape — no voice_prompt.
+type PersonaVoiceOption struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListPersonaVoiceOptions returns the slim picker projection of shared
+// voices — the multi-KB voice_prompt rows picker consumers never read are
+// skipped at the query level (GET /ai/voices?slim=1).
+func (s *Service) ListPersonaVoiceOptions(ctx context.Context, limit, offset int32) ([]PersonaVoiceOption, int64, error) {
+	rows, err := s.store.ListPersonaVoiceOptions(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	total, err := s.store.CountPersonaVoices(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]PersonaVoiceOption, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, PersonaVoiceOption{ID: r.ID.String(), Name: r.Name})
+	}
+
+	return items, total, nil
+}
+
 // ListPersonaVoices returns a paginated list of shared voices for a platform.
 func (s *Service) ListPersonaVoices(ctx context.Context, limit, offset int32) ([]PersonaVoice, int64, error) {
 	rows, err := s.store.ListPersonaVoices(ctx, limit, offset)

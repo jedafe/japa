@@ -362,8 +362,13 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 			"template_site_name": h.SiteName,
 		})
 
-		task := asynq.NewTask("email:send", welcomePayload)
-		if _, err := h.AsynqClient.Enqueue(task, asynq.Queue("default"), asynq.MaxRetry(3)); err != nil {
+		// TaskOpts restores the registered email:send defaults (Unique dedup,
+		// 30s timeout, default-tier queue); the trailing MaxRetry keeps the
+		// deliberately lower retry bound for welcome email (options apply
+		// in order, so it wins over the registered 10).
+		task := asynq.NewTask(worker.TypeEmailSend, welcomePayload)
+		opts := append(worker.TaskOpts(worker.TypeEmailSend), asynq.MaxRetry(3))
+		if _, err := h.AsynqClient.Enqueue(task, opts...); err != nil {
 			slog.Warn("register: failed to enqueue welcome email", "error", err)
 		}
 	}

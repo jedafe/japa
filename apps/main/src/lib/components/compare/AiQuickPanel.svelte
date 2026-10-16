@@ -19,20 +19,18 @@
 </script>
 
 <div
-	class="max-h-[60vh] overflow-y-auto rounded-[var(--radius-card)] border p-3 space-y-3 text-sm"
-	style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-text)"
+	class="max-h-[60vh] space-y-3 overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm text-[var(--color-text)]"
 	role="region"
 	aria-label={t('jce.compare.ai_quick.button')}
 >
 	<div class="flex items-center justify-between gap-2">
-		<span class="text-xs font-medium" style="color: var(--color-muted)">
+		<span class="text-xs font-medium text-[var(--color-muted)]">
 			{t('jce.compare.ai_quick.button')}
 		</span>
 		<button
 			type="button"
 			onclick={onClose}
-			class="rounded-full p-0.5"
-			style="color: var(--color-muted)"
+			class="rounded-full p-0.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 			aria-label={t('jce.common.close')}
 		>
 			<X size={14} />
@@ -40,32 +38,30 @@
 	</div>
 	<div class="grid gap-3 sm:grid-cols-2">
 		<label class="space-y-1">
-			<span class="text-xs font-medium" style="color: var(--color-muted)">
+			<span class="text-xs font-medium text-[var(--color-muted)]">
 				{t('jce.compare.ai_quick.focus_label')}
 			</span>
 			<input
 				type="text"
 				bind:value={focus}
 				placeholder={t('jce.compare.ai_quick.focus_placeholder')}
-				class="w-full rounded-[var(--radius-button)] border px-3 py-1.5 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-bg); color: var(--color-text)"
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
 		</label>
 		<label class="space-y-1">
-			<span class="text-xs font-medium" style="color: var(--color-muted)">
+			<span class="text-xs font-medium text-[var(--color-muted)]">
 				{t('jce.compare.ai_quick.fields_label')}
 			</span>
 			<input
 				type="text"
 				bind:value={fields}
 				placeholder={t('jce.compare.ai_quick.fields_placeholder')}
-				class="w-full rounded-[var(--radius-button)] border px-3 py-1.5 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-bg); color: var(--color-text)"
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
 		</label>
 	</div>
-	<div class="flex items-center gap-3 flex-wrap">
-		<label class="inline-flex items-center gap-2 text-xs" style="color: var(--color-text)">
+	<div class="flex flex-wrap items-center gap-3">
+		<label class="inline-flex items-center gap-2 text-xs text-[var(--color-text)]">
 			<input type="checkbox" bind:checked={createPost} />
 			{t('jce.compare.ai_quick.create_post')}
 		</label>
@@ -73,28 +69,26 @@
 			type="button"
 			disabled={loading}
 			onclick={() => onRun({ focus, fields, createPost })}
-			class="inline-flex items-center gap-2 px-4 py-1.5 rounded-[var(--radius-button)] text-sm font-medium disabled:opacity-50"
-			style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+			class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
 		>
 			{loading ? t('jce.compare.ai_quick.running') : t('jce.compare.ai_quick.run')}
 		</button>
 	</div>
 
 	{#if error}
-		<p class="text-xs" style="color: #ef4444">{error}</p>
+		<p class="text-xs text-[var(--color-danger)]">{error}</p>
 	{/if}
 
 	{#if result}
 		<div class="space-y-2">
-			<div class="flex items-center gap-2 flex-wrap">
+			<div class="flex flex-wrap items-center gap-2">
 				<span
-					class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium"
-					style="border-color: var(--color-border); color: var(--color-text)"
+					class="inline-flex items-center rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs font-medium text-[var(--color-text)]"
 				>
 					{t(`jce.compare.ai_quick.tier.${result.tier}`, result.tier)}
 				</span>
 				{#if result.type_name}
-					<span class="text-xs" style="color: var(--color-muted)">{result.type_name}</span>
+					<span class="text-xs text-[var(--color-muted)]">{result.type_name}</span>
 				{/if}
 			</div>
 
@@ -102,35 +96,33 @@
 				<div class="flex flex-wrap gap-1.5">
 					{#each result.existing_dimensions as dim (dim)}
 						<span
-							class="rounded-full px-2 py-0.5 text-xs"
-							style="background-color: var(--color-bg); color: var(--color-text)"
+							class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text)]"
 						>{dim}</span>
 					{/each}
 				</div>
 			{/if}
 
 			{#if result.missing_dimensions?.length}
-				<p class="text-xs" style="color: var(--color-muted)">
+				<p class="text-xs text-[var(--color-muted)]">
 					{t('jce.compare.ai_quick.missing_dimensions')}:
 					{result.missing_dimensions.join(', ')}
 				</p>
 			{/if}
 
 			{#if result.presearch_level || result.presearch_summary}
-				<p class="text-xs" style="color: var(--color-muted)">
+				<p class="text-xs text-[var(--color-muted)]">
 					{t('jce.compare.ai_quick.presearch')}:
 					{result.presearch_summary ?? result.presearch_level}
 				</p>
 			{/if}
 
 			{#if result.content_id}
-				<p class="text-xs" style="color: var(--color-text)">
+				<p class="text-xs text-[var(--color-text)]">
 					{t('jce.compare.ai_quick.draft_created')}
 					{#if result.comparison?.comparison?.slug}
 						<a
 							href="/compare/{result.comparison.comparison.slug}"
-							class="underline"
-							style="color: var(--color-accent, currentColor)"
+							class="text-[var(--color-primary)] underline"
 						>
 							{result.comparison.comparison.title}
 						</a>

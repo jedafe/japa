@@ -601,6 +601,45 @@ func (q *Queries) ListPersonaActivity(ctx context.Context, arg ListPersonaActivi
 	return items, nil
 }
 
+const listPersonaVoiceOptions = `-- name: ListPersonaVoiceOptions :many
+SELECT id, name FROM persona_voices
+
+ORDER BY name ASC
+LIMIT $2 OFFSET $1
+`
+
+type ListPersonaVoiceOptionsParams struct {
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
+}
+
+type ListPersonaVoiceOptionsRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+}
+
+// Slim {id, name} projection for picker options — skips the multi-KB
+// voice_prompt payload picker consumers never read (GET /ai/voices?slim=1).
+func (q *Queries) ListPersonaVoiceOptions(ctx context.Context, arg ListPersonaVoiceOptionsParams) ([]ListPersonaVoiceOptionsRow, error) {
+	rows, err := q.db.Query(ctx, listPersonaVoiceOptions, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPersonaVoiceOptionsRow
+	for rows.Next() {
+		var i ListPersonaVoiceOptionsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPersonaVoices = `-- name: ListPersonaVoices :many
 SELECT id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
 

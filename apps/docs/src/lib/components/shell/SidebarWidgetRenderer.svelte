@@ -41,7 +41,10 @@
 
 	const widgetProps = $derived(widget.props ?? {});
 	const title = $derived(typeof widgetProps.title === 'string' ? widgetProps.title : '');
-	const adSlot = $derived(typeof widgetProps.slot === 'string' ? widgetProps.slot : 'sidebar_top');
+	// Canonical slot name per §25/migration 000815 — 'sidebar_top' never
+	// existed in ad_slot_types, so widgets without a slot prop must fall
+	// back to 'sidebar' to actually serve.
+	const adSlot = $derived(typeof widgetProps.slot === 'string' ? widgetProps.slot : 'sidebar');
 	const adFormat = $derived(
 		typeof widgetProps.format === 'string' && ['square', 'banner', 'inline'].includes(widgetProps.format)
 			? (widgetProps.format as 'square' | 'banner' | 'inline')

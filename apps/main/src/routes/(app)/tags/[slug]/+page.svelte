@@ -533,7 +533,7 @@
 			{:else if data.followers.length === 0}
 				<EmptyState icon={UserCircle} title={t('tag.no_followers', 'No followers yet')} />
 			{:else}
-				<ul class="space-y-0.5">
+				<ul class="grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
 					{#each data.followers as f (f.id)}
 						<li>
 							<UserHoverCard

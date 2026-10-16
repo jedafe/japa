@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { type Snippet } from 'svelte';
-	import { page, navigating } from '$app/state';
+	import { page } from '$app/state';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import { routeSidebar } from './routeSidebar.svelte';
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
@@ -48,7 +48,18 @@
 	);
 
 	// ADR-060: Dashboard is private — no ad slots on /dashboard/* routes.
-	let isDashboard = $derived(page.url.pathname.startsWith('/dashboard'));
+	// Strip a leading locale segment first — page.url.pathname keeps the
+	// /{lang} prefix (reroute only rewrites route matching), so a naive
+	// startsWith('/dashboard') let ads through on /fr/dashboard.
+	const localeSet = $derived(
+		enabledLanguages.split(',').map((l) => l.trim()).filter(Boolean)
+	);
+	const strippedPath = $derived.by(() => {
+		const parts = page.url.pathname.split('/').filter(Boolean);
+		const rel = parts.length > 0 && localeSet.includes(parts[0]) ? parts.slice(1) : parts;
+		return '/' + rel.join('/');
+	});
+	let isDashboard = $derived(strippedPath.startsWith('/dashboard'));
 
 	// Split widgets into topbar (sticky) and content (scrollable) slots using
 	// the `slot` field from the widget type registry (Section 59 §6, BE-S3).
@@ -74,7 +85,11 @@
 	// then content) — a second configured search widget must not double-tag
 	// the attribute.
 	const searchTourWidgetId = $derived(
+		// A configured_widget may delegate to 'search' — claim the target as
+		// fallback so a wrapped search widget still gets tagged; if it
+		// resolves to another type, no attribute renders (same as before).
 		[...topbarWidgets, ...contentWidgets].find((w) => w.widget_type === 'search')?.id
+		?? [...topbarWidgets, ...contentWidgets].find((w) => w.widget_type === 'configured_widget')?.id
 	);
 </script>
 
@@ -112,17 +127,6 @@
 	>
 		{#if sidebar}
 			{@render sidebar()}
-		{:else if navigating?.to}
-			<!-- Client navigation in flight — the incoming route's SetSidebar
-			     hasn't mounted yet, so pulse placeholders in place of the
-			     route widgets until it registers. -->
-			{#each [0, 1] as i (i)}
-				<div class="animate-pulse rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-					<div class="mb-3 h-4 w-1/3 rounded bg-[var(--color-surface-subtle)]"></div>
-					<div class="mb-2 h-3 w-full rounded bg-[var(--color-surface-subtle)]"></div>
-					<div class="h-3 w-2/3 rounded bg-[var(--color-surface-subtle)]"></div>
-				</div>
-			{/each}
 		{/if}
 
 		{#each contentWidgets as widget (widget.id)}

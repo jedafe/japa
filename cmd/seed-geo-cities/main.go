@@ -803,8 +803,11 @@ func main() {
 					"space_id": list[i].id.String(),
 				})
 
+				// TaskOpts carries the task's registered defaults (Unique dedup
+				// on repeat space_id enqueues, 2m timeout, 10 max retries) — a
+				// bare Queue() opt would silently drop them to asynq defaults.
 				if _, err := asynqClient.EnqueueContext(ctx,
-					asynq.NewTask(worker.TypeSpaceAutoPopulate, payload, asynq.Queue("low"))); err != nil {
+					asynq.NewTask(worker.TypeSpaceAutoPopulate, payload, worker.TaskOpts(worker.TypeSpaceAutoPopulate)...)); err != nil {
 					slog.Warn("populate-top enqueue failed", "city", list[i].name, "country", country, "error", err)
 					continue
 				}

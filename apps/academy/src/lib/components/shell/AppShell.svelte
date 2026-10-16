@@ -6,6 +6,7 @@
 	import RightSidebar from './RightSidebar.svelte';
 	import GuestFooter from './GuestFooter.svelte';
 	import LeftRail from './LeftRail.svelte';
+	import { routeSidebar } from './sidebar.svelte';
 	import { t } from '$lib/i18n';
 	import type { Menu, SessionUser } from '$lib/types';
 
@@ -82,6 +83,13 @@
 			onToggleCollapse();
 		}
 	}
+
+	// ADR-058: route-specific sidebar snippet is provided by child routes via
+	// SetSidebar writing to the shared routeSidebar registry. Reset it at init —
+	// AppShell initializes before children render on every SSR pass, so a stale
+	// registration can never leak into a route that mounts no SetSidebar.
+	routeSidebar.owner = null;
+	routeSidebar.snippet = null;
 </script>
 
 {#if !user}

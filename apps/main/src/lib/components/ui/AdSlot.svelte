@@ -143,12 +143,15 @@
 <div
 	bind:this={containerEl}
 	class="grid place-items-center rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-xs text-[var(--color-muted)] overflow-hidden {sizeClass}"
-	class:hidden={!campaign}
+	class:hidden={!loading && !campaign}
 	data-ad-slot={slot}
 	aria-label={t('ads.label', 'Advertisement')}
 >
 	{#if loading}
-		<!-- Empty while loading — no placeholder flash -->
+		<!-- Reserve the slot while the serve call resolves so a served ad
+		     swaps in place instead of popping in and shifting the widgets
+		     below it; a no-fill collapses the box on resolve. -->
+		<div class="h-full w-full animate-pulse"></div>
 	{:else if campaign}
 		<a
 			href={campaign.target_url ?? '#'}

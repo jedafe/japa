@@ -72,6 +72,18 @@
 	let joinError = $state('');
 	let followersOpen = $state(false);
 
+	// Re-sync on client-side navigation between spaces — the component
+	// persists across [slug] param changes, so without this the previous
+	// space's join/follow state bleeds into the new page's buttons.
+	$effect(() => {
+		space.slug;
+		joined = initialJoined;
+		pendingJoin = initialPending;
+		following = followingProp ?? false;
+		pending = false;
+		joinError = '';
+	});
+
 	// Guest "Join" link — sends the guest to /login with a returnTo so they
 	// land back on this space after authenticating.
 	const loginHref = $derived(
