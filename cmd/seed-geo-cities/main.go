@@ -39,6 +39,7 @@ package main
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -49,6 +50,7 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/text/runes"
@@ -57,6 +59,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 const insertSpaceSQL = `INSERT INTO spaces (id, parent_id, space_type_id, name, slug, geo_code, level,
@@ -210,6 +213,8 @@ func main() {
 	admin1File := flag.String("admin1", "db/seed/admin1_codes.tsv", "GeoNames admin1 codes TSV (country, admin1, name, asciiname)")
 	aliasFile := flag.String("alias", "db/seed/admin1_alias.tsv", "admin1 name overrides TSV (country, admin1, seeded-state-name) — wins over admin1_codes")
 	batchSize := flag.Int("batch", 500, "inserts per transaction")
+	populateTop := flag.Int("populate-top", 0,
+		"after seeding, enqueue space:auto_populate for the N highest-population cities per country (0 = off). Covers cities inserted this run; pre-existing cities are not re-enqueued.")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -497,6 +502,7 @@ func main() {
 		name     string
 		slug     string
 		geoCode  string
+		pop      int64
 	}
 
 	var planned []insert
@@ -563,6 +569,7 @@ func main() {
 			name:     c.name,
 			slug:     slug,
 			geoCode:  c.country,
+			pop:      c.population,
 		})
 	}
 
@@ -760,6 +767,53 @@ func main() {
 		}
 
 		geoFixed++
+	}
+
+	// --populate-top: enqueue space:auto_populate for the N most populous
+	// cities per country so their header/logo media land without hitting
+	// every city (Wikipedia rate-limits — see worker space:auto_populate
+	// throttle note). Off by default; only cities inserted this run are
+	// enqueued — pre-existing city rows aren't tracked here.
+	enqueued := 0
+
+	if *populateTop > 0 && !*dryRun && len(planned) > 0 {
+		byCountry := make(map[string][]insert)
+		for _, p := range planned {
+			byCountry[p.geoCode] = append(byCountry[p.geoCode], p)
+		}
+
+		asynqClient := worker.NewClient(worker.DefaultConfig())
+		defer asynqClient.Close()
+
+		for country, list := range byCountry {
+			slices.SortFunc(list, func(a, b insert) int {
+				switch {
+				case a.pop > b.pop:
+					return -1
+				case a.pop < b.pop:
+					return 1
+				default:
+					return 0
+				}
+			})
+
+			for i := 0; i < *populateTop && i < len(list); i++ {
+				payload, _ := json.Marshal(map[string]string{
+					"version":  "1",
+					"space_id": list[i].id.String(),
+				})
+
+				if _, err := asynqClient.EnqueueContext(ctx,
+					asynq.NewTask(worker.TypeSpaceAutoPopulate, payload, asynq.Queue("low"))); err != nil {
+					slog.Warn("populate-top enqueue failed", "city", list[i].name, "country", country, "error", err)
+					continue
+				}
+
+				enqueued++
+			}
+		}
+
+		slog.Info("populate-top enqueued auto_populate", "tasks", enqueued, "per_country_cap", *populateTop)
 	}
 
 	fmt.Printf("\nDone: %d city spaces created (%d to state, %d to country), %d reparented, %d retired, %d scope-occupied skipped, %d skipped existing, %d unknown-country rows skipped, %d existing cities geo_code backfilled\n",
