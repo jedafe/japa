@@ -7475,7 +7475,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/org/{org_id}/packages", serviceDirHandlers.HandleOrgPackages)
 				// §111 — ALL departures (open/past/full/cancelled) for
 				// editors: author / owning-org member / service.edit_any.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "service.edit_own", "service.edit_any")).
+				// Auth only — the service does the fine-grained gate
+				// (org members may lack service.edit_own but still qualify).
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/services/{id}/departures", serviceDirHandlers.HandleListDepartures)
 				// Org transition — state change + fee-settle enqueue, so the
 				// same Rule 9 replay guarantee as the booker mutations.
