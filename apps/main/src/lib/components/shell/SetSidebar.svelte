@@ -18,6 +18,17 @@
 
 	const owner = Symbol('set-sidebar');
 
+	// Seed the registry at init when nothing is registered — covers SSR (the
+	// rail renders after the center column in AppShell, so the snippet is set
+	// by then) and first-paint hydration, so the route widgets render in the
+	// initial HTML instead of popping in after mount. During client
+	// navigations the outgoing page's registration is still in place here,
+	// so this is a no-op and onMount below remains the commit-safe write.
+	if (routeSidebar.snippet == null) {
+		routeSidebar.owner = owner;
+		routeSidebar.snippet = children;
+	}
+
 	onMount(() => {
 		routeSidebar.owner = owner;
 		routeSidebar.snippet = children;

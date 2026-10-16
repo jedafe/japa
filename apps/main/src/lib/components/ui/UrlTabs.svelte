@@ -12,10 +12,12 @@
 	 * Ref: §78, ADR-058 (unified app shell tab pattern).
 	 */
 	import { Tabs, Dialog } from 'bits-ui';
+	import { Menu, MenuItem } from '@japaconnect/ui';
 	import { ChevronDown, Check } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { untrack } from 'svelte';
+	import { t } from '$lib/i18n';
 
 	export interface UrlTab {
 		value: string;
@@ -34,6 +36,8 @@
 		onValueChange?: (value: string) => void;
 		/** Extra class for the Tabs.List element. */
 		class?: string;
+		/** When true, tabs that don't fit the list's width collapse into a "More" dropdown. */
+		autoOverflow?: boolean;
 	}
 
 	let {
@@ -42,7 +46,8 @@
 		urlParam = 'tab',
 		defaultTab,
 		onValueChange,
-		class: className = ''
+		class: className = '',
+		autoOverflow = false
 	}: Props = $props();
 
 	const resolvedDefault = $derived(defaultTab ?? tabs[0]?.value ?? '');
@@ -61,6 +66,46 @@
 	const activeLabel = $derived(
 		tabs.find((tab) => tab.value === activeValue)?.label ?? tabs[0]?.label ?? ''
 	);
+
+	// Desktop overflow — container-aware. Triggers that don't fit the list's
+	// width are rendered `absolute invisible` (still measurable) and exposed in
+	// a "More" dropdown. A ResizeObserver recomputes the visible count.
+	let rootEl = $state<HTMLElement | null>(null);
+	let moreEl = $state<HTMLElement | null>(null);
+	let visibleCount = $state(0);
+	const effVisible = $derived(visibleCount === 0 ? tabs.length : Math.min(visibleCount, tabs.length));
+	const overflowTabs = $derived(autoOverflow ? tabs.slice(effVisible) : []);
+	const activeOverflowLabel = $derived(
+		overflowTabs.find((tab) => tab.value === activeValue)?.label
+	);
+
+	$effect(() => {
+		const list = rootEl;
+		if (!list || !autoOverflow) return;
+		void tabs;
+		const compute = () => {
+			if (!list.offsetWidth) return;
+			const triggers = [...list.querySelectorAll<HTMLElement>('[role="tab"]')];
+			const avail = list.clientWidth - 24; // px-3
+			const GAP = 4; // gap-1
+			const MORE = moreEl?.offsetWidth || 115; // measured once rendered; fallback estimate
+			if (triggers.reduce((s, el) => s + el.offsetWidth + GAP, 0) - GAP <= avail) {
+				visibleCount = triggers.length;
+				return;
+			}
+			let n = 0, acc = 0;
+			for (const el of triggers) {
+				if (acc + el.offsetWidth + MORE > avail) break;
+				acc += el.offsetWidth + GAP;
+				n++;
+			}
+			visibleCount = Math.max(1, n);
+		};
+		const ro = new ResizeObserver(compute);
+		ro.observe(list);
+		compute();
+		return () => ro.disconnect();
+	});
 
 	// Mobile: the tab row collapses into a single trigger that opens a modal
 	// listing every option (they don't fit a narrow bar).
@@ -139,18 +184,52 @@
 
 <Tabs.Root value={activeValue} onValueChange={handleChange}>
 	<Tabs.List
-		class="hidden gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur sm:flex {className}"
+		bind:ref={rootEl}
+		class="relative hidden gap-1 overflow-y-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur sm:flex {className} {autoOverflow &&
+		visibleCount === 0
+			? 'overflow-x-hidden'
+			: 'overflow-x-auto'}"
 		style="min-height: var(--nav-height)"
 	>
-		{#each tabs as tab (tab.value)}
+		{#each tabs as tab, i (tab.value)}
 			<Tabs.Trigger
 				value={tab.value}
-				class="relative flex shrink-0 cursor-pointer items-center px-4 text-sm font-medium transition-colors after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors data-[state=active]:text-[var(--color-text)] data-[state=active]:after:bg-[var(--color-primary)] data-[state=inactive]:text-[var(--color-muted)] data-[state=inactive]:hover:text-[var(--color-text)]"
+				class="flex shrink-0 cursor-pointer items-center px-4 text-sm font-medium transition-colors after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors data-[state=active]:text-[var(--color-text)] data-[state=active]:after:bg-[var(--color-primary)] data-[state=inactive]:text-[var(--color-muted)] data-[state=inactive]:hover:text-[var(--color-text)] {autoOverflow &&
+				i >= effVisible
+					? 'invisible absolute left-0'
+					: 'relative'}"
 			>
 				{#snippet child({ props })}
 					<span {...props}>{tab.label}</span>
 				{/snippet}
 			</Tabs.Trigger>
 		{/each}
+		{#if autoOverflow}
+			<div
+				class="absolute right-3 top-0 flex h-full items-center bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur {visibleCount !==
+					0 && overflowTabs.length === 0
+					? 'hidden'
+					: ''}"
+			>
+			<Menu>
+				{#snippet trigger(props)}
+					<button
+						type="button"
+						{...props}
+						bind:this={moreEl}
+						class="relative flex shrink-0 cursor-pointer items-center gap-1 px-4 text-sm font-medium transition-colors after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors {activeOverflowLabel
+							? 'text-[var(--color-text)] after:bg-[var(--color-primary)]'
+							: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					>
+						<span class="max-w-20 truncate">{activeOverflowLabel ?? t('common.more', 'More')}</span>
+						<ChevronDown size={14} />
+					</button>
+				{/snippet}
+				{#each overflowTabs as tab (tab.value)}
+					<MenuItem onSelect={() => handleChange(tab.value)}>{tab.label}</MenuItem>
+				{/each}
+			</Menu>
+			</div>
+		{/if}
 	</Tabs.List>
 </Tabs.Root>

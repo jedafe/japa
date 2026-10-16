@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { type Snippet } from 'svelte';
-	import { page } from '$app/state';
+	import { page, navigating } from '$app/state';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import { routeSidebar } from './routeSidebar.svelte';
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
@@ -112,6 +112,17 @@
 	>
 		{#if sidebar}
 			{@render sidebar()}
+		{:else if navigating?.to}
+			<!-- Client navigation in flight — the incoming route's SetSidebar
+			     hasn't mounted yet, so pulse placeholders in place of the
+			     route widgets until it registers. -->
+			{#each [0, 1] as i (i)}
+				<div class="animate-pulse rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="mb-3 h-4 w-1/3 rounded bg-[var(--color-surface-subtle)]"></div>
+					<div class="mb-2 h-3 w-full rounded bg-[var(--color-surface-subtle)]"></div>
+					<div class="h-3 w-2/3 rounded bg-[var(--color-surface-subtle)]"></div>
+				</div>
+			{/each}
 		{/if}
 
 		{#each contentWidgets as widget (widget.id)}
