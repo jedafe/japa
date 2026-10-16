@@ -69,13 +69,15 @@ func TestGenerateContentEmbedding_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(got) != len(expected) {
-		t.Fatalf("expected %d dimensions, got %d", len(expected), len(got))
+	// Provider dims shorter than the storage width are zero-padded to
+	// EmbeddingDimension — the documented contract of this function.
+	if len(got) != EmbeddingDimension {
+		t.Fatalf("expected %d dimensions, got %d", EmbeddingDimension, len(got))
 	}
 
-	for i, v := range got {
-		if v != expected[i] {
-			t.Errorf("dimension %d: got %v, want %v", i, v, expected[i])
+	for i, v := range expected {
+		if got[i] != v {
+			t.Errorf("dimension %d: got %v, want %v", i, got[i], v)
 		}
 	}
 }
@@ -165,8 +167,8 @@ func TestGenerateContentEmbedding_Fallback(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(got) != 1 || got[0] != 1.0 {
-		t.Errorf("expected [1.0], got %v", got)
+	if len(got) != EmbeddingDimension || got[0] != 1.0 {
+		t.Errorf("expected 1536-dim vector with got[0]==1.0, got %v", got[:3])
 	}
 }
 

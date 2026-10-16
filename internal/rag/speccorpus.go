@@ -184,8 +184,10 @@ func (s *Service) ReindexSpecCorpus(ctx context.Context, dir string) (*SpecReind
 			return fmt.Errorf("rag: spec corpus: index %s: %w", rel, err)
 		}
 
-		stats.FilesIndexed++
-		stats.ChunksWritten += n
+		if n > 0 {
+			stats.FilesIndexed++
+			stats.ChunksWritten += n
+		}
 		return nil
 	})
 	if walkErr != nil {
@@ -442,7 +444,8 @@ func (s *Store) SearchSpecs(ctx context.Context, queryVector []float32, language
 
 	var prefix *string
 	if pathPrefix != "" {
-		prefix = &pathPrefix
+		escaped := escapeLikePrefix(pathPrefix)
+		prefix = &escaped
 	}
 
 	rows, err := s.queries.SearchSpecEmbeddings(ctx, gen.SearchSpecEmbeddingsParams{
@@ -470,4 +473,12 @@ func (s *Store) SearchSpecs(ctx context.Context, queryVector []float32, language
 	}
 
 	return results, nil
+}
+
+// escapeLikePrefix escapes LIKE wildcards in a caller-supplied path prefix so
+// '%'/'_'/” in a path_prefix argument can never widen the match into a
+// pattern — it stays a literal prefix filter.
+func escapeLikePrefix(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
 }

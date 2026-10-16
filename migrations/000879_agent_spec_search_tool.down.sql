@@ -1,4 +1,4 @@
--- 000878_agent_spec_search_tool.down.sql
+-- 000879_agent_spec_search_tool.down.sql
 
 BEGIN;
 

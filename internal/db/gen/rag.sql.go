@@ -981,7 +981,7 @@ JOIN rag_spec_sources ss ON ss.id = ce.entity_id
 WHERE ce.entity_type = 'spec_doc'
  AND ce.visibility = 'private'
  AND ($2::text = '' OR ce.language = $2)
- AND ($3::text = '' OR ss.path LIKE $3 || '%')
+ AND ($3::text = '' OR ss.path LIKE $3 || '%' ESCAPE '\')
 ORDER BY ce.embedding <=> $1
 LIMIT $4
 `

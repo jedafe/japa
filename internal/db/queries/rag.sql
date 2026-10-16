@@ -507,6 +507,6 @@ JOIN rag_spec_sources ss ON ss.id = ce.entity_id
 WHERE ce.entity_type = 'spec_doc'
  AND ce.visibility = 'private'
  AND (@language::text = '' OR ce.language = @language)
- AND (sqlc.narg(path_prefix)::text = '' OR ss.path LIKE sqlc.narg(path_prefix) || '%')
+ AND (sqlc.narg(path_prefix)::text = '' OR ss.path LIKE sqlc.narg(path_prefix) || '%' ESCAPE '\')
 ORDER BY ce.embedding <=> @query_embedding
 LIMIT @top_k;

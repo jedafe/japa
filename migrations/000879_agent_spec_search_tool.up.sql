@@ -1,4 +1,4 @@
--- 000878_agent_spec_search_tool.up.sql — register the spec.search agent
+-- 000879_agent_spec_search_tool.up.sql — register the spec.search agent
 -- tool (§121, ADR-131). Staff-only privileged retrieval over the .jeos
 -- engineering-spec corpus (spec_doc chunks, visibility='private') via
 -- rag.Service.RetrievePrivileged. Gated by the agent.spec_search node
