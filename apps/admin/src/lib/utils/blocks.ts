@@ -3,6 +3,7 @@ import type { Block, ContainerProps, GuestHomeData } from '@japaconnect/landing-
 /** Block types that can contain nested child blocks in the page builder. */
 export const CONTAINER_LIKE_TYPES = new Set([
 	'container',
+	'explore_map',
 	'accordion',
 	'tabs',
 	'carousel',
@@ -45,6 +46,12 @@ export const CHILD_ONLY_TYPES = new Set([
 	'guest_footer_column',
 	'guest_footer_link',
 	'guest_footer_social',
+	'explore_map_toolbar',
+	'explore_map_legend',
+	'explore_map_region_filter',
+	'explore_map_stats',
+	'explore_map_canvas',
+	'explore_map_col_index',
 ]);
 
 /** Whether a block type is only valid as a nested child of a guest container. */
@@ -300,6 +307,15 @@ export function defaultChildrenFor(type: Block['type']): Block[] | undefined {
 				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: {} },
 				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: {} },
 				{ id: crypto.randomUUID(), type: 'guest_hero_community_member', visible: true, props: {} },
+			] as Block[];
+		case 'explore_map':
+			return [
+				{ id: crypto.randomUUID(), type: 'explore_map_toolbar', visible: true, props: {} },
+				{ id: crypto.randomUUID(), type: 'explore_map_legend', visible: true, props: {} },
+				{ id: crypto.randomUUID(), type: 'explore_map_region_filter', visible: true, props: {} },
+				{ id: crypto.randomUUID(), type: 'explore_map_stats', visible: true, props: {} },
+				{ id: crypto.randomUUID(), type: 'explore_map_canvas', visible: true, props: {} },
+				{ id: crypto.randomUUID(), type: 'explore_map_col_index', visible: true, props: {} },
 			] as Block[];
 		default:
 			return undefined;
