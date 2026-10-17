@@ -15,8 +15,9 @@ export function exploreMapChildVisible(P: ExploreMapProps, type: string): boolea
 		case 'explore_map_toolbar': return !!P.show_toolbar;
 		case 'explore_map_legend': return !!P.show_legend && (P.categories?.length ?? 0) > 0;
 		case 'explore_map_region_filter': return !!P.show_region_filter;
-		// Bottom mode floats stats inside the canvas card instead.
-		case 'explore_map_stats': return !!P.show_stats && (P.stats?.length ?? 0) > 0 && P.aside_position !== 'bottom';
+		// Stats floats inside the canvas card on overlay placement (incl.
+		// bottom-aside mode, which always forces overlay).
+		case 'explore_map_stats': return !!P.show_stats && (P.stats?.length ?? 0) > 0 && P.aside_position !== 'bottom' && P.stats_position !== 'overlay';
 		case 'explore_map_col_index': return !!P.show_col_index && (P.col_bands?.length ?? 0) > 0;
 		case 'explore_map_canvas': return true;
 		default: return true; // unknown nested types always render

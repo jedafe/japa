@@ -477,6 +477,10 @@ export interface ExploreMapProps {
   /** 'left' (default) puts the legend/stats aside beside the map; 'bottom'
    * stacks them horizontally below so the map spans full width. */
   aside_position?: 'left' | 'bottom';
+  /** Where quick stats render: 'overlay' floats the card at the map's
+   * bottom-left (the /wiki look); 'aside' keeps it in the side panel.
+   * aside_position 'bottom' always forces overlay. Default 'overlay'. */
+  stats_position?: 'aside' | 'overlay';
   /** Nested `explore_map_*` child blocks; empty/unset → seeded defaults
    * render the standard layout. */
   children?: Block[];

@@ -16,6 +16,7 @@ export const EXPLORE_MAP_DEFAULTS: ExploreMapProps = {
 	geo_source: 'api',
 	pin_limit: 8,
 	default_currency: 'USD',
+	stats_position: 'overlay',
 	views: [
 		{ key: 'destinations', label: 'Destinations', source: 'countries' },
 		{ key: 'cities', label: 'Cities', source: 'col_cities' },
