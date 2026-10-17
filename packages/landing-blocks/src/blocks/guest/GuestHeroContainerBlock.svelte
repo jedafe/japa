@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { GuestHeroContainerProps, Block } from '../../types';
   import type { FetchContext } from '../../data/types';
-  import { blockRegistry } from '../../render/blockRegistry';
+  import { blockComponentFor } from '../../render/blockComponent';
   import BlockShell from '../../shell/BlockShell.svelte';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
   import { responsiveVisibilityCss } from '../../shell/styleToCss';
@@ -43,7 +43,7 @@
   const rightChildren = $derived(children.filter((b) => rightTypes.includes(b.type)));
 
   function renderableComponent(block: Block) {
-    const meta = blockRegistry[block.type];
+    const meta = blockComponentFor(block.type);
     if (!meta || !isBlockVisible(block, geoCountry)) return null;
     return { Component: meta.component, style: block.style };
   }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ContainerProps, Block } from '../types';
   import type { FetchContext } from '../data/types';
-  import { blockRegistry } from '../render/blockRegistry';
+  import { blockComponentFor } from '../render/blockComponent';
   import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
   import { getBlockContentContext } from '../shell/blockContent';
@@ -198,7 +198,7 @@
     <div class="container-grid grid grid-cols-12" data-ctr={containerId} style={`gap: ${gapMap[props.gap ?? 'md']}`}>
       {#each props.children as block, i (block.id)}
         {#if isBlockVisible(block, geoCountry)}
-          {@const meta = blockRegistry[block.type]}
+          {@const meta = blockComponentFor(block.type)}
           {#if meta}
             {@const span = childSpan(block, props.columns)}
             <div class="container-cell" data-cell={i} style={`--span: ${span}`}>
@@ -223,7 +223,7 @@
     >
       {#each props.children as block, i (block.id)}
         {#if isBlockVisible(block, geoCountry)}
-          {@const meta = blockRegistry[block.type]}
+          {@const meta = blockComponentFor(block.type)}
           {#if meta}
             <div class="flex-1 min-w-0" data-cell={i}>
               <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
@@ -244,7 +244,7 @@
     <div class="flex flex-col" data-ctr={containerId} style={`gap: ${gapMap[props.gap ?? 'md']}`}>
       {#each props.children as block, i (block.id)}
         {#if isBlockVisible(block, geoCountry)}
-          {@const meta = blockRegistry[block.type]}
+          {@const meta = blockComponentFor(block.type)}
           {#if meta}
             <div data-cell={i}>
               <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>

@@ -2,7 +2,7 @@
   import type { GuestHeroImageProps, MediaRef, Block, BlockStyle } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
-  import { blockRegistry } from '../../render/blockRegistry';
+  import { blockComponentFor } from '../../render/blockComponent';
   import BlockShell from '../../shell/BlockShell.svelte';
   import { resolveAssetUrl } from '../../assetBase';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
@@ -102,7 +102,7 @@
   }
 
   function renderableComponent(block: Block) {
-    const meta = blockRegistry[block.type];
+    const meta = blockComponentFor(block.type);
     if (!meta || !isBlockVisible(block, geoCountry)) return null;
     return { Component: meta.component, style: childStyle(block) };
   }

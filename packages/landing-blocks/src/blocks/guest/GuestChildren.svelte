@@ -7,7 +7,7 @@
   // omit `tag` to render the BlockShell directly.
   import type { Block } from '../../types';
   import type { FetchContext } from '../../data/types';
-  import { blockRegistry } from '../../render/blockRegistry';
+  import { blockComponentFor } from '../../render/blockComponent';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
   import BlockShell from '../../shell/BlockShell.svelte';
   import ScopedCss from '../../shell/ScopedCss.svelte';
@@ -41,17 +41,20 @@
     initialHasContent={!isBlockEmpty(block)}
     scopeKey={block.id}
   >
-    {@const Component = blockRegistry[block.type].component}
-    {#if block.type === 'custom'}
-      <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
-    {:else}
-      <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+    {@const meta = blockComponentFor(block.type)}
+    {#if meta}
+      {@const Component = meta.component}
+      {#if block.type === 'custom'}
+        <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+      {:else}
+        <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+      {/if}
     {/if}
   </BlockShell>
 {/snippet}
 
 {#each blocks as block (block.id)}
-  {#if isBlockVisible(block, geoCountry) && blockRegistry[block.type]}
+  {#if isBlockVisible(block, geoCountry) && blockComponentFor(block.type)}
     {#if tag}
       <svelte:element this={tag} class={cls} data-item={block.id}>
         {@render childShell(block)}

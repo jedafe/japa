@@ -2,7 +2,7 @@
   import type { AccordionProps, Block } from '../types';
   import type { FetchContext } from '../data/types';
   import { Accordion } from 'bits-ui';
-  import { blockRegistry } from '../render/blockRegistry';
+  import { blockComponentFor } from '../render/blockComponent';
   import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
   import ScopedCss from '../shell/ScopedCss.svelte';
@@ -32,7 +32,7 @@
 
 {#snippet nestedBlock(block: Block)}
   {#if isBlockVisible(block, geoCountry)}
-    {@const meta = blockRegistry[block.type]}
+    {@const meta = blockComponentFor(block.type)}
     {#if meta}
       {@const Component = meta.component}
       <BlockShell

@@ -4,7 +4,7 @@
   import { Globe, ArrowRight } from 'lucide-svelte';
   import { getGuestHomeData } from '../../data/guestHomeContext';
   import { writable } from 'svelte/store';
-  import { blockRegistry } from '../../render/blockRegistry';
+  import { blockComponentFor } from '../../render/blockComponent';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
   import { countryCodeToEmoji } from '../../lib/countryEmoji';
   import BlockShell from '../../shell/BlockShell.svelte';
@@ -91,7 +91,7 @@
     {#if manualChildren}
       {#each manualChildren as block (block.id)}
         {#if isBlockVisible(block, geoCountry)}
-          {@const meta = blockRegistry[block.type]}
+          {@const meta = blockComponentFor(block.type)}
           {#if meta}
             <li class="destination-item" data-item={block.id}>
               <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
@@ -109,7 +109,7 @@
     {:else if visibleItems}
       {#each visibleItems as block (block.id)}
         {#if isBlockVisible(block, geoCountry)}
-          {@const meta = blockRegistry[block.type]}
+          {@const meta = blockComponentFor(block.type)}
           {#if meta}
             <li class="destination-item" data-item={block.id}>
               <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>

@@ -4,7 +4,7 @@
   import type { Component } from 'svelte';
   import { Tabs } from 'bits-ui';
   import * as LucideIcons from 'lucide-svelte';
-  import { blockRegistry } from '../render/blockRegistry';
+  import { blockComponentFor } from '../render/blockComponent';
   import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
   import ScopedCss from '../shell/ScopedCss.svelte';
@@ -60,7 +60,7 @@
           {#if tab.content_blocks}
             {#each tab.content_blocks as block (block.id)}
               {#if isBlockVisible(block, geoCountry)}
-                {@const meta = blockRegistry[block.type]}
+                {@const meta = blockComponentFor(block.type)}
                 {#if meta}
                   {@const Component = meta.component}
                   <BlockShell

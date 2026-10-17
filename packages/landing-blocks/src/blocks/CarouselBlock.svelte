@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { CarouselProps } from '../types';
   import type { FetchContext } from '../data/types';
-  import { blockRegistry } from '../render/blockRegistry';
+  import { blockComponentFor } from '../render/blockComponent';
   import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
   import ScopedCss from '../shell/ScopedCss.svelte';
@@ -51,7 +51,7 @@
   <div class="mx-auto max-w-6xl">
     <div class="relative overflow-hidden rounded-[var(--radius-card)]">
       {#each props.slides as slide, i}
-        {@const meta = blockRegistry[slide.type]}
+        {@const meta = blockComponentFor(slide.type)}
         {#if isBlockVisible(slide, geoCountry) && meta}
           {@const Component = meta.component}
           <div
