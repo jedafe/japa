@@ -477,7 +477,23 @@ export interface ExploreMapProps {
   /** 'left' (default) puts the legend/stats aside beside the map; 'bottom'
    * stacks them horizontally below so the map spans full width. */
   aside_position?: 'left' | 'bottom';
+  /** Nested `explore_map_*` child blocks; empty/unset → seeded defaults
+   * render the standard layout. */
+  children?: Block[];
 }
+
+/** Shared props for `explore_map_*` children — config lives on the parent
+ *  `explore_map` block; children are context-driven layout units. */
+export interface ExploreMapChildProps {
+  /** Reserved for future per-child overrides — unused today. */
+  overrides?: Record<string, unknown>;
+}
+export type ExploreMapToolbarProps = ExploreMapChildProps;
+export type ExploreMapLegendProps = ExploreMapChildProps;
+export type ExploreMapRegionFilterProps = ExploreMapChildProps;
+export type ExploreMapStatsProps = ExploreMapChildProps;
+export type ExploreMapCanvasProps = ExploreMapChildProps;
+export type ExploreMapColIndexProps = ExploreMapChildProps;
 
 export interface TableProps {
   columns: Array<{ key: string; label: string; align?: 'left' | 'center' | 'right' }>;
