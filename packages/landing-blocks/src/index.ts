@@ -36,6 +36,7 @@ export { geoCopy, GLOBAL_TOKENS, getGeoTokens } from './geo/copyRegistry';
 export { EXPLORE_MAP_DEFAULTS } from './blocks/exploreMapDefaults';
 export { WORLD_COUNTRIES, WORLD_VIEWBOX, REGION_BOUNDS, COUNTRY_BOUNDS } from './geo/worldMapData';
 export { ADMIN1_CENTROIDS } from './geo/worldAdmin1';
+export { CITY_POSITIONS, CITY_SHAPES } from './geo/worldCities';
 export { default as ExploreMapBlock } from './blocks/ExploreMapBlock.svelte';
 
 export { styleToCss, responsiveStyleToCss, type ResolvedStyle } from './shell/styleToCss';

@@ -28,7 +28,16 @@
 	const fetchCtx = $derived(
 		browser ? { fetch, apiBase: apiBaseUrl, surface: 'main' as const } : undefined
 	);
-	const exploreProps = { headline: '', subtitle: '', geo_source: 'api' as const, pin_limit: 10 };
+	// Full-width hero: toolbar off, legend/stats stacked horizontally below
+	// the map so it spans the full content column.
+	const exploreProps = {
+		headline: '',
+		subtitle: '',
+		geo_source: 'api' as const,
+		pin_limit: 10,
+		show_toolbar: false,
+		aside_position: 'bottom' as const,
+	};
 
 	let { data }: { data: PageData } = $props();
 
@@ -129,10 +138,8 @@
 	<link rel="canonical" href={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1rem">
+<div class="mx-auto w-full max-w-4xl px-4 pt-3 sm:px-6">
 	<ListPageBar title={t('wiki.heading', 'Wiki')} />
-
-	<div class="p-4">
 	<p class="text-sm text-[var(--color-muted)]">
 		{t('wiki.landing_description', 'Choose a destination to explore community-maintained guides.')}
 	</p>
@@ -142,7 +149,11 @@
 			{t('wiki.community_data_note', 'Guides and destination data are community-maintained — suggest edits on any wiki page.')}
 		</p>
 	{/if}
+</div>
 
+<!-- §16/§80 — hero shares the same 4xl column width as the body below;
+     the shell's right rail is still suppressed on this route. -->
+<div class="mx-auto w-full max-w-4xl pt-3">
 	{#if data.builderBlocks?.length}
 		<!-- Builder-managed hero: a published Page Builder page with slug
 		     "wiki" takes over this slot; else the built-in explorer map. -->
@@ -150,7 +161,10 @@
 	{:else}
 		<ExploreMapBlock props={exploreProps} {fetchCtx} />
 	{/if}
+</div>
 
+<div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1rem">
+	<div class="px-4 py-4 sm:px-6">
 	{#if !wikiEnabled}
 		<div class="mt-8">
 			<EmptyState

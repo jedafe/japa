@@ -465,6 +465,18 @@ export interface ExploreMapProps {
   /** Explicit [x0,y0,x1,y1] viewBox rect to fit on mount — takes precedence
    * over initial_region (e.g. COUNTRY_BOUNDS / admin-1 bounds for wiki). */
   initial_bounds?: [number, number, number, number];
+  /** SVG path drawn as a highlighted breakout shape over the country fills
+   * (e.g. an admin-1 state outline on subnational wiki pages). */
+  focus_d?: string;
+  /** SVG path for the containing unit drawn as a bold outline when focus_d
+   * is a sub-unit — e.g. the state boundary around a city breakout. */
+  container_d?: string;
+  /** Render the map as a fixed-height cover (SVG preserveAspectRatio=slice)
+   * that fills its slot like a cover image, instead of aspect-[2/1] meet. */
+  cover_mode?: boolean;
+  /** 'left' (default) puts the legend/stats aside beside the map; 'bottom'
+   * stacks them horizontally below so the map spans full width. */
+  aside_position?: 'left' | 'bottom';
 }
 
 export interface TableProps {

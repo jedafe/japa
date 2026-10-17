@@ -247,7 +247,15 @@
   function clampVb(v: [number, number, number, number]): [number, number, number, number] {
     const w = Math.min(Math.max(v[2], 80), VB_W);
     const h = Math.min(Math.max(v[3], 40), VB_H);
-    return [Math.min(Math.max(v[0], 0), VB_W - w), Math.min(Math.max(v[1], 0), VB_H - h), w, h];
+    // Re-center on the requested midpoint — otherwise small bounds that hit
+    // the min-size clamp (city-level fits) end up pinned to the top-left.
+    const cx = v[0] + v[2] / 2;
+    const cy = v[1] + v[3] / 2;
+    return [
+      Math.min(Math.max(cx - w / 2, 0), VB_W - w),
+      Math.min(Math.max(cy - h / 2, 0), VB_H - h),
+      w, h,
+    ];
   }
 
   const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -310,10 +318,12 @@
     // Touch taps never fire a pre-click pointermove — surface the pin card on down.
     if (svgEl) hoverAt(e, svgEl.getBoundingClientRect());
   }
-  /** Screen-space position of a pin under preserveAspectRatio="meet" —
-   * accounts for letterboxing when the viewBox aspect ≠ the element's. */
+  /** Screen-space position of a pin under preserveAspectRatio — "meet"
+   * letterboxes (min scale), cover_mode "slice" crops (max scale). */
   function pinScreen(p: Pin, rect: DOMRect): { x: number; y: number } {
-    const s = Math.min(rect.width / vb[2], rect.height / vb[3]);
+    const s = P.cover_mode
+      ? Math.max(rect.width / vb[2], rect.height / vb[3])
+      : Math.min(rect.width / vb[2], rect.height / vb[3]);
     const offX = (rect.width - vb[2] * s) / 2;
     const offY = (rect.height - vb[3] * s) / 2;
     return { x: (p.x - vb[0]) * s + offX + rect.left, y: (p.y - vb[1]) * s + offY + rect.top };
@@ -389,11 +399,12 @@
   const visitorCode = $derived(geoCountry?.toUpperCase() ?? '');
 </script>
 
-<section class="explore-map px-4 py-10 sm:px-6" id={id}>
+<section class="explore-map {P.cover_mode ? '' : 'px-4 py-10 sm:px-6'}" id={id}>
   <div class="mx-auto max-w-7xl">
-    <div class="flex flex-col gap-5 lg:flex-row">
-      <!-- ══ Left panel (below the map on mobile/tablet) ══════ -->
-      <aside class="order-2 flex w-full shrink-0 flex-col gap-4 lg:order-1 lg:w-60">
+    <div class="flex flex-col gap-5 {P.aside_position === 'bottom' ? '' : 'lg:flex-row'}">
+      <!-- ══ Panel — beside the map ('left') or stacked below ('bottom') ══ -->
+      {#if (P.show_legend && (P.categories?.length ?? 0) > 0) || P.show_region_filter || (P.aside_position !== 'bottom' && P.show_stats && (P.stats?.length ?? 0) > 0) || (P.aside_position === 'bottom' && P.show_col_index && (P.col_bands?.length ?? 0) > 0)}
+      <aside class="order-2 w-full shrink-0 {P.aside_position === 'bottom' ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-4 lg:order-1 lg:w-60'}"> <!-- bottom mode: below map+stats -->
         {#if P.show_legend && (P.categories?.length ?? 0) > 0}
           <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
             <h3 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Map legend</h3>
@@ -450,7 +461,7 @@
           </div>
         {/if}
 
-        {#if P.show_stats && (P.stats?.length ?? 0) > 0}
+        {#if P.aside_position !== 'bottom' && P.show_stats && (P.stats?.length ?? 0) > 0}
           <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
             <h3 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Quick stats</h3>
             <ul class="space-y-3">
@@ -469,10 +480,27 @@
             </ul>
           </div>
         {/if}
+
+        <!-- COL index — in the aside row only when the aside is bottomed -->
+        {#if P.aside_position === 'bottom' && P.show_col_index && (P.col_bands?.length ?? 0) > 0}
+          <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+            <h3 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Cost of living index (Monthly)</h3>
+            <ul class="space-y-2.5">
+              {#each P.col_bands ?? [] as band (band.key)}
+                <li class="flex items-center gap-2.5 rounded-[var(--radius)] px-1.5 py-1 transition-colors hover:bg-[var(--color-surface-subtle)]">
+                  <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background:{band.color}"></span>
+                  <span class="text-xs font-semibold text-[var(--color-text)]">{bandRange(band.min, band.max)}</span>
+                  <span class="truncate text-xs text-[var(--color-muted)]">{band.label}</span>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
       </aside>
+      {/if}
 
       <!-- ══ Main column (map first on mobile/tablet) ════════ -->
-      <div class="order-1 min-w-0 flex-1 lg:order-2">
+      <div class="order-1 min-w-0 flex-1 {P.aside_position === 'bottom' ? '' : 'lg:order-2'}">
         <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div class="min-w-0">
             {#if P.headline}<h2 class="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-[28px]">{P.headline}</h2>{/if}
@@ -533,8 +561,8 @@
           <svg
             bind:this={svgEl}
             viewBox="{vb[0]} {vb[1]} {vb[2]} {vb[3]}"
-            preserveAspectRatio="xMidYMid meet"
-            class="block aspect-[2/1] w-full select-none {panning ? 'cursor-grabbing' : 'cursor-grab'}"
+            preserveAspectRatio={P.cover_mode ? 'xMidYMid slice' : 'xMidYMid meet'}
+            class="block w-full select-none {P.cover_mode ? 'h-64 sm:h-72' : 'aspect-[2/1]'} {panning ? 'cursor-grabbing' : 'cursor-grab'}"
             style="overflow: visible"
             role="img"
             aria-label="Interactive world map of destinations"
@@ -552,12 +580,36 @@
               <path
                 d={c.d}
                 fill={bandColorFor(c.region, c.subregion)}
-                fill-opacity={isVisitor ? 1 : inRegion ? 0.85 : 0.18}
+                fill-opacity={isVisitor ? 1 : inRegion ? (P.focus_d ? 0.4 : 0.85) : 0.18}
                 stroke={isVisitor ? 'var(--color-primary)' : '#ffffff'}
                 stroke-opacity={inRegion ? 0.9 : 0.35}
-                stroke-width={isVisitor ? 1.6 / (vb[2] / VB_W) : 0.5 / (vb[2] / VB_W)}
+                stroke-width={isVisitor ? 3 * (vb[2] / VB_W) : 1.2 * (vb[2] / VB_W)}
               />
             {/each}
+
+            {#if P.container_d}
+              <!-- Container outline: the parent unit's boundary drawn bold
+                   around the focus shape (state around a city breakout). -->
+              <path
+                d={P.container_d}
+                fill="none"
+                stroke="var(--color-primary)"
+                stroke-opacity={0.9}
+                stroke-width={2.5 * (vb[2] / VB_W)}
+              />
+            {/if}
+            {#if P.focus_d}
+              <!-- Breakout shape: the focused unit drawn over the
+                   country context (state/city outline inside its parent). -->
+              <path
+                d={P.focus_d}
+                fill="var(--color-primary)"
+                fill-opacity={0.7}
+                stroke="#ffffff"
+                stroke-opacity={0.9}
+                stroke-width={1.5 * (vb[2] / VB_W)}
+              />
+            {/if}
 
             {#each visiblePins as p, i (p.country + i)}
               <g transform="translate({p.x} {p.y})">
@@ -606,10 +658,32 @@
               </button>
             </div>
           {/if}
+
+          <!-- Quick stats — floating card at the map's bottom-left in
+               bottom mode (mirrors the zoom controls on the right). -->
+          {#if P.aside_position === 'bottom' && P.show_stats && (P.stats?.length ?? 0) > 0}
+            <div class="absolute bottom-4 left-4 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-3 shadow-sm backdrop-blur-sm">
+              <h3 class="mb-2.5 text-[11px] font-semibold tracking-wide text-[var(--color-muted)]">Quick stats</h3>
+              <ul class="space-y-2.5">
+                {#each P.stats ?? [] as stat (stat.label)}
+                  {@const Icon = iconFor(stat.icon)}
+                  <li class="flex items-center gap-2.5">
+                    <span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                      {#if Icon}<Icon size={14} />{/if}
+                    </span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-bold leading-tight text-[var(--color-text)]">{statValue(stat.source, stat.value, stat.suffix)}</span>
+                      <span class="block truncate text-[11px] text-[var(--color-muted)]">{stat.label}</span>
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
         </div>
 
-        <!-- COL index bar -->
-        {#if P.show_col_index && (P.col_bands?.length ?? 0) > 0}
+        <!-- COL index bar (default 'left' layout — under the map) -->
+        {#if P.aside_position !== 'bottom' && P.show_col_index && (P.col_bands?.length ?? 0) > 0}
           <div class="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 shadow-sm">
             <h3 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Cost of living index (Monthly)</h3>
             <ul class="flex flex-wrap items-center gap-x-8 gap-y-2">
@@ -630,8 +704,8 @@
 
 {#snippet marker(p: Pin)}
   {@const zf = vb[2] / VB_W}
-  <!-- pin marker — scales inversely with zoom so it stays a constant screen size -->
-  <g transform="scale({9 / zf / 10})">
+  <!-- pin marker — scales WITH zoom so it stays a constant screen size -->
+  <g transform="scale({zf * 1.2})">
     <path
       d="M0 0 C-4.5 -7 -6 -10 -6 -13 A6 6 0 1 1 6 -13 C6 -10 4.5 -7 0 0 Z"
       fill={p.color}

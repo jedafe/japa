@@ -459,7 +459,11 @@
 	</div>
 
 	<div class="mx-auto w-full max-w-3xl px-4 pb-8">
-		{#if heroUrl}
+		<!-- §16/§80 — the contextual explore map replaces the static cover
+		     image when the space's geo resolves; the hero stays as fallback. -->
+		{#if space && wikiEnabled && !data.loadError && space.geo_code}
+			<WikiExploreMap {space} {fetchCtx} countryCode={data.countryGeoCode} stateCode={data.stateGeoCode} />
+		{:else if heroUrl}
 			<img
 				src={heroUrl}
 				alt={spaceName}
@@ -470,10 +474,6 @@
 		     media field (e.g. the overview group's `gallery`) has values. -->
 		{#if structuredEditsOn && spaceId && !data.loadError}
 			<WikiGalleryStrip entityId={spaceId} />
-		{/if}
-
-		{#if space && wikiEnabled && !data.loadError}
-			<WikiExploreMap {space} {fetchCtx} countryCode={data.countryGeoCode} stateCode={data.stateGeoCode} />
 		{/if}
 
 		{#if !wikiEnabled && data.loadError}

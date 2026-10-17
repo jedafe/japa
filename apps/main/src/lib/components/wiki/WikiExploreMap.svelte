@@ -5,7 +5,7 @@
 	//   country → fit the continent region, pin at country centroid
 	//   state   → fit the country bounds, pin at the admin-1 centroid
 	//   city    → fit the admin-1 (state) bounds, pin best-effort
-	import { ExploreMapBlock, WORLD_COUNTRIES, ADMIN1_CENTROIDS, COUNTRY_BOUNDS } from '@japaconnect/landing-blocks';
+	import { ExploreMapBlock, WORLD_COUNTRIES, ADMIN1_CENTROIDS, COUNTRY_BOUNDS, CITY_POSITIONS, CITY_SHAPES } from '@japaconnect/landing-blocks';
 	import type { ExploreMapProps, FetchContext } from '@japaconnect/landing-blocks';
 	import type { Space } from '$lib/types';
 
@@ -59,9 +59,36 @@
 		countryCode && stateCodeProp ? `${countryCode}-${stateCodeProp}` : ''
 	);
 
-	// Pin position: own admin-1 centroid → parent state's centroid
-	// (approximate for cities) → country centroid fallback.
+	// Normalized "{cc}:{name}" lookup key shared by city positions + shapes.
+	const nameKey = $derived(
+		countryCode
+			? `${countryCode.toLowerCase()}:${space.name
+					.normalize('NFD')
+					.replace(/[̀-ͯ]/g, '') // U+0300–U+036F combining marks
+					.toLowerCase()
+					.trim()}`
+			: ''
+	);
+
+	// City-level spaces get their real position from the GeoNames city set
+	// (keyed "{cc}:{normalized name}" — e.g. "ng:agege").
+	const cityPos = $derived.by<[number, number] | undefined>(() => {
+		if (!nameKey || space.level === 'country' || space.level === 'state') return undefined;
+		const hit = CITY_POSITIONS[nameKey];
+		return hit ? [hit.x, hit.y] : undefined;
+	});
+
+	// The city's own admin-2 outline (geoBoundaries) — city pages draw their
+	// own boundary for consistency with state pages' admin-1 breakout.
+	const cityShape = $derived.by(() => {
+		if (!nameKey || space.level === 'country' || space.level === 'state') return undefined;
+		return CITY_SHAPES[nameKey];
+	});
+
+	// Pin position: real city coords → own admin-1 centroid → parent state's
+	// centroid (approximate) → country centroid fallback.
 	const pinPos = $derived.by<[number, number] | undefined>(() => {
+		if (cityPos) return cityPos;
 		const own = ownAdmin1 ? ADMIN1_CENTROIDS[ownAdmin1] : undefined;
 		if (own) return [own.x, own.y];
 		const parent = parentAdmin1 ? ADMIN1_CENTROIDS[parentAdmin1] : undefined;
@@ -74,9 +101,11 @@
 	const initialBounds = $derived.by<[number, number, number, number] | undefined>(() => {
 		if (space.level === 'country') return undefined;
 		if (space.level === 'state') return countryCode ? COUNTRY_BOUNDS[countryCode] : undefined;
-		// city or deeper: prefer the parent state's bounds, then own, then country
+		// city or deeper: fit the parent state's bounds ("city inside the
+		// state") — the city's own bounds only when no state is resolvable.
 		const b =
 			(parentAdmin1 ? ADMIN1_CENTROIDS[parentAdmin1]?.b : undefined) ??
+			cityShape?.b ??
 			(ownAdmin1 ? ADMIN1_CENTROIDS[ownAdmin1].b : undefined) ??
 			(countryCode ? COUNTRY_BOUNDS[countryCode] : undefined);
 		return b || undefined;
@@ -87,13 +116,30 @@
 	const mapProps = $derived<ExploreMapProps>({
 		headline: '',
 		subtitle: '',
+		show_toolbar: false,
 		show_legend: false,
 		show_stats: false,
 		show_region_filter: false,
+		// The COL index bar is world-explorer chrome — not meaningful on a
+		// contextual destination breakout.
+		show_col_index: false,
+		cover_mode: true,
 		geo_source: 'manual',
 		pin_limit: 10,
 		initial_region: meta?.region,
 		initial_bounds: initialBounds,
+		// Breakout outline: state's own admin-1 path; city's own admin-2 path
+		// (parent state outline as fallback when the city has no boundary data).
+		focus_d:
+			space.level === 'country'
+				? undefined
+				: (cityShape?.d ?? ADMIN1_CENTROIDS[ownAdmin1 || parentAdmin1]?.d),
+		// On city pages the parent state outline stays visible as a bold
+		// container boundary — matching how the country reads on state pages.
+		container_d:
+			space.level === 'country' || space.level === 'state'
+				? undefined
+				: (parentAdmin1 ? ADMIN1_CENTROIDS[parentAdmin1]?.d : undefined),
 		pins: countryCode
 			? [{
 					country: countryCode,
@@ -109,7 +155,7 @@
 </script>
 
 {#if meta}
-	<div class="mt-6">
+	<div class="mt-4">
 		<ExploreMapBlock props={mapProps} {fetchCtx} geoCountry={countryCode} />
 	</div>
 {/if}
