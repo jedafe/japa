@@ -159,7 +159,11 @@
   {#if meta}
     {@const Component = meta.component}
     <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
-      <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+      {#if block.type === 'custom'}
+        <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+      {:else}
+        <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+      {/if}
     </BlockShell>
   {/if}
 {/snippet}
