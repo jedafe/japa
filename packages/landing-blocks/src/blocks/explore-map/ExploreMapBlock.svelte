@@ -13,7 +13,11 @@
     type GeoSpaceLite, type FxCurrency,
   } from './context.svelte';
   import { REGION_BOUNDS } from '../../geo/worldMapData';
-  import { blockRegistry } from '../../render/blockRegistry';
+  // Resolve children via the lazy registry indirection — a direct
+  // `blockRegistry` import would close a circular import (registry → this
+  // component → registry) that crashes whenever this module is evaluated
+  // before the registry (WikiExploreMap imports this block directly).
+  import { blockComponentFor } from '../../render/blockComponent';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
   import { responsiveVisibilityCss } from '../../shell/styleToCss';
   import ScopedCss from '../../shell/ScopedCss.svelte';
@@ -151,7 +155,7 @@
 </section>
 
 {#snippet childShell(block: Block)}
-  {@const meta = blockRegistry[block.type]}
+  {@const meta = blockComponentFor(block.type)}
   {#if meta}
     {@const Component = meta.component}
     <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>

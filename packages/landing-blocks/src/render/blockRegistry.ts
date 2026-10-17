@@ -1,6 +1,7 @@
 // packages/landing-blocks/src/render/blockRegistry.ts
 import type { Component } from 'svelte';
 import type { Block } from '../types';
+import { setBlockComponentResolver } from './blockComponent';
 import HeroBlock from '../blocks/HeroBlock.svelte';
 import CtaBannerBlock from '../blocks/CtaBannerBlock.svelte';
 import CardGridBlock from '../blocks/CardGridBlock.svelte';
@@ -130,3 +131,7 @@ export const blockRegistry: Record<Block['type'], BlockMeta> = {
   custom: { component: CustomBlock, icon: 'Puzzle', label: 'Custom Block', category: 'custom' },
   widget: { component: WidgetBlock, icon: 'LayoutDashboard', label: 'Widget', category: 'data' },
 };
+
+// Register the lazy resolver so parent blocks (e.g. explore_map) can look up
+// child components without importing this module — avoiding a circular import.
+setBlockComponentResolver((type) => blockRegistry[type as Block['type']]);
