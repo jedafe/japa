@@ -135,7 +135,7 @@
          placement (bottom-aside mode always forces overlay; mirrors the
          zoom controls on the right). -->
     {#if (ctx.P.aside_position === 'bottom' || ctx.P.stats_position === 'overlay') && ctx.P.show_stats && (ctx.P.stats?.length ?? 0) > 0}
-      <div class="absolute bottom-4 left-4 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-3 shadow-sm backdrop-blur-sm">
+      <div class="absolute bottom-4 left-4 hidden w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-3 shadow-sm backdrop-blur-sm lg:block">
         <h3 class="mb-2.5 text-[11px] font-semibold tracking-wide text-[var(--color-muted)]">Quick stats</h3>
         <ul class="space-y-2.5">
           {#each ctx.P.stats ?? [] as stat (stat.label)}

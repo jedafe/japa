@@ -19,7 +19,10 @@
 </script>
 
 {#if ctx && exploreMapChildVisible(ctx.P, 'explore_map_stats')}
-  <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+  <!-- Overlay placement: the canvas floats stats on lg+ — this card is the
+       mobile-only fallback (aside on 'left', below-map column on 'bottom'). -->
+  {@const overlay = ctx.P.aside_position === 'bottom' || ctx.P.stats_position === 'overlay'}
+  <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm {overlay ? 'lg:hidden' : ''}">
     <h3 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Quick stats</h3>
     <ul class="space-y-3">
       {#each ctx.P.stats ?? [] as stat (stat.label)}
