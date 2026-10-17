@@ -44,7 +44,12 @@ interface ExploreMapContextArgs {
 export class ExploreMapContext {
 	constructor(private args: ExploreMapContextArgs) {}
 
-	readonly P = $derived({ ...EXPLORE_MAP_DEFAULTS, ...this.args.props() });
+	/** Merged props — a getter (not $derived) so the class constructor can run
+	 *  before this field initializes; still reactive since props() reads the
+	 *  parent's $props() binding inside tracking contexts. */
+	get P(): ExploreMapProps {
+		return { ...EXPLORE_MAP_DEFAULTS, ...this.args.props() };
+	}
 
 	// ── Remote data (written by the parent's $effects) ─────────────
 	apiCountries = $state<GeoSpaceLite[]>([]);
@@ -357,7 +362,9 @@ export class ExploreMapContext {
 		return ((LucideIcons as Record<string, unknown>)[name] as Component) ?? null;
 	}
 
-	visitorCode = $derived(this.args.geoCountry()?.toUpperCase() ?? '');
+	get visitorCode(): string {
+		return this.args.geoCountry()?.toUpperCase() ?? '';
+	}
 }
 
 export function setExploreMapCtx(ctx: ExploreMapContext) {

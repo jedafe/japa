@@ -20,6 +20,12 @@ import FormEmbedBlock from '../blocks/FormEmbedBlock.svelte';
 import TimelineBlock from '../blocks/TimelineBlock.svelte';
 import MapBlock from '../blocks/MapBlock.svelte';
 import ExploreMapBlock from '../blocks/ExploreMapBlock.svelte';
+import ExploreMapToolbarBlock from '../blocks/explore-map/ExploreMapToolbarBlock.svelte';
+import ExploreMapLegendBlock from '../blocks/explore-map/ExploreMapLegendBlock.svelte';
+import ExploreMapRegionFilterBlock from '../blocks/explore-map/ExploreMapRegionFilterBlock.svelte';
+import ExploreMapStatsBlock from '../blocks/explore-map/ExploreMapStatsBlock.svelte';
+import ExploreMapCanvasBlock from '../blocks/explore-map/ExploreMapCanvasBlock.svelte';
+import ExploreMapColIndexBlock from '../blocks/explore-map/ExploreMapColIndexBlock.svelte';
 import TableBlock from '../blocks/TableBlock.svelte';
 import AdvertisementBlock from '../blocks/AdvertisementBlock.svelte';
 import LiveRateTickerBlock from '../blocks/LiveRateTickerBlock.svelte';
@@ -85,6 +91,12 @@ export const blockRegistry: Record<Block['type'], BlockMeta> = {
   timeline: { component: TimelineBlock, icon: 'GitBranch', label: 'Timeline', category: 'content' },
   map: { component: MapBlock, icon: 'Map', label: 'Map', category: 'geo' },
   explore_map: { component: ExploreMapBlock, icon: 'Globe2', label: 'World Explorer', category: 'geo' },
+  explore_map_toolbar: { component: ExploreMapToolbarBlock, icon: 'ListFilter', label: 'Explorer Toolbar', category: 'geo' },
+  explore_map_legend: { component: ExploreMapLegendBlock, icon: 'List', label: 'Explorer Legend', category: 'geo' },
+  explore_map_region_filter: { component: ExploreMapRegionFilterBlock, icon: 'MapPin', label: 'Explorer Region Filter', category: 'geo' },
+  explore_map_stats: { component: ExploreMapStatsBlock, icon: 'BarChart', label: 'Explorer Stats', category: 'geo' },
+  explore_map_canvas: { component: ExploreMapCanvasBlock, icon: 'Globe2', label: 'Explorer Canvas', category: 'geo' },
+  explore_map_col_index: { component: ExploreMapColIndexBlock, icon: 'DollarSign', label: 'Explorer COL Index', category: 'geo' },
   table: { component: TableBlock, icon: 'Table', label: 'Table', category: 'content' },
   advertisement: { component: AdvertisementBlock, icon: 'Megaphone', label: 'Advertisement', category: 'ads' },
   live_rate_ticker: { component: LiveRateTickerBlock, icon: 'TrendingUp', label: 'Live Rate Ticker', category: 'data' },

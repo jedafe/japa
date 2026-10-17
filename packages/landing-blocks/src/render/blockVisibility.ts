@@ -30,7 +30,13 @@ const contentFields = new Set<string>([
 ]);
 
 /** Block types that load their content dynamically. */
-const dynamicBlockTypes = new Set<string>(['widget', 'entity_collection', 'entity_feature', 'live_rate_ticker', 'explore_map']);
+const dynamicBlockTypes = new Set<string>([
+  'widget', 'entity_collection', 'entity_feature', 'live_rate_ticker', 'explore_map',
+  // explore_map children are context-driven (fed by the parent's
+  // ExploreMapContext) — like their parent they have no static content props.
+  'explore_map_toolbar', 'explore_map_legend', 'explore_map_region_filter',
+  'explore_map_stats', 'explore_map_canvas', 'explore_map_col_index',
+]);
 
 function hasContentValue(value: unknown): boolean {
   if (value == null || value === '' || value === false) return false;
