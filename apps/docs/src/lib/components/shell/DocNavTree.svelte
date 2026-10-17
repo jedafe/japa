@@ -3,6 +3,7 @@
 	import { PanelLeftClose, PanelLeft, ChevronDown, BookOpen, Plus, House, ArrowRight, Compass, FileText, Rocket, Star, User, X } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { theme } from '$lib/stores/theme.svelte';
 	import type { DocNavTree as DocNavTreeType, DocAudience, DocNavItem } from '$lib/types';
 	import { AUDIENCE_LABEL_KEY } from '$lib/types';
 	import { AUDIENCE_ICON } from '$lib/audience-meta';
@@ -23,6 +24,16 @@
 	}
 
 	let { nav, accessibleAudiences, activeAudience, collapsed, onToggleCollapse }: Props = $props();
+
+	// Collapsed rail shows the theme-aware favicon icon (appearance.favicon_url_*),
+	// falling back to the bundled favicon.
+	const collapsedFavicon = $derived(
+		((theme.resolved === 'dark'
+			? (page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url_dark']
+			: (page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url_light']) ??
+			(page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url'] ??
+			'/favicon.svg')
+	);
 
 	// Expand/collapse state per audience section (keyed by audience slug).
 	// Default: the active audience is expanded, others collapsed.
@@ -156,8 +167,13 @@
 
 	<nav class="nav-body" aria-label={t('a11y.main_nav')}>
 		{#if collapsed}
-			<!-- Collapsed: home + audience initials as icons. -->
+			<!-- Collapsed: brand icon + home + audience initials as icons. -->
 			<ul class="rail">
+				<li>
+					<a href="/" class="rail-item" title={t('nav.home')}>
+						<img src={collapsedFavicon} alt="" class="rail-item-img" />
+					</a>
+				</li>
 				<li>
 					<a href="/docs" class="rail-item" class:active={activePath === '/docs'} title={t('nav.home')}>
 						<House size={18} />
@@ -493,6 +509,7 @@
 		color: var(--color-muted);
 	}
 	.rail-item:hover { background: var(--color-surface-subtle); color: var(--color-text); }
+	.rail-item-img { width: 18px; height: 18px; object-fit: contain; }
 	.rail-item.active {
 		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 		color: var(--color-primary);

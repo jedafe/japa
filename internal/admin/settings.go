@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -304,6 +305,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "border_color_dark", Label: "Border Color (Dark)", Type: "color", Description: "Optional dark-mode override; empty = theme default"},
 			{Key: "font_family", Label: "Font Family", Type: "select", Options: []string{"inter", "lora", "poppins", "roboto", "open-sans", "montserrat", "system-ui", "georgia", "monospace"}, Value: "inter", Description: "Body/UI font"},
 			{Key: "font_family_serif", Label: "Serif Font Family", Type: "select", Options: []string{"inter", "lora", "poppins", "roboto", "open-sans", "montserrat", "system-ui", "georgia", "monospace"}, Value: "lora", Description: "Reading/prose font for long-form content"},
+			{Key: "heading_font_family", Label: "Heading Font Family", Type: "select", Options: []string{"inherit", "inter", "lora", "poppins", "roboto", "open-sans", "montserrat", "system-ui", "georgia", "monospace"}, Value: "inherit", Description: "Font applied to h1–h6; inherit follows the body font"},
 			{Key: "font_size", Label: "Font Size", Type: "select", Options: []string{"14", "15", "16", "17", "18"}, Value: "16", Description: "Base body font size in px"},
 			{Key: "font_weight", Label: "Font Weight", Type: "select", Options: []string{"400", "500", "600"}, Value: "400", Description: "Base body font weight"},
 			{Key: "heading_size", Label: "Heading Size", Type: "select", Options: []string{"compact", "default", "comfortable", "large", "xl"}, Value: "default", Description: "Heading size scale for h1–h6 (desktop)"},
@@ -316,6 +318,8 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "logo_url", Label: "Logo URL", Type: "media", Accept: "image/*"},
 			{Key: "logo_url_dark", Label: "Logo URL (Dark)", Type: "media", Accept: "image/*", Description: "Optional dark-theme logo; falls back to Logo URL"},
 			{Key: "favicon_url", Label: "Favicon URL", Type: "media", Accept: "image/*"},
+			{Key: "favicon_url_dark", Label: "Favicon URL (Dark)", Type: "media", Accept: "image/*", Description: "Optional dark-theme favicon; falls back to Favicon URL"},
+			{Key: "favicon_url_light", Label: "Favicon URL (Light)", Type: "media", Accept: "image/*", Description: "Optional light-theme favicon; falls back to Favicon URL"},
 			{
 				Key:         "auth_brand_slides",
 				Label:       "Auth Brand Slides",
@@ -331,7 +335,12 @@ var defaultSettings = map[string]SettingCategory{
 			},
 			{Key: "dark_mode_default", Label: "Dark Mode Default", Type: "toggle"},
 			{Key: "default_editor", Label: "Default Editor Mode", Type: "select", Options: []string{"block", "wysiwyg", "markdown"}, Value: "block", Description: "Default editor mode for the post composer"},
-			{Key: "feed_card_style", Label: "Feed Card Style", Type: "text", Description: "Default feed card style: `reddit`|`compact`|`grid`|`magazine`", Value: "reddit"},
+			// Legacy scalar superseded by feed.card_style (JSON {default, by_type}),
+			// which the public GET /feed/card-style endpoint actually serves and
+			// the Content Types page manages (feed category → card-style row).
+			// Hidden keeps the key writable for compatibility without rendering a
+			// dead control in this category.
+			{Key: "feed_card_style", Label: "Feed Card Style", Type: "text", Description: "Default feed card style: `reddit`|`compact`|`grid`|`magazine`", Value: "reddit", Hidden: true},
 		},
 	},
 	"users": {
@@ -630,7 +639,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "help_links", Label: "Need Help Links", Type: "link-list", Max: 3, Description: "Links shown in the docs portal 'Need help' card. Empty uses the default Help Center / Support links."},
 			{Key: "contribute_links", Label: "Contribute to Docs Links", Type: "link-list", Max: 3, Description: "Links shown in the docs portal 'Contribute to Docs' card. Removing all links hides the card."},
 			{Key: "dev_resources", Label: "Developer Resources", Type: "link-cards", Max: 8, Description: "Resource cards shown at the bottom of the docs portal landing page. Empty uses the built-in defaults."},
-			{Key: "pinned_pages", Label: "Get Started Pinned Pages", Type: "pinned-pages", Description: "Pinned pages powering the sidebar GET STARTED section and the 'New to JapaConnect?' card. Unresolvable pins are skipped."},
+			{Key: "pinned_pages", Label: "Get Started Pinned Pages", Type: "pinned-pages", Description: "Pinned pages powering the sidebar GET STARTED section and the 'New to " + brand.Get() + "?' card. Unresolvable pins are skipped."},
 			{Key: "versions", Label: "Version Switcher Entries", Type: "docs-versions", Description: "Version entries powering the docs header version dropdown. Empty hides it."},
 			{Key: "changelog_category", Label: "Changelog Categories", Type: "text", Description: "Comma-separated doc page categories surfaced in the docs portal 'What's new' section.", Value: "Changelog"},
 			{Key: "changelog_new_days", Label: "NEW Badge Days", Type: "number", Description: "Changelog entries newer than this many days get the NEW badge.", Value: 14},

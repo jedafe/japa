@@ -18,6 +18,7 @@
 	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '$lib/types';
 	import { routeFeatureFlagForPath } from '$lib/components/shell/routeFeatureFlags';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
+	import { theme } from '$lib/stores/theme.svelte';
 	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 
 	interface Props {
@@ -43,6 +44,16 @@
 	}
 
 	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', features = {}, showBrand = true, pinned = true, onToggle }: Props = $props();
+
+	// Collapsed rail shows the theme-aware favicon icon (appearance.favicon_url_*),
+	// falling back to the bundled favicon.
+	const collapsedFavicon = $derived(
+		((theme.resolved === 'dark'
+			? (page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url_dark']
+			: (page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url_light']) ??
+			(page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url'] ??
+			'/favicon.svg')
+	);
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
@@ -174,7 +185,11 @@
 		>
 			{#if showBrand}
 				<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-					<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
+					{#if collapsed}
+						<img src={collapsedFavicon} alt={t('app.name')} class="h-8 w-8 shrink-0 object-contain" />
+					{:else}
+						<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
+					{/if}
 				</a>
 			{/if}
 			{#if !collapsed}
