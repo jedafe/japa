@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -793,6 +794,13 @@ func (s *Service) ClaimOwnership(ctx context.Context, userID, orgID pgtype.UUID,
 		if submission.Status != "new" {
 			return gen.OwnershipClaim{}, fmt.Errorf("%w: form submission must have status 'new'", errpkg.ErrInvalid)
 		}
+	}
+
+	// evidence_url is rendered as <a href> in the admin claims UI — only
+	// absolute http(s) URLs are storable so javascript:/data: URIs cannot
+	// become stored XSS against reviewers.
+	if input.EvidenceURL != "" && !httpx.IsAbsoluteHTTPURL(input.EvidenceURL) {
+		return gen.OwnershipClaim{}, fmt.Errorf("%w: evidence_url must be a valid http or https URL", errpkg.ErrInvalid)
 	}
 
 	return s.store.CreateOwnershipClaim(ctx, gen.CreateOwnershipClaimParams{

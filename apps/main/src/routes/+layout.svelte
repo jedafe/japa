@@ -5,7 +5,6 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t } from '$lib/i18n';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
-	import { sanitizeCustomCss } from '$lib/utils/safeHtml';
 	import { env } from '$env/dynamic/public';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
@@ -30,19 +29,10 @@
 	// /fr or saving a language preference + invalidateAll), `page.data.locale`
 	// updates and `i18n.locale` reactively follows.
 
-	// Apply the primary brand color from the control panel appearance settings.
-	// The value comes from GET /site/settings/public (appearance.primary_color).
-	// We override the --color-primary CSS variable on :root so every component
-	// that references var(--color-primary) picks up the brand color. This runs
-	// both during SSR (inline style on <html>) and reactively after hydration.
-	let primaryColor = $derived(
-		(data.siteSettings?.['appearance.primary_color'] as string | undefined) ?? ''
-	);
-	$effect(() => {
-		if (primaryColor && /^#[0-9a-fA-F]{3,8}$/.test(primaryColor)) {
-			document.documentElement.style.setProperty('--color-primary', primaryColor);
-		}
-	});
+	// Admin appearance theming (appearance.* → CSS vars) is injected server-side
+	// into the static <style id="jc-theme-overrides"> tag in app.html by
+	// hooks.server.ts transformPageChunk — nothing to do here.
+	// Ref: conventions/system-settings-catalog.md (Appearance / Branding)
 
 	// Apply the custom favicon from the control panel appearance settings.
 	// When appearance.favicon_url is set, we override the default favicon.svg
@@ -142,7 +132,9 @@
 	//  3. Custom JS renders ONLY when the super_admin-approved
 	//     `site.custom_js_approved` flag is set (fail-closed default);
 	//     the approval itself is audit-logged server-side.
-	let customCss = $derived(sanitizeCustomCss((data.siteSettings?.['site.custom_css'] as string | undefined) ?? ''));
+	// site.custom_css is injected server-side by hooks.server.ts into the
+	// static <style id="jc-custom-css"> tag in app.html (sanitized there) —
+	// {@html} inside a <style> element does not compile, so it cannot live here.
 	let customJsRaw = $derived((data.siteSettings?.['site.custom_js'] as string | undefined) ?? '');
 	let customJsApproved = $derived(
 		(data.siteSettings?.['site.custom_js_approved'] as boolean | undefined) ?? false
@@ -173,22 +165,10 @@
 		<meta name="twitter:description" content={siteDescription} />
 	{/if}
 	<meta property="og:site_name" content={siteName} />
-	{#if primaryColor && /^#[0-9a-fA-F]{3,8}$/.test(primaryColor)}
-		<!-- Apply the control-panel primary brand color during SSR to prevent
-		a flash of the default color. Uses html:root for higher specificity than
-		the app.css :root rules so the brand color always wins.
-		Ref: conventions/system-settings-catalog.md -->
-		{@html `<style>html:root, html:root[data-theme='dark'] { --color-primary: ${primaryColor}; }</style>`}
-	{/if}
 	{#if faviconUrl}
 		<!-- Override the default favicon with the control-panel uploaded favicon.
 		Ref: conventions/system-settings-catalog.md (appearance.favicon_url) -->
 		<link rel="icon" href={faviconUrl} type="image/png" />
-	{/if}
-	{#if customCss}
-		<!-- Admin custom CSS (§57). Staff-only setting with an audit trail.
-		Sanitized via sanitizeCustomCss + gated behind the CSP nonce. -->
-		<style id="jc-custom-css" nonce={cspNonce}>{@html customCss}</style>
 	{/if}
 	{#if umamiEnabled}
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->

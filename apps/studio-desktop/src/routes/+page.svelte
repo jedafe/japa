@@ -24,7 +24,7 @@
 	import { queueStore } from '$lib/stores/queue.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { scanProject } from '$lib/services/file-scanner';
-	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '$lib/services/markdown';
+	import { parseFrontmatter, buildMarkdown, markdownToHtml, escapeHtml } from '$lib/services/markdown';
 	import { isPublishing, publishWorker } from '$lib/services/publisher';
 	import { initSettingsDb, loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
 	import { isHighStakes } from '$lib/services/validation';
@@ -350,7 +350,7 @@
 			const { body } = parseFrontmatter(text);
 			previewHtml = markdownToHtml(body, { sanitize: true });
 		} catch (e) {
-			previewHtml = `<p class="text-danger">Could not load preview: ${e instanceof Error ? e.message : String(e)}</p>`;
+			previewHtml = `<p class="text-danger">Could not load preview: ${escapeHtml(e instanceof Error ? e.message : String(e))}</p>`;
 		} finally {
 			previewLoading = false;
 		}

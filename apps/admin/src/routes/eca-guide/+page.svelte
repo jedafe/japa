@@ -107,7 +107,7 @@
 		columns: [
 			{ key: 'name', label: 'Name', sortable: true },
 			{ key: 'slug', label: 'Slug' },
-			{ key: 'website', label: 'Website', render: (v?: string) => v ? `<a href="${v}" target="_blank" style="color:var(--color-primary)">${v}</a>` : '—' },
+			{ key: 'website', label: 'Website', render: (v?: string) => v ? `<a href="${v}" target="_blank" rel="noopener noreferrer" style="color:var(--color-primary)">${v}</a>` : '—' },
 			{ key: 'is_active', label: 'Active', render: (v?: boolean) => v === false ? '—' : '✓' },
 		],
 		load: loadProviders,

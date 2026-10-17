@@ -101,7 +101,7 @@
     position: relative;
   }
 
-  @media (max-width: 1024px) {
+  @container (max-width: 1024px) {
     .guest-hero-grid {
       grid-template-columns: 1fr;
     }

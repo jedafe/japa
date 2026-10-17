@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { DataTable } from "$lib/components/ui/data-table";
+	import { safeHref } from "$lib/utils/html";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
@@ -426,7 +427,7 @@
 					</p>
 					<div class="mt-1 rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)">
 						{#if target.evidence_url.startsWith("http")}
-							<a href={target.evidence_url} target="_blank" rel="noopener noreferrer" class="text-sm underline" style="color: var(--color-primary)">{target.evidence_url}</a>
+							<a href={safeHref(target.evidence_url)} target="_blank" rel="noopener noreferrer" class="text-sm underline" style="color: var(--color-primary)">{target.evidence_url}</a>
 						{:else}
 							{target.evidence_url}
 						{/if}

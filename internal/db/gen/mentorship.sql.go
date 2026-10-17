@@ -76,7 +76,8 @@ func (q *Queries) GetMenteeDestinationSpaceID(ctx context.Context, userID pgtype
 const getMentorByUsername = `-- name: GetMentorByUsername :one
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username
+ up.display_name, up.avatar_url, u.username,
+ up.profession, up.website_url
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 WHERE u.username = $1 AND up.is_mentor = true
@@ -102,6 +103,8 @@ type GetMentorByUsernameRow struct {
 	DisplayName       *string            `json:"display_name"`
 	AvatarUrl         *string            `json:"avatar_url"`
 	Username          string             `json:"username"`
+	Profession        *string            `json:"profession"`
+	WebsiteUrl        *string            `json:"website_url"`
 }
 
 // Get a mentor's public profile by username (is_mentor must be true).
@@ -121,6 +124,8 @@ func (q *Queries) GetMentorByUsername(ctx context.Context, username string) (Get
 		&i.DisplayName,
 		&i.AvatarUrl,
 		&i.Username,
+		&i.Profession,
+		&i.WebsiteUrl,
 	)
 	return i, err
 }
@@ -149,6 +154,7 @@ const getMentorProfile = `-- name: GetMentorProfile :one
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, up.mentor_listing_content_id, u.username,
+ up.profession, up.website_url,
  -- 000829 mentor card fields (§114 detail-page rebuild).
  up.location, up.mentor_title, up.mentor_response_time, up.mentor_availability,
  up.mentor_session_type, up.mentor_languages, up.mentor_session_formats,
@@ -171,6 +177,8 @@ type GetMentorProfileRow struct {
 	AvatarUrl              *string            `json:"avatar_url"`
 	MentorListingContentID pgtype.UUID        `json:"mentor_listing_content_id"`
 	Username               string             `json:"username"`
+	Profession             *string            `json:"profession"`
+	WebsiteUrl             *string            `json:"website_url"`
 	Location               *string            `json:"location"`
 	MentorTitle            *string            `json:"mentor_title"`
 	MentorResponseTime     *string            `json:"mentor_response_time"`
@@ -206,6 +214,8 @@ func (q *Queries) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Get
 		&i.AvatarUrl,
 		&i.MentorListingContentID,
 		&i.Username,
+		&i.Profession,
+		&i.WebsiteUrl,
 		&i.Location,
 		&i.MentorTitle,
 		&i.MentorResponseTime,
@@ -224,7 +234,7 @@ func (q *Queries) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Get
 const getMentorsByIDs = `-- name: GetMentorsByIDs :many
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
@@ -253,6 +263,8 @@ type GetMentorsByIDsRow struct {
 	DisplayName       *string            `json:"display_name"`
 	AvatarUrl         *string            `json:"avatar_url"`
 	Username          string             `json:"username"`
+	Profession        *string            `json:"profession"`
+	WebsiteUrl        *string            `json:"website_url"`
 	AvailableSlots    int32              `json:"available_slots"`
 }
 
@@ -279,6 +291,8 @@ func (q *Queries) GetMentorsByIDs(ctx context.Context, userIds []pgtype.UUID) ([
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.Username,
+			&i.Profession,
+			&i.WebsiteUrl,
 			&i.AvailableSlots,
 		); err != nil {
 			return nil, err
@@ -338,7 +352,7 @@ const listMentors = `-- name: ListMentors :many
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  COALESCE(
@@ -396,7 +410,7 @@ WITH mentors AS (
 )
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
- display_name, avatar_url, username,
+ display_name, avatar_url, username, profession, website_url,
  available_slots, total_count, area_overlap
 FROM mentors
 ORDER BY
@@ -426,6 +440,8 @@ type ListMentorsRow struct {
 	DisplayName       *string            `json:"display_name"`
 	AvatarUrl         *string            `json:"avatar_url"`
 	Username          string             `json:"username"`
+	Profession        *string            `json:"profession"`
+	WebsiteUrl        *string            `json:"website_url"`
 	AvailableSlots    int32              `json:"available_slots"`
 	TotalCount        int64              `json:"total_count"`
 	AreaOverlap       interface{}        `json:"area_overlap"`
@@ -466,6 +482,8 @@ func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]Lis
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.Username,
+			&i.Profession,
+			&i.WebsiteUrl,
 			&i.AvailableSlots,
 			&i.TotalCount,
 			&i.AreaOverlap,
@@ -484,7 +502,7 @@ const listMentorsByMatch = `-- name: ListMentorsByMatch :many
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  CASE WHEN up.mentor_embedding IS NOT NULL
@@ -546,7 +564,7 @@ WITH mentors AS (
 )
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
- display_name, avatar_url, username,
+ display_name, avatar_url, username, profession, website_url,
  available_slots, total_count, bio_similarity, area_overlap,
  (0.6 * area_overlap + 0.4 * bio_similarity) AS match_score
 FROM mentors
@@ -574,6 +592,8 @@ type ListMentorsByMatchRow struct {
 	DisplayName       *string            `json:"display_name"`
 	AvatarUrl         *string            `json:"avatar_url"`
 	Username          string             `json:"username"`
+	Profession        *string            `json:"profession"`
+	WebsiteUrl        *string            `json:"website_url"`
 	AvailableSlots    int32              `json:"available_slots"`
 	TotalCount        int64              `json:"total_count"`
 	BioSimilarity     float64            `json:"bio_similarity"`
@@ -611,6 +631,8 @@ func (q *Queries) ListMentorsByMatch(ctx context.Context, arg ListMentorsByMatch
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.Username,
+			&i.Profession,
+			&i.WebsiteUrl,
 			&i.AvailableSlots,
 			&i.TotalCount,
 			&i.BioSimilarity,
@@ -866,7 +888,7 @@ func (q *Queries) ListMentorshipProgramsWithCounts(ctx context.Context, arg List
 const searchMentors = `-- name: SearchMentors :many
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
@@ -901,6 +923,8 @@ type SearchMentorsRow struct {
 	DisplayName       *string            `json:"display_name"`
 	AvatarUrl         *string            `json:"avatar_url"`
 	Username          string             `json:"username"`
+	Profession        *string            `json:"profession"`
+	WebsiteUrl        *string            `json:"website_url"`
 	AvailableSlots    int32              `json:"available_slots"`
 }
 
@@ -926,6 +950,8 @@ func (q *Queries) SearchMentors(ctx context.Context, arg SearchMentorsParams) ([
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.Username,
+			&i.Profession,
+			&i.WebsiteUrl,
 			&i.AvailableSlots,
 		); err != nil {
 			return nil, err
@@ -997,6 +1023,7 @@ SET is_mentor = $1,
 WHERE user_id = $15
 RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
  mentor_areas, mentor_bio, mentor_since, display_name, avatar_url,
+ profession, website_url,
  mentor_title, mentor_response_time, mentor_availability,
  mentor_session_type, mentor_languages, mentor_session_formats,
  mentor_countries, mentor_credentials, mentor_years_experience,
@@ -1031,6 +1058,8 @@ type UpdateMentorProfileRow struct {
 	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
 	DisplayName           *string            `json:"display_name"`
 	AvatarUrl             *string            `json:"avatar_url"`
+	Profession            *string            `json:"profession"`
+	WebsiteUrl            *string            `json:"website_url"`
 	MentorTitle           *string            `json:"mentor_title"`
 	MentorResponseTime    *string            `json:"mentor_response_time"`
 	MentorAvailability    *string            `json:"mentor_availability"`
@@ -1076,6 +1105,8 @@ func (q *Queries) UpdateMentorProfile(ctx context.Context, arg UpdateMentorProfi
 		&i.MentorSince,
 		&i.DisplayName,
 		&i.AvatarUrl,
+		&i.Profession,
+		&i.WebsiteUrl,
 		&i.MentorTitle,
 		&i.MentorResponseTime,
 		&i.MentorAvailability,

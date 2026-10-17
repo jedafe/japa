@@ -54,9 +54,9 @@
 				type="button"
 				class="guest-icon-btn"
 				onclick={() => theme.toggle()}
-				aria-label={theme.current === 'dark' ? t('theme.toggle_light', 'Switch to light') : t('theme.toggle_dark', 'Switch to dark')}
+				aria-label={theme.resolved === 'dark' ? t('theme.toggle_light', 'Switch to light') : t('theme.toggle_dark', 'Switch to dark')}
 			>
-				{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
+				{#if theme.resolved === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 			</button>
 			<a href="/login" class="guest-login-btn guest-auth-link">
 				<LogIn size={16} />

@@ -23,6 +23,12 @@ type UpdateProfileRequest struct {
 	HeaderMediaID      *string `json:"header_media_id"`
 	Bio                *string `json:"bio"`
 	Timezone           *string `json:"timezone"`
+	WebsiteURL         *string `json:"website_url"`
+	Education          *string `json:"education"`
+	Profession         *string `json:"profession"`
+	MaritalStatus      *string `json:"marital_status"`
+	DateOfBirth        *string `json:"date_of_birth"`
+	Gender             *string `json:"gender"`
 	OriginCountry      *string `json:"origin_country"`
 	OriginStateID      *string `json:"origin_state_id"`
 	OriginCityID       *string `json:"origin_city_id"`
@@ -83,6 +89,12 @@ type UserProfileResponse struct {
 	HeaderMediaID *string  `json:"header_media_id"`
 	Bio           *string  `json:"bio"`
 	Timezone      *string  `json:"timezone"`
+	WebsiteURL    *string  `json:"website_url"`
+	Education     *string  `json:"education"`
+	Profession    *string  `json:"profession"`
+	MaritalStatus *string  `json:"marital_status"`
+	DateOfBirth   *string  `json:"date_of_birth"`
+	Gender        *string  `json:"gender"`
 	ProfileType   string   `json:"profile_type"`
 	Status        string   `json:"status"`
 	FollowerCount int32    `json:"follower_count"`
@@ -180,6 +192,7 @@ type PublicProfileResponse struct {
 	AvatarURL      *string `json:"avatar_url"`
 	CoverURL       *string `json:"cover_url"`
 	Bio            *string `json:"bio"`
+	WebsiteURL     *string `json:"website_url"`
 	ProfileType    string  `json:"profile_type"`
 	FollowerCount  int32   `json:"follower_count"`
 	FollowingCount int32   `json:"following_count"`

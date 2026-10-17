@@ -161,11 +161,11 @@ func TestQueueBulkHandlers_AllQueuesAndValidation(t *testing.T) {
 	if code != http.StatusOK || data["archived"] != 2 {
 		t.Fatalf("archive all: code=%d data=%v", code, data)
 	}
-	// The test redis only holds default/low — every other configured queue
-	// reports a per-queue failure which must surface in the response, not
-	// be silently swallowed.
-	if data["__errors"] == 0 {
-		t.Fatal("archive all: partial failures not reported in errors[]")
+	// The test redis only holds default/low — the never-created queue has
+	// nothing to archive, so it is skipped as a no-op (same semantics as
+	// purge) rather than reported as a spurious per-queue failure.
+	if data["__errors"] != 0 {
+		t.Fatal("archive all: never-created queue reported as a failure")
 	}
 
 	code, _ = callBulkHandler(t, h, http.MethodPost, "bogus", "archive")

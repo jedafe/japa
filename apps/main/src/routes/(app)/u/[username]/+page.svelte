@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { afterNavigate, invalidate } from '$app/navigation';
-	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark } from 'lucide-svelte';
+	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe } from 'lucide-svelte';
 	import { MenuItem } from '$lib/components/ui';
 	import { Chart, Bars, LineChart, Tooltip } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -983,6 +983,16 @@ profile is private, or no stage is set. -->
 						<p class="text-sm leading-relaxed text-[var(--color-text)]">{user.bio}</p>
 					{:else}
 						<p class="text-sm text-[var(--color-muted)]">{t('profile.no_about', 'No bio yet')}</p>
+					{/if}
+					{#if user.website_url}
+						<a
+							href={user.website_url}
+							target="_blank"
+							rel="noopener noreferrer nofollow"
+							class="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+						>
+							<Globe size={13} /> {user.website_url.replace(/^https?:\/\//, '')}
+						</a>
 					{/if}
 					<div class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-4">
 						{#each aboutDetails as d (d.label)}

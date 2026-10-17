@@ -12,12 +12,15 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/crypto"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/pquerna/otp/totp"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // defaultTOTPIssuer is the fallback issuer label shown in authenticator apps.
@@ -97,6 +100,34 @@ func GenerateBackupCodes() ([]string, error) {
 func VerifyTOTP(secret, code string) bool {
 	secret = strings.TrimSpace(strings.ToUpper(secret))
 	return totp.Validate(code, secret)
+}
+
+// totpUsedCodeTTL bounds how long a consumed code is remembered. A code
+// stays cryptographically valid for at most ~90s (30s period × skew of 1
+// step on each side), so 120s covers the full replay window with margin.
+const totpUsedCodeTTL = 120 * time.Second
+
+// claimTOTPCode marks a TOTP code as consumed for the given user, returning
+// false when the code was already claimed — i.e. it is being replayed.
+// Call this AFTER VerifyTOTP succeeds but BEFORE granting whatever the code
+// unlocks, so a code captured in transit cannot be reused inside its
+// validity window (CWE-294). Uses SetNX so the check-and-set is atomic
+// across replicas. Fail-open on Valkey errors (log and allow), matching the
+// rateLimitCheck posture — availability of 2FA must not hinge on the cache.
+func claimTOTPCode(ctx context.Context, rdb valkeycompat.Cmdable, userID pgtype.UUID, code string) bool {
+	if rdb == nil || !userID.Valid || code == "" {
+		return true
+	}
+
+	key := valkey.MustKey("totp_used:%s:%s", userID.String(), code)
+
+	ok, err := rdb.SetNX(ctx, key, "1", totpUsedCodeTTL).Result()
+	if err != nil {
+		slog.Warn("totp used-code claim failed, allowing request", "user_id", userID.String(), "error", err)
+		return true
+	}
+
+	return ok
 }
 
 // EnableTOTP verifies the code, then marks 2FA as enabled for the user.

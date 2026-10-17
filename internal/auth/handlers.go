@@ -293,7 +293,12 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		isDuplicate := errors.Is(err, errpkg.ErrDuplicate) || (errors.As(err, &pgErr) && pgErr.Code == "23505")
 		if isDuplicate {
 			// The users table has unique constraints on ( email)
-			// and ( username). Distinguish them when possible.
+			// and ( username). Distinguish them when possible —
+			// username_exists is acceptable as an oracle because
+			// handles are public identifiers on this platform
+			// (/u/{username} profiles, users/{username}/feed.xml).
+			// email_exists deliberately says "Email or username"
+			// so the private identifier stays fuzzy.
 			if pgErr != nil && strings.Contains(pgErr.ConstraintName, "username") {
 				errpkg.WriteError(w, http.StatusConflict, "username_exists", "Username already in use")
 				return
@@ -461,6 +466,12 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.DB.GetUserByEmail(r.Context(), req.Email)
 	if err != nil || user == nil {
+		// Run a bcrypt compare against a dummy hash so a nonexistent email
+		// takes the same wall-clock time as a real user with a wrong
+		// password — otherwise the early return leaks account existence
+		// via response timing (CWE-208).
+		_ = VerifyPassword(dummyPasswordHash, req.Password)
+
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
@@ -484,6 +495,10 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !user.PasswordHash.Valid {
+		// OAuth-only accounts have no password hash — same dummy-compare
+		// timing guard as the unknown-email path above.
+		_ = VerifyPassword(dummyPasswordHash, req.Password)
+
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
@@ -950,6 +965,21 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Replay guard: atomically claim the code before issuing a session so a
+	// code observed in transit cannot be reused inside its validity window.
+	if h.VKClient != nil && !claimTOTPCode(r.Context(), h.VKClient.Redis(), userID, req.Code) {
+		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_totp", "Invalid verification code")
+		return
+	}
+
+	// Single-use the challenge token: revoke its JTI so a captured challenge
+	// cannot mint additional sessions for the remaining ~5 minutes of its TTL.
+	if h.VKClient != nil {
+		if err := RevokeToken(r.Context(), claims.JTI, claims.ExpiresAt.Time, h.VKClient.Redis()); err != nil {
+			slog.Warn("totp challenge: failed to revoke challenge token", "error", err)
+		}
+	}
+
 	// Update last_login_at so analytics active-user counts work (§21).
 	if err := h.Queries.UpdateLastLoginAt(r.Context(),
 
@@ -1070,6 +1100,14 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	if !matched {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_backup", "Invalid backup code")
 		return
+	}
+
+	// Single-use the challenge token on backup-code success too — same
+	// replay reasoning as VerifyLoginChallenge.
+	if h.VKClient != nil {
+		if err := RevokeToken(r.Context(), claims.JTI, claims.ExpiresAt.Time, h.VKClient.Redis()); err != nil {
+			slog.Warn("totp backup: failed to revoke challenge token", "error", err)
+		}
 	}
 
 	// Update last_login_at so analytics active-user counts work (§21).

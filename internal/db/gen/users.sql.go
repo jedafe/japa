@@ -400,6 +400,7 @@ SELECT DISTINCT ON (u.id)
  up.avatar_url,
  up.bio,
  up.cover_url,
+ up.website_url,
  up.location,
  up.banner_media_id,
  COALESCE(up.created_at, u.created_at) AS created_at,
@@ -426,6 +427,7 @@ type GetPublicProfileByUsernameRow struct {
 	AvatarUrl          *string            `json:"avatar_url"`
 	Bio                *string            `json:"bio"`
 	CoverUrl           *string            `json:"cover_url"`
+	WebsiteUrl         *string            `json:"website_url"`
 	Location           *string            `json:"location"`
 	BannerMediaID      pgtype.UUID        `json:"banner_media_id"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
@@ -452,6 +454,7 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, username strin
 		&i.AvatarUrl,
 		&i.Bio,
 		&i.CoverUrl,
+		&i.WebsiteUrl,
 		&i.Location,
 		&i.BannerMediaID,
 		&i.CreatedAt,
@@ -631,6 +634,7 @@ SELECT DISTINCT ON (u.id)
  up.bio,
  up.timezone,
  up.cover_url,
+ up.website_url,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
  u.email, u.username, u.profile_type, u.status, u.follower_count,
@@ -651,6 +655,7 @@ type GetUserByUsernameRow struct {
 	Bio           *string            `json:"bio"`
 	Timezone      *string            `json:"timezone"`
 	CoverUrl      *string            `json:"cover_url"`
+	WebsiteUrl    *string            `json:"website_url"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	Email         string             `json:"email"`
@@ -672,6 +677,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.Bio,
 		&i.Timezone,
 		&i.CoverUrl,
+		&i.WebsiteUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
@@ -1511,6 +1517,12 @@ SELECT DISTINCT ON (u.id)
  up.bio,
  up.timezone,
  up.cover_url,
+ up.website_url,
+ up.education,
+ up.profession,
+ up.marital_status,
+ up.date_of_birth,
+ up.gender,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
  u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
@@ -1533,6 +1545,12 @@ type GetUserProfileRow struct {
 	Bio           *string            `json:"bio"`
 	Timezone      *string            `json:"timezone"`
 	CoverUrl      *string            `json:"cover_url"`
+	WebsiteUrl    *string            `json:"website_url"`
+	Education     *string            `json:"education"`
+	Profession    *string            `json:"profession"`
+	MaritalStatus *string            `json:"marital_status"`
+	DateOfBirth   pgtype.Date        `json:"date_of_birth"`
+	Gender        *string            `json:"gender"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	Email         string             `json:"email"`
@@ -1557,6 +1575,12 @@ func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUs
 		&i.Bio,
 		&i.Timezone,
 		&i.CoverUrl,
+		&i.WebsiteUrl,
+		&i.Education,
+		&i.Profession,
+		&i.MaritalStatus,
+		&i.DateOfBirth,
+		&i.Gender,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
@@ -1572,7 +1596,9 @@ func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUs
 
 const getUserProfileForUpdate = `-- name: GetUserProfileForUpdate :one
 SELECT id, user_id, display_name, avatar_url, avatar_media_id,
- header_media_id, bio, timezone, cover_url, created_at, updated_at
+ header_media_id, bio, timezone, cover_url, website_url,
+ education, profession, marital_status, date_of_birth, gender,
+ created_at, updated_at
 FROM user_profiles
 WHERE user_id = $1
 FOR UPDATE
@@ -1588,6 +1614,12 @@ type GetUserProfileForUpdateRow struct {
 	Bio           *string            `json:"bio"`
 	Timezone      *string            `json:"timezone"`
 	CoverUrl      *string            `json:"cover_url"`
+	WebsiteUrl    *string            `json:"website_url"`
+	Education     *string            `json:"education"`
+	Profession    *string            `json:"profession"`
+	MaritalStatus *string            `json:"marital_status"`
+	DateOfBirth   pgtype.Date        `json:"date_of_birth"`
+	Gender        *string            `json:"gender"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
@@ -1609,6 +1641,12 @@ func (q *Queries) GetUserProfileForUpdate(ctx context.Context, userID pgtype.UUI
 		&i.Bio,
 		&i.Timezone,
 		&i.CoverUrl,
+		&i.WebsiteUrl,
+		&i.Education,
+		&i.Profession,
+		&i.MaritalStatus,
+		&i.DateOfBirth,
+		&i.Gender,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -2599,7 +2637,7 @@ func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserP
 }
 
 const upsertUserProfile = `-- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id, website_url, education, profession, marital_status, date_of_birth, gender) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::date, $16)
 ON CONFLICT (user_id) DO UPDATE SET
  display_name = EXCLUDED.display_name,
  avatar_url = EXCLUDED.avatar_url,
@@ -2610,6 +2648,16 @@ ON CONFLICT (user_id) DO UPDATE SET
  cover_url = EXCLUDED.cover_url,
  location = COALESCE(EXCLUDED.location, user_profiles.location),
  banner_media_id = COALESCE(EXCLUDED.banner_media_id, user_profiles.banner_media_id),
+ -- The caller merges request fields with the locked row first, so these
+ -- assignments are unconditional: NULL means "clear the field", not "keep".
+ -- (location/banner_media_id stay COALESCE — UpdateProfile doesn't manage
+ -- them and always passes NULL.)
+ website_url = EXCLUDED.website_url,
+ education = EXCLUDED.education,
+ profession = EXCLUDED.profession,
+ marital_status = EXCLUDED.marital_status,
+ date_of_birth = EXCLUDED.date_of_birth,
+ gender = EXCLUDED.gender,
  updated_at = now()
 `
 
@@ -2624,6 +2672,12 @@ type UpsertUserProfileParams struct {
 	CoverUrl      *string     `json:"cover_url"`
 	Location      *string     `json:"location"`
 	BannerMediaID pgtype.UUID `json:"banner_media_id"`
+	WebsiteUrl    *string     `json:"website_url"`
+	Education     *string     `json:"education"`
+	Profession    *string     `json:"profession"`
+	MaritalStatus *string     `json:"marital_status"`
+	DateOfBirth   pgtype.Date `json:"date_of_birth"`
+	Gender        *string     `json:"gender"`
 }
 
 func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error {
@@ -2638,6 +2692,12 @@ func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfilePa
 		arg.CoverUrl,
 		arg.Location,
 		arg.BannerMediaID,
+		arg.WebsiteUrl,
+		arg.Education,
+		arg.Profession,
+		arg.MaritalStatus,
+		arg.DateOfBirth,
+		arg.Gender,
 	)
 	return err
 }

@@ -53,7 +53,7 @@ export function getFrontmatterField<T>(
 	return value === undefined || value === null ? defaultValue : (value as T);
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
 	return text
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')

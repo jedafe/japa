@@ -302,6 +302,10 @@ type ServiceRow struct {
 	MentorYearsExperience *int16
 	MentorSuccessLabel    *string
 	MenteesHelped         int32
+	// From the author's user profile — profession drives the "Profession"
+	// detail row; website_url links out from the mentor block.
+	MentorProfession *string
+	MentorWebsiteURL *string
 
 	// HasCoupon is the list-query badge column — true when the listing has
 	// at least one currently-active attached coupon. Populated only by the
@@ -392,6 +396,7 @@ func rowFromSlug(r gen.GetServiceListingBySlugRow) ServiceRow {
 		MentorSessionFormats: r.MentorSessionFormats, MentorCountries: r.MentorCountries,
 		MentorCredentials: r.MentorCredentials, MentorYearsExperience: r.MentorYearsExperience,
 		MentorSuccessLabel: r.MentorSuccessLabel, MenteesHelped: r.MenteesHelped,
+		MentorProfession: r.Profession, MentorWebsiteURL: r.WebsiteUrl,
 	}
 }
 
@@ -436,6 +441,7 @@ func rowFromContentID(r gen.GetServiceListingByContentIDRow) ServiceRow {
 		MentorSessionFormats: r.MentorSessionFormats, MentorCountries: r.MentorCountries,
 		MentorCredentials: r.MentorCredentials, MentorYearsExperience: r.MentorYearsExperience,
 		MentorSuccessLabel: r.MentorSuccessLabel, MenteesHelped: r.MenteesHelped,
+		MentorProfession: r.Profession, MentorWebsiteURL: r.WebsiteUrl,
 	}
 }
 

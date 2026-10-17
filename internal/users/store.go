@@ -253,24 +253,6 @@ func (s *Store) getPublicProfileByUsername(ctx context.Context, username string)
 	return row, nil
 }
 
-// upsertProfile inserts or updates the user profile.
-func (s *Store) upsertProfile(ctx context.Context, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string, avatarMediaID, headerMediaID pgtype.UUID) error {
-	if err := s.write.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-		UserID:        userID,
-		DisplayName:   displayName,
-		AvatarUrl:     avatarURL,
-		AvatarMediaID: avatarMediaID,
-		HeaderMediaID: headerMediaID,
-		CoverUrl:      coverURL,
-		Bio:           bio,
-		Timezone:      timezone,
-	}); err != nil {
-		return fmt.Errorf("upserting user profile: %w", err)
-	}
-
-	return nil
-}
-
 // getProfileForUpdateTx row-locks the user_profiles row for the
 // read-merge-upsert pattern in UpdateProfile (BUG-002). The FOR UPDATE
 // lock is held until the transaction commits or rolls back.
@@ -286,8 +268,10 @@ func (s *Store) getProfileForUpdateTx(ctx context.Context, q *gen.Queries, userI
 	return row, nil
 }
 
-// upsertProfileTx is the transaction-scoped variant of upsertProfile.
-func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string, avatarMediaID, headerMediaID pgtype.UUID) error {
+// upsertProfileTx upserts the user profile inside the caller's transaction.
+// Every parameter is the merged request/current value — NULL clears the
+// field (matching UpdateProfile's read-merge-upsert semantics).
+func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone, websiteURL, education, profession, maritalStatus, gender *string, dateOfBirth pgtype.Date, avatarMediaID, headerMediaID pgtype.UUID) error {
 	if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
 		UserID:        userID,
 		DisplayName:   displayName,
@@ -297,6 +281,12 @@ func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, userID pgty
 		CoverUrl:      coverURL,
 		Bio:           bio,
 		Timezone:      timezone,
+		WebsiteUrl:    websiteURL,
+		Education:     education,
+		Profession:    profession,
+		MaritalStatus: maritalStatus,
+		Gender:        gender,
+		DateOfBirth:   dateOfBirth,
 	}); err != nil {
 		return fmt.Errorf("upserting user profile: %w", err)
 	}

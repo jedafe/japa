@@ -81,6 +81,7 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, up.mentor_listing_content_id, u.username,
+ up.profession, up.website_url,
  -- 000829 mentor card fields (§114 detail-page rebuild).
  up.location, up.mentor_title, up.mentor_response_time, up.mentor_availability,
  up.mentor_session_type, up.mentor_languages, up.mentor_session_formats,
@@ -117,6 +118,7 @@ SET is_mentor = @is_mentor,
 WHERE user_id = @user_id
 RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
  mentor_areas, mentor_bio, mentor_since, display_name, avatar_url,
+ profession, website_url,
  mentor_title, mentor_response_time, mentor_availability,
  mentor_session_type, mentor_languages, mentor_session_formats,
  mentor_countries, mentor_credentials, mentor_years_experience,
@@ -128,7 +130,8 @@ RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
 -- listing_kind='mentorship' meta on a published, non-deleted contents row.
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username
+ up.display_name, up.avatar_url, u.username,
+ up.profession, up.website_url
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 WHERE u.username = @username AND up.is_mentor = true
@@ -154,7 +157,7 @@ WHERE u.username = @username AND up.is_mentor = true
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  COALESCE(
@@ -212,7 +215,7 @@ WITH mentors AS (
 )
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
- display_name, avatar_url, username,
+ display_name, avatar_url, username, profession, website_url,
  available_slots, total_count, area_overlap
 FROM mentors
 ORDER BY
@@ -228,7 +231,7 @@ LIMIT @page_limit OFFSET @page_offset;
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  CASE WHEN up.mentor_embedding IS NOT NULL
@@ -290,7 +293,7 @@ WITH mentors AS (
 )
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
- display_name, avatar_url, username,
+ display_name, avatar_url, username, profession, website_url,
  available_slots, total_count, bio_similarity, area_overlap,
  (0.6 * area_overlap + 0.4 * bio_similarity) AS match_score
 FROM mentors
@@ -303,7 +306,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- published mentorship listing is not comparable.
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
@@ -325,7 +328,7 @@ ORDER BY u.username;
 -- same 000824 live-shadow gate as the other discovery queries.
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id

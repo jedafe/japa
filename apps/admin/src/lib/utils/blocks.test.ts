@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { defaultChildrenFor, seedBlockDefaults, seedAllContainerDefaults, isContainerLike, childrenOf } from './blocks';
-import type { Block } from '@japaconnect/landing-blocks';
+import { defaultChildrenFor, seedBlockDefaults, seedAllContainerDefaults, isContainerLike, childrenOf, materializeGuestContextItems } from './blocks';
+import type { Block, GuestHomeData } from '@japaconnect/landing-blocks';
 
 describe('blocks helpers', () => {
 	it('defaultChildrenFor returns nested defaults for guest_home', () => {
@@ -173,5 +173,90 @@ describe('blocks helpers', () => {
 		// children stays absent so the monolithic legacy render keeps working
 		// and the copy/hero_image props aren't shadowed by seeded children.
 		expect((seeded.props as { children?: Block[] }).children).toBeUndefined();
+	});
+
+	const guestCtx: GuestHomeData = {
+		topDestinations: [],
+		stories: [],
+		stats: [
+			{ value: '50K+', label: 'Opportunities', icon: 'Sparkles' },
+			{ value: '185+', label: 'Countries', icon: 'Globe' },
+		],
+		categories: [
+			{ id: 'jobs', title: 'Find Jobs Abroad', description: 'Jobs.', href: '/jobs', icon: 'Briefcase', color: 'green' },
+		],
+		opportunities: [
+			{ id: 'o1', type: 'job', title: 'Software Engineer', organization: 'Acme', location: 'Canada', tag: 'Full-time', href: '/jobs' },
+		],
+		tools: [
+			{ id: 't1', name: 'Visa Checklist', slug: 'visa-checklist', href: '/tools/visa-checklist', icon: 'FileCheck' },
+		],
+	};
+
+	it('materializeGuestContextItems seeds item children for context-driven list blocks', () => {
+		const guestHome: Block = {
+			id: 'gh-1',
+			type: 'guest_home',
+			visible: true,
+			props: {
+				children: [
+					{ id: 'stats-1', type: 'guest_hero_stats', visible: true, props: {} } as Block,
+					{ id: 'cat-1', type: 'guest_categories', visible: true, props: {} } as Block,
+					{ id: 'opp-1', type: 'guest_opportunities', visible: true, props: {} } as Block,
+					{ id: 'tool-1', type: 'guest_tools', visible: true, props: {} } as Block,
+					{ id: 'nl-1', type: 'guest_newsletter', visible: true, props: {} } as Block,
+				],
+			},
+		} as Block;
+		const [out] = materializeGuestContextItems([guestHome], guestCtx);
+		const kids = childrenOf(out);
+		const stats = kids.find((b) => b.type === 'guest_hero_stats') as Block;
+		expect(childrenOf(stats)).toHaveLength(2);
+		expect(childrenOf(stats).every((c) => c.type === 'guest_hero_stat_item')).toBe(true);
+		expect((stats.props as { data_source?: string }).data_source).toBe('manual');
+		// Sidebar label carries the stat text.
+		expect(childrenOf(stats)[0].label).toBe('50K+ Opportunities');
+		const cats = kids.find((b) => b.type === 'guest_categories') as Block;
+		expect(childrenOf(cats)).toHaveLength(1);
+		expect((childrenOf(cats)[0].props as { title?: string }).title).toBe('Find Jobs Abroad');
+		const opps = kids.find((b) => b.type === 'guest_opportunities') as Block;
+		expect(childrenOf(opps)).toHaveLength(1);
+		const tools = kids.find((b) => b.type === 'guest_tools') as Block;
+		expect(childrenOf(tools)).toHaveLength(1);
+		// Newsletter takes arbitrary children — nothing is seeded for it.
+		const newsletter = kids.find((b) => b.type === 'guest_newsletter') as Block;
+		expect(childrenOf(newsletter)).toHaveLength(0);
+	});
+
+	it('materializeGuestContextItems skips blocks pinned to context mode and blocks with children', () => {
+		const existing: Block = { id: 'x', type: 'guest_category_item', visible: true, props: { title: 'Mine' } } as Block;
+		const tree: Block[] = [
+			{ id: 'c1', type: 'guest_categories', visible: true, props: { data_source: 'context' } } as Block,
+			{ id: 'c2', type: 'guest_categories', visible: true, props: { children: [existing] } } as Block,
+		];
+		const [ctxBlock, manualBlock] = materializeGuestContextItems(tree, guestCtx);
+		expect(childrenOf(ctxBlock)).toHaveLength(0);
+		expect(childrenOf(manualBlock)).toHaveLength(1);
+		expect(childrenOf(manualBlock)[0].id).toBe('x');
+	});
+
+	it('materializeGuestContextItems honors max_items and seeds nested lists', () => {
+		const tree: Block[] = [
+			{
+				id: 'hero',
+				type: 'guest_hero',
+				visible: true,
+				props: {
+					children: [
+						{ id: 's1', type: 'guest_hero_stats', visible: true, props: { max_items: 1 } } as Block,
+					],
+				},
+			} as Block,
+		];
+		const [hero] = materializeGuestContextItems(tree, guestCtx);
+		const stats = childrenOf(hero)[0];
+		expect(childrenOf(stats)).toHaveLength(1);
+		// No context data → tree returned unchanged.
+		expect(materializeGuestContextItems(tree, undefined)[0]).toEqual(tree[0]);
 	});
 });

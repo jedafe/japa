@@ -1,13 +1,14 @@
 import type { Handle } from '@sveltejs/kit';
-import { building, dev } from '$app/environment';
+import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
-import { PUBLIC_JC_API_URL, PUBLIC_JC_WS_URL } from '$env/static/public';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import {
 	refreshSession,
 	setSessionCookie,
 	setRefreshCookie
 } from '$lib/server/auth';
+import { buildThemeOverrides } from '@japaconnect/ui/theme';
+import { sanitizeCustomCss } from '$lib/utils/safeHtml';
 import type { SessionUser } from '$lib/types';
 
 /**
@@ -234,12 +235,24 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	// Theme: prefer cookie, then appearance.dark_mode_default, then 'light'.
+	// 'system' is a valid selection — the SSR markup can't know the OS
+	// preference, so data-theme falls back to dark_mode_default and the
+	// client store resolves prefers-color-scheme after hydration.
 	event.locals.theme =
-		themeCookie === 'dark' || themeCookie === 'light'
+		themeCookie === 'dark' || themeCookie === 'light' || themeCookie === 'system'
 			? themeCookie
 			: siteSettings['appearance.dark_mode_default'] === true
 				? 'dark'
 				: 'light';
+	// The value actually written to <html data-theme>. 'system' has no CSS
+	// block — render the admin default server-side; the theme store corrects
+	// it on hydration.
+	event.locals.resolvedTheme =
+		event.locals.theme === 'system'
+			? siteSettings['appearance.dark_mode_default'] === true
+				? 'dark'
+				: 'light'
+			: event.locals.theme;
 
 	// Locale resolution: URL prefix > cookie > i18n.default_language > 'en'.
 	// The enabled-languages list from i18n.enabled_languages (system_settings)
@@ -323,56 +336,39 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	// CSP nonce for the staff-gated custom-code blocks (`site.custom_css` /
-	// `site.custom_js`). Generated per request, stored in locals, threaded to
-	// the layout via `data.cspNonce` (see +layout.server.ts), and enforced in
-	// the Content-Security-Policy response header below. The inline
-	// `<style id="jc-custom-css">` / `<script id="jc-custom-js">` tags carry
-	// `nonce={cspNonce}` so they stay executable under the nonce policy while
-	// arbitrary injected markup without the nonce is blocked.
+	// CSP nonce: generated per request by SvelteKit (kit.csp mode='nonce'
+	// in svelte.config.js) and exposed as event.locals.cspNonce, which the
+	// layout threads to the staff-gated custom-code blocks
+	// (`site.custom_css` / `site.custom_js`). The CSP response header is
+	// set by SvelteKit — do NOT set it manually here or the bootstrap
+	// script nonce and the header will disagree.
 	//
 	// The nonce alone does NOT make the payload safe — custom code is a
 	// staff-only setting with a server-side audit trail (admin settings
 	// writes are audit-logged), custom CSS passes through the
 	// sanitizeCustomCss blocklist before render, and custom JS renders only
 	// when a super_admin-approved `site.custom_js_approved` flag is set.
-	event.locals.cspNonce = crypto.randomUUID().replaceAll('-', '');
+	// Admin appearance overrides — compile appearance.* public settings into a
+	// CSS block injected into the static <style id="jc-theme-overrides"> tag in
+	// app.html. Server-side so there is no flash of default theme.
+	// Ref: conventions/system-settings-catalog.md (Appearance / Branding)
+	const themeVars = buildThemeOverrides(siteSettings);
+	// §57 custom CSS — sanitized and injected into the static
+	// <style id="jc-custom-css"> tag in app.html (nonce via %sveltekit.nonce%).
+	const customCss = sanitizeCustomCss(
+		(siteSettings['site.custom_css'] as string | undefined) ?? ''
+	);
 
 	const response = await resolve(event, {
 		transformPageChunk: ({ html }) =>
 			html
-				.replace('%jc.theme%', event.locals.theme)
+				.replace('%jc.themevars%', () => themeVars)
+				.replace('%jc.customcss%', () => customCss)
+				.replace('%jc.theme%', () => event.locals.resolvedTheme)
 				.replace('lang="en"', `lang="${event.locals.locale}"`)
 	});
-	// Dev note: Vite injects all CSS as runtime <style> tags without nonces,
-	// so a nonce-based style-src would leave dev pages completely unstyled.
-	// 'unsafe-inline' is ignored by browsers once a nonce is present, so dev
-	// swaps the nonce for unsafe-inline rather than layering both.
-	const styleSrc = dev
-		? `style-src 'self' 'unsafe-inline'`
-		: `style-src 'self' 'nonce-${event.locals.cspNonce}'`;
-	const scriptSrc = dev
-		? `script-src 'self' 'unsafe-inline' 'unsafe-eval'`
-		: `script-src 'self' 'nonce-${event.locals.cspNonce}'`;
-	// connect-src must cover the realtime socket (and the API base when it is
-	// absolute — /api/v1 is same-origin and already covered by 'self'). Both
-	// come from PUBLIC_JC_* env, e.g. ws://localhost:8080/api/v1/ws in dev or
-	// wss://api.japaconnect.com/api/v1/ws in production.
-	const connectOrigins = [PUBLIC_JC_API_URL, PUBLIC_JC_WS_URL]
-		.filter((u): u is string => Boolean(u && /^https?:|^wss?:/.test(u)))
-		.map((u) => {
-			try {
-				const parsed = new URL(u);
-				return `${parsed.protocol}//${parsed.host}`;
-			} catch {
-				return '';
-			}
-		})
-		.filter(Boolean)
-		.join(' ');
-	response.headers.set(
-		'Content-Security-Policy',
-		`default-src 'self'; connect-src 'self'${connectOrigins ? ` ${connectOrigins}` : ''}; ${styleSrc}; ${scriptSrc}; object-src 'none'; base-uri 'self'; frame-ancestors 'self'`
-	);
+	response.headers.set('X-Content-Type-Options', 'nosniff');
+	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
 	return response;
 };

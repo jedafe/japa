@@ -4557,6 +4557,12 @@ type UserProfile struct {
 	MentorCredentials        []string            `json:"mentor_credentials"`
 	MentorYearsExperience    *int16              `json:"mentor_years_experience"`
 	MentorSuccessLabel       *string             `json:"mentor_success_label"`
+	WebsiteUrl               *string             `json:"website_url"`
+	Education                *string             `json:"education"`
+	Profession               *string             `json:"profession"`
+	MaritalStatus            *string             `json:"marital_status"`
+	DateOfBirth              pgtype.Date         `json:"date_of_birth"`
+	Gender                   *string             `json:"gender"`
 }
 
 type UserRole struct {

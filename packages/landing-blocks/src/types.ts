@@ -393,6 +393,80 @@ export interface MapProps {
   highlight_visitor_country: boolean;
 }
 
+/** Ref: japaconnect-engineering/sections/16-page-builder.md (explore_map row) */
+export interface ExploreMapView {
+  key: string;
+  label: string;
+  /** Pin dataset: country spaces, COL cities, or universities. */
+  source: 'countries' | 'col_cities' | 'universities';
+}
+export interface ExploreMapCategory {
+  key: string;
+  icon?: string;
+  label: string;
+  sublabel?: string;
+  /** Legend accent + pin color for pins tagged with this category. */
+  color: string;
+}
+export interface ExploreMapStat {
+  icon?: string;
+  label: string;
+  /** Live source key or 'manual' to use the literal `value`. */
+  source: 'manual' | 'countries' | 'col_cities' | 'blog' | 'services';
+  value?: string;
+  suffix?: string;
+}
+export interface ExploreMapPin {
+  /** ISO alpha-2 code — drives centroid, flag and region. */
+  country: string;
+  label?: string;
+  tagline?: string;
+  /** Category key for legend/'Show' filtering. */
+  category?: string;
+  href?: string;
+  /** Explicit pin position in the 1000x500 viewBox plane — overrides the
+   * country centroid (e.g. subnational ADMIN1_CENTROIDS lookups). */
+  x?: number;
+  y?: number;
+}
+export interface ExploreMapBand {
+  key: string;
+  /** Range label shown in the COL index bar (e.g. "$1,001 – $2,000"). */
+  label: string;
+  /** Monthly range in `default_currency` — converted at render when the
+   * visitor picks another currency via /fx/rates. `max: null` = "+". */
+  min: number;
+  max: number | null;
+  /** Choropleth + legend color. */
+  color: string;
+}
+export interface ExploreMapProps {
+  headline?: string;
+  subtitle?: string;
+  show_toolbar?: boolean;
+  show_legend?: boolean;
+  show_stats?: boolean;
+  show_region_filter?: boolean;
+  show_col_index?: boolean;
+  show_zoom?: boolean;
+  views?: ExploreMapView[];
+  categories?: ExploreMapCategory[];
+  stats?: ExploreMapStat[];
+  /** 'api' = top country spaces by member_count; 'manual' = `pins`. */
+  geo_source?: 'api' | 'manual';
+  pins?: ExploreMapPin[];
+  pin_limit?: number;
+  col_bands?: ExploreMapBand[];
+  /** Region OR subregion name → col_bands key (subregion wins). */
+  region_bands?: Record<string, string>;
+  default_currency?: string;
+  /** Region selected + zoomed on mount (e.g. a wiki space's region). */
+  initial_region?: string;
+  /** Explicit [x0,y0,x1,y1] viewBox rect to fit on mount — takes precedence
+   * over initial_region (e.g. COUNTRY_BOUNDS / admin-1 bounds for wiki). */
+  initial_bounds?: [number, number, number, number];
+}
+
 export interface TableProps {
   columns: Array<{ key: string; label: string; align?: 'left' | 'center' | 'right' }>;
   rows: Array<Record<string, string>>;
@@ -1058,6 +1132,7 @@ export type Block =
   | (BaseBlock & { type: 'form_embed'; props: FormEmbedProps })
   | (BaseBlock & { type: 'timeline'; props: TimelineProps })
   | (BaseBlock & { type: 'map'; props: MapProps })
+  | (BaseBlock & { type: 'explore_map'; props: ExploreMapProps })
   | (BaseBlock & { type: 'table'; props: TableProps })
   | (BaseBlock & { type: 'advertisement'; props: AdvertisementProps })
   | (BaseBlock & { type: 'live_rate_ticker'; props: LiveRateTickerProps })

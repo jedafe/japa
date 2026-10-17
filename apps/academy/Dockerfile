@@ -37,5 +37,7 @@ COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/packages ./packages
 COPY --from=build /repo/apps/academy ./apps/academy
 
+USER bun
+
 EXPOSE 3003
 CMD ["bun", "apps/academy/build/index.js"]

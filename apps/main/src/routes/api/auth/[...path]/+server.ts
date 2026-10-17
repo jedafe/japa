@@ -20,7 +20,8 @@ import {
 	initiateOAuth,
 	refreshSession,
 	setSessionCookie,
-	setRefreshCookie
+	setRefreshCookie,
+	sanitizePostLoginTarget
 } from '$lib/server/auth';
 
 const ALLOWED_PATHS = new Set([
@@ -69,7 +70,11 @@ export async function POST(event: RequestEvent) {
 	}
 
 	const ctx = apiContext(event);
-	const redirect = typeof body.redirect === 'string' ? body.redirect : '/';
+	// Sanitize the post-auth target — an unsanitized echo here is an open
+	// redirect (navigatePostLogin location.assign's absolute URLs). The
+	// dedicated /api/auth/{login,signup} routes resolve this through
+	// resolvePostLoginRedirect; the catch-all must not be weaker.
+	const redirect = sanitizePostLoginTarget(typeof body.redirect === 'string' ? body.redirect : null);
 
 	try {
 		switch (path) {
@@ -177,7 +182,7 @@ export async function GET(event: RequestEvent) {
 	}
 
 	const provider = event.url.searchParams.get('provider') ?? '';
-	const redirect = event.url.searchParams.get('redirect') ?? '/';
+	const redirect = sanitizePostLoginTarget(event.url.searchParams.get('redirect'));
 	if (!provider) return badRequest('missing_fields', 'Provider is required.');
 
 	try {

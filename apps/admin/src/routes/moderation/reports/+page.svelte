@@ -6,6 +6,7 @@
 	// page-local confirm Modal with an optional reason textarea.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
+	import { safeHref } from '$lib/utils/html';
 	import { Button } from '$lib/components/ui/button';
 	import { moderationAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -306,7 +307,7 @@
 				<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.evidence', 'Evidence')}</p>
 				<ul class="space-y-1">
 					{#each row.evidence_urls as url (url)}
-						<li><a href={url} target="_blank" rel="noopener" class="text-sm underline-offset-4 hover:underline" style="color: var(--color-primary)">{url}</a></li>
+						<li><a href={safeHref(url)} target="_blank" rel="noopener" class="text-sm underline-offset-4 hover:underline" style="color: var(--color-primary)">{url}</a></li>
 					{/each}
 				</ul>
 			</div>

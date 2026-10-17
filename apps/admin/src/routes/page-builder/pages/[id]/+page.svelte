@@ -39,6 +39,7 @@
 		type RuntimeBlockMeta,
 		type VisibilityRules,
 		type GuestHomeData,
+		EXPLORE_MAP_DEFAULTS,
 		type GuestHomeStat,
 		type GuestHomeCategory,
 		type GuestHomeOpportunity,
@@ -48,7 +49,7 @@
 		type FetchContext,
 	} from '@japaconnect/landing-blocks';
 	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '$lib/components/landing-editor';
-	import { isContainerLike, isChildOnlyType, childrenOf, childSlotsOf, mapChildSlots, defaultSlotKey, getContainerLayout, getContainerColumns, seedAllContainerDefaults, seedBlockDefaults, defaultChildrenFor } from '$lib/utils/blocks';
+	import { isContainerLike, isChildOnlyType, childrenOf, childSlotsOf, mapChildSlots, defaultSlotKey, getContainerLayout, getContainerColumns, seedAllContainerDefaults, seedBlockDefaults, defaultChildrenFor, materializeGuestContextItems } from '$lib/utils/blocks';
 	import { Button } from '$lib/components/ui/button';
 
 	import { Modal } from '$lib/components/ui/modal';
@@ -375,6 +376,12 @@
 			stats,
 			categories
 		});
+		// Materialize context-driven guest list items into real child blocks so
+		// they appear in the sections tree and stay editable. The materialized
+		// tree becomes the saved baseline (same convention as the load-time
+		// seedAllContainerDefaults pass — the seeds only persist on save).
+		blocks = materializeGuestContextItems(blocks, guestHomePreview);
+		savedFingerprint = saveFingerprint();
 	}
 
 	function asArray<T>(value: unknown): T[] {
@@ -425,9 +432,10 @@
 	// ─── Block CRUD ───────────────────────────────────────────────
 	// `type` can be a real Block type or a `custom:{blockDefId}` palette key.
 	function makeBlock(type: string): Block {
-		// Seed nested container defaults so every guest block arrives with its
-		// editable children already in place (or absent for context-driven lists).
-		return seedBlockDefaults(buildBlock(type));
+		// Seed nested container defaults, then materialize context-driven guest
+		// list items so every guest block arrives with editable children.
+		const [nb] = materializeGuestContextItems([seedBlockDefaults(buildBlock(type))], guestHomePreview);
+		return nb;
 	}
 	function buildBlock(type: string): Block {
 		// Custom block — parse the block def ID and seed props from defaults.
@@ -457,6 +465,9 @@
 		// doesn't crash on an empty widget_id.
 		if (type === 'widget') {
 			return { id: crypto.randomUUID(), type: 'widget', visible: true, props: { widget_id: '', layout: 'grid', columns: 3, heading: '', view_all_href: '' } } as Block;
+		}
+		if (type === 'explore_map') {
+			return { id: crypto.randomUUID(), type: 'explore_map', visible: true, label: 'World Explorer', props: structuredClone(EXPLORE_MAP_DEFAULTS) } as Block;
 		}
 		if (type === 'guest_home') {
 			const id = crypto.randomUUID();

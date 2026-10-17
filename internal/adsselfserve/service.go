@@ -20,6 +20,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // Status constants for ad campaign lifecycle.
@@ -49,6 +50,9 @@ var (
 	ErrSlotTypeNotFound        = errors.New("adsselfserve: slot_type_not_found")
 	ErrDurationTooShort        = errors.New("adsselfserve: duration_too_short")
 	ErrInsufficientBalance     = errors.New("adsselfserve: insufficient_balance")
+	// target_url is opened via window.open on ad click — non-http(s) schemes
+	// are a stored-XSS vector against viewers.
+	ErrInvalidTargetURL = errors.New("adsselfserve: target_url must be a valid http or https URL")
 )
 
 // TaskEnqueuer enqueues Asynq tasks fire-and-forget (Rule 8).
@@ -283,6 +287,10 @@ func (s *Service) CreateCampaign(ctx context.Context, orgID, userID pgtype.UUID,
 		}
 	}
 
+	if input.TargetURL != "" && !httpx.IsAbsoluteHTTPURL(input.TargetURL) {
+		return gen.AdCampaign{}, ErrInvalidTargetURL
+	}
+
 	campaign, err := s.store.CreateCampaign(ctx, gen.CreateSelfServeAdCampaignParams{
 		OrganizationID:      orgID,
 		Name:                input.Name,
@@ -372,6 +380,9 @@ func (s *Service) UpdateCampaignCreative(ctx context.Context, orgID, campaignID 
 
 	var targetURLArg *string
 	if targetURL != "" {
+		if !httpx.IsAbsoluteHTTPURL(targetURL) {
+			return gen.AdCampaign{}, ErrInvalidTargetURL
+		}
 		targetURLArg = &targetURL
 	}
 

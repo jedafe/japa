@@ -99,11 +99,12 @@
 		// page fires the conversion event (§25 — mirrors main's trackedAdUrl).
 		try {
 			const url = new URL(campaign.target_url, window.location.origin);
+			if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 			const same = url.origin === window.location.origin;
 			if (same) url.searchParams.set('jc_ad_cid', campaign.id);
 			window.open(same ? url.pathname + url.search + url.hash : campaign.target_url, '_blank', 'noopener,noreferrer');
 		} catch {
-			window.open(campaign.target_url, '_blank', 'noopener,noreferrer');
+			// Unparseable target — drop the click rather than open an unknown scheme.
 		}
 	}
 

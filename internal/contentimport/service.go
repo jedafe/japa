@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -139,6 +140,19 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
+			// Dial-time IP validation closes the DNS-rebinding/TOCTOU window
+			// between validateFeedURL's lookup-time check and the actual TCP
+			// connect — and covers every redirect hop, which validateFeedURL
+			// alone cannot see. Mirrors linkpreview's newSSRFSafeClient (BUG-006).
+			Transport: &http.Transport{
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+					Control:   blockBlockedIPDial,
+				}).DialContext,
+				ForceAttemptHTTP2:   true,
+				TLSHandshakeTimeout: 10 * time.Second,
+			},
 		},
 	}
 }
@@ -570,6 +584,26 @@ func validateFeedURL(rawURL string) error {
 		}
 	}
 
+	return nil
+}
+
+// blockBlockedIPDial is a net.Dialer Control function that re-validates the
+// resolved IP at TCP connection time using the same isBlockedIP rules as
+// validateFeedURL. A hostname that resolved to a public IP during validation
+// cannot rebind to loopback/private/link-local before connect, and redirect
+// hops to internal addresses are blocked the same way.
+func blockBlockedIPDial(network, address string, c syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("unparseable IP at connection time: %s", host)
+	}
+	if isBlockedIP(ip) {
+		return fmt.Errorf("connection to blocked IP rejected at dial time: %s", ip)
+	}
 	return nil
 }
 

@@ -79,7 +79,9 @@ class AdminWebSocketClient {
 				return;
 			}
 
-			const ws = new WebSocket(`${WS_BASE_URL}/api/v1/ws?ticket=${encodeURIComponent(this.ticket)}`);
+			// Ticket travels as a Sec-WebSocket-Protocol token, not a query param,
+			// so it never lands in URLs or proxy logs.
+			const ws = new WebSocket(`${WS_BASE_URL}/api/v1/ws`, [`jc-ticket.${this.ticket}`]);
 			this.ws = ws;
 
 			ws.onopen = () => {

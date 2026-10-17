@@ -1,6 +1,18 @@
 import { error, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { buildThemeOverrides } from '@japaconnect/ui/theme';
+
+/**
+ * In-process cache for GET /site/settings/public (same pattern as the main
+ * app's hooks). Appearance/theme settings are global and change rarely, so
+ * a 30s TTL avoids a serial backend round-trip on every request while still
+ * applying admin changes quickly. Keyed by request host; stale entries are
+ * served on fetch failure; misses are not cached.
+ * Ref: conventions/system-settings-catalog.md
+ */
+const SETTINGS_TTL_MS = 30_000;
+const settingsCache = new Map<string, { value: Record<string, unknown>; expiresAt: number }>();
 import type { SessionUser, DocAudience } from '$lib/types';
 import { AUDIENCE_ORDER } from '$lib/types';
 
@@ -50,27 +62,43 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// validation).
 	const themeCookie = event.cookies.get('jc_theme');
 	const localeCookie = event.cookies.get('jc_locale');
-	const needSettings =
-		(themeCookie !== 'dark' && themeCookie !== 'light') ||
-		!localeCookie ||
-		pathLocale !== null;
+	// Always fetch: admin appearance overrides (appearance.*) are compiled into
+	// %jc.themevars% on every response, so settings are needed on all requests.
+	const needSettings = true;
 
 	let settings: Record<string, unknown> = {};
 	if (needSettings && !building) {
-		try {
-			settings =
-				(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
-		} catch {
-			settings = {};
+		const host = event.url.host;
+		const cached = settingsCache.get(host);
+		const now = Date.now();
+		if (cached && cached.expiresAt > now) {
+			settings = cached.value;
+		} else {
+			try {
+				settings =
+					(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
+				settingsCache.set(host, { value: settings, expiresAt: now + SETTINGS_TTL_MS });
+			} catch {
+				settings = cached?.value ?? {};
+			}
 		}
 	}
 
+	// 'system' is a valid selection — the SSR markup can't know the OS
+	// preference, so resolvedTheme falls back to dark_mode_default and the
+	// client theme store corrects data-theme after hydration.
 	event.locals.theme =
-		themeCookie === 'dark' || themeCookie === 'light'
+		themeCookie === 'dark' || themeCookie === 'light' || themeCookie === 'system'
 			? themeCookie
 			: settings['appearance.dark_mode_default'] === true
 				? 'dark'
 				: 'light';
+	event.locals.resolvedTheme =
+		event.locals.theme === 'system'
+			? settings['appearance.dark_mode_default'] === true
+				? 'dark'
+				: 'light'
+			: event.locals.theme;
 
 	// Locale resolution: URL prefix > cookie > i18n.default_language > 'en'.
 	// Valid prefix → set cookie + rewrite URL so SvelteKit routes to the
@@ -209,10 +237,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	return resolve(event, {
+	const response = await resolve(event, {
 		transformPageChunk: ({ html }) =>
 			html
-				.replace('%jc.theme%', event.locals.theme)
+				.replace('%jc.themevars%', () => buildThemeOverrides(settings))
+				.replace('%jc.theme%', () => event.locals.resolvedTheme)
 				.replace('lang="en"', `lang="${event.locals.locale}"`)
 	});
+	response.headers.set('X-Content-Type-Options', 'nosniff');
+	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+	return response;
 };

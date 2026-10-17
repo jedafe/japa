@@ -57,7 +57,10 @@ export interface QueueTask {
 	last_err?: string;
 	last_failed_at?: string;
 	next_process_at?: string;
+	is_orphaned?: boolean;
 }
+
+export type QueueTaskState = 'pending' | 'active' | 'scheduled' | 'retry' | 'archived' | 'completed';
 
 export interface QueueTasksResponse {
 	pending: QueueTask[];
@@ -66,6 +69,9 @@ export interface QueueTasksResponse {
 	retry: QueueTask[];
 	archived: QueueTask[];
 	completed: QueueTask[];
+	/** Authoritative per-state totals from the Asynq inspector — the task
+	 * lists above are capped (recent preview), these counts are not. */
+	counts?: Partial<Record<QueueTaskState, number>>;
 }
 
 export interface DlqEntry {
@@ -76,7 +82,7 @@ export interface DlqEntry {
 	failed_at: string;
 	retry_count: number;
 	max_retries: number;
-	payload: Record<string, unknown>;
+	payload: string;
 }
 
 export interface CacheStats {

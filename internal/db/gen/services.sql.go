@@ -2178,6 +2178,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- "Mentorship details" sidebar on the mentorship detail page.
        up.location, up.mentor_title, up.mentor_response_time,
        up.mentor_availability, up.mentor_session_type,
+       up.profession, up.website_url,
        up.mentor_languages, up.mentor_session_formats,
        up.mentor_countries, up.mentor_credentials,
        up.mentor_years_experience, up.mentor_success_label,
@@ -2277,6 +2278,8 @@ type GetMentorshipListingByAuthorRow struct {
 	MentorResponseTime    *string            `json:"mentor_response_time"`
 	MentorAvailability    *string            `json:"mentor_availability"`
 	MentorSessionType     *string            `json:"mentor_session_type"`
+	Profession            *string            `json:"profession"`
+	WebsiteUrl_2          *string            `json:"website_url_2"`
 	MentorLanguages       []string           `json:"mentor_languages"`
 	MentorSessionFormats  []string           `json:"mentor_session_formats"`
 	MentorCountries       []string           `json:"mentor_countries"`
@@ -2372,6 +2375,8 @@ func (q *Queries) GetMentorshipListingByAuthor(ctx context.Context, authorID pgt
 		&i.MentorResponseTime,
 		&i.MentorAvailability,
 		&i.MentorSessionType,
+		&i.Profession,
+		&i.WebsiteUrl_2,
 		&i.MentorLanguages,
 		&i.MentorSessionFormats,
 		&i.MentorCountries,
@@ -2741,6 +2746,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- "Mentorship details" sidebar on the mentorship detail page.
        up.location, up.mentor_title, up.mentor_response_time,
        up.mentor_availability, up.mentor_session_type,
+       up.profession, up.website_url,
        up.mentor_languages, up.mentor_session_formats,
        up.mentor_countries, up.mentor_credentials,
        up.mentor_years_experience, up.mentor_success_label,
@@ -2834,6 +2840,8 @@ type GetServiceListingByContentIDRow struct {
 	MentorResponseTime    *string            `json:"mentor_response_time"`
 	MentorAvailability    *string            `json:"mentor_availability"`
 	MentorSessionType     *string            `json:"mentor_session_type"`
+	Profession            *string            `json:"profession"`
+	WebsiteUrl_2          *string            `json:"website_url_2"`
 	MentorLanguages       []string           `json:"mentor_languages"`
 	MentorSessionFormats  []string           `json:"mentor_session_formats"`
 	MentorCountries       []string           `json:"mentor_countries"`
@@ -2916,6 +2924,8 @@ func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pg
 		&i.MentorResponseTime,
 		&i.MentorAvailability,
 		&i.MentorSessionType,
+		&i.Profession,
+		&i.WebsiteUrl_2,
 		&i.MentorLanguages,
 		&i.MentorSessionFormats,
 		&i.MentorCountries,
@@ -2960,6 +2970,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- "Mentorship details" sidebar on the mentorship detail page.
        up.location, up.mentor_title, up.mentor_response_time,
        up.mentor_availability, up.mentor_session_type,
+       up.profession, up.website_url,
        up.mentor_languages, up.mentor_session_formats,
        up.mentor_countries, up.mentor_credentials,
        up.mentor_years_experience, up.mentor_success_label,
@@ -3053,6 +3064,8 @@ type GetServiceListingBySlugRow struct {
 	MentorResponseTime    *string            `json:"mentor_response_time"`
 	MentorAvailability    *string            `json:"mentor_availability"`
 	MentorSessionType     *string            `json:"mentor_session_type"`
+	Profession            *string            `json:"profession"`
+	WebsiteUrl_2          *string            `json:"website_url_2"`
 	MentorLanguages       []string           `json:"mentor_languages"`
 	MentorSessionFormats  []string           `json:"mentor_session_formats"`
 	MentorCountries       []string           `json:"mentor_countries"`
@@ -3138,6 +3151,8 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 		&i.MentorResponseTime,
 		&i.MentorAvailability,
 		&i.MentorSessionType,
+		&i.Profession,
+		&i.WebsiteUrl_2,
 		&i.MentorLanguages,
 		&i.MentorSessionFormats,
 		&i.MentorCountries,

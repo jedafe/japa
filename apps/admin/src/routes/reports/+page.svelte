@@ -6,6 +6,7 @@
 	// Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
+	import { safeHref } from "$lib/utils/html";
 	import { Button } from "$lib/components/ui/button";
 	import { reportsAdminApiExtended, apiRaw, adminCatalogApi, type CatalogOption } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
@@ -365,7 +366,7 @@
 				<p class="text-xs font-medium uppercase tracking-wider mb-2" style="color: var(--color-muted)">{t("reports.evidence", "Evidence")}</p>
 				<ul class="space-y-1">
 					{#each row.evidence_urls as url (url)}
-						<li><a href={url} target="_blank" rel="noopener" class="text-sm text-primary underline-offset-4 hover:underline">{url}</a></li>
+						<li><a href={safeHref(url)} target="_blank" rel="noopener" class="text-sm text-primary underline-offset-4 hover:underline">{url}</a></li>
 					{/each}
 				</ul>
 			</div>

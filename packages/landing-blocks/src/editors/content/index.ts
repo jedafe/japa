@@ -18,6 +18,7 @@ import ComingSoonContentEditor from './ComingSoonContentEditor.svelte';
 import FormEmbedContentEditor from './FormEmbedContentEditor.svelte';
 import TimelineContentEditor from './TimelineContentEditor.svelte';
 import MapContentEditor from './MapContentEditor.svelte';
+import ExploreMapContentEditor from './ExploreMapContentEditor.svelte';
 import TableContentEditor from './TableContentEditor.svelte';
 import AdvertisementContentEditor from './AdvertisementContentEditor.svelte';
 import LiveRateTickerContentEditor from './LiveRateTickerContentEditor.svelte';
@@ -77,6 +78,7 @@ export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
   form_embed: FormEmbedContentEditor,
   timeline: TimelineContentEditor,
   map: MapContentEditor,
+  explore_map: ExploreMapContentEditor,
   table: TableContentEditor,
   advertisement: AdvertisementContentEditor,
   live_rate_ticker: LiveRateTickerContentEditor,

@@ -346,6 +346,11 @@ type MentorProfile struct {
 	DisplayName       *string            `json:"display_name"`
 	AvatarURL         *string            `json:"avatar_url"`
 
+	// From the caller's user profile — profession drives the mentor card's
+	// profession row; website_url links out from the mentor block.
+	Profession *string `json:"profession,omitempty"`
+	WebsiteURL *string `json:"website_url,omitempty"`
+
 	// 000829 mentor card fields (§114 detail-page rebuild) — surfaced on
 	// the mentorship listing's mentor block via the shadow listing join.
 	Location        *string  `json:"location,omitempty"`
@@ -405,6 +410,8 @@ type MentorSummary struct {
 	MentorCapacity    *int16             `json:"mentor_capacity"`
 	ActiveMenteeCount *int16             `json:"active_mentee_count"`
 	AvailableSlots    int32              `json:"available_slots"`
+	Profession        *string            `json:"profession"`
+	WebsiteURL        *string            `json:"website_url"`
 }
 
 // Connection is a mentorship connection with resolved user names.
@@ -535,6 +542,8 @@ func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Men
 		MentorSince:       row.MentorSince,
 		DisplayName:       row.DisplayName,
 		AvatarURL:         row.AvatarUrl,
+		Profession:        row.Profession,
+		WebsiteURL:        row.WebsiteUrl,
 		Location:          row.Location,
 		MentorTitle:       row.MentorTitle,
 		ResponseTime:      row.MentorResponseTime,
@@ -716,6 +725,8 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 		MentorSince:       row.MentorSince,
 		DisplayName:       row.DisplayName,
 		AvatarURL:         row.AvatarUrl,
+		Profession:        row.Profession,
+		WebsiteURL:        row.WebsiteUrl,
 		Location:          current.Location,
 		MentorTitle:       row.MentorTitle,
 		ResponseTime:      row.MentorResponseTime,
@@ -748,7 +759,7 @@ func (s *Service) GetMentorByUsername(ctx context.Context, username string) (Men
 
 	return mentorSummaryFromRow(row.UserID, row.IsMentor, row.MentorCapacity,
 		row.ActiveMenteeCount, row.MentorAreas, row.MentorBio, row.MentorSince,
-		row.DisplayName, row.AvatarUrl, row.Username, 0), nil
+		row.DisplayName, row.AvatarUrl, row.Username, 0, row.Profession, row.WebsiteUrl), nil
 }
 
 // ListMentors discovers mentors with optional destination and area filters.
@@ -787,7 +798,7 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 
 			mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 				r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
+				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl)
 		}
 
 		return mentors, total, nil
@@ -818,7 +829,7 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 
 		mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
+			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl)
 	}
 
 	return mentors, total, nil
@@ -851,6 +862,7 @@ func (s *Service) SearchMentors(ctx context.Context, query string, limit int32) 
 			r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots,
+			r.Profession, r.WebsiteUrl,
 		)
 	}
 
@@ -906,7 +918,7 @@ func (s *Service) GetMentorsByIDs(ctx context.Context, userIDs []pgtype.UUID) ([
 	for i, r := range rows {
 		mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
+			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl)
 	}
 
 	return mentors, nil
@@ -1490,7 +1502,7 @@ func (s *Service) enqueueGenerateEmbedding(ctx context.Context, userID pgtype.UU
 }
 
 // mentorSummaryFromRow builds a MentorSummary from common field values.
-func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCount *int16, areas []string, bio *string, since pgtype.Timestamptz, displayName, avatarURL *string, username string, availableSlots int32) MentorSummary {
+func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCount *int16, areas []string, bio *string, since pgtype.Timestamptz, displayName, avatarURL *string, username string, availableSlots int32, profession, websiteURL *string) MentorSummary {
 	return MentorSummary{
 		UserID:            userID,
 		Username:          username,
@@ -1502,6 +1514,8 @@ func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCo
 		MentorCapacity:    capacity,
 		ActiveMenteeCount: activeCount,
 		AvailableSlots:    availableSlots,
+		Profession:        profession,
+		WebsiteURL:        websiteURL,
 	}
 }
 

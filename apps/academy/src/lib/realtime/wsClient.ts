@@ -2,7 +2,7 @@
  * WebSocket client for the JapaConnect Real-Time system (Section 10).
  *
  * Backend protocol (internal/websocket):
- *   - Connect:  GET /api/v1/ws?ticket={ticket_id}
+ *   - Connect:  GET /api/v1/ws (ticket via Sec-WebSocket-Protocol: jc-ticket.<uuid>)
  *   - Ticket:   POST /api/v1/auth/ws-ticket -> { "ticket": "..." }
  *   - Envelope: { "type": "<event>", "payload": <any> }
  *   - Server -> client events: notification, presence, typing,
@@ -52,12 +52,12 @@ async function mintTicket(): Promise<MintResult> {
 	}
 }
 
-function resolveWsUrl(ticket: string): string {
+function resolveWsUrl(): string {
 	if (typeof window === 'undefined') {
-		return `ws://localhost:8080/api/v1/ws?ticket=${encodeURIComponent(ticket)}`;
+		return `ws://localhost:8080/api/v1/ws`;
 	}
 	const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-	return `${proto}//${window.location.host}/api/v1/ws?ticket=${encodeURIComponent(ticket)}`;
+	return `${proto}//${window.location.host}/api/v1/ws`;
 }
 
 class WsClient {
@@ -167,10 +167,10 @@ class WsClient {
 		if (this.isConnecting || this.socket) return;
 		this.isConnecting = true;
 
-		const url = resolveWsUrl(ticket);
+		const url = resolveWsUrl();
 		let socket: WebSocket;
 		try {
-			socket = new WebSocket(url);
+			socket = new WebSocket(url, [`jc-ticket.${ticket}`]);
 		} catch {
 			this.isConnecting = false;
 			this.scheduleReconnect();

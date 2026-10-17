@@ -43,5 +43,7 @@ COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/packages ./packages
 COPY --from=build /repo/apps/admin ./apps/admin
 
+USER bun
+
 EXPOSE 3001
 CMD ["bun", "apps/admin/build/index.js"]

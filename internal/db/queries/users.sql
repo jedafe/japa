@@ -9,6 +9,12 @@ SELECT DISTINCT ON (u.id)
  up.bio,
  up.timezone,
  up.cover_url,
+ up.website_url,
+ up.education,
+ up.profession,
+ up.marital_status,
+ up.date_of_birth,
+ up.gender,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
  u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
@@ -50,6 +56,7 @@ SELECT DISTINCT ON (u.id)
  up.bio,
  up.timezone,
  up.cover_url,
+ up.website_url,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
  u.email, u.username, u.profile_type, u.status, u.follower_count,
@@ -68,7 +75,7 @@ INSERT INTO user_profiles (user_id, display_name) VALUES (@user_id, @display_nam
 ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name;
 
 -- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id) VALUES (@user_id, @display_name, @avatar_url, @avatar_media_id, @header_media_id, @bio, @timezone, @cover_url, sqlc.narg(location), sqlc.narg(banner_media_id))
+INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id, website_url, education, profession, marital_status, date_of_birth, gender) VALUES (@user_id, @display_name, @avatar_url, @avatar_media_id, @header_media_id, @bio, @timezone, @cover_url, sqlc.narg(location), sqlc.narg(banner_media_id), sqlc.narg(website_url), sqlc.narg(education), sqlc.narg(profession), sqlc.narg(marital_status), sqlc.narg(date_of_birth)::date, sqlc.narg(gender))
 ON CONFLICT (user_id) DO UPDATE SET
  display_name = EXCLUDED.display_name,
  avatar_url = EXCLUDED.avatar_url,
@@ -79,6 +86,16 @@ ON CONFLICT (user_id) DO UPDATE SET
  cover_url = EXCLUDED.cover_url,
  location = COALESCE(EXCLUDED.location, user_profiles.location),
  banner_media_id = COALESCE(EXCLUDED.banner_media_id, user_profiles.banner_media_id),
+ -- The caller merges request fields with the locked row first, so these
+ -- assignments are unconditional: NULL means "clear the field", not "keep".
+ -- (location/banner_media_id stay COALESCE — UpdateProfile doesn't manage
+ -- them and always passes NULL.)
+ website_url = EXCLUDED.website_url,
+ education = EXCLUDED.education,
+ profession = EXCLUDED.profession,
+ marital_status = EXCLUDED.marital_status,
+ date_of_birth = EXCLUDED.date_of_birth,
+ gender = EXCLUDED.gender,
  updated_at = now();
 
 -- name: GetUserProfileForUpdate :one
@@ -87,7 +104,9 @@ ON CONFLICT (user_id) DO UPDATE SET
 -- transaction commits or rolls back, preventing concurrent profile edits
 -- from racing on the merge step.
 SELECT id, user_id, display_name, avatar_url, avatar_media_id,
- header_media_id, bio, timezone, cover_url, created_at, updated_at
+ header_media_id, bio, timezone, cover_url, website_url,
+ education, profession, marital_status, date_of_birth, gender,
+ created_at, updated_at
 FROM user_profiles
 WHERE user_id = @user_id
 FOR UPDATE;
@@ -455,6 +474,7 @@ SELECT DISTINCT ON (u.id)
  up.avatar_url,
  up.bio,
  up.cover_url,
+ up.website_url,
  up.location,
  up.banner_media_id,
  COALESCE(up.created_at, u.created_at) AS created_at,

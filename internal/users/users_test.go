@@ -113,6 +113,7 @@ func TestPublicProfileResponseJSONTags(t *testing.T) {
 		"synthetic_source": nil,
 		"location":         nil,
 		"banner_url":       nil,
+		"website_url":      nil,
 	}
 
 	for k, want := range wantKeys {
@@ -128,7 +129,7 @@ func TestPublicProfileResponseJSONTags(t *testing.T) {
 	// PII rule (Section 19 / ADR-014): the public profile response must
 	// never expose email, status, last_login_at, or groups.
 	s := string(data)
-	for _, leaked := range []string{`"email"`, `"status"`, `"last_login_at"`, `"groups"`, `"user_group_name"`} {
+	for _, leaked := range []string{`"email"`, `"status"`, `"last_login_at"`, `"groups"`, `"user_group_name"`, `"date_of_birth"`, `"marital_status"`, `"gender"`, `"education"`, `"profession"`} {
 		if strings.Contains(s, leaked) {
 			t.Fatalf("PublicProfileResponse JSON leaked PII field %s: %s", leaked, s)
 		}

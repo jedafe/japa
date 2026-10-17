@@ -30,7 +30,7 @@ const contentFields = new Set<string>([
 ]);
 
 /** Block types that load their content dynamically. */
-const dynamicBlockTypes = new Set<string>(['widget', 'entity_collection', 'entity_feature', 'live_rate_ticker']);
+const dynamicBlockTypes = new Set<string>(['widget', 'entity_collection', 'entity_feature', 'live_rate_ticker', 'explore_map']);
 
 function hasContentValue(value: unknown): boolean {
   if (value == null || value === '' || value === false) return false;

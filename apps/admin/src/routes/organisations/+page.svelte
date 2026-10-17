@@ -2,6 +2,7 @@
 	// /organisations — migrated to the EntityPage scaffold; CRUD entity with state actions (verify/unverify) and an approve-claim sub-flow.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
+	import { safeHref } from "$lib/utils/html";
 	import { Button } from "$lib/components/ui/button";
 	import { organisationsAdminApi, apiRaw } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
@@ -388,7 +389,7 @@
 			{#if pendingClaim.evidence_url}
 				<div class="rounded-lg p-3" style="background: var(--color-surface); border: 1px solid var(--color-border)">
 					<p class="text-xs font-medium uppercase tracking-wider mb-1" style="color: var(--color-muted)">{t("organisations.evidence", "Evidence URL")}</p>
-					<a href={pendingClaim.evidence_url} target="_blank" rel="noopener noreferrer" class="text-sm break-all" style="color: var(--color-primary)">{pendingClaim.evidence_url}</a>
+					<a href={safeHref(pendingClaim.evidence_url)} target="_blank" rel="noopener noreferrer" class="text-sm break-all" style="color: var(--color-primary)">{pendingClaim.evidence_url}</a>
 				</div>
 			{/if}
 			{#if pendingClaim.notes}

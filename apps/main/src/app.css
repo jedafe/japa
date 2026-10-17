@@ -6,6 +6,35 @@
 @import '@fontsource/lora/400-italic.css';
 @import '@fontsource/lora/500-italic.css';
 
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/700.css';
+@import '@fontsource/roboto/400.css';
+@import '@fontsource/roboto/500.css';
+@import '@fontsource/roboto/700.css';
+@import '@fontsource/open-sans/400.css';
+@import '@fontsource/open-sans/500.css';
+@import '@fontsource/open-sans/700.css';
+@import '@fontsource/montserrat/400.css';
+@import '@fontsource/montserrat/500.css';
+@import '@fontsource/montserrat/700.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/inter/800.css';
+@import '@fontsource/inter/900.css';
+@import '@fontsource/lora/600.css';
+@import '@fontsource/lora/700.css';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/poppins/800.css';
+@import '@fontsource/poppins/900.css';
+@import '@fontsource/roboto/600.css';
+@import '@fontsource/roboto/800.css';
+@import '@fontsource/roboto/900.css';
+@import '@fontsource/open-sans/600.css';
+@import '@fontsource/open-sans/800.css';
+@import '@fontsource/montserrat/600.css';
+@import '@fontsource/montserrat/800.css';
+@import '@fontsource/montserrat/900.css';
+
 @import 'tailwindcss';
 
 @source '../../../packages/landing-blocks/src';
@@ -28,6 +57,9 @@
 	--color-primary: #3b49df;
 	--color-primary-hover: #2f3bc0;
 	--color-primary-contrast: #ffffff;
+	--color-secondary: #0ea5e9;
+	--color-secondary-hover: color-mix(in oklab, var(--color-secondary) 82%, black);
+	--color-secondary-contrast: #ffffff;
 	--color-text: #18181b;
 	--color-text-subtle: #52525b;
 	--color-danger: #dc2626;
@@ -83,6 +115,9 @@
 	--color-primary: #5865f2;
 	--color-primary-hover: #6b76f5;
 	--color-primary-contrast: #ffffff;
+	--color-secondary: #38bdf8;
+	--color-secondary-hover: color-mix(in oklab, var(--color-secondary) 82%, white);
+	--color-secondary-contrast: #0a0a0a;
 	--color-text: #f4f4f5;
 	--color-text-subtle: #a1a1aa;
 	--color-danger: #ef4444;
@@ -117,6 +152,9 @@
 	--color-primary: var(--color-primary);
 	--color-primary-hover: var(--color-primary-hover);
 	--color-primary-contrast: var(--color-primary-contrast);
+	--color-secondary: var(--color-secondary);
+	--color-secondary-hover: var(--color-secondary-hover);
+	--color-secondary-contrast: var(--color-secondary-contrast);
 	--color-text: var(--color-text);
 	--color-text-subtle: var(--color-text-subtle);
 	--color-danger: var(--color-danger);

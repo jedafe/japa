@@ -69,6 +69,35 @@ export const load: PageServerLoad = async (event) => {
 			ctx,
 			`/wiki/categories?space=${encodeURIComponent(spaceSlug)}`
 		).catch(() => null);
+		// §16 explore_map — state/city spaces carry a *local* geo_code ("AD"),
+		// not a full ISO-3166-2 ("NG-AD"). Resolve ancestor geo_codes so the
+		// wiki map can pin the admin-1 unit, highlight the parent country, and
+		// fit the right zoom level (state → country bounds, city → state bounds).
+		let countryGeoCode: string | null = null;
+		let stateGeoCode: string | null = null;
+		if (spaceDetail?.space) {
+			const level = spaceDetail.space.level;
+			const resolveAncestor = async (lvl: string) => {
+				const anc = indexEnvelope.ancestors?.find((a) => a.level === lvl);
+				if (!anc) return null;
+				const parent = await apiGet<SpaceDetail>(
+					ctx,
+					`/spaces/${encodeURIComponent(anc.slug)}`
+				).catch(() => null);
+				return (parent?.space?.geo_code ?? '').toUpperCase() || null;
+			};
+			if (level === 'country') {
+				countryGeoCode = (spaceDetail.space.geo_code ?? '').toUpperCase() || null;
+			} else if (level === 'state') {
+				stateGeoCode = (spaceDetail.space.geo_code ?? '').toUpperCase() || null;
+				countryGeoCode = await resolveAncestor('country');
+			} else {
+				[countryGeoCode, stateGeoCode] = await Promise.all([
+					resolveAncestor('country'),
+					resolveAncestor('state')
+				]);
+			}
+		}
 		return {
 			spaceSlug,
 			index: items,
@@ -80,6 +109,8 @@ export const load: PageServerLoad = async (event) => {
 			loadError: false,
 			fromSpace,
 			spaceDetail,
+			countryGeoCode,
+			stateGeoCode,
 			apiCategories: catRes?.data ?? [],
 			wikiScope: catRes?.scope === 'university' ? 'university' : 'geo'
 		};
@@ -98,6 +129,8 @@ export const load: PageServerLoad = async (event) => {
 			loadError: true,
 			fromSpace,
 			spaceDetail: null,
+			countryGeoCode: null,
+			stateGeoCode: null,
 			apiCategories: [] as WikiApiCategory[],
 			wikiScope: 'geo' as const
 		};

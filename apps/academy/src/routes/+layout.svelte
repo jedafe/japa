@@ -95,6 +95,9 @@
 		realtime.setUnread(data.unreadNotifications);
 	});
 
+	// Admin appearance overrides are injected server-side by hooks.server.ts
+	// into the static <style id="jc-theme-overrides"> tag in app.html.
+
 	// Umami analytics — Academy surface (§40, ROADMAP-ACADEMY 01.08).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
 	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_ACADEMY);

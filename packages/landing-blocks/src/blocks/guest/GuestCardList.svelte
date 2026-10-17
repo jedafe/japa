@@ -117,7 +117,7 @@
     scroll-snap-align: start;
   }
 
-  @media (max-width: 1024px) {
+  @container (max-width: 1024px) {
     .card-list-grid {
       grid-template-columns: repeat(var(--tablet, 2), minmax(0, 1fr));
     }
@@ -126,7 +126,7 @@
     }
   }
 
-  @media (max-width: 768px) {
+  @container (max-width: 768px) {
     .card-list-grid {
       grid-template-columns: repeat(var(--mobile, 1), minmax(0, 1fr));
     }

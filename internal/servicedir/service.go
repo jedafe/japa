@@ -29,6 +29,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/media"
 )
 
@@ -188,6 +189,11 @@ type MentorDTO struct {
 	YearsExperience int32    `json:"years_experience,omitempty"`
 	SuccessLabel    string   `json:"success_label,omitempty"`
 	MenteesHelped   int32    `json:"mentees_helped,omitempty"`
+
+	// From the mentor's user profile — profession powers the "Profession"
+	// detail row; website_url links out from the mentor block.
+	Profession string `json:"profession,omitempty"`
+	WebsiteURL string `json:"website_url,omitempty"`
 }
 
 // ServiceIconEntryDTO is one icon-titled page entry — the shared shape
@@ -681,6 +687,9 @@ var (
 	ErrInvalidItem = errors.New("invalid package item")
 	// ErrInvalidDeparture — malformed departure input.
 	ErrInvalidDeparture = errors.New("invalid departure")
+	// ErrInvalidURL — website_url/booking_url is rendered as <a href> on
+	// public listing pages — non-http(s) schemes are stored-XSS vectors.
+	ErrInvalidURL = errors.New("url must be a valid http or https URL")
 	// ErrNotPackage — a package-scoped route hit a listing_kind='service' row.
 	ErrNotPackage = errors.New("not a package listing")
 	// ErrDepartureFull — capacity guard rejected a confirm (§111: 409
@@ -1304,10 +1313,16 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 	}
 
 	if input.WebsiteURL != "" {
+		if !httpx.IsAbsoluteHTTPURL(input.WebsiteURL) {
+			return ServiceDTO{}, fmt.Errorf("%w: website_url", ErrInvalidURL)
+		}
 		params.WebsiteUrl = &input.WebsiteURL
 	}
 
 	if input.BookingURL != "" {
+		if !httpx.IsAbsoluteHTTPURL(input.BookingURL) {
+			return ServiceDTO{}, fmt.Errorf("%w: booking_url", ErrInvalidURL)
+		}
 		params.BookingUrl = &input.BookingURL
 	}
 
@@ -2518,10 +2533,16 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	}
 
 	if input.WebsiteURL != nil {
+		if *input.WebsiteURL != "" && !httpx.IsAbsoluteHTTPURL(*input.WebsiteURL) {
+			return ServiceDTO{}, fmt.Errorf("%w: website_url", ErrInvalidURL)
+		}
 		params.WebsiteUrl = nilIfEmpty(input.WebsiteURL)
 	}
 
 	if input.BookingURL != nil {
+		if *input.BookingURL != "" && !httpx.IsAbsoluteHTTPURL(*input.BookingURL) {
+			return ServiceDTO{}, fmt.Errorf("%w: booking_url", ErrInvalidURL)
+		}
 		params.BookingUrl = nilIfEmpty(input.BookingURL)
 	}
 
@@ -3329,6 +3350,8 @@ func mentorBlock(r ServiceRow) *MentorDTO {
 	// 000829 mentor card fields — detail queries only.
 	m.Location = strOrEmpty(r.MentorLocation)
 	m.Title = strOrEmpty(r.MentorTitle)
+	m.Profession = strOrEmpty(r.MentorProfession)
+	m.WebsiteURL = strOrEmpty(r.MentorWebsiteURL)
 	m.ResponseTime = strOrEmpty(r.MentorResponseTime)
 	m.Availability = strOrEmpty(r.MentorAvailability)
 	m.SessionType = strOrEmpty(r.MentorSessionType)

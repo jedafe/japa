@@ -1124,16 +1124,18 @@ func (s *Store) GetLessonDetail(ctx context.Context, moduleID pgtype.UUID, slug 
 
 // renderLessonContentHTML converts lesson content into display HTML. The
 // academy_lessons.content column holds markdown/plain text (migration
-// 000039) — content.RenderBodyHTML runs the shared goldmark pipeline, which
-// escapes raw HTML in the source (§5.1 — no stored XSS) while still
-// formatting headings, lists, bold, tables, and links. Empty/nil content
-// renders to an empty string.
+// 000039) — content.RenderBodyHTML runs the shared goldmark pipeline, and
+// the output is passed through content.SanitizeHTML (§5.1 — no stored XSS)
+// so the same allowlist gate that protects content bodies also applies to
+// lesson HTML: dangerous link schemes, event handlers, and disallowed tags
+// are stripped server-side regardless of the renderer's own escaping.
+// Empty/nil content renders to an empty string.
 func renderLessonContentHTML(content *string) string {
 	if content == nil || *content == "" {
 		return ""
 	}
 
-	return contentpkg.RenderBodyHTML(*content)
+	return contentpkg.SanitizeHTML(contentpkg.RenderBodyHTML(*content))
 }
 
 // isExternalURL reports whether s is an absolute http(s) URL — used to

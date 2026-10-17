@@ -8,7 +8,7 @@
  *      §73 (Scholarship Finder), §74 (Remittance Tracker), §69/§20 (JapaBot).
  */
 
-export type ThemeName = 'light' | 'dark';
+export type ThemeName = 'light' | 'dark' | 'system';
 
 /** Supported UI locale code (e.g. 'en', 'fr', 'yo'). Dynamic per ADR-013. */
 export type Locale = string;

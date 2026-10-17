@@ -19,6 +19,7 @@ import ComingSoonBlock from '../blocks/ComingSoonBlock.svelte';
 import FormEmbedBlock from '../blocks/FormEmbedBlock.svelte';
 import TimelineBlock from '../blocks/TimelineBlock.svelte';
 import MapBlock from '../blocks/MapBlock.svelte';
+import ExploreMapBlock from '../blocks/ExploreMapBlock.svelte';
 import TableBlock from '../blocks/TableBlock.svelte';
 import AdvertisementBlock from '../blocks/AdvertisementBlock.svelte';
 import LiveRateTickerBlock from '../blocks/LiveRateTickerBlock.svelte';
@@ -83,6 +84,7 @@ export const blockRegistry: Record<Block['type'], BlockMeta> = {
   form_embed: { component: FormEmbedBlock, icon: 'FormInput', label: 'Form Embed', category: 'action' },
   timeline: { component: TimelineBlock, icon: 'GitBranch', label: 'Timeline', category: 'content' },
   map: { component: MapBlock, icon: 'Map', label: 'Map', category: 'geo' },
+  explore_map: { component: ExploreMapBlock, icon: 'Globe2', label: 'World Explorer', category: 'geo' },
   table: { component: TableBlock, icon: 'Table', label: 'Table', category: 'content' },
   advertisement: { component: AdvertisementBlock, icon: 'Megaphone', label: 'Advertisement', category: 'ads' },
   live_rate_ticker: { component: LiveRateTickerBlock, icon: 'TrendingUp', label: 'Live Rate Ticker', category: 'data' },

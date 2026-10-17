@@ -38,15 +38,8 @@
 	// The i18n locale is derived from `page.data.locale` in the store — no
 	// manual setLocale() call needed (SSR-safe, no cross-request leakage).
 
-	// Apply the primary brand color from the control panel appearance settings.
-	let primaryColor = $derived(
-		(data.siteSettings?.['appearance.primary_color'] as string | undefined) ?? ''
-	);
-	$effect(() => {
-		if (primaryColor && /^#[0-9a-fA-F]{3,8}$/.test(primaryColor)) {
-			document.documentElement.style.setProperty('--color-primary', primaryColor);
-		}
-	});
+	// Admin appearance overrides are injected server-side by hooks.server.ts
+	// into the static <style id="jc-theme-overrides"> tag in app.html.
 
 	// Umami analytics — Docs surface (§40).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md

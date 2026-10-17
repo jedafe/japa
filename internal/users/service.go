@@ -246,6 +246,12 @@ func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProf
 		HeaderMediaID:            headerMediaID,
 		Bio:                      p.Bio,
 		Timezone:                 p.Timezone,
+		WebsiteURL:               p.WebsiteUrl,
+		Education:                p.Education,
+		Profession:               p.Profession,
+		MaritalStatus:            p.MaritalStatus,
+		DateOfBirth:              pgDatePtr(p.DateOfBirth),
+		Gender:                   p.Gender,
 		ProfileType:              p.ProfileType,
 		Status:                   p.Status,
 		FollowerCount:            p.FollowerCount,
@@ -284,6 +290,7 @@ func (s *Service) GetProfileByUsername(ctx context.Context, username string) (*U
 		CoverURL:      p.CoverUrl,
 		Bio:           p.Bio,
 		Timezone:      p.Timezone,
+		WebsiteURL:    p.WebsiteUrl,
 		ProfileType:   p.ProfileType,
 		Status:        p.Status,
 		FollowerCount: p.FollowerCount,
@@ -312,6 +319,7 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, username strin
 		AvatarURL:       p.AvatarUrl,
 		CoverURL:        p.CoverUrl,
 		Bio:             p.Bio,
+		WebsiteURL:      p.WebsiteUrl,
 		ProfileType:     p.ProfileType,
 		FollowerCount:   p.FollowerCount,
 		FollowingCount:  p.FollowingCount,
@@ -393,6 +401,81 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 			timezone = req.Timezone
 		}
 
+		websiteURL := current.WebsiteUrl
+		if req.WebsiteURL != nil {
+			// Rendered into <a href> on the public profile — require an
+			// http(s) URL so javascript:/data: schemes cannot be persisted.
+			v := strings.TrimSpace(*req.WebsiteURL)
+			if v != "" {
+				if len(v) > 2048 ||
+					(!strings.HasPrefix(v, "https://") && !strings.HasPrefix(v, "http://")) {
+					return fmt.Errorf("%w: website_url must be a valid http(s) URL", errpkg.ErrInvalid)
+				}
+			}
+			websiteURL = nil
+			if v != "" {
+				websiteURL = &v
+			}
+		}
+
+		// Blank strings normalize to NULL so the column never holds "".
+		blankToNil := func(s string) *string {
+			if s == "" {
+				return nil
+			}
+			return &s
+		}
+
+		education := current.Education
+		if req.Education != nil {
+			v := strings.TrimSpace(*req.Education)
+			if len(v) > 200 {
+				return fmt.Errorf("%w: education is too long", errpkg.ErrInvalid)
+			}
+			education = blankToNil(v)
+		}
+		profession := current.Profession
+		if req.Profession != nil {
+			v := strings.TrimSpace(*req.Profession)
+			if len(v) > 200 {
+				return fmt.Errorf("%w: profession is too long", errpkg.ErrInvalid)
+			}
+			profession = blankToNil(v)
+		}
+		maritalStatus := current.MaritalStatus
+		if req.MaritalStatus != nil {
+			v := strings.TrimSpace(*req.MaritalStatus)
+			if len(v) > 50 {
+				return fmt.Errorf("%w: marital_status is too long", errpkg.ErrInvalid)
+			}
+			maritalStatus = blankToNil(v)
+		}
+		gender := current.Gender
+		if req.Gender != nil {
+			v := strings.TrimSpace(*req.Gender)
+			if len(v) > 50 {
+				return fmt.Errorf("%w: gender is too long", errpkg.ErrInvalid)
+			}
+			gender = blankToNil(v)
+		}
+		dob := current.DateOfBirth
+		if req.DateOfBirth != nil {
+			// "YYYY-MM-DD" → pgtype.Date; empty clears the field.
+			s := strings.TrimSpace(*req.DateOfBirth)
+			if s == "" {
+				dob = pgtype.Date{}
+			} else {
+				var d pgtype.Date
+				if err := d.Scan(s); err != nil {
+					return fmt.Errorf("%w: invalid date_of_birth", errpkg.ErrInvalid)
+				}
+				if d.Time.After(time.Now()) || d.Time.Year() < 1900 {
+					return fmt.Errorf("%w: date_of_birth out of range", errpkg.ErrInvalid)
+				}
+				dob = d
+			}
+		}
+
 		// Media ID fields (BUG-004): when provided, resolve to URLs via the
 		// MediaResolver (if wired) and store both the media_id and the URL.
 		avatarMediaID := current.AvatarMediaID
@@ -441,7 +524,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 			}
 		}
 
-		if err := s.store.upsertProfileTx(ctx, q, userID, displayName, avatarURL, coverURL, bio, timezone, avatarMediaID, headerMediaID); err != nil {
+		if err := s.store.upsertProfileTx(ctx, q, userID, displayName, avatarURL, coverURL, bio, timezone, websiteURL, education, profession, maritalStatus, gender, dob, avatarMediaID, headerMediaID); err != nil {
 			return fmt.Errorf("updating profile: %w", err)
 		}
 
@@ -640,6 +723,16 @@ func normalizeCountryCode(s string) string {
 	}
 
 	return strings.TrimSpace(s)
+}
+
+// pgDatePtr formats a pgtype.Date as "YYYY-MM-DD" for the JSON contract.
+// Returns nil when the date is unset.
+func pgDatePtr(d pgtype.Date) *string {
+	if !d.Valid {
+		return nil
+	}
+	s := d.Time.Format("2006-01-02")
+	return &s
 }
 
 // normalizeJourneyValue trims and lower-cases a journey enumeration value.
@@ -1870,7 +1963,10 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 		// transaction so the FOR UPDATE lock covers this write too) ---
 		if req.DisplayName != nil {
 			newDisplayName := strings.TrimSpace(*req.DisplayName)
-			if err := s.store.upsertProfileTx(ctx, q, userID, &newDisplayName, nil, nil, nil, nil, pgtype.UUID{}, pgtype.UUID{}); err != nil {
+			if err := q.SetUserDisplayName(ctx, gen.SetUserDisplayNameParams{
+				UserID:      userID,
+				DisplayName: &newDisplayName,
+			}); err != nil {
 				return nil, fmt.Errorf("updating display name: %w", err)
 			}
 

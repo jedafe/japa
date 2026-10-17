@@ -33,5 +33,7 @@ ENV NODE_ENV=production \
 COPY --from=build /repo/apps/control/build ./app
 COPY docker/spa-server.mjs ./spa-server.mjs
 
+USER bun
+
 EXPOSE 3002
 CMD ["bun", "spa-server.mjs"]

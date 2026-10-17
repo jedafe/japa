@@ -22,11 +22,17 @@ import type { GeoContext, GeoCountry, PageBuilderPage } from '$lib/types';
  *
  * Ref: japaconnect-engineering/sections/27-page-builder.md
  */
-export async function loadPublishedPage(event: ServerLoadEvent) {
+/**
+ * Resolve the visitor's geo context for Page Builder rendering.
+ * Priority: ?geo= query param → user preference → GeoIP → 'global'.
+ * Shared by loadPublishedPage and other routes that render builder blocks
+ * (e.g. the /wiki index hero).
+ */
+export async function resolveGeoContext(event: ServerLoadEvent): Promise<{
+	geoCountry: string;
+	geoCountryName: string | undefined;
+}> {
 	const ctx = apiContext(event);
-	const slug = event.params.slug!;
-
-	// Geo resolution priority: ?geo= query param → GeoIP → 'global'.
 	let geoCountry =
 		event.url.searchParams.get('geo') ??
 		event.locals.user?.content_country_preference ??
@@ -59,7 +65,14 @@ export async function loadPublishedPage(event: ServerLoadEvent) {
 		}
 	}
 
-	if (!geoCountry) geoCountry = 'global';
+	return { geoCountry: geoCountry || 'global', geoCountryName };
+}
+
+export async function loadPublishedPage(event: ServerLoadEvent) {
+	const ctx = apiContext(event);
+	const slug = event.params.slug!;
+
+	const { geoCountry, geoCountryName } = await resolveGeoContext(event);
 
 	try {
 		const envelope = await apiGetEnvelope<PageBuilderPage>(ctx, `/pages/${slug}`);

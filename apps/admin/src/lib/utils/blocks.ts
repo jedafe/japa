@@ -1,4 +1,4 @@
-import type { Block, ContainerProps } from '@japaconnect/landing-blocks';
+import type { Block, ContainerProps, GuestHomeData } from '@japaconnect/landing-blocks';
 
 /** Block types that can contain nested child blocks in the page builder. */
 export const CONTAINER_LIKE_TYPES = new Set([
@@ -372,4 +372,120 @@ export function seedBlockDefaults(b: Block): Block {
 /** Recursively populate all container-like blocks in a tree with default children. */
 export function seedAllContainerDefaults(tree: Block[]): Block[] {
 	return tree.map(seedBlockDefaults);
+}
+
+/**
+ * Materialize item children for context-driven guest list blocks (hero stats,
+ * categories, opportunities, stories, tools). Each context item becomes a real
+ * child block so it shows in the sections sidebar and is editable. Seeded from
+ * the same context data the preview renders, so visual output is unchanged —
+ * the block is flipped to `data_source: 'manual'` (children now drive the
+ * render instead of live context). Skips blocks that already have children and
+ * blocks pinned to `data_source: 'context'`.
+ */
+export function materializeGuestContextItems(tree: Block[], ctx: GuestHomeData | undefined): Block[] {
+	if (!ctx) return tree;
+	return tree.map((b) => materializeGuestBlockItems(b, ctx));
+}
+
+function materializeGuestBlockItems(b: Block, ctx: GuestHomeData): Block {
+	if (!isContainerLike(b)) return b;
+	// Recurse into child slots first so lists nested inside other guest
+	// containers (e.g. guest_hero_stats inside guest_hero) get seeded too.
+	const out = mapChildSlots(b, (kids) => kids.map((k) => materializeGuestBlockItems(k, ctx)));
+	const props = out.props as Record<string, unknown>;
+	const children = (props.children as Block[] | undefined) ?? [];
+	if (children.length > 0 || props.data_source === 'context') return out;
+	const items = guestContextChildrenFor(
+		out.type,
+		ctx,
+		typeof props.max_items === 'number' ? props.max_items : undefined
+	);
+	if (!items || items.length === 0) return out;
+	return { ...out, props: { ...props, children: items, data_source: 'manual' } } as Block;
+}
+
+// Item prop maps mirror each block's `cloneForContext` (GuestCategoriesBlock,
+// GuestHeroStatsBlock, …) so materialized children render exactly what context
+// mode rendered. Caps mirror each block's `max_items` default because
+// resolveGuestItems does not cap manual children. `label` is sidebar-only so
+// each row shows its real title/name instead of the generic type label.
+function guestContextChildrenFor(type: string, ctx: GuestHomeData, max?: number): Block[] | undefined {
+	const item = (t: Block['type'], props: Record<string, unknown>, label?: string): Block =>
+		({ ...mkBlock(t, props), label }) as Block;
+	switch (type) {
+		case 'guest_hero_stats':
+			return (ctx.stats ?? []).slice(0, max ?? 4).map((s) =>
+				item('guest_hero_stat_item', { value: s.value, label: s.label, icon: s.icon }, `${s.value} ${s.label}`)
+			);
+		case 'guest_categories':
+			return (ctx.categories ?? []).slice(0, max ?? 8).map((c) =>
+				item(
+					'guest_category_item',
+					{
+						title: c.title,
+						description: c.description,
+						href: c.href,
+						icon: c.icon,
+						color: c.color
+					},
+					c.title
+				)
+			);
+		case 'guest_opportunities':
+			return (ctx.opportunities ?? []).slice(0, max ?? 6).map((o) =>
+				item(
+					'guest_opportunity_item',
+					{
+						type: o.type,
+						title: o.title,
+						organization: o.organization,
+						location: o.location,
+						location_code: o.location_code,
+						tag: o.tag,
+						badge: o.badge,
+						value: o.value,
+						logo_url: o.logo_url,
+						href: o.href,
+						published_at: o.published_at
+					},
+					o.title
+				)
+			);
+		case 'guest_stories':
+			return (ctx.stories ?? []).slice(0, max ?? 3).map((s) =>
+				item(
+					'guest_story_item',
+					{
+						title: s.title,
+						slug: s.slug,
+						quote: s.quote,
+						author_name: s.author_name,
+						author_role: s.author_role,
+						author_avatar_url: s.author_avatar_url,
+						href: s.href,
+						destination: s.destination
+					},
+					s.title
+				)
+			);
+		case 'guest_tools':
+			return (ctx.tools ?? []).slice(0, max ?? 6).map((tl) =>
+				item(
+					'guest_tool_item',
+					{
+						name: tl.name,
+						slug: tl.slug,
+						description: tl.description,
+						href: tl.href,
+						icon: tl.icon,
+						badge: tl.badge,
+						accent: tl.accent
+					},
+					tl.name
+				)
+			);
+		default:
+			return undefined;
+	}
 }

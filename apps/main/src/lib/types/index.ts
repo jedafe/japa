@@ -3,7 +3,7 @@
  * Shapes mirror the Go backend's JSON contract (verified against the live API).
  */
 
-export type ThemeName = 'light' | 'dark';
+export type ThemeName = 'light' | 'dark' | 'system';
 
 /** Supported UI locale code (e.g. 'en', 'fr', 'yo'). Dynamic per ADR-013. */
 export type Locale = string;
@@ -539,6 +539,15 @@ export interface MeProfile {
 	username: string;
 	display_name?: string | null;
 	bio?: string | null;
+	/** Personal website URL — PATCH /me/profile accepts it (§50). */
+	website_url?: string | null;
+	/** Extended profile details (§50) — private, /me only. */
+	education?: string | null;
+	profession?: string | null;
+	marital_status?: string | null;
+	/** ISO date "YYYY-MM-DD". */
+	date_of_birth?: string | null;
+	gender?: string | null;
 	/** IANA timezone — PATCH /me/profile accepts it (backend user_profiles.timezone). */
 	timezone?: string | null;
 	avatar_url?: string | null;
@@ -901,6 +910,8 @@ export interface PublicUser {
 	avatar_url?: string | null;
 	cover_url?: string | null;
 	bio?: string | null;
+	/** §50 — personal website URL shown on the public profile. */
+	website_url?: string | null;
 	/** Unified user tier (regular / pro / business). */
 	profile_type: 'regular' | 'pro' | 'business';
 	follower_count: number;
@@ -4173,6 +4184,9 @@ export interface ServiceMentor {
 	username: string;
 	display_name?: string;
 	avatar_url?: string;
+	/** From the mentor's user profile (user_profiles) — optional on payloads. */
+	profession?: string | null;
+	website_url?: string | null;
 	areas?: string[];
 	capacity: number;
 	active_mentee_count: number;
@@ -4447,6 +4461,9 @@ export interface Mentor {
 	mentor_capacity: number | null;
 	active_mentee_count: number | null;
 	available_slots: number;
+	/** From the user's profile (user_profiles) — shown on mentor cards. */
+	profession?: string | null;
+	website_url?: string | null;
 }
 
 /** GET /me/mentor-profile — the caller's own mentor settings. */

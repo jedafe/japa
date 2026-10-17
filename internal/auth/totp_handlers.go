@@ -149,6 +149,15 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Replay guard: mark the confirmed code consumed so it cannot be
+	// replayed inside its validity window (CWE-294).
+	if !claimTOTPCode(r.Context(), h.Redis, user.UserID, req.Code) {
+		slog.Warn("TOTP verify: code already used", "user_id", user.UserID.String())
+		errpkg.WriteError(w, http.StatusBadRequest, "totp_verify_failed", "verification code has already been used")
+
+		return
+	}
+
 	// Generate one-time backup codes for account recovery.
 	// Stored as SHA-256 hashes; plaintext returned once for the user to save.
 	backupCodes, err := GenerateBackupCodes()
@@ -223,6 +232,12 @@ func (h *TOTPHandlers) HandleDisable(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "totp_disable_failed", err.Error())
 
 		return
+	}
+
+	// Replay guard: mark the confirmed code consumed so it cannot be
+	// replayed inside its validity window (CWE-294).
+	if !claimTOTPCode(r.Context(), h.Redis, user.UserID, req.Code) {
+		slog.Warn("TOTP disable: code already used", "user_id", user.UserID.String())
 	}
 
 	// Disabling 2FA lowers the account's security posture — revoke all

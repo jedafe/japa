@@ -9,6 +9,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const response = await resolve(event);
 
+	// Baseline hardening headers (CSP itself is emitted by SvelteKit's
+	// kit.csp nonce mode — see svelte.config.js).
+	response.headers.set('X-Content-Type-Options', 'nosniff');
+	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+
 	const path = event.url.pathname;
 
 	if (path.startsWith('/_app/')) {

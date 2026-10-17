@@ -5911,5 +5911,22 @@
   "wiki.view_all_articles": "View all articles",
   "wiki.view_more_prices": "View more {section} prices",
   "wiki.wiki_only_banner_body": "{name} is a wiki-only place — guides and facts live here instead of a community feed.",
-  "wiki.wiki_only_banner_title": "This place lives on the wiki"
+  "wiki.wiki_only_banner_title": "This place lives on the wiki",
+  "settings.account.theme_system": "System",
+  "settings.profile.website": "Website",
+  "settings.profile.education": "Education",
+  "settings.profile.profession": "Profession",
+  "settings.profile.date_of_birth": "Date of birth",
+  "settings.profile.gender": "Gender",
+  "settings.profile.marital_status": "Marital status",
+  "settings.profile.unspecified": "Prefer not to say",
+  "settings.profile.gender_male": "Male",
+  "settings.profile.gender_female": "Female",
+  "settings.profile.gender_non_binary": "Non-binary",
+  "settings.profile.gender_other": "Other",
+  "settings.profile.marital_single": "Single",
+  "settings.profile.marital_married": "Married",
+  "settings.profile.marital_divorced": "Divorced",
+  "settings.profile.marital_widowed": "Widowed",
+  "settings.profile.marital_other": "Other"
 }

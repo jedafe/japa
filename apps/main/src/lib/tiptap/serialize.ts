@@ -160,8 +160,12 @@ const escapeAttr = (s: string): string => s.replace(/"/g, '&quot;');
  *  everything else collapses to '#'. Mirrors safeHref in safeHtml.ts. */
 function safeUrl(raw: string): string {
 	const v = String(raw ?? '').trim();
-	if (v === '' || v.startsWith('#') || v.startsWith('/') || v.startsWith('./') || v.startsWith('../')) {
-		return v === '' ? '#' : v;
+	if (v === '') return '#';
+	// Protocol-relative URLs ("//evil.com") inherit the page scheme and
+	// navigate to an external host — reject like any off-site scheme.
+	if (v.startsWith('//')) return '#';
+	if (v.startsWith('#') || v.startsWith('/') || v.startsWith('./') || v.startsWith('../')) {
+		return v;
 	}
 	if (/^(https?|mailto):/i.test(v)) return v;
 	return '#';

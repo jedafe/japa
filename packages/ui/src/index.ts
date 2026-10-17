@@ -15,6 +15,8 @@ export { default as MenuSeparator } from './MenuSeparator.svelte';
 export { staticAutocompleteFetcher, autocompleteItems } from './autocomplete';
 export { resolveLucideIcon } from './icon';
 export type { IconComponent } from './icon';
+export { buildThemeOverrides } from './theme';
+export type { ThemeSettings } from './theme';
 
 // Reusable TipTap rich-text editor (extracted from apps/main PostEditor —
 // sections/15-tiptap-rich-text.md). Feature nodes, suggestion pickers, and

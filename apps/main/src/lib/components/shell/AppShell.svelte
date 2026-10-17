@@ -143,9 +143,9 @@
 					type="button"
 					onclick={() => theme.toggle()}
 					class="grid h-11 w-11 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-					aria-label={theme.current === 'dark' ? t('theme.toggle_light', 'Switch to light') : t('theme.toggle_dark', 'Switch to dark')}
+					aria-label={theme.resolved === 'dark' ? t('theme.toggle_light', 'Switch to light') : t('theme.toggle_dark', 'Switch to dark')}
 				>
-					{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
+					{#if theme.resolved === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 				</button>
 				<button
 					type="button"

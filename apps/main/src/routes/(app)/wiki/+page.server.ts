@@ -2,8 +2,15 @@
 // SSR the landing page directory so search engines see the destination list
 // without executing JavaScript.
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { WikiDestination, WikiTypeItem } from '$lib/types';
+import { apiContext, apiList, apiGetEnvelope, ApiError } from '$lib/server/api';
+import { resolveGeoContext } from '$lib/server/published-page';
+import {
+	normalizeLegacyBlocks,
+	resolveGeoCopy,
+	getGeoTokens,
+	type Block
+} from '@japaconnect/landing-blocks';
+import type { WikiDestination, WikiTypeItem, PageBuilderPage } from '$lib/types';
 import { wikiDrillChain } from '$lib/utils/wikiTypeChain';
 
 /**
@@ -29,6 +36,20 @@ export const load: PageServerLoad = async (event) => {
 	let limit = 0;
 	let types: WikiTypeItem[] = [];
 	let chain: WikiTypeItem[] = [];
+
+	// §16/§80 — optional Page Builder hero: a published page with slug "wiki"
+	// renders its blocks above the destination grid (same convention as the
+	// "homepage" slug on /). Fetched in parallel; any failure (404 = none,
+	// or an upstream error) degrades to the built-in explorer map hero.
+	const builderPagePromise = apiGetEnvelope<PageBuilderPage>(ctx, '/pages/wiki')
+		.then((envelope) => envelope)
+		.catch((err) => {
+			if (!(err instanceof ApiError && err.status === 404)) {
+				console.error('[WIKI LOAD] /pages/wiki fetch failed:', err);
+			}
+			return null;
+		});
+
 	try {
 		const typesRes = await apiList<WikiTypeItem>(ctx, '/wiki/types');
 		types = (typesRes.items ?? [])
@@ -53,5 +74,23 @@ export const load: PageServerLoad = async (event) => {
 		/* degrade to empty list */
 	}
 
-	return { destinations, total, page: pageNo, limit, sort, types, chain };
+	let builderBlocks: Block[] | null = null;
+	let contentCountry: string | undefined;
+	const builderEnvelope = await builderPagePromise;
+	const rawBlocks = builderEnvelope?.data?.blocks;
+	if (Array.isArray(rawBlocks) && rawBlocks.length > 0) {
+		const { geoCountry, geoCountryName } = await resolveGeoContext(event);
+		const tokens = getGeoTokens(geoCountry, 'en', geoCountryName);
+		const literals = builderEnvelope?.literals ?? {};
+		const blocks = normalizeLegacyBlocks(rawBlocks) as Block[];
+		builderBlocks = resolveGeoCopy(blocks, {
+			contentCountry: geoCountry,
+			tokens,
+			locale: 'en',
+			literals
+		}) as unknown as Block[];
+		contentCountry = geoCountry;
+	}
+
+	return { destinations, total, page: pageNo, limit, sort, types, chain, builderBlocks, contentCountry };
 };

@@ -5878,5 +5878,22 @@
   "wiki.view_all_articles": "Voir tous les articles",
   "wiki.view_more_prices": "Voir plus de prix {section}",
   "wiki.wiki_only_banner_body": "{name} est un lieu wiki uniquement — les guides et informations sont ici plutôt que dans un fil communautaire.",
-  "wiki.wiki_only_banner_title": "Ce lieu vit sur le wiki"
+  "wiki.wiki_only_banner_title": "Ce lieu vit sur le wiki",
+  "settings.account.theme_system": "Système",
+  "settings.profile.website": "Site web",
+  "settings.profile.education": "Éducation",
+  "settings.profile.profession": "Profession",
+  "settings.profile.date_of_birth": "Date de naissance",
+  "settings.profile.gender": "Genre",
+  "settings.profile.marital_status": "État civil",
+  "settings.profile.unspecified": "Préfère ne pas dire",
+  "settings.profile.gender_male": "Homme",
+  "settings.profile.gender_female": "Femme",
+  "settings.profile.gender_non_binary": "Non-binaire",
+  "settings.profile.gender_other": "Autre",
+  "settings.profile.marital_single": "Célibataire",
+  "settings.profile.marital_married": "Marié(e)",
+  "settings.profile.marital_divorced": "Divorcé(e)",
+  "settings.profile.marital_widowed": "Veuf/Veuve",
+  "settings.profile.marital_other": "Autre"
 }

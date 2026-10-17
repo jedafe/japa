@@ -2,6 +2,18 @@ import { error, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { buildThemeOverrides } from '@japaconnect/ui/theme';
+
+/**
+ * In-process cache for GET /site/settings/public (same pattern as the main
+ * app's hooks). Appearance/theme settings are global and change rarely, so
+ * a 30s TTL avoids a serial backend round-trip on every request while still
+ * applying admin changes quickly. Keyed by request host; stale entries are
+ * served on fetch failure; misses are not cached.
+ * Ref: conventions/system-settings-catalog.md
+ */
+const SETTINGS_TTL_MS = 30_000;
+const settingsCache = new Map<string, { value: Record<string, unknown>; expiresAt: number }>();
 import type { SessionUser, ToolSurface } from '$lib/types';
 
 /**
@@ -143,10 +155,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const ctx = apiContext(event);
 	let siteSettings: Record<string, unknown> = {};
 	if (!building) {
-		try {
-			siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
-		} catch {
-			siteSettings = {};
+		const host = event.url.host;
+		const cached = settingsCache.get(host);
+		const now = Date.now();
+		if (cached && cached.expiresAt > now) {
+			siteSettings = cached.value;
+		} else {
+			try {
+				siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
+				settingsCache.set(host, { value: siteSettings, expiresAt: now + SETTINGS_TTL_MS });
+			} catch {
+				siteSettings = cached?.value ?? {};
+			}
 		}
 	}
 
@@ -164,12 +184,21 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	// Theme: prefer cookie, then appearance.dark_mode_default, then 'light'.
 	const themeCookie = event.cookies.get('jc_theme');
+	// 'system' is a valid selection — the SSR markup can't know the OS
+	// preference, so resolvedTheme falls back to dark_mode_default and the
+	// client theme store corrects data-theme after hydration.
 	event.locals.theme =
-		themeCookie === 'dark' || themeCookie === 'light'
+		themeCookie === 'dark' || themeCookie === 'light' || themeCookie === 'system'
 			? themeCookie
 			: siteSettings['appearance.dark_mode_default'] === true
 				? 'dark'
 				: 'light';
+	event.locals.resolvedTheme =
+		event.locals.theme === 'system'
+			? siteSettings['appearance.dark_mode_default'] === true
+				? 'dark'
+				: 'light'
+			: event.locals.theme;
 
 	// Locale resolution: URL prefix > cookie > i18n.default_language > 'en'.
 	// Valid prefix → set cookie + rewrite URL so SvelteKit routes to the
@@ -258,11 +287,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	return resolve(event, {
+	const response = await resolve(event, {
 		transformPageChunk: ({ html }) =>
 			html
-				.replace('%jc.theme%', event.locals.theme)
-				.replace('%jc.theme-color%', event.locals.theme === 'dark' ? '#0a0a0a' : '#3b49df')
+				.replace('%jc.themevars%', () => buildThemeOverrides(siteSettings))
+				.replace('%jc.theme%', () => event.locals.resolvedTheme)
+				.replace('%jc.theme-color%', () => event.locals.resolvedTheme === 'dark' ? '#0a0a0a' : '#3b49df')
 				.replace('lang="en"', `lang="${event.locals.locale}"`)
 	});
+	response.headers.set('X-Content-Type-Options', 'nosniff');
+	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+	return response;
 };

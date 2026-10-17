@@ -12,8 +12,12 @@ declare global {
 			token: string | null;
 			/** Resolved current user, or null when unauthenticated (guest). */
 			user: SessionUser | null;
-			/** Active colour theme, resolved from the jc_theme cookie. */
+			/** Active colour theme selection, resolved from the jc_theme cookie.
+			 *  May be 'system' — see resolvedTheme for the SSR-rendered value. */
 			theme: ThemeName;
+			/** The theme written to <html data-theme> during SSR. Equals `theme`
+			 *  unless 'system', where it falls back to dark_mode_default. */
+			resolvedTheme: 'light' | 'dark';
 			/** Hostname (port stripped) used for reverse-proxy and host-based routing. */
 			requestHost: string;
 			/** Per-request CSP nonce for the staff-gated custom-code blocks. */

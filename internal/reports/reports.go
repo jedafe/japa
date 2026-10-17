@@ -16,6 +16,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/valkey"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
@@ -64,6 +65,9 @@ var (
 	ErrInvalidReason     = errors.New("invalid reason")
 	ErrInvalidStatus     = errors.New("invalid status")
 	ErrAlreadyReported   = errors.New("already reported by this user")
+	// evidence_urls are rendered as <a href> in the admin/moderation UIs —
+	// non-http(s) schemes are stored-XSS vectors against reviewers.
+	ErrInvalidEvidenceURL = errors.New("evidence_urls must be valid http or https URLs")
 )
 
 // CreateReportInput holds parameters for submitting a report.
@@ -118,6 +122,12 @@ func (s *Service) CreateReport(ctx context.Context, reporterUserID pgtype.UUID, 
 
 	if !validReasons[input.Reason] {
 		return gen.ContentReport{}, fmt.Errorf("%w: %s", ErrInvalidReason, input.Reason)
+	}
+
+	for _, u := range input.EvidenceURLs {
+		if !httpx.IsAbsoluteHTTPURL(u) {
+			return gen.ContentReport{}, fmt.Errorf("%w: %q", ErrInvalidEvidenceURL, u)
+		}
 	}
 
 	report, err := s.write.CreateReport(ctx, gen.CreateReportParams{

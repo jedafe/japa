@@ -4,13 +4,15 @@
 // that call the same authenticateLogin helper.
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { apiContext, authenticateLogin, getOnboardingStatus, resolvePostLoginRedirect, setRefreshCookie, setSessionCookie } from '$lib/server/auth';
+import { apiContext, authenticateLogin, getOnboardingStatus, resolvePostLoginRedirect, sanitizePostLoginTarget, setRefreshCookie, setSessionCookie } from '$lib/server/auth';
 
 export const POST: RequestHandler = async (event) => {
 	const body = await event.request.json().catch(() => ({}));
 	const email = body?.email;
 	const password = body?.password;
-	const redirect = body?.redirect ?? '/';
+	// Sanitize before it is echoed into the /verify-totp URL — the raw value
+	// would resurface as the post-2FA navigation target (open redirect).
+	const redirect = sanitizePostLoginTarget(typeof body?.redirect === 'string' ? body.redirect : null);
 	const website = body?.website; // §41 Layer 2 honeypot
 
 	if (!email || !password) {

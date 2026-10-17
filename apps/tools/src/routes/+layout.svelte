@@ -35,6 +35,9 @@
 	);
 	const isSingleTool = $derived(activeTool !== undefined);
 
+	// Admin appearance overrides are injected server-side by hooks.server.ts
+	// into the static <style id="jc-theme-overrides"> tag in app.html.
+
 	// Umami analytics — Tools surface (§40, §78). The script is injected only
 	// when both the Umami URL and the tools-specific site ID are configured.
 	const umamiEnabled = $derived(

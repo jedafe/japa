@@ -173,6 +173,12 @@ func VerifyPassword(hash, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
 
+// dummyPasswordHash is a bcrypt-cost-12 hash of a fixed non-credential
+// string. Login compares against it on the no-account and no-password
+// paths so the response time is indistinguishable from a real failed
+// password check (timing-oracle defense, CWE-208).
+const dummyPasswordHash = "$2a$12$0UiF9DiW0OZpvvnVY8ZSou5FYJrmO3njq6a4hQaaeFhFQZr3nK6pK"
+
 // CheckPasswordHistory queries the last N password hashes for the given user
 // and checks whether the new password matches any of them. Returns nil if the
 // password is unique, or a PasswordReusedError if it matches a recent hash.

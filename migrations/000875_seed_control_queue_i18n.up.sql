@@ -1,0 +1,67 @@
+-- 000875_seed_control_queue_i18n
+-- Seed control-panel i18n keys for the Queue Monitor page fixes
+-- (task columns, state tabs, bulk-op confirms, DLQ card). en + fr.
+
+BEGIN;
+
+INSERT INTO translations (id, locale, "key", value)
+VALUES
+    (gen_random_uuid(), 'en', 'queue.action', 'Action'),
+    (gen_random_uuid(), 'en', 'queue.archived_success', 'Archived {count} tasks'),
+    (gen_random_uuid(), 'en', 'queue.confirm_archive_title', 'Archive queue'),
+    (gen_random_uuid(), 'en', 'queue.confirm_purge_title', 'Purge archived tasks'),
+    (gen_random_uuid(), 'en', 'queue.confirm_requeue_title', 'Requeue tasks'),
+    (gen_random_uuid(), 'en', 'queue.dlq_card', 'Dead Letter'),
+    (gen_random_uuid(), 'en', 'queue.dlq_subtitle', 'archived tasks'),
+    (gen_random_uuid(), 'en', 'queue.error', 'Error'),
+    (gen_random_uuid(), 'en', 'queue.last_failed', 'Last Failed'),
+    (gen_random_uuid(), 'en', 'queue.next_run', 'Next Run'),
+    (gen_random_uuid(), 'en', 'queue.orphaned', 'Orphaned'),
+    (gen_random_uuid(), 'en', 'queue.payload', 'Payload'),
+    (gen_random_uuid(), 'en', 'queue.preview_note', 'Showing the first {shown} of {total} tasks'),
+    (gen_random_uuid(), 'en', 'queue.purged_success', 'Purged {count} tasks'),
+    (gen_random_uuid(), 'en', 'queue.requeued_success', 'Requeued {count} tasks'),
+    (gen_random_uuid(), 'en', 'queue.retries', 'Retries'),
+    (gen_random_uuid(), 'en', 'queue.retry_failed', 'Task action failed: {error}'),
+    (gen_random_uuid(), 'en', 'queue.retry_success', 'Task moved back to pending'),
+    (gen_random_uuid(), 'en', 'queue.run_now', 'Run now'),
+    (gen_random_uuid(), 'en', 'queue.state_active', 'active'),
+    (gen_random_uuid(), 'en', 'queue.state_archived', 'archived'),
+    (gen_random_uuid(), 'en', 'queue.state_completed', 'completed'),
+    (gen_random_uuid(), 'en', 'queue.state_pending', 'pending'),
+    (gen_random_uuid(), 'en', 'queue.state_retry', 'retry'),
+    (gen_random_uuid(), 'en', 'queue.state_scheduled', 'scheduled'),
+    (gen_random_uuid(), 'en', 'queue.task_id', 'ID'),
+    (gen_random_uuid(), 'en', 'queue.task_type', 'Type'),
+    (gen_random_uuid(), 'en', 'queue.view_details', 'View details for {queue}'),
+    (gen_random_uuid(), 'fr', 'queue.action', 'Action'),
+    (gen_random_uuid(), 'fr', 'queue.archived_success', '{count} tâches archivées'),
+    (gen_random_uuid(), 'fr', 'queue.confirm_archive_title', 'Archiver la file'),
+    (gen_random_uuid(), 'fr', 'queue.confirm_purge_title', 'Purger les tâches archivées'),
+    (gen_random_uuid(), 'fr', 'queue.confirm_requeue_title', 'Remettre les tâches en file'),
+    (gen_random_uuid(), 'fr', 'queue.dlq_card', 'File morte'),
+    (gen_random_uuid(), 'fr', 'queue.dlq_subtitle', 'tâches archivées'),
+    (gen_random_uuid(), 'fr', 'queue.error', 'Erreur'),
+    (gen_random_uuid(), 'fr', 'queue.last_failed', 'Dernier échec'),
+    (gen_random_uuid(), 'fr', 'queue.next_run', 'Prochaine exécution'),
+    (gen_random_uuid(), 'fr', 'queue.orphaned', 'Orpheline'),
+    (gen_random_uuid(), 'fr', 'queue.payload', 'Charge utile'),
+    (gen_random_uuid(), 'fr', 'queue.preview_note', 'Affichage des {shown} premières tâches sur {total}'),
+    (gen_random_uuid(), 'fr', 'queue.purged_success', '{count} tâches purgées'),
+    (gen_random_uuid(), 'fr', 'queue.requeued_success', '{count} tâches remises en file'),
+    (gen_random_uuid(), 'fr', 'queue.retries', 'Tentatives'),
+    (gen_random_uuid(), 'fr', 'queue.retry_failed', 'Échec de l''action : {error}'),
+    (gen_random_uuid(), 'fr', 'queue.retry_success', 'Tâche remise en attente'),
+    (gen_random_uuid(), 'fr', 'queue.run_now', 'Exécuter maintenant'),
+    (gen_random_uuid(), 'fr', 'queue.state_active', 'actif'),
+    (gen_random_uuid(), 'fr', 'queue.state_archived', 'archivé'),
+    (gen_random_uuid(), 'fr', 'queue.state_completed', 'terminé'),
+    (gen_random_uuid(), 'fr', 'queue.state_pending', 'en attente'),
+    (gen_random_uuid(), 'fr', 'queue.state_retry', 'nouvelle tentative'),
+    (gen_random_uuid(), 'fr', 'queue.state_scheduled', 'planifié'),
+    (gen_random_uuid(), 'fr', 'queue.task_id', 'ID'),
+    (gen_random_uuid(), 'fr', 'queue.task_type', 'Type'),
+    (gen_random_uuid(), 'fr', 'queue.view_details', 'Voir les détails de {queue}')
+ON CONFLICT (locale, "key") DO UPDATE SET value = EXCLUDED.value;
+
+COMMIT;

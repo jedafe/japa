@@ -20,7 +20,9 @@ function looksLikeUrl(value: string): boolean {
 	// Only safe schemes render as links — `javascript:`/`data:`/`vbscript:` URIs
 	// must fall through to plain-text treatment (XSS via resource links).
 	if (/^(https?|mailto|tel):/i.test(value)) return true;
-	return value.startsWith('/') || value.startsWith('//');
+	// Site-relative paths only — "//evil.com" is protocol-relative to an
+	// external host, not a site path (matches safeHref in safeHtml.ts).
+	return value.startsWith('/') && !value.startsWith('//');
 }
 
 function looksLikeBareHost(value: string): boolean {

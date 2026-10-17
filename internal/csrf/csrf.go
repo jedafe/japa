@@ -176,13 +176,19 @@ func Middleware(protectPrefixes []string, exempt ExemptFunc, opts ...Option) fun
 
 			cookie, err := r.Cookie(CookieName)
 			if err != nil || cookie.Value == "" {
-				// No CSRF cookie and no non-cookie credential (exempt would have
-				// passed above). This is an unauthenticated request — let the
-				// downstream RequireAuth middleware return 401 missing_token
-				// instead of a misleading 403 csrf_token_invalid. A real CSRF
-				// attempt always carries the victim's cookie (the browser sends
-				// it automatically), so reaching this branch with no cookie
-				// means the request is simply unauthenticated, not a CSRF attack.
+				// The request carries OTHER cookies but no CSRF token cookie.
+				// If any of those cookies are (or ever become) credentials,
+				// this request is a live CSRF vector — a cross-site request
+				// would arrive exactly like this. Reject rather than pass:
+				// the SPA always bootstraps a token via GET /api/v1/csrf.
+				// Requests with NO Cookie header at all (curl, mobile, first-
+				// contact anonymous calls) can't carry cookie credentials,
+				// so they pass through to the downstream 401.
+				if r.Header.Get("Cookie") != "" {
+					writeRejection(w)
+					return
+				}
+
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -20,7 +20,15 @@
 	import { page } from '$app/state';
 	import { BookOpen, Globe, MapPin, MessageSquarePlus, Table2 } from 'lucide-svelte';
 	import { ListPageBar } from '$lib/components/ui';
+	import { ExploreMapBlock, LandingRenderer } from '@japaconnect/landing-blocks';
+	import { browser } from '$app/environment';
+	import { apiBaseUrl } from '$lib/api/client';
 	import type { PageData } from './$types';
+
+	const fetchCtx = $derived(
+		browser ? { fetch, apiBase: apiBaseUrl, surface: 'main' as const } : undefined
+	);
+	const exploreProps = { headline: '', subtitle: '', geo_source: 'api' as const, pin_limit: 10 };
 
 	let { data }: { data: PageData } = $props();
 
@@ -133,6 +141,14 @@
 			<Table2 size={13} />
 			{t('wiki.community_data_note', 'Guides and destination data are community-maintained — suggest edits on any wiki page.')}
 		</p>
+	{/if}
+
+	{#if data.builderBlocks?.length}
+		<!-- Builder-managed hero: a published Page Builder page with slug
+		     "wiki" takes over this slot; else the built-in explorer map. -->
+		<LandingRenderer blocks={data.builderBlocks} {fetchCtx} geoCountry={data.contentCountry} />
+	{:else}
+		<ExploreMapBlock props={exploreProps} {fetchCtx} />
 	{/if}
 
 	{#if !wikiEnabled}

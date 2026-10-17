@@ -14,6 +14,9 @@ declare global {
 			user: SessionUser | null;
 			/** Active colour theme, resolved from the jc_theme cookie. */
 			theme: ThemeName;
+			/** The theme written to <html data-theme> during SSR.
+			 *  Equals `theme` unless 'system', where it falls back to dark_mode_default. */
+			resolvedTheme: 'light' | 'dark';
 			/** Hostname (port stripped) used for reverse-proxy and host-based routing. */
 			requestHost: string;
 			/** Resolved UI locale code (e.g. 'en', 'fr', 'yo'), from the jc_locale

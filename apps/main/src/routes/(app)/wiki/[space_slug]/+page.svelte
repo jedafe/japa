@@ -14,6 +14,9 @@
 	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
 	import WikiGalleryStrip from '$lib/components/wiki/WikiGalleryStrip.svelte';
 	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
+	import WikiExploreMap from '$lib/components/wiki/WikiExploreMap.svelte';
+	import { browser } from '$app/environment';
+	import { apiBaseUrl } from '$lib/api/client';
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 	import { categoryIconResolved, categoryTint } from '$lib/components/wiki/icons';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
@@ -78,6 +81,11 @@
 	}
 
 	const space = $derived(data.spaceDetail?.space ?? null);
+	// fetchCtx is browser-only — the block calls the API during init and
+	// SvelteKit forbids relative fetch() during SSR.
+	const fetchCtx = $derived(
+		browser ? { fetch, apiBase: apiBaseUrl, surface: 'main' as const } : undefined
+	);
 	const spaceName = $derived(
 		data.spaceDetail?.space?.name ?? data.index[0]?.space_name ?? data.spaceSlug
 	);
@@ -462,6 +470,10 @@
 		     media field (e.g. the overview group's `gallery`) has values. -->
 		{#if structuredEditsOn && spaceId && !data.loadError}
 			<WikiGalleryStrip entityId={spaceId} />
+		{/if}
+
+		{#if space && wikiEnabled && !data.loadError}
+			<WikiExploreMap {space} {fetchCtx} countryCode={data.countryGeoCode} stateCode={data.stateGeoCode} />
 		{/if}
 
 		{#if !wikiEnabled && data.loadError}

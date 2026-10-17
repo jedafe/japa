@@ -976,9 +976,9 @@
 		type="button"
 		onclick={() => theme.toggle()}
 		class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-		aria-label={theme.current === 'dark' ? t('theme.toggle_light') : t('theme.toggle_dark')}
+		aria-label={theme.resolved === 'dark' ? t('theme.toggle_light') : t('theme.toggle_dark')}
 	>
-		{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
+		{#if theme.resolved === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 	</button>
 {:else if widget.widget_type === 'language_toggle'}
 	{#if showLanguageToggle}

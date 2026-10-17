@@ -23,7 +23,7 @@ final jcApiClientProvider = Provider<JcApiClient>((ref) {
     defaultValue: '',
   );
   return JcApiClient(
-    baseUrl: baseUrl,
+    baseUrl: _forceSecureHttp(baseUrl),
     wsUrl: wsUrl,
     tokenStore: tokenStore,
     deviceId: deviceId,
@@ -31,6 +31,18 @@ final jcApiClientProvider = Provider<JcApiClient>((ref) {
         ref.read(isAuthenticatedProvider.notifier).set(false),
   );
 });
+
+/// Upgrades http:// to https:// in release builds so a release binary can
+/// never silently downgrade REST traffic to cleartext. Debug builds keep
+/// the configured scheme (localhost dev over http://). Mirrors
+/// [_forceSecureWs] for the WebSocket URL.
+String _forceSecureHttp(String url) {
+  if (!kReleaseMode) return url;
+  if (url.startsWith('http://')) {
+    return 'https://${url.substring(7)}';
+  }
+  return url;
+}
 
 class JcApiClient {
   final String baseUrl;

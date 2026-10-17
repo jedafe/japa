@@ -24,6 +24,7 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // OrgDTO is the API response shape for a single community organisation.
@@ -303,6 +304,11 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, input SubmitIn
 	}
 
 	if input.WebsiteURL != "" {
+		// website_url renders as <a href> on the public locator — only
+		// absolute http(s) is storable (stored-XSS guard).
+		if !httpx.IsAbsoluteHTTPURL(input.WebsiteURL) {
+			return OrgDTO{}, errors.New("website_url must be a valid http or https URL")
+		}
 		in.WebsiteURL = &input.WebsiteURL
 	}
 
@@ -518,6 +524,11 @@ func (s *Service) Generate(ctx context.Context, generatedBy pgtype.UUID, input G
 	}
 
 	if input.WebsiteURL != "" {
+		// AI-generated drafts are not immune to emitting dangerous schemes —
+		// same stored-XSS guard as the user Submit path.
+		if !httpx.IsAbsoluteHTTPURL(input.WebsiteURL) {
+			return OrgDTO{}, errors.New("website_url must be a valid http or https URL")
+		}
 		in.WebsiteURL = &input.WebsiteURL
 	}
 

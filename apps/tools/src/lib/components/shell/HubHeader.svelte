@@ -59,7 +59,7 @@
 				class="p-2 rounded-lg text-muted hover:text-text hover:bg-surface-subtle transition-colors"
 				aria-label={t('shell.toggle_theme', 'Toggle theme')}
 			>
-				<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={18} />
+				<Icon name={theme.resolved === 'dark' ? 'sun' : 'moon'} size={18} />
 			</button>
 
 			{#if user}

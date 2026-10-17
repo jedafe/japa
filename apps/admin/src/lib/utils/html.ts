@@ -66,6 +66,17 @@ function isSafeSrc(src: string): boolean {
  * value. Use this when interpolating user/admin data into a render template
  * literal that will be passed to `{@html}`.
  */
+/**
+ * Guard a URL for safe use in an `href` binding. Returns the URL when it is
+ * a safe scheme (http(s), mailto, or a site-relative path); returns '#' for
+ * `javascript:`/`data:`/`vbscript:`/protocol-relative values so a stored
+ * payload can never execute on click.
+ */
+export function safeHref(url: string | null | undefined): string {
+	if (!url || typeof url !== 'string') return '#';
+	return isSafeHref(url) ? url : '#';
+}
+
 export function escapeHtml(s: string): string {
 	return String(s ?? '')
 		.replace(/&/g, '&amp;')

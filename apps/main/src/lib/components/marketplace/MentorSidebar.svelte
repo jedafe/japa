@@ -71,6 +71,8 @@
 			[
 				{ icon: MonitorSmartphone, label: t('services.mentor_session_type', 'Mentorship type'), value: mentor?.session_type },
 				{ icon: Target, label: t('services.mentor_focus_areas', 'Focus areas'), value: (mentor?.areas ?? []).join(', ') || undefined },
+				{ icon: Briefcase, label: t('services.mentor_profession', 'Profession'), value: mentor?.profession ?? undefined },
+				{ icon: Globe, label: t('services.mentor_website', 'Website'), value: mentor?.website_url ? mentor.website_url.replace(/^https?:\/\//, '') : undefined, href: mentor?.website_url ?? undefined },
 				{ icon: Globe, label: t('services.mentor_countries_covered', 'Countries covered'), value: (mentor?.countries ?? []).join(', ') || undefined },
 				{ icon: Award, label: t('services.mentor_expertise', 'Expertise'), value: (mentor?.credentials ?? []).join(', ') || undefined },
 				{ icon: GraduationCap, label: t('services.mentor_experience', 'Experience'), value: yearsLabel },
@@ -117,7 +119,15 @@
 							<dd
 								class="min-w-0 text-right text-xs font-semibold break-words text-[var(--color-text)]"
 							>
-								{row.value}
+								{#if 'href' in row && row.href}
+									<a
+										class="text-[var(--color-primary)] hover:underline"
+										href={row.href}
+										target="_blank"
+										rel="noopener noreferrer nofollow">{row.value}</a>
+								{:else}
+									{row.value}
+								{/if}
 							</dd>
 						</div>
 					{/each}

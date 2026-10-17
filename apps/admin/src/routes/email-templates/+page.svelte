@@ -361,6 +361,7 @@
 				</p>
 				<iframe
 					srcdoc={renderPreview(row.html_body)}
+					sandbox=""
 					title="Email body preview"
 					class="mt-1 w-full rounded-lg border"
 					style="border-color: var(--color-border); min-height: 300px;"
@@ -429,6 +430,7 @@
 					<TabsContent value="preview">
 						<iframe
 							srcdoc={renderPreview(value.html_body ?? '')}
+							sandbox=""
 							title="Email body preview"
 							class="w-full rounded-lg border"
 							style="border-color: var(--color-border); min-height: 300px;"

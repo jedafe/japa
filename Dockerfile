@@ -37,9 +37,18 @@ FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates tesseract-ocr tesseract-ocr-data-eng poppler-utils ffmpeg
 
+# Run as an unprivileged user — the API should never be root inside the
+# container. The media scratch dir (JC_MEDIA_ROOT default "data/media",
+# resolved under WORKDIR) must be writable by that user.
+RUN addgroup -S japa && adduser -S japa -G japa
+
 WORKDIR /app
 
+RUN mkdir -p /app/data/media && chown -R japa:japa /app
+
 COPY --from=builder /japa-api /app/japa-api
+
+USER japa
 
 EXPOSE 8080
 

@@ -294,7 +294,7 @@
 			retry_count: row.retry_count as number,
 			max_retries: (row.max_retries as number) ?? 0,
 			failed_at: row.failed_at as string,
-			payload: {}
+			payload: (row.payload as string) ?? ''
 		};
 	}
 

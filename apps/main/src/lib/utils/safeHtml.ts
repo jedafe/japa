@@ -347,5 +347,9 @@ export function sanitizeCustomCss(css: string): string {
 	out = out.replace(/behavior\s*:[^;}]+;?/gi, '');
 	// Neutralize residual dangerous schemes if they survive the passes above.
 	out = out.replace(/javascript\s*:/gi, '').replace(/vbscript\s*:/gi, '');
+	// Block tag breakouts — the payload is injected inside a literal <style>
+	// element, so `</style>` (or any </ tag) would close it and allow
+	// arbitrary markup injection. No valid CSS contains "</".
+	out = out.replace(/<\//g, '');
 	return out;
 }

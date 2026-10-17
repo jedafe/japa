@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/worker"
@@ -574,6 +575,12 @@ func (s *Service) SubmitClaim(ctx context.Context, claimantUserID pgtype.UUID, u
 
 	if err := s.validateClaimant(ctx, claimantUserID); err != nil {
 		return gen.VideoChannelClaim{}, err
+	}
+
+	// evidence_url renders as <a href> in the admin claims UI — only
+	// absolute http(s) is storable (stored-XSS guard).
+	if evidenceURL != "" && !httpx.IsAbsoluteHTTPURL(evidenceURL) {
+		return gen.VideoChannelClaim{}, fmt.Errorf("%w: evidence_url must be a valid http or https URL", errpkg.ErrInvalid)
 	}
 
 	evidence, notesPtr := optionalStrings(evidenceURL, notes)

@@ -3,6 +3,7 @@
 	// Ref: japaconnect-engineering/sections/106-video-content-and-import.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { videoClaimsAdminApi } from '$lib/api';
+	import { safeHref } from '$lib/utils/html';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { CheckCircle2, XCircle } from 'lucide-svelte';
 
@@ -252,7 +253,7 @@
 		{#if row.evidence_url}
 			<div>
 				<dt class="text-sm text-muted">{t('video_claims.evidence_url', 'Evidence URL')}</dt>
-				<dd><a href={row.evidence_url} target="_blank" rel="noopener noreferrer" class="break-all text-sm underline">{row.evidence_url}</a></dd>
+				<dd><a href={safeHref(row.evidence_url)} target="_blank" rel="noopener noreferrer" class="break-all text-sm underline">{row.evidence_url}</a></dd>
 			</div>
 		{/if}
 		{#if row.notes}

@@ -172,5 +172,6 @@ func rowFromMentorShadow(r gen.GetMentorshipListingByAuthorRow) ServiceRow {
 		MentorSessionFormats: r.MentorSessionFormats, MentorCountries: r.MentorCountries,
 		MentorCredentials: r.MentorCredentials, MentorYearsExperience: r.MentorYearsExperience,
 		MentorSuccessLabel: r.MentorSuccessLabel, MenteesHelped: r.MenteesHelped,
+		MentorProfession: r.Profession, MentorWebsiteURL: r.WebsiteUrl,
 	}
 }

@@ -1153,6 +1153,18 @@ func listAllTasks(
 	listFn func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error),
 	queueName string,
 ) ([]*asynq.TaskInfo, error) {
+	return listTasksUpTo(listFn, queueName, 0)
+}
+
+// listTasksUpTo pages through an Inspector list method like listAllTasks
+// but stops once max entries have been collected (max <= 0 means no
+// limit). Prevents a "recent tasks" preview from shipping thousands of
+// rows when a state set is deep.
+func listTasksUpTo(
+	listFn func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error),
+	queueName string,
+	max int,
+) ([]*asynq.TaskInfo, error) {
 	const pageSize = 200
 
 	var all []*asynq.TaskInfo
@@ -1165,7 +1177,10 @@ func listAllTasks(
 
 		all = append(all, entries...)
 
-		if len(entries) < pageSize {
+		if len(entries) < pageSize || (max > 0 && len(all) >= max) {
+			if max > 0 && len(all) > max {
+				all = all[:max]
+			}
 			return all, nil
 		}
 	}
@@ -1204,6 +1219,13 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tasks})
 }
 
+// maxQueueTaskPreview bounds how many tasks per state ListQueueTasks
+// returns. The endpoint backs the "recent jobs" drill-down — a queue can
+// hold tens of thousands of archived/completed tasks, and shipping them
+// all produces a multi-MB response that hangs the modal. True per-state
+// totals ride alongside in the counts map.
+const maxQueueTaskPreview = 100
+
 // ListQueueTasks returns recent tasks for a specific queue across all states
 // (pending, active, scheduled, retry, archived, completed).
 func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
@@ -1217,8 +1239,9 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queueName := chi.URLParam(r, "queue_name")
-	if queueName == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
+	// Tasks are per-queue — "all" (accepted by the bulk ops) is invalid here.
+	if queueBulkTargetQueues(queueName) == nil || queueName == "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_queue", "queue_name must be critical, default, or low")
 		return
 	}
 
@@ -1232,6 +1255,7 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 		LastErr       string  `json:"last_err,omitempty"`
 		LastFailedAt  *string `json:"last_failed_at,omitempty"`
 		NextProcessAt *string `json:"next_process_at,omitempty"`
+		IsOrphaned    bool    `json:"is_orphaned,omitempty"`
 	}
 
 	summarize := func(tasks []*asynq.TaskInfo, state string) []taskSummary {
@@ -1245,6 +1269,7 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 				Payload:    string(t.Payload),
 				RetryCount: t.Retried,
 				MaxRetry:   t.MaxRetry,
+				IsOrphaned: t.IsOrphaned,
 			}
 			if t.LastErr != "" {
 				ts.LastErr = t.LastErr
@@ -1266,14 +1291,27 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 		return result
 	}
 
-	// Collect tasks from each state, best-effort (skip non-existent queues).
-	// All states are paged — the Inspector caps a single call at 30 rows.
-	pending, _ := listAllTasks(h.Inspector.ListPendingTasks, queueName)
-	active, _ := listAllTasks(h.Inspector.ListActiveTasks, queueName)
-	scheduled, _ := listAllTasks(h.Inspector.ListScheduledTasks, queueName)
-	retry, _ := listAllTasks(h.Inspector.ListRetryTasks, queueName)
-	archived, _ := listAllTasks(h.Inspector.ListArchivedTasks, queueName)
-	completed, _ := listAllTasks(h.Inspector.ListCompletedTasks, queueName)
+	// Collect the first page(s) of each state, best-effort (skip
+	// non-existent queues). Listing is capped at maxQueueTaskPreview per
+	// state; authoritative per-state totals come from GetQueueInfo below.
+	pending, _ := listTasksUpTo(h.Inspector.ListPendingTasks, queueName, maxQueueTaskPreview)
+	active, _ := listTasksUpTo(h.Inspector.ListActiveTasks, queueName, maxQueueTaskPreview)
+	scheduled, _ := listTasksUpTo(h.Inspector.ListScheduledTasks, queueName, maxQueueTaskPreview)
+	retry, _ := listTasksUpTo(h.Inspector.ListRetryTasks, queueName, maxQueueTaskPreview)
+	archived, _ := listTasksUpTo(h.Inspector.ListArchivedTasks, queueName, maxQueueTaskPreview)
+	completed, _ := listTasksUpTo(h.Inspector.ListCompletedTasks, queueName, maxQueueTaskPreview)
+
+	counts := map[string]int{}
+	if qi, err := h.Inspector.GetQueueInfo(queueName); err == nil {
+		counts = map[string]int{
+			"pending":   qi.Pending,
+			"active":    qi.Active,
+			"scheduled": qi.Scheduled,
+			"retry":     qi.Retry,
+			"archived":  qi.Archived,
+			"completed": qi.Completed,
+		}
+	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -1283,6 +1321,7 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 			"retry":     summarize(retry, "retry"),
 			"archived":  summarize(archived, "archived"),
 			"completed": summarize(completed, "completed"),
+			"counts":    counts,
 		},
 	})
 }
@@ -1318,8 +1357,8 @@ func (h *Handlers) RetryQueueTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queueName := chi.URLParam(r, "queue_name")
-	if queueName == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
+	if queueBulkTargetQueues(queueName) == nil || queueName == "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_queue", "queue_name must be critical, default, or low")
 		return
 	}
 
@@ -1330,11 +1369,100 @@ func (h *Handlers) RetryQueueTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Inspector.RunTask(queueName, taskID); err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in queue")
+		switch {
+		case errors.Is(err, asynq.ErrTaskNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in queue")
+		case errors.Is(err, asynq.ErrQueueNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "queue_not_found", "Queue not found")
+		default:
+			// The remaining RunTask failure modes are state conflicts —
+			// the task is active or already pending — so a 404 would lie.
+			errpkg.WriteError(w, http.StatusConflict, "task_not_actionable", err.Error())
+		}
+
 		return
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "retried"}})
+}
+
+// ArchiveQueueTask moves a single pending, scheduled, or retry task in
+// {queue_name} into the dead-letter queue — the recoverable "remove"
+// (the task can still be requeued). Wired at
+// POST /control/queue/{queue_name}/tasks/{task_id}/archive.
+func (h *Handlers) ArchiveQueueTask(w http.ResponseWriter, r *http.Request) {
+	if h.Inspector == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		return
+	}
+
+	queueName := chi.URLParam(r, "queue_name")
+	if queueBulkTargetQueues(queueName) == nil || queueName == "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_queue", "queue_name must be critical, default, or low")
+		return
+	}
+
+	taskID := chi.URLParam(r, "task_id")
+	if taskID == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_task", "task_id is required")
+		return
+	}
+
+	if err := h.Inspector.ArchiveTask(queueName, taskID); err != nil {
+		switch {
+		case errors.Is(err, asynq.ErrTaskNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in queue")
+		case errors.Is(err, asynq.ErrQueueNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "queue_not_found", "Queue not found")
+		default:
+			// Active tasks cannot be archived; completed tasks are already
+			// terminal — those failures are state conflicts, not 404s.
+			errpkg.WriteError(w, http.StatusConflict, "task_not_actionable", err.Error())
+		}
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "archived"}})
+}
+
+// DeleteQueueTask permanently removes a single task from {queue_name} —
+// valid for any non-active state (pending, scheduled, retry, archived,
+// completed). Irreversible; the recoverable alternative is
+// ArchiveQueueTask. Wired at
+// DELETE /control/queue/{queue_name}/tasks/{task_id}.
+func (h *Handlers) DeleteQueueTask(w http.ResponseWriter, r *http.Request) {
+	if h.Inspector == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		return
+	}
+
+	queueName := chi.URLParam(r, "queue_name")
+	if queueBulkTargetQueues(queueName) == nil || queueName == "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_queue", "queue_name must be critical, default, or low")
+		return
+	}
+
+	taskID := chi.URLParam(r, "task_id")
+	if taskID == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_task", "task_id is required")
+		return
+	}
+
+	if err := h.Inspector.DeleteTask(queueName, taskID); err != nil {
+		switch {
+		case errors.Is(err, asynq.ErrTaskNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in queue")
+		case errors.Is(err, asynq.ErrQueueNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "queue_not_found", "Queue not found")
+		default:
+			errpkg.WriteError(w, http.StatusConflict, "task_not_actionable", err.Error())
+		}
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "deleted"}})
 }
 
 func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
@@ -1388,11 +1516,23 @@ func (h *Handlers) ArchiveAllQueueTasks(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Asynq creates queues lazily on first enqueue and the ArchiveAll*
+	// methods return an internal NotFound kind for never-created queues
+	// (not the exported ErrQueueNotFound), so gate on Inspector.Queues() —
+	// a queue that never existed has nothing to archive and must not
+	// surface a spurious per-queue failure. If the lookup itself fails,
+	// attempt the ops anyway and surface real errors.
+	queueExists, lookupOK := existingQueues(h.Inspector)
+
 	archived := 0
 
 	var failures []string
 
 	for _, queueName := range queues {
+		if lookupOK && !queueExists[queueName] {
+			continue
+		}
+
 		for _, fn := range []func(string) (int, error){
 			h.Inspector.ArchiveAllPendingTasks,
 			h.Inspector.ArchiveAllScheduledTasks,
@@ -1436,11 +1576,20 @@ func (h *Handlers) RequeueAllQueueTasks(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Same never-created-queue quirk as ArchiveAllQueueTasks — a queue
+	// that does not exist has nothing to requeue; skip it instead of
+	// reporting a spurious per-queue failure.
+	queueExists, lookupOK := existingQueues(h.Inspector)
+
 	requeued := 0
 
 	var failures []string
 
 	for _, queueName := range queues {
+		if lookupOK && !queueExists[queueName] {
+			continue
+		}
+
 		for _, fn := range []func(string) (int, error){
 			h.Inspector.RunAllScheduledTasks,
 			h.Inspector.RunAllRetryTasks,

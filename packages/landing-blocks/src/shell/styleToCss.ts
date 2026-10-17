@@ -475,7 +475,9 @@ export function responsiveStyleToCss(style: BlockStyle | undefined, scopeSelecto
   const parts: string[] = [];
   for (const [breakpoint, override] of Object.entries(style.responsive)) {
     if (!override) continue;
-    const decls = styleToCssDeclarations(override);
+    // `!important` is required: base layout values are emitted as inline
+    // styles on the shell, which would otherwise always beat the override.
+    const decls = styleToCssDeclarations(override).map((d) => `${d} !important`);
     const rules: string[] = [];
     if (decls.length > 0) {
       rules.push(`${scopeSelector} {\n    ${decls.join(';\n    ')};\n  }`);

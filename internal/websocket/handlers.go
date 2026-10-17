@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -155,10 +156,35 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// wsTicketSubprotocolPrefix is the Sec-WebSocket-Protocol token prefix a
+// client uses to carry the ticket out-of-band: the browser WebSocket API
+// cannot set arbitrary headers, so the ticket travels as the subprotocol
+// "jc-ticket.<uuid>" instead of a ?ticket= query parameter that lands in
+// proxy and access logs (CWE-598). The server never negotiates the token —
+// gorilla's upgrader has no Subprotocols configured, so it is not echoed
+// back — it is read off the plain HTTP upgrade request.
+const wsTicketSubprotocolPrefix = "jc-ticket."
+
+// ticketFromRequest resolves the WS ticket, preferring the
+// Sec-WebSocket-Protocol channel and falling back to the ?ticket= query
+// parameter for older clients.
+func ticketFromRequest(r *http.Request) string {
+	for _, proto := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
+		if t := strings.TrimSpace(proto); strings.HasPrefix(t, wsTicketSubprotocolPrefix) {
+			if ticket := strings.TrimPrefix(t, wsTicketSubprotocolPrefix); ticket != "" {
+				return ticket
+			}
+		}
+	}
+
+	return r.URL.Query().Get("ticket")
+}
+
 // HandleWebSocket upgrades connection and authenticates via ticket.
-// GET /api/v1/ws?ticket={ticket_id}.
+// GET /api/v1/ws — ticket via Sec-WebSocket-Protocol ("jc-ticket.<uuid>"),
+// legacy ?ticket={ticket_id} query parameter still accepted.
 func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	ticketStr := r.URL.Query().Get("ticket")
+	ticketStr := ticketFromRequest(r)
 	if ticketStr == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_ticket", "Ticket query parameter is required")
 		return

@@ -13,9 +13,11 @@
 	let { data }: { data: unknown } = $props();
 	const profile = $derived(data as MeProfile | null);
 
-	// Static two-value enum — theme names are a platform contract
-	// (jc_theme cookie + data-theme attribute), not backend data.
+	// Static three-value enum — theme names are a platform contract
+	// (jc_theme cookie + data-theme attribute + user_preferences.dark_mode),
+	// not backend data.
 	const themeOptions = [
+		{ value: 'system', label: t('settings.account.theme_system', 'System') },
 		{ value: 'light', label: t('settings.account.theme_light', 'Light') },
 		{ value: 'dark', label: t('settings.account.theme_dark', 'Dark') }
 	];
@@ -27,15 +29,18 @@
 	const form = new DirtyForm(
 		untrack(() => ({
 			username: profile?.username ?? '',
-			theme: (page.data.theme as ThemeName) ?? 'light'
+			email: profile?.email ?? '',
+			theme: (page.data.theme as ThemeName) ?? 'system'
 		})),
-		// PATCH /me/account only accepts username/email/display_name — the
-		// previous { ui: { theme } } key was silently dropped (Rule 1 drift;
-		// §50: theme persists via the jc_theme cookie, set by themeStore.set
-		// on selection, and the dark_mode preference via PUT /me/preferences).
+		// PATCH /me/account accepts username/email/display_name — email change
+		// triggers re-verification server-side (§50). Theme persists via the
+		// jc_theme cookie (set by themeStore.set on selection) and the
+		// dark_mode preference via PUT /me/preferences.
 		async (v) => {
+			const body: { username: string; email?: string } = { username: v.username };
+			if (v.email && v.email !== profile?.email) body.email = v.email;
 			const [acctRes, prefRes] = await Promise.all([
-				patchAccount({ username: v.username }),
+				patchAccount(body),
 				putPreferences({ dark_mode: v.theme })
 			]);
 			const err = acctRes.error ?? prefRes.error;
@@ -49,20 +54,29 @@
 
 	// Live-preview the selected theme — and, because this watches
 	// form.values.theme, Discard (form.reset) reverts the applied theme and
-	// the jc_theme cookie too, not just the picker.
+	// the jc_theme cookie too, not just the picker. 'system' resolves via
+	// prefers-color-scheme inside the theme store.
 	$effect(() => {
 		const th = form.values.theme;
-		if (th === 'light' || th === 'dark') themeStore.set(th);
+		if (th === 'light' || th === 'dark' || th === 'system') themeStore.set(th);
 	});
 </script>
 
 <SettingsSection titleKey="settings.nav.account" descKey="settings.account.desc" {form}>
-	<div class="mb-3">
+	<label class="mb-3 block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.account.email')}</span>
-		<p class="rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-muted)]">
-			{profile?.email ?? '—'}
-		</p>
-	</div>
+		<input
+			type="email"
+			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+			value={form.values.email}
+			oninput={(e) => form.set({ email: e.currentTarget.value })}
+		/>
+		{#if form.values.email !== profile?.email}
+			<span class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.account.email_reverify', 'Changing your email requires re-verification.')}
+			</span>
+		{/if}
+	</label>
 	<label class="mb-3 block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.account.username')}</span>
 		<input

@@ -274,7 +274,7 @@
 					{#if item.url}
 						<a
 							href={item.url}
-							target="_blank"
+							target="_blank" rel="noopener noreferrer"
 							class="inline-flex items-center gap-1 text-xs text-[var(--color-text)] underline"
 						>
 							<ExternalLink size={12} /> {t('jce.common.view')}

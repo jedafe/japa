@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -665,6 +666,9 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
+// langCodeRe validates the language preference: "en", "en-NG", "pt-BR", etc.
+var langCodeRe = regexp.MustCompile(`^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$`)
+
 // Preferences Handlers
 // ---------------------------------------------------------------------------
 
@@ -694,6 +698,22 @@ func (h *Handlers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request) {
 	var req UpdatePreferencesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	// §50 contract: dark_mode is a closed enum, language a BCP-47-ish code.
+	// Previously any string was stored, which let a bad client wedge a user's
+	// theme/locale resolution into an unreadable state.
+	if req.DarkMode != nil {
+		switch *req.DarkMode {
+		case "light", "dark", "system":
+		default:
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_dark_mode", "dark_mode must be light, dark, or system")
+			return
+		}
+	}
+	if req.Language != nil && !langCodeRe.MatchString(*req.Language) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_language", "language must be a BCP-47 code like en or en-NG")
 		return
 	}
 

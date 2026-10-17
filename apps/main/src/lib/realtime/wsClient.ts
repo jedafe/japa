@@ -2,7 +2,7 @@ import { api } from '$lib/api/client';
 
 /**
  * Backend protocol (internal/websocket):
- *   - Connect:  GET /api/v1/ws?ticket={ticket_id}
+ *   - Connect:  GET /api/v1/ws (ticket via Sec-WebSocket-Protocol: jc-ticket.<uuid>)
  *   - Ticket:   POST /api/v1/auth/ws-ticket -> { "ticket": "..." }
  *   - Envelope: { "type": "<event>", "payload": <any> }
  *   - Server -> client events: notification, presence, typing,
@@ -50,19 +50,19 @@ async function mintTicket(): Promise<MintResult> {
 	}
 }
 
-function resolveWsUrl(ticket: string): string {
+function resolveWsUrl(): string {
 	// If a public WebSocket URL is configured, use it. In production this is
 	// typically wss://api.example.com; in local dev it can be set to
 	// ws://localhost:8080 to bypass the Vite proxy.
 	const publicUrl = import.meta.env.PUBLIC_JC_WS_URL as string | undefined;
 	if (publicUrl) {
-		return `${publicUrl}?ticket=${encodeURIComponent(ticket)}`;
+		return publicUrl;
 	}
 	if (typeof window === 'undefined') {
 		return '';
 	}
 	const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-	return `${proto}//${window.location.host}/api/v1/ws?ticket=${encodeURIComponent(ticket)}`;
+	return `${proto}//${window.location.host}/api/v1/ws`;
 }
 
 class WsClient {
@@ -178,10 +178,13 @@ class WsClient {
 		if (this.socket) return;
 		this.isConnecting = true;
 
-		const url = resolveWsUrl(ticket);
+		const url = resolveWsUrl();
 		let socket: WebSocket;
 		try {
-			socket = new WebSocket(url);
+			// Ticket rides the Sec-WebSocket-Protocol header ("jc-ticket.<uuid>")
+			// so it never lands in URLs, proxy logs, or browser history. The
+			// server reads it off the upgrade request without negotiating it.
+			socket = new WebSocket(url, [`jc-ticket.${ticket}`]);
 		} catch {
 			this.isConnecting = false;
 			this.scheduleReconnect();

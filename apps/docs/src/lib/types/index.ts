@@ -4,7 +4,7 @@
  * verified against the live API (ADR-060 — Docs drift on the unified shell).
  */
 
-export type ThemeName = 'light' | 'dark';
+export type ThemeName = 'light' | 'dark' | 'system';
 
 /** Supported UI locale code (e.g. 'en', 'fr', 'yo'). Dynamic per ADR-013. */
 export type Locale = string;
