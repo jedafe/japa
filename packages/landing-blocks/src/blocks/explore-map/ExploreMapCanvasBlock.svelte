@@ -23,7 +23,7 @@
   const VB_W = WORLD_VIEWBOX.w;
 </script>
 
-{#if ctx && exploreMapChildVisible(ctx, 'explore_map_canvas')}
+{#if ctx && exploreMapChildVisible(ctx.P, 'explore_map_canvas')}
   <div class="relative overflow-hidden rounded-2xl border border-[var(--color-border)] shadow-sm" style="background: linear-gradient(180deg, #e8f3fb 0%, #dcedf7 100%);">
     {#if ctx.loading}
       <div class="absolute inset-0 z-10 grid place-items-center">

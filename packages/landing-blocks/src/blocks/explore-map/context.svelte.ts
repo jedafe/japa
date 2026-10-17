@@ -5,7 +5,7 @@
 // getExploreMapCtx(). Ported verbatim from the former monolith script.
 import { getContext, setContext } from 'svelte';
 import type { Component } from 'svelte';
-import type { Block, ExploreMapProps } from '../../types';
+import type { ExploreMapProps } from '../../types';
 import type { FetchContext } from '../../data/types';
 import { countryCentroid } from '../../geo/countryCentroids';
 import { WORLD_COUNTRIES, WORLD_VIEWBOX, REGION_BOUNDS } from '../../geo/worldMapData';
@@ -374,44 +374,6 @@ export function getExploreMapCtx(): ExploreMapContext | undefined {
 	return getContext<ExploreMapContext>(EXPLORE_MAP_CTX);
 }
 
-// ── Child layout helpers ───────────────────────────────────────
-const ASIDE_LEFT = new Set(['explore_map_legend', 'explore_map_region_filter', 'explore_map_stats']);
-const ASIDE_BOTTOM = new Set(['explore_map_legend', 'explore_map_region_filter', 'explore_map_col_index']);
-
-/** Whether a child of `type` currently renders anything, given ctx config. */
-export function exploreMapChildVisible(ctx: ExploreMapContext, type: string): boolean {
-	const P = ctx.P;
-	switch (type) {
-		case 'explore_map_toolbar': return !!P.show_toolbar;
-		case 'explore_map_legend': return !!P.show_legend && (P.categories?.length ?? 0) > 0;
-		case 'explore_map_region_filter': return !!P.show_region_filter;
-		// Bottom mode floats stats inside the canvas card instead.
-		case 'explore_map_stats': return !!P.show_stats && (P.stats?.length ?? 0) > 0 && P.aside_position !== 'bottom';
-		case 'explore_map_col_index': return !!P.show_col_index && (P.col_bands?.length ?? 0) > 0;
-		case 'explore_map_canvas': return true;
-		default: return true; // unknown nested types always render
-	}
-}
-
-/** Split children into the aside vs main column by type (like guest_hero's rightTypes). */
-export function partitionExploreMapChildren(children: Block[], bottom: boolean): { aside: Block[]; main: Block[] } {
-	const set = bottom ? ASIDE_BOTTOM : ASIDE_LEFT;
-	return {
-		aside: children.filter((b) => set.has(b.type)),
-		main: children.filter((b) => !set.has(b.type)),
-	};
-}
-
-/** Seeded children for a block with no stored children — reproduces the standard layout. */
-export function defaultExploreMapChildren(id: string): Block[] {
-	const mk = (type: string, suffix: string) =>
-		({ id: `${id}-${suffix}`, type, visible: true, props: {} }) as Block;
-	return [
-		mk('explore_map_toolbar', 'toolbar'),
-		mk('explore_map_legend', 'legend'),
-		mk('explore_map_region_filter', 'region'),
-		mk('explore_map_stats', 'stats'),
-		mk('explore_map_canvas', 'canvas'),
-		mk('explore_map_col_index', 'colindex'),
-	];
-}
+// Child layout helpers live in ./exploreMapChildren.ts (plain .ts — keeps them
+// unit-testable without pulling lucide-svelte into the test runtime).
+export { exploreMapChildVisible, partitionExploreMapChildren, defaultExploreMapChildren } from './exploreMapChildren';

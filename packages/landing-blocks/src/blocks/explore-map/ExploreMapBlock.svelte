@@ -106,8 +106,8 @@
   // Children self-gate on show_* via exploreMapChildVisible — filtering here
   // keeps gated-off children from mounting an empty BlockShell (and keeps the
   // aside wrapper absent when nothing inside would render, as before).
-  const visibleAside = $derived(parts.aside.filter((b) => isBlockVisible(b, geoCountry) && exploreMapChildVisible(ctx, b.type)));
-  const visibleMain = $derived(parts.main.filter((b) => isBlockVisible(b, geoCountry) && exploreMapChildVisible(ctx, b.type)));
+  const visibleAside = $derived(parts.aside.filter((b) => isBlockVisible(b, geoCountry) && exploreMapChildVisible(ctx.P, b.type)));
+  const visibleMain = $derived(parts.main.filter((b) => isBlockVisible(b, geoCountry) && exploreMapChildVisible(ctx.P, b.type)));
   // The toolbar sits inside the header row beside the headline; everything
   // else in the main column renders below it.
   const mainToolbar = $derived(visibleMain.filter((b) => b.type === 'explore_map_toolbar'));

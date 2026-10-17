@@ -18,7 +18,7 @@
   const ctx = getExploreMapCtx();
 </script>
 
-{#if ctx && exploreMapChildVisible(ctx, 'explore_map_col_index')}
+{#if ctx && exploreMapChildVisible(ctx.P, 'explore_map_col_index')}
   {#if ctx.P.aside_position === 'bottom'}
     <!-- Card variant — sits in the bottom aside grid -->
     <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">

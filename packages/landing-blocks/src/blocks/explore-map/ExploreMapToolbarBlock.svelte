@@ -18,7 +18,7 @@
   const ctx = getExploreMapCtx();
 </script>
 
-{#if ctx && exploreMapChildVisible(ctx, 'explore_map_toolbar')}
+{#if ctx && exploreMapChildVisible(ctx.P, 'explore_map_toolbar')}
   <div class="flex shrink-0 divide-x divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
     <label class="flex items-center gap-2 px-3 py-2">
       <LucideIcons.MapPin size={15} class="text-[var(--color-primary)]" />
