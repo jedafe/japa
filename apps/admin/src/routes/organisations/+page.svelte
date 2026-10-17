@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /organisations — migrated to the EntityPage scaffold; CRUD entity with state actions (verify/unverify) and an approve-claim sub-flow.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
@@ -363,7 +364,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("organisations.title", "Organisations")} — JapaConnect Admin</title>
+	<title>{t("organisations.title", "Organisations")} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

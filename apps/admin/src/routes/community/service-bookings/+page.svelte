@@ -218,7 +218,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.service_bookings.page_title', 'Service Bookings — JapaConnect Admin')}</title>
+	<title>{t('app.service_bookings.page_title', 'Service Bookings — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

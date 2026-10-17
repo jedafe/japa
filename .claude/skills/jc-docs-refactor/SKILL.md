@@ -1,6 +1,6 @@
 ---
 name: jc-docs-refactor
-description: [Docs app, docs.japaconnect.com] Unified shell adapted for Docs (ADR-060) — nav-tree left nav, TOC right sidebar, playground full-width exception. Use when updating or refactoring existing JapaConnect Docs app code (apps/docs). Converts scroll tracking to IntersectionObserver, modernizes search to Dialog+Combobox, fixes listener cleanup, migrates any charts to LayerChart.
+description: [Docs app, docs.japa.to] Unified shell adapted for Docs (ADR-060) — nav-tree left nav, TOC right sidebar, playground full-width exception. Use when updating or refactoring existing JapaConnect Docs app code (apps/docs). Converts scroll tracking to IntersectionObserver, modernizes search to Dialog+Combobox, fixes listener cleanup, migrates any charts to LayerChart.
 ---
 
 # JapaConnect Docs — Updating & Refactoring Skill
@@ -74,4 +74,4 @@ Apply `jc-main-refactor` §§1–2, 4–5 (Svelte 4→5, Bits UI — incl. `<Tab
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /widgets — Page Builder widget_configurations CRUD (Section 16).
 	// Uses EntityPage with a formSnippet because the config field is
 	// dynamic per widget_type (e.g. latest_content has content_type/sort/featured,
@@ -332,7 +333,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('widgets.title', 'Widgets')} — JapaConnect Admin</title>
+	<title>{t('widgets.title', 'Widgets')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

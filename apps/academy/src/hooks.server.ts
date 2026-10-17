@@ -23,7 +23,7 @@ import type { SessionUser } from '$lib/types';
  * `academy.subdomain` and `academy.custom_domain` system_settings
  * (ADR-063 §2); the edge/proxy routes the configured host to this app
  * and the backend uses the hostname for host-based routing. The
- * academy.japaconnect.com host redirects to the configured academy host
+ * academy.japa.to host redirects to the configured academy host
  * (handled by the edge/proxy).
  * Ref: japaconnect-engineering/conventions/system-settings-catalog.md
  */

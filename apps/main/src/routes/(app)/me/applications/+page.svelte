@@ -17,7 +17,7 @@
 		return i < 0 ? -1 : i;
 	};
 
-	const title = $derived(t('jobs.my_applications', 'My Applications — JapaConnect'));
+	const title = $derived(t('jobs.my_applications', 'My Applications — {site}'));
 	const applications = $derived<JobApplication[]>(data.applications);
 	const meta = $derived(data.meta);
 

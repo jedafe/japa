@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /tags — migrated to the EntityPage scaffold (Task 9).
 	//
 	// The rich tag form (logo/cover media pickers, custom field definitions) and
@@ -332,7 +333,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("tags.title", "Tags")} — JapaConnect Admin</title>
+	<title>{t("tags.title", "Tags")} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}
@@ -463,7 +464,7 @@
 {/snippet}
 
 <!-- Manage-moderators row action (kept as a column because EntityPage does not
-     expose its internal openView/openEdit/openDelete, so a custom `actions`
+     expose its internal openView/openEdit/openDelete, so a custom "actions"
      array cannot trigger the scaffold's built-in slide-overs) -->
 {#snippet ModeratorsCell({ row }: { row: Tag })}
 	{#if canManageTags}

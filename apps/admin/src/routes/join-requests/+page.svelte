@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /join-requests — migrated to the EntityPage scaffold; read-only list with state actions (approve/reject).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
@@ -144,7 +145,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('joinRequests.title', 'Join Requests')} — JapaConnect Admin</title>
+	<title>{t('joinRequests.title', 'Join Requests')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

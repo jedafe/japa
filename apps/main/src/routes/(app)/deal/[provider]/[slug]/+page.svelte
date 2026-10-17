@@ -56,7 +56,7 @@
 	let editing = $state(false);
 
 	const title = $derived(
-		t('coupon.title', '{name} — JapaConnect').replace('{name}', coupon.title)
+		t('coupon.title', '{name} — {site}').replace('{name}', coupon.title)
 	);
 	const description = $derived(
 		summary ??
@@ -378,7 +378,7 @@
 					<h2 class="text-base font-semibold text-[var(--color-text)]">
 						{t('deal.other_ways', 'Other ways to save on {provider}').replace(
 							'{provider}',
-							coupon.provider_name ?? t('deals.internal', 'JapaConnect')
+							coupon.provider_name ?? t('deals.internal', '{site}')
 						)}
 					</h2>
 					<div class="mt-3 grid gap-2 sm:grid-cols-2">

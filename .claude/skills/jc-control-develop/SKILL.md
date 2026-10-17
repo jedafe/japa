@@ -39,7 +39,7 @@ All Control Panel dashboards render metrics with LayerChart:
 - `academy.pro_stream_rate_kobo` — per-Pro-learner stream rate for creator compensation.
 - `university.payout_min_threshold_kobo` — minimum payout amount; below this, payouts roll to next period.
 - `university.payout_period_days` — payout cycle length.
-- `university.surface_domain` — the Japa Academy branded domain (default `academy.japaconnect.com`). Changing this affects host detection in the Learn app.
+- `university.surface_domain` — the Japa Academy branded domain (default `academy.japa.to`). Changing this affects host detection in the Learn app.
 
 **Job Queue:** tabs Critical/Default/Low · stats + failed-jobs DataTable (retry action) · poll 15s.
 **Health:** service cards + LayerChart sparklines · poll 30s.
@@ -100,4 +100,4 @@ Same as `jc-admin-develop`: `ssr=false`, auth guard verifying BOTH session AND `
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

@@ -501,7 +501,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 // the API issuer origin — never an open-redirect vector.
 func (h *OAuthHandlers) redirectToFrontend(w http.ResponseWriter, r *http.Request, path string) {
 	if u, err := url.Parse(path); err == nil && u.IsAbs() {
-		http.Redirect(w, r, path, http.StatusFound) // #nosec G601 -- absolute target was allowlisted to the API issuer origin by safeRedirectTarget
+		http.Redirect(w, r, path, http.StatusFound) // #nosec G710 -- absolute target was allowlisted to the API issuer origin by safeRedirectTarget
 		return
 	}
 

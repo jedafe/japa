@@ -4,11 +4,11 @@
   "title": "JapaConnect",
   "description": "Read-only search over JapaConnect content, spaces, visa guides, scholarships, and scam alerts.",
   "version": "1.0.0",
-  "websiteUrl": "https://japaconnect.com",
+  "websiteUrl": "https://japa.to",
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://api.japaconnect.com/api/v1/mcp",
+      "url": "https://api.japa.to/api/v1/mcp",
       "headers": [
         {
           "name": "X-API-Key",

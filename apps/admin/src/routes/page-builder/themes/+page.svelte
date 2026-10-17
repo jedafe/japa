@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /page-builder/themes — migrated to the EntityPage scaffold.
 	// Simple CRUD entity using declarative `fields` (EntityForm) plus a custom
 	// `actions` array with a "Set Default" state action backed by a page-local
@@ -212,7 +213,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('themes.title', 'Page Themes')} — JapaConnect Admin</title>
+	<title>{t('themes.title', 'Page Themes')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

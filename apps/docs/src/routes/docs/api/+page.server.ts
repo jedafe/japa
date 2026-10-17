@@ -3,7 +3,7 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
 import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPageSummary, DocNavItem } from '$lib/types';
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 import type { ExistingPage } from '$lib/server/docs-author';
 
 type ApiEndpoint = { method: string; path: string; summary: string; tag: string };
@@ -24,6 +24,7 @@ const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', '
  * Ref: japaconnect-engineering/sections/44-docs-site.md (ADR-060)
  */
 export const load: PageServerLoad = async (event) => {
+	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	const ctx = apiContext(event);
 
 	let pages: DocPageSummary[] = [];
@@ -66,13 +67,15 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const locale = event.locals.locale;
-	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
-	const audienceLabel = tServer(locale, 'audience.api', 'API');
+	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
+	const audienceLabel = tServer(locale, 'audience.api', 'API', undefined, site);
 	const title = `${audienceLabel} · ${appName}`;
 	const description = tServer(
 		locale,
 		'api.landing_desc',
-		'API reference, authentication guides, and an interactive playground for testing endpoints.'
+		'API reference, authentication guides, and an interactive playground for testing endpoints.',
+		undefined,
+		site
 	);
 
 	const meta = buildMeta({
@@ -81,7 +84,8 @@ export const load: PageServerLoad = async (event) => {
 		path: '/docs/api',
 		ogType: 'website',
 		jsonLd: collectionPageLd({
-			name: title,
+				siteName: site,
+				name: title,
 			url: `${DOCS_ORIGIN}/docs/api`,
 			description
 		})

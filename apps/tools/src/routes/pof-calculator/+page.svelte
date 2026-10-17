@@ -48,7 +48,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('pof_calculator.seo_title', 'Proof of Funds Calculator — JapaConnect Tools'),
+			title: t('pof_calculator.seo_title', 'Proof of Funds Calculator — {site} Tools'),
 			description: t(
 				'pof_calculator.seo_description',
 				'Work out the proof-of-funds requirement for your destination and family size — with live NGN and USD equivalents.'

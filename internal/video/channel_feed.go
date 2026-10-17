@@ -97,11 +97,11 @@ func resolveYouTubeChannelID(ctx context.Context, client *http.Client, channelUR
 		return "", fmt.Errorf("video: channel resolve: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "JapaConnect-VideoSync/1.0 (+https://japaconnect.com)")
+	req.Header.Set("User-Agent", "JapaConnect-VideoSync/1.0 (+https://japa.to)")
 	req.Header.Set("Accept-Language", "en")
 	// YouTube redirects EU-region requests through consent.youtube.com;
 	// this cookie bypasses the interstitial so the channel page is served.
-	req.AddCookie(&http.Cookie{Name: "CONSENT", Value: "YES+cb"})
+	req.AddCookie(&http.Cookie{Name: "CONSENT", Value: "YES+cb"}) // #nosec G124 -- outbound request cookie, not a served cookie
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -145,7 +145,7 @@ func fetchChannelVideoIDs(ctx context.Context, client *http.Client, feedURL stri
 		return nil, fmt.Errorf("video: channel feed: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "JapaConnect-VideoSync/1.0 (+https://japaconnect.com)")
+	req.Header.Set("User-Agent", "JapaConnect-VideoSync/1.0 (+https://japa.to)")
 	req.Header.Set("Accept", "application/atom+xml, application/xml, text/xml")
 
 	resp, err := client.Do(req)

@@ -81,7 +81,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('appeals.list_title', 'My appeals — JapaConnect')}</title>
+	<title>{t('appeals.list_title', 'My appeals — {site}')}</title>
 </svelte:head>
 
 <section class="space-y-4">
@@ -112,7 +112,7 @@
 				<p class="mt-0.5 text-sm text-[var(--color-muted)]">
 					{t(
 						'appeals.restricted_body',
-						'Most of JapaConnect is unavailable while this restriction is active. You can contest it below — a staff member will review your appeal.'
+						'Most of {site} is unavailable while this restriction is active. You can contest it below — a staff member will review your appeal.'
 					)}
 				</p>
 			</div>

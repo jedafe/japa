@@ -141,7 +141,7 @@ func TestServeRSSFeed(t *testing.T) {
 	items := []RSSItem{
 		{
 			Title:       "Hello World",
-			Link:        "https://japaconnect.com/content/hello-world",
+			Link:        "https://japa.to/content/hello-world",
 			GUID:        "urn:uuid:test-123",
 			Description: "A test post",
 			PubDate:     "Mon, 01 Jan 2024 00:00:00 +0000",
@@ -150,7 +150,7 @@ func TestServeRSSFeed(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	serveRSSFeed(w, "Test Feed", "https://japaconnect.com/feed.xml", "Desc", items)
+	serveRSSFeed(w, "Test Feed", "https://japa.to/feed.xml", "Desc", items)
 
 	if ct := w.Header().Get("Content-Type"); ct != "application/rss+xml; charset=utf-8" {
 		t.Fatalf("unexpected Content-Type: %s", ct)
@@ -214,26 +214,26 @@ func TestResolveSiteURL(t *testing.T) {
 		{
 			name:       "trusted proxy with X-Forwarded-Host and https proto",
 			remoteAddr: "10.0.0.5:4321", // 10.0.0.0/8 is a default trusted CIDR
-			host:       "japaconnect.com",
+			host:       "japa.to",
 			proto:      "https",
 			fallback:   "http://localhost:8080",
-			want:       "https://japaconnect.com",
+			want:       "https://japa.to",
 		},
 		{
 			name:       "trusted proxy with X-Forwarded-Host, no proto, no TLS",
 			remoteAddr: "10.0.0.5:4321",
-			host:       "japaconnect.com",
+			host:       "japa.to",
 			proto:      "",
 			fallback:   "http://localhost:8080",
-			want:       "http://japaconnect.com",
+			want:       "http://japa.to",
 		},
 		{
 			name:       "untrusted peer ignores X-Forwarded-Host (host-header injection fix)",
 			remoteAddr: "203.0.113.10:4321", // not a trusted proxy
 			host:       "evil.com",
 			proto:      "https",
-			fallback:   "https://japaconnect.com",
-			want:       "https://japaconnect.com",
+			fallback:   "https://japa.to",
+			want:       "https://japa.to",
 		},
 		{
 			name:       "trusted proxy without X-Forwarded-Host uses fallback",

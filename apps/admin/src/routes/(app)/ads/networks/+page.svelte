@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /ads/networks — migrated to the EntityPage scaffold; CRUD entity with JSON textarea fields.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { adNetworksApi, type AdNetwork } from '$lib/api';
@@ -233,7 +234,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('networks.title', 'Ad Networks')} — JapaConnect Admin</title>
+	<title>{t('networks.title', 'Ad Networks')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

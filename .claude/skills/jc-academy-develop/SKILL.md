@@ -1,18 +1,18 @@
 ---
 name: jc-academy-develop
-description: Use when building new pages or components for the JapaConnect Academy app (apps/academy, port 3003, SSR, academy.japaconnect.com). Covers the unified app shell adapted for Academy (ADR-060), the lesson-player reading exception, the SSR/CSR progress boundary, TrackCard, LayerChart 2.0.1 progress analytics, and the API-Readiness Gate.
+description: Use when building new pages or components for the JapaConnect Academy app (apps/academy, port 3003, SSR, academy.japa.to). Covers the unified app shell adapted for Academy (ADR-060), the lesson-player reading exception, the SSR/CSR progress boundary, TrackCard, LayerChart 2.0.1 progress analytics, and the API-Readiness Gate.
 ---
 
 # JapaConnect Academy — Development Skill
 
-Course/track platform at `academy.japaconnect.com`. SSR (adapter-node + Bun). API base `/api/v1/academy/*`. **Layout is the unified app shell (ADR-058) adapted for Academy (ADR-060) — build inside it; the lesson player is the one exception.**
+Course/track platform at `academy.japa.to`. SSR (adapter-node + Bun). API base `/api/v1/academy/*`. **Layout is the unified app shell (ADR-058) adapted for Academy (ADR-060) — build inside it; the lesson player is the one exception.**
 
 ## ⛔ API-READINESS GATE
 Same as `jc-main-develop`: list endpoints → verify (catalog or probe) → any missing: STOP + ⚠️ MISSING BACKEND API ROUTES alert. Never mock. Known routes: `GET /academy/tracks`, `GET /academy/tracks/:slug`, `POST /academy/tracks/:id/enroll`, `GET /me/enrollments`, `GET /academy/lessons/:id`, `POST /academy/lessons/:id/progress`, `POST /academy/lessons/:id/complete`, `GET/POST /academy/quizzes/:id`, `GET /me/certificates` — verify each before use. **Japa Academy (ADR-063) routes**: `GET /academy/tracks` (marketplace catalog, filters on `is_published_to_academy`), `POST /academy/instructors/apply` (creator application), `GET /me/instructor-profile` (own instructor status), `POST /academy/tracks/:id/submit` (submit course to marketplace), `GET /me/payouts` (instructor payout history) — verify each before use.
 
 ## Japa Academy Marketplace (ADR-063 — unified shell)
 
-Japa Academy is the Academy platform presented as a worldwide creator marketplace under its own brand. Since the ADR-063 consolidation there is a **single Academy shell** — the former Learn/University dual-shell is gone. The canonical host is `academy.japaconnect.com` (or a custom domain from the `academy.subdomain` / `academy.custom_domain` system_settings, routed by the edge proxy). Not open sourced (ADR-063 §1).
+Japa Academy is the Academy platform presented as a worldwide creator marketplace under its own brand. Since the ADR-063 consolidation there is a **single Academy shell** — the former Learn/University dual-shell is gone. The canonical host is `academy.japa.to` (or a custom domain from the `academy.subdomain` / `academy.custom_domain` system_settings, routed by the edge proxy). Not open sourced (ADR-063 §1).
 - **Marketplace catalog:** `GET /academy/tracks` returns only `is_published_to_academy = true` courses. `TrackCard` adds a price badge (`price_kobo` → formatted) and instructor name. Free and Pro-included courses show "Free" / "Pro".
 - **Creator flow:** `POST /academy/instructors/apply` → `academy_instructor_profiles.status = 'pending'`. Admin approves → `academy:notify_instructor_approved`. Approved instructor creates a track → `POST /academy/tracks/:id/submit` → admin approves course → `academy:notify_course_approved` → `is_published_to_academy = true`.
 - **Instructor dashboard:** `/dashboard/instructor` — course list with enrollment counts (`total_enrolled`), revenue overview from `GET /me/payouts`, pending/approved course status. LayerChart for revenue over time.
@@ -63,7 +63,7 @@ Rules: colors via `var(--chart-*)`/`var(--color-*)` only (dark-mode safe) · fix
 `--level-beginner` (green) · `--level-intermediate` (amber) · `--level-advanced` (red) · `--color-progress` · `--color-locked`. Define once in the theme; reference as variables.
 
 ## Stack
-Identical base to `jc-main-develop`: Svelte 5 Runes, Bits UI dot-notation, Tailwind v4, LayerChart 2.0.1, Lucide, TypeScript, `$t()` i18n (en+fr), Rule 16, no AI attribution. Canonical URLs on `academy.japaconnect.com`.
+Identical base to `jc-main-develop`: Svelte 5 Runes, Bits UI dot-notation, Tailwind v4, LayerChart 2.0.1, Lucide, TypeScript, `$t()` i18n (en+fr), Rule 16, no AI attribution. Canonical URLs on `academy.japa.to`.
 
 ## Deliverables Per Task
 1. Gate output · 2. surface built INSIDE `AppShell` (or the lesson-player exception, explicitly) · 3. `+page.server.ts` (public content only — no user progress) · 4. `+page.svelte` (SSR content + CSR progress, skeletons) · 5. components · 6. JSON-LD · 7. types
@@ -92,4 +92,4 @@ Identical base to `jc-main-develop`: Svelte 5 Runes, Bits UI dot-notation, Tailw
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

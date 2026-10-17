@@ -1,6 +1,7 @@
 package media
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -1585,6 +1586,7 @@ func (h *Handlers) ProxyRemoteMedia(w http.ResponseWriter, r *http.Request) {
 // The requested filename is deliberately not echoed back — reflecting it into
 // an SVG served from this origin is an XSS sink.
 func writePlaceholderSVG(w http.ResponseWriter) {
+	placeholderBrand := brand.Get()
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -1593,6 +1595,6 @@ func writePlaceholderSVG(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
   <rect width="100%" height="100%" fill="#1a1a2e"/>
-  <text x="50%" y="50%" font-family="sans-serif" font-size="14" fill="#888" text-anchor="middle" dy=".3em">Japa Connect</text>
+  <text x="50%" y="50%" font-family="sans-serif" font-size="14" fill="#888" text-anchor="middle" dy=".3em">` + placeholderBrand + `</text>
 </svg>`))
 }

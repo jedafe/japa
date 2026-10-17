@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'app/site_name_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'app/theme.dart';
 import 'app/router.dart';
@@ -26,7 +27,7 @@ class JapaConnectApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
-      title: 'JapaConnect',
+      title: ref.watch(siteNameProvider).valueOrNull ?? 'JapaConnect',
       theme: ref.watch(jcThemeProvider),
       routerConfig: ref.watch(jcRouterProvider),
     );

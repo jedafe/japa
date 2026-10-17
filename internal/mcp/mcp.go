@@ -9,6 +9,7 @@
 package mcp
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -31,8 +32,8 @@ import (
 
 const (
 	protocolVersion = "2024-11-05"
-	serverName      = "japaconnect-mcp"
-	serverTitle     = "JapaConnect"
+	serverName      = "japa-mcp"
+	
 	serverVersion   = "1.0.0"
 	maxBodyBytes    = 1 << 20 // 1 MiB
 	maxBatchSize    = 100     // bounds a single JSON-RPC batch POST
@@ -40,7 +41,7 @@ const (
 	// serverInstructions rides the initialize result. OpenAI's submission
 	// scan imports it and Anthropic reviewers read it — keep it accurate:
 	// the surface is a read-mostly tool catalog over the user's account.
-	serverInstructions = "JapaConnect exposes read tools over published content, " +
+	serverInstructionsText = "exposes read tools over published content, " +
 		"spaces, visa and scholarship guides, scam alerts, and feeds, plus the " +
 		"search/fetch deep-research aliases. Write tools appear only for " +
 		"callers whose credentials allow them."
@@ -53,6 +54,12 @@ const (
 // hosted connectors (which request e.g. 2025-06-18) still get a usable
 // session over our stateless subset.
 var supportedClientVersions = []string{protocolVersion, "2025-03-26", "2025-06-18", "2025-11-25"}
+
+// serverTitle resolves the configured brand name (general.site_name →
+// cfg.SiteName) for the MCP initialize result. Falls back to brand.Default.
+func serverTitle() string { return brand.Get() }
+
+func serverInstructions() string { return serverTitle() + " " + serverInstructionsText }
 
 const latestProtocolVersion = "2025-11-25"
 
@@ -526,10 +533,10 @@ func (s *Server) handleInitialize(ctx context.Context, req *jsonRPCRequest) (*js
 		},
 		ServerInfo: serverInfo{
 			Name:    serverName,
-			Title:   serverTitle,
+			Title:   serverTitle(),
 			Version: serverVersion,
 		},
-		Instructions: serverInstructions,
+		Instructions: serverInstructions(),
 	}
 
 	return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, false

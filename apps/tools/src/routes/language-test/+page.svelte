@@ -58,7 +58,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('language_test.seo_title', 'Language Test Hub — JapaConnect Tools'),
+			title: t('language_test.seo_title', 'Language Test Hub — {site} Tools'),
 			description: t(
 				'language_test.seo_description',
 				'Find required language tests for your visa, minimum scores, prep resources, and community score stories.'

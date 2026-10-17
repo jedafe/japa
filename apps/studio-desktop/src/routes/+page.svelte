@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { onMount } from 'svelte';
 	import {
 		RefreshCw,
@@ -560,7 +561,7 @@
 	<header class="mb-6 flex items-center justify-between gap-4">
 		<div>
 			<h1 class="text-2xl font-bold">Content Queue</h1>
-			<p class="text-sm text-muted-foreground">Review, edit, preview, and publish JapaConnect content.</p>
+			<p class="text-sm text-muted-foreground">Review, edit, preview, and publish {siteName()} content.</p>
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
 			<button
@@ -831,7 +832,7 @@
 							<th class="px-4 py-2 text-left font-medium">Persona</th>
 						{/if}
 						<th class="px-4 py-2 text-left font-medium">Local status</th>
-						<th class="px-4 py-2 text-left font-medium">JapaConnect status</th>
+						<th class="px-4 py-2 text-left font-medium">{siteName()} status</th>
 						<th
 							class="cursor-pointer px-4 py-2 text-left font-medium"
 							onclick={() => setSort('modified')}

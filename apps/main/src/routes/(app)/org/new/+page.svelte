@@ -52,9 +52,9 @@
 		return (data.countries ?? []).find((c) => c.geo_code === id)?.name ?? id;
 	}
 
-	const pageTitle = $derived(t('organizations.new.title', 'New organization — JapaConnect'));
+	const pageTitle = $derived(t('organizations.new.title', 'New organization — {site}'));
 	const pageDescription = $derived(
-		t('organizations.new.description', 'Create a new organization on JapaConnect.')
+		t('organizations.new.description', 'Create a new organization on {site}.')
 	);
 
 	const inputClass =
@@ -99,7 +99,7 @@
 			<Building2 size={20} /> {t('organizations.new.heading', 'New organization')}
 		</h1>
 		<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-			{t('organizations.new.subtitle', 'Create a new organization on JapaConnect.')}
+			{t('organizations.new.subtitle', 'Create a new organization on {site}.')}
 		</p>
 	</div>
 

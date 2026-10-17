@@ -93,7 +93,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('forum.new.title', 'New discussion — JapaConnect')}</title>
+	<title>{t('forum.new.title', 'New discussion — {site}')}</title>
 	<meta name="description" content={t('forum.new.description', 'Start a new discussion in the community.')} />
 	<meta property="og:title" content={t('forum.new.title', 'New discussion')} />
 	<meta property="og:type" content="website" />

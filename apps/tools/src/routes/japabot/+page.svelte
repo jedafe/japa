@@ -17,10 +17,10 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('japabot.seo_title', 'JapaBot — Your AI Japa Guide | JapaConnect Tools'),
+			title: t('japabot.seo_title', 'JapaBot — Your AI Japa Guide | {site} Tools'),
 			description: t(
 				'japabot.seo_description',
-				'Chat with JapaBot — answers grounded in JapaConnect\'s published guides, forum threads, and community knowledge via RAG.'
+				'Chat with JapaBot — answers grounded in {site}\'s published guides, forum threads, and community knowledge via RAG.'
 			),
 			path: '/japabot',
 			origin: page.url.origin,
@@ -54,7 +54,7 @@
 				</div>
 				<h2 class="text-xl font-semibold text-text">{t('japabot.title', 'JapaBot')}</h2>
 				<p class="mt-2 text-sm text-text-subtle">
-					{t('japabot.subtitle', "Your AI guide for the japa journey. Ask about visas, scholarships, cost of living, and more — answers are grounded in JapaConnect's published content.")}
+					{t('japabot.subtitle', "Your AI guide for the japa journey. Ask about visas, scholarships, cost of living, and more — answers are grounded in {site}'s published content.")}
 				</p>
 				<div class="mt-5 flex flex-col gap-2">
 					<a

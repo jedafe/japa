@@ -23,7 +23,7 @@
 
 <svelte:head>
 	<title>{t('pages_list.title', 'Pages')}</title>
-	<meta name="description" content={t('pages_list.description', 'Browse all published pages on JapaConnect.')} />
+	<meta name="description" content={t('pages_list.description', 'Browse all published pages on {site}.')} />
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-4 py-6">

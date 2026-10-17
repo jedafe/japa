@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /media — migrated to the EntityPage scaffold.
 	// Moderation entity: read-only list (no create from EntityPage) with state actions
 	// (approve/reject/quarantine) and a page-local upload button + modal preserved from the legacy page.
@@ -947,7 +948,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.media.page_title', 'Media Library')} — JapaConnect Admin</title>
+	<title>{t('app.media.page_title', 'Media Library')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

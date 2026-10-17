@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /onboarding/templates — Onboarding template CRUD (Section 09).
 	// Templates are configurable onboarding step sequences stored as jsonb.
 	// The backend exposes GET/POST/PATCH/DELETE under /admin/onboarding/templates
@@ -199,7 +200,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('onboarding.templates.title', 'Onboarding Templates')} — JapaConnect Admin</title>
+	<title>{t('onboarding.templates.title', 'Onboarding Templates')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

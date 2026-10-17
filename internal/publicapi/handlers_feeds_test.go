@@ -684,7 +684,7 @@ func newMarkdownHandlers(t *testing.T, canonical *string) (*Handlers, pgtype.UUI
 }
 
 func TestGetContentMarkdown(t *testing.T) {
-	canonical := "https://japaconnect.com/content/hello-world"
+	canonical := "https://japa.to/content/hello-world"
 	h, contentID := newMarkdownHandlers(t, &canonical)
 
 	rec := httptest.NewRecorder()

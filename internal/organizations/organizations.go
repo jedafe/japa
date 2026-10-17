@@ -7,6 +7,7 @@
 package organizations
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"strconv"
 	"context"
 	"crypto/sha256"
@@ -193,7 +194,7 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 		acceptURL = s.siteURL + acceptPath
 	}
 
-	subject := fmt.Sprintf("You've been invited to join %s on JapaConnect", orgName)
+	subject := fmt.Sprintf("You've been invited to join %s on %s", orgName, brand.Get())
 	body := fmt.Sprintf(
 		"You have been invited to join %s as a %s.\n\n"+
 			"To accept this invitation, click the link below:\n"+

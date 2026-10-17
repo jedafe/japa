@@ -460,7 +460,7 @@ func TestMiddlewareOriginCheckRejectsForeignOrigin(t *testing.T) {
 	t.Parallel()
 
 	called := false
-	allowed := func(origin string) bool { return origin == "https://japaconnect.com" }
+	allowed := func(origin string) bool { return origin == "https://japa.to" }
 	handler := Middleware([]string{"/control/"}, nil, WithOriginCheck(allowed))(okHandler(&called))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, testPath, nil)
@@ -486,13 +486,13 @@ func TestMiddlewareOriginCheckAcceptsAllowedOrigin(t *testing.T) {
 	t.Parallel()
 
 	called := false
-	allowed := func(origin string) bool { return origin == "https://japaconnect.com" }
+	allowed := func(origin string) bool { return origin == "https://japa.to" }
 	handler := Middleware([]string{"/control/"}, nil, WithOriginCheck(allowed))(okHandler(&called))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, testPath, nil)
 	req.AddCookie(&http.Cookie{Name: CookieName, Value: "matching-token"})
 	req.Header.Set(HeaderName, "matching-token")
-	req.Header.Set("Origin", "https://japaconnect.com")
+	req.Header.Set("Origin", "https://japa.to")
 
 	handler.ServeHTTP(rec, req)
 
@@ -565,7 +565,7 @@ func TestMiddlewareOriginCheckForeignOriginNoCookie(t *testing.T) {
 	t.Parallel()
 
 	called := false
-	allowed := func(origin string) bool { return origin == "https://japaconnect.com" }
+	allowed := func(origin string) bool { return origin == "https://japa.to" }
 	handler := Middleware([]string{"/control/"}, nil, WithOriginCheck(allowed))(okHandler(&called))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, testPath, nil)

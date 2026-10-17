@@ -1,6 +1,6 @@
 ---
 name: jc-academy-refactor
-description: [Academy app, academy.japaconnect.com] Unified shell adapted for Academy (ADR-060), lesson-player exception, LayerChart 2.0.1. Use when updating or refactoring existing JapaConnect Academy app code (apps/academy). Moves progress fetching out of SSR, modernizes lesson navigation to $derived, migrates charts to LayerChart.
+description: [Academy app, academy.japa.to] Unified shell adapted for Academy (ADR-060), lesson-player exception, LayerChart 2.0.1. Use when updating or refactoring existing JapaConnect Academy app code (apps/academy). Moves progress fetching out of SSR, modernizes lesson navigation to $derived, migrates charts to LayerChart.
 ---
 
 # JapaConnect Academy — Updating & Refactoring Skill
@@ -73,4 +73,4 @@ Apply `jc-main-refactor` §§1–2, 4–5 (Svelte 4→5, Bits UI, Rule 16, skele
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

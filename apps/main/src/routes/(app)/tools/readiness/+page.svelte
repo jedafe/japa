@@ -42,7 +42,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('tools.readiness', 'Readiness Assessment — JapaConnect'));
+	const title = $derived(t('tools.readiness', 'Readiness Assessment — {site}'));
 	const description = $derived(
 		t('tools.readiness_desc', 'Score your japa readiness across key dimensions.')
 	);

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /academy/categories — migrated to the EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { academyAdminApi } from '$lib/api';
@@ -131,7 +132,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('academy.categories_title', 'Academy Track Categories')} — JapaConnect Admin</title>
+	<title>{t('academy.categories_title', 'Academy Track Categories')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

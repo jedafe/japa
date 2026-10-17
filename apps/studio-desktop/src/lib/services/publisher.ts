@@ -1,5 +1,5 @@
 /**
- * Publish or synchronise a Markdown file to JapaConnect.
+ * Publish or synchronise a Markdown file to ${siteName()}.
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
@@ -16,6 +16,7 @@ import { writable } from 'svelte/store';
 import { readTextFile, stat } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
 
+import { siteName } from '$lib/stores/site.svelte';
 export interface PublishInput {
 	relativePath: string;
 	frontmatter: Record<string, unknown>;
@@ -338,7 +339,7 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 		const personas = await fetchPersonas(settings);
 		const newAuthorId = resolvePersonaUserId(personas, personaId);
 		if (!newAuthorId) {
-			const msg = `Could not resolve persona "${personaId}" to a JapaConnect user.`;
+			const msg = `Could not resolve persona "${personaId}" to a ${siteName()} user.`;
 			await syncLogStore.append({
 				relativePath: input.relativePath,
 				action: 'failed',

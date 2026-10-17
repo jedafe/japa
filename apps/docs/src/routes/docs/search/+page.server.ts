@@ -3,7 +3,7 @@ import { apiContext, apiGet } from '$lib/server/api';
 import { buildMeta } from '$lib/seo/meta';
 import type { DocSearchResult, DocAudience } from '$lib/types';
 
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 
 /**
  * Server-side search results page (the ⌘K palette is the in-app search; this
@@ -11,6 +11,7 @@ import { tServer } from '$lib/i18n/dict';
  * Queries /docs/search?q=&audience=&limit= (ADR-060 — audience-filtered search).
  */
 export const load: PageServerLoad = async (event) => {
+	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	const q = (event.url.searchParams.get('q') ?? '').trim();
 	const rawAudience = (event.url.searchParams.get('audience') ?? '').trim() as DocAudience;
 	// An unrecognized audience param is ignored for the API call and dropped
@@ -37,11 +38,11 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const locale = event.locals.locale;
-	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
+	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
 	const title = q
-		? `${tServer(locale, 'search.results_for', 'Results for "{q}"', { q })} · ${appName}`
-		: `${tServer(locale, 'search.title', 'Search docs')} · ${appName}`;
-	const description = tServer(locale, 'search.placeholder', 'Search the documentation…');
+		? `${tServer(locale, 'search.results_for', 'Results for "{q}"', { q }, site)} · ${appName}`
+		: `${tServer(locale, 'search.title', 'Search docs', undefined, site)} · ${appName}`;
+	const description = tServer(locale, 'search.placeholder', 'Search the documentation…', undefined, site);
 
 	const meta = buildMeta({
 		title,

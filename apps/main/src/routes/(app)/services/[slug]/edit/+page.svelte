@@ -30,7 +30,7 @@
 
 	const svc = $derived(data.service);
 
-	const pageTitle = $derived(t('services.edit_title', 'Edit Service — JapaConnect'));
+	const pageTitle = $derived(t('services.edit_title', 'Edit Service — {site}'));
 	const pageDescription = $derived(
 		t('services.edit_description', 'Update your service listing.')
 	);
@@ -253,7 +253,7 @@
 		// backend rejects blank titles/labels (invalid_selling_point /
 		// invalid_included / invalid_fact).
 		if (sellingPoints.some((p) => !p.title.trim())) {
-			errorMsg = t('services.errors.point_title_required', 'Every selling point needs a title');
+			errorMsg = t('services.errors.selling_point_title_required', 'Every selling point needs a title');
 			return false;
 		}
 		if (included.some((p) => !p.title.trim())) {
@@ -261,7 +261,7 @@
 			return false;
 		}
 		if (facts.some((f) => !f.label.trim() || !f.value.trim())) {
-			errorMsg = t('services.errors.fact_required', 'Every fact needs a label and a value');
+			errorMsg = t('services.errors.fact_label_value_required', 'Every fact needs a label and a value');
 			return false;
 		}
 		// Booking/pricing rules apply to every listing kind (§114

@@ -18,7 +18,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('pricing.title', 'Pricing — JapaConnect')}</title>
+	<title>{t('pricing.title', 'Pricing — {site}')}</title>
 	<meta name="description" content={t('pricing.description', 'Choose the plan that fits your journey.')} />
 </svelte:head>
 

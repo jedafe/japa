@@ -6,6 +6,7 @@
 package digest
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
@@ -539,7 +540,7 @@ func (s *Service) resolveBaseURL(ctx context.Context) string {
 
 // emailSubject resolves the site name for the digest email subject line.
 func (s *Service) emailSubject(ctx context.Context) string {
-	name := "JapaConnect"
+	name := brand.Get()
 
 	if s.settings != nil {
 		if v := s.settings.GetStringOr(ctx, "site.name", ""); v != "" {

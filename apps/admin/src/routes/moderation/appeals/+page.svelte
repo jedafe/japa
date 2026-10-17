@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /moderation/appeals — migrated to the EntityPage scaffold; read-only list with
 	// state actions (uphold / overturn / dismiss) via page-local confirm Modals.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -219,7 +220,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('moderation.appeals', 'Appeals')} — JapaConnect Admin</title>
+	<title>{t('moderation.appeals', 'Appeals')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

@@ -301,7 +301,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.story.review_queue_page_title', 'Story Wall Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.story.review_queue_page_title', 'Story Wall Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

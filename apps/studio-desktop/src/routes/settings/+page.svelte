@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { onMount } from 'svelte';
 	import { Save, FolderOpen, TestTube, Loader2, Check, AlertCircle, Trash2 } from 'lucide-svelte';
 	import { promptStore } from '$lib/stores/prompt.svelte';
@@ -227,7 +228,7 @@
 <div class="flex h-full flex-col p-6">
 	<header class="mb-6">
 		<h1 class="text-2xl font-bold">Settings</h1>
-		<p class="text-sm text-muted-foreground">Configure the JapaConnect connection and watched project root.</p>
+		<p class="text-sm text-muted-foreground">Configure the {siteName()} connection and watched project root.</p>
 	</header>
 
 	<div class="max-w-2xl space-y-4 rounded-xl border border-border bg-card p-6">
@@ -270,11 +271,11 @@
 		</label>
 
 		<label class="block text-sm font-medium">
-			JapaConnect Base URL
+			{siteName()} Base URL
 			<input
 				type="url"
 				class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-				placeholder="https://api.japaconnect.com"
+				placeholder="https://api.japa.to"
 				value={settings.baseUrl}
 				oninput={(event) => update('baseUrl', (event.currentTarget as HTMLInputElement).value)}
 			/>

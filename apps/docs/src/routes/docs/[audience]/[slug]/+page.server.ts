@@ -4,7 +4,7 @@ import { loadDocPage, editorData, saveDocPageAction, reviewAction } from '$lib/s
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocAudience } from '$lib/types';
 import { AUDIENCE_LABEL_KEY } from '$lib/types';
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 
 /**
  * Single doc page: fetches the published page, renders TipTap JSON → HTML
@@ -16,6 +16,7 @@ import { tServer } from '$lib/i18n/dict';
  * lookup 404s — the page renders with a preview banner + noindex.
  */
 export const load: PageServerLoad = async (event) => {
+	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	const audience = event.params.audience as DocAudience;
 	const slug = event.params.slug;
 
@@ -31,13 +32,14 @@ export const load: PageServerLoad = async (event) => {
 	const { page, html, toc, preview, feedback, editHtml } = await loadDocPage(event, audience, slug);
 
 	const locale = event.locals.locale;
-	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
+	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
 	const title = `${page.title} · ${appName}`;
 	const description = tServer(
 		locale,
 		'page.doc_description',
-		'JapaConnect documentation — {title}.',
-		{ title: page.title }
+		'{site} documentation — {title}.',
+		{ title: page.title },
+		site
 	);
 
 	const meta = buildMeta({
@@ -47,7 +49,8 @@ export const load: PageServerLoad = async (event) => {
 		jsonLd: preview
 			? undefined
 			: techArticleLd({
-					headline: page.title,
+				siteName: site,
+				headline: page.title,
 					dateModified: page.updated_at,
 					url: `${DOCS_ORIGIN}/docs/${audience}/${slug}`,
 					description

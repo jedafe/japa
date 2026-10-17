@@ -15,7 +15,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('newsletter.unsubscribe_title', 'Unsubscribe — JapaConnect')}</title>
+	<title>{t('newsletter.unsubscribe_title', 'Unsubscribe — {site}')}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

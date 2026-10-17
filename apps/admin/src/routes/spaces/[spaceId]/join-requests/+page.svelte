@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -105,7 +106,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('joinRequests.title')} — JapaConnect Admin</title>
+	<title>{t('joinRequests.title')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

@@ -1,6 +1,6 @@
 ---
 name: jc-academy-audit
-description: [Academy app, academy.japaconnect.com] Unified shell adapted for Academy (ADR-060), lesson-player exception, LayerChart 2.0.1. Use when performing a comprehensive quality audit of the JapaConnect Academy app (apps/academy) before merge or release. Verifies the SSR/CSR progress boundary, API route consumption, LayerChart, SEO structured data, and standard compliance.
+description: [Academy app, academy.japa.to] Unified shell adapted for Academy (ADR-060), lesson-player exception, LayerChart 2.0.1. Use when performing a comprehensive quality audit of the JapaConnect Academy app (apps/academy) before merge or release. Verifies the SSR/CSR progress boundary, API route consumption, LayerChart, SEO structured data, and standard compliance.
 ---
 
 # JapaConnect Academy — Audit Skill
@@ -27,7 +27,7 @@ Every `fetch()`/`load()` route confirmed against JEOS catalog or live probe. Unc
 Learner dashboard / instructor analytics use LayerChart exclusively · `var(--color-*)` · fixed heights · skeletons · session-guarded data.
 
 ## F. SEO
-Per route: `/courses` ItemList · `/courses/[slug]` Course JSON-LD · lesson pages LearningResource JSON-LD · all canonicals → `academy.japaconnect.com` · titles + descriptions present.
+Per route: `/courses` ItemList · `/courses/[slug]` Course JSON-LD · lesson pages LearningResource JSON-LD · all canonicals → `academy.japa.to` · titles + descriptions present.
 
 ## G. Performance
 Lesson HTML SSR'd · highlight lib dynamically imported · lazy media · accordion renders only open sections.
@@ -79,4 +79,4 @@ Same structure as `jc-main-audit` with categories: SSR/CSR boundary · API route
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

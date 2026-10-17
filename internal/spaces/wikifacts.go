@@ -90,7 +90,7 @@ func universitySeedData() map[string]universitySeedEntry {
 	uniSeedOnce.Do(func() {
 		uniSeedIndex = map[string]universitySeedEntry{}
 		for _, path := range []string{"db/seed/universities.json", "../db/seed/universities.json", "../../db/seed/universities.json"} {
-			raw, err := os.ReadFile(path)
+			raw, err := os.ReadFile(path) // #nosec G304 -- path is a fixed internal seed-data candidate
 			if err != nil {
 				continue
 			}

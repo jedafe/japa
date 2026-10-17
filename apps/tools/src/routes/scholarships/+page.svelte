@@ -14,7 +14,7 @@
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { Scholarship, SavedScholarship, ScholarshipStatus, GeoSpaceOption, CatalogOption } from '$lib/types';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 
 	/**
 	 * Scholarship Finder tool — §73, ADR-073.
@@ -55,7 +55,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('scholarships.seo_title', 'Scholarship Finder — JapaConnect Tools'),
+			title: t('scholarships.seo_title', 'Scholarship Finder — {site} Tools'),
 			description: t(
 				'scholarships.seo_description',
 				'Filter scholarships by country, level of study, award amount, and deadline. Save scholarships to your tracker and get deadline reminders.'
@@ -66,7 +66,7 @@
 			jsonLd: {
 				'@context': 'https://schema.org',
 				'@type': 'EducationalOccupationalProgram',
-				name: 'JapaConnect Scholarship Finder',
+				name: `${siteName()} Scholarship Finder`,
 				description: 'Find scholarships for studying abroad.'
 			}
 		})

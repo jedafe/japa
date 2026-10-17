@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (TOTP login challenge)
 	// Completes the second factor of a 2FA login for the admin panel. The login
 	// page stashes the challenge token + email in the challenge store and
@@ -122,7 +123,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('auth.totp.title', 'Two-Factor Authentication')} — JapaConnect Admin</title>
+	<title>{t('auth.totp.title', 'Two-Factor Authentication')} — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">

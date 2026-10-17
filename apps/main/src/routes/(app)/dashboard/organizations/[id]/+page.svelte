@@ -538,7 +538,7 @@
 			{t('org_admin.add_member_section', 'Add member')}
 		</h2>
 		<p class="text-xs text-[var(--color-muted)]">
-			{t('org_admin.add_member_hint', 'Add an existing JapaConnect user directly by username.')}
+			{t('org_admin.add_member_hint', 'Add an existing {site} user directly by username.')}
 		</p>
 		{#if addErrorKey}
 			<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{t(addErrorKey)}</p>

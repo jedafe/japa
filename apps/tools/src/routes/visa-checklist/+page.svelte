@@ -80,7 +80,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('checklist.seo_title', 'Visa Document Checklist — JapaConnect Tools'),
+			title: t('checklist.seo_title', 'Visa Document Checklist — {site} Tools'),
 			description:
 				t('checklist.seo_description', 'Select your origin, destination, and visa type to get a personalized, checkable document list with progress tracking.'),
 			path: '/visa-checklist',

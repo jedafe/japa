@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /gamification — migrated to the EntityPage scaffold.
 	// Two tabs: Badges (full CRUD + award) and Challenges (full CRUD).
 	// Rich forms (ActivityKeyAutocomplete) use the formSnippet escape hatch.
@@ -474,7 +475,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('gamification.title', 'Gamification')} — JapaConnect Admin</title>
+	<title>{t('gamification.title', 'Gamification')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

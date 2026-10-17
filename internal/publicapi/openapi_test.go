@@ -6,7 +6,7 @@ import (
 )
 
 func TestGetPublicOpenAPISpec(t *testing.T) {
-	spec := GetPublicOpenAPISpec("https://japaconnect.com", "JapaConnect")
+	spec := GetPublicOpenAPISpec("https://japa.to", "JapaConnect")
 
 	if got, want := spec["openapi"], "3.0.3"; got != want {
 		t.Fatalf("openapi version = %q, want %q", got, want)
@@ -125,7 +125,7 @@ func TestGetPublicOpenAPISpec(t *testing.T) {
 }
 
 func TestGetPublicOpenAPISpecServerURLs(t *testing.T) {
-	spec := GetPublicOpenAPISpec("https://japaconnect.com", "JapaConnect")
+	spec := GetPublicOpenAPISpec("https://japa.to", "JapaConnect")
 
 	servers, ok := spec["servers"].([]any)
 	if !ok || len(servers) == 0 {
@@ -137,8 +137,8 @@ func TestGetPublicOpenAPISpecServerURLs(t *testing.T) {
 		t.Fatal("first server is not a map")
 	}
 
-	if first["url"] != "https://japaconnect.com/api/v1" {
-		t.Fatalf("production server url = %q, want %q", first["url"], "https://japaconnect.com/api/v1")
+	if first["url"] != "https://japa.to/api/v1" {
+		t.Fatalf("production server url = %q, want %q", first["url"], "https://japa.to/api/v1")
 	}
 }
 

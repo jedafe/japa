@@ -4,7 +4,7 @@
 	// My Japa Stage. Server-preloaded via GET /me/japa-stage; updates go through
 	// the browser API client to PATCH /me/japa-stage (auth). Shows the current
 	// stage, a visual stepper of the 7-stage progression, and stage history.
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
@@ -131,7 +131,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('japa_stage.my_stage_title', 'My Japa Stage')} — JapaConnect</title>
+	<title>{t('japa_stage.my_stage_title', 'My Japa Stage')} — {siteName()}</title>
 	<meta name="description" content={t('japa_stage.my_stage_desc', 'Track and share your japa journey stage.')} />
 </svelte:head>
 

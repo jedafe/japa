@@ -53,7 +53,7 @@
 				class="mb-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-semibold text-[var(--color-primary)]"
 			>
 				<Sparkles size={13} />
-				{t('services.hero_eyebrow', 'JapaConnect Services Marketplace')}
+				{t('services.hero_eyebrow', '{site} Services Marketplace')}
 			</span>
 			<h1 class="text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl">
 				{t('services.hero_title', 'Every service for your journey abroad, in one place')}

@@ -9,7 +9,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('tools.visa_checklist', 'Visa Checklist — JapaConnect'));
+	const title = $derived(t('tools.visa_checklist', 'Visa Checklist — {site}'));
 	const description = $derived(
 		t('tools.visa_checklist_desc', 'Build a document checklist for your visa route.')
 	);

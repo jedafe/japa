@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { page } from '$app/state';
 	import { api, formsAdminApi } from '$lib/api';
 	import { Modal } from '$lib/components/ui/modal';
@@ -104,7 +105,7 @@
 </script>
 
 <svelte:head>
-	<title>Space Forms — JapaConnect Admin</title>
+	<title>Space Forms — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

@@ -211,6 +211,18 @@ export function buildThemeOverrides(settings: ThemeSettings | null | undefined):
 	const base = headingRules(hScale, hWeight);
 	if (base) out.push(base);
 
+	// Heading font family — 'inherit' (or unset) follows the body font.
+	// --font-heading is exposed as a token so elements with an inline
+	// font-family (e.g. article titles, serif by design) opt in via
+	// var(--font-heading, var(--font-serif)) fallback chains.
+	const hFont = FONT_STACKS[str(settings, 'appearance.heading_font_family')];
+	if (hFont) {
+		out.push(`html:root { --font-heading: ${hFont}; }`);
+		out.push(
+			`${HEADING_SELECTORS.map((t) => `html:root ${t}`).join(', ')} { font-family: var(--font-heading); }`
+		);
+	}
+
 	for (const [suffix, query] of [
 		['tablet', '1024px'],
 		['mobile', '640px']

@@ -187,7 +187,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.cv_formatter_page_title', 'CV Formatter Standards — JapaConnect Admin')}</title>
+	<title>{t('app.tools.cv_formatter_page_title', 'CV Formatter Standards — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

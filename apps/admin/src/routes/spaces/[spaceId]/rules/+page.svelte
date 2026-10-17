@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /spaces/[spaceId]/rules — migrated to shared components (ActionMenu,
 	// SlideOver, shared Modal). Reorder arrows stay as a componentSnippet
 	// (inline up/down UI that doesn't fit the ⋮ dropdown). Create/edit open
@@ -217,7 +218,7 @@
 {/snippet}
 
 <svelte:head>
-	<title>Space Rules — JapaConnect Admin</title>
+	<title>Space Rules — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

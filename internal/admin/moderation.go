@@ -2002,16 +2002,18 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	limit := int32(50)
 
 	if v := r.URL.Query().Get("page_size"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= 200 {
-			limit = int32(parsed) //nolint:gosec // G115: bounded by 200 check
+		// ParseInt with bitSize 32 rejects out-of-range values — the int32
+		// conversion below cannot overflow (gosec G109/G115).
+		if parsed, err := strconv.ParseInt(v, 10, 32); err == nil && parsed > 0 && parsed <= 200 {
+			limit = int32(parsed)
 		}
 	}
 
 	var offset int32
 
 	if v := r.URL.Query().Get("page_offset"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
-			offset = int32(parsed) //nolint:gosec // G115: bounded above
+		if parsed, err := strconv.ParseInt(v, 10, 32); err == nil && parsed >= 0 {
+			offset = int32(parsed)
 		}
 	}
 

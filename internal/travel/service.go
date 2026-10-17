@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -1227,9 +1228,9 @@ func (s *Service) HotelDirectory(ctx context.Context, city, q string, minStars, 
 	filter := gen.ListTravelHotelsParams{
 		CityKey:  cityKey,
 		NameQ:    nameQ,
-		MinStars: int32(minStars),
-		Off:      int32((page - 1) * pageSize),
-		Lim:      int32(pageSize),
+		MinStars: toInt32(int64(minStars)),
+		Off:      toInt32(int64(page-1) * int64(pageSize)),
+		Lim:      toInt32(int64(pageSize)),
 	}
 
 	rows, err := s.store.ListTravelHotels(ctx, filter)
@@ -1240,7 +1241,7 @@ func (s *Service) HotelDirectory(ctx context.Context, city, q string, minStars, 
 	total, err := s.store.CountTravelHotels(ctx, gen.CountTravelHotelsParams{
 		CityKey:  cityKey,
 		NameQ:    nameQ,
-		MinStars: int32(minStars),
+		MinStars: toInt32(int64(minStars)),
 	})
 	if err != nil {
 		return nil, 0, err
@@ -1376,8 +1377,8 @@ func (s *Service) AirlineDirectory(ctx context.Context, q, country, providerSlug
 		Q:            query,
 		Country:      countryFilter,
 		ProviderSlug: providerFilter,
-		Off:          int32((page - 1) * pageSize),
-		Lim:          int32(pageSize),
+		Off:          toInt32(int64(page-1) * int64(pageSize)),
+		Lim:          toInt32(int64(pageSize)),
 	}
 
 	rows, err := s.store.ListTravelAirlines(ctx, filter)
@@ -1610,8 +1611,8 @@ func (s *Service) persistFlightOffers(ctx context.Context, provider gen.TravelPr
 			RouteKey:     flightRouteKey(params),
 			DepartDate:   pgtype.Date{Time: departDate, Valid: true},
 			ReturnDate:   returnDate,
-			Adults:       int16(params.Adults),
-			Children:     int16(params.Children),
+			Adults:       toInt16(params.Adults),
+			Children:     toInt16(params.Children),
 			CabinClass:   strings.ToLower(strings.TrimSpace(params.CabinClass)),
 			OfferKey:     flightOfferKey(*r, coverageKey),
 			Price:        floatToNumeric(r.Price),
@@ -1638,7 +1639,7 @@ func (s *Service) persistFlightOffers(ctx context.Context, provider gen.TravelPr
 		CoverageKey: coverageKey,
 		ProviderID:  provider.ID,
 		ExpiresAt:   pgtype.Timestamptz{Time: expires, Valid: true},
-		OfferCount:  int32(len(results)),
+		OfferCount:  toInt32(int64(len(results))),
 	}); err != nil {
 		slog.Warn("travel: upsert coverage failed", "error", err)
 	}
@@ -1661,8 +1662,8 @@ func (s *Service) persistHotelOffers(ctx context.Context, provider gen.TravelPro
 			CityKey:    cityKey,
 			Checkin:    pgtype.Date{Time: checkin, Valid: true},
 			Checkout:   pgtype.Date{Time: checkout, Valid: true},
-			Guests:     int16(params.Guests),
-			Rooms:      int16(params.Rooms),
+			Guests:     toInt16(params.Guests),
+			Rooms:      toInt16(params.Rooms),
 			OfferKey:   hotelOfferKey(r, coverageKey),
 			Name:       r.Name,
 			Price:      floatToNumeric(r.Price),
@@ -1687,7 +1688,7 @@ func (s *Service) persistHotelOffers(ctx context.Context, provider gen.TravelPro
 		CoverageKey: coverageKey,
 		ProviderID:  provider.ID,
 		ExpiresAt:   pgtype.Timestamptz{Time: expires, Valid: true},
-		OfferCount:  int32(len(results)),
+		OfferCount:  toInt32(int64(len(results))),
 	}); err != nil {
 		slog.Warn("travel: upsert coverage failed", "error", err)
 	}
@@ -1719,8 +1720,8 @@ func (s *Service) inventoryFlights(ctx context.Context, provider gen.TravelProvi
 		RouteKey:       flightRouteKey(params),
 		DepartDate:     pgtype.Date{Time: departDate, Valid: true},
 		ReturnDate:     returnDate,
-		Adults:         int16(params.Adults),
-		Children:       int16(params.Children),
+		Adults:         toInt16(params.Adults),
+		Children:       toInt16(params.Children),
 		CabinClass:     strings.ToLower(strings.TrimSpace(params.CabinClass)),
 		IncludeExpired: includeExpired,
 	})
@@ -1753,8 +1754,8 @@ func (s *Service) inventoryHotels(ctx context.Context, provider gen.TravelProvid
 		CityKey:        hotelCityKey(params),
 		Checkin:        pgtype.Date{Time: checkin, Valid: true},
 		Checkout:       pgtype.Date{Time: checkout, Valid: true},
-		Guests:         int16(params.Guests),
-		Rooms:          int16(params.Rooms),
+		Guests:         toInt16(params.Guests),
+		Rooms:          toInt16(params.Rooms),
 		IncludeExpired: includeExpired,
 	})
 	if err != nil || len(rows) == 0 {
@@ -2078,9 +2079,36 @@ func int16PtrOrNil(v int, keep bool) *int16 {
 		return nil
 	}
 
-	i := int16(v)
+	i := toInt16(v)
 
 	return &i
+}
+
+// toInt16 clamps v to the int16 range so request-derived or provider-derived
+// counts can never wrap negative on conversion (gosec G109/G115).
+func toInt16(v int) int16 {
+	if v > math.MaxInt16 {
+		return math.MaxInt16
+	}
+
+	if v < math.MinInt16 {
+		return math.MinInt16
+	}
+
+	return int16(v)
+}
+
+// toInt32 clamps v to the int32 range (gosec G109/G115).
+func toInt32(v int64) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+
+	return int32(v)
 }
 
 // tsFromString parses an RFC3339-ish timestamp into a nullable timestamptz.

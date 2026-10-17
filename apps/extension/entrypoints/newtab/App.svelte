@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { siteName, DEFAULT_SITE_NAME } from '../../lib/site';
 	import { ApiError, getDigest, getFeed } from '../../lib/api';
 	import { contentHref, siteUrl } from '../../lib/links';
 	import {
@@ -29,6 +30,7 @@
 	// §120 v1.4: "connected" is either an OAuth bearer session (primary) or
 	// a pasted extension API key (fallback).
 
+	let brand = $state(DEFAULT_SITE_NAME);
 	let credential = $state<Credential>(null);
 	let user = $state<OAuthUser | null>(null);
 	let digest = $state<Digest | null>(null);
@@ -150,6 +152,8 @@
 	}
 
 	onMount(async () => {
+		brand = await siteName();
+		document.title = brand;
 		credential = await getCredential();
 		if (credential?.kind === 'oauth') user = await getOAuthUser();
 		await refresh();
@@ -160,7 +164,7 @@
 	<header class="topbar">
 		<div class="brand">
 			<span class="brand-mark">J</span>
-			<span class="brand-name">JapaConnect</span>
+			<span class="brand-name">{brand}</span>
 		</div>
 		<div class="topbar-actions">
 			{#if stale}
@@ -196,7 +200,7 @@
 			<h1>Your migration feed, on every new tab</h1>
 			<p>
 				Visa updates, destination intel, scam alerts, and community activity for where you're
-				headed — personalized once you connect your JapaConnect account.
+				headed — personalized once you connect your {brand} account.
 			</p>
 			<button class="primary" onclick={() => (showSettings = true)}>Connect your account</button>
 		</section>

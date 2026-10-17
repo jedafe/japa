@@ -1,5 +1,5 @@
 -- 000032_doc_pages.sql
--- Documentation pages for the docs.japaconnect.com site.
+-- Documentation pages for the docs.japa.to site.
 
 CREATE TABLE doc_pages (
     id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),

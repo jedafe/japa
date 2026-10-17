@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -31,7 +31,7 @@
 		buildSeoMeta({
 			title: t(
 				'processing_tracker.aggregate_seo_title',
-				'{visa} visa processing time — {country} | JapaConnect Tools'
+				'{visa} visa processing time — {country} | {site} Tools'
 			)
 				.replace('{visa}', visaLabel)
 				.replace('{country}', country?.name ?? ''),
@@ -49,7 +49,7 @@
 				'@type': 'Dataset',
 				name: `${visaLabel} visa processing time — ${country?.name ?? ''}`,
 				description: `Crowd-sourced ${visaLabel} visa processing times for ${country?.name ?? ''}.`,
-				creator: { '@type': 'Organization', name: 'JapaConnect' }
+				creator: { '@type': 'Organization', name: siteName() }
 			}
 		})
 	);

@@ -1,13 +1,14 @@
+import { DEFAULT_SITE_NAME } from '$lib/brand';
 /**
  * SEO helpers for the Academy app.
- * Ref: ADR-060 (canonical URLs on academy.japaconnect.com), Rule 16 (no hardcoded
+ * Ref: ADR-060 (canonical URLs on academy.japa.to), Rule 16 (no hardcoded
  * data — these helpers shape API data, they don't replace it).
  */
 
 export interface SeoMeta {
 	title: string;
 	description?: string;
-	/** Canonical URL (academy.japaconnect.com/<path>). */
+	/** Canonical URL (academy.japa.to/<path>). */
 	canonicalPath?: string;
 	/** Open Graph image URL. */
 	ogImage?: string;
@@ -17,7 +18,7 @@ export interface SeoMeta {
 	noindex?: boolean;
 }
 
-const CANONICAL_ORIGIN = 'https://academy.japaconnect.com';
+const CANONICAL_ORIGIN = 'https://academy.japa.to';
 
 /** Build the absolute canonical URL for a path. */
 export function canonicalUrl(path: string): string {
@@ -30,14 +31,17 @@ export function canonicalUrl(path: string): string {
  * Build a Course JSON-LD object from a track detail.
  * Ref: ADR-060 (Track Detail — Course JSON-LD), schema.org/Course.
  */
-export function courseJsonLd(track: {
-	title: string;
-	description?: string | null;
-	instructor_name?: string | null;
-	instructor?: { displayName: string; username?: string } | null;
-	thumbnail_url?: string | null;
-}): unknown {
-	const instructorName = track.instructor?.displayName ?? track.instructor_name ?? 'JapaConnect';
+export function courseJsonLd(
+	track: {
+		title: string;
+		description?: string | null;
+		instructor_name?: string | null;
+		instructor?: { displayName: string; username?: string } | null;
+		thumbnail_url?: string | null;
+	},
+	siteName = DEFAULT_SITE_NAME
+): unknown {
+	const instructorName = track.instructor?.displayName ?? track.instructor_name ?? siteName;
 	return {
 		'@context': 'https://schema.org',
 		'@type': 'Course',
@@ -45,8 +49,8 @@ export function courseJsonLd(track: {
 		description: track.description ?? undefined,
 		provider: {
 			'@type': 'Organization',
-			name: 'JapaConnect',
-			sameAs: 'https://japaconnect.com'
+			name: siteName,
+			sameAs: 'https://japa.to'
 		},
 		author: {
 			'@type': 'Person',

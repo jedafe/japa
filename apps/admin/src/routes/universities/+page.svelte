@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
@@ -313,7 +314,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("universities.title", "Universities")} — JapaConnect Admin</title>
+	<title>{t("universities.title", "Universities")} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

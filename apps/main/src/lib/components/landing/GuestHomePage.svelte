@@ -213,11 +213,11 @@
 
 	const destinations = $derived(home.topDestinations.slice(0, 4));
 
-	const title = $derived(t('landing.home.title', 'JapaConnect — Work. Study. Live. Anywhere in the World.'));
+	const title = $derived(t('landing.home.title', '{site} — Work. Study. Thrive. Anywhere in the World.'));
 	const description = $derived(
 		t(
 			'landing.home.description',
-			'JapaConnect is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.'
+			'{site} is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.'
 		)
 	);
 </script>
@@ -240,13 +240,13 @@
 		<div class="guest-hero-content">
 			<span class="hero-eyebrow">{t('landing.home.eyebrow', 'Your Bridge to Global Opportunities')}</span>
 			<h1 class="hero-headline">
-				{t('landing.home.headline_prefix', 'Work. Study. Live.')}
+				{t('landing.home.headline_prefix', 'Work. Study. Thrive.')}
 				<span class="hero-headline-accent">{t('landing.home.headline_accent', 'Anywhere in the World.')}</span>
 			</h1>
 			<p class="hero-subhead">
 				{t(
 					'landing.home.subhead',
-					'JapaConnect is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.'
+					'{site} is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.'
 				)}
 			</p>
 			<div class="hero-actions">
@@ -636,7 +636,7 @@
 				<ul class="footer-col-list footer-col-contact">
 					<li>
 						<Mail size={16} />
-						<a href="mailto:support@japaconnect.com">support@japaconnect.com</a>
+						<a href="mailto:support@japa.to">support@japa.to</a>
 					</li>
 					<li>
 						<Phone size={16} />

@@ -8,7 +8,7 @@ import {
 	type DocsCategoryItem
 } from '$lib/docs/catalog';
 import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '$lib/seo/meta';
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 import type { DocAudience } from '$lib/types';
 import { AUDIENCE_LABEL_KEY } from '$lib/types';
 
@@ -27,6 +27,7 @@ export interface CategoryAudienceGroup {
  */
 export const load: PageServerLoad = async (event) => {
 	const data = await event.parent();
+	const site = (data.siteSettings?.['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME;
 	let category: DocsCategory | null = findCategory(data.nav, event.params.name);
 	if (!category) {
 		// Managed-catalog categories with no published pages yet still
@@ -80,12 +81,14 @@ export const load: PageServerLoad = async (event) => {
 		});
 
 	const locale = data.locale ?? event.locals.locale;
-	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
+	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
 	const title = `${category.name} · ${appName}`;
 	const description = tServer(
 		locale,
 		'categories.sub',
-		'Browse all documentation by category and sub-category.'
+		'Browse all documentation by category and sub-category.',
+		undefined,
+		site
 	);
 	const meta = buildMeta({
 		title,
@@ -93,7 +96,8 @@ export const load: PageServerLoad = async (event) => {
 		path: `/docs/category/${category.slug}`,
 		ogType: 'website',
 		jsonLd: collectionPageLd({
-			name: title,
+				siteName: site,
+				name: title,
 			url: `${DOCS_ORIGIN}/docs/category/${category.slug}`,
 			description
 		})

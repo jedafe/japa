@@ -41,7 +41,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('tax_calculator.seo_title', 'Tax Calculator — JapaConnect Tools'),
+			title: t('tax_calculator.seo_title', 'Tax Calculator — {site} Tools'),
 			description: t(
 				'tax_calculator.seo_description',
 				'Destination-specific tax guides — residency triggers, worldwide income rules, double taxation treaties, and checklists.'

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /page-builder — migrated to the EntityPage scaffold; CRUD list of pagebuilder blocks.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { pageBuilderAdminApiExtended, pageBuilderApi, apiRaw } from '$lib/api';
@@ -232,7 +233,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('pageBuilder.blocks_title', 'Blocks')} — JapaConnect Admin</title>
+	<title>{t('pageBuilder.blocks_title', 'Blocks')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

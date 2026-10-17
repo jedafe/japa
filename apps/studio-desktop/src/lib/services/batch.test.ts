@@ -148,6 +148,6 @@ describe('buildBatchPrompt', () => {
 		const prompt = buildBatchPrompt([{ title: 'Member post' }], settings, lookups);
 		expect(prompt).not.toContain('persona_id:');
 		expect(prompt).not.toContain('voice_id:');
-		expect(prompt).toContain('JapaConnect member writing under your own profile');
+		expect(prompt).toContain('Japa.to member writing under your own profile');
 	});
 });

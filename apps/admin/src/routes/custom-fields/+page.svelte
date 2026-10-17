@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /custom-fields — migrated to the EntityPage scaffold.
 	//
 	// The field-group list + group CRUD is driven declaratively by EntityPage.
@@ -625,7 +626,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('custom_fields.title', 'Custom Fields')} — JapaConnect Admin</title>
+	<title>{t('custom_fields.title', 'Custom Fields')} — {siteName()} Admin</title>
 </svelte:head>
 
 <EntityPage {config} bind:controller={entityController} />

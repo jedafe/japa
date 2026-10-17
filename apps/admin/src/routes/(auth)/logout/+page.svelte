@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { clearUser } from '$lib/stores/auth.svelte';
@@ -21,7 +22,7 @@
 </script>
 
 <svelte:head>
-	<title>Logging out... — JapaConnect Admin</title>
+	<title>Logging out... — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center">

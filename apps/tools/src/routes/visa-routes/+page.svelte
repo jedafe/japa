@@ -34,7 +34,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('visa_routes.seo_title', 'Visa Route Comparison — JapaConnect Tools'),
+			title: t('visa_routes.seo_title', 'Visa Route Comparison — {site} Tools'),
 			description: t(
 				'visa_routes.seo_description',
 				'Compare visa routes for your destination side by side — eligibility, fees, path to PR, and renewal terms.'

@@ -3,7 +3,7 @@
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -37,7 +37,7 @@
 		buildSeoMeta({
 			title: t(
 				'processing_tracker.seo_title',
-				'Visa Processing Time Tracker — JapaConnect Tools'
+				'Visa Processing Time Tracker — {site} Tools'
 			),
 			description: t(
 				'processing_tracker.seo_description',
@@ -51,7 +51,7 @@
 				'@type': 'Dataset',
 				name: 'Visa Processing Time Statistics',
 				description: 'Crowd-sourced visa processing times — average, median, and percentile wait times.',
-				creator: { '@type': 'Organization', name: 'JapaConnect' }
+				creator: { '@type': 'Organization', name: siteName() }
 			}
 		})
 	);

@@ -55,7 +55,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('attestation_guide.seo_title', 'Attestation Guide — JapaConnect Tools'),
+			title: t('attestation_guide.seo_title', 'Attestation Guide — {site} Tools'),
 			description: t(
 				'attestation_guide.seo_description',
 				'Step-by-step document attestation pathways — apostille requirements, steps, fees, and community-verified updates.'

@@ -16,7 +16,7 @@
 	let { data }: { data: PageData } = $props();
 
 	const basePath = '/messages/mentorship';
-	const title = $derived(t('messages.mentorship_title', 'Mentorship — JapaConnect'));
+	const title = $derived(t('messages.mentorship_title', 'Mentorship — {site}'));
 
 	const features = $derived((page.data.features ?? {}) as Record<string, boolean>);
 	const dmEnabled = $derived(!!features['feature.dm']);

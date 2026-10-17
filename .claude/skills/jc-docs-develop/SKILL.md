@@ -1,11 +1,11 @@
 ---
 name: jc-docs-develop
-description: Use when building new pages or components for the JapaConnect Docs app (apps/docs, port 3004, SSR, docs.japaconnect.com). Covers the unified app shell adapted for Docs (ADR-060) — nav-tree-as-left-nav, TOC-as-right-sidebar, audience gating, the API-reference code pane and full-width playground exception, Cmd+K search, and the API-Readiness Gate.
+description: Use when building new pages or components for the JapaConnect Docs app (apps/docs, port 3004, SSR, docs.japa.to). Covers the unified app shell adapted for Docs (ADR-060) — nav-tree-as-left-nav, TOC-as-right-sidebar, audience gating, the API-reference code pane and full-width playground exception, Cmd+K search, and the API-Readiness Gate.
 ---
 
 # JapaConnect Docs — Development Skill
 
-Developer + user documentation at `docs.japaconnect.com`. SSR (adapter-node + Bun). API base `/api/v1/docs/*`. **Layout is the unified app shell (ADR-058) adapted for Docs (ADR-060) — the left nav IS the doc nav tree, the right sidebar IS the in-page TOC.** Reading comfort 16–18px / 1.7, excellent code blocks.
+Developer + user documentation at `docs.japa.to`. SSR (adapter-node + Bun). API base `/api/v1/docs/*`. **Layout is the unified app shell (ADR-058) adapted for Docs (ADR-060) — the left nav IS the doc nav tree, the right sidebar IS the in-page TOC.** Reading comfort 16–18px / 1.7, excellent code blocks.
 
 ## ⛔ API-READINESS GATE
 Same as `jc-main-develop`: list endpoints → verify (catalog or probe) → any missing: STOP + ⚠️ MISSING BACKEND API ROUTES alert. Never mock, never hardcode the nav tree or page content. Known routes: `GET /docs/nav` (audience-filtered tree), `GET /docs/:audience/:slug` (page), `GET /docs/search?q=&audience=`, OpenAPI spec — verify each before use.
@@ -36,7 +36,7 @@ Never hide gated docs with client checks. The API returns 403; the page redirect
 - **Code blocks:** language badge · copy button (`code.textContent` → clipboard, `<Tooltip.Root>` "Copied") · highlighting post-render via dynamic import, browser-guarded.
 
 ## SEO
-Every page: title, description, canonical on `docs.japaconnect.com` · `TechArticle` JSON-LD (headline, dateModified, publisher) · landing: `WebSite` JSON-LD with SearchAction.
+Every page: title, description, canonical on `docs.japa.to` · `TechArticle` JSON-LD (headline, dateModified, publisher) · landing: `WebSite` JSON-LD with SearchAction.
 
 ## LayerChart (only where docs surface usage stats)
 If a page surfaces usage stats (endpoint volumes, popular pages), render with pinned `layerchart@2.0.1` — `BarChart` for top pages, `LineChart` for trends. Colors via `var(--chart-*)`, fixed heights, Gate-verified data, skeletons.
@@ -77,4 +77,4 @@ Identical base to `jc-main-develop`: Svelte 5 Runes, Bits UI dot-notation, Tailw
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

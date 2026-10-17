@@ -12,8 +12,8 @@ const siteOrigin = process.env.WXT_JC_SITE_URL ?? 'https://japa.to';
 export default defineConfig({
 	modules: ['@wxt-dev/module-svelte'],
 	manifest: {
-		name: 'JapaConnect',
-		short_name: 'JapaConnect',
+		name: 'Japa',
+		short_name: 'Japa',
 		description:
 			'Your migration feed — destination visa intel, safety alerts, and community activity on every new tab.',
 		// 'identity' powers the §120 "Login with JapaConnect" OAuth flow
@@ -23,7 +23,7 @@ export default defineConfig({
 		// No tabs/cookies permissions, no content scripts — the install
 		// prompt stays minimal and the surface stays read-only (V1).
 		browser_specific_settings: {
-			gecko: { id: 'newtab@japaconnect.com' },
+			gecko: { id: 'newtab@japa.to' },
 		},
 	},
 });

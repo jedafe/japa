@@ -5,6 +5,7 @@
 package ecaguide
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
@@ -616,7 +617,7 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 	}
 
 	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
-		SystemPrompt: "You are the JapaConnect Content Agent. Produce an ECA guide as " +
+		SystemPrompt: "You are the " + brand.Get() + " Content Agent. Produce an ECA guide as " +
 			"STRICT JSON (no markdown fences): " +
 			`{"purpose":"immigration|study|employment|professional_licensure",` +
 			`"pathway_steps":[{"step":1,"title":"...","detail":"...","duration":"..."}],` +

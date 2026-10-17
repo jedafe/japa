@@ -174,9 +174,9 @@
 		})
 	);
 
-	const title = $derived(t('tag.title', '#{name} — JapaConnect').replace('{name}', tag.name));
+	const title = $derived(t('tag.title', '#{name} — {site}').replace('{name}', tag.name));
 	const description = $derived(
-		t('tag.description', 'Content tagged with #{name} on JapaConnect.').replace('{name}', tag.name)
+		t('tag.description', 'Content tagged with #{name} on {site}.').replace('{name}', tag.name)
 	);
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.

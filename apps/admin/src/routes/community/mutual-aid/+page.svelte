@@ -186,7 +186,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.mutual_aid.review_queue_page_title', 'Mutual Aid Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.mutual_aid.review_queue_page_title', 'Mutual Aid Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

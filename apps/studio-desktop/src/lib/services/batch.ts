@@ -5,6 +5,7 @@
  */
 
 import { slugify } from '$lib/services/prompt';
+import { siteName } from '$lib/stores/site.svelte';
 import { isHighStakesCategory } from '$lib/services/validation';
 import type { BatchTopic } from '$lib/types/batch';
 import type { StudioSettings } from '$lib/services/settings';
@@ -153,8 +154,8 @@ ${fm}
 		.join('\n\n');
 
 	const authorLine = settings.mode === 'member'
-		? 'You are a JapaConnect member writing under your own profile.'
-		: `You are writing as the JapaConnect persona "${lookups.personaName || 'a JapaConnect author'}".`;
+		? `You are a ${siteName()} member writing under your own profile.`
+		: `You are writing as the ${siteName()} persona "${lookups.personaName || `a ${siteName()} author`}".`;
 
 	return `${authorLine}
 

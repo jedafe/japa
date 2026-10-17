@@ -2,7 +2,7 @@
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
@@ -154,7 +154,7 @@
 	}
 
 	const title = $derived(
-		data.page ? `${data.page.title} — JapaConnect` : t('wiki.page_title_suffix')
+		data.page ? `${data.page.title} — ${siteName()}` : t('wiki.page_title_suffix')
 	);
 	const description = $derived.by(() => {
 		const c = data.page?.current_content;

@@ -183,8 +183,8 @@
 </script>
 
 <svelte:head>
-	<title>{data.query ? `${data.query} — ${t('app.name')}` : t('search.title', 'Search — JapaConnect')}</title>
-	<meta name="description" content={t('search.description', 'Search for posts, people, spaces, and discussions on JapaConnect.')} />
+	<title>{data.query ? `${data.query} — ${t('app.name')}` : t('search.title', 'Search — {site}')}</title>
+	<meta name="description" content={t('search.description', 'Search for posts, people, spaces, and discussions on {site}.')} />
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

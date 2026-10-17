@@ -4,6 +4,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { LayoutDashboard, Sparkles, Check, Settings, RefreshCw, List } from 'lucide-svelte';
 	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
+	import { initSiteSettings, siteName } from '$lib/stores/site.svelte';
 	import { startWatcher, stopWatcher } from '$lib/services/watcher';
 
 	let { children } = $props();
@@ -18,6 +19,7 @@
 	onMount(async () => {
 		await initSettingsDb();
 		reloadSettings();
+		initSiteSettings(settings.baseUrl);
 	});
 
 	afterNavigate(() => {

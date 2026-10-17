@@ -300,7 +300,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.scholarships_page_title', 'Scholarships — JapaConnect Admin')}</title>
+	<title>{t('app.tools.scholarships_page_title', 'Scholarships — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

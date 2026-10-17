@@ -55,7 +55,7 @@
 		buildSeoMeta({
 			title: t(
 				'credential_checker.seo_title',
-				'Professional Credential Checker — JapaConnect Tools'
+				'Professional Credential Checker — {site} Tools'
 			),
 			description: t(
 				'credential_checker.seo_description',

@@ -257,7 +257,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.housing_guide_page_title', 'Housing Guide Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.tools.housing_guide_page_title', 'Housing Guide Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

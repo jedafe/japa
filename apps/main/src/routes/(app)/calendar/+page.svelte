@@ -31,7 +31,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('calendar.list_title', 'Community Calendar — JapaConnect'));
+	const title = $derived(t('calendar.list_title', 'Community Calendar — {site}'));
 	const description = $derived(
 		t(
 			'calendar.list_description',

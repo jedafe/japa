@@ -529,11 +529,11 @@ func TestForwardedBaseURL_TrustedProxy_UsesForwardedHost(t *testing.T) {
 
 	// Peer 10.0.0.5 is a trusted proxy. X-Forwarded-Host/Proto should be honoured.
 	r := requestWith("10.0.0.5:4321", map[string]string{
-		"X-Forwarded-Host":  "japaconnect.com",
+		"X-Forwarded-Host":  "japa.to",
 		"X-Forwarded-Proto": "https",
 	})
 
-	if got := ForwardedBaseURL(r, "http://localhost:8080"); got != "https://japaconnect.com" {
+	if got := ForwardedBaseURL(r, "http://localhost:8080"); got != "https://japa.to" {
 		t.Fatalf("expected forwarded base URL from trusted proxy, got %q", got)
 	}
 }
@@ -550,7 +550,7 @@ func TestForwardedBaseURL_UntrustedPeer_IgnoresForwardedHost(t *testing.T) {
 		"X-Forwarded-Proto": "https",
 	})
 
-	if got := ForwardedBaseURL(r, "https://japaconnect.com"); got != "https://japaconnect.com" {
+	if got := ForwardedBaseURL(r, "https://japa.to"); got != "https://japa.to" {
 		t.Fatalf("expected fallback (not spoofed host), got %q", got)
 	}
 }
@@ -572,10 +572,10 @@ func TestForwardedBaseURL_TrustedProxy_NoProto_DefaultsToHTTP(t *testing.T) {
 	// Trusted peer, X-Forwarded-Host present but no X-Forwarded-Proto and
 	// no TLS → scheme defaults to "http".
 	r := requestWith("10.0.0.5:4321", map[string]string{
-		"X-Forwarded-Host": "japaconnect.com",
+		"X-Forwarded-Host": "japa.to",
 	})
 
-	if got := ForwardedBaseURL(r, "https://fallback.com"); got != "http://japaconnect.com" {
+	if got := ForwardedBaseURL(r, "https://fallback.com"); got != "http://japa.to" {
 		t.Fatalf("expected http scheme when no proto and no TLS, got %q", got)
 	}
 }
@@ -596,10 +596,10 @@ func TestForwardedHost_TrustedPeer_ReturnsHost(t *testing.T) {
 	t.Parallel()
 
 	r := requestWith("127.0.0.1:4321", map[string]string{
-		"X-Forwarded-Host": "  japaconnect.com  ",
+		"X-Forwarded-Host": "  japa.to  ",
 	})
 
-	if got := ForwardedHost(r); got != "japaconnect.com" {
+	if got := ForwardedHost(r); got != "japa.to" {
 		t.Fatalf("expected trimmed forwarded host, got %q", got)
 	}
 }
@@ -690,7 +690,7 @@ func TestForwardedHost_RejectsCRLFInjection(t *testing.T) {
 	// CRLF in the host could inject headers / split RSS XML when the value
 	// is concatenated into a URL. Must return "" so the caller falls back.
 	r := requestWith("10.0.0.5:4321", map[string]string{
-		"X-Forwarded-Host": "japaconnect.com\r\nBcc: attacker@evil.com",
+		"X-Forwarded-Host": "japa.to\r\nBcc: attacker@evil.com",
 	})
 
 	if got := ForwardedHost(r); got != "" {
@@ -730,10 +730,10 @@ func TestForwardedHost_AcceptsPortBearingHost(t *testing.T) {
 
 	// A legitimate host with an explicit port must still be accepted.
 	r := requestWith("10.0.0.5:4321", map[string]string{
-		"X-Forwarded-Host": "japaconnect.com:8443",
+		"X-Forwarded-Host": "japa.to:8443",
 	})
 
-	if got := ForwardedHost(r); got != "japaconnect.com:8443" {
+	if got := ForwardedHost(r); got != "japa.to:8443" {
 		t.Fatalf("expected port-bearing host, got %q", got)
 	}
 }
@@ -764,7 +764,7 @@ func TestForwardedBaseURL_RejectsJavaScriptScheme(t *testing.T) {
 		"X-Forwarded-Proto": "javascript:alert(1)//",
 	})
 
-	if got := ForwardedBaseURL(r, "https://japaconnect.com"); got != "http://evil.com" {
+	if got := ForwardedBaseURL(r, "https://japa.to"); got != "http://evil.com" {
 		t.Fatalf("expected http://evil.com (javascript scheme rejected), got %q", got)
 	}
 }

@@ -19,10 +19,10 @@ import type { SessionUser, ToolSurface } from '$lib/types';
 /**
  * ADR-086 / §78: detect which tool surface the request host maps to.
  *
- * The canonical hub host is `tools.japaconnect.com`. Each tool can have its own
- * subdomain (e.g. `remittance.japaconnect.com`) or custom domain (e.g.
+ * The canonical hub host is `tools.japa.to`. Each tool can have its own
+ * subdomain (e.g. `remittance.japa.to`) or custom domain (e.g.
  * `japacalculator.com`), configured via `system_settings` keys:
- *   {tool}.subdomain  → {subdomain}.japaconnect.com
+ *   {tool}.subdomain  → {subdomain}.japa.to
  *   {tool}.custom_domain → exact host match
  *
  * The host→surface mapping is built from system_settings on each request. If no
@@ -87,13 +87,20 @@ const DEFAULT_SUBDOMAINS: Record<string, string> = {
 	pof_calculator: 'pof-calculator',
 	eca_guide: 'eca-guide',
 	sop_generator: 'sop-generator',
-	// §112 — fx.japaconnect.com → currency-converter surface.
+	// §112 — fx.japa.to → currency-converter surface.
 	fx: 'currency-converter'
 };
 
 /**
+ * Base domain for canonical surface hosts (ADR-086). Defaults to the
+ * production domain; staging deployments set JC_BASE_DOMAIN so the hub and
+ * per-tool subdomains resolve under e.g. staging.japa.to.
+ */
+const BASE_DOMAIN = (env.JC_BASE_DOMAIN ?? 'japa.to').trim().toLowerCase() || 'japa.to';
+
+/**
  * Build the host→surface map from system_settings. Custom domains take
- * precedence (exact match), then subdomains ({sub}.japaconnect.com).
+ * precedence (exact match), then subdomains ({sub}.{BASE_DOMAIN}).
  *
  * Accepts the already-fetched public settings (shared with theme/locale
  * resolution) to avoid a duplicate backend round-trip per request.
@@ -102,7 +109,7 @@ function resolveToolSurfaceFromSettings(
 	host: string,
 	settings: Record<string, unknown>
 ): ToolSurface {
-	const canonicalHub = 'tools.japaconnect.com';
+	const canonicalHub = `tools.${BASE_DOMAIN}`;
 	const extraHubHosts =
 		env.JC_TOOLS_HUB_HOSTS?.split(',')
 			.map((h) => h.trim().toLowerCase())
@@ -130,7 +137,7 @@ function resolveToolSurfaceFromSettings(
 
 	for (const { key, surface } of TOOL_SETTINGS_KEYS) {
 		const subdomain = (settings[`${key}.subdomain`] as string | undefined) ?? DEFAULT_SUBDOMAINS[key];
-		if (`${subdomain}.japaconnect.com` === host) {
+		if (`${subdomain}.${BASE_DOMAIN}` === host) {
 			return surface;
 		}
 	}

@@ -22,11 +22,11 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('trending.title', 'Trending — JapaConnect'));
+	const title = $derived(t('trending.title', 'Trending — {site}'));
 	const description = $derived(
 		t(
 			'trending.description',
-			'The hottest content, tags, spaces, and people on JapaConnect right now.'
+			'The hottest content, tags, spaces, and people on {site} right now.'
 		)
 	);
 

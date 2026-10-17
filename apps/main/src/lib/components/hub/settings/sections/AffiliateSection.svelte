@@ -225,13 +225,13 @@
 
 	function shareWhatsApp(link: AffiliateLink) {
 		const url = encodeURIComponent(shareUrl(link));
-		const text = encodeURIComponent(t('settings.affiliate.share_text', 'Check this out on JapaConnect'));
+		const text = encodeURIComponent(t('settings.affiliate.share_text', 'Check this out on {site}'));
 		window.open(`https://wa.me/?text=${text}%20${url}`, '_blank', 'noopener,noreferrer');
 	}
 
 	function shareTwitter(link: AffiliateLink) {
 		const url = encodeURIComponent(shareUrl(link));
-		const text = encodeURIComponent(t('settings.affiliate.share_text', 'Check this out on JapaConnect'));
+		const text = encodeURIComponent(t('settings.affiliate.share_text', 'Check this out on {site}'));
 		window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank', 'noopener,noreferrer');
 	}
 
@@ -265,7 +265,7 @@
 		     on enrollment. Show program info + enroll button. -->
 		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
 			<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('settings.affiliate.enroll_title', 'Join the affiliate program')}</h2>
-			<p class="mb-4 text-sm text-[var(--color-muted)]">{t('settings.affiliate.enroll_desc', 'Earn commission by referring others to JapaConnect paid products. Create trackable links and share them with your audience.')}</p>
+			<p class="mb-4 text-sm text-[var(--color-muted)]">{t('settings.affiliate.enroll_desc', 'Earn commission by referring others to {site} paid products. Create trackable links and share them with your audience.')}</p>
 
 			{#if program?.commission_rates}
 				<div class="mb-4 grid grid-cols-3 gap-3">

@@ -214,18 +214,18 @@ UPDATE public.menu_items SET feature_flag = 'feature.academy' WHERE feature_flag
 UPDATE public.menu_items SET url = '/academy', label = 'Academy' WHERE url = '/learn';
 UPDATE public.menu_items SET url = '/dashboard/academy' WHERE url = '/dashboard/learning';
 UPDATE public.menu_items SET label = 'dashboard.nav.academy' WHERE label = 'dashboard.nav.learning';
-UPDATE public.menu_items SET url = replace(url, 'learn.japaconnect.com', 'academy.japaconnect.com')
-    WHERE url LIKE '%learn.japaconnect.com%';
-UPDATE public.menu_items SET url = replace(url, 'university.japaconnect.com', 'academy.japaconnect.com')
-    WHERE url LIKE '%university.japaconnect.com%';
+UPDATE public.menu_items SET url = replace(url, 'learn.japa.to', 'academy.japa.to')
+    WHERE url LIKE '%learn.japa.to%';
+UPDATE public.menu_items SET url = replace(url, 'university.japa.to', 'academy.japa.to')
+    WHERE url LIKE '%university.japa.to%';
 UPDATE public.translations SET key = 'dashboard.nav.academy' WHERE key = 'dashboard.nav.learning';
 
 -- ── 12. JSON-LD template branding ────────────────────────────────────────────
 UPDATE public.content_type_jsonld_templates
     SET template = replace(replace(template::text,
             'JapaConnect Learn', 'JapaConnect Academy'),
-            'learn.japaconnect.com', 'academy.japaconnect.com')::jsonb
-    WHERE template::text LIKE '%JapaConnect Learn%' OR template::text LIKE '%learn.japaconnect.com%';
+            'learn.japa.to', 'academy.japa.to')::jsonb
+    WHERE template::text LIKE '%JapaConnect Learn%' OR template::text LIKE '%learn.japa.to%';
 
 -- ── 13. Onboarding product tour (learn surface → academy) ───────────────────
 -- system_settings.onboarding.tour_steps is a jsonb map surface → ordered

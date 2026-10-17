@@ -39,8 +39,8 @@
 	const seo = $derived(
 		buildSeoMeta({
 			title: scholarship
-				? `${scholarship.title} — ${t('scholarships.seo_title', 'Scholarship Finder — JapaConnect Tools')}`
-				: t('scholarships.seo_title', 'Scholarship Finder — JapaConnect Tools'),
+				? `${scholarship.title} — ${t('scholarships.seo_title', 'Scholarship Finder — {site} Tools')}`
+				: t('scholarships.seo_title', 'Scholarship Finder — {site} Tools'),
 			description: scholarship?.description ?? t('scholarships.seo_description', 'Filter scholarships by country, level of study, award amount, and deadline.'),
 			path: `/scholarships/${page.params.guide_id}`,
 			origin: page.url.origin,

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /literals — template literals CRUD using the EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api, apiRaw } from '$lib/api';
@@ -309,7 +310,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('literals.title', 'Template Literals')} — JapaConnect Admin</title>
+	<title>{t('literals.title', 'Template Literals')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

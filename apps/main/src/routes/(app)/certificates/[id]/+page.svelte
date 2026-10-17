@@ -12,7 +12,7 @@
 	const cert = $derived(data.cert);
 	const recipient = $derived(data.recipient);
 
-	const title = $derived(cert.title ?? t('certificates.title', 'Certificate — JapaConnect'));
+	const title = $derived(cert.title ?? t('certificates.title', 'Certificate — {site}'));
 	const issuedDate = $derived(new Date(cert.issued_at).toLocaleDateString(i18n.locale));
 	let downloadMessage = $state('');
 	let downloading = $state(false);
@@ -38,7 +38,7 @@
 
 <svelte:head>
 	<title>{title}</title>
-	<meta name="description" content={t('certificates.description', 'A verified certificate issued on JapaConnect.')} />
+	<meta name="description" content={t('certificates.description', 'A verified certificate issued on {site}.')} />
 	<meta property="og:title" content={title} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />

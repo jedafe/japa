@@ -46,7 +46,7 @@
 	// changed again before a previous fetch resolves.
 	let destReqToken = 0;
 
-	const title = $derived(t('pof_calculator.seo_title', 'Proof of Funds Calculator — JapaConnect'));
+	const title = $derived(t('pof_calculator.seo_title', 'Proof of Funds Calculator — {site}'));
 	const description = $derived(
 		t(
 			'pof_calculator.seo_description',

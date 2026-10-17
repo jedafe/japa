@@ -62,7 +62,7 @@
 	let calculating = $state(false);
 	let calcError = $state('');
 
-	const title = $derived(t('crs_calculator.seo_title', 'Express Entry CRS Calculator — JapaConnect'));
+	const title = $derived(t('crs_calculator.seo_title', 'Express Entry CRS Calculator — {site}'));
 	const description = $derived(
 		t(
 			'crs_calculator.seo_description',

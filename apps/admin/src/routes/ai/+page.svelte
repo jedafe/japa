@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type HitlVerifyResult, type GenerateResult, type AiTool, type AiUsageSummary, type AiToolUsageStats } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
@@ -488,7 +489,7 @@
 </script>
 
 <svelte:head>
-	<title>AI Core — JapaConnect Admin</title>
+	<title>AI Core — {siteName()} Admin</title>
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('ai.title')}</h1>
@@ -755,7 +756,7 @@
 					</div>
 					<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 						<p class="text-xs" style="color: var(--color-muted)">{t('ai.usage.total_cost')}</p>
-						<p class="mt-1 text-2xl font-bold">${(aiUsage.total_cost_usd ?? 0).toFixed(2)}</p>
+						<p class="mt-1 text-2xl font-bold">{(aiUsage.total_cost_usd ?? 0).toFixed(2)}</p>
 					</div>
 					<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 						<p class="text-xs" style="color: var(--color-muted)">{t('ai.usage.models_used')}</p>

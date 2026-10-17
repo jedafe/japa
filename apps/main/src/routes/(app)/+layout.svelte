@@ -206,7 +206,7 @@
 </script>
 
 {#if data.isRoadmapHost}
-	<!-- ADR-127: roadmap.japaconnect.com renders a compact roadmap-branded
+	<!-- ADR-127: roadmap.japa.to renders a compact roadmap-branded
 	     shell — no app sidebars, left nav, widgets, chat FAB, or product tour.
 	     Voting/submission auth uses the shared session cookie on /login. -->
 	<header class="roadmap-header">
@@ -223,7 +223,7 @@
 			<nav class="roadmap-nav" aria-label={t('roadmap.nav', 'Roadmap navigation')}>
 				<a href="/roadmap/changelog" class="roadmap-nav-link">{t('roadmap.changelog', 'Changelog')}</a>
 				<a href={roadmapApexUrl} class="roadmap-nav-link roadmap-back-link">
-					{t('roadmap.back_to_site', 'Back to JapaConnect')}
+					{t('roadmap.back_to_site', 'Back to {site}')}
 				</a>
 			</nav>
 		</div>

@@ -5,7 +5,7 @@
 	// from the API). The flagship item (is_flagship) is pinned in a banner
 	// above the grid. Voting is logged-in only; guests get a login CTA.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import VoteButton from '$lib/components/roadmap/VoteButton.svelte';
@@ -46,7 +46,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('roadmap.title', 'Product Roadmap')} — JapaConnect</title>
+	<title>{t('roadmap.title', 'Product Roadmap')} — {siteName()}</title>
 	<meta name="description" content={t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} />
 	<link rel="canonical" href="{page.url.origin}/roadmap" />
 	<meta property="og:title" content={t('roadmap.title', 'Product Roadmap')} />

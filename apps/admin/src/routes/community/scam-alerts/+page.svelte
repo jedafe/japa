@@ -266,7 +266,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.scam_alert.review_queue_page_title', 'Scam Alerts Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.scam_alert.review_queue_page_title', 'Scam Alerts Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

@@ -129,7 +129,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('scam_alerts.edit_title', 'Edit Scam Alert — JapaConnect')}</title>
+	<title>{t('scam_alerts.edit_title', 'Edit Scam Alert — {site}')}</title>
 	<meta name="description" content={t('scam_alerts.edit_description', 'Update your scam report.')} />
 	<meta name="robots" content="noindex" />
 	<meta property="og:title" content={t('scam_alerts.edit_title', 'Edit Scam Alert')} />

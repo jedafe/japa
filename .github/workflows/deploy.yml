@@ -4,13 +4,17 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: [main]
+    branches: [main, staging]
 
 # Coolify deployment: each application in Coolify exposes a deploy webhook
 # (Applications → <app> → Webhooks → "Deploy Webhook"). CI calls the webhook;
 # Coolify pulls the repo, rebuilds the Dockerfile, and rolls the service.
 #
-# Required repo secrets (Settings → Secrets → Actions):
+# Production deploys after green CI on `main`; staging deploys after green CI
+# on `staging`. Each environment has its own set of Coolify apps (and thus its
+# own webhook URLs) — see docs/deployment-coolify.md.
+#
+# Required repo secrets (Settings → Secrets → Actions), production:
 #   COOLIFY_WEBHOOK_API        — api service    (Dockerfile at repo root)
 #   COOLIFY_WEBHOOK_MAIN       — apps/main
 #   COOLIFY_WEBHOOK_ADMIN      — apps/admin
@@ -19,13 +23,21 @@ on:
 #   COOLIFY_WEBHOOK_DOCS       — apps/docs
 #   COOLIFY_WEBHOOK_TOOLS      — apps/tools
 #
+# Staging secrets use the same names with a _STAGING suffix:
+#   COOLIFY_WEBHOOK_API_STAGING, COOLIFY_WEBHOOK_MAIN_STAGING,
+#   COOLIFY_WEBHOOK_ADMIN_STAGING, COOLIFY_WEBHOOK_CONTROL_STAGING,
+#   COOLIFY_WEBHOOK_ACADEMY_STAGING, COOLIFY_WEBHOOK_DOCS_STAGING,
+#   COOLIFY_WEBHOOK_TOOLS_STAGING
+#
 # Each secret holds the full webhook URL, e.g.
 #   https://coolify.example.com/api/v1/deploy?uuid=<app-uuid>&token=<token>&force=false
 
 jobs:
-  deploy:
+  deploy-production:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.head_branch == 'main' }}
     steps:
       - name: Deploy api
         run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API }}"
@@ -47,3 +59,30 @@ jobs:
 
       - name: Deploy tools
         run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS }}"
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.head_branch == 'staging' }}
+    steps:
+      - name: Deploy api (staging)
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API_STAGING }}"
+
+      - name: Deploy main (staging)
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_MAIN_STAGING }}"
+
+      - name: Deploy admin (staging)
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ADMIN_STAGING }}"
+
+      - name: Deploy control (staging)
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_CONTROL_STAGING }}"
+
+      - name: Deploy academy (staging)
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ACADEMY_STAGING }}"
+
+      - name: Deploy docs (staging)
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_DOCS_STAGING }}"
+
+      - name: Deploy tools (staging)
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS_STAGING }}"

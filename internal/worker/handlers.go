@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -1364,7 +1365,7 @@ func templateDataFromMap(siteName string, m map[string]string) map[string]any {
 	}
 
 	if siteName == "" {
-		siteName = "JapaConnect"
+		siteName = brand.Get()
 	}
 
 	data := make(map[string]any, len(m)+1)
@@ -4160,7 +4161,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	// Resolve the site name for the email subject.
 	name := siteName
 	if name == "" {
-		name = "JapaConnect"
+		name = brand.Get()
 	}
 
 	subject := "Weekly Digest — " + name
@@ -4573,7 +4574,7 @@ func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
 	subjectType := "onboarding"
 	actionURL := "/onboarding"
 	title := "Finish setting up your account"
-	body := "You're almost there — finish the setup steps to get the most out of JapaConnect."
+	body := "You're almost there — finish the setup steps to get the most out of " + brand.Get() + "."
 	sent := 0
 
 	for _, userID := range candidates {
@@ -4645,7 +4646,9 @@ func onboardingReminderIntSetting(ctx context.Context, key string, fallback int3
 		return fallback
 	}
 
-	n, err := strconv.Atoi(strings.Trim(string(row), `"`))
+	// ParseInt with bitSize 32 rejects out-of-range values — the int32
+	// conversion below cannot overflow (gosec G109/G115).
+	n, err := strconv.ParseInt(strings.Trim(string(row), `"`), 10, 32)
 	if err != nil || n <= 0 {
 		return fallback
 	}
@@ -4654,7 +4657,7 @@ func onboardingReminderIntSetting(ctx context.Context, key string, fallback int3
 		n = 10000
 	}
 
-	return int32(n) //nolint:gosec // bounded above
+	return int32(n)
 }
 
 // ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@
 			href={mainAppUrl('/')}
 			class="text-sm text-muted hover:text-text transition-colors"
 		>
-			{t('shell.footer.powered_by', 'Powered by JapaConnect')}
+			{t('shell.footer.powered_by', 'Powered by {site}')}
 		</a>
 	</footer>
 {:else}
@@ -35,10 +35,10 @@
 				>
 					J
 				</span>
-				<span>{t('app.name', 'JapaConnect Tools')}</span>
+				<span>{t('app.name', '{site} Tools')}</span>
 			</div>
 			<div class="flex items-center gap-4 text-sm text-muted">
-				<a href={mainAppUrl('/')} class="hover:text-text transition-colors">{t('shell.footer.japaconnect', 'JapaConnect')}</a>
+				<a href={mainAppUrl('/')} class="hover:text-text transition-colors">{t('shell.footer.japaconnect', '{site}')}</a>
 				<a href={mainAppUrl('/docs')} class="hover:text-text transition-colors">{t('shell.footer.docs', 'Docs')}</a>
 				<a href={mainAppUrl('/academy')} class="hover:text-text transition-colors">{t('shell.footer.academy', 'Academy')}</a>
 			</div>

@@ -330,7 +330,7 @@ func TestHreflangLink(t *testing.T) {
 func TestHreflangAlternate_DefaultLanguages(t *testing.T) {
 	t.Parallel()
 
-	got := HreflangAlternate("https://japaconnect.com", "/guide", nil)
+	got := HreflangAlternate("https://japa.to", "/guide", nil)
 
 	if !strings.Contains(got, `hreflang="en"`) {
 		t.Error("missing English hreflang")
@@ -344,11 +344,11 @@ func TestHreflangAlternate_DefaultLanguages(t *testing.T) {
 		t.Error("missing x-default hreflang")
 	}
 
-	if !strings.Contains(got, `https://japaconnect.com/en/guide`) {
+	if !strings.Contains(got, `https://japa.to/en/guide`) {
 		t.Error("missing English URL")
 	}
 
-	if !strings.Contains(got, `https://japaconnect.com/fr/guide`) {
+	if !strings.Contains(got, `https://japa.to/fr/guide`) {
 		t.Error("missing French URL")
 	}
 }

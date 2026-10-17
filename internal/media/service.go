@@ -205,7 +205,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 	case size <= 0:
 		return fmt.Errorf("%w: uploaded object is empty", errUploadInvalid)
 	case size > s.MaxUploadBytes(ctx):
-		s.deleteObject(ctx, m.StorageBucket, m.StoragePath)
+		_ = s.deleteObject(ctx, m.StorageBucket, m.StoragePath)
 		return fmt.Errorf("%w: uploaded object is %d bytes, exceeding the %d byte upload limit",
 			errUploadInvalid, size, s.MaxUploadBytes(ctx))
 	case size != m.FileSizeBytes:
@@ -1038,7 +1038,8 @@ func storeLocalMediaFile(bucket, storagePath string, body []byte) error {
 		return fmt.Errorf("creating media directory: %w", err)
 	}
 
-	// #nosec G306 // media files are meant to be world-readable via ServeMedia.
+	// #nosec G306 G703 // media files are meant to be world-readable via ServeMedia;
+	// localPath is confined to the media root by resolveMediaPath.
 	if err := os.WriteFile(localPath, body, 0o644); err != nil {
 		return fmt.Errorf("writing media file: %w", err)
 	}

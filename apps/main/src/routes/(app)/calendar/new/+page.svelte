@@ -166,7 +166,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('calendar.new_title', 'Submit Event — JapaConnect')}</title>
+	<title>{t('calendar.new_title', 'Submit Event — {site}')}</title>
 	<meta name="description" content={t('calendar.new_description', 'Submit a community calendar event with a verifiable official source.')} />
 	<meta name="robots" content="noindex" />
 </svelte:head>

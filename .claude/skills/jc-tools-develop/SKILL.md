@@ -1,11 +1,11 @@
 ---
 name: jc-tools-develop
-description: Use when developing the JapaConnect Tools Web Surface (apps/tools, port 3005, tools.japaconnect.com). Covers host-detection shell rendering, identity tool pages, and the standalone single-tool domain mode.
+description: Use when developing the JapaConnect Tools Web Surface (apps/tools, port 3005, tools.japa.to). Covers host-detection shell rendering, identity tool pages, and the standalone single-tool domain mode.
 ---
 
 # JapaConnect Tools — Development Skill
 
-Identity tools surface at `tools.japaconnect.com`. SSR (adapter-node + Bun). Sixth SvelteKit app in the monorepo (`apps/tools/`). Same Go backend, same `/api/v1`, **no community navigation** — tool-first UX.
+Identity tools surface at `tools.japa.to`. SSR (adapter-node + Bun). Sixth SvelteKit app in the monorepo (`apps/tools/`). Same Go backend, same `/api/v1`, **no community navigation** — tool-first UX.
 
 ## ⛔ API-READINESS GATE
 
@@ -21,11 +21,11 @@ Same as `jc-main-develop`: list endpoints → verify in `api-routes-catalog.md` 
 ## Host Detection — The Core Mechanic (ADR-086, §78)
 
 `hooks.server.ts` reads `system_settings` per-tool domain keys and sets `event.locals.toolSurface`:
-- `'hub'` → full tools listing (default when host = `tools.japaconnect.com`)
+- `'hub'` → full tools listing (default when host = `tools.japa.to`)
 - `'visa-checklist'` / `'readiness'` / `'cost-of-living'` / `'scholarships'` / `'remittance'` / `'japabot'` → single-tool shell
 
 The host→surface map is built from `GET /site/settings/public` on each request. Each tool has two settings:
-- `{tool}.subdomain` → `{subdomain}.japaconnect.com` (e.g. `remittance.japaconnect.com`)
+- `{tool}.subdomain` → `{subdomain}.japa.to` (e.g. `remittance.japa.to`)
 - `{tool}.custom_domain` → exact host match (e.g. `japacalculator.com`)
 
 Custom domains take precedence over subdomains. The `JC_TOOLS_HUB_HOSTS` env var adds extra hub hosts.
@@ -34,8 +34,8 @@ Custom domains take precedence over subdomains. The `JC_TOOLS_HUB_HOSTS` env var
 
 ## Two Shell Modes
 
-- **Hub shell** (`tools.japaconnect.com`): `HubHeader` (simplified — no community nav, just logo + theme toggle + auth links), tool cards grid, `Footer` (full).
-- **Single-tool shell** (e.g. `remittance.japaconnect.com`): `SingleToolHeader` (tool name + icon with tool accent color, theme toggle, no cross-tool nav), full-screen tool content, `Footer` (minimal — "Powered by JapaConnect" link only).
+- **Hub shell** (`tools.japa.to`): `HubHeader` (simplified — no community nav, just logo + theme toggle + auth links), tool cards grid, `Footer` (full).
+- **Single-tool shell** (e.g. `remittance.japa.to`): `SingleToolHeader` (tool name + icon with tool accent color, theme toggle, no cross-tool nav), full-screen tool content, `Footer` (minimal — "Powered by JapaConnect" link only).
 
 Root `+layout.svelte` reads `data.toolSurface` and renders the appropriate shell. **Every tool route works in both shell modes** — the shell wrapping changes, the tool content does not.
 
@@ -78,7 +78,7 @@ SvelteKit 2.57.x (SSR, adapter-node) · Bun 1.3.x · Tailwind CSS v4 · Bits UI 
 
 ## Auth & Cross-App Links
 
-Cookie auth (`domain=.japaconnect.com`) works for subdomains — authenticated users stay logged in across `japaconnect.com` and `tools.japaconnect.com`. Custom domains use OAuth flow back to `api.japaconnect.com` (see §78). Auth links (login, signup, profile) cross over to the Main app via `PUBLIC_MAIN_ORIGIN`.
+Cookie auth (`domain=.japa.to`) works for subdomains — authenticated users stay logged in across `japa.to` and `tools.japa.to`. Custom domains use OAuth flow back to `api.japa.to` (see §78). Auth links (login, signup, profile) cross over to the Main app via `PUBLIC_MAIN_ORIGIN`.
 
 ## V2 Functional Tools (Phase 05, §§90–97, §§99–101)
 

@@ -297,7 +297,7 @@
 		border-bottom: 1px solid var(--color-border);
 	}
 	.doc-header h1 {
-		font-family: var(--font-sans);
+		font-family: var(--font-heading, var(--font-sans));
 		font-size: 2rem;
 		font-weight: 700;
 		color: var(--color-text);

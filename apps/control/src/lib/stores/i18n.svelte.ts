@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { apiFetch } from '$lib/api/client';
+import { substituteSiteName } from './site.svelte';
 
 type Locale = string;
 
@@ -31,7 +32,9 @@ export function setLocale(locale: Locale) {
 }
 
 export function t(key: string, fallback?: string): string {
-	return translationsState[key] ?? fallback ?? key;
+	// substituteSiteName expands {site} and rewrites any literal brand spelling
+	// in packs/fallbacks to the configured general.site_name.
+	return substituteSiteName(translationsState[key] ?? fallback ?? key);
 }
 
 export async function loadTranslations(localeCode: string): Promise<Record<string, string>> {

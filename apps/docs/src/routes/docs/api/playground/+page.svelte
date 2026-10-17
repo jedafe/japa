@@ -448,7 +448,7 @@
 		margin-bottom: 1.5rem;
 	}
 	.pg-header h1 {
-		font-family: var(--font-sans);
+		font-family: var(--font-heading, var(--font-sans));
 		font-size: 1.75rem;
 		font-weight: 700;
 		margin: 0;

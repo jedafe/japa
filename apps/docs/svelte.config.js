@@ -53,7 +53,7 @@ const config = {
 							'form-action': ['self'],
 							'object-src': ['none'],
 							'base-uri': ['self'],
-							'frame-ancestors': ['self', 'https://japaconnect.com', 'https://*.japaconnect.com']
+							'frame-ancestors': ['self', 'https://japa.to', 'https://*.japa.to']
 						}
 					}
 				})

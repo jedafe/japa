@@ -319,7 +319,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.i18n.title')} — {t('common.admin_title_suffix', 'JapaConnect Admin')}</title>
+	<title>{t('app.i18n.title')} — {t('common.admin_title_suffix', '{site} Admin')}</title>
 </svelte:head>
 
 <PageHeader

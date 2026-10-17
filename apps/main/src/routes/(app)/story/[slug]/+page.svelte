@@ -244,7 +244,7 @@
 			{/if}
 
 			<div class="flex items-start gap-2">
-				<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-serif);">{story.title}</h1>
+				<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-heading, var(--font-serif));">{story.title}</h1>
 				{#if story.verified}
 					<BadgeCheck size={22} class="mt-2 shrink-0 text-[var(--color-primary)]" />
 				{/if}

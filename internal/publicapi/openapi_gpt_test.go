@@ -6,7 +6,7 @@ import (
 )
 
 func TestGetGPTActionsSpec(t *testing.T) {
-	spec := GetGPTActionsSpec("https://api.japaconnect.com", "JapaConnect")
+	spec := GetGPTActionsSpec("https://api.japa.to", "JapaConnect")
 
 	if got, want := spec["openapi"], "3.0.3"; got != want {
 		t.Fatalf("openapi version = %q, want %q", got, want)
@@ -19,7 +19,7 @@ func TestGetGPTActionsSpec(t *testing.T) {
 	}
 
 	serverURL, _ := servers[0].(map[string]any)["url"].(string)
-	if serverURL != "https://api.japaconnect.com/api/v1" {
+	if serverURL != "https://api.japa.to/api/v1" {
 		t.Fatalf("server url = %q", serverURL)
 	}
 

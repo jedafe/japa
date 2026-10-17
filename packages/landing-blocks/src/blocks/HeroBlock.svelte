@@ -101,7 +101,7 @@
 
           <h1
             class="text-balance text-4xl font-bold tracking-tight text-[#0f1e4e] sm:text-5xl lg:text-6xl"
-            style="font-family: var(--block-heading-family, var(--font-sans)); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
+            style="font-family: var(--block-heading-family, var(--font-heading, var(--font-sans))); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
           >
             {#if splitHeadline}
               {splitHeadline.before}<span class="text-[#16a34a]">{splitHeadline.match}</span>{splitHeadline.after}
@@ -207,7 +207,7 @@
       {#if props.headline}
         <h1
           class="text-balance text-4xl font-bold tracking-tight text-[var(--color-heading,var(--color-text))] sm:text-5xl lg:text-6xl"
-          style="font-family: var(--block-heading-family, var(--font-serif, ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif)); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
+          style="font-family: var(--block-heading-family, var(--font-heading, var(--font-serif, ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif))); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
         >
           {#if splitHeadline}
             {splitHeadline.before}<span class="text-[var(--color-success)]">{splitHeadline.match}</span>{splitHeadline.after}

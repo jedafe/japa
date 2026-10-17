@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { siteName } from '../site';
   import type {
     GuestHomeCopy,
     GuestHomeData,
@@ -251,8 +252,8 @@
 
     const destinations = $derived(home.topDestinations.slice(0, 4));
 
-    const title = $derived(c('title', 'JapaConnect — Work. Study. Live. Anywhere in the World.'));
-    const description = $derived(c('description', 'JapaConnect is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.'));
+    const title = $derived(c('title', `${siteName()} — Work. Study. Thrive. Anywhere in the World.`));
+    const description = $derived(c('description', `${siteName()} is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.`));
 </script>
 
 
@@ -262,11 +263,11 @@
     <div class="guest-hero-content">
       <span class="hero-eyebrow">{c('eyebrow', 'Your Bridge to Global Opportunities')}</span>
       <h1 class="hero-headline">
-        {c('headline_prefix', 'Work. Study. Live.')}
+        {c('headline_prefix', 'Work. Study. Thrive.')}
         <span class="hero-headline-accent">{c('headline_accent', 'Anywhere in the World.')}</span>
       </h1>
       <p class="hero-subhead">
-        {c('subhead', 'JapaConnect is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.')}
+        {c('subhead', `${siteName()} is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.`)}
       </p>
       <div class="hero-actions">
         <a href="/signup" class="hero-btn hero-btn-primary">

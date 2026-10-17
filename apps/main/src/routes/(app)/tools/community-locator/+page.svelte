@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
 	import { replaceState } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import {
 		Users,
@@ -323,7 +323,7 @@
 </script>
 
 <svelte:head>
-	<title>{title} — JapaConnect Tools</title>
+	<title>{title} — {siteName()} Tools</title>
 	<meta
 		name="description"
 		content={t(
@@ -332,7 +332,7 @@
 		)}
 	/>
 	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content="{title} — JapaConnect Tools" />
+	<meta property="og:title" content="{title} — {siteName()} Tools" />
 	<meta
 		property="og:description"
 		content={t(
@@ -343,7 +343,7 @@
 	<meta property="og:url" content={page.url.href} />
 	<meta property="og:type" content="website" />
 	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content="{title} — JapaConnect Tools" />
+	<meta name="twitter:title" content="{title} — {siteName()} Tools" />
 	<meta
 		name="twitter:description"
 		content={t(
@@ -767,7 +767,7 @@
 									{#if org.claim_status === 'claimed' && (org.japaconnect_space_slug || org.japaconnect_space_id)}
 										<div class="pt-2 border-t border-[var(--color-border)] mt-2">
 											<p class="text-xs font-medium uppercase tracking-wider text-[var(--color-muted)] mb-1">
-												{t('community_locator.space_integration', 'JapaConnect Space')}
+												{t('community_locator.space_integration', '{site} Space')}
 											</p>
 											<a
 												href={`/spaces/${org.japaconnect_space_slug || org.japaconnect_space_id}`}

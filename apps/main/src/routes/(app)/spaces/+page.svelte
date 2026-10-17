@@ -19,7 +19,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let showCreateModal = $state(false);
 
-	const title = $derived(t('spaces.title', 'Spaces — JapaConnect'));
+	const title = $derived(t('spaces.title', 'Spaces — {site}'));
 	const description = $derived(
 		t('spaces.description', 'Discover and join spaces — countries, states, cities, and topical communities.')
 	);

@@ -31,7 +31,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('tools.title', 'Tools — JapaConnect'));
+	const title = $derived(t('tools.title', 'Tools — {site}'));
 	const description = $derived(
 		t('tools.description', 'Plan your move with calculators, checklists, and trackers built for the diaspora.')
 	);

@@ -307,7 +307,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.data_exports.page_title', 'Data Exports — JapaConnect Admin')}</title>
+	<title>{t('app.data_exports.page_title', 'Data Exports — {site} Admin')}</title>
 </svelte:head>
 
 <PageHeader
@@ -393,7 +393,7 @@
 
 <!-- ── Snippets ───────────────────────────────────────────────────────── -->
 
-<!-- Create form (formSnippet). Binds to page-local `form` state. -->
+<!-- Create form (formSnippet). Binds to page-local "form" state. -->
 {#snippet ExportForm({ value, editing }: { value: any; editing: boolean })}
 	<div class="space-y-4">
 		<div>

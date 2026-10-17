@@ -95,7 +95,7 @@ func (c *RobotsChecker) fetchRobots(ctx context.Context, domain string) (RobotsP
 		return RobotsPolicy{}, fmt.Errorf("robots: new request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
+	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japa.to)")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -107,7 +107,7 @@ func (c *RobotsChecker) fetchRobots(ctx context.Context, domain string) (RobotsP
 			return RobotsPolicy{}, fmt.Errorf("robots: new request (http): %w", err2)
 		}
 
-		req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
+		req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japa.to)")
 
 		resp, err = c.client.Do(req)
 		if err != nil {

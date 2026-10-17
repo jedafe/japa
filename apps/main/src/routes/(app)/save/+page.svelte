@@ -7,7 +7,7 @@
 	let { data } = $props();
 </script>
 
-<svelte:head><title>{t('save.title', 'Save — JapaConnect')}</title></svelte:head>
+<svelte:head><title>{t('save.title', 'Save — {site}')}</title></svelte:head>
 
 <div class="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
 	{#if data.saved}

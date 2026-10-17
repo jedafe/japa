@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { spaceTypesApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -203,7 +204,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.space_types.page_title', 'Space Types')} — JapaConnect Admin</title>
+	<title>{t('app.space_types.page_title', 'Space Types')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

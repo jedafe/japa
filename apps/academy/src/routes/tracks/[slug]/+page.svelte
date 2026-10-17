@@ -278,13 +278,13 @@
 		<meta name="description" content={track.description.slice(0, 160)} />
 	{/if}
 	<meta name="robots" content="index, follow" />
-	<link rel="canonical" href={`https://academy.japaconnect.com/tracks/${track.slug}`} />
+	<link rel="canonical" href={`https://academy.japa.to/tracks/${track.slug}`} />
 	<meta property="og:title" content={track.title} />
 	{#if track.description}
 		<meta property="og:description" content={track.description.slice(0, 160)} />
 	{/if}
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={`https://academy.japaconnect.com/tracks/${track.slug}`} />
+	<meta property="og:url" content={`https://academy.japa.to/tracks/${track.slug}`} />
 	{#if track.thumbnail_url}
 		<meta property="og:image" content={track.thumbnail_url} />
 	{/if}

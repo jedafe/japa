@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /spam — migrated to the EntityPage scaffold. This page has 3 distinct entity
 	// types (ip-blocks, censored-words, user-blocks) presented in tabs; each tab
 	// renders its own `<EntityPage>` with a config specific to that entity type.
@@ -340,7 +341,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('spam.title', 'Spam Management')} — JapaConnect Admin</title>
+	<title>{t('spam.title', 'Spam Management')} — {siteName()} Admin</title>
 </svelte:head>
 
 <Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} class="mb-4" />

@@ -1,7 +1,7 @@
 -- 000796_roadmap.up.sql
 --
 -- Public product roadmap (§113): community-votable, admin-curated feature
--- roadmap at /roadmap and roadmap.japaconnect.com. Items carry a hidden
+-- roadmap at /roadmap and roadmap.japa.to. Items carry a hidden
 -- contents row (content_type='roadmap') so the §49 comments engine serves
 -- item discussion threads unchanged. vote_count is a denormalized counter
 -- kept honest by a recount query (ADR-127), not increment/decrement drift.

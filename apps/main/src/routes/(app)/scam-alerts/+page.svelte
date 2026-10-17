@@ -38,7 +38,7 @@
 		});
 	});
 
-	const title = $derived(t('scam_alerts.list_title', 'Scam Alerts — JapaConnect'));
+	const title = $derived(t('scam_alerts.list_title', 'Scam Alerts — {site}'));
 	const description = $derived(
 		t(
 			'scam_alerts.list_description',

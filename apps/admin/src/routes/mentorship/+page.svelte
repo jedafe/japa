@@ -431,7 +431,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.mentorship.page_title', 'Mentorship — JapaConnect Admin')}</title>
+	<title>{t('app.mentorship.page_title', 'Mentorship — {site} Admin')}</title>
 </svelte:head>
 
 <Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />

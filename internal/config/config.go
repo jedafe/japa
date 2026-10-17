@@ -35,6 +35,7 @@ type Config struct {
 	RedisTLSEnabled          bool   // JC_REDIS_TLS_ENABLED — enable TLS connection to Valkey/Redis
 	MeilisearchURL           string // JC_MEILISEARCH_URL — Meilisearch HTTP endpoint
 	MeilisearchKey           string // JC_MEILISEARCH_KEY — Meilisearch master key (empty for dev)
+	MeiliIndexPrefix         string // JC_MEILI_INDEX_PREFIX — optional index UID prefix so non-prod envs can share an instance
 	GeoIPDBPath              string // JC_GEOIP_DB_PATH — path to the MaxMind GeoLite2 database file
 	SpecCorpusDir            string // JC_SPEC_CORPUS_DIR — JEOS spec corpus root for the spec_doc RAG indexer (default ".jeos")
 	MaxmindAccountID         string // JC_MAXMIND_ACCOUNT_ID — MaxMind account ID (Basic Auth username for DB downloads)
@@ -129,6 +130,7 @@ func Load() (Config, error) {
 		RedisTLSEnabled:          getEnvBool("JC_REDIS_TLS_ENABLED", false),
 		MeilisearchURL:           os.Getenv("JC_MEILISEARCH_URL"),
 		MeilisearchKey:           os.Getenv("JC_MEILISEARCH_KEY"),
+		MeiliIndexPrefix:         os.Getenv("JC_MEILI_INDEX_PREFIX"),
 		GeoIPDBPath:              os.Getenv("JC_GEOIP_DB_PATH"),
 		SpecCorpusDir:            os.Getenv("JC_SPEC_CORPUS_DIR"),
 		MaxmindAccountID:         os.Getenv("JC_MAXMIND_ACCOUNT_ID"),
@@ -228,7 +230,7 @@ func applyDefaults(cfg *Config) error {
 	setStringIfEmpty(&cfg.Env, "development")
 	setStringIfEmpty(&cfg.Port, "8080")
 	setStringIfEmpty(&cfg.JWTKeyID, "key-dev")
-	setStringIfEmpty(&cfg.SiteName, "JapaConnect")
+	setStringIfEmpty(&cfg.SiteName, "Japa.to")
 	setStringIfEmpty(&cfg.SiteURL, "http://localhost:8080")
 	setStringIfEmpty(&cfg.SiteDescription, "A community platform for the diaspora and people planning to relocate abroad")
 	setStringIfEmpty(&cfg.OAuthRedirectBase, "http://localhost:8080")

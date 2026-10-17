@@ -12,7 +12,7 @@
 
 	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
 
-	const title = $derived(t('explore.title', 'Explore — JapaConnect'));
+	const title = $derived(t('explore.title', 'Explore — {site}'));
 	const description = $derived(t('explore.description', 'Discover stories, discussions, and guides from the Nigerian diaspora community.'));
 </script>
 

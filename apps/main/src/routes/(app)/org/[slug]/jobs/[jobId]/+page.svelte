@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
@@ -61,7 +61,7 @@
 </script>
 
 <svelte:head>
-	<title>{title} — JapaConnect</title>
+	<title>{title} — {siteName()}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

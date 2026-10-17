@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -771,7 +772,7 @@
 </script>
 
 <svelte:head>
-	<title>{form?.name ?? 'Form'} — JapaConnect Admin</title>
+	<title>{form?.name ?? 'Form'} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if saveMsg}

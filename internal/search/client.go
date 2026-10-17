@@ -98,8 +98,8 @@ var sortableAttributesByIndex = map[string][]string{
 // boot without a running search engine; the search handler degrades
 // gracefully to empty results and the index sync task skips when the
 // engine cannot be reached.
-func NewEngine(url, key string) (Engine, error) {
-	engine, err := newMeiliEngine(url, key)
+func NewEngine(url, key, indexPrefix string) (Engine, error) {
+	engine, err := newMeiliEngine(url, key, indexPrefix)
 	if err != nil {
 		return nil, err
 	}

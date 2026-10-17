@@ -260,7 +260,7 @@
 	}
 	.back-link:hover { color: var(--color-primary); }
 	.audience-header h1 {
-		font-family: var(--font-sans);
+		font-family: var(--font-heading, var(--font-sans));
 		font-size: 2rem;
 		font-weight: 700;
 		color: var(--color-text);
@@ -478,7 +478,7 @@
 	.new-page-link:hover { border-color: var(--color-primary); }
 	.cat-section { margin-top: 2rem; }
 	.cat-title {
-		font-family: var(--font-sans);
+		font-family: var(--font-heading, var(--font-sans));
 		font-size: 1.125rem;
 		font-weight: 700;
 		color: var(--color-text);
@@ -486,7 +486,7 @@
 		letter-spacing: -0.01em;
 	}
 	.subcat-title {
-		font-family: var(--font-sans);
+		font-family: var(--font-heading, var(--font-sans));
 		font-size: 0.8125rem;
 		font-weight: 600;
 		text-transform: uppercase;

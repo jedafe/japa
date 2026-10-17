@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /moderation — migrated to the EntityPage scaffold; moderation queue with
 	// state actions (approve/reject/delete) via a custom `actions` array and a
 	// page-local confirm Modal (reason textarea), plus bulk approve/reject.
@@ -259,7 +260,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("moderation.title", "Moderation")} — JapaConnect Admin</title>
+	<title>{t("moderation.title", "Moderation")} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

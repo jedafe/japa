@@ -670,7 +670,7 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Public API Resource Handlers (Section 47 — api.japaconnect.com)
+// Public API Resource Handlers (Section 47 — api.japa.to)
 // ---------------------------------------------------------------------------
 // These are read-only endpoints exposed to external integrations via API key auth.
 // They proxy to the same underlying data as the platform-scoped internal API but

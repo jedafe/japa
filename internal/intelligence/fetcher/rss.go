@@ -46,7 +46,7 @@ func (f *RSSFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		return FetchResult{}, fmt.Errorf("rss: new request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
+	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japa.to)")
 
 	resp, err := f.client.Do(req)
 	if err != nil {

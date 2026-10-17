@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { siteName } from '../../../site';
   import type { GuestHeroTextProps, CTA, Block } from '../../../types';
   import CTAEditor from '../../CTAEditor.svelte';
   import NestedBlocksEditor from '../../NestedBlocksEditor.svelte';
@@ -52,9 +53,9 @@
 
 <div class="space-y-4">
   <label class="block"><span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Eyebrow</span><input class={inputClass} value={props.eyebrow ?? ''} oninput={(e) => update('eyebrow', e.currentTarget.value || undefined)} placeholder="Your Bridge to Global Opportunities" /></label>
-  <label class="block"><span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Headline prefix</span><input class={inputClass} value={props.headline_prefix ?? ''} oninput={(e) => update('headline_prefix', e.currentTarget.value || undefined)} placeholder="Work. Study. Live." /></label>
+  <label class="block"><span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Headline prefix</span><input class={inputClass} value={props.headline_prefix ?? ''} oninput={(e) => update('headline_prefix', e.currentTarget.value || undefined)} placeholder="Work. Study. Thrive." /></label>
   <label class="block"><span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Headline accent</span><input class={inputClass} value={props.headline_accent ?? ''} oninput={(e) => update('headline_accent', e.currentTarget.value || undefined)} placeholder="Anywhere in the World." /></label>
-  <label class="block"><span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subhead</span><textarea class={inputClass} rows={3} value={props.subhead ?? ''} oninput={(e) => update('subhead', e.currentTarget.value || undefined)} placeholder="JapaConnect is your all-in-one platform..."></textarea></label>
+  <label class="block"><span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Subhead</span><textarea class={inputClass} rows={3} value={props.subhead ?? ''} oninput={(e) => update('subhead', e.currentTarget.value || undefined)} placeholder="{siteName()} is your all-in-one platform..."></textarea></label>
 
   {#if hasChildren}
     <div class="space-y-2">

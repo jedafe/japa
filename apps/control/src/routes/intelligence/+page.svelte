@@ -344,7 +344,7 @@
 
 	// Build the Main app URL for cross-app links. In dev, the Control app
 	// runs on port 3002 and the Main app on port 3000. In production, both
-	// are served from the same domain (e.g. japaconnect.com) so a relative
+	// are served from the same domain (e.g. japa.to) so a relative
 	// /scholarships path works. We detect dev by checking if the port is
 	// 3002 and swap to 3000.
 	function mainAppUrl(path: string): string {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Modal } from '$lib/components/ui/modal';
@@ -221,7 +222,7 @@
 </script>
 
 <svelte:head>
-	<title>{form?.name ?? t('space_forms.detail_title')} — JapaConnect Admin</title>
+	<title>{form?.name ?? t('space_forms.detail_title')} — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="mb-4 flex items-center justify-between">

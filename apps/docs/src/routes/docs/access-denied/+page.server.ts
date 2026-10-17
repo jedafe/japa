@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { buildMeta } from '$lib/seo/meta';
 import { env } from '$env/dynamic/public';
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 
 /**
  * Access-denied page — the destination for 403s on gated audiences (ADR-060).
@@ -9,10 +9,11 @@ import { tServer } from '$lib/i18n/dict';
  * API reference.
  */
 export const load: PageServerLoad = async (event) => {
+	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	const locale = event.locals.locale;
-	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
-	const title = `${tServer(locale, 'audience.no_access_title', 'Access denied')} · ${appName}`;
-	const description = tServer(locale, 'audience.no_access_body', 'You do not have access to this documentation section.');
+	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
+	const title = `${tServer(locale, 'audience.no_access_title', 'Access denied', undefined, site)} · ${appName}`;
+	const description = tServer(locale, 'audience.no_access_body', 'You do not have access to this documentation section.', undefined, site);
 	const meta = buildMeta({
 		title,
 		description,

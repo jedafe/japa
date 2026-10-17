@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /reviews — migrated to the EntityPage scaffold. Moderation entity (no create):
 	// View (slide-over), Moderate (page-local Modal → PATCH status), Delete (confirm → DELETE).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -259,7 +260,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('reviews.title', 'Reviews')} — JapaConnect Admin</title>
+	<title>{t('reviews.title', 'Reviews')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /eca-guide — ECA provider + guide management + community update moderation (§109).
 	// Backend: GET/POST/PATCH/DELETE /admin/eca-providers, GET/POST/PATCH/DELETE /admin/eca-guides,
 	//          GET/PATCH /admin/eca-guides/updates.
@@ -364,7 +365,7 @@
 </script>
 
 <svelte:head>
-	<title>ECA Guide — JapaConnect Admin</title>
+	<title>ECA Guide — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

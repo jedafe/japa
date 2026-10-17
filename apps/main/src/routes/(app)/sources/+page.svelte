@@ -23,7 +23,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('sources.title', 'Sources — JapaConnect'));
+	const title = $derived(t('sources.title', 'Sources — {site}'));
 	const description = $derived(
 		t(
 			'sources.description',

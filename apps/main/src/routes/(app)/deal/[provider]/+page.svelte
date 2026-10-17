@@ -25,7 +25,7 @@
 	const coupons = $derived(data.partner.coupons);
 
 	const title = $derived(
-		t('deal.partner_title', '{name} deals — JapaConnect').replace('{name}', provider.name)
+		t('deal.partner_title', '{name} deals — {site}').replace('{name}', provider.name)
 	);
 	const description = $derived(
 		provider.description ??

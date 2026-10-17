@@ -22,9 +22,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('users.title', 'People — JapaConnect'));
+	const title = $derived(t('users.title', 'People — {site}'));
 	const description = $derived(
-		t('users.description', 'Discover people on JapaConnect — creators, professionals, and communities.')
+		t('users.description', 'Discover people on {site} — creators, professionals, and communities.')
 	);
 
 	const jsonLd = $derived(

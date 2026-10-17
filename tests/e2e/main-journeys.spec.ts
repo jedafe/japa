@@ -14,8 +14,8 @@ import { test, expect, type Page, type BrowserContext } from '@playwright/test';
  */
 
 const API = 'http://localhost:8080/api/v1';
-const USER1 = { email: 'user1@japaconnect.com', password: 'Demo1234!' };
-const USER2 = { email: 'user2@japaconnect.com', password: 'Demo1234!' };
+const USER1 = { email: 'user1@japa.to', password: 'Demo1234!' };
+const USER2 = { email: 'user2@japa.to', password: 'Demo1234!' };
 
 const VIEWPORTS = {
 	mobile: { width: 375, height: 812 },
@@ -365,7 +365,7 @@ test.describe('Pass 4 — Feature flags & RBAC', () => {
 	test.fixme('disabled feature flag 404s its route group (feature.dm)', async ({ page, request }) => {
 		// Toggle via admin API, verify, then restore.
 		const adminLogin = await request.post(`${API}/auth/login`, {
-			data: { email: 'admin@japaconnect.com', password: 'Admin123!' }
+			data: { email: 'admin@japa.to', password: 'Admin123!' }
 		});
 		test.skip(!adminLogin.ok(), 'admin credentials unavailable for flag toggle');
 		const token = (await adminLogin.json())?.data?.access_token as string;

@@ -16,7 +16,7 @@
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
-	const title = $derived(t('tools.cost_of_living', 'Cost of Living Calculator — JapaConnect'));
+	const title = $derived(t('tools.cost_of_living', 'Cost of Living Calculator — {site}'));
 	const description = $derived(
 		t('tools.cost_of_living_desc', 'Compare living costs between cities.')
 	);

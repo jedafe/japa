@@ -695,7 +695,7 @@ func (h *OAuthHandlers) handleConsentDecision(w http.ResponseWriter, r *http.Req
 	}
 
 	target.RawQuery = qq.Encode()
-	http.Redirect(w, r, target.String(), http.StatusFound) // #nosec G601 -- redirect_uri was exact-match validated against the registered client
+	http.Redirect(w, r, target.String(), http.StatusFound) // #nosec G710 -- redirect_uri was exact-match validated against the registered client
 }
 
 // redirectWithError appends RFC 6749 error params to the (already
@@ -716,7 +716,7 @@ func (h *OAuthHandlers) redirectWithError(w http.ResponseWriter, r *http.Request
 	}
 
 	target.RawQuery = qq.Encode()
-	http.Redirect(w, r, target.String(), http.StatusFound) // #nosec G601 -- redirect_uri was exact-match validated against the registered client
+	http.Redirect(w, r, target.String(), http.StatusFound) // #nosec G710 -- redirect_uri was exact-match validated against the registered client
 }
 
 // ---------------------------------------------------------------------------

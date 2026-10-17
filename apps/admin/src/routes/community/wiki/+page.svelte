@@ -1224,7 +1224,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.wiki.review_queue_page_title', 'Wiki Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.wiki.review_queue_page_title', 'Wiki Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

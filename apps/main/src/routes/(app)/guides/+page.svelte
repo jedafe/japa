@@ -96,7 +96,7 @@
 		}
 	}
 
-	const title = $derived(t('guides.title', 'Guides — JapaConnect'));
+	const title = $derived(t('guides.title', 'Guides — {site}'));
 	const description = $derived(
 		t('guides.description', 'Step-by-step relocation, visa, and settlement guides from the diaspora community.')
 	);

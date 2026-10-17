@@ -177,7 +177,7 @@ func (s *Service) ProxyRemote(ctx context.Context, rawURL string) (ProxyResult, 
 		ttlSecs = s.settings.GetIntOr(ctx, "media.proxy.ttl_secs", ttlSecs)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil) // #nosec G704 -- every dial is IP-validated by proxyHTTPClient below
 	if err != nil {
 		return ProxyResult{}, fmt.Errorf("media proxy: %w", err)
 	}
@@ -185,7 +185,7 @@ func (s *Service) ProxyRemote(ctx context.Context, rawURL string) (ProxyResult, 
 	req.Header.Set("User-Agent", "JapaConnect-MediaProxy/1.0")
 	req.Header.Set("Accept", "image/*")
 
-	resp, err := proxyHTTPClient.Do(req)
+	resp, err := proxyHTTPClient.Do(req) // #nosec G704 -- DialContext rejects non-public IPs on every redirect hop
 	if err != nil {
 		return ProxyResult{}, err
 	}

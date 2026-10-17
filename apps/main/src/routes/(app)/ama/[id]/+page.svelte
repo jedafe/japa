@@ -71,7 +71,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const title = $derived(
 		session
 			? `${session.title} — ${t('ama.detail_title_suffix', 'Ask an Expat')}`
-			: t('ama.detail_title_missing', 'AMA — JapaConnect')
+			: t('ama.detail_title_missing', 'AMA — {site}')
 	);
 	const description = $derived(session ? tiptapExcerpt(session.body, 160) : '');
 	// Section 26 — self-referencing canonical on the clean ID URL (never

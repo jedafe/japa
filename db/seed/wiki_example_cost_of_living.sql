@@ -22,7 +22,7 @@ BEGIN;
 
 INSERT INTO users (id, email, username, is_synthetic, synthetic_source, status)
 VALUES ('f1e2d3c4-b5a6-4789-9abc-def012345678',
-        'amaka.okoro@japaconnect.com', 'amaka_okoro', true, 'wiki_demo', 'active')
+        'amaka.okoro@japa.to', 'amaka_okoro', true, 'wiki_demo', 'active')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO user_profiles (user_id, display_name, bio)

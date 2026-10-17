@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /docs — migrated to shared components (ActionMenu, FilterPanel, Modal,
 	// SlideOver). Replaces the legacy FilterBar.svelte and hand-rolled bits-ui
 	// Dialog with shared Modal/SlideOver. State action: toggle publish.
@@ -509,7 +510,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('docs.documentation')} — JapaConnect Admin</title>
+	<title>{t('docs.documentation')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

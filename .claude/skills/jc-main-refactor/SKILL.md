@@ -51,7 +51,7 @@ Replace static arrays (nav, countries, tags, groups, post types, chart datasets)
 
 ## 5b. Profile Learning Hub & Cross-App (ADR-060)
 - Replace hardcoded certificate/enrollment/knowledge-base lists with `GET /api/v1/me/certificates`, `GET /api/v1/me/enrollments`, and the bookmark routes (no new backend needed).
-- Extract any Learn/Docs surface re-implemented in this app (lesson player, curriculum rail, docs nav tree) — replace with an absolute deep link to `academy.japaconnect.com` / `docs.japaconnect.com`; those apps own those surfaces.
+- Extract any Learn/Docs surface re-implemented in this app (lesson player, curriculum rail, docs nav tree) — replace with an absolute deep link to `academy.japa.to` / `docs.japa.to`; those apps own those surfaces.
 - Consolidate scattered learning links into the dashboard hub tabs: `/dashboard/learning`, `/dashboard/certificates`, `/dashboard/knowledge-base`.
 - Point certificate cards at the public shareable page `/certificates/:id`; add earned-certificate badges to the public profile.
 
@@ -100,7 +100,7 @@ Replace static arrays (nav, countries, tags, groups, post types, chart datasets)
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
 
 ## 5d. V2 Community Features & Mentorship — Refactoring Notes (Phases 37–38, §§79–102)
 

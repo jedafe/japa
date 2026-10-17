@@ -737,7 +737,7 @@ func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, q,
 // other-name for 'name' — all tiebroken by conversation id. An empty string
 // means no further page.
 func nextConversationCursor(rows []gen.GetUserConversationsRow, sort string, limit int32) string {
-	if len(rows) == 0 || int32(len(rows)) < effectivePageLimit(limit) {
+	if len(rows) == 0 || int32(len(rows)) < effectivePageLimit(limit) { // #nosec G115 -- slice length bounded by request-scoped data
 		return ""
 	}
 
@@ -816,7 +816,7 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 
 	var nextCursor string
 
-	if int32(len(rows)) == effectivePageLimit(limit) && len(rows) > 0 {
+	if int32(len(rows)) == effectivePageLimit(limit) && len(rows) > 0 { // #nosec G115 -- slice length bounded by request-scoped data
 		last := rows[len(rows)-1]
 		nextCursor = encodeDMCursor(dmCursor{T: last.CreatedAt.Time.UnixNano(), ID: last.ID.String()})
 	}
@@ -954,7 +954,7 @@ func (s *DMService) GetPendingMessageRequests(ctx context.Context, recipientID p
 // from the last row — created_at for recent/oldest, the COALESCEd
 // requester name for 'name' — tiebroken by request id. Empty = no more.
 func nextRequestCursor(rows []gen.GetPendingMessageRequestsRow, sort string, limit int32) string {
-	if len(rows) == 0 || int32(len(rows)) < effectivePageLimit(limit) {
+	if len(rows) == 0 || int32(len(rows)) < effectivePageLimit(limit) { // #nosec G115 -- slice length bounded by request-scoped data
 		return ""
 	}
 

@@ -62,7 +62,7 @@
 		goto(`/mutual-aid${qs ? `?${qs}` : ''}`);
 	}
 
-	const title = $derived(t('mutual_aid.list_title', 'Mutual Aid — JapaConnect'));
+	const title = $derived(t('mutual_aid.list_title', 'Mutual Aid — {site}'));
 	const description = $derived(
 		t(
 			'mutual_aid.list_description',

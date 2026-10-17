@@ -307,8 +307,8 @@
 
 <!--
 	ADR-058 Exception #1 (vertical rail): borderless, transparent vertical strip in the article's
-	LEFT margin, distinct from the 72px nav. `horizontal` re-uses the same controls in a compact
-	row for a bottom action bar under the article body. `bottom` renders a fixed bottom bar
+	LEFT margin, distinct from the 72px nav. "horizontal" re-uses the same controls in a compact
+	row for a bottom action bar under the article body. "bottom" renders a fixed bottom bar
 	below sm (popovers opening upward, like the shell's mobile menu) and falls back to the
 	horizontal strip on sm+.
 -->

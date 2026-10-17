@@ -402,7 +402,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.community_locator_page_title', 'Community Locator Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.tools.community_locator_page_title', 'Community Locator Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

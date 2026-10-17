@@ -49,7 +49,7 @@
 		});
 	});
 
-	const title = $derived(t('ama.list_title', 'Ask an Expat — Live AMAs — JapaConnect'));
+	const title = $derived(t('ama.list_title', 'Ask an Expat — Live AMAs — {site}'));
 	const description = $derived(
 		t('ama.list_description', 'Live Ask Me Anything sessions with experienced members of the diaspora.')
 	);

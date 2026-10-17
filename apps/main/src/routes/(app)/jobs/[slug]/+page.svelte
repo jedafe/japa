@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n, siteName} from '$lib/i18n';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import { page } from '$app/state';
 	import {
@@ -77,7 +77,7 @@
 		return map[code] ?? t('jobs.apply_failed', 'Could not submit your application.');
 	});
 
-	const title = $derived(job ? `${job.title} — JapaConnect` : 'Job — JapaConnect');
+	const title = $derived(job ? `${job.title} — ${siteName()}` : 'Job — ${siteName()}');
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.
 	const canonical = $derived(job ? `${page.url.origin}/jobs/${job.slug}` : `${page.url.origin}/jobs`);
@@ -374,7 +374,7 @@
 					url: canonical,
 					hiringOrganization: {
 						'@type': 'Organization',
-						name: field('company_name') || 'JapaConnect'
+						name: field('company_name') || siteName()
 					},
 					jobLocation: locationStr()
 						? { '@type': 'Place', address: locationStr() }

@@ -4,7 +4,7 @@
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { mainAppUrl } from '$lib/seo';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import type { SessionUser } from '$lib/types';
 
 	/**
@@ -31,7 +31,7 @@
 		<div class="flex items-center gap-3">
 			<a href="/" class="flex items-center gap-2 font-bold text-text text-lg">
 				{#if logoUrl}
-					<ThemeLogo {logoUrl} {logoDarkUrl} alt="JapaConnect" class="h-7 w-auto" />
+					<ThemeLogo {logoUrl} {logoDarkUrl} alt="{siteName()}" class="h-7 w-auto" />
 				{:else}
 					<span class="flex items-center gap-1.5">
 						<span
@@ -39,7 +39,7 @@
 						>
 							J
 						</span>
-						<span>JapaConnect <span class="text-muted font-normal">{t('app.tagline', 'Tools')}</span></span>
+						<span>{siteName()} <span class="text-muted font-normal">{t('app.tagline', 'Tools')}</span></span>
 					</span>
 				{/if}
 			</a>
@@ -51,7 +51,7 @@
 				class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-text-subtle hover:text-text transition-colors"
 			>
 				<Icon name="arrow-left" size={16} />
-				{t('shell.back_to_japaconnect', 'Back to JapaConnect')}
+				{t('shell.back_to_japaconnect', 'Back to {site}')}
 			</a>
 
 			<button

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /users/roles — migrated to the EntityPage scaffold.
 	//
 	// The role form has a searchable permissions checkbox grid that EntityForm
@@ -152,7 +153,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('users.roles.title', 'Roles')} — JapaConnect Admin</title>
+	<title>{t('users.roles.title', 'Roles')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

@@ -73,7 +73,7 @@
 	const POLL_MAX_ATTEMPTS = 40; // ~2 minutes at 3s
 	const POLL_MAX_ERRORS = 3;
 
-	const title = $derived(t('sop_generator.seo_title', 'AI SOP Generator — JapaConnect'));
+	const title = $derived(t('sop_generator.seo_title', 'AI SOP Generator — {site}'));
 	const description = $derived(
 		t('sop_generator.seo_description', 'Generate a tailored statement of purpose draft from proven templates — browse samples, refine, and export.')
 	);

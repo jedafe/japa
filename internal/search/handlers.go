@@ -1029,7 +1029,7 @@ func (h *Handlers) filterContentHits(r *http.Request, hits []Hit) []Hit {
 		CanSeePrivate:     canSeePrivate,
 		RequesterID:       requesterID,
 		CanSeeMembers:     canSeeMembers,
-		PageLimit:         int32(len(ids)),
+		PageLimit:         int32(len(ids)), // #nosec G115 -- slice length bounded by request-scoped data
 	})
 	if err != nil {
 		slog.Warn("content hit visibility filter failed", "error", err)

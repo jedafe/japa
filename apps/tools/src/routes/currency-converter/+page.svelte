@@ -38,7 +38,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('fx.seo_title', 'Currency Converter — JapaConnect Tools'),
+			title: t('fx.seo_title', 'Currency Converter — {site} Tools'),
 			description: t(
 				'fx.seo_description',
 				'Convert between 160+ currencies at live mid-market rates — including NGN, GHS, KES — powered by Open Exchange Rates.'

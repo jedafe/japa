@@ -53,7 +53,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: `${org.name} — ${t('community_locator.seo_title', 'Diaspora Community Locator — JapaConnect Tools')}`,
+			title: `${org.name} — ${t('community_locator.seo_title', 'Diaspora Community Locator — {site} Tools')}`,
 			description: `Diaspora community organisation in ${org.destination_space_name ?? ''}: ${org.org_type}, ${org.origin_community}.`,
 			path: `/community-locator/${page.params.slug}`,
 			origin: page.url.origin,

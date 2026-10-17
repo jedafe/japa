@@ -75,7 +75,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('crs_calculator.seo_title', 'Express Entry CRS Calculator — JapaConnect Tools'),
+			title: t('crs_calculator.seo_title', 'Express Entry CRS Calculator — {site} Tools'),
 			description: t(
 				'crs_calculator.seo_description',
 				'Calculate your Comprehensive Ranking System score for Canada Express Entry — factor breakdown, draw cut-offs, and score history.'

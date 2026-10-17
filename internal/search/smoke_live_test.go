@@ -17,7 +17,7 @@ func TestLiveEngine(t *testing.T) {
 
 	ctx := t.Context()
 
-	engine, err := NewEngine(url, "")
+	engine, err := NewEngine(url, "", "")
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}

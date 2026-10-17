@@ -1,5 +1,5 @@
 import { page } from '$app/state';
-import { tServer, type Locale } from './dict';
+import { tServer, DEFAULT_SITE_NAME, type Locale } from './dict';
 
 export type { Locale };
 
@@ -20,12 +20,24 @@ class I18nStore {
 		typeof page.data?.locale === 'string' && page.data.locale ? page.data.locale : 'en'
 	);
 
+	/** Configured brand name (general.site_name) from the public site settings
+	 * returned by the root layout load. Single fallback literal for the whole
+	 * app — every other consumer must read this, never hardcode the name. */
+	siteName = $derived<string>(
+		(page.data?.siteSettings?.['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME
+	);
+
 	/** Interpolate {name} placeholders in the fallback string. */
 	t = (key: string, fallback?: string, vars?: Record<string, string>): string =>
-		tServer(this.locale, key, fallback, vars);
+		tServer(this.locale, key, fallback, vars, this.siteName);
 }
 
 export const i18n = new I18nStore();
 
 /** Convenience binding: `t('nav.search_placeholder')`. */
 export const t = i18n.t;
+
+/** Convenience binding for non-i18n markup: `{siteName()}`. */
+export function siteName(): string {
+	return i18n.siteName;
+}

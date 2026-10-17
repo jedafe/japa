@@ -27,7 +27,7 @@
 </script>
 
 <svelte:head>
-	<title>{title} — {t('app.name', 'JapaConnect Docs')}</title>
+	<title>{title} — {t('app.name', '{site} Docs')}</title>
 </svelte:head>
 
 <AppShell

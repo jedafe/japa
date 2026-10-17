@@ -678,8 +678,8 @@ func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input Propose
 const (
 	oneshotSourceSlug = "user-oneshot-submissions"
 	oneshotSourceName = "User Oneshot Submissions"
-	oneshotSourceURL  = "https://japaconnect.com/"
-	oneshotDomain     = "japaconnect.com"
+	oneshotSourceURL  = "https://japa.to/"
+	oneshotDomain     = "japa.to"
 )
 
 // SubmitOneshot records a user-submitted URL as a oneshot channel on the
@@ -789,7 +789,7 @@ func (s *Service) oneshotSource(ctx context.Context) (Source, error) {
 		Category:   "announcement",
 		Categories: []string{"announcement"},
 		// "system" + crawl_method manual → verifySkipSource skips a reprobe
-		// (an admin reprobe must not probe japaconnect.com and materialize
+		// (an admin reprobe must not probe japa.to and materialize
 		// channels onto the shared submissions source).
 		SourceType:         "system",
 		SourceKind:         string(SourceKindAggregator),

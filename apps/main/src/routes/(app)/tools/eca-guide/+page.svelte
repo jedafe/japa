@@ -86,7 +86,7 @@
 		return '';
 	}
 
-	const title = $derived(t('eca_guide.seo_title', 'ECA Evaluation Guide — WES, IQAS & More — JapaConnect'));
+	const title = $derived(t('eca_guide.seo_title', 'ECA Evaluation Guide — WES, IQAS & More — {site}'));
 	const description = $derived(
 		t(
 			'eca_guide.seo_description',

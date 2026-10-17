@@ -38,7 +38,7 @@
 	const description = $derived(
 		t('fx.subtitle', 'Live mid-market rates across 160+ currencies.')
 	);
-	const seoTitle = $derived(t('fx.seo_title', 'Currency Converter — JapaConnect'));
+	const seoTitle = $derived(t('fx.seo_title', 'Currency Converter — {site}'));
 	const seoDescription = $derived(
 		t('fx.seo_description', 'Convert between 160+ currencies at live mid-market rates.')
 	);

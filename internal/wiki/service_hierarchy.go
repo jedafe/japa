@@ -927,7 +927,7 @@ func (s *Service) compositeSections(ctx context.Context, userID, spaceID pgtype.
 				fields = append(fields, f)
 			}
 
-			if child.PreviewLimit > 0 && int32(len(fields)) > child.PreviewLimit {
+			if child.PreviewLimit > 0 && int32(len(fields)) > child.PreviewLimit { // #nosec G115 -- slice length bounded by request-scoped data
 				fields = fields[:child.PreviewLimit]
 			}
 		} else if err != nil {

@@ -5,6 +5,7 @@
 	import type { ActionContext } from '$lib/components/ui/data-table/types';
 	import { videoImportJobsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { siteName } from '$lib/stores/site.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, RefreshCw } from 'lucide-svelte';
 
@@ -191,7 +192,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('video_import_jobs.title', 'Video Import Jobs')} — JapaConnect Admin</title>
+	<title>{t('video_import_jobs.title', 'Video Import Jobs')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

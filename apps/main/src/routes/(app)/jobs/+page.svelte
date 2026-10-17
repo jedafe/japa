@@ -24,7 +24,7 @@
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
-	const title = $derived(t('jobs.title', 'Jobs — JapaConnect'));
+	const title = $derived(t('jobs.title', 'Jobs — {site}'));
 	const description = $derived(
 		t('jobs.description', 'Find jobs relevant to the Nigerian diaspora community.')
 	);

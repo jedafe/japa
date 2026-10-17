@@ -53,9 +53,9 @@
     <ChevronDown class="h-4 w-4 opacity-50" />
   </Select.Trigger>
 
-  <!-- Gate the portaled content on `open`: bits-ui's presence layer can leave
+  <!-- Gate the portaled content on "open": bits-ui's presence layer can leave
        a closed-but-mounted popover behind (ghost overlay intercepting clicks)
-       when a selection triggers a parent re-render; unmounting via `{#if}`
+       when a selection triggers a parent re-render; unmounting via "{#if}"
        guarantees cleanup. -->
   {#if open}
     <Select.Portal>

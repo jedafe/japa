@@ -342,7 +342,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.calendar.review_queue_page_title', 'Calendar Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.calendar.review_queue_page_title', 'Calendar Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

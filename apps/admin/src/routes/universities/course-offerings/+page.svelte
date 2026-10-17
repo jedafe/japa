@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /universities/course-offerings — per-university course offerings
 	// (university_course_offerings, Section 39). EntityPage scaffold; the
 	// course + university selects are hydrated from the API on mount (Rule 16 —
@@ -290,7 +291,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('courses.offerings_title', 'Course Offerings')} — JapaConnect Admin</title>
+	<title>{t('courses.offerings_title', 'Course Offerings')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

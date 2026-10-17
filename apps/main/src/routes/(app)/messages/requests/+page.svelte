@@ -27,7 +27,7 @@
 		searchValue = data.query.q;
 	});
 
-	const title = $derived(t('messages.requests_title', 'Message requests — JapaConnect'));
+	const title = $derived(t('messages.requests_title', 'Message requests — {site}'));
 
 	const sortOptions = [
 		{ value: 'recent', label: t('messages.sort_recent', 'Most recent') },

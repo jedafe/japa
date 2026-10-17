@@ -6,7 +6,7 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 	// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 10, task 10.04)
 
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import {
 		Sparkles,
 		Clock,
@@ -123,7 +123,7 @@
 </script>
 
 <svelte:head>
-	<title>{session ? truncate(session.prompt, 60) : 'Session'} — {t('ai.agent.session_history', 'Session History')} — JapaConnect</title>
+	<title>{session ? truncate(session.prompt, 60) : 'Session'} — {t('ai.agent.session_history', 'Session History')} — {siteName()}</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

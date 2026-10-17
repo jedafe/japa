@@ -11,7 +11,7 @@
 	const series = $derived(data.series);
 
 	const title = $derived(
-		t('series_detail.title', '{name} — JapaConnect').replace('{name}', series.title)
+		t('series_detail.title', '{name} — {site}').replace('{name}', series.title)
 	);
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.

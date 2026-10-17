@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /jsonld-templates — migrated to the EntityPage scaffold.
 	//
 	// The form has a JSON content textarea with live JSON-validation feedback, so
@@ -250,7 +251,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('jsonld.title', 'JSON-LD Templates')} — JapaConnect Admin</title>
+	<title>{t('jsonld.title', 'JSON-LD Templates')} — {siteName()} Admin</title>
 </svelte:head>
 
 <!-- Page-local export/import header actions (rendered above the scaffold) -->
@@ -349,7 +350,7 @@
 
 <!-- Create/Edit form body (JSON content textarea with live validation feedback) -->
 {#snippet TemplateForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
-	<!-- Seed `content` once: edit from the row's template, create from the default skeleton. -->
+	<!-- Seed "content" once: edit from the row's template, create from the default skeleton. -->
 	{@const _seed = value.content ??= editing ? JSON.stringify(editing?.template ?? {}, null, 2) : DEFAULT_TEMPLATE}
 	{@const jsonError = validateJson(value.content)}
 	<div class="space-y-4">

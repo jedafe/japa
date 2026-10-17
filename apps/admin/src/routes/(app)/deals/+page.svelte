@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /deals — migrated to the EntityPage scaffold; declarative CRUD entity with date conversion.
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -354,7 +355,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('deals.title', 'Deals')} — JapaConnect Admin</title>
+	<title>{t('deals.title', 'Deals')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

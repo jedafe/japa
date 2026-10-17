@@ -36,7 +36,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('services.marketplace_title', 'Services Marketplace — JapaConnect'));
+	const title = $derived(t('services.marketplace_title', 'Services Marketplace — {site}'));
 	const description = $derived(
 		t(
 			'services.marketplace_description',
@@ -326,7 +326,7 @@
 <MarketplaceHero q={data.filters.q} fetcher={fetchServiceSuggestions} onSearch={onHeroSearch} />
 
 <!-- Edge gutters + vertical rhythm come from the (marketplace) layout's
-     `marketplace-center` main — this wrapper only caps the content width. -->
+     "marketplace-center" main — this wrapper only caps the content width. -->
 <div class="mx-auto mt-6 w-full max-w-[1400px] sm:mt-8">
 	<!-- Category pills -->
 	<div class="mb-5">
@@ -550,7 +550,7 @@
 	<!-- Trust strip -->
 	<section
 		class="mt-10 grid gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:grid-cols-3"
-		aria-label={t('services.trust_aria', 'Why book with JapaConnect')}
+		aria-label={t('services.trust_aria', 'Why book with {site}')}
 	>
 		{#each trustItems as item (item.title)}
 			{@const Icon = item.icon}

@@ -248,7 +248,7 @@
 			</button>
 		{/if}
 
-		<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-serif);">{article.title}</h1>
+		<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-heading, var(--font-serif));">{article.title}</h1>
 
 		{#if article.content_type === 'guide' && article.guide_category || journeyChips.length > 0}
 			<div class="mt-4 flex flex-wrap items-center gap-2">

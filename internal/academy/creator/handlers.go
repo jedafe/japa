@@ -1347,7 +1347,7 @@ func (h *Handlers) AdminUnpublishTrack(w http.ResponseWriter, r *http.Request) {
 
 	if h.rag != nil {
 		go func() {
-			bgCtx := context.Background()
+			bgCtx := context.WithoutCancel(r.Context())
 			if err := h.rag.PurgeEntity(bgCtx, "academy_track", trackID); err != nil {
 				slog.Warn("academy: RAG purge failed for unpublished track", "track_id", trackID.String(), "error", err)
 			}

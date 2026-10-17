@@ -293,7 +293,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.language_test_hub_page_title', 'Language Test Hub Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.tools.language_test_hub_page_title', 'Language Test Hub Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

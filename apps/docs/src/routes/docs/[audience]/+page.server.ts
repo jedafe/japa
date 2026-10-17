@@ -4,7 +4,7 @@ import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPageSummary, DocAudience, DocNavItem } from '$lib/types';
 import { AUDIENCE_LABEL_KEY } from '$lib/types';
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 import type { ExistingPage } from '$lib/server/docs-author';
 
 /**
@@ -19,6 +19,7 @@ import type { ExistingPage } from '$lib/server/docs-author';
  * and reviewable in-app instead of disappearing from every surface.
  */
 export const load: PageServerLoad = async (event) => {
+	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	const audience = event.params.audience as DocAudience;
 
 	// An audience slug outside the canonical list isn't gated — it doesn't
@@ -74,15 +75,16 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const locale = event.locals.locale;
-	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
+	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
 	const labelKey = AUDIENCE_LABEL_KEY[audience];
-	const audienceLabel = tServer(locale, labelKey, audience);
+	const audienceLabel = tServer(locale, labelKey, audience, undefined, site);
 	const title = `${audienceLabel} · ${appName}`;
 	const description = tServer(
 		locale,
 		'page.audience_description',
 		'Documentation for the {audience} audience.',
-		{ audience: audienceLabel }
+		{ audience: audienceLabel },
+		site
 	);
 
 	// Gated audiences get noindex (Ref: §26 ROADMAP 07.02). Presence in the
@@ -95,7 +97,8 @@ export const load: PageServerLoad = async (event) => {
 		path: `/docs/${audience}`,
 		ogType: 'website',
 		jsonLd: collectionPageLd({
-			name: title,
+				siteName: site,
+				name: title,
 			url: `${DOCS_ORIGIN}/docs/${audience}`,
 			description
 		})

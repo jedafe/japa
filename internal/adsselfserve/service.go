@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -556,7 +557,7 @@ func (s *Service) ReopenCampaignOnAppeal(ctx context.Context, campaignID pgtype.
 				return fmt.Errorf("adsselfserve: inserting re-escrow ledger entry: %w", err)
 			}
 
-			restoreCredits = int32(refundAmount)
+			restoreCredits = int32(min(refundAmount, math.MaxInt32)) // #nosec G115 -- clamped to int32 range
 		case errors.Is(err, pgx.ErrNoRows):
 			// No refund row — either refunds are disabled
 			// (ads.credit_refund_on_reject=false) or the refund task never

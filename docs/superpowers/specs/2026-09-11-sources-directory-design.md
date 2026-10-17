@@ -217,7 +217,7 @@ Tools continue to consume their existing domain endpoints. The change is to expo
 1. **API payload enrichment.** Responses for `/scholarships`, `/jobs`, `/remittance/rates`, etc. include a lightweight `source` object: `{ name, slug, logo_url, trust_level, domain }`.
 2. **Source links on result cards.** Each result shows a small attribution row: “From [Source Name] · [trust icon]” linking to `/sources/[slug]`.
 3. **“Data sources” link.** Each tool page header includes a link to `/sources?category=<domain>` pre-filtered to that tool’s category.
-4. **Cross-app links.** `apps/tools` is a separate SvelteKit app; it links to `main.japaconnect.com/sources/[slug]` for source detail and discovery.
+4. **Cross-app links.** `apps/tools` is a separate SvelteKit app; it links to `main.japa.to/sources/[slug]` for source detail and discovery.
 
 ---
 

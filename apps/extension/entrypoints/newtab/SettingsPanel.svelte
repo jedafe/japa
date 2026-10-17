@@ -2,10 +2,13 @@
 	// Ref: japaconnect-engineering/sections/120-mcp-agent-distribution.md
 	// (Login with JapaConnect — v1.4): OAuth sign-in is the primary connect
 	// path; pasting an extension key stays as the manual fallback.
+	import { siteName, DEFAULT_SITE_NAME } from '../../lib/site';
 	import { getInstallId, type OAuthUser } from '../../lib/storage';
 	import { siteUrl } from '../../lib/links';
 	import { LoginCancelledError } from '../../lib/oauth';
 
+	let brand = $state(DEFAULT_SITE_NAME);
+	siteName().then((n) => (brand = n));
 	let {
 		connected,
 		user,
@@ -83,23 +86,23 @@
 	{#if connected}
 		{#if user}
 			<p>
-				This browser is signed in to JapaConnect as
+				This browser is signed in to {brand} as
 				<strong>{user.name ?? user.preferred_username ?? user.email}</strong>{#if user.preferred_username}
 					&nbsp;(<a href={siteUrl('/u/' + user.preferred_username)}>@{user.preferred_username}</a>){/if}.
 			</p>
 		{:else}
-			<p>This browser is connected to your JapaConnect account.</p>
+			<p>This browser is connected to your {brand} account.</p>
 		{/if}
 		<button class="danger" onclick={onDisconnected}>Disconnect this browser</button>
 		<p class="hint">
 			Manage or revoke connected apps under
 			<a href={siteUrl('/settings')}>Settings → Connected apps</a> on the web — each browser's
-			session shows as a <code>JapaConnect Browser Extension (…)</code> grant; pasted keys appear
+			session shows as a <code>{brand} Browser Extension (…)</code> grant; pasted keys appear
 			under API keys named <code>extension:*</code>.
 		</p>
 	{:else}
 		<button class="primary" onclick={signIn} disabled={signingIn}>
-			{signingIn ? 'Waiting for sign-in…' : 'Sign in with JapaConnect'}
+			{signingIn ? 'Waiting for sign-in…' : `Sign in with ${brand}`}
 		</button>
 		{#if loginError}
 			<p class="error" role="alert">{loginError}</p>

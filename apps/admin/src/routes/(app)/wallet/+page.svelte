@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /wallet — migrated to shared components (ActionMenu, BulkBar, SlideOver).
 	// Tabbed page (rules + settings + adjust) — not an EntityPage candidate; keeps
 	// the tab structure but uses DataTable `actions`/`bulkActionsList` props and
@@ -378,7 +379,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.wallet.title', 'Wallet Management')} — JapaConnect Admin</title>
+	<title>{t('app.wallet.title', 'Wallet Management')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

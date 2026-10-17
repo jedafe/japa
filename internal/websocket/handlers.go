@@ -128,11 +128,11 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store in Valkey for fast lookup: jc:ws_ticket:{ticket_id} -> {user_id, }, TTL 60s.
-	// The upgrade handler resolves tickets from Valkey only, so a failed write
-	// would hand the client a ticket that can never be redeemed. The
-	// is cached alongside the user_id so the upgrade handler does not fall back
-	// to a hardcoded default platform (Rule 4: Valkey keys must be platform-scoped).
+	// Store in Valkey for fast lookup: jc:ws_ticket:{ticket_id} -> {user_id},
+	// TTL 60s. The upgrade handler resolves tickets from Valkey first and falls
+	// back to the DB row, so a failed write would be redeemed via Postgres
+	// anyway — but a cache write failure still surfaces as a 500 to keep the
+	// mint path honest about what was stored.
 	if h.vkClient != nil {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
@@ -220,12 +220,6 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 					slog.Error("cached ws ticket holds an invalid user id", "error", scanErr, "ticket", ticketStr)
 				}
 			}
-
-			if _, ok := fields["the id"]; ok {
-				if scanErr := (error)(nil); scanErr != nil {
-					slog.Error("cached ws ticket holds an invalid platform id", "error", scanErr, "ticket", ticketStr)
-				}
-			}
 		}
 	}
 
@@ -265,8 +259,23 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Upgrade to WebSocket.
-	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	// Upgrade to WebSocket. RFC 6455: when the client offers
+	// Sec-WebSocket-Protocol tokens the server must echo one back — a
+	// missing Sec-WebSocket-Protocol response header aborts the browser
+	// handshake ("Sent non-empty 'Sec-WebSocket-Protocol' header but no
+	// response was received"). Echo the offered jc-ticket.* token via the
+	// upgrade response headers; it transports the ticket, not a real
+	// subprotocol.
+	var responseHeader http.Header
+	for _, proto := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
+		if t := strings.TrimSpace(proto); strings.HasPrefix(t, wsTicketSubprotocolPrefix) {
+			responseHeader = http.Header{}
+			responseHeader.Set("Sec-WebSocket-Protocol", t)
+			break
+		}
+	}
+
+	conn, err := wsUpgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		slog.Error("websocket upgrade failed", "error", err)
 		return

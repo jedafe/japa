@@ -62,7 +62,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('remittance.seo_title', 'Remittance Rate Tracker — JapaConnect Tools'),
+			title: t('remittance.seo_title', 'Remittance Rate Tracker — {site} Tools'),
 			description: t(
 				'remittance.seo_description',
 				'Compare live remittance rates across providers, view historical trends, calculate transfer costs, and set rate alerts.'

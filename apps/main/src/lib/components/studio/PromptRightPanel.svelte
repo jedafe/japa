@@ -205,7 +205,7 @@
 	<Tabs.Content value="prompt" class="pt-2">
 		<div class="panel-stack">
 			{@render selectField(t('studio.prompts.mode', 'Mode'), modeItems, values.mode, (i) => (values.mode = i.id as PromptMode), () => (values.mode = DEFAULT_PROMPT_VALUES.mode))}
-			{@render textField(t('studio.prompts.audience', 'Audience'), values.audience, (v) => (values.audience = v), t('studio.prompts.audience_placeholder', 'e.g. Nigerians relocating to Canada — defaults to general JapaConnect readers'))}
+			{@render textField(t('studio.prompts.audience', 'Audience'), values.audience, (v) => (values.audience = v), t('studio.prompts.audience_placeholder', 'e.g. Nigerians relocating to Canada — defaults to general {site} readers'))}
 
 			{#if canPersona}
 				{@render selectField(t('studio.prompts.persona', 'Persona'), personaItems, values.persona_id, (i) => (values.persona_id = i.id), () => (values.persona_id = ''))}

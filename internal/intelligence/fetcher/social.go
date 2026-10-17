@@ -87,7 +87,7 @@ func (f *SocialFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 
 	ua := stringFromCfg(cfg, "ua")
 	if ua == "" {
-		ua = "JapaConnect-Intel/1.0 (+https://japaconnect.com)"
+		ua = "JapaConnect-Intel/1.0 (+https://japa.to)"
 	}
 
 	req.Header.Set("User-Agent", ua)

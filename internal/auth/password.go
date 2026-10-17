@@ -177,7 +177,7 @@ func VerifyPassword(hash, password string) error {
 // string. Login compares against it on the no-account and no-password
 // paths so the response time is indistinguishable from a real failed
 // password check (timing-oracle defense, CWE-208).
-const dummyPasswordHash = "$2a$12$0UiF9DiW0OZpvvnVY8ZSou5FYJrmO3njq6a4hQaaeFhFQZr3nK6pK"
+const dummyPasswordHash = "$2a$12$0UiF9DiW0OZpvvnVY8ZSou5FYJrmO3njq6a4hQaaeFhFQZr3nK6pK" // #nosec G101 -- fixed non-credential string used only for timing-oracle defense
 
 // CheckPasswordHistory queries the last N password hashes for the given user
 // and checks whether the new password matches any of them. Returns nil if the

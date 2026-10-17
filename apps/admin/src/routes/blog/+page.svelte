@@ -365,7 +365,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.blog.page_title', 'Blog — JapaConnect Admin')}</title>
+	<title>{t('app.blog.page_title', 'Blog — {site} Admin')}</title>
 </svelte:head>
 
 <PageHeader

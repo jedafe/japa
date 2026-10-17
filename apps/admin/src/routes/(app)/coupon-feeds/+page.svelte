@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /coupon-feeds — deal feed source management (EntityPage scaffold).
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md (Deal Feed Import)
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -181,7 +182,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('coupon_feeds.title', 'Deal Feeds')} — JapaConnect Admin</title>
+	<title>{t('coupon_feeds.title', 'Deal Feeds')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

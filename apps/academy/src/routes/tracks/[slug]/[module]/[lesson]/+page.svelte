@@ -257,11 +257,11 @@
 	{:else}
 		<meta name="robots" content="noindex, nofollow" />
 	{/if}
-	<link rel="canonical" href={`https://academy.japaconnect.com/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
+	<link rel="canonical" href={`https://academy.japa.to/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
 	<meta property="og:title" content={`${lesson.title} · ${track.title}`} />
 	<meta property="og:description" content={excerptFromHtml(lesson.content_html) ?? lesson.title} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={`https://academy.japaconnect.com/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
+	<meta property="og:url" content={`https://academy.japa.to/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
 	{#if track.thumbnail_url}
 		<meta property="og:image" content={track.thumbnail_url} />
 	{/if}
@@ -276,7 +276,7 @@
 			'@type': 'LearningResource',
 			name: lesson.title,
 			description: excerptFromHtml(lesson.content_html) ?? undefined,
-			isPartOf: { '@type': 'Course', name: track.title, url: `https://academy.japaconnect.com/tracks/${track.slug}` },
+			isPartOf: { '@type': 'Course', name: track.title, url: `https://academy.japa.to/tracks/${track.slug}` },
 			teaches: lesson.title
 		})}
 </svelte:head>
@@ -682,7 +682,7 @@
 		<div class="mt-8 flex max-w-3xl flex-wrap items-center justify-between gap-4 border-t border-[var(--color-border)] pt-6">
 			{#if lesson.prev_lesson}
 				<a
-					href="/tracks/{track.slug}/{lesson.prev_lesson.module_slug}/${lesson.prev_lesson.slug}"
+					href="/tracks/{track.slug}/{lesson.prev_lesson.module_slug}/{lesson.prev_lesson.slug}"
 					class="inline-flex items-center gap-1 text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
 				>
 					<ArrowLeft size={16} /> {t('academy.prev_lesson')}

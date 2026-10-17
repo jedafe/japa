@@ -108,7 +108,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('readiness.seo_title', 'Japa Readiness Assessment — JapaConnect Tools'),
+			title: t('readiness.seo_title', 'Japa Readiness Assessment — {site} Tools'),
 			description: t(
 				'readiness.seo_description',
 				'A scored questionnaire across financial, logistical, and personal dimensions. Get a readiness score, threshold label, and a personalized roadmap.'

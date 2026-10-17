@@ -5,8 +5,8 @@ import { categoryHref } from '$lib/docs/catalog';
 import type { DocNavTree, DocNavItem } from '$lib/types';
 
 /**
- * Per-host sitemap for docs.japaconnect.com (sitemap-protocol same-host rule:
- * academy/docs/tools cannot be `loc` entries under japaconnect.com).
+ * Per-host sitemap for docs.japa.to (sitemap-protocol same-host rule:
+ * academy/docs/tools cannot be `loc` entries under japa.to).
  * Advertised by static/robots.txt as Sitemap: {origin}/sitemap.xml.
  *
  * Data: GET /docs/nav (public tree, no token) → /docs/{audience}/{slug}.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /moderation-queue — migrated to the EntityPage scaffold.
 	// This page has two distinct entity types behind tabs (queue items + alerts),
 	// so it renders two separate `<EntityPage>` instances conditionally rather
@@ -442,7 +443,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('moderationQueue.title', 'Moderation Queue')} — JapaConnect Admin</title>
+	<title>{t('moderationQueue.title', 'Moderation Queue')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if !canModerate}

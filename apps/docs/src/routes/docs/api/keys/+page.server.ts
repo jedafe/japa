@@ -4,7 +4,7 @@ import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError } from '$lib
 import { buildMeta } from '$lib/seo/meta';
 import type { ApiKeySummary, ApiKeyCreated, ApiScopeOption, ApiKeyIpEntry } from '$lib/types';
 import { env } from '$env/dynamic/public';
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 
 // Login lives on the Main app, not the Docs app. Any /login redirect relative
 // to the docs origin 404s, so always build the full URL against the main origin.
@@ -18,6 +18,7 @@ const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/
  * only the prefix is visible.
  */
 export const load: PageServerLoad = async (event) => {
+	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	if (!event.locals.user) {
 		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
 	}
@@ -72,12 +73,14 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const locale = event.locals.locale;
-	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
-	const title = `${tServer(locale, 'api.keys_title', 'API Keys')} · ${appName}`;
+	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
+	const title = `${tServer(locale, 'api.keys_title', 'API Keys', undefined, site)} · ${appName}`;
 	const description = tServer(
 		locale,
 		'api.keys_desc',
-		'Manage your developer API keys for the JapaConnect platform.'
+		'Manage your developer API keys for the {site} platform.',
+		undefined,
+		site
 	);
 
 	const meta = buildMeta({

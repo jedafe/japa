@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import {
 		Newspaper,
@@ -151,7 +151,7 @@
 </script>
 
 <svelte:head>
-	<title>{title} — JapaConnect</title>
+	<title>{title} — {siteName()}</title>
 	<meta name="description" content={description} />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />

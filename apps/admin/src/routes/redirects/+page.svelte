@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /redirects — migrated to the EntityPage scaffold; simple CRUD entity using declarative `fields` (EntityForm).
 	// Ref: japaconnect-engineering/adr/ADR-056-url-redirects.md
 	// Field names mirror the backend gen.Redirect JSON contract:
@@ -203,7 +204,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('redirects.title', 'Redirects')} — JapaConnect Admin</title>
+	<title>{t('redirects.title', 'Redirects')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

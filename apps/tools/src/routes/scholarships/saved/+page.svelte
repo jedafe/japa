@@ -28,7 +28,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('scholarships.tracker_title', 'Saved Scholarships — JapaConnect'),
+			title: t('scholarships.tracker_title', 'Saved Scholarships — {site}'),
 			description: t('scholarships.tracker_seo_desc', 'Track your saved scholarships and application status.'),
 			path: '/scholarships/saved',
 			origin: page.url.origin,

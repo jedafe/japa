@@ -298,7 +298,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('imports.page_title', 'Content Imports — JapaConnect Admin')}</title>
+	<title>{t('imports.page_title', 'Content Imports — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

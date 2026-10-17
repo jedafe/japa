@@ -505,7 +505,7 @@ func searchPerplexity(ctx context.Context, client *http.Client, apiKey, query st
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("HTTP-Referer", "https://japaconnect.com")
+	req.Header.Set("HTTP-Referer", "https://japa.to")
 	req.Header.Set("X-Title", "JapaConnect")
 
 	resp, err := client.Do(req)

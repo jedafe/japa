@@ -4,7 +4,7 @@
 	import { getEnabledTools } from '$lib/tools/registry';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 
 	/**
@@ -23,7 +23,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('hub.seo_title', 'JapaConnect Tools — Identity tools for your japa journey'),
+			title: t('hub.seo_title', '{site} Tools — Identity tools for your japa journey'),
 			description: t(
 				'hub.seo_description',
 				'Visa document checklist, readiness assessment, cost of living calculator, scholarship finder, remittance rate tracker, and JapaBot AI guide.'
@@ -36,19 +36,19 @@
 				'@graph': [
 					{
 						'@type': 'WebSite',
-						name: 'JapaConnect Tools',
+						name: `${siteName()} Tools`,
 						url: `${page.url.origin}/`,
 						description:
 							'Identity tools for the Nigerian diaspora japa journey: visa checklist, readiness assessment, cost of living, scholarships, remittance tracker, and JapaBot.'
 					},
 					{
 						'@type': 'ItemList',
-						name: 'JapaConnect Tools',
+						name: `${siteName()} Tools`,
 						itemListElement: enabledTools.map((tool, i) => ({
 							'@type': 'ListItem',
 							position: i + 1,
 							name: tool.name,
-							description: tool.description,
+							description: t(tool.descriptionKey, tool.description),
 							url: `${page.url.origin}${tool.route}`
 						}))
 					}
@@ -75,7 +75,7 @@
 			icon="wrench"
 			title={t('hub.no_tools', 'No tools available')}
 			description={t('hub.no_tools_desc', 'All tools are currently disabled. Please check back later.')}
-			action={{ label: t('shell.back_to_japaconnect', 'Back to JapaConnect'), href: mainAppUrl('/') }}
+			action={{ label: t('shell.back_to_japaconnect', 'Back to {site}'), href: mainAppUrl('/') }}
 		/>
 	{:else}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">

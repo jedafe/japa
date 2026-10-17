@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import RecommendationsWidget from '$lib/components/hub/dashboard/RecommendationsWidget.svelte';
 	import type { PageData } from './$types';
 
@@ -9,7 +9,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('dashboard.overview.recommendations')} — JapaConnect</title>
+	<title>{t('dashboard.overview.recommendations')} — {siteName()}</title>
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">

@@ -52,7 +52,7 @@ func IndexWithRetry(ctx context.Context, entityType, entityID, operation string,
 			"attempt", attempt+1,
 			"error", err)
 
-		wait := delays[attempt] + time.Duration(rand.Int64N(int64(delays[attempt]/2+1)))
+		wait := delays[attempt] + time.Duration(rand.Int64N(int64(delays[attempt]/2+1))) // #nosec G404 -- retry jitter is not security-sensitive
 		if !sleepContext(ctx, wait) {
 			return err
 		}

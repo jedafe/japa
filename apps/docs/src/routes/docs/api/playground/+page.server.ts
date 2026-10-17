@@ -4,7 +4,7 @@ import type { PageServerLoad } from './$types';
 import { buildMeta } from '$lib/seo/meta';
 import { API_BASE, JC_SURFACE, apiContext, apiGet } from '$lib/server/api';
 import type { OpenAPISpec, ApiKeySummary } from '$lib/types';
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 
 /**
  * API Playground — the full-width tool exception (ADR-060). Breaks the shell
@@ -15,6 +15,7 @@ import { tServer } from '$lib/i18n/dict';
  * session. Guests are redirected to the main site login.
  */
 export const load: PageServerLoad = async (event) => {
+	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	if (!event.locals.user) {
 		const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
@@ -41,12 +42,14 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const locale = event.locals.locale;
-	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
-	const title = `${tServer(locale, 'api.playground_title', 'API Playground')} · ${appName}`;
+	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
+	const title = `${tServer(locale, 'api.playground_title', 'API Playground', undefined, site)} · ${appName}`;
 	const description = tServer(
 		locale,
 		'api.playground_subtitle',
-		'Make real requests against the JapaConnect API with your own key.'
+		'Make real requests against the {site} API with your own key.',
+		undefined,
+		site
 	);
 
 	const meta = buildMeta({

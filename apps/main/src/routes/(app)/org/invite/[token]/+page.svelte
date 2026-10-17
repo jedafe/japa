@@ -16,7 +16,7 @@
 	let acceptedSlug = $state('');
 	let errorMessage = $state('');
 
-	const pageTitle = $derived(t('org_invite.title', 'Organization invitation — JapaConnect'));
+	const pageTitle = $derived(t('org_invite.title', 'Organization invitation — {site}'));
 
 	async function accept() {
 		if (accepting || acceptedSlug) return;

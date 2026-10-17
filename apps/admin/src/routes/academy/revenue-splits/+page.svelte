@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /academy/revenue-splits — read-only audit viewer migrated to EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
 	import { academyAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
@@ -161,7 +162,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('academy.revenue_splits_title', 'Revenue Splits')} — JapaConnect Admin</title>
+	<title>{t('academy.revenue_splits_title', 'Revenue Splits')} — {siteName()} Admin</title>
 </svelte:head>
 
 <!-- Page-local date-range filter (EntityPage FilterDef only supports select dropdowns) -->

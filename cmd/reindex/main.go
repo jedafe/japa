@@ -55,7 +55,7 @@ func run() error {
 	}
 	defer database.Close()
 
-	searchEngine, err := search.NewEngine(cfg.MeilisearchURL, cfg.MeilisearchKey)
+	searchEngine, err := search.NewEngine(cfg.MeilisearchURL, cfg.MeilisearchKey, cfg.MeiliIndexPrefix)
 	if err != nil {
 		return fmt.Errorf("creating search engine: %w", err)
 	}

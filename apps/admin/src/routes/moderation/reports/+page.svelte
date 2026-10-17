@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /moderation/reports — migrated to the EntityPage scaffold.
 	// Distinct from /reports: this view is focused on resolving pending reports
 	// via state actions (dismiss / warn / ban / remove content) issued through
@@ -228,7 +229,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('moderation.reports', 'Reports')} — JapaConnect Admin</title>
+	<title>{t('moderation.reports', 'Reports')} — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="mb-4">

@@ -1,6 +1,6 @@
 ---
 name: jc-tools-audit
-description: Use when auditing or reviewing the JapaConnect Tools Web Surface (apps/tools, port 3005, tools.japaconnect.com). Covers host-detection correctness, shell mode rendering, API-Readiness Gate compliance, Rule 16 (no hardcoded data), and SSR/CSR boundary violations.
+description: Use when auditing or reviewing the JapaConnect Tools Web Surface (apps/tools, port 3005, tools.japa.to). Covers host-detection correctness, shell mode rendering, API-Readiness Gate compliance, Rule 16 (no hardcoded data), and SSR/CSR boundary violations.
 ---
 
 # JapaConnect Tools Surface — Audit Skill
@@ -9,7 +9,7 @@ Audit checklist for `apps/tools/` (§78, ADR-086). Run this when reviewing a PR,
 
 ## Surface Overview
 
-SvelteKit SSR · Port 3005 · `tools.japaconnect.com` (configurable via `system_settings`). Sixth SvelteKit app in the monorepo. Same Go backend, same `/api/v1`, **no community navigation**.
+SvelteKit SSR · Port 3005 · `tools.japa.to` (configurable via `system_settings`). Sixth SvelteKit app in the monorepo. Same Go backend, same `/api/v1`, **no community navigation**.
 
 ## Audit Checklist
 

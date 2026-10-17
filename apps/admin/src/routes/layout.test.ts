@@ -42,7 +42,7 @@ import TopBar from '$lib/components/layout/TopBar.svelte';
 describe('admin root +layout load', () => {
 	it('returns an empty object (SPA — auth is client-side in onMount)', async () => {
 		const result = (await load({
-			url: new URL('http://admin.japaconnect.com/users')
+			url: new URL('http://admin.japa.to/users')
 		} as any)) as any;
 
 		expect(result).toEqual({});
@@ -50,7 +50,7 @@ describe('admin root +layout load', () => {
 
 	it('does not throw for the login route', async () => {
 		await expect(load({
-			url: new URL('http://admin.japaconnect.com/login')
+			url: new URL('http://admin.japa.to/login')
 		} as any)).resolves.toEqual({});
 	});
 });

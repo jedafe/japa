@@ -64,13 +64,13 @@
 		<meta name="description" content={instructor.headline.slice(0, 160)} />
 	{/if}
 	<meta name="robots" content="index, follow" />
-	<link rel="canonical" href={`https://academy.japaconnect.com/instructors/${id}`} />
+	<link rel="canonical" href={`https://academy.japa.to/instructors/${id}`} />
 	<meta property="og:title" content={`${instructor?.display_name ?? t('academy.instructor')} · ${t('app.name')}`} />
 	{#if instructor?.headline}
 		<meta property="og:description" content={instructor.headline.slice(0, 160)} />
 	{/if}
 	<meta property="og:type" content="profile" />
-	<meta property="og:url" content={`https://academy.japaconnect.com/instructors/${id}`} />
+	<meta property="og:url" content={`https://academy.japa.to/instructors/${id}`} />
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={`${instructor?.display_name ?? t('academy.instructor')} · ${t('app.name')}`} />
 	{#if instructor?.headline}
@@ -82,7 +82,7 @@
 				'@type': 'Person',
 				name: instructor.display_name,
 				description: instructor.headline ?? instructor.bio ?? undefined,
-				url: `https://academy.japaconnect.com/instructors/${id}`
+				url: `https://academy.japa.to/instructors/${id}`
 			})}
 	{/if}
 </svelte:head>

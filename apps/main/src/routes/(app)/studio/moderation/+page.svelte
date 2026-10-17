@@ -328,7 +328,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('studio.tabs.moderation', 'Moderation')} — {t('studio.title', 'Studio — JapaConnect')}</title>
+	<title>{t('studio.tabs.moderation', 'Moderation')} — {t('studio.title', 'Studio — {site}')}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

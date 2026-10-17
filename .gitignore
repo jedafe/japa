@@ -110,3 +110,9 @@ screenshot/
 # Generated build artifacts
 /reindex
 /sitemaps/
+
+# Runtime-generated feeds/sitemaps (served dynamically by the API)
+/feed.xml
+/llms.txt
+/llms-full.txt
+/sitemap.xml

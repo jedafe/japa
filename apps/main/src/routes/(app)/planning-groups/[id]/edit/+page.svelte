@@ -1,6 +1,6 @@
 // Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { goto } from '$app/navigation';
@@ -82,7 +82,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('planning_groups.edit_heading', 'Edit Planning Group')} — JapaConnect</title>
+	<title>{t('planning_groups.edit_heading', 'Edit Planning Group')} — {siteName()}</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

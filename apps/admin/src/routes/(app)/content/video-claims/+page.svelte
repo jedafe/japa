@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /content/video-claims — admin DataTable for video_channel_claims.
 	// Ref: japaconnect-engineering/sections/106-video-content-and-import.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -200,7 +201,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('video_claims.title', 'Video Claims')} — JapaConnect Admin</title>
+	<title>{t('video_claims.title', 'Video Claims')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

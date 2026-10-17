@@ -143,7 +143,7 @@ func (s *ConversationService) AppendAssistantMessage(ctx context.Context, convID
 		Content:        content,
 		Model:          modelArg,
 		VoiceID:        voiceArg,
-		TokensUsed:     int32(tokens),
+		TokensUsed:     int32(tokens), // #nosec G115 -- provider usage counts are well below int32 range
 		CostUsd:        floatToNumeric(cost),
 		AgentSessionID: sess,
 	})

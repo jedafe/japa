@@ -5,7 +5,7 @@
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import {
 		Stamp,
@@ -265,7 +265,7 @@
 </script>
 
 <svelte:head>
-	<title>{title} — JapaConnect Tools</title>
+	<title>{title} — {siteName()} Tools</title>
 	<meta
 		name="description"
 		content={t(
@@ -274,7 +274,7 @@
 		)}
 	/>
 	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content="{title} — JapaConnect Tools" />
+	<meta property="og:title" content="{title} — {siteName()} Tools" />
 	<meta
 		property="og:description"
 		content={t(
@@ -285,7 +285,7 @@
 	<meta property="og:url" content={page.url.href} />
 	<meta property="og:type" content="website" />
 	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content="{title} — JapaConnect Tools" />
+	<meta name="twitter:title" content="{title} — {siteName()} Tools" />
 	<meta
 		name="twitter:description"
 		content={t(

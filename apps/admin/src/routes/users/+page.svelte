@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
@@ -480,7 +481,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("users.title", "Users")} — JapaConnect Admin</title>
+	<title>{t("users.title", "Users")} — {siteName()} Admin</title>
 </svelte:head>
 
 <!-- Impersonation Banner -->

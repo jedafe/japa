@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /docs/categories — manages the public docs.categories setting (the
 	// docs portal's category/subcategory catalog). Lives on its own subpage
 	// instead of Settings → Documentation because it is docs-surface work.
@@ -59,7 +60,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('docs.categories_title', 'Categories & Subcategories')} — JapaConnect Admin</title>
+	<title>{t('docs.categories_title', 'Categories & Subcategories')} — {siteName()} Admin</title>
 </svelte:head>
 
 <a

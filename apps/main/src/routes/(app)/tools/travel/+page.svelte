@@ -36,7 +36,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('tools.travel', 'Travel Search — JapaConnect'));
+	const title = $derived(t('tools.travel', 'Travel Search — {site}'));
 	const description = $derived(t('tools.travel_desc', 'Search flights and hotels for your move.'));
 	// Section 26 — self-referencing canonical on the clean tool URL (never
 	// the query-string form) so tab/filter hits consolidate.

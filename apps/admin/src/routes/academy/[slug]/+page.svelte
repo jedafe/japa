@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { page } from "$app/state";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
@@ -232,7 +233,7 @@
 </script>
 
 <svelte:head>
-	<title>{space?.name ?? t("academy.detail", "University")} — JapaConnect Admin</title>
+	<title>{space?.name ?? t("academy.detail", "University")} — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="mb-4">

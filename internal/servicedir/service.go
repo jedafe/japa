@@ -1407,8 +1407,8 @@ func (s *Service) validatePackageItems(ctx context.Context, orgID pgtype.UUID, i
 		return nil, nil
 	}
 
-	maxItems := int32(s.settings.GetIntOr(ctx, "service_packages.max_items", 25))
-	if int32(len(items)) > maxItems {
+	maxItems := int32(s.settings.GetIntOr(ctx, "service_packages.max_items", 25)) // #nosec G115 -- operator-configured bound
+	if int32(len(items)) > maxItems { // #nosec G115 -- slice length bounded by request-scoped data
 		return nil, ErrTooManyPackageItems
 	}
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, adminCatalogApi, type CatalogOption } from '$lib/api';
@@ -121,7 +122,7 @@
 </script>
 
 <svelte:head>
-	<title>Create Form — JapaConnect Admin</title>
+	<title>Create Form — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="mb-6">

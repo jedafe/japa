@@ -118,7 +118,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('dashboard.nav.spaces')} — {t('app.name', 'JapaConnect')}</title>
+	<title>{t('dashboard.nav.spaces')} — {t('app.name', '{site}')}</title>
 </svelte:head>
 
 <section class="space-y-4">

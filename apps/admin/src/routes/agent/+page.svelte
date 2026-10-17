@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /agent — Admin AI Agent session viewer. Read-only audit surface with
 	// three tabs: Sessions (list + detail slide-over), Tool Stats, Cost Report.
 	//
@@ -288,7 +289,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('admin.agent.title', 'AI Agent Sessions')} — JapaConnect Admin</title>
+	<title>{t('admin.agent.title', 'AI Agent Sessions')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if !canView}

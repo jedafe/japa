@@ -152,7 +152,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.planning_group.review_queue_page_title', 'Planning Groups Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.planning_group.review_queue_page_title', 'Planning Groups Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

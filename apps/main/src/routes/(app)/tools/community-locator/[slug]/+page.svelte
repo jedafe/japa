@@ -176,7 +176,7 @@
 		{#if org.claim_status === 'claimed' && (org.japaconnect_space_slug || org.japaconnect_space_id)}
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">
-					{t('community_locator.space_integration', 'JapaConnect Space')}
+					{t('community_locator.space_integration', '{site} Space')}
 				</h2>
 				<a
 					href={`/spaces/${org.japaconnect_space_slug || org.japaconnect_space_id}`}

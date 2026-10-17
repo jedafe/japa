@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /persona-voices — shared persona voice / tone definitions (ADR-114, §68).
 	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
 	import { personaVoicesAdminApi, type PersonaVoice } from '$lib/api';
@@ -120,7 +121,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('persona_voices.title', 'Persona Voices')} — JapaConnect Admin</title>
+	<title>{t('persona_voices.title', 'Persona Voices')} — {siteName()} Admin</title>
 </svelte:head>
 
 <EntityPage {config} />

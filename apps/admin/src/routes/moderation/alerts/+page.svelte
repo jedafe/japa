@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /moderation/alerts — migrated to the EntityPage scaffold; read-only list with
 	// state actions (Acknowledge / Resolve) wired through the `actions` config.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -172,7 +173,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('moderation.alerts_title', 'Moderation Alerts')} — JapaConnect Admin</title>
+	<title>{t('moderation.alerts_title', 'Moderation Alerts')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

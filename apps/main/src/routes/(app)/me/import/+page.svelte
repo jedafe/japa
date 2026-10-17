@@ -51,7 +51,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('import.title', 'Import Content — JapaConnect')}</title>
+	<title>{t('import.title', 'Import Content — {site}')}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

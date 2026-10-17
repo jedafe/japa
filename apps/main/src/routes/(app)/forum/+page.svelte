@@ -19,7 +19,7 @@
 	let { data }: { data: PageData } = $props();
 	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? undefined);
 
-	const title = $derived(t('forum.list_title', 'Forum — JapaConnect'));
+	const title = $derived(t('forum.list_title', 'Forum — {site}'));
 	const description = $derived(
 		t('forum.list_description', 'Discussions, questions, and answers from the Nigerian diaspora community.')
 	);

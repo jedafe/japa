@@ -19,7 +19,7 @@
 	const trend = $derived<TrendPoint[]>(data.trend);
 	const filters = $derived(data.filters);
 
-	const title = $derived(t('visa_timelines.title', 'Visa Timeline Tracker — JapaConnect'));
+	const title = $derived(t('visa_timelines.title', 'Visa Timeline Tracker — {site}'));
 	const description = $derived(
 		t(
 			'visa_timelines.description',

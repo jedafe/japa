@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { setToken } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { setChallenge } from '$lib/api/challenge';
@@ -73,7 +74,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('control.login.title', 'Sign In')} — JapaConnect Control</title>
+	<title>{t('control.login.title', 'Sign In')} — {siteName()} Control</title>
 </svelte:head>
 
 <div class="px-4">

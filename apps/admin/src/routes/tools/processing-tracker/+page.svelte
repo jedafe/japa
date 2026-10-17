@@ -267,7 +267,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.processing_tracker_page_title', 'Processing Time Tracker — JapaConnect Admin')}</title>
+	<title>{t('app.tools.processing_tracker_page_title', 'Processing Time Tracker — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

@@ -38,7 +38,7 @@
 	);
 
 	const title = $derived(
-		group ? t('planning_groups.detail_title', '{name} — JapaConnect').replace('{name}', group.name) : t('planning_groups.title', 'Planning Groups — JapaConnect')
+		group ? t('planning_groups.detail_title', '{name} — {site}').replace('{name}', group.name) : t('planning_groups.title', 'Planning Groups — {site}')
 	);
 	const description = $derived(group?.description ?? '');
 

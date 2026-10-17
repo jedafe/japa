@@ -1,4 +1,5 @@
 import { page } from '$app/state';
+import { DEFAULT_SITE_NAME } from '$lib/brand';
 import en from './en.json';
 import fr from './fr.json';
 
@@ -20,15 +21,38 @@ const dictionaries: Record<string, Dict> = { en, fr };
  * and client-side locale switches (via the `jc_locale` cookie + page reload)
  * propagate reactively without any manual `setLocale()` call.
  */
+/** Default brand name — re-exported from $lib/brand so server modules can
+ * use it without importing this runes-based store. */
+export { DEFAULT_SITE_NAME };
+
+/**
+ * Substitute the configured site name into a translated string: replaces the
+ * explicit `{site}` placeholder and any literal brand spelling that slipped
+ * into a dictionary/fallback, so a renamed site never leaks the default name.
+ */
+export function substituteSiteName(value: string, name: string): string {
+	return value
+		.replaceAll('{site}', name)
+		.replaceAll('Japa Connect', name)
+		.replaceAll('JapaConnect', name);
+}
+
 class I18nStore {
 	/** Active locale, derived from the request-scoped page data. */
 	locale = $derived<Locale>(
 		typeof page.data?.locale === 'string' && page.data.locale ? page.data.locale : 'en'
 	);
 
+	/** Configured brand name (general.site_name) from the public site settings
+	 * returned by the root layout load. Single fallback literal for the whole
+	 * app — every other consumer must read this, never hardcode the name. */
+	siteName = $derived<string>(
+		(page.data?.siteSettings?.['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME
+	);
+
 	t = (key: string, fallback?: string): string => {
 		const dict = dictionaries[this.locale] ?? dictionaries.en;
-		return dict[key] ?? fallback ?? key;
+		return substituteSiteName(dict[key] ?? fallback ?? key, this.siteName);
 	};
 }
 
@@ -36,3 +60,8 @@ export const i18n = new I18nStore();
 
 /** Convenience binding: `t('nav.compose')`. */
 export const t = i18n.t;
+
+/** Convenience binding for non-i18n markup: `{siteName()}`. */
+export function siteName(): string {
+	return i18n.siteName;
+}

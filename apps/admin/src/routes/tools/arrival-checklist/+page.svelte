@@ -252,7 +252,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.arrival_checklist_page_title', 'Arrival Checklist Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.tools.arrival_checklist_page_title', 'Arrival Checklist Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

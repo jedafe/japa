@@ -1047,7 +1047,7 @@
 							bind:value={values.audience}
 							placeholder={t(
 								'studio.prompts.audience_placeholder',
-								'e.g. Nigerians relocating to Canada — defaults to general JapaConnect readers'
+								'e.g. Nigerians relocating to Canada — defaults to general {site} readers'
 							)}
 						/>
 					</div>

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a public product roadmap (`/roadmap` + `roadmap.japaconnect.com`) with voting, submissions triage, comments, and admin management — leading with Spaces & Content Creation as the flagship item.
+**Goal:** Build a public product roadmap (`/roadmap` + `roadmap.japa.to`) with voting, submissions triage, comments, and admin management — leading with Spaces & Content Creation as the flagship item.
 
-**Architecture:** Dedicated `internal/roadmap` Go module (Handlers → Service → Store, sqlc) backed by `roadmap_items` / `roadmap_categories` / `roadmap_votes` tables. Each published item owns a hidden `contents` row (`content_type='roadmap'`) so §49 comments work unchanged. Public pages in `apps/main`; admin management in `apps/admin` via the `EntityPage` scaffold; `roadmap.japaconnect.com` via host detection (ADR-063 precedent).
+**Architecture:** Dedicated `internal/roadmap` Go module (Handlers → Service → Store, sqlc) backed by `roadmap_items` / `roadmap_categories` / `roadmap_votes` tables. Each published item owns a hidden `contents` row (`content_type='roadmap'`) so §49 comments work unchanged. Public pages in `apps/main`; admin management in `apps/admin` via the `EntityPage` scaffold; `roadmap.japa.to` via host detection (ADR-063 precedent).
 
 **Tech Stack:** Go + chi + sqlc/pgx + Valkey + Asynq; SvelteKit 2 + Svelte 5 runes + Tailwind v4; bun for all JS tooling.
 
@@ -41,11 +41,11 @@
 
 - [x] **Step 1: Write `sections/113-public-product-roadmap.md`**
 
-Structure it like `sections/38-ticket-system.md` (read it for the house style: status machine, tables, routes, settings, RBAC, Valkey keys). Content must cover: purpose (incremental launch comms, Spaces & Content Creation flagship), the status lifecycle `pending → under_review → planned → in_progress → shipped` (+ `declined`, `archived`), the three tables (schema in Task 2), the shadow-`contents`-row comments mechanism, public + admin routes (Task 6 list), RBAC nodes, Valkey key `jc:roadmap:board`, system settings `roadmap.submissions_enabled` / `roadmap.custom_domain` / `roadmap.board_cache_ttl_seconds` / `roadmap.shipped_window_days`, the `roadmap:ship_notify` task, and the `roadmap.japaconnect.com` host-detection mode.
+Structure it like `sections/38-ticket-system.md` (read it for the house style: status machine, tables, routes, settings, RBAC, Valkey keys). Content must cover: purpose (incremental launch comms, Spaces & Content Creation flagship), the status lifecycle `pending → under_review → planned → in_progress → shipped` (+ `declined`, `archived`), the three tables (schema in Task 2), the shadow-`contents`-row comments mechanism, public + admin routes (Task 6 list), RBAC nodes, Valkey key `jc:roadmap:board`, system settings `roadmap.submissions_enabled` / `roadmap.custom_domain` / `roadmap.board_cache_ttl_seconds` / `roadmap.shipped_window_days`, the `roadmap:ship_notify` task, and the `roadmap.japa.to` host-detection mode.
 
 - [x] **Step 2: Write `adr/ADR-127-public-product-roadmap.md`**
 
-Decisions to record: (a) dedicated module vs contents-native (feed/search pollution, vote semantics, `content_hash` collision risk), (b) shadow `contents` row for §49 comments reuse, (c) host-detection reuse of the ADR-063 `isUniversityHost` pattern for `roadmap.japaconnect.com`, (d) logged-in-only voting, (e) self-healing `vote_count` via recount query instead of increment counters.
+Decisions to record: (a) dedicated module vs contents-native (feed/search pollution, vote semantics, `content_hash` collision risk), (b) shadow `contents` row for §49 comments reuse, (c) host-detection reuse of the ADR-063 `isUniversityHost` pattern for `roadmap.japa.to`, (d) logged-in-only voting, (e) self-healing `vote_count` via recount query instead of increment counters.
 
 - [x] **Step 3: Update `JEOS.md`**
 
@@ -1136,7 +1136,7 @@ git commit -am "main: roadmap changelog + submission pages (§113)"
 
 ---
 
-### Task 12: `apps/main` — `roadmap.japaconnect.com` host detection
+### Task 12: `apps/main` — `roadmap.japa.to` host detection
 
 **Files:**
 - Modify: `apps/main/src/hooks.server.ts`
@@ -1156,11 +1156,11 @@ git commit -am "main: roadmap changelog + submission pages (§113)"
 ```ts
 /**
  * ADR-127: detect whether the request host is the public roadmap surface.
- * The canonical host is roadmap.japaconnect.com; additional custom domains
+ * The canonical host is roadmap.japa.to; additional custom domains
  * via the JC_ROADMAP_HOSTS env var (comma-separated).
  */
 function isRoadmapSurface(host: string): boolean {
-	const canonical = 'roadmap.japaconnect.com';
+	const canonical = 'roadmap.japa.to';
 	const configured = env.JC_ROADMAP_HOSTS?.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) ?? [];
 	return [canonical, ...configured].includes(host.toLowerCase());
 }
@@ -1182,7 +1182,7 @@ Set `event.locals.isRoadmapHost = isRoadmapSurface(event.url.hostname)` beside t
 
 ```bash
 cd apps/main && bun run check
-git commit -am "main: roadmap.japaconnect.com host detection (ADR-127)"
+git commit -am "main: roadmap.japa.to host detection (ADR-127)"
 ```
 
 ---

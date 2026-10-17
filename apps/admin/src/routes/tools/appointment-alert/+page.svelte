@@ -187,7 +187,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.appointment_alert_page_title', 'Embassy Appointment Alerter — JapaConnect Admin')}</title>
+	<title>{t('app.tools.appointment_alert_page_title', 'Embassy Appointment Alerter — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

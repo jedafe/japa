@@ -292,7 +292,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.digest.review_queue_page_title', 'Digest Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.digest.review_queue_page_title', 'Digest Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

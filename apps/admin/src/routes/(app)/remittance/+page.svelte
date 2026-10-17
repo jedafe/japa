@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /remittance — migrated to the EntityPage scaffold: server-paginated
 	// fetch loop + client-side q/sort/filter (the backend only supports
 	// limit/offset/active_only), ActionMenu row actions, SlideOver forms.
@@ -379,7 +380,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('remittance.title', 'Remittance Rate Tracker')} — JapaConnect Admin</title>
+	<title>{t('remittance.title', 'Remittance Rate Tracker')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if message}

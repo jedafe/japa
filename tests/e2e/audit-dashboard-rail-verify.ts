@@ -13,7 +13,7 @@ async function login(page: any) {
 			});
 			return { ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) };
 		},
-		{ email: 'admin@japaconnect.com', password: 'Admin123!' }
+		{ email: 'admin@japa.to', password: 'Admin123!' }
 	);
 	if (!res.ok) throw new Error(`Login failed: ${res.status} ${JSON.stringify(res.body)}`);
 }

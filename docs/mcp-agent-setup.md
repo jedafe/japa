@@ -8,9 +8,9 @@ for the specs.
 
 Production endpoints:
 
-- MCP: `https://api.japaconnect.com/api/v1/mcp`
-- OAuth discovery: `https://api.japaconnect.com/.well-known/oauth-protected-resource`
-- GPT Actions schema: `https://api.japaconnect.com/docs/gpt-actions.json`
+- MCP: `https://api.japa.to/api/v1/mcp`
+- OAuth discovery: `https://api.japa.to/.well-known/oauth-protected-resource`
+- GPT Actions schema: `https://api.japa.to/docs/gpt-actions.json`
 
 Two credential paths exist:
 
@@ -42,7 +42,7 @@ recommended minimum for useful results).
   "mcpServers": {
     "japaconnect": {
       "type": "http",
-      "url": "https://api.japaconnect.com/api/v1/mcp",
+      "url": "https://api.japa.to/api/v1/mcp",
       "headers": { "X-API-Key": "${JC_MCP_API_KEY}" }
     }
   }
@@ -55,7 +55,7 @@ recommended minimum for useful results).
 {
   "mcpServers": {
     "japaconnect": {
-      "url": "https://api.japaconnect.com/api/v1/mcp",
+      "url": "https://api.japa.to/api/v1/mcp",
       "headers": { "X-API-Key": "${JC_MCP_API_KEY}" }
     }
   }
@@ -69,7 +69,7 @@ recommended minimum for useful results).
   "mcp": {
     "japaconnect": {
       "type": "remote",
-      "url": "https://api.japaconnect.com/api/v1/mcp",
+      "url": "https://api.japa.to/api/v1/mcp",
       "headers": { "X-API-Key": "{env:JC_MCP_API_KEY}" }
     }
   }
@@ -98,7 +98,7 @@ go build -o mcpbridge ./cmd/mcpbridge
       "type": "stdio",
       "command": "/path/to/mcpbridge",
       "env": {
-        "JC_MCP_URL": "https://api.japaconnect.com/api/v1/mcp",
+        "JC_MCP_URL": "https://api.japa.to/api/v1/mcp",
         "JC_MCP_API_KEY": "jc_key_..."
       }
     }
@@ -127,7 +127,7 @@ Mint via the admin/control path — self-serve keys are rejected with
 `scope_requires_admin` if they include `agent.write`:
 
 ```bash
-curl -X POST https://api.japaconnect.com/api/v1/control/api-keys \
+curl -X POST https://api.japa.to/api/v1/control/api-keys \
   -H "Authorization: Bearer <admin-jwt>" \
   -H 'Content-Type: application/json' \
   -d '{"name":"content-agent","scopes":["agent.use","agent.write"]}'
@@ -151,7 +151,7 @@ needed — clients register themselves via RFC 7591 DCR.
 ### claude.ai (custom connector)
 
 1. Settings → Connectors → Add custom connector.
-2. Paste `https://api.japaconnect.com/api/v1/mcp`.
+2. Paste `https://api.japa.to/api/v1/mcp`.
 3. Claude discovers `/.well-known/oauth-protected-resource` →
    `oauth-authorization-server` → `oauth/register` automatically, then opens
    the JapaConnect consent page (`/oauth/authorize`).
@@ -160,7 +160,7 @@ needed — clients register themselves via RFC 7591 DCR.
 ### ChatGPT connector (developer mode / deep research)
 
 1. Enable developer mode in ChatGPT.
-2. Add connector with server URL `https://api.japaconnect.com/api/v1/mcp`.
+2. Add connector with server URL `https://api.japa.to/api/v1/mcp`.
 3. ChatGPT performs the same OAuth discovery + DCR + PKCE flow and requires
    the `search` and `fetch` tools — JapaConnect exposes them as aliases over
    `content.search` and `content.read`.
@@ -174,7 +174,7 @@ documents directly.
 ## ChatGPT Custom GPT Action (API key)
 
 1. Create a Custom GPT → Actions → paste or import
-   `https://api.japaconnect.com/docs/gpt-actions.json` (OpenAPI 3.0.3,
+   `https://api.japa.to/docs/gpt-actions.json` (OpenAPI 3.0.3,
    read-only subset of `/api/v1/public/*`).
 2. Authentication → API Key → header name `X-API-Key` → paste a generated key.
 3. Save. The Action calls the same scoped public REST API as any developer key.
@@ -208,11 +208,11 @@ documents directly.
 
 ## Deployment checklist
 
-- `JC_MCP_PUBLIC_URL=https://api.japaconnect.com` — issuer + consent base.
-- `JC_SITE_URL=https://japaconnect.com` — login redirect target.
+- `JC_MCP_PUBLIC_URL=https://api.japa.to` — issuer + consent base.
+- `JC_SITE_URL=https://japa.to` — login redirect target.
 - `jc_token` cookie domain must cover the API host (`JC_COOKIE_DOMAIN` —
-  e.g. `.japaconnect.com`) so the consent page sees the session.
-- `PRIVATE_API_PUBLIC_ORIGIN=https://api.japaconnect.com` on the main-site
+  e.g. `.japa.to`) so the consent page sees the session.
+- `PRIVATE_API_PUBLIC_ORIGIN=https://api.japa.to` on the main-site
   deployment **only when** `PRIVATE_API_BASE_URL` points at an internal
   address that differs from the public issuer — otherwise the post-login
   redirect allowlist rejects the consent URL.

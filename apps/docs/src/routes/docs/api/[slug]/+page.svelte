@@ -290,7 +290,7 @@
 	.crumb:hover { color: var(--color-primary); }
 	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); flex-shrink: 0; }
 	.doc-header h1 {
-		font-family: var(--font-sans);
+		font-family: var(--font-heading, var(--font-sans));
 		font-size: 2rem;
 		font-weight: 700;
 		color: var(--color-text);

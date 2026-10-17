@@ -139,7 +139,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('mutual_aid.new_title', 'New Mutual Aid Post — JapaConnect')}</title>
+	<title>{t('mutual_aid.new_title', 'New Mutual Aid Post — {site}')}</title>
 	<meta name="description" content={t('mutual_aid.new_description', 'Post a help request or offer.')} />
 	<meta name="robots" content="noindex" />
 </svelte:head>

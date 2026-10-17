@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /page-builder/pages — migrated to the EntityPage scaffold.
 	// List + page metadata CRUD via EntityPage; state actions (publish/archive)
 	// keep page-local confirm Modals and refetch via entityController.reload().
@@ -526,7 +527,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('page_builder.pages_title', 'Pages')} — JapaConnect Admin</title>
+	<title>{t('page_builder.pages_title', 'Pages')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

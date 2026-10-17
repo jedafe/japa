@@ -236,7 +236,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.tax_calculator_page_title', 'Tax Calculator Guide Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.tools.tax_calculator_page_title', 'Tax Calculator Guide Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

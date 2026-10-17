@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /share-platforms — migrated to the EntityPage scaffold (Task 10); simple CRUD entity using `formFields` (EntityForm).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { sharePlatformsAdminApi } from '$lib/api';
@@ -160,7 +161,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('share_platforms.title', 'Share Platforms')} — JapaConnect Admin</title>
+	<title>{t('share_platforms.title', 'Share Platforms')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { siteName } from '../../site';
   import type { GuestHeroTextProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { ArrowRight } from 'lucide-svelte';
@@ -14,11 +15,11 @@
   let { props, fetchCtx, geoCountry, id = 'guest-hero-text' }: Props = $props();
 
   const eyebrow = $derived(props.eyebrow ?? 'Your Bridge to Global Opportunities');
-  const headlinePrefix = $derived(props.headline_prefix ?? 'Work. Study. Live.');
+  const headlinePrefix = $derived(props.headline_prefix ?? 'Work. Study. Thrive.');
   const headlineAccent = $derived(props.headline_accent ?? 'Anywhere in the World.');
   const subhead = $derived(
     props.subhead ??
-      'JapaConnect is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.'
+      `${siteName()} is your all-in-one platform for migration guidance, job opportunities, scholarships, business insights, and everything you need to succeed globally.`
   );
   // CTA children (guest_hero_cta_item blocks) take precedence over the legacy
   // ctas[] prop so each action is editable in the page builder tree.

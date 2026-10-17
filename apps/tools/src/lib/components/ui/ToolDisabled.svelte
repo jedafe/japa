@@ -34,6 +34,6 @@
 		class="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover transition-colors"
 	>
 		<Icon name="arrow-left" size={16} />
-		{t('shell.back_to_japaconnect', 'Back to JapaConnect')}
+		{t('shell.back_to_japaconnect', 'Back to {site}')}
 	</a>
 </div>

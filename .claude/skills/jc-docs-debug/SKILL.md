@@ -1,6 +1,6 @@
 ---
 name: jc-docs-debug
-description: [Docs app, docs.japaconnect.com] Unified shell adapted for Docs (ADR-060) — nav-tree left nav, TOC right sidebar, playground full-width exception. Use when reviewing or debugging JapaConnect Docs app code (apps/docs, SSR). Diagnoses IntersectionObserver and keydown listener leaks, Cmd+K search issues, code block highlighting, and responsive three-column collapse.
+description: [Docs app, docs.japa.to] Unified shell adapted for Docs (ADR-060) — nav-tree left nav, TOC right sidebar, playground full-width exception. Use when reviewing or debugging JapaConnect Docs app code (apps/docs, SSR). Diagnoses IntersectionObserver and keydown listener leaks, Cmd+K search issues, code block highlighting, and responsive three-column collapse.
 ---
 
 # JapaConnect Docs — Review & Debugging Skill
@@ -79,4 +79,4 @@ Apply `jc-main-debug` §§1–3, 5–7 (SSR/hydration, Runes, Bits UI, Tailwind,
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

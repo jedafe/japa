@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /roadmap/categories — EntityPage scaffold (§113). Simple CRUD entity
 	// using declarative `fields` (EntityForm); the list endpoint returns all
 	// categories unpaginated, so search/pagination are applied client-side
@@ -92,7 +93,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('roadmap.categories', 'Roadmap Categories')} — JapaConnect Admin</title>
+	<title>{t('roadmap.categories', 'Roadmap Categories')} — {siteName()} Admin</title>
 </svelte:head>
 
 <EntityPage {config} />

@@ -48,7 +48,7 @@ test('Settings pages runtime audit', async ({ page }) => {
   // Login
   await page.goto('/login');
   await page.locator('#login-email').waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('#login-email').fill('admin@japaconnect.com');
+  await page.locator('#login-email').fill('admin@japa.to');
   await page.locator('#login-password').fill('Admin123!');
 
   const [loginRes] = await Promise.all([

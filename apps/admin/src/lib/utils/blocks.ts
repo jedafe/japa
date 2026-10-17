@@ -210,7 +210,7 @@ const DEFAULT_FOOTER_COLUMNS: Array<[string, Array<{ label: string; url?: string
 		{ label: 'Contact Us', url: '/' },
 	]],
 	['Need Help?', [
-		{ label: 'support@japaconnect.com', url: 'mailto:support@japaconnect.com', icon: 'Mail' },
+		{ label: 'support@japa.to', url: 'mailto:support@japa.to', icon: 'Mail' },
 		{ label: '+1 (234) 567-8900', url: 'tel:+12345678900', icon: 'Phone' },
 		{ label: 'Mon - Fri: 9AM - 6PM (EST)', icon: 'Clock' },
 	]],

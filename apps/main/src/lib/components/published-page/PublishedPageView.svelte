@@ -23,11 +23,11 @@
 	const title = $derived(
 		pageData.meta && typeof pageData.meta === 'object' && 'title' in pageData.meta
 			? String(pageData.meta.title)
-			: t('page.title', '{name} — JapaConnect').replace('{name}', pageData.title)
+			: t('page.title', '{name} — {site}').replace('{name}', pageData.title)
 	);
 	const description = $derived(
 		pageData.description ??
-			t('page.description', 'A JapaConnect page.')
+			t('page.description', 'A {site} page.')
 	);
 
 	const jsonLd = $derived(

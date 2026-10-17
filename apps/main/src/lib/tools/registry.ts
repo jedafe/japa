@@ -171,7 +171,7 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 	},
 	// --- §§107–110 functional tools — in-app routes like the tools above.
 	// The same tools are mirrored on the dedicated Tools surface
-	// (tools.japaconnect.com) for standalone use. ---
+	// (tools.japa.to) for standalone use. ---
 	{
 		href: '/tools/crs-calculator',
 		labelKey: 'tools.crs_calculator',

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /broadcasts — migrated to shared components (ActionMenu, FilterPanel,
 	// SlideOver, bulkActionsList). Tabbed page (all/drafts/sent); keeps
 	// page-local Modals for create broadcast (form) and send confirmation.
@@ -206,7 +207,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('broadcasts.page_title', 'Broadcasts')} — JapaConnect Admin</title>
+	<title>{t('broadcasts.page_title', 'Broadcasts')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

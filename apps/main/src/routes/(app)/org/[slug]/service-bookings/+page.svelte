@@ -12,7 +12,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('bookings.org_title', 'Bookings inbox — JapaConnect'));
+	const title = $derived(t('bookings.org_title', 'Bookings inbox — {site}'));
 	const bookings = $derived<ServiceBooking[]>(data.bookings);
 	const meta = $derived(data.meta);
 	const org = $derived(data.org);

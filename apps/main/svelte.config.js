@@ -1,7 +1,17 @@
 import adapter from '@sveltejs/adapter-node';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { loadEnv } from 'vite';
 
-const dev = process.argv.includes('dev');
+const dev = process.argv.includes('dev') || process.argv.includes('serve');
+
+// PUBLIC_* vars live in .env files — Vite injects them into
+// import.meta.env for client code, but they are NOT in process.env when
+// this config file is evaluated. loadEnv reads .env/.env.local/
+// .env.[mode] so the CSP connect-src origins stay in sync with what the
+// bundle actually calls. Real environment variables (CI/deploy) win over
+// file values.
+const fileEnv = loadEnv(dev ? 'development' : 'production', process.cwd(), 'PUBLIC_');
+const env = (key) => process.env[key] ?? fileEnv[key];
 
 // Origins the browser legitimately connects to (API, realtime WS, Umami,
 // GlitchTip). PUBLIC_* vars are build-time constants — the same values are
@@ -16,12 +26,12 @@ const envOrigin = (v) => {
 	}
 };
 const connectOrigins = [
-	envOrigin(process.env.PUBLIC_JC_API_URL),
-	envOrigin(process.env.PUBLIC_JC_WS_URL),
-	envOrigin(process.env.PUBLIC_JC_UMAMI_URL),
-	envOrigin(process.env.PUBLIC_JC_GLITCHTIP_DSN)
+	envOrigin(env('PUBLIC_JC_API_URL')),
+	envOrigin(env('PUBLIC_JC_WS_URL')),
+	envOrigin(env('PUBLIC_JC_UMAMI_URL')),
+	envOrigin(env('PUBLIC_JC_GLITCHTIP_DSN'))
 ].filter(Boolean);
-const umamiOrigin = envOrigin(process.env.PUBLIC_JC_UMAMI_URL);
+const umamiOrigin = envOrigin(env('PUBLIC_JC_UMAMI_URL'));
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {

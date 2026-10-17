@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { DataTable } from "$lib/components/ui/data-table";
@@ -197,7 +198,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('geo.title', 'Geo Tools')} — JapaConnect Admin</title>
+	<title>{t('geo.title', 'Geo Tools')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

@@ -181,7 +181,7 @@
 		{ value: 'series', label: t('blog.tab_series', 'Series') }
 	]);
 
-	const title = $derived(t('blog.list_title', 'Blog — JapaConnect'));
+	const title = $derived(t('blog.list_title', 'Blog — {site}'));
 	const description = $derived(
 		t('blog.list_description', 'Stories, guides, and insights from the diaspora community.')
 	);

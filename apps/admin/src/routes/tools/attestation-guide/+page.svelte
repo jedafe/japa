@@ -362,7 +362,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.attestation_guide_page_title', 'Attestation Guide Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.tools.attestation_guide_page_title', 'Attestation Guide Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

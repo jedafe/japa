@@ -178,7 +178,7 @@
 		padding: 2.5rem 1.5rem 4rem;
 	}
 	h1 {
-		font-family: var(--font-sans);
+		font-family: var(--font-heading, var(--font-sans));
 		font-size: 1.75rem;
 		font-weight: 700;
 		color: var(--color-text);

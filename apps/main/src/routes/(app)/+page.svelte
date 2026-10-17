@@ -38,7 +38,7 @@
 	const title = $derived(
 		isLanding
 			? (data.landing?.title ?? t('app.name'))
-			: t('home.title', 'JapaConnect — Explore')
+			: t('home.title', '{site} — Explore')
 	);
 	const description = $derived(
 		isLanding

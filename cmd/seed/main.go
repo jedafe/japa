@@ -66,7 +66,7 @@ func run() error {
 	adminPassword := os.Getenv("JC_SEED_ADMIN_PASSWORD")
 
 	if adminEmail == "" {
-		adminEmail = "admin@japaconnect.com"
+		adminEmail = "admin@japa.to"
 	}
 
 	if adminPassword == "" {
@@ -267,14 +267,14 @@ func seedUsers(ctx context.Context, database *db.DB, tid, adminID pgtype.UUID) (
 	}
 
 	users := []demoUser{
-		{email: "user1@japaconnect.com", username: "chioma_explorer", displayName: "Chioma Explorer"},
-		{email: "user2@japaconnect.com", username: "ade_navigator", displayName: "Ade Navigator"},
-		{email: "user3@japaconnect.com", username: "nneka_globetrotter", displayName: "Nneka Globetrotter"},
-		{email: "user4@japaconnect.com", username: "emeka_wanderer", displayName: "Emeka Wanderer"},
-		{email: "user5@japaconnect.com", username: "ifeoma_pathfinder", displayName: "Ifeoma Pathfinder"},
-		{email: "user6@japaconnect.com", username: "obinna_pioneer", displayName: "Obinna Pioneer"},
-		{email: "user7@japaconnect.com", username: "amara_settler", displayName: "Amara Settler"},
-		{email: "user8@japaconnect.com", username: "chidi_journeyman", displayName: "Chidi Journeyman"},
+		{email: "user1@japa.to", username: "chioma_explorer", displayName: "Chioma Explorer"},
+		{email: "user2@japa.to", username: "ade_navigator", displayName: "Ade Navigator"},
+		{email: "user3@japa.to", username: "nneka_globetrotter", displayName: "Nneka Globetrotter"},
+		{email: "user4@japa.to", username: "emeka_wanderer", displayName: "Emeka Wanderer"},
+		{email: "user5@japa.to", username: "ifeoma_pathfinder", displayName: "Ifeoma Pathfinder"},
+		{email: "user6@japa.to", username: "obinna_pioneer", displayName: "Obinna Pioneer"},
+		{email: "user7@japa.to", username: "amara_settler", displayName: "Amara Settler"},
+		{email: "user8@japa.to", username: "chidi_journeyman", displayName: "Chidi Journeyman"},
 	}
 
 	hash, err := auth.HashPassword("Demo1234!")

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { setAccessToken } from '$lib/api/token';
 	import { restoreSession } from '$lib/stores/session.svelte';
@@ -74,7 +75,7 @@
 </script>
 
 <svelte:head>
-	<title>Login — JapaConnect Admin</title>
+	<title>Login — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">

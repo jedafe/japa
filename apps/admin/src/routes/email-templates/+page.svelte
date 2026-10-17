@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /email-templates — migrated to the EntityPage scaffold.
 	//
 	// Email templates are predefined (no create/delete). The page is READ + EDIT
@@ -34,12 +35,12 @@
 
 	// ── Preview helpers (mirror legacy sample-variable substitution) ────────
 	const templateSampleValues: Record<string, string> = {
-		SiteName: 'JapaConnect',
-		SiteURL: 'https://japaconnect.com',
+		SiteName: siteName(),
+		SiteURL: 'https://japa.to',
 		UserName: 'Test User',
-		ActionURL: 'https://japaconnect.com/reset-password?token=abc123',
+		ActionURL: 'https://japa.to/reset-password?token=abc123',
 		Expiry: '1 hour',
-		SupportURL: 'https://japaconnect.com/support',
+		SupportURL: 'https://japa.to/support',
 	};
 
 	function renderPreview(html: string): string {
@@ -237,7 +238,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('email_templates.title', 'Email Templates')} — JapaConnect Admin</title>
+	<title>{t('email_templates.title', 'Email Templates')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

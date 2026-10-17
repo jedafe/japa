@@ -125,7 +125,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.visa_checklist_page_title', 'Visa Checklist Progress — JapaConnect Admin')}</title>
+	<title>{t('app.tools.visa_checklist_page_title', 'Visa Checklist Progress — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

@@ -3,14 +3,14 @@ import { PUBLIC_MAIN_ORIGIN } from '$env/static/public';
 /**
  * Cross-app origin helpers.
  *
- * The Academy app (academy.japaconnect.com / :3003) shares the `jc_token` cookie
- * with the Main app (japaconnect.com / :3000), which owns the login, signup,
+ * The Academy app (academy.japa.to / :3003) shares the `jc_token` cookie
+ * with the Main app (japa.to / :3000), which owns the login, signup,
  * and user-profile surfaces. Academy has no `/login` or `/u/{username}` route of
  * its own, so auth/profile links must point at the Main app origin.
  *
  * `PUBLIC_MAIN_ORIGIN` is the canonical Main app origin (no trailing slash).
  * In dev it defaults to http://localhost:3000; in prod it is
- * https://japaconnect.com (set via .env).
+ * https://japa.to (set via .env).
  */
 export const MAIN_ORIGIN = (PUBLIC_MAIN_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
 

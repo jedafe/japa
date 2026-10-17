@@ -30,7 +30,7 @@
 
 	const packagesEnabled = $derived(data.packagesEnabled ?? false);
 
-	const pageTitle = $derived(t('services.new_title', 'List a Service — JapaConnect'));
+	const pageTitle = $derived(t('services.new_title', 'List a Service — {site}'));
 	const pageDescription = $derived(
 		t('services.new_description', 'List a diaspora-relevant service in the Service Directory.')
 	);
@@ -182,7 +182,7 @@
 		// backend rejects blank titles/labels (invalid_selling_point /
 		// invalid_included / invalid_fact).
 		if (sellingPoints.some((p) => !p.title.trim())) {
-			errorMsg = t('services.errors.point_title_required', 'Every selling point needs a title');
+			errorMsg = t('services.errors.selling_point_title_required', 'Every selling point needs a title');
 			return false;
 		}
 		if (included.some((p) => !p.title.trim())) {
@@ -190,7 +190,7 @@
 			return false;
 		}
 		if (facts.some((f) => !f.label.trim() || !f.value.trim())) {
-			errorMsg = t('services.errors.fact_required', 'Every fact needs a label and a value');
+			errorMsg = t('services.errors.fact_label_value_required', 'Every fact needs a label and a value');
 			return false;
 		}
 		if (purchaseMode === 'external' && !bookingUrl.trim()) {

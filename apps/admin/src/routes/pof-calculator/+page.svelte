@@ -434,7 +434,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.pof_page_title', 'POF Requirements — JapaConnect Admin')}</title>
+	<title>{t('app.tools.pof_page_title', 'POF Requirements — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

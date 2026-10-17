@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { page as pageState } from '$app/state';
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
@@ -77,7 +77,7 @@
 		goto(qs ? `${basePath}?${qs}` : basePath);
 	}
 
-	const title = $derived(`${t('wiki.history_title', 'Revision history')} — JapaConnect`);
+	const title = $derived(`${t('wiki.history_title', 'Revision history')} — ${siteName()}`);
 	const description = $derived(t('wiki.history_description'));
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	const spaceName = $derived(data.spaceDetail?.space?.name ?? data.index[0]?.space_name ?? data.spaceSlug);

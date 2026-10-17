@@ -38,7 +38,7 @@
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
-	const title = $derived(t('tools.remittance', 'Remittance Rate Tracker — JapaConnect'));
+	const title = $derived(t('tools.remittance', 'Remittance Rate Tracker — {site}'));
 	const description = $derived(
 		t('tools.remittance_desc', 'Compare provider rates and set alerts.')
 	);

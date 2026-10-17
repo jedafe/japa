@@ -272,7 +272,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.data_imports.page_title', 'Data Imports — JapaConnect Admin')}</title>
+	<title>{t('app.data_imports.page_title', 'Data Imports — {site} Admin')}</title>
 </svelte:head>
 
 <PageHeader

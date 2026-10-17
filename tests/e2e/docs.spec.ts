@@ -88,7 +88,7 @@ test.describe('Docs App — Smoke Tests', () => {
 	});
 
 	test('authenticated user can load API keys and playground', async ({ page }) => {
-		await login(page, { email: 'user1@japaconnect.com', password: 'Demo1234!' });
+		await login(page, { email: 'user1@japa.to', password: 'Demo1234!' });
 
 		await page.goto('/docs/api/keys');
 		await page.waitForLoadState('networkidle');

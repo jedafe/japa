@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { onMount } from 'svelte';
 	import { Sparkles, Copy, Save, Loader2 } from 'lucide-svelte';
 	import { promptStore } from '$lib/stores/prompt.svelte';
@@ -407,7 +408,7 @@
 <div class="flex h-full flex-col p-6">
 	<header class="mb-6">
 		<h1 class="text-2xl font-bold">Prompt Builder</h1>
-		<p class="text-sm text-muted-foreground">Build a prompt for Claude Code to generate JapaConnect content.</p>
+		<p class="text-sm text-muted-foreground">Build a prompt for Claude Code to generate {siteName()} content.</p>
 	</header>
 
 	{#if statusMessage}

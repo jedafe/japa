@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /custom-fields/entity-types — migrated to the EntityPage scaffold.
 	// Simple CRUD entity using declarative `fields` (EntityForm). System entity
 	// types are protected from edit/delete via `show()` predicates; bulk delete
@@ -157,7 +158,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('fieldGroups.entity_types', 'Entity Types')} — JapaConnect Admin</title>
+	<title>{t('fieldGroups.entity_types', 'Entity Types')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

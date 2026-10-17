@@ -167,7 +167,7 @@ describe('buildPrompt', () => {
 		expect(prompt).toContain('space_id: "space-1"');
 		expect(prompt).not.toContain('persona_id:');
 		expect(prompt).not.toContain('voice_id:');
-		expect(prompt).toContain('JapaConnect member writing under your own profile');
+		expect(prompt).toContain('Japa.to member writing under your own profile');
 	});
 
 	it('emits the guide category custom-field schema into the prompt', () => {

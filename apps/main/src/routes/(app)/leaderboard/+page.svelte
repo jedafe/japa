@@ -10,7 +10,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('leaderboard.title', 'Leaderboard — JapaConnect'));
+	const title = $derived(t('leaderboard.title', 'Leaderboard — {site}'));
 	const description = $derived(
 		t('leaderboard.description', 'Top community members by points.')
 	);

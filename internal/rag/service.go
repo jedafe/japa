@@ -7,6 +7,7 @@
 package rag
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -425,7 +426,7 @@ func (s *Service) FormatContext(chunks []RetrievedChunk) string {
 
 	var sb strings.Builder
 
-	sb.WriteString("The following passages are sourced from JapaConnect's published content. ")
+	sb.WriteString("The following passages are sourced from " + brand.Get() + "'s published content. ")
 	sb.WriteString("Cite the source when using these passages. ")
 	sb.WriteString("Qualify claims from community-sourced content (discussions, forum threads) ")
 	sb.WriteString("differently from editorial content (guides, blog posts).\n\n")

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /crs-calculator — CRS ruleset + draw management (§107).
 	// Backend: GET/POST/PATCH/DELETE /admin/crs/rulesets, GET/POST/PATCH/DELETE /admin/crs/draws.
 	// Ref: sections/107-crs-calculator.md, ADR-118.
@@ -206,7 +207,7 @@
 </script>
 
 <svelte:head>
-	<title>CRS Calculator — JapaConnect Admin</title>
+	<title>CRS Calculator — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

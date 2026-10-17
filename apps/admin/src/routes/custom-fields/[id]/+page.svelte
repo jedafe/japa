@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { page } from '$app/state';
 	import { api, fieldGroupsAdminApiExtended, userManagementApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -414,7 +415,7 @@
 </script>
 
 <svelte:head>
-	<title>{group?.name ?? 'Field Group'} — JapaConnect Admin</title>
+	<title>{group?.name ?? 'Field Group'} — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="space-y-6">

@@ -24,7 +24,7 @@
 		sourceOptions
 	} from '$lib/components/compare/compareFlow';
 	import type { PageData } from './$types';
-	import { i18n, t } from '$lib/i18n';
+	import { i18n, t, siteName} from '$lib/i18n';
 	import {
 		GitCompare,
 		Search,
@@ -695,8 +695,8 @@
 </script>
 
 <svelte:head>
-	<title>{t('jce.compare.heading')} — JapaConnect</title>
-	<meta property="og:title" content="{t('jce.compare.heading')} — JapaConnect" />
+	<title>{t('jce.compare.heading')} — {siteName()}</title>
+	<meta property="og:title" content="{t('jce.compare.heading')} — {siteName()}" />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>

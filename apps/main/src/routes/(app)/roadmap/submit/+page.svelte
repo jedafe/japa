@@ -6,7 +6,7 @@
 	// /roadmap/board via the load function (Rule 16 — no hardcoded options).
 	// The body is encoded as base64 TipTap JSON via encodeReplyBody, matching
 	// the §49 comments convention so the detail page renders it rich.
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { roadmapErrorKey } from '$lib/enumOptions';
 	import { encodeReplyBody } from '$lib/tiptap/serialize';
@@ -73,10 +73,10 @@
 </script>
 
 <svelte:head>
-	<title>{t('roadmap.submit.title', 'Submit a request')} — JapaConnect</title>
+	<title>{t('roadmap.submit.title', 'Submit a request')} — {siteName()}</title>
 	<meta
 		name="description"
-		content={t('roadmap.submit.subtitle', 'Tell us what you would like to see on JapaConnect.')}
+		content={t('roadmap.submit.subtitle', 'Tell us what you would like to see on {site}.')}
 	/>
 	<!-- Auth-required form — excluded from /sitemap-roadmap.xml, so mark it
 	     noindex to match. -->
@@ -95,7 +95,7 @@
 				{t('roadmap.submit.title', 'Submit a request')}
 			</h1>
 			<p class="text-sm text-[var(--color-muted)]">
-				{t('roadmap.submit.subtitle', 'Tell us what you would like to see on JapaConnect.')}
+				{t('roadmap.submit.subtitle', 'Tell us what you would like to see on {site}.')}
 			</p>
 		</div>
 	</header>

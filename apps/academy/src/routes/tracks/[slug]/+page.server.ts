@@ -52,7 +52,10 @@ export const load: PageServerLoad = async (event) => {
 	// admin-managed Course template resolved server-side (backend `json_ld`
 	// sidecar); fall back to the client-side courseJsonLd helper when absent.
 	// Breadcrumb is always emitted client-side (no template for it).
-	const courseJsonLdNode = backendJsonLd ?? courseJsonLd(track);
+	const siteName = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)[
+		'general.site_name'
+	];
+	const courseJsonLdNode = backendJsonLd ?? courseJsonLd(track, siteName);
 	const jsonLd = [
 		courseJsonLdNode,
 		breadcrumbJsonLd([

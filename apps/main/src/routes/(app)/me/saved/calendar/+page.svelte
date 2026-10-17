@@ -12,7 +12,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('calendar.saved_title', 'Saved Calendar Entries — JapaConnect'));
+	const title = $derived(t('calendar.saved_title', 'Saved Calendar Entries — {site}'));
 
 	function categoryLabel(cat: CalendarCategory): string {
 		return calendarCategoryLabel(t, cat);

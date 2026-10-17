@@ -165,7 +165,7 @@ func (s *Service) ReindexSpecCorpus(ctx context.Context, dir string) (*SpecReind
 			return nil
 		}
 
-		data, err := os.ReadFile(path) // #nosec G304 -- path is confined to the corpus dir by WalkDir
+		data, err := os.ReadFile(path) // #nosec G304 G122 -- path is confined to the corpus dir by WalkDir
 		if err != nil {
 			return err
 		}

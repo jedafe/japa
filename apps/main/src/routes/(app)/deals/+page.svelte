@@ -15,9 +15,9 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('deals.title', 'Deals — JapaConnect'));
+	const title = $derived(t('deals.title', 'Deals — {site}'));
 	const description = $derived(
-		t('deals.description', 'Browse active deals and discount codes from JapaConnect partners.')
+		t('deals.description', 'Browse active deals and discount codes from {site} partners.')
 	);
 
 	const jsonLd = $derived(
@@ -227,7 +227,7 @@
 	}
 
 	function providerName(c: Coupon): string {
-		return c.provider_name ?? t('deals.internal', 'JapaConnect');
+		return c.provider_name ?? t('deals.internal', '{site}');
 	}
 
 	function onRowClick(e: MouseEvent, coupon: Coupon) {

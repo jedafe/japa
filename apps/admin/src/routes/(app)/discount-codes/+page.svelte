@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /discount-codes — migrated to the EntityPage scaffold with computed-status filter
 	// and a page-local usage SlideOver (view-detail sub-flow).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -259,7 +260,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('discounts.title', 'Discount Codes')} — JapaConnect Admin</title>
+	<title>{t('discounts.title', 'Discount Codes')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

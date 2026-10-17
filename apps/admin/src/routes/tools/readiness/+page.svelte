@@ -232,7 +232,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.readiness_page_title', 'Readiness Assessment Results — JapaConnect Admin')}</title>
+	<title>{t('app.tools.readiness_page_title', 'Readiness Assessment Results — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

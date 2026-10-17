@@ -5,7 +5,7 @@
 	// a wiki-specific right sidebar (quick facts, related, popular cities)
 	// registered on the shared rail via SetSidebar (ADR-058).
 	import { page } from '$app/state';
-	import { i18n, t } from '$lib/i18n';
+	import { i18n, t, siteName} from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -228,7 +228,7 @@
 		});
 	});
 
-	const title = $derived(`${spaceName} ${t('wiki.heading')} — JapaConnect`);
+	const title = $derived(`${spaceName} ${t('wiki.heading')} — ${siteName()}`);
 	const description = $derived(intro || t('wiki.index_description'));
 	const ogImage = $derived(
 		heroUrl ? (heroUrl.startsWith('http') ? heroUrl : page.url.origin + heroUrl) : ''
@@ -471,7 +471,7 @@
 			/>
 		{/if}
 		<!-- §80 attractions — full-width gallery strip under the hero when a
-		     media field (e.g. the overview group's `gallery`) has values. -->
+		     media field (e.g. the overview group's "gallery") has values. -->
 		{#if structuredEditsOn && spaceId && !data.loadError}
 			<WikiGalleryStrip entityId={spaceId} />
 		{/if}

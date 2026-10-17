@@ -2,7 +2,7 @@ import type { PageServerLoad, Actions } from './$types';
 import { apiContext, API_BASE, JC_SURFACE } from '$lib/server/api';
 import { loadDocPage, editorData, saveDocPageAction, reviewAction } from '$lib/server/docs-author';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 
 /**
  * Module-level OpenAPI spec cache (TTL 5 min). The spec is large and fetched
@@ -51,6 +51,7 @@ async function getOpenApiSpec(): Promise<Record<string, unknown> | null> {
  * actions.
  */
 export const load: PageServerLoad = async (event) => {
+	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	const slug = event.params.slug;
 	const ctx = apiContext(event);
 
@@ -98,14 +99,15 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const locale = event.locals.locale;
-	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
-	const apiLabel = tServer(locale, 'audience.api', 'API');
+	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
+	const apiLabel = tServer(locale, 'audience.api', 'API', undefined, site);
 	const title = `${page.title} · ${apiLabel} · ${appName}`;
 	const description = tServer(
 		locale,
 		'api.meta_description',
-		'JapaConnect API reference — {title}.',
-		{ title: page.title }
+		'{site} API reference — {title}.',
+		{ title: page.title },
+		site
 	);
 
 	const meta = buildMeta({
@@ -115,7 +117,8 @@ export const load: PageServerLoad = async (event) => {
 		jsonLd: preview
 			? undefined
 			: techArticleLd({
-					headline: page.title,
+				siteName: site,
+				headline: page.title,
 					dateModified: page.updated_at,
 					url: `${DOCS_ORIGIN}/docs/api/${slug}`,
 					description

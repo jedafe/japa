@@ -31,7 +31,7 @@
 	let loading = $state(false);
 	let errorKey = $state('');
 
-	const pageTitle = $derived(t('achievements.edit_title', 'Edit Achievement — JapaConnect'));
+	const pageTitle = $derived(t('achievements.edit_title', 'Edit Achievement — {site}'));
 
 	const milestoneOpts = $derived(milestoneOptions(t));
 

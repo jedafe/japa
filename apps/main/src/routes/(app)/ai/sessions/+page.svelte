@@ -7,7 +7,7 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 	// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 10, task 10.04)
 
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { Sparkles, Clock, Cpu, Database, Wrench, ChevronRight, AlertCircle, CheckCircle2, XCircle, Loader2, Folder, FolderInput } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import type { AgentSession, AiProject } from '$lib/ai/agentTypes';
@@ -118,7 +118,7 @@
 />
 
 <svelte:head>
-	<title>{t('ai.agent.session_history', 'Session History')} — JapaConnect</title>
+	<title>{t('ai.agent.session_history', 'Session History')} — {siteName()}</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

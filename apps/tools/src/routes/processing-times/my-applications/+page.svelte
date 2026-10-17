@@ -63,7 +63,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('processing_tracker.my_apps_title', 'My Applications — Processing Time Tracker | JapaConnect Tools'),
+			title: t('processing_tracker.my_apps_title', 'My Applications — Processing Time Tracker | {site} Tools'),
 			description: t(
 				'processing_tracker.my_apps_desc',
 				'Track your own visa application milestones and optionally share your timeline anonymously with the community.'

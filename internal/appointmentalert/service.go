@@ -8,6 +8,7 @@
 package appointmentalert
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
@@ -400,7 +401,7 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID pgtype.UUID) error 
 		return fmt.Errorf("appointmentalert: poll embassy: build request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "JapaConnect-Alerter/1.0 (+https://japaconnect.com)")
+	req.Header.Set("User-Agent", "JapaConnect-Alerter/1.0 (+https://japa.to)")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -544,7 +545,8 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string) error 
 		// (pending platform-wide SMS gateway integration).
 		if channelsContainSMS(alert.NotificationChannels) {
 			if s.smsSender != nil {
-				smsBody := fmt.Sprintf("JapaConnect: appointment available at %s. Book quickly — slots can disappear fast. %s",
+				smsBody := fmt.Sprintf("%s: appointment available at %s. Book quickly — slots can disappear fast. %s",
+				brand.Get(),
 					embassy.Name, embassy.BookingURL)
 				if err := s.smsSender.SendSMS(ctx, alert.UserID, smsBody, embassy.BookingURL); err != nil {
 					slog.Warn("appointmentalert: dispatch alerts: sms send failed", "alert_id", alert.ID.String(), "user_id", alert.UserID.String(), "error", err)

@@ -5,8 +5,8 @@ import { getTool } from '$lib/tools/registry';
 /**
  * Tools hub page — the landing page at `/`.
  *
- * In hub shell mode (tools.japaconnect.com): renders the tool cards grid.
- * In single-tool shell mode (e.g. remittance.japaconnect.com): redirects to
+ * In hub shell mode (tools.japa.to): renders the tool cards grid.
+ * In single-tool shell mode (e.g. remittance.japa.to): redirects to
  * the active tool's route so the user lands directly on the tool, not the hub.
  *
  * Ref: §78 (Tools Web Surface), ROADMAP-TOOLS 02.01.

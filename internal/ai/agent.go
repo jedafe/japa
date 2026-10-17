@@ -23,6 +23,7 @@
 package ai
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1388,7 +1389,7 @@ rejected. Use content.create_draft exclusively for the draft-request path.
 
 // systemPromptPreamble is the §103 behavior rules block, verbatim from the
 // spec. The LLM receives these instructions in every agent request.
-const systemPromptPreamble = `You are Japa AI, the intelligence layer of JapaConnect.
+var systemPromptPreamble = `You are Japa AI, the intelligence layer of ` + brand.Get() + `.
 
 BEHAVIOR RULES:
 1. You have been given pre-search results. Use them.

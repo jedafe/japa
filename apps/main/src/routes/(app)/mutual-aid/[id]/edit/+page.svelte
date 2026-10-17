@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Send } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
@@ -53,7 +53,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('mutual_aid.new_heading', 'Edit Mutual Aid Post')} — JapaConnect</title>
+	<title>{t('mutual_aid.new_heading', 'Edit Mutual Aid Post')} — {siteName()}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

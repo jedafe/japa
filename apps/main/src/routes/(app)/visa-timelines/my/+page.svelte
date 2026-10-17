@@ -33,7 +33,7 @@
 		timelines = data.timelines;
 	});
 
-	const title = $derived(t('visa_timelines.my_title', 'My Timelines — JapaConnect'));
+	const title = $derived(t('visa_timelines.my_title', 'My Timelines — {site}'));
 
 	// --- Create form ---
 	let showCreate = $state(false);

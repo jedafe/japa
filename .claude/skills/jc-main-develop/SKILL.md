@@ -143,9 +143,9 @@ The backend resolves `VisitorContext` (ADR-064) and exposes `ContentCountry` via
 **Profiles (`/u/[username]`, `/org/[slug]`):** cover + avatar header, name/bio/Primary Space badge/join date/follow counts, then center tabs (Posts/Replies/Media/Likes/Spaces; org adds About/Members). Right sidebar: follow button, mutual spaces, org affiliations. **Earned certificates render as badges here** (social proof), linking to public cert pages.
 
 **Profile learning hub — cross-app entry point (ADR-060).** The dashboard (`/dashboard`) is the single entry into the Learn and Docs apps; all tabs consume existing routes (no new backend), and cross-app links work off the shared session cookie + the ADR-054 cross-app menu system:
-- **Learning tab (`/dashboard/learning`):** continue-learning cards from `GET /api/v1/me/enrollments`, resume links deep-linking into `academy.japaconnect.com`; progress via LayerChart `LineChart`.
+- **Learning tab (`/dashboard/learning`):** continue-learning cards from `GET /api/v1/me/enrollments`, resume links deep-linking into `academy.japa.to`; progress via LayerChart `LineChart`.
 - **Certificates tab (`/dashboard/certificates`):** grid from `GET /api/v1/me/certificates`; each links to its public, shareable cert page `/certificates/:id` (same certs badge the public profile).
-- **Knowledge Base tab (`/dashboard/knowledge-base`):** deep-links into Docs (users audience, `docs.japaconnect.com/docs/users`) + the user's bookmarked doc pages.
+- **Knowledge Base tab (`/dashboard/knowledge-base`):** deep-links into Docs (users audience, `docs.japa.to/docs/users`) + the user's bookmarked doc pages.
 
 Learn and Docs are separate SvelteKit apps (owned by the `jc-learn-*` / `jc-docs-*` skills) that share this app's session and theme — link to them by absolute subdomain URL; don't re-implement their surfaces here.
 
@@ -227,7 +227,7 @@ Every user-facing string: `$t('key')`; add keys to `en.json` AND `fr.json`.
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
 
 ## V2 Community Feature Pages — Development Notes (Phase 37, §§79–89, §98)
 

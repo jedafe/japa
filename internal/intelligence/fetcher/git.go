@@ -190,7 +190,7 @@ func parseNumericIPv4(host string) net.IP {
 			return nil
 		}
 
-		return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+		return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n)) // #nosec G115 -- n is ParseUint-bounded to 32 bits
 	}
 
 	var b [4]byte
@@ -201,7 +201,7 @@ func parseNumericIPv4(host string) net.IP {
 			return nil
 		}
 
-		b[i] = byte(n)
+		b[i] = byte(n) // #nosec G115 -- n is ParseUint-bounded to 8 bits
 	}
 
 	return net.IPv4(b[0], b[1], b[2], b[3])

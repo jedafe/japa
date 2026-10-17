@@ -128,11 +128,11 @@
 	});
 
 	const title = $derived(
-		t('university.title', '{name} — JapaConnect').replace('{name}', university.name)
+		t('university.title', '{name} — {site}').replace('{name}', university.name)
 	);
 	const description = $derived(
 		university.description ??
-			t('university.description', 'Explore {name} on JapaConnect.').replace(
+			t('university.description', 'Explore {name} on {site}.').replace(
 				'{name}',
 				university.name
 			)

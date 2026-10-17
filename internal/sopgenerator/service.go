@@ -8,6 +8,7 @@
 package sopgenerator
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -802,7 +803,7 @@ func (s *Service) CreateSample(ctx context.Context, in SampleRequest) (SampleDTO
 	if in.WordCount != nil {
 		row.WordCount = pgtype.Int4{Int32: *in.WordCount, Valid: true}
 	} else {
-		row.WordCount = pgtype.Int4{Int32: int32(len(strings.Fields(in.Body))), Valid: true}
+		row.WordCount = pgtype.Int4{Int32: int32(len(strings.Fields(in.Body))), Valid: true} // #nosec G115 -- slice length bounded by request-scoped data
 	}
 
 	if in.DestinationSpaceID != "" {
@@ -1025,7 +1026,7 @@ func (s *Service) GenerateTemplateDraft(ctx context.Context, params map[string]s
 	}
 
 	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
-		SystemPrompt: "You are the JapaConnect Content Agent. Produce an SOP template " +
+		SystemPrompt: "You are the " + brand.Get() + " Content Agent. Produce an SOP template " +
 			"as STRICT JSON (no markdown fences): " +
 			`{"purpose":"study_permit|student_visa|work_visa|visitor_visa",` +
 			`"title":"...","structure":[{"section":"...","prompt_hint":"...","max_words":0}]}. ` +

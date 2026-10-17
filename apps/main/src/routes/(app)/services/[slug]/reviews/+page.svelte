@@ -7,7 +7,7 @@
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { ChevronRight, Star } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { EmptyState, PaginationControls } from '$lib/components/ui';
 	import ReviewListItem from '$lib/components/marketplace/ReviewListItem.svelte';
 	import ReviewForm from '$lib/components/reviews/ReviewForm.svelte';
@@ -25,7 +25,7 @@
 	);
 
 	const title = $derived(
-		`${t('services.reviews_heading', 'Reviews')} — ${service.title} — JapaConnect`
+		`${t('services.reviews_heading', 'Reviews')} — ${service.title} — ${siteName()}`
 	);
 	const description = $derived(
 		excerpt(service.body_html || service.body || '', 160) ||

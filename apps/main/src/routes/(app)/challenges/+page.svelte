@@ -9,7 +9,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('challenges.title', 'Challenges — JapaConnect'));
+	const title = $derived(t('challenges.title', 'Challenges — {site}'));
 	const description = $derived(
 		t('challenges.description', 'Compete in community challenges and earn rewards.')
 	);

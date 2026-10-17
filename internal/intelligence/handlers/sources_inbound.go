@@ -98,7 +98,7 @@ func (h *Handlers) HandleInboundEmail(w http.ResponseWriter, r *http.Request) {
 		// memory ceiling — oversized file parts would stream to disk
 		// unbounded without MaxBytesReader on the body itself.
 		r.Body = http.MaxBytesReader(w, r.Body, inboundMaxBody)
-		if err := r.ParseMultipartForm(inboundMaxBody); err != nil {
+		if err := r.ParseMultipartForm(inboundMaxBody); err != nil { // #nosec G120 -- body is hard-capped by MaxBytesReader above
 			if perr := r.ParseForm(); perr != nil {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Could not parse delivery")
 				return
@@ -408,7 +408,7 @@ func (h *Handlers) HandleWebSubVerify(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, challenge)
+	_, _ = io.WriteString(w, challenge) // #nosec G705 -- WebSub spec echo, text/plain response only
 }
 
 // armWebSubRenew schedules intel:websub_renew for just before the granted

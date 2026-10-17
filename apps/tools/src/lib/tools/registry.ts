@@ -141,7 +141,7 @@ export const TOOLS: ToolMeta[] = [
 		tagline: 'Your AI japa guide',
 		taglineKey: 'tool.japabot.tagline',
 		description:
-			'Chat with JapaBot — answers grounded in JapaConnect\'s published guides, forum threads, and community knowledge via RAG.',
+			"Chat with JapaBot — answers grounded in {site}'s published guides, forum threads, and community knowledge via RAG.",
 		descriptionKey: 'tool.japabot.description',
 		accent: '#8b5cf6',
 		accentHover: '#7c3aed',

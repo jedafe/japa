@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /menus — migrated to the EntityPage scaffold.
 	//
 	// The menu list + menu CRUD use the shared EntityPage scaffold (declarative
@@ -552,7 +553,7 @@ loadPermissionNodes();
 </script>
 
 <svelte:head>
-	<title>{t('menus.title', 'Menus')} — JapaConnect Admin</title>
+	<title>{t('menus.title', 'Menus')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

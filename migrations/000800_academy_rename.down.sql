@@ -14,8 +14,8 @@ WHERE key = 'onboarding.tour_steps';
 UPDATE public.content_type_jsonld_templates
     SET template = replace(replace(template::text,
             'JapaConnect Academy', 'JapaConnect Learn'),
-            'academy.japaconnect.com', 'learn.japaconnect.com')::jsonb
-    WHERE template::text LIKE '%JapaConnect Academy%' OR template::text LIKE '%academy.japaconnect.com%';
+            'academy.japa.to', 'learn.japa.to')::jsonb
+    WHERE template::text LIKE '%JapaConnect Academy%' OR template::text LIKE '%academy.japa.to%';
 
 UPDATE public.translations SET key = 'learning' || substring(key from 8)
     WHERE key LIKE 'academy.%' AND substring(key from 9) IN (
@@ -80,8 +80,8 @@ UPDATE public.permissions SET key = 'learning' || substring(key from 8)
     WHERE key LIKE 'academy.%';
 
 UPDATE public.translations SET key = 'dashboard.nav.learning' WHERE key = 'dashboard.nav.academy';
-UPDATE public.menu_items SET url = replace(url, 'academy.japaconnect.com', 'learn.japaconnect.com')
-    WHERE url LIKE '%academy.japaconnect.com%';
+UPDATE public.menu_items SET url = replace(url, 'academy.japa.to', 'learn.japa.to')
+    WHERE url LIKE '%academy.japa.to%';
 UPDATE public.menu_items SET label = 'dashboard.nav.learning' WHERE label = 'dashboard.nav.academy';
 UPDATE public.menu_items SET url = '/dashboard/learning' WHERE url = '/dashboard/academy';
 UPDATE public.menu_items SET url = '/learn', label = 'Learn' WHERE url = '/academy';

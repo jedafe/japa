@@ -1,6 +1,6 @@
 ---
 name: jc-academy-debug
-description: [Academy app, academy.japaconnect.com] Unified shell adapted for Academy (ADR-060), lesson-player exception, LayerChart 2.0.1. Use when reviewing or debugging JapaConnect Academy app code (apps/academy, SSR). Diagnoses SSR/CSR progress boundary leaks, TipTap rendering, video player browser APIs, Mark Complete races, and LayerChart issues.
+description: [Academy app, academy.japa.to] Unified shell adapted for Academy (ADR-060), lesson-player exception, LayerChart 2.0.1. Use when reviewing or debugging JapaConnect Academy app code (apps/academy, SSR). Diagnoses SSR/CSR progress boundary leaks, TipTap rendering, video player browser APIs, Mark Complete races, and LayerChart issues.
 ---
 
 # JapaConnect Academy — Review & Debugging Skill
@@ -32,7 +32,7 @@ Init browser-guarded · destroyed on unmount · iframe embeds have `title` attri
 Apply `jc-main-debug` §4 (containers, colors, Date conversion, skeletons, tooltip import alias). Academy-specific: activity charts must not render before session-guarded data loads.
 
 ## 7. SEO
-`Course` JSON-LD on overview, `LearningResource` on lessons · canonicals point to `academy.japaconnect.com`.
+`Course` JSON-LD on overview, `LearningResource` on lessons · canonicals point to `academy.japa.to`.
 
 ## 8. Standard Checks
 Apply `jc-main-debug` §§1–3, 5–7 (SSR/hydration, Runes, Bits UI, Tailwind, a11y).
@@ -80,4 +80,4 @@ Apply `jc-main-debug` §§1–3, 5–7 (SSR/hydration, Runes, Bits UI, Tailwind,
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

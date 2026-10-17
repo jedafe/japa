@@ -8,7 +8,7 @@
 	import { api } from '$lib/api/client';
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import { Sparkles, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -35,11 +35,11 @@
 
 <svelte:head>
 	{#if data.sourceOnly && source}
-		<title>{source.title ?? t('video.single.title', 'Video')} — JapaConnect</title>
+		<title>{source.title ?? t('video.single.title', 'Video')} — {siteName()}</title>
 		{#if source.description}
 			<meta name="description" content={source.description.slice(0, 160)} />
 		{/if}
-		{@const videoCanonical = `https://japaconnect.com/video/${source.slug ?? source.id}`}
+		{@const videoCanonical = `https://japa.to/video/${source.slug ?? source.id}`}
 		<link rel="canonical" href={videoCanonical} />
 		<meta property="og:url" content={videoCanonical} />
 		<meta property="og:type" content="video.other" />

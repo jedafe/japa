@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /sop-generator — SOP template + sample + field management (§110).
 	// Backend: GET/POST/PATCH/DELETE /admin/sop/templates, /admin/sop/samples, /admin/sop/fields.
 	// Ref: sections/110-sop-generator.md, ADR-121.
@@ -384,7 +385,7 @@
 </script>
 
 <svelte:head>
-	<title>SOP Generator — JapaConnect Admin</title>
+	<title>SOP Generator — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

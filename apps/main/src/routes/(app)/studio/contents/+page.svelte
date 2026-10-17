@@ -10,7 +10,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('studio.tabs.contents', 'Contents')} — {t('studio.title', 'Studio — JapaConnect')}</title>
+	<title>{t('studio.tabs.contents', 'Contents')} — {t('studio.title', 'Studio — {site}')}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

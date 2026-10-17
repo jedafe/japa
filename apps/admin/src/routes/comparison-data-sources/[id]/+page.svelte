@@ -145,7 +145,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('data_sources.title', 'Comparison data sources')} — {t('common.admin_title_suffix', 'JapaConnect Admin')}</title>
+	<title>{t('data_sources.title', 'Comparison data sources')} — {t('common.admin_title_suffix', '{site} Admin')}</title>
 </svelte:head>
 
 <div class="space-y-6">

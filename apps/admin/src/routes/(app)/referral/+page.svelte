@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -265,7 +266,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('referral.title')} — JapaConnect Admin</title>
+	<title>{t('referral.title')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

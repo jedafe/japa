@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /academy/tracks — migrated to the EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { academyAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
@@ -272,7 +273,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('academy.tracks_title', 'Academy Track Approvals')} — JapaConnect Admin</title>
+	<title>{t('academy.tracks_title', 'Academy Track Approvals')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

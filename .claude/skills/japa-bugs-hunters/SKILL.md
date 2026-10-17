@@ -60,7 +60,7 @@ via the existing §20 AI Gateway, and mandatory HITL review before publish.
 3. **Playwright is already installed** on this system. Do NOT run `npx playwright install` or any
    similar installation command. The system is pre-configured and ready to use.
 
-4. **Super admin credentials:** `admin@japaconnect.com` / `Admin123!` — use these when login is
+4. **Super admin credentials:** `admin@japa.to` / `Admin123!` — use these when login is
    required to test authenticated pages or admin features.
 
 5. **Always use `bun`** to start dev servers, install packages, or run any app commands. Never use
@@ -103,7 +103,7 @@ options:
   - label: "Learn platform"           (option 8)
       Audit + fix apps/academy (port 3003, SSR) against the Guide.
   - label: "Tools web surface"        (option 9)
-      Audit + fix apps/tools (port 3005, SSR, tools.japaconnect.com) against the Guide — the sixth
+      Audit + fix apps/tools (port 3005, SSR, tools.japa.to) against the Guide — the sixth
       SvelteKit app with host-detection hub/single-tool shell modes (ADR-086, §78).
   - label: "Feature name (from ./internal)"  (option 10)
       A specific feature in the ./internal folder (e.g. forum, like, bookmark, ai, affiliate,
@@ -162,7 +162,7 @@ fix-only); for every other target both verbs trigger that target's combined audi
    identifier like `forum.CreatePost`) → **Option 2 — Backend API / Route**.
 3. **Frontend URL / page** — `/japa-bugs-hunters "audit <url-or-path>"` or
    `/japa-bugs-hunters "fix <url-or-path>"` where the target is a URL
-   (`http://localhost:3000/...`, `https://admin.japaconnect.com/...`, `https://tools.japaconnect.com/...`)
+   (`http://localhost:3000/...`, `https://admin.japa.to/...`, `https://tools.japa.to/...`)
    or a frontend path (`/dashboard/overview`, `/forum/threads`, `/settings/profile`) →
    **Option 1 — Frontend URL / Page**. Resolve the app from the URL/path per Option 1's
    app-resolution rules.
@@ -192,7 +192,7 @@ the combined audit+fix for all other targets.
   with a URL or frontend path (see routing rule 3).
 
 1. **Resolve the app from the URL** (or ask which app if only a page name is given):
-   - `localhost:3000` / `japaconnect.com` → **main** (SSR, ADR-058 shell)
+   - `localhost:3000` / `japa.to` → **main** (SSR, ADR-058 shell)
    - `localhost:3001` / `admin.*` → **admin** (SPA)
    - `localhost:3002` / `control.*` → **control** (SPA)
    - `localhost:3003` / `learn.*` → **learn** (SSR, ADR-060 lesson-player exception)

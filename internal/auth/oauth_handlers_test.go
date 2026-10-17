@@ -462,7 +462,7 @@ func TestSafeRedirectPath(t *testing.T) {
 func TestSafeRedirectTarget(t *testing.T) {
 	t.Parallel()
 
-	const apiOrigin = "https://api.japaconnect.com"
+	const apiOrigin = "https://api.japa.to"
 
 	tests := []struct {
 		name string
@@ -472,12 +472,12 @@ func TestSafeRedirectTarget(t *testing.T) {
 		{"empty defaults to root", "", "/"},
 		{"relative path unchanged", "/feed", "/feed"},
 		{"absolute URL on API origin allowed", apiOrigin + "/oauth/authorize?client_id=x", apiOrigin + "/oauth/authorize?client_id=x"},
-		{"absolute URL on API origin with port differs", "https://api.japaconnect.com:4443/oauth/authorize", "/"},
+		{"absolute URL on API origin with port differs", "https://api.japa.to:4443/oauth/authorize", "/"},
 		{"absolute URL on other host rejected", "https://evil.com/oauth/authorize", "/"},
-		{"scheme mismatch rejected", "http://api.japaconnect.com/oauth/authorize", "/"},
-		{"subdomain suffix rejected", "https://api.japaconnect.com.evil.com/", "/"},
-		{"userinfo trick rejected", "https://api.japaconnect.com@evil.com/", "/"},
-		{"protocol-relative rejected", "//api.japaconnect.com/x", "/"},
+		{"scheme mismatch rejected", "http://api.japa.to/oauth/authorize", "/"},
+		{"subdomain suffix rejected", "https://api.japa.to.evil.com/", "/"},
+		{"userinfo trick rejected", "https://api.japa.to@evil.com/", "/"},
+		{"protocol-relative rejected", "//api.japa.to/x", "/"},
 		{"javascript URI rejected", "javascript:alert(1)", "/"},
 	}
 
@@ -494,7 +494,7 @@ func TestSafeRedirectTarget(t *testing.T) {
 
 	// No allowlist configured → all absolute URLs reduce to "/" (same as
 	// safeRedirectPath).
-	if got := safeRedirectTarget("https://api.japaconnect.com/x", ""); got != "/" {
+	if got := safeRedirectTarget("https://api.japa.to/x", ""); got != "/" {
 		t.Fatalf("safeRedirectTarget with empty origin = %q, want /", got)
 	}
 }

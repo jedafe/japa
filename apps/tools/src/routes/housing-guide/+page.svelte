@@ -32,7 +32,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('housing_guide.seo_title', 'Housing Guide — JapaConnect Tools'),
+			title: t('housing_guide.seo_title', 'Housing Guide — {site} Tools'),
 			description: t(
 				'housing_guide.seo_description',
 				'Destination-specific housing guides — platforms, landlord requirements, rent ranges, scam categories, and tips for finding safe housing abroad.'

@@ -123,7 +123,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('ingestion_jobs.title', 'Comparison refresh jobs')} — {t('common.admin_title_suffix', 'JapaConnect Admin')}</title>
+	<title>{t('ingestion_jobs.title', 'Comparison refresh jobs')} — {t('common.admin_title_suffix', '{site} Admin')}</title>
 </svelte:head>
 
 {#if !canView}

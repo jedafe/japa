@@ -22,9 +22,9 @@
 		if (data.q || data.contentType) showFilters = true;
 	});
 
-	const title = $derived(t('series.title', 'Series — JapaConnect'));
+	const title = $derived(t('series.title', 'Series — {site}'));
 	const description = $derived(
-		t('series.description', 'Browse curated, multi-part series on JapaConnect.')
+		t('series.description', 'Browse curated, multi-part series on {site}.')
 	);
 
 	const tabs = $derived<UrlTab[]>([

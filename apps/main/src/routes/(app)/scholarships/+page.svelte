@@ -37,7 +37,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	const MAX_COMPARE = 4;
 
-	const title = $derived(t('tools.scholarships', 'Scholarship Finder — JapaConnect'));
+	const title = $derived(t('tools.scholarships', 'Scholarship Finder — {site}'));
 	const description = $derived(
 		t('tools.scholarships_desc', 'Find and track scholarships by country and level.')
 	);
@@ -580,7 +580,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{field(s, 'level_of_study') || s.level_of_study}</span>
 										{/if}
 										{#if field(s, 'award_amount_usd')}
-											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">${field(s, 'award_amount_usd')}</span>
+											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{field(s, 'award_amount_usd')}</span>
 										{/if}
 										{#if deadline || s.application_deadline}
 											<span class="flex items-center gap-1">

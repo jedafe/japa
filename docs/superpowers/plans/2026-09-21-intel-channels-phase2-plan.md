@@ -65,7 +65,7 @@ original task text:
   endpoint materialized as `method:GET` would 405 forever.
 - The oneshot system source uses `source_type='system'` so
   `verifySkipSource` skips admin reprobes (prevents probing
-  japaconnect.com and materializing channels onto the shared source).
+  japa.to and materializing channels onto the shared source).
 
 ## Global Constraints
 

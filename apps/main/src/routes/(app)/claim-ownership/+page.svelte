@@ -56,7 +56,7 @@
 	const feeCredits = $derived(form?.submission_fee_credits ?? 0);
 	const isPaid = $derived(feeCredits > 0);
 
-	const pageTitle = $derived(t('claim_ownership.title', 'Claim ownership — JapaConnect'));
+	const pageTitle = $derived(t('claim_ownership.title', 'Claim ownership — {site}'));
 	const pageDescription = $derived(
 		t('claim_ownership.description', 'Submit evidence to claim this organization.')
 	);

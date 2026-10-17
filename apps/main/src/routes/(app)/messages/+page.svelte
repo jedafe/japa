@@ -85,7 +85,7 @@
 		conversations.find((c) => c.id === activeId) ?? null
 	);
 
-	const title = $derived(t('messages.title', 'Messages — JapaConnect'));
+	const title = $derived(t('messages.title', 'Messages — {site}'));
 
 	const sortOptions = [
 		{ value: 'recent', label: t('messages.sort_recent', 'Most recent') },

@@ -19,7 +19,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('stories.list_title', 'Community Stories — JapaConnect'));
+	const title = $derived(t('stories.list_title', 'Community Stories — {site}'));
 	const description = $derived(
 		t(
 			'stories.list_description',

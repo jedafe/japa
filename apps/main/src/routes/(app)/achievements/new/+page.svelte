@@ -28,7 +28,7 @@
 	let loading = $state(false);
 	let errorKey = $state('');
 
-	const pageTitle = $derived(t('achievements.new_title', 'Share an Achievement — JapaConnect'));
+	const pageTitle = $derived(t('achievements.new_title', 'Share an Achievement — {site}'));
 	const pageDescription = $derived(
 		t('achievements.new_description', 'Share a relocation milestone with the community.')
 	);

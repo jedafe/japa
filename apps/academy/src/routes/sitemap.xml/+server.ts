@@ -4,8 +4,8 @@ import { canonicalUrl } from '$lib/seo';
 import type { TrackSummary } from '$lib/types';
 
 /**
- * Per-host sitemap for academy.japaconnect.com (sitemap-protocol same-host
- * rule: academy/docs/tools cannot be `loc` entries under japaconnect.com).
+ * Per-host sitemap for academy.japa.to (sitemap-protocol same-host
+ * rule: academy/docs/tools cannot be `loc` entries under japa.to).
  * Advertised by static/robots.txt as Sitemap: {origin}/sitemap.xml.
  *
  * Data: GET /academy/catalog (public, paginated) → /tracks/{slug}.

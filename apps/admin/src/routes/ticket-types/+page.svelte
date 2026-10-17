@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /ticket-types — migrated to the EntityPage scaffold; simple server-paginated CRUD entity using `fields` (EntityForm).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { ticketTypesApi } from '$lib/api';
@@ -161,7 +162,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.ticket_types.page_title', 'Ticket Types')} — JapaConnect Admin</title>
+	<title>{t('app.ticket_types.page_title', 'Ticket Types')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

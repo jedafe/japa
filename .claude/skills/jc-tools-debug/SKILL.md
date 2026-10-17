@@ -1,6 +1,6 @@
 ---
 name: jc-tools-debug
-description: Use when debugging issues in the JapaConnect Tools Web Surface (apps/tools, port 3005, tools.japaconnect.com). Covers host-detection failures, shell rendering issues, API errors, SSR/CSR boundary leaks, and LayerChart problems.
+description: Use when debugging issues in the JapaConnect Tools Web Surface (apps/tools, port 3005, tools.japa.to). Covers host-detection failures, shell rendering issues, API errors, SSR/CSR boundary leaks, and LayerChart problems.
 ---
 
 # JapaConnect Tools Surface — Debug Skill
@@ -9,7 +9,7 @@ Debugging guide for `apps/tools/` (§78, ADR-086). Start here when something is 
 
 ## Surface Overview
 
-SvelteKit SSR · Port 3005 · `tools.japaconnect.com`. Sixth SvelteKit app. Same Go backend, same `/api/v1`, no community navigation.
+SvelteKit SSR · Port 3005 · `tools.japa.to`. Sixth SvelteKit app. Same Go backend, same `/api/v1`, no community navigation.
 
 ## Common Issues & Fixes
 
@@ -113,12 +113,12 @@ import { LineChart } from 'layerchart';
 
 ### 10. Cookie Auth Not Working Across Subdomains
 
-**Symptom:** User logged in on `japaconnect.com` but not on `tools.japaconnect.com`.
+**Symptom:** User logged in on `japa.to` but not on `tools.japa.to`.
 
 **Debug path:**
-1. Check cookie `domain=.japaconnect.com` (covers all subdomains)
+1. Check cookie `domain=.japa.to` (covers all subdomains)
 2. Verify the Vite proxy passes the cookie to the API as a Bearer header
-3. For custom domains (not `.japaconnect.com`), cookie auth doesn't work — OAuth flow required (§78)
+3. For custom domains (not `.japa.to`), cookie auth doesn't work — OAuth flow required (§78)
 
 ### 11. V2 Functional Tool — Missing `?dest=` Filter (Geo-Aware Pattern)
 
@@ -185,7 +185,7 @@ import { LineChart } from 'layerchart';
 
 ### 17. Tool-Domain Host Detection Failure for New V2 Tools
 
-**Symptom:** New v2 functional tool domain (e.g. `visaroute.japaconnect.com`) shows hub shell instead of single-tool shell.
+**Symptom:** New v2 functional tool domain (e.g. `visaroute.japa.to`) shows hub shell instead of single-tool shell.
 
 **Debug path:**
 1. Check `system_settings` — are the `{slug}.subdomain` and `{slug}.custom_domain` keys seeded for the new tool?

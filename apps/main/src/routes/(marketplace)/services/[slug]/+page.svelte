@@ -695,6 +695,30 @@
 		action={{ label: t('services.back_to_dir', 'Back to services'), href: '/services' }}
 	/>
 {:else}
+	<!-- Zero-review CTA — keeps the "first review" path discoverable when
+	     the listing has no reviews yet (ServiceReviews only renders with
+	     data). Both kind layouts render it in the reviews cell. -->
+	{#snippet reviewsCta()}
+		<section
+			aria-labelledby="reviews-heading"
+			class="rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6"
+		>
+			<h2 id="reviews-heading" class="text-xl font-bold text-[var(--color-text)]">
+				{reviewsHeading}
+			</h2>
+			<p class="mt-2 text-sm text-[var(--color-muted)]">
+				{t('services.no_reviews_yet', 'No reviews yet. Be the first to share your experience.')}
+			</p>
+			<a
+				href="/services/{service.slug}/reviews"
+				class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+			>
+				<Star size={15} aria-hidden="true" />
+				{t('reviews.write_title', 'Write a review')}
+			</a>
+		</section>
+	{/snippet}
+
 	<div class="mx-auto w-full max-w-6xl {stickyCta ? 'pb-24' : 'pb-14'} lg:pb-14">
 		<!-- Breadcrumb: Home / Services|Packages|?kind=mentorship / Category / Title -->
 		<nav
@@ -1123,16 +1147,18 @@
 
 			<!-- Bottom 2-col: What Mentees Say | How It Works -->
 			<div class="mt-12 grid gap-12 lg:grid-cols-2">
-				{#if hasReviews}
-					<div id="reviews" class="scroll-mt-20">
+				<div id="reviews" class="scroll-mt-20">
+					{#if hasReviews}
 						<ServiceReviews
 							{reviews}
 							aggregate={reviewAggregate}
 							heading={reviewsHeading}
 							viewAllHref="/services/{service.slug}/reviews"
 						/>
-					</div>
-				{/if}
+					{:else}
+						{@render reviewsCta()}
+					{/if}
+				</div>
 				{#if service.steps && service.steps.length > 0}
 					<HowItWorks steps={service.steps} />
 				{/if}
@@ -1527,24 +1553,26 @@
 					<ProviderCard {service} />
 				{/if}
 
-				<!-- Reviews | FAQs side by side (the mockup's bottom split row) -->
-				{#if hasReviews || (service.faqs && service.faqs.length > 0)}
-					<div class="grid gap-12 lg:grid-cols-2">
+				<!-- Reviews | FAQs side by side (the mockup's bottom split row);
+				     the reviews cell always renders — a zero-review listing gets
+				     the first-review CTA so the write path stays discoverable. -->
+				<div class="grid gap-12 lg:grid-cols-2">
+					<div id="reviews" class="scroll-mt-20">
 						{#if hasReviews}
-							<div id="reviews" class="scroll-mt-20">
-								<ServiceReviews
-									{reviews}
-									aggregate={reviewAggregate}
-									heading={reviewsHeading}
-									viewAllHref="/services/{service.slug}/reviews"
-								/>
-							</div>
-						{/if}
-						{#if service.faqs && service.faqs.length > 0}
-							<ServiceFaq faqs={service.faqs} />
+							<ServiceReviews
+								{reviews}
+								aggregate={reviewAggregate}
+								heading={reviewsHeading}
+								viewAllHref="/services/{service.slug}/reviews"
+							/>
+						{:else}
+							{@render reviewsCta()}
 						{/if}
 					</div>
-				{/if}
+					{#if service.faqs && service.faqs.length > 0}
+						<ServiceFaq faqs={service.faqs} />
+					{/if}
+				</div>
 			</div>
 		{/if}
 

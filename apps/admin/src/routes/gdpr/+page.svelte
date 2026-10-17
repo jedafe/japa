@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /gdpr — read-only deletion-request list with an "Execute" state action.
 	// Backend: GET /admin/gdpr/deletion-requests → gdprHandlers.ListPendingDeletions (RBAC: gdpr.deletions.view)
 	//          POST /admin/gdpr/deletion-requests/{id}/execute → gdprHandlers.ExecuteDeletion
@@ -147,7 +148,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.gdpr.erasure.title', 'Data Erasure Requests')} — JapaConnect Admin</title>
+	<title>{t('app.gdpr.erasure.title', 'Data Erasure Requests')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

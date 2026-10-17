@@ -179,7 +179,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.blog.review_queue_page_title', 'Blog Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.blog.review_queue_page_title', 'Blog Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

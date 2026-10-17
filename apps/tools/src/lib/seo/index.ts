@@ -1,4 +1,5 @@
 import { PUBLIC_MAIN_ORIGIN } from '$env/static/public';
+import { siteName as configuredSiteName } from '$lib/i18n';
 
 /**
  * SEO metadata helper for the Tools surface.
@@ -17,12 +18,12 @@ export interface SeoInput {
 	ogImage?: string;
 	/** Optional JSON-LD structured data object. */
 	jsonLd?: Record<string, unknown>;
-	/** Override the site name (defaults to "JapaConnect Tools"). */
+	/** Override the site name (defaults to "{general.site_name} Tools"). */
 	siteName?: string;
 	/** Mark as noindex for tools that should not be indexed. */
 	noindex?: boolean;
 	/** Canonical tool host for cross-domain canonicals (ADR-086 single-tool
-	 *  subdomains, e.g. "crs-calculator.japaconnect.com"). When set, the
+	 *  subdomains, e.g. "crs-calculator.japa.to"). When set, the
 	 *  canonical points at that host instead of the request origin, and an
 	 *  `alternates` list is returned for hreflang/self references. */
 	canonicalHost?: string;
@@ -34,32 +35,32 @@ export interface SeoInput {
 }
 
 /** Canonical Tools hub origin (ADR-086). */
-export const TOOLS_ORIGIN = 'https://tools.japaconnect.com';
+export const TOOLS_ORIGIN = 'https://tools.japa.to';
 
 /** Default per-tool canonical hosts (ADR-086 default subdomains). */
 const TOOL_CANONICAL_HOSTS: Record<string, string> = {
-	'/visa-checklist': 'visa-checklist.japaconnect.com',
-	'/readiness': 'readiness.japaconnect.com',
-	'/cost-of-living': 'cost-of-living.japaconnect.com',
-	'/scholarships': 'scholarships.japaconnect.com',
-	'/remittance': 'remittance.japaconnect.com',
-	'/japabot': 'japabot.japaconnect.com',
-	'/visa-routes': 'visa-routes.japaconnect.com',
-	'/embassy-alerter': 'embassy-alerter.japaconnect.com',
-	'/arrival-checklist': 'arrival-checklist.japaconnect.com',
-	'/processing-times': 'processing-times.japaconnect.com',
-	'/credential-checker': 'credential-checker.japaconnect.com',
-	'/cv-formatter': 'cv-formatter.japaconnect.com',
-	'/housing-guide': 'housing-guide.japaconnect.com',
-	'/attestation-guide': 'attestation-guide.japaconnect.com',
-	'/language-test': 'language-test.japaconnect.com',
-	'/tax-calculator': 'tax-calculator.japaconnect.com',
-	'/community-locator': 'community-locator.japaconnect.com',
-	'/crs-calculator': 'crs-calculator.japaconnect.com',
-	'/pof-calculator': 'pof-calculator.japaconnect.com',
-	'/eca-guide': 'eca-guide.japaconnect.com',
-	'/sop-generator': 'sop-generator.japaconnect.com',
-	'/currency-converter': 'currency-converter.japaconnect.com'
+	'/visa-checklist': 'visa-checklist.japa.to',
+	'/readiness': 'readiness.japa.to',
+	'/cost-of-living': 'cost-of-living.japa.to',
+	'/scholarships': 'scholarships.japa.to',
+	'/remittance': 'remittance.japa.to',
+	'/japabot': 'japabot.japa.to',
+	'/visa-routes': 'visa-routes.japa.to',
+	'/embassy-alerter': 'embassy-alerter.japa.to',
+	'/arrival-checklist': 'arrival-checklist.japa.to',
+	'/processing-times': 'processing-times.japa.to',
+	'/credential-checker': 'credential-checker.japa.to',
+	'/cv-formatter': 'cv-formatter.japa.to',
+	'/housing-guide': 'housing-guide.japa.to',
+	'/attestation-guide': 'attestation-guide.japa.to',
+	'/language-test': 'language-test.japa.to',
+	'/tax-calculator': 'tax-calculator.japa.to',
+	'/community-locator': 'community-locator.japa.to',
+	'/crs-calculator': 'crs-calculator.japa.to',
+	'/pof-calculator': 'pof-calculator.japa.to',
+	'/eca-guide': 'eca-guide.japa.to',
+	'/sop-generator': 'sop-generator.japa.to',
+	'/currency-converter': 'currency-converter.japa.to'
 };
 
 /** Resolve the canonical host for a tools path (longest-prefix match so
@@ -71,7 +72,7 @@ export function canonicalHostForPath(path: string): string {
 			best = prefix;
 		}
 	}
-	return best ? TOOL_CANONICAL_HOSTS[best] : 'tools.japaconnect.com';
+	return best ? TOOL_CANONICAL_HOSTS[best] : 'tools.japa.to';
 }
 
 export interface HreflangAlternate {
@@ -81,15 +82,15 @@ export interface HreflangAlternate {
 
 /**
  * Returns the canonical tools origin. In production this is
- * https://tools.japaconnect.com; in dev it falls back to the request origin.
+ * https://tools.japa.to; in dev it falls back to the request origin.
  * The origin is not known at module scope on the server, so callers pass the
  * absolute URL via the `origin` parameter when needed. For SSR, use
  * `event.url.origin` from the load function.
  *
  * Cross-domain canonical (ADR-086): each tool's canonical host is its
  * single-tool subdomain (canonicalHostForPath), NOT the request origin — so a
- * tool served from tools.japaconnect.com/<tool> and from
- * <tool>.japaconnect.com consolidates to one canonical URL.
+ * tool served from tools.japa.to/<tool> and from
+ * <tool>.japa.to consolidates to one canonical URL.
  */
 export function buildSeoMeta(input: SeoInput & { origin?: string }): {
 	title: string;
@@ -115,7 +116,7 @@ export function buildSeoMeta(input: SeoInput & { origin?: string }): {
 	// Per-tool og:image: caller-provided absolute URL wins; otherwise fall
 	// back to the static default under /og/ on the canonical origin.
 	const ogImage = input.ogImage ?? `${canonicalOrigin}/og/og-default.png`;
-	const siteName = input.siteName ?? DEFAULT_SITE_NAME;
+	const siteName = input.siteName ?? `${configuredSiteName()} Tools`;
 	const jsonLdString = input.jsonLd ? JSON.stringify(input.jsonLd) : null;
 
 	// hreflang alternates (EN-only when locales is unset — see per-page docs).
@@ -140,8 +141,6 @@ export function buildSeoMeta(input: SeoInput & { origin?: string }): {
 		alternates
 	};
 }
-
-const DEFAULT_SITE_NAME = 'JapaConnect Tools';
 
 /** Serialize JSON-LD safely for inline <script> (escape closing tags). */
 export function safeJsonLd(jsonLdString: string): string {

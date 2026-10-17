@@ -43,7 +43,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('cv_formatter.seo_title', 'CV Formatter — JapaConnect Tools'),
+			title: t('cv_formatter.seo_title', 'CV Formatter — {site} Tools'),
 			description: t(
 				'cv_formatter.seo_description',
 				'Get destination-specific CV standards and AI-assisted formatting — photo policy, sections, tone, and common pitfalls.'

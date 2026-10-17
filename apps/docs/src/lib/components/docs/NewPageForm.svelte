@@ -446,7 +446,7 @@
 		flex-shrink: 0;
 	}
 	.page-header h1 {
-		font-family: var(--font-sans);
+		font-family: var(--font-heading, var(--font-sans));
 		font-size: 1.5rem;
 		font-weight: 700;
 		color: var(--color-text);

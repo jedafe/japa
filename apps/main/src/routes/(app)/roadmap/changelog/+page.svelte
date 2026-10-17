@@ -3,7 +3,7 @@
 	// Release-notes style changelog — shipped roadmap items grouped by the
 	// month of shipped_at. All data from GET /roadmap/changelog (Rule 16).
 	import { page } from '$app/state';
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n, siteName} from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { ArrowLeft, History, PackageOpen, TriangleAlert } from 'lucide-svelte';
 	import type { RoadmapChangelogItem } from '$lib/types';
@@ -46,7 +46,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('roadmap.changelog.title', 'Changelog')} — JapaConnect</title>
+	<title>{t('roadmap.changelog.title', 'Changelog')} — {siteName()}</title>
 	<meta
 		name="description"
 		content={t('roadmap.changelog.subtitle', 'Everything that has shipped on the roadmap.')}

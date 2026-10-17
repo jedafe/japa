@@ -23,7 +23,7 @@
 </script>
 
 <svelte:head>
-	<title>{title} — {t('app.name', 'JapaConnect Academy')}</title>
+	<title>{title} — {t('app.name', '{site} Academy')}</title>
 </svelte:head>
 
 <!--

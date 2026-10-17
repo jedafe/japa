@@ -1,7 +1,8 @@
 import { env } from '$env/dynamic/private';
 
+import { DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 /** Canonical docs origin for SEO canonical URLs + JSON-LD. */
-export const DOCS_ORIGIN = (env.PUBLIC_DOCS_ORIGIN ?? 'https://docs.japaconnect.com').replace(
+export const DOCS_ORIGIN = (env.PUBLIC_DOCS_ORIGIN ?? 'https://docs.japa.to').replace(
 	/\/$/,
 	''
 );
@@ -10,7 +11,7 @@ export const DOCS_ORIGIN = (env.PUBLIC_DOCS_ORIGIN ?? 'https://docs.japaconnect.
  * Build a normalized SEO meta object from a single options bag.
  *
  * The returned shape is ready to spread into a `<svelte:head>` block. The
- * canonical URL is forced onto docs.japaconnect.com; `jsonLdString` is
+ * canonical URL is forced onto docs.japa.to; `jsonLdString` is
  * pre-serialized so it can be dropped directly into a
  * `<script type="application/ld+json">` body.
  */
@@ -67,12 +68,14 @@ export function buildMeta(opts: BuildMetaOptions): SeoMeta {
 	};
 }
 
-/** TechArticle JSON-LD for a single doc page. */
+/** TechArticle JSON-LD for a single doc page. `siteName` comes from
+ * event.locals.siteSettings['general.site_name'] (server context). */
 export function techArticleLd(opts: {
 	headline: string;
 	dateModified: string;
 	url: string;
 	description?: string;
+	siteName?: string;
 }): object {
 	return {
 		'@context': 'https://schema.org',
@@ -81,7 +84,7 @@ export function techArticleLd(opts: {
 		description: opts.description ?? undefined,
 		dateModified: opts.dateModified,
 		url: opts.url,
-		publisher: { '@type': 'Organization', name: 'JapaConnect' }
+		publisher: { '@type': 'Organization', name: opts.siteName ?? DEFAULT_SITE_NAME }
 	};
 }
 
@@ -90,6 +93,7 @@ export function collectionPageLd(opts: {
 	name: string;
 	url: string;
 	description?: string;
+	siteName?: string;
 }): object {
 	return {
 		'@context': 'https://schema.org',
@@ -97,16 +101,16 @@ export function collectionPageLd(opts: {
 		name: opts.name,
 		description: opts.description ?? undefined,
 		url: opts.url,
-		publisher: { '@type': 'Organization', name: 'JapaConnect' }
+		publisher: { '@type': 'Organization', name: opts.siteName ?? DEFAULT_SITE_NAME }
 	};
 }
 
 /** WebSite JSON-LD with SearchAction for the docs landing page. */
-export function webSiteLd(opts?: { name?: string; description?: string }): object {
+export function webSiteLd(opts?: { name?: string; description?: string; siteName?: string }): object {
 	return {
 		'@context': 'https://schema.org',
 		'@type': 'WebSite',
-		name: opts?.name ?? 'JapaConnect Docs',
+		name: opts?.name ?? `${opts?.siteName ?? DEFAULT_SITE_NAME} Docs`,
 		description: opts?.description,
 		url: DOCS_ORIGIN,
 		potentialAction: {

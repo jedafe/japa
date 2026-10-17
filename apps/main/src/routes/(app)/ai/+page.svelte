@@ -6,7 +6,7 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 	// Ref: japaconnect-engineering/adr/ADR-130-unified-japa-ai.md
 
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { Sparkles } from 'lucide-svelte';
 	import JapaAIChat from '$lib/ai/JapaAIChat.svelte';
 	import type { PageData } from './$types';
@@ -23,7 +23,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('ai.page.title', 'Japa AI')} — JapaConnect</title>
+	<title>{t('ai.page.title', 'Japa AI')} — {siteName()}</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

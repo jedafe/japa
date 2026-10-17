@@ -27,7 +27,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('universities.title', 'Universities — JapaConnect'));
+	const title = $derived(t('universities.title', 'Universities — {site}'));
 	const description = $derived(
 		t('universities.description', 'Explore universities relevant to the diaspora community.')
 	);

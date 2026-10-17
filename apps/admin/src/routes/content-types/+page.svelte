@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -105,7 +106,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('content_types.title', 'Content Types')} — JapaConnect Admin</title>
+	<title>{t('content_types.title', 'Content Types')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

@@ -20,7 +20,7 @@
 </script>
 
 <svelte:head>
-	<title>{t(meta?.label ?? 'dashboard.nav.label', 'Dashboard')} — {t('app.name', 'JapaConnect')}</title>
+	<title>{t(meta?.label ?? 'dashboard.nav.label', 'Dashboard')} — {t('app.name', '{site}')}</title>
 </svelte:head>
 
 {#if ViewComponent && page.data.user}

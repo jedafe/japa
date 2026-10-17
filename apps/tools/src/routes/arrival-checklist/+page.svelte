@@ -56,7 +56,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('arrival_checklist.seo_title', 'Arrival Checklist — JapaConnect Tools'),
+			title: t('arrival_checklist.seo_title', 'Arrival Checklist — {site} Tools'),
 			description: t(
 				'arrival_checklist.seo_description',
 				'A phased checklist of tasks to complete after arriving in your destination country — registration, banking, and more.'

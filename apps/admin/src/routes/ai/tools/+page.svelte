@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { aiAdminApi, type AiTool, type AiUsageSummary } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -152,7 +153,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('ai.tools_title')} — JapaConnect Admin</title>
+	<title>{t('ai.tools_title')} — {siteName()} Admin</title>
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('ai.tools_title')}</h1>
@@ -208,7 +209,7 @@
 		</div>
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
 			<p class="text-sm" style="color: var(--color-muted)">{t('ai.total_cost')}</p>
-			<p class="mt-1 text-2xl font-bold">${(usage.total_cost_usd ?? 0).toFixed(2)}</p>
+			<p class="mt-1 text-2xl font-bold">{(usage.total_cost_usd ?? 0).toFixed(2)}</p>
 		</div>
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
 			<p class="text-sm" style="color: var(--color-muted)">{t('ai.requests')}</p>

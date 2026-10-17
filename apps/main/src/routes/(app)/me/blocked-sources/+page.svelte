@@ -17,7 +17,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('sources.blocked.title', 'Blocked sources — JapaConnect')}</title>
+	<title>{t('sources.blocked.title', 'Blocked sources — {site}')}</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

@@ -33,7 +33,7 @@ func (f *StaticFetcher) Fetch(ctx context.Context, source sources.Source) (Fetch
 		return FetchResult{}, fmt.Errorf("static: new request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
+	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japa.to)")
 
 	resp, err := f.client.Do(req)
 	if err != nil {

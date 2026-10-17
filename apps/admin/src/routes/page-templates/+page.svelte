@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /page-templates — migrated to the EntityPage scaffold; simple CRUD entity using declarative `fields` (EntityForm).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { pageTemplatesAdminApiExtended, apiRaw } from '$lib/api';
@@ -194,7 +195,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('pageTemplates.title', 'Page Templates')} — JapaConnect Admin</title>
+	<title>{t('pageTemplates.title', 'Page Templates')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

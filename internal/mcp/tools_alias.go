@@ -32,7 +32,7 @@ type chatGPTAliasTool struct {
 var chatGPTAliasTools = map[string]chatGPTAliasTool{
 	"search": {
 		underlying:  "content.search",
-		description: "Search published JapaConnect content — posts, articles, guides, visa and relocation resources. Returns id, title, and url for each result; call fetch with an id to read the full text.",
+		description: "Search published " + serverTitle() + " content — posts, articles, guides, visa and relocation resources. Returns id, title, and url for each result; call fetch with an id to read the full text.",
 		schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -43,7 +43,7 @@ var chatGPTAliasTools = map[string]chatGPTAliasTool{
 	},
 	"fetch": {
 		underlying:  "content.read",
-		description: "Fetch the full text of a JapaConnect content item by the id returned from search.",
+		description: "Fetch the full text of a " + serverTitle() + " content item by the id returned from search.",
 		schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -180,7 +180,7 @@
   "jce.error.not_found": "Comparison not found",
   "jce.home.browse_comparisons": "Browse comparisons",
   "jce.home.heading": "Japa Comparison Engine",
-  "jce.home.meta_description": "Compare countries, pathways, schools, scholarships, jobs, and more on JapaConnect.",
+  "jce.home.meta_description": "Compare countries, pathways, schools, scholarships, jobs, and more on {site}.",
   "jce.home.signed_in_as": "Signed in as {username}",
   "jce.home.sign_in_prompt": "Sign in to create comparisons.",
   "jce.home.start_comparing": "Start comparing",

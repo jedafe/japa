@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /intelligence/review — intelligence review queue moderation page.
 	// Lists extracted intel records pending review, with approve/reject/edit
 	// actions. Backed by /intel/records (defaults to review_required) and
@@ -462,7 +463,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('intel.review_title', 'Intelligence Review Queue')} — JapaConnect Admin</title>
+	<title>{t('intel.review_title', 'Intelligence Review Queue')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

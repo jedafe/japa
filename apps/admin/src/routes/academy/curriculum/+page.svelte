@@ -680,7 +680,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.academy.page_title', 'Academy Curriculum — JapaConnect Admin')}</title>
+	<title>{t('app.academy.page_title', 'Academy Curriculum — {site} Admin')}</title>
 </svelte:head>
 
 <PageHeader

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { page } from '$app/state';
 	import { FileQuestion, ShieldX, TriangleAlert } from 'lucide-svelte';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -16,7 +17,7 @@
 </script>
 
 <svelte:head>
-	<title>{meta.title} — JapaConnect Admin</title>
+	<title>{meta.title} — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">

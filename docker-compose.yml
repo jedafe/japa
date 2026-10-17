@@ -305,7 +305,7 @@ services:
     restart: unless-stopped
 
   # Tools — SvelteKit SSR identity tools surface, port 3005.
-  # Canonical host: tools.japaconnect.com (per-tool subdomains and custom
+  # Canonical host: tools.japa.to (per-tool subdomains and custom
   # domains render the single-tool shell — ADR-086, §78).
   tools:
     build:

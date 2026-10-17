@@ -6,6 +6,7 @@
 package pofcalculator
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
@@ -625,7 +626,7 @@ func (s *Service) GenerateRequirementDraft(ctx context.Context, params map[strin
 	}
 
 	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
-		SystemPrompt: "You are the JapaConnect Content Agent. Produce a proof-of-funds " +
+		SystemPrompt: "You are the " + brand.Get() + " Content Agent. Produce a proof-of-funds " +
 			"requirement as STRICT JSON (no markdown fences): " +
 			`{"visa_type":"...","program_label":"...","currency":"ISO-4217",` +
 			`"amount_schedule":[{"members":1,"amount":15290,"per_additional":0}]` +

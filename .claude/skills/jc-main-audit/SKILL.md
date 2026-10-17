@@ -35,7 +35,7 @@ All dropdowns/modals/selects/tooltips/accordions/tabs are Bits UI primitives · 
 ## E3. Profile Learning Hub & Cross-App (ADR-060)
 - Dashboard hub tabs present and API-sourced: `/dashboard/learning` (`me/enrollments`), `/dashboard/certificates` (`me/certificates`), `/dashboard/knowledge-base` (docs + bookmarks) — flag any hardcoded lists
 - No Learn/Docs surface re-implemented in this app (lesson player, curriculum rail, docs nav tree belong to `jc-learn-*` / `jc-docs-*`)
-- Cross-app links use absolute subdomain URLs (`academy.japaconnect.com`, `docs.japaconnect.com`)
+- Cross-app links use absolute subdomain URLs (`academy.japa.to`, `docs.japa.to`)
 - Certificate cards link to the public shareable page `/certificates/:id`; earned certificates badge the public profile
 - Dashboard is private: no ad slots, not indexed
 
@@ -118,7 +118,7 @@ List hardcoded strings not in `$t()` · flag keys in `en.json` missing from `fr.
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
 
 ## E6. V2 Community Features & Mentorship (Phases 37–38, §§79–102, ADRs 087–110)
 

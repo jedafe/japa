@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { buildApiUrl } from '@japaconnect/api-url';
+import { substituteSiteName } from './site.svelte';
 
 type Locale = string;
 
@@ -34,7 +35,9 @@ export function getLocale() {
 export const locale = getLocale();
 
 export function t(key: string, fallback?: string): string {
-	return translations[key] ?? fallback ?? key;
+	// substituteSiteName expands {site} and rewrites any literal brand spelling
+	// in packs/fallbacks to the configured general.site_name.
+	return substituteSiteName(translations[key] ?? fallback ?? key);
 }
 
 export async function loadTranslations(localeCode: string): Promise<Record<string, string>> {

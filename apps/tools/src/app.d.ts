@@ -24,7 +24,7 @@ declare global {
 			locale: Locale;
 			/**
 			 * ADR-086 / §78: which tool surface the request host maps to.
-			 * 'hub' = full tools listing (tools.japaconnect.com default);
+			 * 'hub' = full tools listing (tools.japa.to default);
 			 * a specific tool slug = single-tool shell mode.
 			 */
 			toolSurface: ToolSurface;

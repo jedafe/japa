@@ -387,7 +387,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('comparison_types.title', 'Comparison Types')} — {t('common.admin_title_suffix', 'JapaConnect Admin')}</title>
+	<title>{t('comparison_types.title', 'Comparison Types')} — {t('common.admin_title_suffix', '{site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

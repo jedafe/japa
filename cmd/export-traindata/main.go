@@ -406,7 +406,7 @@ func run(outPath, evalPath string, evalFrac float64, minVotes int, dedupThreshol
 }
 
 func writeJSONL(path string, exs []example) error {
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- operator-provided output path in a dev tool
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", path, err)
 	}

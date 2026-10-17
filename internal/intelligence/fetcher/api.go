@@ -155,7 +155,7 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		return FetchResult{}, fmt.Errorf("api: new request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
+	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japa.to)")
 	req.Header.Set("Accept", "application/json")
 
 	if len(bodyBytes) > 0 {

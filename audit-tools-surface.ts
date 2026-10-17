@@ -8,7 +8,7 @@ const OUT = '/tmp/tools-audit';
 const loginRes = await fetch(`${API}/auth/login`, {
 	method: 'POST',
 	headers: { 'content-type': 'application/json' },
-	body: JSON.stringify({ email: 'admin@japaconnect.com', password: 'Admin123!' })
+	body: JSON.stringify({ email: 'admin@japa.to', password: 'Admin123!' })
 });
 const loginBody = await loginRes.json();
 const token = loginBody?.data?.access_token as string;

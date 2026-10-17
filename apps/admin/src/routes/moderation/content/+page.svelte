@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /moderation/content — migrated to the EntityPage scaffold.
 	// Distinct moderation-focused view of platform content (reports count,
 	// featured badge, type/status filters) with read-only list + Remove/Restore
@@ -244,7 +245,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('moderation.content_admin', 'Content Moderation')} — JapaConnect Admin</title>
+	<title>{t('moderation.content_admin', 'Content Moderation')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

@@ -237,7 +237,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 
 	// OpenRouter recommends these headers for attribution/routing; they are
 	// harmless on other OpenAI-compatible endpoints and ignored if unknown.
-	httpReq.Header.Set("HTTP-Referer", "https://japaconnect.com")
+	httpReq.Header.Set("HTTP-Referer", "https://japa.to")
 	httpReq.Header.Set("X-Title", "JapaConnect")
 
 	httpResp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
@@ -482,7 +482,7 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-	httpReq.Header.Set("HTTP-Referer", "https://japaconnect.com")
+	httpReq.Header.Set("HTTP-Referer", "https://japa.to")
 	httpReq.Header.Set("X-Title", "JapaConnect")
 
 	httpResp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
@@ -610,7 +610,7 @@ func (p *OpenAIProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-	httpReq.Header.Set("HTTP-Referer", "https://japaconnect.com")
+	httpReq.Header.Set("HTTP-Referer", "https://japa.to")
 	httpReq.Header.Set("X-Title", "JapaConnect")
 
 	resp, err := p.httpClient.Do(httpReq)

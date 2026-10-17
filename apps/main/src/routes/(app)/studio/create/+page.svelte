@@ -28,7 +28,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('create.title', 'Create')} — {t('app.name', 'JapaConnect')}</title>
+	<title>{t('create.title', 'Create')} — {t('app.name', '{site}')}</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

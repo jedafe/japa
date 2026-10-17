@@ -112,7 +112,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('ama.new_title', 'Start an AMA — JapaConnect')}</title>
+	<title>{t('ama.new_title', 'Start an AMA — {site}')}</title>
 	<meta name="description" content={t('ama.new_description', 'Open yourself to community questions in a structured AMA session.')} />
 	<meta name="robots" content="noindex" />
 	<meta property="og:title" content={t('ama.new_title', 'Start an AMA')} />

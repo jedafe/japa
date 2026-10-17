@@ -54,7 +54,7 @@ declare global {
 			theme: ThemeName;
 			locale: Locale;
 			isAcademyHost: boolean;
-			/** True on roadmap.japaconnect.com — renders the minimal roadmap shell (ADR-127). */
+			/** True on roadmap.japa.to — renders the minimal roadmap shell (ADR-127). */
 			isRoadmapHost: boolean;
 			/** CSRF token for client-side mutations (echoed as X-CSRF-Token). */
 			csrfToken: string | null;

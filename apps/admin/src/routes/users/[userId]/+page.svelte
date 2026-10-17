@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
   import { page } from "$app/state";
   import { goto, invalidateAll } from "$app/navigation";
@@ -548,7 +549,7 @@
 </script>
 
 <svelte:head>
-  <title>{user?.username ?? "User"} — JapaConnect Admin</title>
+  <title>{user?.username ?? "User"} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if impersonating}

@@ -218,7 +218,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('coupons.title', 'Coupons — JapaConnect')}</title>
+	<title>{t('coupons.title', 'Coupons — {site}')}</title>
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">

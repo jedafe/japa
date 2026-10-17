@@ -300,7 +300,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('onboarding.title', 'Welcome to JapaConnect')} — {t('app.name')}</title>
+	<title>{t('onboarding.title', 'Welcome to {site}')} — {t('app.name')}</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
@@ -308,7 +308,7 @@
 	<div class="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl lg:grid-cols-[360px_1fr]">
 		<!-- Brand panel — decorative illustration + privacy note. -->
 		<aside aria-hidden="true" class="onb-side relative hidden flex-col gap-4 overflow-hidden p-8 lg:flex xl:p-10">
-			<ThemeLogo alt={t('app.name', 'JapaConnect')} class="h-7 w-auto self-start" />
+			<ThemeLogo alt={t('app.name', '{site}')} class="h-7 w-auto self-start" />
 			<h2 class="text-[1.4rem] leading-snug font-bold text-[var(--color-text)]">
 				{t('onboarding.side_title', "Let's personalize your Japa journey")} <span aria-hidden="true">👋</span>
 			</h2>

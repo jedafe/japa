@@ -3,7 +3,7 @@ import type { PageServerLoad } from './$types';
 
 /**
  * The docs app root redirects to /docs (the docs landing). The canonical
- * surface is docs.japaconnect.com/docs; the bare origin is a convenience.
+ * surface is docs.japa.to/docs; the bare origin is a convenience.
  */
 export const load: PageServerLoad = async () => {
 	throw redirect(308, '/docs');

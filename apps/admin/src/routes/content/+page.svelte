@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /content — migrated to the EntityPage scaffold; read-only moderation list
 	// (content is created by users, not from this page) with Remove/Restore/Feature
 	// state actions driven by a custom `actions` array + page-local confirm Modals.
@@ -454,7 +455,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("content.title", "Content")} — JapaConnect Admin</title>
+	<title>{t("content.title", "Content")} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

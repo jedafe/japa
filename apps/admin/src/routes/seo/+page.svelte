@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Card, CardContent } from "$lib/components/ui/card";
@@ -236,7 +237,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("seo.title", "SEO Validation")} — JapaConnect Admin</title>
+	<title>{t("seo.title", "SEO Validation")} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

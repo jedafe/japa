@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /travel — Travel Search providers (Section 67, ADR-085).
 	// Migrated to the EntityPage scaffold. Uses `formSnippet` for structured
 	// config editing — api_config renders as endpoint/key inputs plus an
@@ -240,7 +241,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('travel.title', 'Travel Search')} — JapaConnect Admin</title>
+	<title>{t('travel.title', 'Travel Search')} — {siteName()} Admin</title>
 </svelte:head>
 
 <EntityPage {config} />

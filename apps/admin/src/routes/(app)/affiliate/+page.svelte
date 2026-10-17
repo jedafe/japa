@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /affiliate — migrated to shared components (ActionMenu, BulkBar, SlideOver, FilterPanel).
 	// Tabbed page (6 tabs) — not an EntityPage candidate; keeps the tab structure but
 	// uses DataTable `actions`/`bulkActionsList`/`filters` props and SlideOver for create.
@@ -631,7 +632,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('affiliate.title')} — JapaConnect Admin</title>
+	<title>{t('affiliate.title')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

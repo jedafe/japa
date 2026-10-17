@@ -188,7 +188,7 @@ func (s *Service) OptimizeMedia(ctx context.Context, mediaID pgtype.UUID) error 
 
 	// Best-effort cleanup of the old object when the path changed.
 	if newPath != m.StoragePath {
-		s.deleteObject(ctx, m.StorageBucket, m.StoragePath)
+		_ = s.deleteObject(ctx, m.StorageBucket, m.StoragePath)
 	}
 
 	return nil

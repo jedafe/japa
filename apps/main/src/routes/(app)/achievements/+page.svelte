@@ -33,7 +33,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('achievements.list_title', 'Achievements — JapaConnect'));
+	const title = $derived(t('achievements.list_title', 'Achievements — {site}'));
 	const description = $derived(
 		t(
 			'achievements.list_description',

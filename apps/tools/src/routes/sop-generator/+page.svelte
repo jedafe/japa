@@ -85,7 +85,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('sop_generator.seo_title', 'AI SOP Generator — JapaConnect Tools'),
+			title: t('sop_generator.seo_title', 'AI SOP Generator — {site} Tools'),
 			description: t(
 				'sop_generator.seo_description',
 				'Generate a tailored statement of purpose draft from proven templates — browse samples, refine, and export.'

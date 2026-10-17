@@ -8,7 +8,7 @@
 	// §80 Reader UX: sort (A–Z | most guides), server-side pagination with a
 	// total count, destination logos/descriptions on the cards, and a
 	// request-a-guide CTA pointing at the public feedback form.
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -129,7 +129,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('wiki.heading', 'Wiki')} — JapaConnect</title>
+	<title>{t('wiki.heading', 'Wiki')} — {siteName()}</title>
 	<meta name="description" content={t('wiki.landing_description', 'Explore destination wikis')} />
 	<meta property="og:title" content={t('wiki.heading', 'Wiki')} />
 	<meta property="og:description" content={t('wiki.landing_description', 'Explore destination wikis')} />

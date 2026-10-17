@@ -30,7 +30,7 @@ func TestToolWriterCreateSmoke(t *testing.T) {
 	database := &db.DB{Writer: pool, Reader: pool}
 
 	var userID pgtype.UUID
-	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = 'admin@japaconnect.com' LIMIT 1").Scan(&userID); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = 'admin@japa.to' LIMIT 1").Scan(&userID); err != nil {
 		t.Fatalf("get user: %v", err)
 	}
 

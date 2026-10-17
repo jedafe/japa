@@ -66,7 +66,7 @@ If the bug involves data not loading: verify the endpoint actually exists (`curl
 ## 7b. Profile Learning Hub & Cross-App (ADR-060)
 - Certificates, enrollments, or knowledge-base lists hardcoded instead of fetched from `GET /api/v1/me/certificates` / `GET /api/v1/me/enrollments` (Rule 16 violation)
 - Learn or Docs surfaces **re-implemented inside the main app** (a lesson player, curriculum rail, or docs nav tree built here) — those belong to the `jc-learn-*` / `jc-docs-*` apps; the main app links out by absolute subdomain URL
-- Cross-app links hardcoded to a wrong/relative path instead of `academy.japaconnect.com` / `docs.japaconnect.com` (breaks the shared-session deep link)
+- Cross-app links hardcoded to a wrong/relative path instead of `academy.japa.to` / `docs.japa.to` (breaks the shared-session deep link)
 - Certificate cards not linking to the public shareable page `/certificates/:id`; earned certificates missing as badges on the public profile
 - Dashboard treated as a public surface — it is private: no ad slots, and it must not be indexed
 
@@ -111,7 +111,7 @@ If the bug involves data not loading: verify the endpoint actually exists (`curl
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
 
 ## 7d. V2 Community Features — Debug Patterns (Phase 37, §§79–89, §98)
 

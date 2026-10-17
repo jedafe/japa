@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -21,7 +22,15 @@ import (
 // meiliEngine implements Engine over a Meilisearch client.
 type meiliEngine struct {
 	client meilisearch.ServiceManager
+	// indexPrefix namespaces physical index UIDs (JC_MEILI_INDEX_PREFIX) so
+	// a non-production environment can share one instance without colliding
+	// with another environment's indexes. Callers always see logical names.
+	indexPrefix string
 }
+
+// indexPrefixPattern is the safe charset for a Meilisearch index UID prefix
+// (index UIDs allow alphanumerics, hyphens, and underscores).
+var indexPrefixPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // newMeiliEngine creates the Meilisearch-backed Engine. The client is
 // returned even when Meilisearch is unreachable: index setup is best-effort
@@ -31,13 +40,23 @@ type meiliEngine struct {
 //
 // Note: the meilisearch-go v0.36 API exposes a ServiceManager interface
 // rather than a concrete *Client.
-func newMeiliEngine(url, key string) (*meiliEngine, error) {
+func newMeiliEngine(url, key, indexPrefix string) (*meiliEngine, error) {
 	if url == "" {
 		return nil, errors.New("meilisearch URL is required")
 	}
+	if indexPrefix != "" && !indexPrefixPattern.MatchString(indexPrefix) {
+		return nil, fmt.Errorf("invalid meilisearch index prefix %q (letters, digits, '-' and '_' only)", indexPrefix)
+	}
 
-	return &meiliEngine{client: meilisearch.New(url, meilisearch.WithAPIKey(key))}, nil
+	return &meiliEngine{client: meilisearch.New(url, meilisearch.WithAPIKey(key)), indexPrefix: indexPrefix}, nil
 }
+
+// ix maps a logical index name to the physical Meilisearch UID.
+func (e *meiliEngine) ix(logical string) string { return e.indexPrefix + logical }
+
+// unix maps a physical Meilisearch UID back to the logical index name so
+// consumers see catalog names regardless of the configured prefix.
+func (e *meiliEngine) unix(uid string) string { return strings.TrimPrefix(uid, e.indexPrefix) }
 
 // Name implements Engine.
 func (e *meiliEngine) Name() string { return "Meilisearch" }
@@ -57,18 +76,18 @@ func (e *meiliEngine) EnsureIndex(ctx context.Context, schema IndexSchema) error
 	defer cancel()
 
 	if _, err := e.client.CreateIndexWithContext(setupCtx, &meilisearch.IndexConfig{
-		Uid:        schema.UID,
+		Uid:        e.ix(schema.UID),
 		PrimaryKey: schema.PrimaryKey,
 	}); err != nil {
 		return fmt.Errorf("creating index %q: %w", schema.UID, err)
 	}
 
 	filterable := stringsToInterface(schema.FilterableAttributes)
-	if _, err := e.client.Index(schema.UID).UpdateFilterableAttributesWithContext(setupCtx, &filterable); err != nil {
+	if _, err := e.client.Index(e.ix(schema.UID)).UpdateFilterableAttributesWithContext(setupCtx, &filterable); err != nil {
 		return fmt.Errorf("setting filterable attributes for index %q: %w", schema.UID, err)
 	}
 
-	if _, err := e.client.Index(schema.UID).UpdateSortableAttributesWithContext(setupCtx, &schema.SortableAttributes); err != nil {
+	if _, err := e.client.Index(e.ix(schema.UID)).UpdateSortableAttributesWithContext(setupCtx, &schema.SortableAttributes); err != nil {
 		slog.Warn("meilisearch: failed to set sortable attributes (non-fatal)",
 			"index", schema.UID, "error", err)
 	}
@@ -78,12 +97,12 @@ func (e *meiliEngine) EnsureIndex(ctx context.Context, schema IndexSchema) error
 
 // Search implements Engine.
 func (e *meiliEngine) Search(ctx context.Context, index string, q Query) (*IndexResult, error) {
-	resp, err := e.client.Index(index).SearchWithContext(ctx, q.Text, e.toSearchRequest(q))
+	resp, err := e.client.Index(e.ix(index)).SearchWithContext(ctx, q.Text, e.toSearchRequest(q))
 	if err != nil {
 		return nil, err
 	}
 
-	return toIndexResult(resp), nil
+	return e.toIndexResult(resp), nil
 }
 
 // MultiSearch implements Engine. Meilisearch runs all queries in one HTTP
@@ -103,7 +122,7 @@ func (e *meiliEngine) MultiSearch(ctx context.Context, queries []Query) ([]Index
 
 	results := make([]IndexResult, len(resp.Results))
 	for i, sr := range resp.Results {
-		results[i] = *toIndexResult(&sr)
+		results[i] = *e.toIndexResult(&sr)
 	}
 
 	return results, nil
@@ -112,14 +131,14 @@ func (e *meiliEngine) MultiSearch(ctx context.Context, queries []Query) ([]Index
 // UpsertDocuments implements Engine. docs is marshaled to JSON as-is; pass a
 // slice (or pointer to a slice) of structs or maps.
 func (e *meiliEngine) UpsertDocuments(ctx context.Context, index string, docs any) error {
-	_, err := e.client.Index(index).AddDocumentsWithContext(ctx, docs, nil)
+	_, err := e.client.Index(e.ix(index)).AddDocumentsWithContext(ctx, docs, nil)
 
 	return err
 }
 
 // DeleteDocument implements Engine.
 func (e *meiliEngine) DeleteDocument(ctx context.Context, index, docID string) error {
-	_, err := e.client.Index(index).DeleteDocumentWithContext(ctx, docID, nil)
+	_, err := e.client.Index(e.ix(index)).DeleteDocumentWithContext(ctx, docID, nil)
 
 	return err
 }
@@ -129,7 +148,7 @@ func (e *meiliEngine) DeleteDocument(ctx context.Context, index, docID string) e
 // Sort passes through in the shared "field:dir" form.
 func (e *meiliEngine) toSearchRequest(q Query) *meilisearch.SearchRequest {
 	req := &meilisearch.SearchRequest{
-		IndexUID:             q.IndexUID,
+		IndexUID:             e.ix(q.IndexUID),
 		Query:                q.Text,
 		Limit:                int64(q.Limit),
 		Offset:               int64(q.Offset),
@@ -146,15 +165,16 @@ func (e *meiliEngine) toSearchRequest(q Query) *meilisearch.SearchRequest {
 
 // toIndexResult converts a Meilisearch SearchResponse to the neutral
 // IndexResult. meilisearch.Hit and Hit share the same underlying map type,
-// so conversion is a cast, not a copy.
-func toIndexResult(resp *meilisearch.SearchResponse) *IndexResult {
+// so conversion is a cast, not a copy. The physical index UID is mapped back
+// to the logical name so consumers match the index catalog unprefixed.
+func (e *meiliEngine) toIndexResult(resp *meilisearch.SearchResponse) *IndexResult {
 	hits := make([]Hit, len(resp.Hits))
 	for i, h := range resp.Hits {
 		hits[i] = Hit(h)
 	}
 
 	return &IndexResult{
-		IndexUID:           resp.IndexUID,
+		IndexUID:           e.unix(resp.IndexUID),
 		Hits:               hits,
 		EstimatedTotalHits: resp.EstimatedTotalHits,
 	}

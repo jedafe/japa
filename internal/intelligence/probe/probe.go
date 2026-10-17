@@ -30,7 +30,7 @@ const (
 	maxBodyBytes = 4 * 1024 * 1024
 
 	// userAgent identifies the probe on outbound requests.
-	userAgent = "JapaConnect-Intelligence-Probe/1.0 (+https://japaconnect.com)"
+	userAgent = "JapaConnect-Intelligence-Probe/1.0 (+https://japa.to)"
 )
 
 // errBudgetExhausted is returned by runState fetch helpers when the shared

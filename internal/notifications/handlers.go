@@ -171,7 +171,7 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":     notifications,
 		"total":    total,
-		"has_more": offset+int32(len(notifications)) < total,
+		"has_more": offset+int32(len(notifications)) < total, // #nosec G115 -- slice length bounded by request-scoped data
 	})
 }
 

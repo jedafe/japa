@@ -83,7 +83,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('planning_groups.new_title', 'Create Planning Group — JapaConnect')}</title>
+	<title>{t('planning_groups.new_title', 'Create Planning Group — {site}')}</title>
 	<meta
 		name="description"
 		content={t('planning_groups.new_description', 'Create a planning group to organize your japa journey with others.')}

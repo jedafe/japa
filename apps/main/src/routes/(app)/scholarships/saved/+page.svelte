@@ -33,7 +33,7 @@
 		}))
 	);
 
-	const title = $derived(t('scholarships.saved_title', 'Saved Scholarships — JapaConnect'));
+	const title = $derived(t('scholarships.saved_title', 'Saved Scholarships — {site}'));
 	const description = $derived(t('scholarships.saved_desc', 'Track your scholarship applications and deadlines.'));
 
 	function statusBadgeColor(status: string): string {

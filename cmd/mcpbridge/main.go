@@ -7,7 +7,7 @@
 // Configuration is env-only so the binary can be dropped into a host's
 // MCP server config without flags:
 //
-//	JC_MCP_URL      — endpoint (default https://api.japaconnect.com/api/v1/mcp)
+//	JC_MCP_URL      — endpoint (default https://api.japa.to/api/v1/mcp)
 //	JC_MCP_API_KEY  — sent as X-API-Key (preferred credential), or
 //	JC_MCP_TOKEN    — sent as Authorization: Bearer (OAuth token or JWT)
 //
@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	defaultMCPURL = "https://api.japaconnect.com/api/v1/mcp"
+	defaultMCPURL = "https://api.japa.to/api/v1/mcp"
 	// perRequestTimeout bounds a single upstream call. Tool executions can
 	// be slow, so this is generous; the MCP host applies its own deadline.
 	perRequestTimeout = 5 * time.Minute
@@ -91,7 +91,7 @@ func relay(client *http.Client, url, apiKey, token string, msg []byte, out *bufi
 	ctx, cancel := context.WithTimeout(context.Background(), perRequestTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(msg))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(msg)) // #nosec G704 -- upstream URL is operator-configured, not request-derived
 	if err != nil {
 		slog.Error("mcpbridge: build request", "error", err)
 		writeSyntheticError(msg, out, "bridge request build failed")
@@ -108,7 +108,7 @@ func relay(client *http.Client, url, apiKey, token string, msg []byte, out *bufi
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- upstream URL is operator-configured, not request-derived
 	if err != nil {
 		slog.Error("mcpbridge: upstream call", "error", err)
 		writeSyntheticError(msg, out, "upstream request failed")

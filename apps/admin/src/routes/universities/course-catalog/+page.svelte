@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /universities/course-catalog — canonical institutional course catalog
 	// (university_course_catalog, Section 39). EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -216,7 +217,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('courses.catalog_title', 'Course Catalog')} — JapaConnect Admin</title>
+	<title>{t('courses.catalog_title', 'Course Catalog')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

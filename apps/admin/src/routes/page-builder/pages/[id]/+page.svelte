@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// Ref: japaconnect-engineering/sections/16-page-builder.md
 	// Unified Page Builder editor — handles all page types (landing, about,
 	// service, event, custom) on the shared @japaconnect/landing-blocks library.
@@ -417,7 +418,7 @@
 			slug: typeof story.slug === 'string' ? story.slug : undefined,
 			title,
 			quote,
-			author_name: typeof story.author_display_name === 'string' ? story.author_display_name : (typeof story.author_name === 'string' ? story.author_name : 'A JapaConnect Member'),
+			author_name: typeof story.author_display_name === 'string' ? story.author_display_name : (typeof story.author_name === 'string' ? story.author_name : `A ${siteName()} Member`),
 			author_role: role || undefined,
 			author_avatar_url: (typeof story.author_avatar === 'string' ? story.author_avatar : (typeof story.featured_image_url === 'string' ? story.featured_image_url : null)) as string | null,
 			destination: destinationSpaceName || undefined
@@ -1053,7 +1054,7 @@
 </script>
 
 <svelte:head>
-	<title>{pageData?.title ?? t('page_builder.page_editor', 'Page Editor')} — JapaConnect Admin</title>
+	<title>{pageData?.title ?? t('page_builder.page_editor', 'Page Editor')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if loading}

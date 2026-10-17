@@ -104,7 +104,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('eca_guide.seo_title', 'ECA Evaluation Guide — WES, IQAS & More — JapaConnect Tools'),
+			title: t('eca_guide.seo_title', 'ECA Evaluation Guide — WES, IQAS & More — {site} Tools'),
 			description: t(
 				'eca_guide.seo_description',
 				'Compare credential evaluation providers, follow the step-by-step guide for your destination, and read real fee and timeline reports.'

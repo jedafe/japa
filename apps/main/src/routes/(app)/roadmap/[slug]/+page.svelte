@@ -5,7 +5,7 @@
 	// thread (via the item's shadow contents row). Moderators carrying
 	// roadmap.moderate get the same inline status select as board cards.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
@@ -77,7 +77,7 @@
 </script>
 
 <svelte:head>
-	<title>{item.title} — {t('roadmap.title', 'Product Roadmap')} — JapaConnect</title>
+	<title>{item.title} — {t('roadmap.title', 'Product Roadmap')} — {siteName()}</title>
 	<meta
 		name="description"
 		content={item.summary || t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')}

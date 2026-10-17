@@ -221,7 +221,7 @@
 	{#snippet children(close)}
 		<!-- Header: brand + stepper + close -->
 		<div class="flex items-center gap-4 border-b border-[var(--color-border)] px-5 py-4 sm:px-7">
-			<ThemeLogo alt={t('app.name', 'JapaConnect')} class="h-6 w-auto shrink-0" />
+			<ThemeLogo alt={t('app.name', '{site}')} class="h-6 w-auto shrink-0" />
 			<nav aria-label={t('journey.steps_label', 'Journey setup steps')} class="mx-auto flex items-center">
 				{#each steps as s, i (i)}
 					{@const n = i + 1}

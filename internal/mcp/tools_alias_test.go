@@ -59,7 +59,7 @@ func registerAliasTargets(deps *testDeps) {
 func TestMCP_AliasToolsList(t *testing.T) {
 	srv, deps := newTestMCP(t)
 	registerAliasTargets(deps)
-	srv.SetSiteBaseURL("https://japaconnect.com")
+	srv.SetSiteBaseURL("https://japa.to")
 
 	ctx := withUser(t.Context(), testUserID)
 
@@ -109,7 +109,7 @@ func TestMCP_AliasToolsListHiddenWithoutUnderlying(t *testing.T) {
 func TestMCP_AliasSearchCall(t *testing.T) {
 	srv, deps := newTestMCP(t)
 	registerAliasTargets(deps)
-	srv.SetSiteBaseURL("https://japaconnect.com")
+	srv.SetSiteBaseURL("https://japa.to")
 
 	ctx := withUser(t.Context(), testUserID)
 
@@ -147,7 +147,7 @@ func TestMCP_AliasSearchCall(t *testing.T) {
 		t.Fatalf("unexpected results: %v", payload.Results)
 	}
 
-	if payload.Results[0].URL != "https://japaconnect.com/content/study-in-canada" {
+	if payload.Results[0].URL != "https://japa.to/content/study-in-canada" {
 		t.Fatalf("unexpected url: %q", payload.Results[0].URL)
 	}
 }
@@ -155,7 +155,7 @@ func TestMCP_AliasSearchCall(t *testing.T) {
 func TestMCP_AliasFetchCall(t *testing.T) {
 	srv, deps := newTestMCP(t)
 	registerAliasTargets(deps)
-	srv.SetSiteBaseURL("https://japaconnect.com")
+	srv.SetSiteBaseURL("https://japa.to")
 
 	ctx := withUser(t.Context(), testUserID)
 
@@ -192,7 +192,7 @@ func TestMCP_AliasFetchCall(t *testing.T) {
 		t.Fatalf("unexpected fetch payload: %v", payload)
 	}
 
-	if payload.URL != "https://japaconnect.com/content/study-in-canada" {
+	if payload.URL != "https://japa.to/content/study-in-canada" {
 		t.Fatalf("unexpected url: %q", payload.URL)
 	}
 }

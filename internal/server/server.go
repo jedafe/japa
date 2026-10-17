@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -247,8 +248,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	geoipUpdater := geoip.NewUpdater(cfg.MaxmindAccountID, cfg.MaxmindLicenseKey, cfg.GeoIPDBPath, geoipReader)
 	worker.RegisterGeoIPUpdater(geoipUpdater)
 
-	// Register site name for worker handlers (RSS feeds, LLMS.txt, emails).
+	// Register site name for worker handlers (RSS feeds, LLMS.txt, emails) and
+	// the process-wide brand package used by services without a SiteName param.
 	worker.RegisterSiteName(cfg.SiteName)
+	brand.Set(cfg.SiteName)
 
 	// IP block middleware — reject blocked IPs before they reach any handler.
 	// Resolves the client IP internally via clientip.FromRequest (trusted-proxy
@@ -2950,7 +2953,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Search engine (Meilisearch driver — §13 Search Engine Port; graceful if
 	// unreachable — NewEngine logs a warning and returns a usable engine so
 	// the server boots even when the search engine is down).
-	searchEngine, err := search.NewEngine(cfg.MeilisearchURL, cfg.MeilisearchKey)
+	searchEngine, err := search.NewEngine(cfg.MeilisearchURL, cfg.MeilisearchKey, cfg.MeiliIndexPrefix)
 	if err != nil {
 		slog.Warn("search engine not created", "error", err)
 	}
@@ -5133,7 +5136,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
 				Post("/me/extension-tokens", publicAPIHandlers.CreateExtensionToken)
 
-			// Public API resource endpoints (Section 47 — api.japaconnect.com).
+			// Public API resource endpoints (Section 47 — api.japa.to).
 			// Gated by API key auth via X-API-Key header. These are read-only
 			// endpoints for external integrations.
 			// // Mounted under /public/ to avoid chi radix-tree shadowing: the main

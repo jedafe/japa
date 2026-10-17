@@ -108,7 +108,7 @@ func (s *Service) Digest(ctx context.Context, viewerID pgtype.UUID) (*PublicDige
 
 	if s.settingsReader != nil {
 		if v := s.settingsReader.GetIntOr(ctx, "api.digest.section_limit", 8); v > 0 {
-			limit = int32(v)
+			limit = int32(v) // #nosec G115 -- operator-configured small positive bound
 		}
 	}
 

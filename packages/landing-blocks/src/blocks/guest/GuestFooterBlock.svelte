@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { siteName } from '../../site';
   import type { GuestFooterProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getLucideIcon } from './guestIconMap';
@@ -81,7 +82,7 @@
       id: 'help',
       title: 'Need Help?',
       links: [
-        { label: 'support@japaconnect.com', url: 'mailto:support@japaconnect.com', icon: 'Mail' },
+        { label: 'support@japa.to', url: 'mailto:support@japa.to', icon: 'Mail' },
         { label: '+1 (234) 567-8900', url: 'tel:+12345678900', icon: 'Phone' },
         { label: 'Mon - Fri: 9AM - 6PM (EST)', icon: 'Clock' },
       ],
@@ -97,7 +98,7 @@
   const socials = $derived(props.socials ?? defaultSocials);
   const columns = $derived(props.columns ?? defaultColumns);
   const copyright = $derived(
-    props.copyright ?? `© ${new Date().getFullYear()} JapaConnect. All rights reserved.`
+    props.copyright ?? `© ${new Date().getFullYear()} ${siteName()}. All rights reserved.`
   );
   const bottomLinks = $derived(props.bottom_links ?? defaultBottomLinks);
 
@@ -120,7 +121,7 @@
   <h2 id="guest-footer-heading-{id}" class="sr-only">Footer</h2>
   <div class="guest-footer-inner">
     <div class="guest-footer-brand">
-      <img src={logoSrc} alt="JapaConnect" class="footer-logo footer-logo-dark" />
+      <img src={logoSrc} alt=siteName() class="footer-logo footer-logo-dark" />
       <p class="footer-tagline">{tagline}</p>
       {#if socialChildren.length > 0}
         <div class="footer-socials">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /notification-types — migrated to the EntityPage scaffold; simple CRUD entity using `fields` (EntityForm).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api, apiRaw } from '$lib/api';
@@ -192,7 +193,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('notification_types.title', 'Notification Types')} — JapaConnect Admin</title>
+	<title>{t('notification_types.title', 'Notification Types')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

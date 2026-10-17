@@ -45,7 +45,7 @@ func run() error {
 	// shutdown, signal-triggered exit, and fatal errors. See AUDIT-BE-002.
 	defer errtracking.Flush(2)
 
-	slog.Info("starting JapaConnect API", "config", cfg.String())
+	slog.Info("starting "+cfg.SiteName+" API", "config", cfg.String())
 
 	// Create the database pool. This pings the database on startup so
 	// we fail fast if PostgreSQL is unreachable. Pool tuning comes from

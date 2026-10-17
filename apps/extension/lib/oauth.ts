@@ -25,7 +25,7 @@ import {
 // openid unlocks /oauth/userinfo; the api.read.* set mirrors the fixed
 // scope set the extension-token mint issues (§47).
 const OAUTH_SCOPES = 'openid api.read.digest api.read.content api.read.me api.read.safety';
-const OAUTH_CLIENT_NAME = 'JapaConnect Browser Extension';
+const OAUTH_CLIENT_NAME = 'Japa Browser Extension';
 
 // Refresh a token this far ahead of expiry so a request never leaves with
 // a nearly-dead access token.

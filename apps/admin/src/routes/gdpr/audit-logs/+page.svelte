@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
@@ -62,7 +63,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("gdpr.audit_logs", "Audit Logs")} — JapaConnect Admin</title>
+	<title>{t("gdpr.audit_logs", "Audit Logs")} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

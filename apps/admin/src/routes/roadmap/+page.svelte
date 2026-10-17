@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /roadmap — EntityPage scaffold (§113). Items table with status/category
 	// filters, soft-delete restore + hard delete, and a "Change Status" state
 	// action that drives the lifecycle state machine via PATCH .../status.
@@ -468,7 +469,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('roadmap.title_plural', 'Roadmap')} — JapaConnect Admin</title>
+	<title>{t('roadmap.title_plural', 'Roadmap')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import type { VisaRouteWithAi } from '$lib/types';
@@ -18,7 +18,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: `${route.name} — ${t('visa_routes.seo_title', 'Visa Route Comparison — JapaConnect Tools')}`,
+			title: `${route.name} — ${t('visa_routes.seo_title', 'Visa Route Comparison — {site} Tools')}`,
 			description:
 				route.eligibility_summary ??
 				t(
@@ -33,7 +33,7 @@
 				'@type': 'Article',
 				headline: route.name,
 				description: route.eligibility_summary ?? '',
-				author: { '@type': 'Organization', name: 'JapaConnect' },
+				author: { '@type': 'Organization', name: siteName() },
 				mainEntityOfPage: `${page.url.origin}/visa-routes/${page.params.id}`
 			}
 		})

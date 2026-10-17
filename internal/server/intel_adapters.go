@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -278,7 +279,7 @@ func (a *intelRelevanceClassifierAdapter) Classify(ctx context.Context, item rel
 
 	var b strings.Builder
 
-	b.WriteString("You are a topical relevance classifier for JapaConnect, a platform for ")
+	b.WriteString("You are a topical relevance classifier for " + brand.Get() + ", a platform for ")
 	b.WriteString("Nigerians/Africans migrating, relocating, studying abroad, working abroad, or settling overseas.\n")
 
 	if len(topics) > 0 {

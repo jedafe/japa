@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /plans — migrated to the EntityPage scaffold.
 	//
 	// The plan form includes a feature-list editor (add/remove/toggle) and a
@@ -314,7 +315,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('nav.plans', 'Subscription Plans')} — JapaConnect Admin</title>
+	<title>{t('nav.plans', 'Subscription Plans')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

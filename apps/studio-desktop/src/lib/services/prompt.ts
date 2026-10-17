@@ -12,6 +12,7 @@ import {
 import { isHighStakes } from '$lib/services/validation';
 import type { StudioMode } from '$lib/services/settings';
 import * as yaml from 'js-yaml';
+import { siteName } from '$lib/stores/site.svelte';
 
 export interface PromptLookups {
 	contentTypeName: string;
@@ -98,7 +99,7 @@ export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mo
 	const linkInstructions: string[] = [];
 	if (values.internal_links > 0) {
 		linkInstructions.push(
-			`Include ${values.internal_links} internal links in the form [text](/content/[slug]). Do not invent slugs; use real JapaConnect content slugs only if you know them, otherwise omit the link.`
+			`Include ${values.internal_links} internal links in the form [text](/content/[slug]). Do not invent slugs; use real ${siteName()} content slugs only if you know them, otherwise omit the link.`
 		);
 	}
 	if (values.external_links > 0) {
@@ -146,8 +147,8 @@ export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mo
 		? ''
 		: `Voice guidance: ${lookups.voicePrompt}`;
 	const authorBlock = isMember
-		? 'You are a JapaConnect member writing under your own profile.'
-		: `You are writing as the JapaConnect persona "${lookups.personaName || 'a JapaConnect author'}". ${voiceBlock}`;
+		? `You are a ${siteName()} member writing under your own profile.`
+		: `You are writing as the ${siteName()} persona "${lookups.personaName || `a ${siteName()} author`}". ${voiceBlock}`;
 
 	const publishAt = values.publish_at ? `publish_at: "${values.publish_at}"\n` : '';
 	const topicLine = values.topic || values.title;
@@ -155,7 +156,7 @@ export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mo
 	return `${authorBlock}
 
 Topic: ${topicLine || '(not provided)'}
-Audience: ${values.audience || 'general JapaConnect readers'}
+Audience: ${values.audience || `general ${siteName()} readers`}
 Content type: ${lookups.contentTypeName || values.content_type}${lookups.guideCategoryName ? ` / ${lookups.guideCategoryName}` : ''}
 Tone variant: ${values.tone}
 Voice: ${lookups.voiceName || '(not selected)'}
@@ -200,7 +201,7 @@ ${frontmatterLine('seo_indexable', values.seo_indexable)}
 export function buildProjectInstruction(promptText: string): string {
 	return `# Japa Content Studio — Project Instructions
 
-You are the Japa Content Studio writing assistant. Your job is to help the user create high-quality, human-sounding JapaConnect content from the prompt they provide.
+You are the Japa Content Studio writing assistant. Your job is to help the user create high-quality, human-sounding ${siteName()} content from the prompt they provide.
 
 When given a generation prompt, write the full article as a Markdown file under \`jc-content/[content-type]/[slug].md\` with the exact frontmatter requested. Always use H1 for the title and H2 for section headings. Include internal links as \`[text](/content/[slug])\` and real external URLs where requested. Fill all frontmatter fields with real, accurate values; do not leave placeholder text.
 

@@ -205,7 +205,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.achievements.review_queue_page_title', 'Achievements Moderation — JapaConnect Admin')}</title>
+	<title>{t('app.achievements.review_queue_page_title', 'Achievements Moderation — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

@@ -2,7 +2,7 @@
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { page } from '$app/state';
 	import { ArrowLeft, Pin, Bell, BellOff, TriangleAlert, ShieldCheck } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { relativeTime } from '$lib/feed/time';
@@ -19,8 +19,8 @@
 
 	const title = $derived(
 		alert
-			? `${t('scam_alerts.detail_title', 'Scam Alert')} — JapaConnect`
-			: t('scam_alerts.list_title', 'Scam Alerts — JapaConnect')
+			? `${t('scam_alerts.detail_title', 'Scam Alert')} — ${siteName()}`
+			: t('scam_alerts.list_title', 'Scam Alerts — {site}')
 	);
 	const description = $derived(alert ? alert.description.slice(0, 160) : '');
 	// Section 26 — self-referencing canonical on the clean ID URL (never

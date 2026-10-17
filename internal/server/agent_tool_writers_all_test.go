@@ -83,7 +83,7 @@ func TestToolWriterLifecycle(t *testing.T) {
 	settings := config.NewSettings(database, nil)
 
 	var userID pgtype.UUID
-	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = 'admin@japaconnect.com' LIMIT 1").Scan(&userID); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = 'admin@japa.to' LIMIT 1").Scan(&userID); err != nil {
 		t.Skipf("seed admin user not found, skipping: %v", err)
 	}
 

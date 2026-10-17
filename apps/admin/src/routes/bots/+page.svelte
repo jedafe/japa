@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /bots — migrated to the EntityPage scaffold; declarative CRUD entity with
 	// is_system show-predicate on delete and bot_type/policy filters.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -209,7 +210,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.bots.page_title', 'Bots')} — JapaConnect Admin</title>
+	<title>{t('app.bots.page_title', 'Bots')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

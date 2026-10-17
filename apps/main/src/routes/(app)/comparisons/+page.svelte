@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Search, Eye, MessageCircle, Share2, Plus, GitCompare } from 'lucide-svelte';
-	import { i18n, t } from '$lib/i18n';
+	import { i18n, t, siteName} from '$lib/i18n';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
 	import { EmptyState, ListPageBar, PaginationControls, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import type { PageData } from './$types';
@@ -129,7 +129,7 @@
 	const currentPage = $derived(meta.page || 1);
 	// List head: title/description, self-referencing canonical on the clean
 	// path, and rel=prev/next on numbered pages (same pattern as /blog).
-	const listTitle = $derived(t('jce.comparisons.heading', 'Comparisons') + ' — JapaConnect');
+	const listTitle = $derived(t('jce.comparisons.heading', 'Comparisons') + ` — ${siteName()}`);
 	const listDescription = $derived(
 		t('jce.comparisons.seo_description', 'Compare destinations, visas, schools and more side by side.')
 	);

@@ -180,7 +180,7 @@
   "jce.error.not_found": "Comparaison introuvable",
   "jce.home.browse_comparisons": "Parcourir les comparaisons",
   "jce.home.heading": "Moteur de comparaison Japa",
-  "jce.home.meta_description": "Comparez pays, voies, écoles, bourses, emplois et plus sur JapaConnect.",
+  "jce.home.meta_description": "Comparez pays, voies, écoles, bourses, emplois et plus sur {site}.",
   "jce.home.signed_in_as": "Connecté en tant que {username}",
   "jce.home.sign_in_prompt": "Connectez-vous pour créer des comparaisons.",
   "jce.home.start_comparing": "Commencer à comparer",

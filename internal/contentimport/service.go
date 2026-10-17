@@ -37,7 +37,7 @@ const maxFeedURLLength = 2048
 
 // importUserAgent is the User-Agent string used when fetching RSS feeds.
 // Some providers (e.g. Medium) reject requests without a User-Agent.
-const importUserAgent = "JapaConnect-Import-Bot/1.0 (+https://japaconnect.com)"
+const importUserAgent = "JapaConnect-Import-Bot/1.0 (+https://japa.to)"
 
 // Source type constants — the set of supported import sources (Section 65).
 const (

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /ads/slot-types — migrated to the EntityPage scaffold; declarative CRUD entity.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { adSlotTypesApi } from '$lib/api';
@@ -152,7 +153,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('slot_types.title', 'Slot Types')} — JapaConnect Admin</title>
+	<title>{t('slot_types.title', 'Slot Types')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

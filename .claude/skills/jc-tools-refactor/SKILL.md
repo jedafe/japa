@@ -1,6 +1,6 @@
 ---
 name: jc-tools-refactor
-description: Use when refactoring or modernizing existing JapaConnect Tools Web Surface code (apps/tools, port 3005, tools.japaconnect.com). Covers Svelte 5 Runes migration, shell consolidation, LayerChart upgrades, and removing hardcoded data per Rule 16.
+description: Use when refactoring or modernizing existing JapaConnect Tools Web Surface code (apps/tools, port 3005, tools.japa.to). Covers Svelte 5 Runes migration, shell consolidation, LayerChart upgrades, and removing hardcoded data per Rule 16.
 ---
 
 # JapaConnect Tools Surface — Refactor Skill
@@ -9,7 +9,7 @@ Refactoring guide for `apps/tools/` (§78, ADR-086). Use when modernizing existi
 
 ## Surface Overview
 
-SvelteKit SSR · Port 3005 · `tools.japaconnect.com`. Sixth SvelteKit app. Svelte 5 Runes, Bits UI, Tailwind v4, LayerChart 2.0.1, `lucide-svelte@^1.0.1`.
+SvelteKit SSR · Port 3005 · `tools.japa.to`. Sixth SvelteKit app. Svelte 5 Runes, Bits UI, Tailwind v4, LayerChart 2.0.1, `lucide-svelte@^1.0.1`.
 
 ## Refactor Scenarios
 

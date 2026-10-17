@@ -23,7 +23,7 @@
 			'@type': 'CollectionPage',
 			name: t('academy.catalog'),
 			description: t('academy.catalog_description'),
-			url: 'https://academy.japaconnect.com/'
+			url: 'https://academy.japa.to/'
 		},
 		{
 			'@context': 'https://schema.org',
@@ -32,7 +32,7 @@
 				'@type': 'ListItem',
 				position: data.offset + j + 1,
 				name: track.title,
-				url: `https://academy.japaconnect.com/tracks/${track.slug}`
+				url: `https://academy.japa.to/tracks/${track.slug}`
 			}))
 		},
 		{
@@ -43,7 +43,7 @@
 					'@type': 'ListItem',
 					position: 1,
 					name: t('academy.catalog'),
-					item: 'https://academy.japaconnect.com/'
+					item: 'https://academy.japa.to/'
 				}
 			]
 		}
@@ -107,11 +107,11 @@
 	<title>{t('academy.catalog')} · {t('academy.name')}</title>
 	<meta name="description" content={t('academy.catalog_description')} />
 	<meta name="robots" content={robotsContent(false)} />
-	<link rel="canonical" href="https://academy.japaconnect.com/" />
+	<link rel="canonical" href="https://academy.japa.to/" />
 	<meta property="og:title" content={`${t('academy.catalog')} · ${t('academy.name')}`} />
 	<meta property="og:description" content={t('academy.catalog_description')} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content="https://academy.japaconnect.com/" />
+	<meta property="og:url" content="https://academy.japa.to/" />
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={`${t('academy.catalog')} · ${t('academy.name')}`} />
 	<meta name="twitter:description" content={t('academy.catalog_description')} />

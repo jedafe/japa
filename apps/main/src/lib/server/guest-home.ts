@@ -1,5 +1,6 @@
 import type { ServerLoadEvent } from '@sveltejs/kit';
 import { apiList, apiContext } from '$lib/server/api';
+import { DEFAULT_SITE_NAME } from '$lib/brand';
 import type {
 	GuestHomeData,
 	GuestHomeOpportunity,
@@ -29,7 +30,7 @@ function asArray<T>(value: unknown): T[] {
 	return [];
 }
 
-function mapStoryToGuestHome(story: Story): GuestHomeStory {
+function mapStoryToGuestHome(story: Story, siteName = DEFAULT_SITE_NAME): GuestHomeStory {
 	const quote =
 		story.best_advice?.trim() ||
 		story.most_useful_resource?.trim() ||
@@ -41,7 +42,10 @@ function mapStoryToGuestHome(story: Story): GuestHomeStory {
 		slug: story.slug,
 		title: story.title,
 		quote,
-		author_name: story.author_display_name ?? story.author_name ?? 'A JapaConnect Member',
+		author_name:
+			story.author_display_name ??
+			story.author_name ??
+			`A ${siteName} Member`,
 		author_role: role || undefined,
 		author_avatar_url: story.author_avatar ?? story.featured_image_url ?? null,
 		destination: story.destination_space_name
@@ -81,7 +85,8 @@ export async function buildGuestHome(
 	let stories: GuestHomeStory[] = [];
 	try {
 		const storyRes = await apiList<Story>(ctx, '/stories?limit=10&sort=top');
-		stories = storyRes.items.slice(0, 10).map(mapStoryToGuestHome);
+		const site = (siteSettings['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME;
+		stories = storyRes.items.slice(0, 10).map((s) => mapStoryToGuestHome(s, site));
 	} catch (err) {
 		console.error('[HOME] stories load failed', err);
 	}

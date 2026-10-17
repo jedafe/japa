@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /(app)/jobs — admin view of all job listings (Section 63, ADR-081).
 	// Full CRUD: list, edit, delete, feature-toggle.
 	// Ref: japaconnect-engineering/sections/63-jobs-board.md
@@ -266,7 +267,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('jobs.title', 'Jobs Board')} — JapaConnect Admin</title>
+	<title>{t('jobs.title', 'Jobs Board')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

@@ -67,7 +67,7 @@ var intelDiscoveryDenylist = []string{
 	"wordpress.org", "wordpress.com", "wp.me",
 	"apple.com", "itunes.apple.com", "apps.apple.com", "play.google.com",
 	"microsoft.com", "amzn.to", "amazon.com",
-	"japaconnect.com",
+	"japa.to",
 }
 
 // HandleIntelHarvestOutbound processes one changed raw doc: extract the

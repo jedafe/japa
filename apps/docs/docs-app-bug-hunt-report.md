@@ -156,7 +156,7 @@ This pass audited the entire Docs SvelteKit app against the backend API catalog 
 
 ### 14. Root-relative menu/CTA links 404'd on the docs origin
 
-**Severity:** High — admin-authored footer/sidebar links (`/signup`, `/login`, `/privacy`, `/terms`, `/`) are main-app routes; on `docs.japaconnect.com` they 404. The seeded CTA widget "Try JapaConnect" → `/signup` was the most prominent offender.
+**Severity:** High — admin-authored footer/sidebar links (`/signup`, `/login`, `/privacy`, `/terms`, `/`) are main-app routes; on `docs.japa.to` they 404. The seeded CTA widget "Try JapaConnect" → `/signup` was the most prominent offender.
 
 **Fix:** `resolveMenuHref()` added to `lib/utils/safeHtml.ts` — absolute URLs and `/docs...` stay local; other root-relative paths get `PUBLIC_MAIN_ORIGIN` prefixed. Applied in `GuestFooter.svelte` and `SidebarWidgetRenderer.svelte` (CTA). Migration `000680_docs_footer_and_api_key_limit_fixes.up.sql` also repoints stale seed rows (`/docs/getting-started` → `/docs/users`, deletes `/docs/guides` — neither slug exists as an audience) and sets `api.keys.max_per_user` `is_public=true` so the keys page can read the real limit. Verified: all footer links + CTA resolve to `http://localhost:3000/...` in dev.
 

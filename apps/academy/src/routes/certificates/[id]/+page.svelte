@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Public certificate share page — SSR (ADR-060 §4, shareable social proof).
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { safeJsonLd } from '$lib/seo';
 	import { api } from '$lib/api/client';
 	import { Award, GraduationCap, CheckCircle, Download } from 'lucide-svelte';
@@ -50,11 +50,11 @@
 	     proof) — indexable by design. No privacy flag exists on the backend
 	     Certificate model; if one is added, gate this to noindex. -->
 	<meta name="robots" content="index, follow" />
-	<link rel="canonical" href={`https://academy.japaconnect.com/certificates/${cert.id}`} />
+	<link rel="canonical" href={`https://academy.japa.to/certificates/${cert.id}`} />
 	<meta property="og:title" content={`${cert.recipient_name} — ${cert.title}`} />
 	<meta property="og:description" content={`Certificate of completion: ${cert.title}`} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={`https://academy.japaconnect.com/certificates/${cert.id}`} />
+	<meta property="og:url" content={`https://academy.japa.to/certificates/${cert.id}`} />
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={`${cert.recipient_name} — ${cert.title}`} />
 	<meta name="twitter:description" content={`Certificate of completion: ${cert.title}`} />
@@ -65,7 +65,7 @@
 			credentialCategory: 'Course Completion',
 			recognizedBy: {
 				'@type': 'Organization',
-				name: 'JapaConnect'
+				name: siteName()
 			},
 			hasCredential: {
 				'@type': 'EducationalOccupationalCredential',

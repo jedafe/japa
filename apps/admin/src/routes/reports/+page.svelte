@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /reports — migrated to the EntityPage scaffold.
 	// Read-only list (reports are user-submitted) with Action/Dismiss state actions
 	// and Delete. Action opens a page-local Modal to set status to 'actioned' with a
@@ -273,7 +274,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("reports.title", "Reports")} — JapaConnect Admin</title>
+	<title>{t("reports.title", "Reports")} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

@@ -4,7 +4,30 @@
 // Service worker for browser push notifications (Section 35 / Section 50).
 // Ref: japaconnect-engineering/sections/35-notification-system.md
 
+import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
+import { DEFAULT_SITE_NAME } from '$lib/brand';
+
 const sw = self as unknown as ServiceWorkerGlobalScope;
+
+// Notification title fallback comes from general.site_name — fetched lazily
+// on the first push (activate is too early: no network guarantee) and cached
+// for the SW's lifetime. Never hardcode the brand here.
+let cachedSiteName = DEFAULT_SITE_NAME;
+let siteNameFetched = false;
+async function refreshSiteName(): Promise<void> {
+	if (siteNameFetched) return;
+	siteNameFetched = true;
+	try {
+		const res = await fetch(buildApiUrl('/site/settings/public', PUBLIC_JC_API_URL));
+		if (!res.ok) return;
+		const body = await res.json();
+		const name = (body?.data ?? body)?.['general.site_name'];
+		if (typeof name === 'string' && name) cachedSiteName = name;
+	} catch {
+		// Offline or transient failure — keep the default.
+	}
+}
 
 // Take control of clients immediately so push events can open the app.
 sw.addEventListener('install', () => {
@@ -24,8 +47,6 @@ sw.addEventListener('push', (event) => {
 		// non-JSON payload — fall back to text.
 		payload = { body: event.data?.text() ?? '' };
 	}
-
-	const title = payload.title ?? 'JapaConnect';
 	const body = payload.body ?? '';
 	// Same-origin gate: a compromised notifier (or an API echoing a crafted
 	// content URL into the push payload) must not turn a trusted
@@ -50,7 +71,12 @@ sw.addEventListener('push', (event) => {
 		badge: '/favicon.png'
 	};
 
-	event.waitUntil(sw.registration.showNotification(title, options));
+	event.waitUntil(
+		(async () => {
+			if (!payload.title) await refreshSiteName();
+			await sw.registration.showNotification(payload.title ?? cachedSiteName, options);
+		})()
+	);
 });
 
 // Clicking a push notification focuses/closes the relevant client.

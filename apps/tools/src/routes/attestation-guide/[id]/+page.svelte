@@ -20,7 +20,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: `${pathway.document_type} — ${t('attestation_guide.seo_title', 'Attestation Guide — JapaConnect Tools')}`,
+			title: `${pathway.document_type} — ${t('attestation_guide.seo_title', 'Attestation Guide — {site} Tools')}`,
 			description: `Attestation pathway for ${pathway.document_type} from ${pathway.issuing_space_name ?? ''} to ${pathway.destination_space_name ?? ''}.`,
 			path: `/attestation-guide/${page.params.id}`,
 			origin: page.url.origin,

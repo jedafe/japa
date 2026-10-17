@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /forms — migrated to shared components (ActionMenu, FilterPanel,
 	// SlideOver, bulkActionsList). Tabbed page (all/system/active/inactive);
 	// keeps page-local Modals for create/edit (forms with slug auto-fill) and
@@ -327,7 +328,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('forms.title', 'Forms')} — JapaConnect Admin</title>
+	<title>{t('forms.title', 'Forms')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

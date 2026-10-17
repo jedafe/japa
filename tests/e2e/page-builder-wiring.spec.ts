@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 const BASE = 'http://localhost:3001';
 const API_BASE = 'http://localhost:8080/api/v1';
-const EMAIL = 'admin@japaconnect.com';
+const EMAIL = 'admin@japa.to';
 const PASSWORD = 'Admin123!';
 
 async function login(page: import('@playwright/test').Page) {

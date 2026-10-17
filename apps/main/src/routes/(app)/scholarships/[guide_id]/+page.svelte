@@ -61,7 +61,7 @@
 		}))
 	);
 
-	const title = $derived(`${scholarship.title} — ${t('tools.scholarships', 'Scholarship Finder — JapaConnect')}`);
+	const title = $derived(`${scholarship.title} — ${t('tools.scholarships', 'Scholarship Finder — {site}')}`);
 	const description = $derived(scholarship.summary ?? t('tools.scholarships_desc', 'Find and track scholarships by country and level.'));
 
 	const jsonLd = $derived(

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /newsletter — migrated to the EntityPage scaffold.
 	// Tabbed page: Subscribers (view/edit/delete + import) and Campaigns
 	// (view/send + bulk delete + create-via-modal), plus an Analytics tab
@@ -473,7 +474,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.newsletter.page_title', 'Newsletter')} — JapaConnect Admin</title>
+	<title>{t('app.newsletter.page_title', 'Newsletter')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

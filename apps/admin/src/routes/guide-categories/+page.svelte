@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /guide-categories — migrated to the EntityPage scaffold.
 	// Create + delete only (no update API); custom `actions` array omits Edit.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
@@ -133,7 +134,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('guide_categories.title', 'Guide Categories')} — JapaConnect Admin</title>
+	<title>{t('guide_categories.title', 'Guide Categories')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

@@ -7,7 +7,7 @@
 	// center column (no navigation to /org/new). The form POSTs /organizations
 	// via the browser API client; on success the list is invalidated and the
 	// user is routed to the new org's admin dashboard.
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { Building2, Plus, ShieldCheck, Loader2, X } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
@@ -138,7 +138,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('dashboard.nav.organizations')} — JapaConnect</title>
+	<title>{t('dashboard.nav.organizations')} — {siteName()}</title>
 </svelte:head>
 
 <section class="space-y-4">
@@ -172,7 +172,7 @@
 		>
 			<div>
 				<h2 class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.create_title', 'New organization')}</h2>
-				<p class="mt-0.5 text-xs text-[var(--color-muted)]">{t('org_admin.create_subtitle', 'Create a new organization on JapaConnect.')}</p>
+				<p class="mt-0.5 text-xs text-[var(--color-muted)]">{t('org_admin.create_subtitle', 'Create a new organization on {site}.')}</p>
 			</div>
 
 			{#if errorKey}

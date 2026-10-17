@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /roadmap/submissions — pending community submissions triage queue (§113).
 	// Readonly EntityPage; Approve/Decline drive the lifecycle state machine
 	// (pending → under_review | declined) via PATCH .../status.
@@ -148,7 +149,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('roadmap.submissions', 'Roadmap Submissions')} — JapaConnect Admin</title>
+	<title>{t('roadmap.submissions', 'Roadmap Submissions')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

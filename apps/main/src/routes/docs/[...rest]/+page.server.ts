@@ -4,7 +4,7 @@ import { DOCS_ORIGIN } from '$lib/appOrigins';
 
 /**
  * ADR-060 / P9 (one backend, multiple client surfaces): the Documentation site
- * is a dedicated SvelteKit app at docs.japaconnect.com (apps/docs, port 3004 in
+ * is a dedicated SvelteKit app at docs.japa.to (apps/docs, port 3004 in
  * dev). The main app has no doc tree of its own — it deep-links into Docs from
  * the profile dashboard Knowledge Base tab and bookmarks.
  *

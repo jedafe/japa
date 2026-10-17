@@ -273,7 +273,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.credential_checker_page_title', 'Credential Checker Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.tools.credential_checker_page_title', 'Credential Checker Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

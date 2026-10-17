@@ -1017,7 +1017,7 @@ func uniqueSlug(base, country, admin1 string, taken map[string]struct{}) string 
 // loadCities parses the TSV and dedups rows by (country, admin1, normalized
 // name), keeping the highest-population row.
 func loadCities(path string) ([]cityRow, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- operator-provided dataset path in a seed tool
 	if err != nil {
 		return nil, err
 	}
@@ -1087,7 +1087,7 @@ func loadCities(path string) ([]cityRow, error) {
 // loadAdmin1Aliases merges "country\tadmin1\tseeded-state-name" overrides into
 // the admin1-name map. Missing file is fine — overrides are optional.
 func loadAdmin1Aliases(path string, into map[string]string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- operator-provided dataset path in a seed tool
 	if err != nil {
 		return err
 	}
@@ -1117,7 +1117,7 @@ func loadAdmin1Aliases(path string, into map[string]string) error {
 // loadAdmin1 parses "country\tadmin1\tname\tasciiname" into "CC.A1" -> name,
 // preferring the ASCII variant.
 func loadAdmin1(path string) (map[string]string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- operator-provided dataset path in a seed tool
 	if err != nil {
 		return nil, err
 	}

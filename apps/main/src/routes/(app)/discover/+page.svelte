@@ -24,7 +24,7 @@
 		{ value: 'sources', label: t('discover.tab.sources', 'Sources') }
 	]);
 
-	const title = $derived(t('discover.title', 'Discover — JapaConnect'));
+	const title = $derived(t('discover.title', 'Discover — {site}'));
 	const description = $derived(
 		t('discover.description', 'Find spaces, people, organizations, tags, sources, and universities in the Nigerian diaspora community.')
 	);

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { beforeNavigate, goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
@@ -472,7 +473,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('settings.title', 'Settings')} — JapaConnect Admin</title>
+	<title>{t('settings.title', 'Settings')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

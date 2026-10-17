@@ -1,7 +1,7 @@
 <!-- Ref: japaconnect-engineering/sections/39-space-types-university.md
      (university_course_offerings — public offering detail) -->
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import { GraduationCap, ArrowLeft, GitCompare, CalendarDays, Clock, Globe, Award, ListChecks, Wallet, Building2 } from 'lucide-svelte';
 	import type { PageData } from './$types';
@@ -11,7 +11,7 @@
 	let { data }: { data: PageData } = $props();
 
 	const offering = $derived(data.offering);
-	const title = $derived(`${offering.course.title} — ${offering.university.name} · JapaConnect`);
+	const title = $derived(`${offering.course.title} — ${offering.university.name} · ${siteName()}`);
 	const description = $derived(
 		offering.course.description ?? t('course_offering.meta_description', 'Degree program details, tuition, duration and entry requirements.')
 	);

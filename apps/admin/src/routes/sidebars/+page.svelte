@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /sidebars — migrated to the EntityPage scaffold.
 	//
 	// The sidebar list + sidebar CRUD use EntityPage. The sidebar create/edit
@@ -699,7 +700,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("sidebars.title", "Sidebar Manager")} — JapaConnect Admin</title>
+	<title>{t("sidebars.title", "Sidebar Manager")} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

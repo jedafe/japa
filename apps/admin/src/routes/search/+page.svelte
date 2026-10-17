@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { api } from '$lib/api';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
@@ -196,7 +197,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('search.title')} — JapaConnect Admin</title>
+	<title>{t('search.title')} — {siteName()} Admin</title>
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('search.title')}</h1>

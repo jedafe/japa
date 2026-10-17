@@ -72,7 +72,7 @@
 			: notifications.filter((n) => notificationFilterFor(n.notification_type) === activeFilter)
 	);
 
-	const title = $derived(t('notifications.title', 'Notifications — JapaConnect'));
+	const title = $derived(t('notifications.title', 'Notifications — {site}'));
 
 	// Phase 23 — live notification prepend via WebSocket. The realtime store
 	// increments the global unread counter; this handler prepends the row so

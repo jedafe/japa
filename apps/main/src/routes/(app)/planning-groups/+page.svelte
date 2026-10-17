@@ -14,7 +14,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('planning_groups.title', 'Planning Groups — JapaConnect'));
+	const title = $derived(t('planning_groups.title', 'Planning Groups — {site}'));
 	const description = $derived(
 		t(
 			'planning_groups.description',

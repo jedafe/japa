@@ -18,7 +18,7 @@
 
 	const entry = $derived(data.entry);
 
-	const pageTitle = $derived(t('calendar.edit_title', 'Edit Calendar Entry — JapaConnect'));
+	const pageTitle = $derived(t('calendar.edit_title', 'Edit Calendar Entry — {site}'));
 
 	let title = $state(untrack(() => entry.title));
 	let description = $state(untrack(() => entry.description ?? ''));

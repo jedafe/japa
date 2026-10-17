@@ -13,6 +13,7 @@
 package crscalculator
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1165,7 +1166,7 @@ func (s *Service) GenerateRulesetDraft(ctx context.Context, params map[string]st
 	}
 
 	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
-		SystemPrompt: "You are the JapaConnect Content Agent. Produce an Express Entry CRS " +
+		SystemPrompt: "You are the " + brand.Get() + " Content Agent. Produce an Express Entry CRS " +
 			"ruleset as STRICT JSON (no markdown fences): " +
 			`{"version_label":"YYYY-MM","effective_date":"YYYY-MM-DD","source_url":"",` +
 			`"factors":[{"factor_group":"core|spouse|transferability|additional","factor_key":"...",` +

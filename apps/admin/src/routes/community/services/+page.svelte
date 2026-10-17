@@ -284,7 +284,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.services.review_queue_page_title', 'Service Directory Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.services.review_queue_page_title', 'Service Directory Review Queue — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}

@@ -57,13 +57,20 @@ interface CachedCsrf {
 const csrfCache = new Map<string, CachedCsrf>();
 
 /**
+ * Base domain for canonical surface hosts. Defaults to the production
+ * domain; staging deployments set JC_BASE_DOMAIN so canonical hosts resolve
+ * under e.g. staging.japa.to.
+ */
+const BASE_DOMAIN = (env.JC_BASE_DOMAIN ?? 'japa.to').trim().toLowerCase() || 'japa.to';
+
+/**
  * ADR-063: detect whether the request host is the Japa Academy branded
- * surface. The canonical host is academy.japaconnect.com; additional custom
+ * surface. The canonical host is academy.{BASE_DOMAIN}; additional custom
  * domains (e.g. japauni.com) can be configured via the JC_ACADEMY_HOSTS env
  * var as a comma-separated list.
  */
 function isAcademySurface(host: string): boolean {
-	const canonical = 'academy.japaconnect.com';
+	const canonical = `academy.${BASE_DOMAIN}`;
 	const configured = env.JC_ACADEMY_HOSTS?.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) ?? [];
 	const hosts = [canonical, ...configured];
 	return hosts.includes(host.toLowerCase());
@@ -71,12 +78,12 @@ function isAcademySurface(host: string): boolean {
 
 /**
  * ADR-127: detect whether the request host is the public roadmap surface.
- * The canonical host is roadmap.japaconnect.com; additional custom domains
+ * The canonical host is roadmap.{BASE_DOMAIN}; additional custom domains
  * come from the roadmap.custom_domain system setting (comma-separated, §113)
  * and the JC_ROADMAP_HOSTS env var (comma-separated).
  */
 function isRoadmapSurface(host: string, customDomainSetting?: unknown): boolean {
-	const canonical = 'roadmap.japaconnect.com';
+	const canonical = `roadmap.${BASE_DOMAIN}`;
 	const configured = env.JC_ROADMAP_HOSTS?.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) ?? [];
 	const custom = typeof customDomainSetting === 'string'
 		? customDomainSetting.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
@@ -289,12 +296,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.siteSettings = siteSettings;
 
 	// ADR-063: detect the Japa Academy branded surface by host.
-	// academy.japaconnect.com (and configurable custom domains like japauni.com)
+	// academy.japa.to (and configurable custom domains like japauni.com)
 	// render the Japa Academy shell instead of the diaspora community shell.
 	event.locals.isAcademyHost = isAcademySurface(event.url.hostname);
 
 	// ADR-127: detect the public roadmap surface by host.
-	// roadmap.japaconnect.com renders a minimal roadmap-branded shell inside
+	// roadmap.japa.to renders a minimal roadmap-branded shell inside
 	// the same app — unlike the university surface it does not redirect.
 	// Extra hosts come from the roadmap.custom_domain setting (§113).
 	event.locals.isRoadmapHost = isRoadmapSurface(

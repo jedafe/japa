@@ -563,7 +563,7 @@
 	<!-- Presets -->
 	<div class="space-y-2 border-t border-dashed border-border-input pt-4">
 		<h4 class="text-foreground text-sm font-medium">
-			{t('settings.comparison_presets', 'JapaConnect presets')}
+			{t('settings.comparison_presets', '{site} presets')}
 		</h4>
 		<div class="flex flex-wrap items-center gap-2">
 			<AutocompleteSelect

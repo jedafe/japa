@@ -306,7 +306,7 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, req ChatWithToolsReques
 		p.baseURL+"/chat/completions",
 		map[string]string{
 			"Authorization": "Bearer " + p.apiKey,
-			"HTTP-Referer":  "https://japaconnect.com",
+			"HTTP-Referer":  "https://japa.to",
 			"X-Title":       "JapaConnect",
 		},
 		body,

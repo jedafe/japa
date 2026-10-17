@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { adSlotTypesApi, adsAdminApi } from "$lib/api";
@@ -199,7 +200,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('ads.new', 'New Campaign')} — JapaConnect Admin</title>
+	<title>{t('ads.new', 'New Campaign')} — {siteName()} Admin</title>
 </svelte:head>
 
 <PageHeader

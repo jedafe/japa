@@ -9,8 +9,8 @@
 
 JapaConnect is approaching production and will release features incrementally, with
 **Spaces & Content Creation** leading the priority table. This spec defines a public,
-feature-rich product roadmap surface — `japaconnect.com/roadmap` AND
-`roadmap.japaconnect.com` — that:
+feature-rich product roadmap surface — `japa.to/roadmap` AND
+`roadmap.japa.to` — that:
 
 - communicates what is under consideration, planned, in progress, and shipped;
 - lets logged-in users vote on items and submit feature requests;
@@ -24,7 +24,7 @@ feature-rich product roadmap surface — `japaconnect.com/roadmap` AND
 | Decision | Outcome |
 | :--- | :--- |
 | Interaction model | Voting + public submissions + comments (full Canny-style) |
-| Hosting | `/roadmap` in `apps/main` **and** `roadmap.japaconnect.com` via host detection (ADR-063 precedent, `isUniversityHost` pattern) |
+| Hosting | `/roadmap` in `apps/main` **and** `roadmap.japa.to` via host detection (ADR-063 precedent, `isUniversityHost` pattern) |
 | Management | Admin panel DataTable **and** privileged inline editing on the public page |
 | Voting auth | Logged-in users only; one user, one vote per item |
 | Backend shape | Dedicated `internal/roadmap` module (Handlers → Service → Store) |
@@ -39,7 +39,7 @@ routes return 404 when disabled, matching the `internal/features` contract.
 
 ```
 Browser ──► apps/main /roadmap (SSR) ──► GET /api/v1/roadmap/board ──► roadmap.Service ──► Postgres (+Valkey)
-        └── roadmap.japaconnect.com ──► hooks.server.ts host detect ──► same pages, minimal shell
+        └── roadmap.japa.to ──► hooks.server.ts host detect ──► same pages, minimal shell
 Admin   ──► apps/admin DataTable ──► /api/v1/admin/roadmap/* (RBAC-gated)
 Worker  ──► asynq task roadmap:ship_notify ──► notifications to voters + submitter
 ```
@@ -150,7 +150,7 @@ All data from the API (Rule 16); i18n keys in `en.json` + `fr.json`.
   style.
 - **`/roadmap/submit`** (or dialog) — auth-required form: title, description,
   category select.
-- **Subdomain** — `hooks.server.ts` detects `roadmap.japaconnect.com` (+
+- **Subdomain** — `hooks.server.ts` detects `roadmap.japa.to` (+
   `roadmap.custom_domain` setting support) → `event.locals.isRoadmapHost`;
   root layout serves a minimal roadmap-branded shell (no app chrome); all
   routes on that host render the roadmap surface.

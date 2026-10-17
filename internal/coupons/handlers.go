@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -361,7 +362,14 @@ func (h *Handlers) DealGo(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("deals: failed to record go click", "slug", slug, "error", err)
 	}
 
-	http.Redirect(w, r, target, http.StatusFound)
+	// Restrict the click-through redirect to http(s) — the URL is DB-managed
+	// but defense-in-depth keeps javascript:/data: schemes out (gosec G710).
+	if u, perr := url.Parse(target); perr != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		errpkg.WriteError(w, http.StatusBadGateway, "invalid_redirect_target", "Deal target is unavailable")
+		return
+	}
+
+	http.Redirect(w, r, target, http.StatusFound) // #nosec G710 -- scheme allowlisted to http/https immediately above
 }
 
 // ── Admin Affiliate Provider Routes ─────────────────────────────────

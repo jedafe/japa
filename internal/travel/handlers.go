@@ -376,7 +376,7 @@ func (h *Handlers) HandleSearchLocations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	locs, err := h.service.SearchLocations(r.Context(), q, int32(atoiDefault(r.URL.Query().Get("limit"), 15)))
+	locs, err := h.service.SearchLocations(r.Context(), q, toInt32(int64(atoiDefault(r.URL.Query().Get("limit"), 15))))
 	if err != nil {
 		slog.Error("travel: locations search failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "locations_failed", "Failed to search locations")

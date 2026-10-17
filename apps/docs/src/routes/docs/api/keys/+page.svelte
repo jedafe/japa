@@ -213,7 +213,7 @@
 			<a href="/docs/api" class="back-link">← {t('audience.api')}</a>
 			<h1>{t('api.keys_title', 'API Keys')}</h1>
 			<p class="keys-desc">
-				{t('api.keys_desc', 'Manage your developer API keys. Each key identifies an application that can call the JapaConnect API on your behalf.')}
+				{t('api.keys_desc', 'Manage your developer API keys. Each key identifies an application that can call the {site} API on your behalf.')}
 			</p>
 		</header>
 
@@ -616,7 +616,7 @@
 	}
 	.back-link:hover { color: var(--color-primary); }
 	.keys-header h1 {
-		font-family: var(--font-sans);
+		font-family: var(--font-heading, var(--font-sans));
 		font-size: 2rem;
 		font-weight: 700;
 		color: var(--color-text);

@@ -1,3 +1,4 @@
+import { siteName } from '$lib/i18n';
 /**
  * Chat templates — named generation-spec presets for the /ai composer.
  * A template carries the same structured drafting options the studio
@@ -345,7 +346,7 @@ export function buildTemplateInsertText(
 		const links: string[] = [];
 		if (values.internal_links > 0)
 			links.push(
-				`${values.internal_links} internal links as [text](/content/[slug]) — real JapaConnect slugs only`
+				`${values.internal_links} internal links as [text](/content/[slug]) — real ${siteName()} slugs only`
 			);
 		if (values.external_links > 0)
 			links.push(`${values.external_links} authoritative external links with real URLs`);

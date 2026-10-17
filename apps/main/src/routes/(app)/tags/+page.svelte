@@ -11,9 +11,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('tags.title', 'Tags — JapaConnect'));
+	const title = $derived(t('tags.title', 'Tags — {site}'));
 	const description = $derived(
-		t('tags.description', 'Browse all tags on JapaConnect and find content that matters to you.')
+		t('tags.description', 'Browse all tags on {site} and find content that matters to you.')
 	);
 
 	// Self-referencing canonical on the clean path (never the query-string

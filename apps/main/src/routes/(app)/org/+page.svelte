@@ -21,9 +21,9 @@
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
-	const title = $derived(t('organizations.title', 'Organizations — JapaConnect'));
+	const title = $derived(t('organizations.title', 'Organizations — {site}'));
 	const description = $derived(
-		t('organizations.description', 'Communities, businesses, and professional groups on JapaConnect.')
+		t('organizations.description', 'Communities, businesses, and professional groups on {site}.')
 	);
 
 	const jsonLd = $derived(

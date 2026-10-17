@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
 const BASE = 'http://localhost:3001';
-const ADMIN_EMAIL = 'admin@japaconnect.com';
+const ADMIN_EMAIL = 'admin@japa.to';
 const ADMIN_PASSWORD = 'Admin123!';
 const SCREENSHOT_DIR = '/home/jmobile/websites/japa/japaconnect/test-results/admin-screenshots';
 

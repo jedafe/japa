@@ -93,7 +93,7 @@
 </script>
 
 <svelte:head>
-	<title>{title} — {t('sources.title', 'Sources — JapaConnect')}</title>
+	<title>{title} — {t('sources.title', 'Sources — {site}')}</title>
 	<meta name="description" content={source.description ?? source.domain} />
 </svelte:head>
 

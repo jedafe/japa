@@ -68,7 +68,7 @@
       <svelte:element
         this={level}
         class="font-bold tracking-tight text-[var(--color-heading,var(--color-text))] {sizeClass[props.size ?? 'xl'] ?? 'text-4xl'} {props.accent === 'underline' ? 'border-b-2 pb-2' : ''}"
-        style="{headingStyle} font-family: var(--block-heading-family, var(--font-serif, ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif)); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
+        style="{headingStyle} font-family: var(--block-heading-family, var(--font-heading, var(--font-serif, ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif))); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
       >
         {props.text}
       </svelte:element>

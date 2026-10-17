@@ -4,7 +4,7 @@
 	import { api } from '$lib/api/client';
 	import { mainAppUrl, buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -80,7 +80,7 @@
 		buildSeoMeta({
 			title: t(
 				'community_locator.seo_title',
-				'Diaspora Community Locator — JapaConnect Tools'
+				'Diaspora Community Locator — {site} Tools'
 			),
 			description: t(
 				'community_locator.seo_description',
@@ -94,7 +94,7 @@
 				'@type': 'Dataset',
 				name: 'Diaspora Community Locator',
 				description: 'Directory of diaspora organisations — cultural groups, religious communities, and social clubs.',
-				creator: { '@type': 'Organization', name: 'JapaConnect' }
+				creator: { '@type': 'Organization', name: siteName() }
 			}
 		})
 	);
@@ -694,7 +694,7 @@
 									{#if org.claim_status === 'claimed' && org.japaconnect_space_slug}
 										<div class="pt-2 border-t border-border mt-2">
 											<p class="text-xs font-medium uppercase tracking-wider text-muted mb-1">
-												{t('community_locator.space_integration', 'JapaConnect Space')}
+												{t('community_locator.space_integration', '{site} Space')}
 											</p>
 											<a
 												href={mainAppUrl(`/spaces/${org.japaconnect_space_slug}`)}

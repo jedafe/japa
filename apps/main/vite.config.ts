@@ -13,8 +13,8 @@ const API_TARGET = 'http://localhost:8080';
 // detect the host. Canonical hosts plus the JC_*_HOSTS env lists — same sources
 // isUniversitySurface/isRoadmapSurface consult.
 const devAllowedHosts = [
-	'academy.japaconnect.com',
-	'roadmap.japaconnect.com',
+	'academy.japa.to',
+	'roadmap.japa.to',
 	...(process.env.JC_ACADEMY_HOSTS ?? '').split(','),
 	...(process.env.JC_ROADMAP_HOSTS ?? '').split(',')
 ]

@@ -7,6 +7,7 @@
 package devices
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"errors"
 	"fmt"
@@ -291,7 +292,7 @@ func (s *Service) SendTestPush(ctx context.Context, deviceID string) error {
 
 	payload := PushPayload{
 		Title: "Test Push",
-		Body:  "This is a test push notification from JapaConnect.",
+		Body:  "This is a test push notification from " + brand.Get() + ".",
 		Data:  map[string]interface{}{"type": "test"},
 	}
 	if err := s.dispatcher.Dispatch(ctx, token.Platform, token.Token, payload); err != nil {

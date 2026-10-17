@@ -334,7 +334,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.visa_routes_page_title', 'Visa Routes Management — JapaConnect Admin')}</title>
+	<title>{t('app.tools.visa_routes_page_title', 'Visa Routes Management — {site} Admin')}</title>
 </svelte:head>
 
 {#if pageError}
@@ -448,7 +448,7 @@
 		{#if row.typical_fee_usd != null}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_typical_fee', 'Typical Fee')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">${row.typical_fee_usd}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.typical_fee_usd}</p>
 			</div>
 		{/if}
 		{#if row.path_to_pr}

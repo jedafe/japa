@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import {
@@ -259,7 +259,7 @@
 </script>
 
 <svelte:head>
-	<title>{title} — JapaConnect Tools</title>
+	<title>{title} — {siteName()} Tools</title>
 	<meta
 		name="description"
 		content={t(
@@ -268,7 +268,7 @@
 		)}
 	/>
 	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content="{title} — JapaConnect Tools" />
+	<meta property="og:title" content="{title} — {siteName()} Tools" />
 	<meta
 		property="og:description"
 		content={t(
@@ -279,7 +279,7 @@
 	<meta property="og:url" content={page.url.href} />
 	<meta property="og:type" content="website" />
 	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content="{title} — JapaConnect Tools" />
+	<meta name="twitter:title" content="{title} — {siteName()} Tools" />
 	<meta
 		name="twitter:description"
 		content={t(

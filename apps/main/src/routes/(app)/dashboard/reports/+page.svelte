@@ -16,7 +16,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('my_reports.title', 'My Reports — JapaConnect'));
+	const title = $derived(t('my_reports.title', 'My Reports — {site}'));
 	const reports = $derived<MyReport[]>(data.reports);
 	const pageNum = $derived(data.page);
 	const pageSize = $derived(data.pageSize);

@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
 import { buildMeta, webSiteLd } from '$lib/seo/meta';
-import { tServer } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 import type { DocPageSummary } from '$lib/types';
 
 /**
@@ -16,19 +16,22 @@ import type { DocPageSummary } from '$lib/types';
  */
 export const load: PageServerLoad = async (event) => {
 	const data = await event.parent();
+	const site = (data.siteSettings?.['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME;
 	const locale = data.locale ?? event.locals.locale;
-	const title = tServer(locale, 'landing.hero_title', 'JapaConnect Documentation');
+	const title = tServer(locale, 'landing.hero_title', '{site} Documentation', undefined, site);
 	const description = tServer(
 		locale,
 		'landing.hero_subtitle',
-		'Everything you need to build on, integrate with, and use JapaConnect.'
+		'Everything you need to build on, integrate with, and use {site}.',
+		undefined,
+		site
 	);
 	const meta = buildMeta({
 		title,
 		description,
 		path: '/docs',
 		ogType: 'website',
-		jsonLd: webSiteLd({ name: title, description })
+		jsonLd: webSiteLd({ siteName: site, name: title, description })
 	});
 
 	const ctx = apiContext(event);

@@ -3,7 +3,7 @@
 	import { api } from '$lib/api/client';
 	import { mainAppUrl, buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -62,7 +62,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('embassy_alerter.seo_title', 'Embassy Appointment Alerter — JapaConnect Tools'),
+			title: t('embassy_alerter.seo_title', 'Embassy Appointment Alerter — {site} Tools'),
 			description: t(
 				'embassy_alerter.seo_description',
 				'Subscribe to embassy appointment availability alerts. Get notified when a visa slot opens in your date range.'
@@ -74,7 +74,7 @@
 				'@context': 'https://schema.org',
 				'@type': 'Service',
 				name: 'Embassy Appointment Alerter',
-				provider: { '@type': 'Organization', name: 'JapaConnect' },
+				provider: { '@type': 'Organization', name: siteName() },
 				description: 'Embassy appointment availability alerts for visa slots.'
 			}
 		})

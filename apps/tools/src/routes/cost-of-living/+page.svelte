@@ -49,7 +49,7 @@
 
 	const seo = $derived(
 		buildSeoMeta({
-			title: t('col.seo_title', 'Cost of Living Calculator — JapaConnect Tools'),
+			title: t('col.seo_title', 'Cost of Living Calculator — {site} Tools'),
 			description: t(
 				'col.seo_description',
 				'Compare cost of living between your destination cities and a baseline city. Rent, groceries, transport, utilities, and more.'

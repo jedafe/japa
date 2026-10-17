@@ -106,7 +106,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.cost_of_living_page_title', 'Cost of Living Stats — JapaConnect Admin')}</title>
+	<title>{t('app.tools.cost_of_living_page_title', 'Cost of Living Stats — {site} Admin')}</title>
 </svelte:head>
 
 <div class="space-y-6">

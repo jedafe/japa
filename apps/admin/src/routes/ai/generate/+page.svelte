@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	import { aiApi, personaVoicesAdminApi, type GenerateResult, type PersonaVoice } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2, Copy, Check, Sparkles, RotateCcw, Send, ChevronDown, ChevronUp, Clock, Zap, Trash2, AlertTriangle } from 'lucide-svelte';
@@ -240,7 +241,7 @@
 </script>
 
 <svelte:head>
-	<title>AI Generator — JapaConnect Admin</title>
+	<title>AI Generator — {siteName()} Admin</title>
 </svelte:head>
 
 <div class="mb-6">

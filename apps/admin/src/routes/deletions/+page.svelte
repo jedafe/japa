@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /deletions — read-only audit log of soft-deleted and removed content.
 	// Backend: GET /admin/deletions → adminHandlers.ListDeletedContents (RBAC: admin.moderation).
 	// Ref: sections/19-gdpr-ndpr-compliance.md, Rule 11 (soft deletes only for user content)
@@ -103,7 +104,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('deletions.title', 'Deletions')} — JapaConnect Admin</title>
+	<title>{t('deletions.title', 'Deletions')} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

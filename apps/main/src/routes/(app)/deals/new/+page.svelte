@@ -17,7 +17,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('deals.new_title', 'New deal — JapaConnect'));
+	const title = $derived(t('deals.new_title', 'New deal — {site}'));
 
 	const labelClass = 'mb-1 block text-sm font-medium text-[var(--color-text)]';
 

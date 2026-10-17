@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { siteName } from '$lib/stores/site.svelte';
 	// /spaces — migrated to EntityPage scaffold. EntityPage owns list/pagination/
 	// search/filter state and URL sync. Page keeps local Modals for Suspend
 	// (reason input) and Delete confirmation, plus a page-local Edit SlideOver
@@ -399,7 +400,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("spaces.title", "Spaces")} — JapaConnect Admin</title>
+	<title>{t("spaces.title", "Spaces")} — {siteName()} Admin</title>
 </svelte:head>
 
 {#if pageError}

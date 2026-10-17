@@ -1,6 +1,6 @@
 ---
 name: jc-docs-audit
-description: [Docs app, docs.japaconnect.com] Unified shell adapted for Docs (ADR-060) — nav-tree left nav, TOC right sidebar, playground full-width exception. Use when performing a comprehensive quality audit of the JapaConnect Docs app (apps/docs) before merge or release. Verifies observer/listener cleanup, API-driven sidebar, search modal composition, code blocks, SEO structured data, and standard compliance.
+description: [Docs app, docs.japa.to] Unified shell adapted for Docs (ADR-060) — nav-tree left nav, TOC right sidebar, playground full-width exception. Use when performing a comprehensive quality audit of the JapaConnect Docs app (apps/docs) before merge or release. Verifies observer/listener cleanup, API-driven sidebar, search modal composition, code blocks, SEO structured data, and standard compliance.
 ---
 
 # JapaConnect Docs — Audit Skill
@@ -32,7 +32,7 @@ Live-DOM heading extraction · IntersectionObserver tracking · smooth anchor sc
 Column collapse at breakpoints · `<Dialog.Root>` mobile drawer with focus trap · no horizontal overflow.
 
 ## G. SEO & Structured Data
-Per page: title, description, canonical → `docs.japaconnect.com`, TechArticle JSON-LD · landing: WebSite + SearchAction JSON-LD · API reference: appropriate WebPage schema.
+Per page: title, description, canonical → `docs.japa.to`, TechArticle JSON-LD · landing: WebSite + SearchAction JSON-LD · API reference: appropriate WebPage schema.
 
 ## H. LayerChart (If Usage Stats Present)
 Apply `jc-main-audit` §E.
@@ -87,4 +87,4 @@ Same structure as `jc-main-audit` with categories: Memory leaks · API routes/si
 
 **API-Readiness Gate applies to all v2 features.** Verify against `api-routes-catalog.md` — all v2 routes are marked as "V2 planned" in the catalog. Once the corresponding backend phase lands, the planned routes become available.
 
-**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japaconnect.com` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.
+**New surface in v2:** `apps/tools` (§78, ADR-086) — a sixth SvelteKit SSR app at `tools.japa.to` (port 3005). `jc-tools-*` skills are already generated and live at `.ai/skills/frontend/06-tools/`.

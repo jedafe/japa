@@ -4,7 +4,7 @@
 	// (no hardcoded fields — Rule 16) and submits to POST /forms/{id}/submissions
 	// via the browser API client. Auth is optional: an authed user's ID is
 	// recorded automatically by the backend.
-	import { t } from '$lib/i18n';
+	import { t, siteName} from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -68,7 +68,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('feedback.title')} — JapaConnect</title>
+	<title>{t('feedback.title')} — {siteName()}</title>
 	<meta name="description" content={t('feedback.subtitle')} />
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>

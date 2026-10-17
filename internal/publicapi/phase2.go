@@ -258,7 +258,7 @@ func (s *Service) TagFeed(ctx context.Context, tagSlug, cursor string, limit int
 
 	nextCursor := ""
 
-	if int32(len(rows)) == limit && len(rows) > 0 {
+	if int32(len(rows)) == limit && len(rows) > 0 { // #nosec G115 -- slice length bounded by request-scoped data
 		last := rows[len(rows)-1]
 		nextCursor = encodeTagFeedCursor(last.CreatedAt, last.ID)
 	}
@@ -465,7 +465,7 @@ func (s *Service) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, quer
 
 // sliceSemanticHits truncates result.Data to limit (no-op when limit <= 0).
 func sliceSemanticHits(result *SemanticSearchResult, limit int32) {
-	if limit > 0 && int32(len(result.Data)) > limit {
+	if limit > 0 && int32(len(result.Data)) > limit { // #nosec G115 -- slice length bounded by request-scoped data
 		result.Data = result.Data[:limit]
 	}
 }

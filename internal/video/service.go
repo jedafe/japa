@@ -1,6 +1,7 @@
 package video
 
 import (
+	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -453,7 +454,7 @@ func (s *Service) storeVideoPoster(ctx context.Context, uploaderID pgtype.UUID, 
 	defer os.Remove(in.Name())
 
 	if _, err := in.Write(data); err != nil {
-		in.Close()
+		_ = in.Close()
 		return pgtype.UUID{}, "", fmt.Errorf("writing temp input: %w", err)
 	}
 
@@ -467,7 +468,7 @@ func (s *Service) storeVideoPoster(ctx context.Context, uploaderID pgtype.UUID, 
 	}
 
 	outPath := out.Name()
-	out.Close()
+	_ = out.Close()
 
 	defer os.Remove(outPath)
 
@@ -486,7 +487,7 @@ func (s *Service) storeVideoPoster(ctx context.Context, uploaderID pgtype.UUID, 
 		}
 	}
 
-	poster, err := os.ReadFile(outPath)
+	poster, err := os.ReadFile(outPath) // #nosec G304 -- outPath is an os.CreateTemp file owned by this call
 	if err != nil {
 		return pgtype.UUID{}, "", fmt.Errorf("reading poster: %w", err)
 	}
@@ -1141,7 +1142,7 @@ func (s *Service) buildSummaryPrompt(source gen.VideoSource) string {
 
 	var b strings.Builder
 
-	b.WriteString("You are a JapaConnect content assistant. Write a draft post to accompany the following video.\n\n")
+	b.WriteString("You are a " + brand.Get() + " content assistant. Write a draft post to accompany the following video.\n\n")
 	fmt.Fprintf(&b, "Source title: %s\n", source.Title)
 	fmt.Fprintf(&b, "Description: %s\n", source.Description)
 	fmt.Fprintf(&b, "Category: %s\n", category)
