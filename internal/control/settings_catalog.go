@@ -284,7 +284,7 @@ var settingsCatalog = map[string]settingMeta{
 	"onboarding.reminder_batch_limit":        {Type: "int", DefaultValue: "2000", Description: "Max users processed per onboarding reminder sweep run.", Panel: "control"},
 	// General platform settings (exist in DB, now catalogued for type metadata).
 	// Public so the main site can render the site name and description in SEO/meta.
-	"general.site_name":         {Type: "string", DefaultValue: "JapaConnect", Description: "Platform display name.", Public: true, Panel: "admin"},
+	"general.site_name":         {Type: "string", DefaultValue: "Japa.to", Description: "Platform display name.", Public: true, Panel: "admin"},
 	"general.site_description":  {Type: "string", DefaultValue: "", Description: "Short platform description for SEO and meta tags.", Public: true, Panel: "admin"},
 	"general.maintenance_mode":  {Type: "bool", DefaultValue: "false", Description: "When true, the platform shows a maintenance banner to non-admin users.", Public: true, Panel: "admin"},
 	"general.registration_open": {Type: "bool", DefaultValue: "true", Description: "Whether new user self-registration is allowed.", Public: true, Panel: "admin"},
@@ -303,6 +303,8 @@ var settingsCatalog = map[string]settingMeta{
 	"appearance.logo_url":          {Type: "string", DefaultValue: "", Description: "URL to the platform logo image for light theme.", Public: true, Panel: "admin"},
 	"appearance.logo_url_dark":     {Type: "string", DefaultValue: "", Description: "URL to the platform logo image for dark theme; falls back to logo_url.", Public: true, Panel: "admin"},
 	"appearance.favicon_url":       {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image; empty = use default favicon.svg.", Public: true, Panel: "admin"},
+	"appearance.favicon_url_dark":  {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image for dark theme; falls back to favicon_url.", Public: true, Panel: "admin"},
+	"appearance.favicon_url_light": {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image for light theme; falls back to favicon_url.", Public: true, Panel: "admin"},
 	"appearance.primary_color":     {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex).", Public: true, Panel: "admin"},
 	"appearance.auth_brand_slides": {Type: "json", DefaultValue: "[]", Description: "Carousel slides for the auth brand panel: [{image, headline, subheading}].", Public: true, Panel: "admin"},
 	// Extended site theming — all Public so every SSR surface (main, docs,
@@ -327,6 +329,7 @@ var settingsCatalog = map[string]settingMeta{
 	"appearance.border_color_dark":    {Type: "string", DefaultValue: "", Description: "Optional dark-mode --color-border override.", Public: true, Panel: "admin"},
 	"appearance.font_family":          {Type: "string", DefaultValue: "inter", Description: "Body/UI font mapped to --font-sans.", Options: `[{"value":"inter","label":"Inter"},{"value":"lora","label":"Lora"},{"value":"poppins","label":"Poppins"},{"value":"roboto","label":"Roboto"},{"value":"open-sans","label":"Open Sans"},{"value":"montserrat","label":"Montserrat"},{"value":"system-ui","label":"System UI"},{"value":"georgia","label":"Georgia"},{"value":"monospace","label":"Monospace"}]`, Public: true, Panel: "admin"},
 	"appearance.font_family_serif":    {Type: "string", DefaultValue: "lora", Description: "Reading/prose font mapped to --font-serif; same options as font_family.", Options: `[{"value":"inter","label":"Inter"},{"value":"lora","label":"Lora"},{"value":"poppins","label":"Poppins"},{"value":"roboto","label":"Roboto"},{"value":"open-sans","label":"Open Sans"},{"value":"montserrat","label":"Montserrat"},{"value":"system-ui","label":"System UI"},{"value":"georgia","label":"Georgia"},{"value":"monospace","label":"Monospace"}]`, Public: true, Panel: "admin"},
+	"appearance.heading_font_family":  {Type: "string", DefaultValue: "inherit", Description: "Font applied to h1–h6; inherit = follow font_family.", Options: `[{"value":"inherit","label":"Inherit"},{"value":"inter","label":"Inter"},{"value":"lora","label":"Lora"},{"value":"poppins","label":"Poppins"},{"value":"roboto","label":"Roboto"},{"value":"open-sans","label":"Open Sans"},{"value":"montserrat","label":"Montserrat"},{"value":"system-ui","label":"System UI"},{"value":"georgia","label":"Georgia"},{"value":"monospace","label":"Monospace"}]`, Public: true, Panel: "admin"},
 	"appearance.font_size":            {Type: "string", DefaultValue: "16", Description: "Base body font size in px.", Options: `[{"value":"14","label":"14px"},{"value":"15","label":"15px"},{"value":"16","label":"16px"},{"value":"17","label":"17px"},{"value":"18","label":"18px"}]`, Public: true, Panel: "admin"},
 	"appearance.font_weight":          {Type: "string", DefaultValue: "400", Description: "Base body font weight.", Options: `[{"value":"400","label":"Regular (400)"},{"value":"500","label":"Medium (500)"},{"value":"600","label":"Semibold (600)"}]`, Public: true, Panel: "admin"},
 	"appearance.heading_size":         {Type: "string", DefaultValue: "default", Description: "Heading size scale applied to h1–h6.", Options: `[{"value":"compact","label":"Compact (0.9x)"},{"value":"default","label":"Default (1.0x)"},{"value":"comfortable","label":"Comfortable (1.125x)"},{"value":"large","label":"Large (1.25x)"},{"value":"xl","label":"XL (1.5x)"}]`, Public: true, Panel: "admin"},
@@ -336,7 +339,7 @@ var settingsCatalog = map[string]settingMeta{
 	"appearance.heading_weight_tablet": {Type: "string", DefaultValue: "inherit", Description: "Heading weight at ≤1024px; inherit = use heading_weight.", Options: `[{"value":"inherit","label":"Inherit"},{"value":"500","label":"Medium (500)"},{"value":"600","label":"Semibold (600)"},{"value":"700","label":"Bold (700)"},{"value":"800","label":"Extrabold (800)"},{"value":"900","label":"Black (900)"}]`, Public: true, Panel: "admin"},
 	"appearance.heading_weight_mobile": {Type: "string", DefaultValue: "inherit", Description: "Heading weight at ≤640px; inherit = use heading_weight.", Options: `[{"value":"inherit","label":"Inherit"},{"value":"500","label":"Medium (500)"},{"value":"600","label":"Semibold (600)"},{"value":"700","label":"Bold (700)"},{"value":"800","label":"Extrabold (800)"},{"value":"900","label":"Black (900)"}]`, Public: true, Panel: "admin"},
 	"appearance.border_radius":        {Type: "string", DefaultValue: "8", Description: "Corner radius in px mapped to --radius (--radius-card derives as radius+4).", Options: `[{"value":"0","label":"0 (square)"},{"value":"4","label":"4px"},{"value":"8","label":"8px"},{"value":"12","label":"12px"},{"value":"16","label":"16px"}]`, Public: true, Panel: "admin"},
-	// Documentation portal (docs app) — public so docs.japaconnect.com renders
+	// Documentation portal (docs app) — public so docs.japa.to renders
 	// its header chrome, sidebar sections, and landing cards from settings.
 	"docs.pinned_pages":       {Type: "json", DefaultValue: "[]", Description: "Get Started pinned pages for the docs portal: [{audience, slug, label?}]. Label falls back to the page title; unresolvable pins are skipped.", Public: true, Panel: "admin"},
 	"docs.versions":           {Type: "json", DefaultValue: "[]", Description: "Docs portal version switcher entries: [{label, url}]. Empty hides the version dropdown.", Public: true, Panel: "admin"},
@@ -820,7 +823,7 @@ func getSettingPanel(key string) string {
 // now owns them. These keys remain catalogued for backward-compatible reads
 // but are excluded from the editable settings list and carry a DEPRECATED
 // description prefix pointing at the owning flag.
-var deprecatedReachabilitySettings = map[string]string{
+var deprecatedReachabilitySettings = map[string]string{ // #nosec G101 -- these are setting/flag key names, not credentials
 	"ai.japabot_enabled":          "feature.japabot",
 	"agent.enabled":               "feature.ai_agent",
 	"achievement.enabled":         "achievement.enabled",

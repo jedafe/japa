@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { t } from '$lib/i18n';
+	import { t, DEFAULT_SITE_NAME } from '$lib/i18n';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import { env } from '$env/dynamic/public';
 	import type { Snippet } from 'svelte';
@@ -38,7 +38,10 @@
 	// When appearance.favicon_url is set, we override the default favicon.svg
 	// link tag with the uploaded favicon. Ref: conventions/system-settings-catalog.md
 	let faviconUrl = $derived(
-		(data.siteSettings?.['appearance.favicon_url'] as string | undefined) ?? ''
+		((theme.resolved === 'dark'
+			? (data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined)
+			: (data.siteSettings?.['appearance.favicon_url_light'] as string | undefined)) ??
+			(data.siteSettings?.['appearance.favicon_url'] as string | undefined) ?? '')
 	);
 	$effect(() => {
 		if (faviconUrl) {
@@ -106,7 +109,7 @@
 	// Site-level settings from GET /site/settings/public (general.*).
 	// Used for SEO meta tags and the maintenance banner.
 	let siteName = $derived(
-		(data.siteSettings?.['general.site_name'] as string | undefined) ?? 'JapaConnect'
+		(data.siteSettings?.['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME
 	);
 	let siteDescription = $derived(
 		(data.siteSettings?.['general.site_description'] as string | undefined) ?? ''
@@ -152,11 +155,11 @@
 	<link rel="alternate" hreflang="x-default" href={xDefaultHref} />
 	<meta property="og:locale" content={ogLocale} />
 	{#each enabledLanguages.filter((l) => l !== ogLocale) as alt}<meta property="og:locale:alternate" content={alt} />{/each}
-	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', 'JapaConnect Blog')} href="/blog/rss.xml" />
+	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', '{site} Blog')} href="/blog/rss.xml" />
 	<link
 		rel="alternate"
 		type="application/rss+xml"
-		title={t('forum.rss_title', 'JapaConnect Forum')}
+		title={t('forum.rss_title', '{site} Forum')}
 		href="/forum/rss.xml"
 	/>
 	{#if siteDescription}

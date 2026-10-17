@@ -98,12 +98,25 @@
 	// Admin appearance overrides are injected server-side by hooks.server.ts
 	// into the static <style id="jc-theme-overrides"> tag in app.html.
 
+	// Custom favicon from appearance.favicon_url — overrides the default
+	// favicon links in app.html when set.
+	// Ref: conventions/system-settings-catalog.md (appearance.favicon_url)
+	let faviconUrl = $derived(
+		((theme.resolved === 'dark'
+			? (data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined)
+			: (data.siteSettings?.['appearance.favicon_url_light'] as string | undefined)) ??
+			(data.siteSettings?.['appearance.favicon_url'] as string | undefined) ?? '')
+	);
+
 	// Umami analytics — Academy surface (§40, ROADMAP-ACADEMY 01.08).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
 	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_ACADEMY);
 </script>
 
 <svelte:head>
+	{#if faviconUrl}
+		<link rel="icon" href={faviconUrl} type="image/png" />
+	{/if}
 	{#if umamiEnabled}
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
 		<script

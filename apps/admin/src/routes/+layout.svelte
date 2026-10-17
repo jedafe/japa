@@ -19,7 +19,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { fetchCsrfToken } from '$lib/api/csrf';
-	import { initSiteSettings, siteName, faviconUrl } from '$lib/stores/site.svelte';
+	import { initSiteSettings, siteName, faviconUrl, faviconForTheme } from '$lib/stores/site.svelte';
+	import { theme } from '$lib/stores/theme.svelte';
 	import { env } from '$env/dynamic/public';
 
 	let { children } = $props();
@@ -45,9 +46,10 @@
 		page.url.pathname.startsWith('/logout/')
 	);
 
-	// Apply the custom favicon from appearance settings once settings load.
+	// Apply the custom favicon from appearance settings once settings load;
+	// re-runs on theme change so the dark/light variant follows the toggle.
 	$effect(() => {
-		const url = faviconUrl();
+		const url = faviconForTheme(theme.current);
 		if (!url) return;
 		let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
 		if (!link) {

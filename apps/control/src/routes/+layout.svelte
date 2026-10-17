@@ -19,7 +19,8 @@
 	}
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
 	import { t, translations, initLocale, loadTranslations } from '$lib/stores/i18n.svelte';
-	import { initSiteSettings, siteName, faviconUrl } from '$lib/stores/site.svelte';
+	import { initSiteSettings, siteName, faviconUrl, faviconForTheme } from '$lib/stores/site.svelte';
+	import { getTheme } from '$lib/stores/theme.svelte';
 	import { setToken, getToken } from '$lib/api';
 	import { apiFetch } from '$lib/api/client';
 	import { env } from '$env/dynamic/public';
@@ -77,9 +78,10 @@
 		loadTranslations('en');
 	});
 
-	// Apply the custom favicon from appearance settings once settings load.
+	// Apply the custom favicon from appearance settings once settings load;
+	// re-runs on theme change so the dark/light variant follows the toggle.
 	$effect(() => {
-		const url = faviconUrl();
+		const url = faviconForTheme(getTheme());
 		if (!url) return;
 		let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
 		if (!link) {

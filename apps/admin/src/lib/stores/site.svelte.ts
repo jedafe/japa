@@ -34,6 +34,16 @@ export function faviconUrl(): string {
 	return (settings['appearance.favicon_url'] as string | undefined) || '';
 }
 
+/** Theme-specific favicon URL — appearance.favicon_url_{theme} with
+ * appearance.favicon_url fallback. */
+export function faviconForTheme(theme: 'light' | 'dark'): string {
+	return (
+		(settings[`appearance.favicon_url_${theme}`] as string | undefined) ||
+		(settings['appearance.favicon_url'] as string | undefined) ||
+		''
+	);
+}
+
 /** Fetch public site settings once. Safe to call from any layout onMount. */
 export async function initSiteSettings(): Promise<void> {
 	if (initStarted) return;

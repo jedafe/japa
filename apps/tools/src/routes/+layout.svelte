@@ -38,6 +38,16 @@
 	// Admin appearance overrides are injected server-side by hooks.server.ts
 	// into the static <style id="jc-theme-overrides"> tag in app.html.
 
+	// Custom favicon from appearance.favicon_url — overrides the default
+	// favicon links in app.html when set.
+	// Ref: conventions/system-settings-catalog.md (appearance.favicon_url)
+	let faviconUrl = $derived(
+		((theme.resolved === 'dark'
+			? (data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined)
+			: (data.siteSettings?.['appearance.favicon_url_light'] as string | undefined)) ??
+			(data.siteSettings?.['appearance.favicon_url'] as string | undefined) ?? '')
+	);
+
 	// Umami analytics — Tools surface (§40, §78). The script is injected only
 	// when both the Umami URL and the tools-specific site ID are configured.
 	const umamiEnabled = $derived(
@@ -46,6 +56,9 @@
 </script>
 
 <svelte:head>
+	{#if faviconUrl}
+		<link rel="icon" href={faviconUrl} type="image/png" />
+	{/if}
 	{#if umamiEnabled}
 		<script
 			defer

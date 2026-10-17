@@ -13,7 +13,11 @@ class ThemeStore {
 	current = $state<ThemeName>('light');
 
 	private media: MediaQueryList | null = null;
+	// Bumped on OS scheme flips so `resolved` stays reactive while 'system'
+	// is selected (matchMedia isn't tracked by $derived/$effect).
+	private mediaTick = $state(0);
 	private readonly onMediaChange = () => {
+		this.mediaTick++;
 		if (this.current === 'system') this.applyAttribute();
 	};
 
@@ -38,6 +42,7 @@ class ThemeStore {
 	 * resolved through prefers-color-scheme when 'system' is set. Use this
 	 * for icons/labels that describe the rendered theme. */
 	get resolved(): 'light' | 'dark' {
+		void this.mediaTick;
 		if (this.current !== 'system') return this.current;
 		if (typeof window === 'undefined') return 'light';
 		return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';

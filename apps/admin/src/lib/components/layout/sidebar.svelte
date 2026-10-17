@@ -29,6 +29,8 @@
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 	import { sidebarCollapsed } from "$lib/stores/sidebar.svelte";
+	import { faviconForTheme } from "$lib/stores/site.svelte";
+	import { theme } from "$lib/stores/theme.svelte";
 
 	let {
 		collapsed = $bindable(false),
@@ -338,7 +340,7 @@
 	<div class="flex h-14 items-center border-b px-4 {effectiveCollapsed ? 'justify-center' : ''}" style="border-color: var(--color-border)">
 		<a href="/" class="flex items-center gap-2" aria-label={t('lib.components.Sidebar.svelte.admin')}>
 			{#if effectiveCollapsed}
-				<img src="/favicon.svg" alt="" class="h-6 w-6" />
+				<img src={faviconForTheme(theme.current) || '/favicon.svg'} alt="" class="h-6 w-6" />
 			{:else}
 				<span class="text-lg font-semibold" style="color: var(--color-foreground)">{t('lib.components.Sidebar.svelte.admin')}</span>
 			{/if}
