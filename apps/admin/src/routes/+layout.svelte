@@ -19,6 +19,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { fetchCsrfToken } from '$lib/api/csrf';
+	import { initSiteSettings, siteName, faviconUrl } from '$lib/stores/site.svelte';
 	import { env } from '$env/dynamic/public';
 
 	let { children } = $props();
@@ -44,9 +45,26 @@
 		page.url.pathname.startsWith('/logout/')
 	);
 
+	// Apply the custom favicon from appearance settings once settings load.
+	$effect(() => {
+		const url = faviconUrl();
+		if (!url) return;
+		let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+		if (!link) {
+			link = document.createElement('link');
+			link.rel = 'icon';
+			document.head.appendChild(link);
+		}
+		link.href = url;
+		const ext = url.split('.').pop()?.toLowerCase();
+		link.type = ext === 'svg' ? 'image/svg+xml' : ext === 'ico' ? 'image/x-icon' : 'image/png';
+	});
+
 	onMount(async () => {
 		fetchCsrfToken().catch(() => {});
 		initSidebarFromStorage();
+		// Brand name (general.site_name) for titles and {site} i18n substitution.
+		initSiteSettings();
 
 		// Register a global 403 error handler so permission errors from any
 		// API call surface as a notification rather than a silent blank screen.
@@ -273,7 +291,7 @@
 </script>
 
 <svelte:head>
-	<title>JapaConnect Admin</title>
+	<title>{siteName()} Admin</title>
 	<!-- Internal surface: never index. Defense-in-depth alongside robots.txt Disallow:/. -->
 	<meta name="robots" content="noindex,nofollow" />
 	{#if umamiEnabled}
