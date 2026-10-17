@@ -9,7 +9,7 @@ import type { Block, ExploreMapProps } from '../../types';
 import type { FetchContext } from '../../data/types';
 import { countryCentroid } from '../../geo/countryCentroids';
 import { WORLD_COUNTRIES, WORLD_VIEWBOX, REGION_BOUNDS } from '../../geo/worldMapData';
-import { EXPLORE_MAP_DEFAULTS } from '../exploreMapDefaults';
+import { EXPLORE_MAP_DEFAULTS } from './exploreMapDefaults';
 import { buildApiUrl } from '@japaconnect/api-url';
 import * as LucideIcons from 'lucide-svelte';
 

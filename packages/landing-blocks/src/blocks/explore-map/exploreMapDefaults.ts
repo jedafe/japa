@@ -1,5 +1,5 @@
 // Ref: japaconnect-engineering/sections/16-page-builder.md (explore_map)
-import type { ExploreMapProps } from '../types';
+import type { ExploreMapProps } from '../../types';
 
 /** Default props for `explore_map` — a fresh block (props: {}) merges over
  * these so it renders the full explorer out of the box. Shared by the block,

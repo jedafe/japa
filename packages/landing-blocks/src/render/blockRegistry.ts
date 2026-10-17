@@ -19,7 +19,7 @@ import ComingSoonBlock from '../blocks/ComingSoonBlock.svelte';
 import FormEmbedBlock from '../blocks/FormEmbedBlock.svelte';
 import TimelineBlock from '../blocks/TimelineBlock.svelte';
 import MapBlock from '../blocks/MapBlock.svelte';
-import ExploreMapBlock from '../blocks/ExploreMapBlock.svelte';
+import ExploreMapBlock from '../blocks/explore-map/ExploreMapBlock.svelte';
 import ExploreMapToolbarBlock from '../blocks/explore-map/ExploreMapToolbarBlock.svelte';
 import ExploreMapLegendBlock from '../blocks/explore-map/ExploreMapLegendBlock.svelte';
 import ExploreMapRegionFilterBlock from '../blocks/explore-map/ExploreMapRegionFilterBlock.svelte';

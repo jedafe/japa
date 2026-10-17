@@ -5,7 +5,7 @@
     ExploreMapStat, ExploreMapPin, ExploreMapBand, GeoContext,
   } from '../../types';
   import type { FetchContext } from '../../data/types';
-  import { EXPLORE_MAP_DEFAULTS } from '../../blocks/exploreMapDefaults';
+  import { EXPLORE_MAP_DEFAULTS } from '../../blocks/explore-map/exploreMapDefaults';
   import { WORLD_COUNTRIES } from '../../geo/worldMapData';
   import type { Component } from 'svelte';
 
