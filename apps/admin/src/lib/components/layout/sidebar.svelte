@@ -335,9 +335,11 @@
 	style="border-color: var(--color-border); background-color: var(--color-surface)"
 >
 	<!-- Logo -->
-	<div class="flex h-14 items-center border-b px-4" style="border-color: var(--color-border)">
-		<a href="/" class="flex items-center gap-2">
-			{#if !effectiveCollapsed}
+	<div class="flex h-14 items-center border-b px-4 {effectiveCollapsed ? 'justify-center' : ''}" style="border-color: var(--color-border)">
+		<a href="/" class="flex items-center gap-2" aria-label={t('lib.components.Sidebar.svelte.admin')}>
+			{#if effectiveCollapsed}
+				<img src="/favicon.svg" alt="" class="h-6 w-6" />
+			{:else}
 				<span class="text-lg font-semibold" style="color: var(--color-foreground)">{t('lib.components.Sidebar.svelte.admin')}</span>
 			{/if}
 		</a>
