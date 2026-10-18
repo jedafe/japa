@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Cookie with a settings gear">
+  <defs>
+    <linearGradient id="cookieBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FDF3E3"/>
+      <stop offset="1" stop-color="#EEF1FE"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="40" y="30" width="560" height="420" rx="48" fill="url(#cookieBg)"/>
+  <circle cx="120" cy="110" r="10" fill="#F6C76B"/>
+  <circle cx="530" cy="390" r="11" fill="#C9D3F8"/>
+
+  <!-- cookie -->
+  <g transform="translate(300 240)">
+    <circle cx="0" cy="0" r="120" fill="#E5A94B"/>
+    <circle cx="0" cy="0" r="120" fill="none" stroke="#C9842B" stroke-width="6"/>
+    <!-- bite -->
+    <circle cx="86" cy="-86" r="34" fill="#FDF3E3"/>
+    <circle cx="58" cy="-102" r="18" fill="#FDF3E3"/>
+    <!-- chips -->
+    <circle cx="-40" cy="-52" r="14" fill="#5A3A1E"/>
+    <circle cx="28" cy="-30" r="12" fill="#5A3A1E"/>
+    <circle cx="-62" cy="18" r="12" fill="#5A3A1E"/>
+    <circle cx="-8" cy="42" r="14" fill="#5A3A1E"/>
+    <circle cx="52" cy="34" r="12" fill="#5A3A1E"/>
+    <circle cx="18" cy="-76" r="11" fill="#5A3A1E"/>
+    <circle cx="-46" cy="78" r="11" fill="#5A3A1E"/>
+  </g>
+
+  <!-- gear -->
+  <g transform="translate(464 168)">
+    <g fill="#3B49DF">
+      <rect x="-10" y="-52" width="20" height="24" rx="6"/>
+      <rect x="-10" y="28" width="20" height="24" rx="6"/>
+      <rect x="-52" y="-10" width="24" height="20" rx="6"/>
+      <rect x="28" y="-10" width="24" height="20" rx="6"/>
+      <rect x="-10" y="-52" width="20" height="24" rx="6" transform="rotate(45)"/>
+      <rect x="-10" y="-52" width="20" height="24" rx="6" transform="rotate(-45)"/>
+      <rect x="-10" y="-52" width="20" height="24" rx="6" transform="rotate(135)"/>
+      <rect x="-10" y="-52" width="20" height="24" rx="6" transform="rotate(-135)"/>
+    </g>
+    <circle cx="0" cy="0" r="38" fill="#3B49DF"/>
+    <circle cx="0" cy="0" r="16" fill="#fff"/>
+  </g>
+
+  <!-- crumbs -->
+  <circle cx="410" cy="330" r="8" fill="#C9842B"/>
+  <circle cx="200" cy="350" r="6" fill="#C9842B"/>
+  <circle cx="176" cy="160" r="7" fill="#C9842B"/>
+</svg>

@@ -62,14 +62,16 @@
 	import {
 		DEFAULT_CHAT_TEMPLATE_VALUES,
 		buildTemplateBlock,
+		buildInsertTail,
 		buildTemplateInsertText,
 		buildTemplateSpec,
 		normalizeTemplateFolder,
 		normalizeTemplateValues,
-		normalizeTopicsTail,
 		splitComposerForInsert,
 		templateFingerprint,
 		type ChatTemplate,
+		type ChatTemplatePostMode,
+		type ChatTemplatePostTarget,
 		type ChatTemplateValues
 	} from './chatTemplate';
 	import { chatTemplateRail } from './chatTemplateRail.svelte';
@@ -106,6 +108,9 @@
 		maxTags: number;
 		statusOptions: { value: string; label: string }[];
 		visibilityOptions: { value: string; label: string }[];
+		/** Actor holds agent.skip_hitl — high-stakes categories don't force
+		 * the in_review status restriction in the template editor (§103). */
+		canSkipHitl?: boolean;
 	}
 
 	let {
@@ -121,7 +126,8 @@
 		assessmentDimensions,
 		maxTags,
 		statusOptions,
-		visibilityOptions
+		visibilityOptions,
+		canSkipHitl = false
 	}: Props = $props();
 
 	type ToolStatus = 'pending' | 'success' | 'error' | 'unauthorized' | 'privacy_blocked' | 'hitl_queued';
@@ -792,15 +798,31 @@
 		return null;
 	}
 
-	// "Insert as editable prompt" — drop the readable spec into the
-	// composer and detach so the send doesn't carry the spec twice.
-	// Splitting first makes re-inserts swap the previous spec block
-	// instead of nesting it: a prior insert's Topics lines survive, and
-	// free text lands in the Topics section rather than being clobbered.
-	// Called with no args from the editor footer (working copy) or with a
-	// row's template from the list's action menu.
+	// "Insert as editable prompt" opens the Posts modal — post targeting
+	// (single title / counted set / bulk titles) is per-insert input, not
+	// part of the saved template. The composer's existing tail seeds the
+	// modal so a re-insert brings the typed title/topics back instead of
+	// clobbering them; the spec body is rebuilt from the template.
+	let insertModalOpen = $state(false);
+	let insertValues = $state<ChatTemplateValues | null>(null);
+	let insertMode = $state<ChatTemplatePostMode>('single');
+	let insertTitle = $state('');
+	let insertCount = $state(3);
+	let insertTopics = $state('');
+
 	function insertTemplateText(tpl?: ChatTemplate) {
-		const v = tpl ? normalizeTemplateValues(tpl.values) : tplValues;
+		insertValues = tpl ? normalizeTemplateValues(tpl.values) : tplValues;
+		const tail = splitComposerForInsert(input).trim();
+		insertMode = 'single';
+		insertTitle = tail && !tail.includes('\n') ? tail.replace(/^[-*•]\s*/, '') : '';
+		insertCount = 3;
+		insertTopics = tail;
+		insertModalOpen = true;
+	}
+
+	function confirmInsert() {
+		const v = insertValues;
+		if (!v) return;
 		// Resolve spec ids to display names so the prose reads as names —
 		// same catalogs the panel's selectors draw from.
 		const labels = {
@@ -808,9 +830,18 @@
 			series: tplSeries.find((s) => s.id === v.series_id)?.title,
 			voice: voices.find((x) => x.id === v.voice_id)?.name
 		};
-		const tail = splitComposerForInsert(input);
-		input = buildTemplateInsertText(v, labels) + '\n' + normalizeTopicsTail(tail);
+		const posts: ChatTemplatePostTarget = {
+			mode: insertMode,
+			title: insertTitle.trim(),
+			count: Math.max(1, Math.floor(insertCount) || 1),
+			topics: insertTopics
+				.split('\n')
+				.map((s) => s.trim().replace(/^[-*•]\s*/, ''))
+				.filter(Boolean)
+		};
+		input = buildTemplateInsertText(v, labels, posts) + '\n' + buildInsertTail(posts);
 		templateActive = false;
+		insertModalOpen = false;
 		tick().then(() => {
 			resizeInput();
 			inputEl?.focus();
@@ -1422,6 +1453,38 @@
 		}
 	}
 
+	// Content items a successful tool call produced — create_draft /
+	// create / bulk_create (and status transitions) return
+	// {content_id, title, slug, status}, so the chat can link the created
+	// item instead of leaving the result buried in the JSON details.
+	function createdItemLinks(tc: ToolCallEntry): { href: string; label: string }[] {
+		if (tc.status !== 'success' || !tc.result) return [];
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(tc.result);
+		} catch {
+			return [];
+		}
+		const links: { href: string; label: string }[] = [];
+		const push = (o: unknown) => {
+			if (!o || typeof o !== 'object') return;
+			const rec = o as Record<string, unknown>;
+			const slug = typeof rec.slug === 'string' ? rec.slug : '';
+			if (!slug || links.some((l) => l.href === `/content/${slug}`)) return;
+			const title = typeof rec.title === 'string' && rec.title.trim() ? rec.title.trim() : slug;
+			links.push({ href: `/content/${slug}`, label: title });
+		};
+		if (Array.isArray(parsed)) parsed.forEach(push);
+		else if (parsed && typeof parsed === 'object') {
+			push(parsed);
+			for (const key of ['items', 'results', 'created', 'contents']) {
+				const arr = (parsed as Record<string, unknown>)[key];
+				if (Array.isArray(arr)) arr.forEach(push);
+			}
+		}
+		return links;
+	}
+
 	function statusLabel(status: ToolStatus): string {
 		switch (status) {
 			case 'success': return t('ai.agent.tool.success', 'Success');
@@ -1864,6 +1927,7 @@
 									<div class="mt-2 space-y-1.5">
 										{#each turn.tool_calls as tc (tc.id)}
 											{@const Icon = iconForTool(tc.tool_name)}
+											{@const created = createdItemLinks(tc)}
 											<div
 												class="rounded-md border px-2.5 py-1.5 text-xs"
 												style="border-color: var(--color-border); background-color: var(--color-background)"
@@ -1885,6 +1949,22 @@
 														{statusLabel(tc.status)}
 													</span>
 												</div>
+												{#if created.length > 0}
+													<div class="mt-1 flex flex-wrap items-center gap-1.5">
+														<span style="color: var(--color-muted)"
+															>{t('ai.agent.created', 'Created')}:</span
+														>
+														{#each created as l (l.href)}
+															<a
+																href={l.href}
+																class="rounded-full border px-1.5 py-0.5 underline-offset-2 hover:underline"
+																style="border-color: var(--color-border); color: var(--color-primary)"
+																target="_blank"
+																rel="noopener noreferrer">{l.label}</a
+															>
+														{/each}
+													</div>
+												{/if}
 												{#if tc.arguments}
 													<details class="mt-1">
 														<summary class="cursor-pointer text-xs" style="color: var(--color-muted)">
@@ -2203,6 +2283,7 @@
 				bind:values={tplValues}
 				bind:activeId={activeTemplateId}
 				bind:active={templateActive}
+				{canSkipHitl}
 				{contentTypes}
 				bind:spaces={tplSpaces}
 				bind:series={tplSeries}
@@ -2394,6 +2475,111 @@
 			>
 				{confirmDialog?.confirmLabel}
 			</button>
+		</div>
+	{/snippet}
+</Modal>
+
+<!-- Posts modal — per-insert targeting for the template prompt. -->
+<Modal
+	open={insertModalOpen}
+	onOpenChange={(o) => {
+		if (!o) insertModalOpen = false;
+	}}
+	title={t('ai.templates.insert_title', 'Insert template as prompt')}
+	description={t('ai.templates.insert_hint', 'Choose what the prompt should generate.')}
+	size="lg"
+>
+	{#snippet children(close)}
+		<div class="space-y-3">
+			<div class="flex overflow-hidden rounded-[var(--radius)] border" style="border-color: var(--color-border)">
+				{#each [
+					['single', t('ai.templates.mode_single', 'Single post')],
+					['count', t('ai.templates.mode_count', 'Counted set')],
+					['bulk', t('ai.templates.mode_bulk', 'Bulk list')]
+				] as [val, label] (val)}
+					<button
+						type="button"
+						onclick={() => (insertMode = val as ChatTemplatePostMode)}
+						class="flex-1 px-2 py-1.5 text-xs {insertMode === val
+							? 'font-medium text-white'
+							: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+						style={insertMode === val ? 'background-color: var(--color-primary)' : ''}
+					>
+						{label}
+					</button>
+				{/each}
+			</div>
+
+			{#if insertMode !== 'bulk'}
+				<div>
+					<label class="mb-1 block text-xs" style="color: var(--color-muted)" for="insert-title"
+						>{t('ai.templates.post_title', 'Title')}</label
+					>
+					<input
+						id="insert-title"
+						type="text"
+						class="w-full rounded-[var(--radius)] border px-2.5 py-1.5 text-sm"
+						style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-surface)"
+						bind:value={insertTitle}
+						placeholder={t('ai.templates.title_placeholder', 'e.g. UK student visa checklist')}
+					/>
+				</div>
+			{/if}
+			{#if insertMode === 'count'}
+				<div>
+					<label class="mb-1 block text-xs" style="color: var(--color-muted)" for="insert-count"
+						>{t('ai.templates.post_count', 'Related posts')}</label
+					>
+					<input
+						id="insert-count"
+						type="number"
+						min="1"
+						class="w-full rounded-[var(--radius)] border px-2.5 py-1.5 text-sm"
+						style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-surface)"
+						bind:value={insertCount}
+					/>
+				</div>
+			{/if}
+			{#if insertMode === 'bulk'}
+				<div>
+					<label class="mb-1 block text-xs" style="color: var(--color-muted)" for="insert-topics"
+						>{t('ai.templates.titles', 'Titles')}</label
+					>
+					<textarea
+						id="insert-topics"
+						rows="7"
+						class="w-full rounded-[var(--radius)] border px-2.5 py-1.5 text-sm"
+						style="border-color: var(--color-border); color: var(--color-text); background-color: var(--color-surface)"
+						bind:value={insertTopics}
+						placeholder={t('ai.templates.paste_titles_placeholder', 'Title one\nTitle two\nTitle three')}
+					></textarea>
+					<p class="mt-1 text-[10px]" style="color: var(--color-muted)">
+						{t('ai.templates.paste_titles_hint', 'One title per line — each becomes a post.')}
+					</p>
+				</div>
+			{/if}
+
+			<div class="flex justify-end gap-2">
+				<button
+					type="button"
+					onclick={close}
+					class="rounded-[var(--radius)] border px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					style="border-color: var(--color-border)"
+				>
+					{t('common.cancel', 'Cancel')}
+				</button>
+				<button
+					type="button"
+					onclick={() => {
+						confirmInsert();
+						close();
+					}}
+					class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium text-white"
+					style="background-color: var(--color-primary)"
+				>
+					{t('ai.templates.insert_apply', 'Insert')}
+				</button>
+			</div>
 		</div>
 	{/snippet}
 </Modal>

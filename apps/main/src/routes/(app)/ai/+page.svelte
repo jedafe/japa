@@ -58,6 +58,10 @@
 			{maxTags}
 			statusOptions={data.statusOptions}
 			visibilityOptions={data.visibilityOptions}
+			canSkipHitl={!!(
+				data.user?.permissions?.includes('*') ||
+				data.user?.permissions?.includes('agent.skip_hitl')
+			)}
 		/>
 	</div>
 {/if}

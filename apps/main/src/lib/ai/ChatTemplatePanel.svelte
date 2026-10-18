@@ -71,6 +71,9 @@
 		/** /content/{status,visibility}-options — live catalogs (Rule 16). */
 		statusOptions: SelectOption[];
 		visibilityOptions: SelectOption[];
+		/** Actor holds agent.skip_hitl — high-stakes categories don't force
+		 * the in_review status restriction (§103). */
+		canSkipHitl?: boolean;
 		/** Persist a full template list server-side; resolves to an error
 		 * message or null on success. The parent reassigns `templates`. */
 		onpersist: (next: ChatTemplate[]) => Promise<string | null>;
@@ -94,6 +97,7 @@
 		maxTags,
 		statusOptions,
 		visibilityOptions,
+		canSkipHitl = false,
 		onpersist,
 		oninsert,
 		onclose
@@ -403,7 +407,8 @@
 
 	// High-stakes guide categories can't publish/schedule — same rule as
 	// the studio rail: filter the status options and coerce a stale pick.
-	const highStakes = $derived(isHighStakesCategory(values.guide_category));
+	// agent.skip_hitl holders bypass the restriction (§103).
+	const highStakes = $derived(isHighStakesCategory(values.guide_category) && !canSkipHitl);
 	const statusOpts = $derived(
 		statusOptions.filter(
 			(s) => !highStakes || (s.value !== 'published' && s.value !== 'scheduled')

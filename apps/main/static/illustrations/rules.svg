@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Balanced scale over community figures">
+  <defs>
+    <linearGradient id="rulesBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#EEF1FE"/>
+      <stop offset="1" stop-color="#E8F5EE"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="40" y="30" width="560" height="420" rx="48" fill="url(#rulesBg)"/>
+  <circle cx="104" cy="392" r="10" fill="#BEE6CD"/>
+  <circle cx="540" cy="96" r="9" fill="#C9D3F8"/>
+
+  <!-- scale pillar -->
+  <rect x="308" y="140" width="24" height="196" rx="12" fill="#3B49DF"/>
+  <rect x="268" y="336" width="104" height="20" rx="10" fill="#2B38B8"/>
+  <rect x="244" y="356" width="152" height="16" rx="8" fill="#2B38B8"/>
+  <!-- beam -->
+  <rect x="150" y="124" width="340" height="16" rx="8" fill="#3B49DF"/>
+  <circle cx="320" cy="132" r="16" fill="#F6A623" stroke="#E08E0B" stroke-width="4"/>
+
+  <!-- left pan -->
+  <g>
+    <path d="M186 140 L150 216 M186 140 L222 216" stroke="#8B97F2" stroke-width="5" stroke-linecap="round"/>
+    <path d="M138 216 a48 22 0 0 0 96 0 z" fill="#22B573"/>
+    <!-- person on pan -->
+    <circle cx="186" cy="176" r="13" fill="#fff" stroke="#22B573" stroke-width="4"/>
+    <path d="M172 208 c0-12 7-18 14-18 s14 6 14 18" fill="#fff" stroke="#22B573" stroke-width="4"/>
+  </g>
+
+  <!-- right pan -->
+  <g>
+    <path d="M454 140 L418 216 M454 140 L490 216" stroke="#8B97F2" stroke-width="5" stroke-linecap="round"/>
+    <path d="M406 216 a48 22 0 0 0 96 0 z" fill="#F6A623"/>
+    <circle cx="454" cy="176" r="13" fill="#fff" stroke="#F6A623" stroke-width="4"/>
+    <path d="M440 208 c0-12 7-18 14-18 s14 6 14 18" fill="#fff" stroke="#F6A623" stroke-width="4"/>
+  </g>
+
+  <!-- gavel hint -->
+  <g transform="translate(150 300) rotate(-30)">
+    <rect x="-10" y="-46" width="20" height="44" rx="9" fill="#E23D5B"/>
+    <rect x="-4" y="-4" width="8" height="72" rx="4" fill="#2B38B8"/>
+  </g>
+</svg>

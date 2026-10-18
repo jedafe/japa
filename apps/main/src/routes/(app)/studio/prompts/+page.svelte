@@ -85,6 +85,10 @@
 			voices={data.voices}
 			statusOptions={data.statusOptions}
 			visibilityOptions={data.visibilityOptions}
+			canSkipHitl={!!(
+				data.user?.permissions?.includes('*') ||
+				data.user?.permissions?.includes('agent.skip_hitl')
+			)}
 		/>
 	</aside>
 </div>

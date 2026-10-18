@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Globe with a flight path connecting communities">
+  <defs>
+    <linearGradient id="aboutBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#EEF1FE"/>
+      <stop offset="1" stop-color="#E8F5EE"/>
+    </linearGradient>
+    <linearGradient id="aboutGlobe" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4B59E8"/>
+      <stop offset="1" stop-color="#3B49DF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- backdrop -->
+  <rect x="40" y="30" width="560" height="420" rx="48" fill="url(#aboutBg)"/>
+  <circle cx="112" cy="104" r="10" fill="#C9D3F8"/>
+  <circle cx="556" cy="392" r="12" fill="#BEE6CD"/>
+  <circle cx="548" cy="88" r="7" fill="#F6C76B"/>
+
+  <!-- globe -->
+  <circle cx="320" cy="252" r="150" fill="url(#aboutGlobe)"/>
+  <circle cx="320" cy="252" r="150" fill="none" stroke="#2B38B8" stroke-width="6"/>
+  <!-- meridians -->
+  <ellipse cx="320" cy="252" rx="62" ry="150" fill="none" stroke="#8B97F2" stroke-width="4"/>
+  <ellipse cx="320" cy="252" rx="118" ry="150" fill="none" stroke="#8B97F2" stroke-width="4"/>
+  <!-- parallels -->
+  <ellipse cx="320" cy="252" rx="150" ry="52" fill="none" stroke="#8B97F2" stroke-width="4"/>
+  <ellipse cx="320" cy="252" rx="150" ry="108" fill="none" stroke="#8B97F2" stroke-width="4"/>
+  <!-- continents -->
+  <path d="M248 176c20-14 48-10 58 6s2 34-16 40-46 4-52-14-8-22 10-32z" fill="#5EE2A0" opacity=".9"/>
+  <path d="M352 296c16-10 44-8 52 8s-2 34-20 38-44-2-48-18 0-20 16-28z" fill="#5EE2A0" opacity=".9"/>
+
+  <!-- flight path -->
+  <path d="M150 330 C 210 190, 430 150, 508 168" fill="none" stroke="#F6A623" stroke-width="5" stroke-linecap="round" stroke-dasharray="2 16"/>
+  <!-- paper plane -->
+  <g transform="translate(508 168) rotate(18)">
+    <path d="M0 0 L46 14 L8 30 L16 16 Z" fill="#F6A623"/>
+    <path d="M16 16 L46 14 L22 34 Z" fill="#E08E0B"/>
+  </g>
+
+  <!-- origin pin -->
+  <g transform="translate(150 330)">
+    <path d="M0 -34 C -19 -34 -30 -21 -30 -8 C -30 8 0 26 0 26 C 0 26 30 8 30 -8 C 30 -21 19 -34 0 -34 Z" fill="#E23D5B"/>
+    <circle cx="0" cy="-9" r="10" fill="#fff"/>
+  </g>
+
+  <!-- people nodes -->
+  <g transform="translate(214 372)">
+    <circle cx="0" cy="0" r="16" fill="#fff" stroke="#3B49DF" stroke-width="4"/>
+    <circle cx="0" cy="-5" r="5" fill="#3B49DF"/>
+    <path d="M-8 8c0-6 4-9 8-9s8 3 8 9" fill="#3B49DF"/>
+  </g>
+  <g transform="translate(426 362)">
+    <circle cx="0" cy="0" r="16" fill="#fff" stroke="#22B573" stroke-width="4"/>
+    <circle cx="0" cy="-5" r="5" fill="#22B573"/>
+    <path d="M-8 8c0-6 4-9 8-9s8 3 8 9" fill="#22B573"/>
+  </g>
+  <g transform="translate(320 400)">
+    <circle cx="0" cy="0" r="16" fill="#fff" stroke="#F6A623" stroke-width="4"/>
+    <circle cx="0" cy="-5" r="5" fill="#F6A623"/>
+    <path d="M-8 8c0-6 4-9 8-9s8 3 8 9" fill="#F6A623"/>
+  </g>
+
+  <!-- stars -->
+  <path d="M120 200 l4 10 10 4 -10 4 -4 10 -4 -10 -10 -4 10 -4z" fill="#B9C3F5"/>
+  <path d="M540 260 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3z" fill="#B9C3F5"/>
+</svg>

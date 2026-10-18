@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Protective umbrella over community members">
+  <defs>
+    <linearGradient id="safetyBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E8F5EE"/>
+      <stop offset="1" stop-color="#EEF1FE"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="40" y="30" width="560" height="420" rx="48" fill="url(#safetyBg)"/>
+  <circle cx="540" cy="120" r="10" fill="#BEE6CD"/>
+  <circle cx="102" cy="380" r="11" fill="#C9D3F8"/>
+
+  <!-- umbrella canopy -->
+  <path d="M320 84 C 220 84 148 142 132 216 C 168 196 202 196 236 216 C 262 200 292 200 320 216 C 348 200 378 200 404 216 C 438 196 472 196 508 216 C 492 142 420 84 320 84 Z" fill="#3B49DF"/>
+  <path d="M320 84 C 320 84 320 96 320 96" stroke="#2B38B8" stroke-width="6"/>
+  <circle cx="320" cy="80" r="10" fill="#F6A623"/>
+  <!-- canopy ribs -->
+  <path d="M320 96 C 292 130 270 170 262 206 M320 96 C 348 130 370 170 378 206 M320 96 C 320 132 320 172 320 208" stroke="#8B97F2" stroke-width="4" fill="none"/>
+
+  <!-- handle -->
+  <path d="M320 216 v96 c0 22 -36 22 -36 0" fill="none" stroke="#2B38B8" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- people -->
+  <g transform="translate(228 330)">
+    <circle cx="0" cy="-34" r="22" fill="#fff" stroke="#22B573" stroke-width="5"/>
+    <path d="M-34 36 c0-30 16-42 34-42 s34 12 34 42" fill="#fff" stroke="#22B573" stroke-width="5"/>
+  </g>
+  <g transform="translate(412 330)">
+    <circle cx="0" cy="-34" r="22" fill="#fff" stroke="#F6A623" stroke-width="5"/>
+    <path d="M-34 36 c0-30 16-42 34-42 s34 12 34 42" fill="#fff" stroke="#F6A623" stroke-width="5"/>
+  </g>
+
+  <!-- check badge -->
+  <g transform="translate(516 240)">
+    <circle cx="0" cy="0" r="30" fill="#22B573"/>
+    <path d="M-13 0 l9 10 18 -20" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- shield sparkles -->
+  <path d="M128 140 l4 10 10 4 -10 4 -4 10 -4 -10 -10 -4 10 -4z" fill="#B9C3F5"/>
+  <path d="M520 340 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3z" fill="#B9C3F5"/>
+</svg>

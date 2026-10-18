@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Shield protecting personal data">
+  <defs>
+    <linearGradient id="privacyBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#EEF1FE"/>
+      <stop offset="1" stop-color="#E8F5EE"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4B59E8"/>
+      <stop offset="1" stop-color="#2B38B8"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="40" y="30" width="560" height="420" rx="48" fill="url(#privacyBg)"/>
+  <circle cx="104" cy="116" r="9" fill="#C9D3F8"/>
+  <circle cx="540" cy="372" r="12" fill="#BEE6CD"/>
+
+  <!-- shield -->
+  <path d="M320 92 C 360 120 412 128 440 128 L440 246 C440 316 386 366 320 392 C 254 366 200 316 200 246 L200 128 C228 128 280 120 320 92 Z" fill="url(#shield)"/>
+  <path d="M320 124 C 348 144 388 150 408 150 L408 246 C408 300 366 340 320 360 C 274 340 232 300 232 246 L232 150 C252 150 292 144 320 124 Z" fill="#fff" opacity=".12"/>
+
+  <!-- keyhole -->
+  <circle cx="320" cy="222" r="30" fill="#fff"/>
+  <path d="M306 240 h28 l8 66 h-44 z" fill="#fff"/>
+  <circle cx="320" cy="222" r="14" fill="#3B49DF"/>
+  <rect x="314" y="230" width="12" height="42" rx="6" fill="#3B49DF"/>
+
+  <!-- orbiting data dots -->
+  <ellipse cx="320" cy="242" rx="196" ry="64" fill="none" stroke="#B9C3F5" stroke-width="3" stroke-dasharray="4 12"/>
+  <circle cx="128" cy="228" r="12" fill="#22B573"/>
+  <circle cx="512" cy="258" r="12" fill="#F6A623"/>
+  <circle cx="320" cy="178" r="0" fill="none"/>
+
+  <!-- small locks -->
+  <g transform="translate(150 320)">
+    <rect x="-20" y="-6" width="40" height="34" rx="8" fill="#fff" stroke="#22B573" stroke-width="5"/>
+    <path d="M-12 -6 v-8 a12 12 0 0 1 24 0 v8" fill="none" stroke="#22B573" stroke-width="5"/>
+    <circle cx="0" cy="11" r="5" fill="#22B573"/>
+  </g>
+  <g transform="translate(496 150)">
+    <rect x="-20" y="-6" width="40" height="34" rx="8" fill="#fff" stroke="#F6A623" stroke-width="5"/>
+    <path d="M-12 -6 v-8 a12 12 0 0 1 24 0 v8" fill="none" stroke="#F6A623" stroke-width="5"/>
+    <circle cx="0" cy="11" r="5" fill="#F6A623"/>
+  </g>
+</svg>

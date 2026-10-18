@@ -15,6 +15,20 @@ import { siteName } from '$lib/i18n';
 
 export type ChatTemplateFramework = '' | 'aida' | 'pas';
 export type ChatTemplateHumanize = 'off' | 'light' | 'medium' | 'heavy';
+/** Post targeting mode — 'single' generates one post from `title`,
+ * 'count' derives `count` related posts from it, 'bulk' generates one
+ * post per entry in `topics`. */
+export type ChatTemplatePostMode = 'single' | 'count' | 'bulk';
+
+/** Insert-time post targeting — asked in a modal when the user inserts
+ * a template, not stored on the template itself: a template carries the
+ * generation spec; titles/count are per-send input. */
+export interface ChatTemplatePostTarget {
+	mode: ChatTemplatePostMode;
+	title: string;
+	count: number;
+	topics: string[];
+}
 
 export interface ChatTemplateValues {
 	/** Send intent — 'preview' renders drafts in chat (generate_draft),
@@ -65,7 +79,10 @@ export interface ChatTemplateValues {
 }
 
 export const DEFAULT_CHAT_TEMPLATE_VALUES: ChatTemplateValues = {
-	intent: 'preview',
+	// Create-by-default: the surface is agent-only, so a template send
+	// persists items in the background (create_draft/bulk_create) and the
+	// chat reports the tool-call status.
+	intent: 'create',
 	content_type: 'guide',
 	guide_category: '',
 	tone: 'professional',
@@ -94,9 +111,9 @@ export const DEFAULT_CHAT_TEMPLATE_VALUES: ChatTemplateValues = {
 	series_id: '',
 	publish_at: '',
 	tags: [],
-	// Mirrors DEFAULT_PROMPT_VALUES — generated output defaults to review,
-	// not straight to published.
-	status: 'in_review',
+	// Eligible-only surface for now — output publishes directly. The
+	// backend still forces in_review for high-stakes categories.
+	status: 'published',
 	visibility: 'public',
 	seo_indexable: true,
 	field_values: {}
@@ -164,7 +181,7 @@ export function normalizeTemplateValues(raw: unknown): ChatTemplateValues {
 		}
 	}
 	return {
-		intent: v.intent === 'create' ? 'create' : 'preview',
+		intent: v.intent === 'preview' ? 'preview' : DEFAULT_CHAT_TEMPLATE_VALUES.intent,
 		content_type: str(v.content_type) || DEFAULT_CHAT_TEMPLATE_VALUES.content_type,
 		guide_category: str(v.guide_category),
 		tone: str(v.tone) || DEFAULT_CHAT_TEMPLATE_VALUES.tone,
@@ -249,7 +266,13 @@ export function buildTemplateSpec(values: ChatTemplateValues): Record<string, un
 	if (values.tags.length) context.tags = values.tags;
 	// Status/visibility/indexable only emit when they differ from the
 	// composer defaults — an untouched Settings tab stays out of the spec.
-	if (values.status && values.status !== DEFAULT_CHAT_TEMPLATE_VALUES.status)
+	// Create intent always carries status explicitly: the backend default
+	// is in_review (HITL), so omitting it would silently drop the
+	// published-by-default contract.
+	if (
+		values.status &&
+		(values.status !== DEFAULT_CHAT_TEMPLATE_VALUES.status || values.intent === 'create')
+	)
 		context.status = values.status;
 	if (values.visibility && values.visibility !== DEFAULT_CHAT_TEMPLATE_VALUES.visibility)
 		context.visibility = values.visibility;
@@ -281,18 +304,20 @@ export function buildTemplateBlock(name: string, values: ChatTemplateValues): st
 	const spec = buildTemplateSpec(values);
 	const label = name.trim() || 'Untitled template';
 	const persist = values.intent === 'create';
+	const ct = values.content_type || 'guide';
+	const items = `one ${ct} per topic in my request`;
 	return (
 		`\n\n---\n` +
 		`[Chat template: "${label}"] Apply this generation spec to my request. ` +
 		(persist
-			? `Persist the result as real content — call content.create_draft once per topic ` +
-				`(or content.bulk_create when my request lists several topics), filling ` +
+			? `Persist ${items} as real content — call content.create_draft once per item ` +
+				`(or content.bulk_create when there are several items), filling ` +
 				`title/body from my request and these constraints. If no content-creation ` +
 				`tools are available, present the drafts in chat instead.\n\n`
-			: `If the content.generate_draft tool is available, call it with these arguments, ` +
-				`filling "title" and "instructions" from my request above — when my request ` +
-				`lists multiple topics, make one call per topic; otherwise draft the ` +
-				`content directly, honoring the same constraints.\n\n`) +
+			: `If the content.generate_draft tool is available, call it once per item for ` +
+				`${items} with these arguments, filling "title" and "instructions" from my ` +
+				`request above; otherwise draft the content directly, honoring the same ` +
+				`constraints.\n\n`) +
 		'```json\n' +
 		JSON.stringify(spec, null, 2) +
 		'\n```'
@@ -309,9 +334,11 @@ export interface TemplateInsertLabels {
 }
 
 // Marker lines an inserted spec is recognized by on re-insert. The
-// topics header ends every spec block; the legacy 'Topic: ' line covers
-// inserts produced before the Topics list existed.
+// topics header ends bulk-mode spec blocks; 'Title:' ends single/count
+// blocks; the legacy 'Topic: ' line covers inserts produced before the
+// Topics list existed.
 const TOPICS_MARKER = 'Topics (one per line';
+const TITLE_MARKER = '\nTitle:';
 const LEGACY_TOPIC_MARKER = '\nTopic: ';
 const SPEC_HEADER_RE = /^(?:Write (?:a|one)|Create one)\b[^\n]*(?:draft|requirements)[^\n]*:/;
 
@@ -325,13 +352,30 @@ const SPEC_HEADER_RE = /^(?:Write (?:a|one)|Create one)\b[^\n]*(?:draft|requirem
  */
 export function buildTemplateInsertText(
 	values: ChatTemplateValues,
-	labels: TemplateInsertLabels = {}
+	labels: TemplateInsertLabels = {},
+	posts?: ChatTemplatePostTarget
 ): string {
-	const lines: string[] = [
-		values.intent === 'create'
-			? `Create one ${values.content_type || 'guide'} per topic in the Topics list — persist each as a real content item (content.create_draft for a single topic, content.bulk_create for several; if creation tools are unavailable, present the drafts in chat instead), with these requirements:`
-			: `Write one ${values.content_type || 'guide'} draft per topic in the Topics list, with these requirements:`
-	];
+	const ct = values.content_type || 'guide';
+	// Post targeting is an insert-time choice (the Posts modal); without
+	// it the insert keeps the original per-topic Topics list shape.
+	const mode = posts?.mode ?? 'bulk';
+	const postCount = Math.max(1, posts?.count ?? 3);
+	const create = values.intent === 'create';
+	// Header verbs keep the SPEC_HEADER_RE prefixes (Write a|one /
+	// Create one) so re-inserts still split correctly.
+	const header =
+		mode === 'single'
+			? create
+				? `Create one ${ct} from the title below — persist it as a real content item (content.create_draft; if creation tools are unavailable, present the draft in chat instead), with these requirements:`
+				: `Write a ${ct} draft from the title below, with these requirements:`
+			: mode === 'count'
+				? create
+					? `Create one ${ct} per related title derived from the title below — ${postCount} items in total — persist each as a real content item (content.create_draft or content.bulk_create; if creation tools are unavailable, present the drafts in chat instead), with these requirements:`
+					: `Write a set of ${postCount} related ${ct} drafts based on the title below, with these requirements:`
+				: create
+					? `Create one ${ct} per topic in the Topics list — persist each as a real content item (content.create_draft for a single topic, content.bulk_create for several; if creation tools are unavailable, present the drafts in chat instead), with these requirements:`
+					: `Write one ${ct} draft per topic in the Topics list, with these requirements:`;
+	const lines: string[] = [header];
 	if (values.framework) {
 		lines.push(`- Structure it with the ${values.framework.toUpperCase()} marketing framework`);
 	}
@@ -392,10 +436,17 @@ export function buildTemplateInsertText(
 	if (values.intent !== 'create') {
 		lines.push('', 'Present the draft(s) in chat — do not create content items.');
 	}
-	lines.push(
-		'',
-		`${TOPICS_MARKER} — ${values.intent === 'create' ? 'one item is persisted per topic' : 'one draft is generated per topic'}):`
-	);
+	// Tail marker — bulk keeps the one-per-line Topics list; single/count
+	// end at a bare `Title:` marker whose following lines carry the
+	// editable title (splitComposerForInsert reads it back on re-insert).
+	if (mode === 'bulk') {
+		lines.push(
+			'',
+			`${TOPICS_MARKER} — ${values.intent === 'create' ? 'one item is persisted per topic' : 'one draft is generated per topic'}):`
+		);
+	} else {
+		lines.push('', 'Title:');
+	}
 	return lines.join('\n');
 }
 
@@ -412,6 +463,11 @@ export function splitComposerForInsert(input: string): string {
 	const topicsIdx = input.indexOf(TOPICS_MARKER);
 	if (topicsIdx >= 0) {
 		const nl = input.indexOf('\n', topicsIdx);
+		return nl >= 0 ? input.slice(nl + 1) : '';
+	}
+	const titleIdx = input.indexOf(TITLE_MARKER);
+	if (titleIdx >= 0) {
+		const nl = input.indexOf('\n', titleIdx + 1);
 		return nl >= 0 ? input.slice(nl + 1) : '';
 	}
 	const legacyIdx = input.indexOf(LEGACY_TOPIC_MARKER);
@@ -432,4 +488,18 @@ export function normalizeTopicsTail(tail: string): string {
 	if (!trimmed.includes('\n') && !trimmed.trimStart().startsWith('-'))
 		return `- ${trimmed}`;
 	return trimmed;
+}
+
+/**
+ * Tail appended after an inserted spec's marker line, built from the
+ * Posts modal's answers: bulk bullets each title one-per-line (empty
+ * keeps the `- ` affordance so the cursor has somewhere to land);
+ * single/count carry the title verbatim.
+ */
+export function buildInsertTail(posts: ChatTemplatePostTarget): string {
+	if (posts.mode === 'bulk') {
+		if (!posts.topics.length) return '- ';
+		return posts.topics.map((t) => `- ${t}`).join('\n');
+	}
+	return posts.title;
 }

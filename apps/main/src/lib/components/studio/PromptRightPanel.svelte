@@ -47,6 +47,9 @@
 		statusOptions: SelectOption[];
 		/** GET /content/visibility-options — the authoritative visibility list. */
 		visibilityOptions: SelectOption[];
+		/** Actor holds agent.skip_hitl — high-stakes categories don't force
+		 * the in_review status restriction (§103). */
+		canSkipHitl?: boolean;
 	}
 
 	let {
@@ -59,10 +62,12 @@
 		personas,
 		voices,
 		statusOptions,
-		visibilityOptions
+		visibilityOptions,
+		canSkipHitl = false
 	}: Props = $props();
 
-	const highStakes = $derived(isHighStakesCategory(values.guide_category));
+	// agent.skip_hitl holders bypass the high-stakes publish restriction (§103).
+	const highStakes = $derived(isHighStakesCategory(values.guide_category) && !canSkipHitl);
 
 	// Adapters between the prompt form's scalar fields and the composer's
 	// multi-value components.

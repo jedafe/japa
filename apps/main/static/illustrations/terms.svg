@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Signed agreement document">
+  <defs>
+    <linearGradient id="termsBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#EEF1FE"/>
+      <stop offset="1" stop-color="#FDF3E3"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="40" y="30" width="560" height="420" rx="48" fill="url(#termsBg)"/>
+  <circle cx="548" cy="104" r="10" fill="#C9D3F8"/>
+  <circle cx="104" cy="384" r="11" fill="#BEE6CD"/>
+
+  <!-- back sheet -->
+  <rect x="200" y="86" width="260" height="330" rx="16" fill="#C9D3F8" transform="rotate(6 330 250)"/>
+  <!-- document -->
+  <g transform="rotate(-3 320 240)">
+    <rect x="170" y="74" width="280" height="340" rx="16" fill="#fff" stroke="#3B49DF" stroke-width="6"/>
+    <!-- title line -->
+    <rect x="200" y="110" width="140" height="14" rx="7" fill="#3B49DF"/>
+    <!-- text lines -->
+    <rect x="200" y="146" width="220" height="9" rx="4.5" fill="#DCE2FB"/>
+    <rect x="200" y="168" width="220" height="9" rx="4.5" fill="#DCE2FB"/>
+    <rect x="200" y="190" width="160" height="9" rx="4.5" fill="#DCE2FB"/>
+    <rect x="200" y="224" width="220" height="9" rx="4.5" fill="#DCE2FB"/>
+    <rect x="200" y="246" width="190" height="9" rx="4.5" fill="#DCE2FB"/>
+    <rect x="200" y="268" width="220" height="9" rx="4.5" fill="#DCE2FB"/>
+    <rect x="200" y="290" width="130" height="9" rx="4.5" fill="#DCE2FB"/>
+    <!-- signature -->
+    <path d="M204 356 C 218 336, 232 372, 246 350 S 272 336, 284 356" fill="none" stroke="#22B573" stroke-width="5" stroke-linecap="round"/>
+    <rect x="200" y="372" width="110" height="6" rx="3" fill="#E4E9FC"/>
+  </g>
+
+  <!-- seal -->
+  <g transform="translate(452 356)">
+    <circle cx="0" cy="0" r="46" fill="#F6A623"/>
+    <circle cx="0" cy="0" r="34" fill="none" stroke="#fff" stroke-width="4"/>
+    <path d="M-16 2 l10 11 22 -24" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-14 40 l-6 30 18 -12 18 12 -6 -30" fill="#E08E0B"/>
+  </g>
+
+  <!-- pen -->
+  <g transform="translate(120 320) rotate(-24)">
+    <rect x="-8" y="-70" width="16" height="110" rx="8" fill="#3B49DF"/>
+    <path d="M-8 40 L0 62 L8 40 Z" fill="#2B38B8"/>
+    <circle cx="0" cy="62" r="4" fill="#F6A623"/>
+  </g>
+</svg>

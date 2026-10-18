@@ -49,7 +49,7 @@ describe('normalizeTemplateValues', () => {
 		expect(v.status).toBe('draft');
 		// Absent → studio defaults.
 		const d = normalizeTemplateValues({});
-		expect(d.status).toBe('in_review');
+		expect(d.status).toBe('published');
 		expect(d.visibility).toBe('public');
 		expect(d.seo_indexable).toBe(true);
 	});
@@ -138,14 +138,19 @@ describe('buildTemplateSpec', () => {
 	});
 
 	it('omits context when only publishing defaults are set', () => {
-		const spec = buildTemplateSpec(base());
+		const spec = buildTemplateSpec({ ...base(), intent: 'preview' });
 		expect(spec).not.toHaveProperty('context');
+	});
+
+	it('create intent emits status explicitly so publishes stay published', () => {
+		const spec = buildTemplateSpec(base()) as { context?: Record<string, unknown> };
+		expect(spec.context).toMatchObject({ status: 'published' });
 	});
 });
 
 describe('buildTemplateBlock', () => {
 	it('embeds the spec as JSON inside the message suffix', () => {
-		const block = buildTemplateBlock('My guide', base());
+		const block = buildTemplateBlock('My guide', { ...base(), intent: 'preview' });
 		expect(block).toContain('Chat template: "My guide"');
 		expect(block).toContain('content.generate_draft');
 		expect(block).toContain('"content_type": "guide"');
@@ -155,6 +160,7 @@ describe('buildTemplateBlock', () => {
 describe('buildTemplateInsertText', () => {
 	it('renders readable constraint lines ending in a Topics section', () => {
 		const v = base();
+		v.intent = 'preview';
 		v.min_words = 1500;
 		v.include_faqs = true;
 		v.external_links = 2;
@@ -181,7 +187,7 @@ describe('buildTemplateInsertText', () => {
 
 	it('emits non-default publishing fields and id labels', () => {
 		const v = base();
-		v.status = 'published';
+		v.status = 'draft';
 		v.visibility = 'members';
 		v.seo_indexable = false;
 		v.publish_at = '2026-02-01T10:00';
@@ -194,7 +200,7 @@ describe('buildTemplateInsertText', () => {
 			series: 'Student Series',
 			voice: 'Professional Ada'
 		});
-		expect(text).toContain('Publishing: status published, members visibility, not indexable');
+		expect(text).toContain('Publishing: status draft, members visibility, not indexable');
 		expect(text).toContain('Publish at: 2026-02-01T10:00');
 		expect(text).toContain('Space: Nigeria Hub');
 		expect(text).toContain('Series: Student Series');
@@ -264,14 +270,14 @@ describe('normalizeTopicsTail', () => {
 });
 
 describe('intent', () => {
-	it('normalizes intent to preview|create with preview default', () => {
-		expect(normalizeTemplateValues({}).intent).toBe('preview');
-		expect(normalizeTemplateValues({ intent: 'create' }).intent).toBe('create');
-		expect(normalizeTemplateValues({ intent: 'bogus' }).intent).toBe('preview');
+	it('normalizes intent to preview|create with create default', () => {
+		expect(normalizeTemplateValues({}).intent).toBe('create');
+		expect(normalizeTemplateValues({ intent: 'preview' }).intent).toBe('preview');
+		expect(normalizeTemplateValues({ intent: 'bogus' }).intent).toBe('create');
 	});
 
 	it('preview intent says the drafts stay in chat', () => {
-		const text = buildTemplateInsertText(base());
+		const text = buildTemplateInsertText({ ...base(), intent: 'preview' });
 		expect(text).toContain('Present the draft(s) in chat');
 		expect(text).not.toContain('content.create_draft');
 	});
@@ -283,7 +289,9 @@ describe('intent', () => {
 	});
 
 	it('attach block keeps generate_draft for preview, create tools for create', () => {
-		expect(buildTemplateBlock('T', base())).toContain('content.generate_draft');
+		expect(buildTemplateBlock('T', { ...base(), intent: 'preview' })).toContain(
+			'content.generate_draft'
+		);
 		const b = buildTemplateBlock('T', { ...base(), intent: 'create' });
 		expect(b).toContain('content.create_draft');
 		expect(b).not.toContain('generate_draft');
