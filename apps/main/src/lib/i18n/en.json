@@ -5957,5 +5957,8 @@
   "ai.panel.thinking": "Thinking…",
   "ai.panel.title": "Japa AI",
   "ai.panel.tools": "Agent tools",
-  "ai.panel.welcome": "Ask me anything — I can see what page you're on."
+  "ai.panel.welcome": "Ask me anything — I can see what page you're on.",
+  "ai.panel.mode": "Mode",
+  "ai.panel.mode_chat": "Chat",
+  "ai.panel.mode_agent": "Agent"
 }
