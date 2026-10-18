@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import { env } from '$env/dynamic/public';
 	import HubHeader from '$lib/components/shell/HubHeader.svelte';
 	import SingleToolHeader from '$lib/components/shell/SingleToolHeader.svelte';
@@ -14,8 +14,11 @@
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
 	// Seed the client stores from the SSR-resolved values once, after hydration.
+	// untrack: theme.init reads reactive store state — without it the effect
+	// re-fires on every user toggle and snaps the theme back to the SSR value.
 	$effect(() => {
-		theme.init(data.theme);
+		const serverTheme = data.theme;
+		untrack(() => theme.init(serverTheme));
 	});
 
 	// Seed the i18n locale from the SSR-resolved value (jc_locale cookie →

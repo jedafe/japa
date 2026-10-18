@@ -17,8 +17,12 @@
 
 	// Seed the client stores from the SSR-resolved values once, after hydration.
 	// This prevents flash-of-wrong-theme and ensures the toggle starts in sync.
+	// untrack: theme.init reads reactive store state (current/resolved) — without
+	// it those reads become effect dependencies, so every user toggle re-fires
+	// the effect and init() snaps the theme back to the stale SSR value.
 	$effect(() => {
-		theme.init(data.theme);
+		const serverTheme = data.theme;
+		untrack(() => theme.init(serverTheme));
 	});
 	// The i18n locale is derived from `page.data.locale` in the store — no
 	// manual setLocale() call needed (SSR-safe, no cross-request leakage).
