@@ -1,9 +1,9 @@
 <script lang="ts">
 	// Global docs-portal header (ADR-060 drift): brand · search · version ·
-	// language · theme · "Go to JapaConnect" · account. Rendered once above
+	// language · theme · account. Rendered once above
 	// the three-column shell on every docs surface.
 	import { page } from '$app/state';
-	import { Menu as MenuIcon, Search, ChevronDown, Sun, Moon, Languages, Check, ArrowUpRight } from 'lucide-svelte';
+	import { Menu as MenuIcon, Search, ChevronDown, Sun, Moon, Languages, Check } from 'lucide-svelte';
 	import { Menu, MenuItem } from '@japaconnect/ui';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import SearchPalette from '$lib/components/docs/SearchPalette.svelte';
@@ -14,7 +14,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { enabledLanguages, localeLabel, switchLanguage } from '$lib/locale';
 	import { parseVersions } from '$lib/docs/catalog';
-	import { env } from '$env/dynamic/public';
+
 	import type { SessionUser } from '$lib/types';
 
 	interface HeaderWidget {
@@ -47,7 +47,6 @@
 		onOpenMenu
 	}: Props = $props();
 
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 
 	// Widget types the header renders natively — skip admin widgets of these
 	// types so the canonical chrome never duplicates.
@@ -90,8 +89,8 @@
 				<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-7 w-auto max-w-[140px] object-contain" />
 			{:else}
 				<span class="brand-mark">JC</span>
+				<span class="brand-name">{t('app.name')}</span>
 			{/if}
-			<span class="brand-name">{t('app.name')}</span>
 		</a>
 	</div>
 
@@ -166,11 +165,6 @@
 		{#each extraWidgets as widget (widget.id)}
 			<SidebarWidgetRenderer {widget} {user} />
 		{/each}
-
-		<a href={mainOrigin} class="cta">
-			{t('header.go_to_app')}
-			<ArrowUpRight size={14} />
-		</a>
 
 		{#if user}
 			<UserDropdown {user} />
@@ -320,28 +314,7 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
-	.cta {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		height: 2.25rem;
-		padding: 0 0.875rem;
-		border-radius: var(--radius);
-		background: var(--color-primary);
-		color: var(--color-primary-contrast);
-		font-size: 0.8125rem;
-		font-weight: 600;
-		text-decoration: none;
-		white-space: nowrap;
-		margin-left: 0.25rem;
-	}
-	.cta:hover {
-		background: var(--color-primary-hover);
-	}
 
-	@media (max-width: 1023px) {
-		.cta { display: none; }
-	}
 	@media (max-width: 767px) {
 		.header { gap: 0.5rem; }
 		.header-center { display: none; }

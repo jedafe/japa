@@ -60,7 +60,7 @@ via the existing §20 AI Gateway, and mandatory HITL review before publish.
 3. **Playwright is already installed** on this system. Do NOT run `npx playwright install` or any
    similar installation command. The system is pre-configured and ready to use.
 
-4. **Super admin credentials:** `admin@japa.to` / `Admin123!` — use these when login is
+4. **Super admin credentials:** `admin@japaconnect.com` / `Admin123!` — use these when login is
    required to test authenticated pages or admin features.
 
 5. **Always use `bun`** to start dev servers, install packages, or run any app commands. Never use

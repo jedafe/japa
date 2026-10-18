@@ -298,7 +298,7 @@
 							<td><span class="tier-badge tier-{k.rate_limit_tier}">{k.rate_limit_tier}</span></td>
 							<td class="scopes-cell">
 								{#if k.scopes && k.scopes.length > 0}
-									{#each k.scopes as s}{s} {/each}
+									{#each k.scopes as s (s)}<code class="scope-chip">{s}</code>{/each}
 								{:else}
 									<span class="muted">—</span>
 								{/if}
@@ -737,11 +737,20 @@
 	.tier-premium { color: var(--method-patch); background: var(--method-patch-bg); }
 	.tier-unlimited { color: var(--method-delete); background: var(--method-delete-bg); }
 	.scopes-cell {
-		font-family: var(--font-mono);
-		font-size: 0.75rem;
-		color: var(--color-text-subtle);
 		max-width: 220px;
-		word-break: break-all;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+	.scope-chip {
+		font-family: var(--font-mono);
+		font-size: 0.6875rem;
+		color: var(--color-text-subtle);
+		background: var(--color-surface-subtle);
+		border: 1px solid var(--color-border);
+		border-radius: 4px;
+		padding: 0.0625rem 0.375rem;
+		white-space: nowrap;
 	}
 	.status-badge {
 		display: inline-block;

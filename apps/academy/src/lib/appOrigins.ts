@@ -73,6 +73,12 @@ const ACADEMY_PATH_PREFIXES = [
  */
 export function resolveMenuUrl(url: string): string {
 	if (!url) return '/';
+	// `main:` scheme — an explicit link to the Main app. Needed because `/` is
+	// a real Academy route (the catalog), so a menu item that means "Main app
+	// home" cannot use `/` without self-linking (e.g. academy_footer's
+	// "Main App" item, which shares `/` with "Explore"). Must be checked before
+	// the generic scheme pass-through below.
+	if (url.startsWith('main:')) return `${MAIN_ORIGIN}${url.slice(5) || '/'}`;
 	// External URL, anchor, or non-http scheme (mailto:, tel:) — leave as-is.
 	if (/^([a-z][a-z0-9+.-]*:|#)/i.test(url)) return url;
 	if (!url.startsWith('/')) return url;

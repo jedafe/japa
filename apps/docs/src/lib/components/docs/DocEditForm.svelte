@@ -467,8 +467,8 @@
 		font-weight: 600;
 		cursor: pointer;
 	}
-	.review-btn.approve { background: var(--method-patch); color: #fff; }
-	.review-btn.publish { background: var(--method-get, #16a34a); color: #fff; }
+	.review-btn.approve { background: var(--method-patch); color: var(--color-bg); }
+	.review-btn.publish { background: var(--method-get, #16a34a); color: var(--color-bg); }
 	.review-btn:disabled { opacity: 0.6; cursor: default; }
 	.review-hint { font-size: 0.75rem; color: var(--color-muted); }
 	@media (max-width: 640px) {

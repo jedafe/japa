@@ -77,6 +77,23 @@ func (h *Hub) Register(client *Client) {
 	slog.Info("ws client registered", "user_id", client.UserID)
 }
 
+// safeSend delivers data to a client's send buffer without panicking when
+// the channel was closed by a concurrent Unregister between snapshot and
+// send. Returns false when the buffer is full or the client is gone.
+func safeSend(client *Client, data []byte) (delivered bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			delivered = false
+		}
+	}()
+	select {
+	case client.Send <- data:
+		return true
+	default:
+		return false
+	}
+}
+
 // Unregister removes a client from the hub and cleans up space
 // subscriptions. Only this connection's Send channel is closed — other
 // live connections for the same user keep their hub entry (§11).
@@ -138,29 +155,21 @@ func (h *Hub) BroadcastToUser(userID string, event WSEvent) {
 // the pubsub subscription goroutine (which must not re-publish, or every
 // received message would fan out again and create an infinite loop).
 func (h *Hub) deliverLocalUser(userID string, event WSEvent) {
-	h.mu.RLock()
-	conns := h.clients[userID]
-	clients := make([]*Client, 0, len(conns))
-
-	for c := range conns {
-		clients = append(clients, c)
-	}
-	h.mu.RUnlock()
-
-	if len(clients) == 0 {
-		return
-	}
-
 	data, err := json.Marshal(event)
 	if err != nil {
 		slog.Error("ws marshal event", "error", err)
 		return
 	}
 
-	for _, client := range clients {
-		select {
-		case client.Send <- data:
-		default:
+	// Hold RLock through the sends: Unregister's Lock (which closes
+	// client.Send) cannot interleave, so no send lands on a closed
+	// channel. safeSend is non-blocking so the read lock is never held
+	// on a full buffer.
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients[userID] {
+		if !safeSend(client, data) {
 			slog.Warn("ws client send buffer full, dropping message", "user_id", userID)
 		}
 	}
@@ -184,30 +193,22 @@ func (h *Hub) BroadcastToSpace(spaceID string, event WSEvent) {
 // to THIS instance only. It does NOT publish to Valkey — see
 // deliverLocalUser for the loop-safety rationale.
 func (h *Hub) deliverLocalSpace(spaceID string, event WSEvent) {
-	h.mu.RLock()
-
-	subs, ok := h.spaceSubscribers[spaceSubscriptionKey(spaceID)]
-	if !ok {
-		h.mu.RUnlock()
-		return
-	}
-
-	clients := make([]*Client, 0, len(subs))
-	for c := range subs {
-		clients = append(clients, c)
-	}
-	h.mu.RUnlock()
-
 	data, err := json.Marshal(event)
 	if err != nil {
 		slog.Error("ws marshal space event", "error", err)
 		return
 	}
 
-	for _, client := range clients {
-		select {
-		case client.Send <- data:
-		default:
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	subs, ok := h.spaceSubscribers[spaceSubscriptionKey(spaceID)]
+	if !ok {
+		return
+	}
+
+	for client := range subs {
+		if !safeSend(client, data) {
 			slog.Warn("ws client send buffer full, dropping space message", "user_id", client.UserID, "space_id", spaceID)
 		}
 	}
@@ -231,27 +232,20 @@ func (h *Hub) BroadcastToAll(event WSEvent) {
 // only. It does NOT publish to Valkey — see deliverLocalUser for the
 // loop-safety rationale.
 func (h *Hub) deliverLocalAll(event WSEvent) {
-	h.mu.RLock()
-
-	clients := make([]*Client, 0, len(h.clients))
-	for _, conns := range h.clients {
-		for c := range conns {
-			clients = append(clients, c)
-		}
-	}
-	h.mu.RUnlock()
-
 	data, err := json.Marshal(event)
 	if err != nil {
 		slog.Error("ws marshal broadcast event", "error", err)
 		return
 	}
 
-	for _, client := range clients {
-		select {
-		case client.Send <- data:
-		default:
-			slog.Warn("ws client send buffer full, dropping broadcast", "user_id", client.UserID)
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for _, conns := range h.clients {
+		for client := range conns {
+			if !safeSend(client, data) {
+				slog.Warn("ws client send buffer full, dropping broadcast", "user_id", client.UserID)
+			}
 		}
 	}
 }

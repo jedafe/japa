@@ -37,6 +37,12 @@
 
 	// The i18n locale is derived from `page.data.locale` in the store — no
 	// manual setLocale() call needed (SSR-safe, no cross-request leakage).
+	// <html lang> is stamped by hooks on full loads, but client-side locale
+	// switches (switchLanguage → goto) never re-render the html element —
+	// sync it here so a11y/SEO lang stays correct after in-app switches.
+	$effect(() => {
+		document.documentElement.lang = data.locale || 'en';
+	});
 
 	// Admin appearance overrides are injected server-side by hooks.server.ts
 	// into the static <style id="jc-theme-overrides"> tag in app.html.
