@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -38,12 +39,31 @@ type unifiedChatInput struct {
 	ConversationID string `json:"conversation_id,omitempty"`
 	// §103 AI Projects: start the new thread inside this project.
 	ProjectID     string         `json:"project_id,omitempty"`
+	// §115 AI Quick Panel: page-anchored thread find-or-create key.
+	Anchor        string         `json:"anchor,omitempty"`
 	Context       map[string]any `json:"context,omitempty"`
 	Model         string         `json:"model,omitempty"`
 	VoiceID       string         `json:"voice_id,omitempty"`
 	Humanize      *bool          `json:"humanize,omitempty"`
 	HumanizeLevel string         `json:"humanize_level,omitempty"`
 	Tools         *ToolSelection `json:"tools,omitempty"`
+}
+
+// §115 AI Quick Panel — anchor keys are lowercase [a-z0-9_.:/-], ≤200
+// chars. Invalid anchors are dropped (warn-logged), never a request error:
+// a bad anchor must not block chat.
+var anchorRe = regexp.MustCompile(`^[a-z0-9_.:/-]{1,200}$`)
+
+func sanitizeAnchor(raw string) string {
+	a := strings.ToLower(strings.TrimSpace(raw))
+	if a == "" {
+		return ""
+	}
+	if !anchorRe.MatchString(a) {
+		slog.Warn("ai: dropping invalid anchor")
+		return ""
+	}
+	return a
 }
 
 // HandleUnifiedChat serves POST /ai/chat (ADR-130). SSE when the client
@@ -74,6 +94,10 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 	// poisoning (ADR-010, BUG-007) — the §20 allowlist.
 	input.Context = sanitizeClientContext(input.Context)
 
+	// §115: drop malformed anchors rather than rejecting the send — a bad
+	// anchor must not block chat.
+	anchor := sanitizeAnchor(input.Anchor)
+
 	var convID *pgtype.UUID
 
 	if input.ConversationID != "" {
@@ -100,6 +124,7 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 		Prompt:         prompt,
 		ConversationID: convID,
 		ProjectID:      projectID,
+		Anchor:         anchor,
 		Context:        input.Context,
 		Model:          input.Model,
 		VoiceID:        input.VoiceID,
@@ -250,6 +275,34 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 
 	out := []convoSummary{}
 	dbIDs := map[string]bool{}
+
+	// §115: ?anchor= returns only the page-anchored thread (0 or 1 items) —
+	// the quick panel's pre-send resume. Anchored threads are always unified
+	// rows, so the legacy union below is skipped on this path.
+	if anchor := sanitizeAnchor(r.URL.Query().Get("anchor")); anchor != "" {
+		if h.Convos != nil {
+			if conv, aerr := h.Convos.GetByAnchor(r.Context(), user.UserID, anchor); aerr == nil {
+				sum := convoSummary{
+					ConversationID: conv.ID.String(),
+					Title:          conv.Title,
+					LastEntryAt:    conv.UpdatedAt.Time,
+				}
+				if conv.ProjectID.Valid {
+					sum.ProjectID = conv.ProjectID.String()
+				}
+				out = append(out, sum)
+			}
+		}
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+			"data": out,
+			"meta": map[string]any{
+				"total":       int64(len(out)),
+				"page_size":   pageSize,
+				"page_offset": 0,
+			},
+		})
+		return
+	}
 
 	// New relational threads — drain every page so the union below merges
 	// the full set; a fixed cap would silently drop older threads.

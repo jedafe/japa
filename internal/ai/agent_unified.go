@@ -36,6 +36,8 @@ type UnifiedChatRequest struct {
 	// project. Validated owner-side before Resolve; ignored for existing
 	// threads (explicit moves go through PUT …/project).
 	ProjectID     *pgtype.UUID
+	// §115 AI Quick Panel: page-anchored thread key (sanitized upstream).
+	Anchor        string
 	Context       map[string]any // client-supplied context (lowest precedence, ADR-025)
 	Model         string
 	VoiceID       string
@@ -208,7 +210,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	if h.convos != nil {
 		titleLen := h.getIntSetting(ctx, "ai.conversation_title_length", defaultConversationTitleLen)
 
-		c, err := h.convos.Resolve(ctx, userID, req.ConversationID, req.ProjectID, truncateRunes(req.Prompt, titleLen))
+		c, err := h.convos.Resolve(ctx, userID, req.ConversationID, req.ProjectID, truncateRunes(req.Prompt, titleLen), req.Anchor)
 		if err != nil {
 			return nil, fmt.Errorf("ai: resolving conversation: %w", err)
 		}

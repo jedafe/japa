@@ -382,3 +382,22 @@ func TestHandleGetConversationV2_RunningSessionID(t *testing.T) {
 		t.Fatal("running_session_id must be absent once the session is terminal")
 	}
 }
+
+// §115 — anchor keys are lowercase charset-bounded; bad input drops to "".
+func TestSanitizeAnchor(t *testing.T) {
+	cases := map[string]string{
+		"wikipage:9f0c-2a":       "wikipage:9f0c-2a",
+		"  Content:AbC_1  ":      "content:abc_1",
+		"path:/wiki/toronto":     "path:/wiki/toronto",
+		"bad anchor!!":           "",
+		"nested{json}":           "",
+		"route:/(app)/blog":      "",
+		strings.Repeat("a", 201): "",
+		"":                       "",
+	}
+	for in, want := range cases {
+		if got := sanitizeAnchor(in); got != want {
+			t.Fatalf("sanitizeAnchor(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

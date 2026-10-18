@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db"
@@ -26,6 +27,7 @@ import (
 type ConversationStore interface {
 	CreateAIConversation(ctx context.Context, arg gen.CreateAIConversationParams) (gen.AiConversation, error)
 	GetAIConversationForUser(ctx context.Context, arg gen.GetAIConversationForUserParams) (gen.AiConversation, error)
+	GetAIConversationByAnchor(ctx context.Context, arg gen.GetAIConversationByAnchorParams) (gen.AiConversation, error)
 	TouchAIConversation(ctx context.Context, id pgtype.UUID) error
 	ListAIConversationsForUser(ctx context.Context, arg gen.ListAIConversationsForUserParams) ([]gen.ListAIConversationsForUserRow, error)
 	CountAIConversationsForUser(ctx context.Context, userID pgtype.UUID) (int64, error)
@@ -83,7 +85,11 @@ func (s *ConversationService) Get(ctx context.Context, userID, convID pgtype.UUI
 // table (ADR-130). title is stored only on create. projectID (when valid)
 // is stamped on the newly created row only — existing threads keep their
 // membership; reassignment goes through the PUT …/project endpoint.
-func (s *ConversationService) Resolve(ctx context.Context, userID pgtype.UUID, conversationID, projectID *pgtype.UUID, title string) (gen.AiConversation, error) {
+// Resolve returns the conversation for a send: an explicit id wins, then
+// the §115 page anchor, then a fresh create (stamped with the anchor so
+// later sends on the same page resume the thread). A 23505 race on the
+// anchor unique index re-reads by anchor once.
+func (s *ConversationService) Resolve(ctx context.Context, userID pgtype.UUID, conversationID, projectID *pgtype.UUID, title, anchor string) (gen.AiConversation, error) {
 	if conversationID != nil && conversationID.Valid {
 		conv, err := s.store.GetAIConversationForUser(ctx, gen.GetAIConversationForUserParams{
 			ID:     *conversationID,
@@ -99,16 +105,65 @@ func (s *ConversationService) Resolve(ctx context.Context, userID pgtype.UUID, c
 		// Unknown or foreign → fall through to create.
 	}
 
+	if anchor != "" {
+		conv, err := s.store.GetAIConversationByAnchor(ctx, gen.GetAIConversationByAnchorParams{
+			UserID: userID,
+			Anchor: &anchor,
+		})
+		if err == nil {
+			return conv, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return gen.AiConversation{}, fmt.Errorf("resolving conversation by anchor: %w", err)
+		}
+	}
+
 	var pid pgtype.UUID
 	if projectID != nil && projectID.Valid {
 		pid = *projectID
 	}
+	var anchorArg *string
+	if anchor != "" {
+		anchorArg = &anchor
+	}
 
-	return s.store.CreateAIConversation(ctx, gen.CreateAIConversationParams{
+	conv, err := s.store.CreateAIConversation(ctx, gen.CreateAIConversationParams{
 		UserID:    userID,
 		Title:     title,
 		ProjectID: pid,
+		Anchor:    anchorArg,
 	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && anchor != "" {
+			if existing, lerr := s.store.GetAIConversationByAnchor(ctx, gen.GetAIConversationByAnchorParams{
+				UserID: userID,
+				Anchor: &anchor,
+			}); lerr == nil {
+				return existing, nil
+			}
+		}
+		return gen.AiConversation{}, fmt.Errorf("creating conversation: %w", err)
+	}
+
+	return conv, nil
+}
+
+// GetByAnchor returns the live anchored thread for the panel's
+// pre-send resume (GET /ai/conversations?anchor=, §115).
+func (s *ConversationService) GetByAnchor(ctx context.Context, userID pgtype.UUID, anchor string) (gen.AiConversation, error) {
+	conv, err := s.store.GetAIConversationByAnchor(ctx, gen.GetAIConversationByAnchorParams{
+		UserID: userID,
+		Anchor: &anchor,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.AiConversation{}, ErrConversationNotFound
+		}
+		return gen.AiConversation{}, err
+	}
+
+	return conv, nil
 }
 
 func (s *ConversationService) AppendUserMessage(ctx context.Context, convID pgtype.UUID, content string) (gen.AiMessage, error) {
