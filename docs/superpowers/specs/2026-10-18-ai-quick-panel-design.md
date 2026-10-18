@@ -57,7 +57,7 @@ CREATE UNIQUE INDEX idx_ai_conversations_anchor
 `anchor` is an opaque client-supplied key identifying the page/entity a
 thread belongs to, e.g. `wikipage:{page_id}`, `space:{space_id}`,
 `content:{content_id}`, `doc:{doc_id}`, `tool:{slug}`, `lesson:{id}`,
-`route:{route_id}` (section-level fallback). Soft-deleting a conversation
+`path:{pathname}` (section-level fallback). Soft-deleting a conversation
 frees the anchor — the next send creates a fresh thread (desired semantics:
 "clear this page's chat" = delete the thread).
 
@@ -167,7 +167,7 @@ field → pure chat.
 
 1. Panel opens → read `aiPageContext` → `GET /ai/conversations?anchor=…`
    → load messages via `GET /ai/conversations/{id}` (existing). No context →
-   anchor is `route:{routeId}` (one thread per route pattern); routeId
+   anchor is `path:{pathname}` (one thread per URL); pathname
    unavailable → `panel:general`.
 2. First send → `streamChat({message, anchor, context, tools?})` — backend
    resolves-or-creates the anchored thread and returns `conversation_id` on
@@ -202,12 +202,12 @@ come from API-loaded page data).
 | `/docs/[...rest]` | `doc:{doc_id-or-path}` | `content_type:'doc'`, `slug`, `title`, `doc_category` |
 | `/(app)/content/[slug]`, guides, stories | `content:{id}` | same as blog |
 | `/(app)/spaces/[slug]` (+ subpages) | `space:{id}` | `space_id`, `slug`, `title` |
-| anything else | `route:{route_id}` | `title` (page title) only |
+| anything else | `path:{pathname}` | `title` (page title) only |
 
-**apps/docs:** doc pages → `doc:{id/path}`; section index → `route:{route_id}`.
+**apps/docs:** doc pages → `doc:{id/path}`; section index → `path:{pathname}`.
 **apps/academy:** track/lesson pages → `track:{id}` / `lesson:{id}` +
-`content_type:'academy_track'|'academy_lesson'`; else `route:{route_id}`.
-**apps/tools:** tool pages → `tool:{slug}`; else `route:{route_id}`.
+`content_type:'academy_track'|'academy_lesson'`; else `path:{pathname}`.
+**apps/tools:** tool pages → `tool:{slug}`; else `path:{pathname}`.
 
 ## 5. Per-app integration
 

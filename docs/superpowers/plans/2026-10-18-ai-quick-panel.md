@@ -19,7 +19,7 @@
 - **Rule 18:** bun only (`bun`, `bunx`, `bun run`) — never npm/npx/pnpm/yarn.
 - **JEOS before code:** `.jeos/sections/115-ai-quick-panel.md` lands in Task 1 before any application code.
 - All commits go to `main`. Do not create branches.
-- Anchor format: `^[a-z0-9_.:/-]{1,200}$`, lowercased server-side; anchor keys use stable entity ids (`wikipage:{id}`, `content:{id}`, `space:{id}`, `doc:{id}`, `tool:{slug}`, `track:{id}`, `lesson:{id}`, `route:{route_id}`, `panel:general`).
+- Anchor format: `^[a-z0-9_.:/-]{1,200}$`, lowercased server-side; anchor keys use stable entity ids (`wikipage:{id}`, `content:{id}`, `space:{id}`, `doc:{id}`, `tool:{slug}`, `track:{id}`, `lesson:{id}`) with `path:{pathname}` as the fallback (pathnames are already charset-safe; `route.id` values like `/(app)/blog/[slug]` contain `()[]` and would be rejected server-side — do NOT use them).
 - `context` payloads use ONLY keys in `allowedContextKeys` (internal/ai/handlers.go:506): `title`, `slug`, `content_id`, `space_id`, `geo_space_id`, `tags`, `tone`, `content_type`, `doc_category`, `doc_subcategory`, `audience`, `language`, etc.
 - i18n: every UI string goes through injected `t(key, fallback)` with `ai.panel.*` keys added to each app's `en.json` + `fr.json`.
 
@@ -101,7 +101,7 @@ WHERE user_id = @user_id AND anchor = @anchor AND deleted_at IS NULL;
 - [ ] **Step 3: Apply migration + regenerate**
 
 ```bash
-make migrate-up   # or the repo's migrate target — check Makefile
+make migrate    # runs `go run ./cmd/migrate/`
 make sqlc-gen
 ```
 
@@ -631,10 +631,27 @@ Run to verify it fails (module not found → then passes after Task 4 files exis
 
 Structure (follow `JapaAIChat.svelte` patterns — the event loop at ~line 1150 and `loadConversation` at ~974 are the references; this is a trimmed standalone):
 
+Turn model (declare above the state block):
+
+```ts
+interface PanelToolCall { name: string; status: string }
+interface PanelTurn {
+	id: number;
+	role: 'user' | 'assistant';
+	content: string;
+	in_progress?: boolean;
+	progress?: string;
+	tool_calls?: PanelToolCall[];
+	sources?: AiCitationSource[];
+	error?: string;
+	session_id?: string | null;
+}
+```
+
 State:
 
 ```ts
-let turns = $state<PanelTurn[]>([]);          // {id, role, content, in_progress?, progress?, tool_calls?, sources?, error?, session_id?}
+let turns = $state<PanelTurn[]>([]);
 let conversationId = $state('');
 let sending = $state(false);
 let composer = $state('');
@@ -727,7 +744,7 @@ async function send() {
 		}
 		// stream ended without final_response → detach-poll fallback
 		if (live.in_progress) {
-			const sid = live.session_id ?? (conversationId ? await findRunningSessionId() : '');
+			const sid = live.session_id ?? (conversationId ? await findRunningSessionId(conversationId) : '');
 			if (sid) { live.progress = pt('ai.panel.bg_running', 'Working in the background…'); live.session_id = sid; startSessionPoll(sid); }
 			else { live.in_progress = false; live.content ||= pt('ai.panel.stream_closed', 'Stream closed.'); }
 		}
@@ -820,13 +837,13 @@ export const streamChat = createStreamChat();
 
 - [ ] **Step 2: Convert agentTypes.ts to partial re-export**
 
-Keep every type the package does NOT own (`AIPrefs`, `AiProject`, `AgentSession`, `AgentToolCall`, `AgentSessionDetail`, `AgentListMeta`, `AgentToolStat`, `AgentCostReportRow`, `AIPrivacyStatus`, `AIPrivacyUpdateResult`, `AgentToolCapability`) and re-export shared ones:
+Keep every type the package does NOT own (`AIPrefs`, `AiProject`, `AgentSession`, `AgentToolCall`, `AgentSessionDetail`, `AgentListMeta`, `AgentToolStat`, `AgentCostReportRow`, `AIPrivacyStatus`, `AIPrivacyUpdateResult`) and re-export shared ones:
 
 ```ts
 export { AgentRequestError } from '@japaconnect/ai-panel';
 export type {
-	AgentEventType, AgentEvent, AgentGeoContext, AgentToolCategory,
-	AgentCapabilities, UnifiedConversationSummary,
+	AgentEventType, AgentEvent, AgentToolCapability, AgentGeoContext,
+	AgentToolCategory, AgentCapabilities, UnifiedConversationSummary,
 	ConversationToolCall, ConversationMessage
 } from '@japaconnect/ai-panel';
 // …unchanged remaining declarations…
@@ -902,7 +919,11 @@ import { ensureAiPanelDeps } from '$lib/ai/panel';
 import { resolveAiPageContext } from '$lib/ai/pageContext';   // Task 8
 import { setAiPageContext } from '@japaconnect/ai-panel';
 import { afterNavigate } from '$app/navigation';
-import { tick } from 'svelte';
+
+// §115: deps must init on EVERY page, not just on FAB click — /ai hides
+// the FAB but JapaAIChat streams through the same package factory. Inside
+// the existing onMount (client-only, idempotent).
+onMount(() => ensureAiPanelDeps());
 
 let aiPanelOpen = $state(false);
 
@@ -915,7 +936,7 @@ const showChatFab = $derived(
 // Page-context registry: recompute on every data/route change; cleared
 // while navigating so a stale entity context can't leak across pages.
 $effect(() => {
-	setAiPageContext(resolveAiPageContext(page.route.id ?? '', page.data));
+	setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
 });
 afterNavigate(() => setAiPageContext(null));
 ```
@@ -926,7 +947,7 @@ Replace the FAB `<a>` block (~line 294) with:
 {#if showChatFab}
 	<button
 		type="button"
-		onclick={() => { ensureAiPanelDeps(); aiPanelOpen = !aiPanelOpen; }}
+		onclick={() => (aiPanelOpen = !aiPanelOpen)}
 		aria-label={t('ai.panel.title', 'Japa AI')}
 		title={t('ai.panel.title', 'Japa AI')}
 		aria-expanded={aiPanelOpen}
@@ -964,7 +985,7 @@ git commit -m "feat(main): AI quick panel — FAB toggle + deps wiring (§115)"
 - Modify: `apps/main/src/lib/ai/JapaAIChat.svelte` (accept `initialConversationId` prop)
 
 **Interfaces:**
-- Produces: `resolveAiPageContext(routeId: string, data: Record<string, unknown>): AiPageContext | null`
+- Produces: `resolveAiPageContext(pathname: string, data: Record<string, unknown>): AiPageContext` — entity extractors keyed on `pathname` prefixes; `path:{pathname}` fallback
 - Consumes: `AiPageContext` from `@japaconnect/ai-panel`; `page.data.page` (WikiPage — `id`, `space_id`, `slug`, `title`, `category`), `page.data.spaceDetail` (`id`, `slug`, `name`), `page.data.article` (ContentArticle — `id`, `slug`, `title`, `content_type`, `space_id`, `tags`).
 
 - [ ] **Step 1: Write the failing extractor tests**
@@ -977,7 +998,7 @@ import { resolveAiPageContext } from './pageContext';
 
 describe('resolveAiPageContext', () => {
 	it('wiki page → wikipage anchor with full context', () => {
-		const ctx = resolveAiPageContext('/(app)/wiki/[space_slug]/[page_slug]', {
+		const ctx = resolveAiPageContext('/wiki/toronto/housing', {
 			page: { id: 'p1', space_id: 's1', slug: 'housing', title: 'Housing', category: 'guides' },
 			spaceDetail: { id: 's1', slug: 'toronto', name: 'Toronto' }
 		});
@@ -985,25 +1006,25 @@ describe('resolveAiPageContext', () => {
 		expect(ctx?.context).toMatchObject({ content_type: 'wiki_page', content_id: 'p1', space_id: 's1', slug: 'housing', title: 'Housing' });
 	});
 	it('wiki space index → space anchor', () => {
-		const ctx = resolveAiPageContext('/(app)/wiki/[space_slug]', {
+		const ctx = resolveAiPageContext('/wiki/toronto', {
 			spaceDetail: { id: 's1', slug: 'toronto', name: 'Toronto' }
 		});
 		expect(ctx?.anchor).toBe('space:s1');
 	});
 	it('blog post → content anchor', () => {
-		const ctx = resolveAiPageContext('/(app)/blog/[slug]', {
+		const ctx = resolveAiPageContext('/blog/moving-to-canada', {
 			article: { id: 'c9', slug: 'moving-to-canada', title: 'Moving', content_type: 'post' }
 		});
 		expect(ctx?.anchor).toBe('content:c9');
 		expect(ctx?.context).toMatchObject({ content_type: 'post', content_id: 'c9' });
 	});
-	it('unknown route → route anchor with title only', () => {
-		const ctx = resolveAiPageContext('/(app)/forum', {});
-		expect(ctx?.anchor).toBe('route:/(app)/forum');
+	it('unknown path → path anchor with title only', () => {
+		const ctx = resolveAiPageContext('/forum', { title: 'Forum' });
+		expect(ctx?.anchor).toBe('path:/forum');
 	});
-	it('missing entity data on entity route → route anchor', () => {
-		const ctx = resolveAiPageContext('/(app)/blog/[slug]', {});
-		expect(ctx?.anchor).toBe('route:/(app)/blog/[slug]');
+	it('entity path with missing data → path anchor', () => {
+		const ctx = resolveAiPageContext('/blog/moving-to-canada', {});
+		expect(ctx?.anchor).toBe('path:/blog/moving-to-canada');
 	});
 });
 ```
@@ -1014,9 +1035,10 @@ Run: `cd apps/main && bunx vitest run src/lib/ai/pageContext.test.ts` → FAIL (
 
 ```ts
 // apps/main/src/lib/ai/pageContext.ts
-// §115 — route → AiPageContext table. Extractors read API-loaded page
-// data only (Rule 16); unknown/entity-less routes fall back to a
-// route-pattern anchor so every page gets a scoped thread.
+// §115 — pathname+data → AiPageContext. Entity extractors read API-loaded
+// page data only (Rule 16); the path:{pathname} fallback gives every page
+// a scoped thread (pathname chars are always anchor-safe — route.id
+// values contain ()[] and are NOT usable in anchors).
 import type { AiPageContext } from '@japaconnect/ai-panel';
 
 type Data = Record<string, unknown>;
@@ -1025,78 +1047,84 @@ function str(v: unknown): string {
 	return typeof v === 'string' ? v : '';
 }
 
-function routeAnchor(routeId: string, data: Data): AiPageContext {
+function pathAnchor(pathname: string, data: Data): AiPageContext {
+	const title = str(data.title);
 	return {
-		anchor: `route:${routeId}`.toLowerCase(),
-		label: str(data.title) || 'Page',
-		context: str(data.title) ? { title: str(data.title) } : {}
+		anchor: `path:${pathname}`.toLowerCase(),
+		label: title || 'Page',
+		context: title ? { title } : {}
 	};
 }
 
-const extractors: Record<string, (d: Data) => AiPageContext | null> = {
-	'/(app)/wiki/[space_slug]/[page_slug]': (d) => {
-		const p = d.page as { id?: string; space_id?: string; slug?: string; title?: string; category?: string } | null;
-		const space = d.spaceDetail as { id?: string; slug?: string; name?: string } | null;
-		if (!p?.id) return null;
-		return {
-			anchor: `wikipage:${p.id}`,
-			label: `Wiki · ${p.title ?? p.slug}`,
-			context: {
-				content_type: 'wiki_page',
-				content_id: p.id,
-				...(p.space_id ? { space_id: p.space_id } : {}),
-				...(p.slug ? { slug: p.slug } : {}),
-				...(p.title ? { title: p.title } : {}),
-				...(space?.slug ? { doc_category: `wiki:${space.slug}` } : {})
-			}
-		};
-	},
-	'/(app)/wiki/[space_slug]': (d) => {
-		const space = (d.spaceDetail ?? d.space) as { id?: string; slug?: string; name?: string } | null;
-		if (!space?.id) return null;
-		return {
-			anchor: `space:${space.id}`,
-			label: `Wiki · ${space.name ?? space.slug}`,
-			context: { content_type: 'space', space_id: space.id, slug: space.slug ?? '', title: space.name ?? '' }
-		};
-	},
-	'/(app)/blog/[slug]': (d) => {
-		const a = d.article as { id?: string; slug?: string; title?: string; content_type?: string; space_id?: string | null; tags?: { slug?: string }[] } | null;
-		if (!a?.id) return null;
-		return {
-			anchor: `content:${a.id}`,
-			label: `Blog · ${a.title ?? a.slug}`,
-			context: {
-				content_type: a.content_type ?? 'post',
-				content_id: a.id,
-				...(a.slug ? { slug: a.slug } : {}),
-				...(a.title ? { title: a.title } : {}),
-				...(a.space_id ? { space_id: a.space_id } : {}),
-				...(Array.isArray(a.tags) && a.tags.length
-					? { tags: a.tags.map((t) => str(t?.slug)).filter(Boolean) }
-					: {})
-			}
-		};
-	},
-	// Content single pages share the article shape with /blog/[slug]
-	// (ContentArticle) — covers guides, stories, comparisons where
-	// page.data.article exists.
-};
+function articleContext(d: Data): AiPageContext | null {
+	const a = d.article as { id?: string; slug?: string; title?: string; content_type?: string; space_id?: string | null; tags?: { slug?: string }[] } | null;
+	if (!a?.id) return null;
+	return {
+		anchor: `content:${a.id}`,
+		label: `Blog · ${a.title ?? a.slug}`,
+		context: {
+			content_type: a.content_type ?? 'post',
+			content_id: a.id,
+			...(a.slug ? { slug: a.slug } : {}),
+			...(a.title ? { title: a.title } : {}),
+			...(a.space_id ? { space_id: a.space_id } : {}),
+			...(Array.isArray(a.tags) && a.tags.length
+				? { tags: a.tags.map((t) => str(t?.slug)).filter(Boolean) }
+				: {})
+		}
+	};
+}
 
-export function resolveAiPageContext(routeId: string, data: Data): AiPageContext | null {
-	const viaEntity = extractors[routeId]?.(data);
-	if (viaEntity) return viaEntity;
-	// Generic fallback: any page exposing a top-level `article`/`space`/`doc`
-	// object with an id gets its entity anchor.
-	const article = data.article as { id?: string } | null;
-	if (article?.id) return extractors['/(app)/blog/[slug]'](data);
-	const space = (data.spaceDetail ?? data.space) as { id?: string } | null;
-	if (space?.id) return extractors['/(app)/wiki/[space_slug]'](data);
-	return routeAnchor(routeId, data);
+function spaceContext(d: Data): AiPageContext | null {
+	const space = (d.spaceDetail ?? d.space) as { id?: string; slug?: string; name?: string } | null;
+	if (!space?.id) return null;
+	return {
+		anchor: `space:${space.id}`,
+		label: `Wiki · ${space.name ?? space.slug}`,
+		context: { content_type: 'space', space_id: space.id, slug: space.slug ?? '', title: space.name ?? '' }
+	};
+}
+
+function wikiPageContext(d: Data): AiPageContext | null {
+	const p = d.page as { id?: string; space_id?: string; slug?: string; title?: string; category?: string } | null;
+	if (!p?.id) return null;
+	return {
+		anchor: `wikipage:${p.id}`,
+		label: `Wiki · ${p.title ?? p.slug}`,
+		context: {
+			content_type: 'wiki_page',
+			content_id: p.id,
+			...(p.space_id ? { space_id: p.space_id } : {}),
+			...(p.slug ? { slug: p.slug } : {}),
+			...(p.title ? { title: p.title } : {})
+		}
+	};
+}
+
+export function resolveAiPageContext(pathname: string, data: Data): AiPageContext {
+	const segs = pathname.split('/').filter(Boolean);
+	// /wiki/{space_slug}/{page_slug} → page; /wiki/{space_slug} → space.
+	// (/wiki/{space}/{page}/history shares the page anchor — it's the same entity.)
+	if (segs[0] === 'wiki' && segs.length >= 3) {
+		const ctx = wikiPageContext(data);
+		if (ctx) return ctx;
+	}
+	if (segs[0] === 'wiki' && segs.length === 2) {
+		const ctx = spaceContext(data);
+		if (ctx) return ctx;
+	}
+	// Generic entity fallback: article-bearing pages (blog, content,
+	// guides, stories, comparisons) and space-bearing pages get their
+	// entity anchor regardless of the route segment shape.
+	const viaArticle = articleContext(data);
+	if (viaArticle) return viaArticle;
+	const viaSpace = spaceContext(data);
+	if (viaSpace) return viaSpace;
+	return pathAnchor(pathname, data);
 }
 ```
 
-(Extend the extractor table as other routes are audited — forum threads `/(app)/forum/...` → `thread:{id}`, spaces `/(app)/spaces/...` → `space:{id}` — same pattern.)
+(Extend as other entity surfaces are audited — forum threads → `thread:{id}`, docs pages → `doc:{id}` — same pattern.)
 
 - [ ] **Step 3: Verify tests pass**
 
@@ -1154,7 +1182,7 @@ French translations follow each file's existing tone (e.g. `"ai.panel.title": "J
 - [ ] **Step 2: Validate JSON**
 
 ```bash
-for f in apps/{main,tools,academy,docs}/src/lib/i18n/{en,fr}.json; do bunx -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" || echo "BAD: $f"; done
+for f in apps/{main,tools,academy,docs}/src/lib/i18n/{en,fr}.json; do bun -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" || echo "BAD: $f"; done
 ```
 
 - [ ] **Step 3: Commit**
@@ -1203,26 +1231,31 @@ export function ensureAiPanelDeps(): void {
 
 Check `$lib/api/csrf.svelte` exports `refreshCsrfToken` returning `Promise<boolean>` — compatible with `Promise<unknown>`.
 
-- [ ] **Step 2: Extractor** — `tool:{slug}` for `/[tool]` tool pages (each tool route is a fixed top-level segment — map `route.id` → slug via the existing `tools` registry in `hooks.server.ts`/`$lib/tools` if it exposes slugs, else use `route:{route_id}` fallback):
+- [ ] **Step 2: Extractor** — derive the tool anchor from the app's own `TOOLS` registry (`apps/tools/src/lib/tools/registry.ts` — `ToolMeta.route` ↔ `ToolMeta.slug`), never a hardcoded route list:
 
 ```ts
-const TOOL_ROUTES: Record<string, string> = {
-	'/crs-calculator': 'crs-calculator',
-	'/visa-checklist': 'visa-checklist',
-	'/currency-converter': 'currency-converter',
-	'/cost-of-living': 'cost-of-living',
-	'/tax-calculator': 'tax-calculator',
-	'/housing-guide': 'housing-guide',
-	'/sop-generator': 'sop-generator',
-	'/eca-guide': 'eca-guide',
-	'/processing-times': 'processing-times'
-	// …extend to every tool route — source of truth: apps/tools/src/lib/tools registry
-};
+import { TOOLS } from '$lib/tools/registry';
+import type { AiPageContext } from '@japaconnect/ai-panel';
+
+export function resolveAiPageContext(pathname: string, data: Record<string, unknown>): AiPageContext {
+	const tool = TOOLS.find((t) => pathname === t.route || pathname.startsWith(t.route + '/'));
+	if (tool) {
+		return {
+			anchor: `tool:${tool.slug}`,
+			label: tool.name,
+			context: { content_type: 'tool', slug: tool.slug, title: tool.name }
+		};
+	}
+	const title = typeof data.title === 'string' ? data.title : '';
+	return {
+		anchor: `path:${pathname}`.toLowerCase(),
+		label: title || 'Page',
+		context: title ? { title } : {}
+	};
+}
 ```
 
-Wait — Rule 16 forbids hardcoded option lists that should come from API. The tools registry (`apps/tools/src/lib/tools/`) is the app's own catalog — derive the map from it at runtime instead of a literal. Check `getTool`/`TOOLS` export there and build `TOOL_ROUTES` from the registry.
-
-- [ ] **Step 3: Layout wiring** — same FAB+panel block as main (Task 7 Step 2), gated on `data.features?.['feature.japabot'] === true`, `user={data.user ?? null}`, deps inited on first toggle. Suppress the FAB on `/japabot` (redirects anyway — harmless either way).
+- [ ] **Step 3: Layout wiring** — same FAB+panel block as main (Task 7 Step 2), gated on `data.features?.['feature.japabot'] === true`, `user={data.user ?? null}`. Deps init in `onMount(() => ensureAiPanelDeps())` (same every-page rule as main — the FAB can be suppressed on any route). Suppress the FAB on `/japabot` (redirects anyway — harmless either way).
 
 - [ ] **Step 4: Typecheck + commit**
 
@@ -1244,7 +1277,7 @@ git commit -m "feat(tools): AI quick panel integration (§115)"
 
 - [ ] **Step 1: Deps module** — identical shape, `surface: 'academy'`, `fullChatUrl` via `MAIN_ORIGIN` from `$lib/appOrigins` (`${MAIN_ORIGIN}/ai?c=…`). Check the exact `X-JC-Surface` value academy sends — grep `x-jc-surface` in `apps/academy/src` and mirror it.
 
-- [ ] **Step 2: Extractor** — `/tracks/[slug]` → `track:{track.id}` with `context: {content_type:'academy_track', content_id, slug, title}` (track row comes from `page.data.track`); lesson player routes (`/tracks/[slug]/lessons/[id]` or whatever exists — check `find apps/academy/src/routes -name "+page.server.ts" | xargs grep -l lesson`) → `lesson:{id}` + `content_type:'academy_lesson'`; fallback `route:{route_id}`.
+- [ ] **Step 2: Extractor** — `/tracks/[slug]` → `track:{track.id}` with `context: {content_type:'academy_track', content_id, slug, title}` (track row comes from `page.data.track`); lesson player routes (`/tracks/[slug]/lessons/[id]` or whatever exists — check `find apps/academy/src/routes -name "+page.server.ts" | xargs grep -l lesson`) → `lesson:{id}` + `content_type:'academy_lesson'`; fallback `path:{pathname}`.
 
 - [ ] **Step 3: Layout wiring** — same FAB+panel pattern, `data.features['feature.japabot']`, `user={data.user}`.
 
@@ -1288,9 +1321,9 @@ export async function refreshCsrfToken(): Promise<void> {
 
 (`getCookie` already exists in `apps/docs/src/lib/api/client.ts:51`.)
 
-- [ ] **Step 2: Deps module** — `surface: 'docs'` (matches `JC_SURFACE` in `apps/docs/src/lib/api/client.ts:19`), csrf from the new adapter, `fullChatUrl` → absolute main-app URL. Docs has no `mainAppUrl` helper — check `apps/docs/src/lib` for a main-origin env (`PUBLIC_MAIN_ORIGIN`? grep for `MAIN_ORIGIN|mainAppUrl`); if absent, add `const MAIN_ORIGIN = (env.PUBLIC_MAIN_ORIGIN ?? '').replace(/\/$/,'')` fallback to `'https://japa.to'`? No — don't hardcode; derive from `env.PUBLIC_MAIN_ORIGIN` and document it; if the env is unset the CTA falls back to `'/ai'` (harmless on docs' own host — it 404s there; acceptable degraded path, or hide the CTA when no origin configured).
+- [ ] **Step 2: Deps module** — `surface: 'docs'` (matches `JC_SURFACE` in `apps/docs/src/lib/api/client.ts:19`), csrf from the new adapter, `fullChatUrl` → absolute main-app URL using the established docs pattern already used in 5 components (`GuestAuthButtons`, `UserDropdown`, `GuestHeader`, `GuestFooter`, `HelpfulWidget`): `(env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '')`.
 
-- [ ] **Step 3: Extractor** — `/docs/[audience]/[slug]` → `doc:{page.id}` with `context: {content_type:'doc', content_id, slug, title, doc_category: page.category, doc_subcategory: page.subcategory, audience}` (page row shape: `data.page` per `loadDocPage` — `id`, `title`, `slug`, `category`, `subcategory`, `audience`, `parent_id`); `/docs/api/[slug]` → same treatment from its data; index/category routes → `route:{route_id}`.
+- [ ] **Step 3: Extractor** — `/docs/[audience]/[slug]` → `doc:{page.id}` with `context: {content_type:'doc', content_id, slug, title, doc_category: page.category, doc_subcategory: page.subcategory, audience}` (page row shape: `data.page` per `loadDocPage` — `id`, `title`, `slug`, `category`, `subcategory`, `audience`, `parent_id`); `/docs/api/[slug]` → same treatment from its data; index/category routes → `path:{pathname}`.
 
 - [ ] **Step 4: Layout wiring** — FAB+panel block, `data.features?.['feature.japabot']`, `user={data.user}`. Hide FAB on `/docs/*/new` editor routes (panel competes with the authoring layout) — optional, harmless to show.
 
