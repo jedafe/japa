@@ -76,13 +76,20 @@ type Candidate struct {
 	TargetCountry *string
 }
 
-// recencyDecay returns an exponential decay in [0,1]; fresher content scores higher.
+// recencyDecay returns a true half-life decay in [0,1]: content that is
+// exactly halfLifeHours old scores 0.5 (previously exp(-t/halfLife) yielded
+// ~0.37 there — the parameter acted as a decay constant ~1.44× faster than
+// its name implied, ALG-011). Fresher content scores higher.
 func recencyDecay(ageHours, halfLifeHours float64) float64 {
 	if ageHours < 0 {
 		ageHours = 0
 	}
 
-	return math.Exp(-ageHours / halfLifeHours)
+	if halfLifeHours <= 0 {
+		return 0
+	}
+
+	return math.Pow(0.5, ageHours/halfLifeHours)
 }
 
 // ptrStrEquals reports whether a nullable candidate value matches a context value.
@@ -201,16 +208,29 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visit
 		roadmapSlugs = make(map[string]bool)
 	}
 
+	if sortMode == SortRelevant || (sortMode != SortLatest && sortMode != SortTop && sortMode != SortRising) {
+		// Pre-compute each candidate's score once — the sort comparator must
+		// be O(1), not recompute a multi-signal blend per comparison (ALG-017).
+		scores := make([]float64, len(cands))
+		for i := range cands {
+			scores[i] = computeForYouScore(cands[i], now, maxVel, vc, roadmapSlugs, w)
+		}
+
+		sort.SliceStable(cands, func(i, j int) bool {
+			return scores[i] > scores[j]
+		})
+
+		return cands
+	}
+
 	sort.SliceStable(cands, func(i, j int) bool {
 		switch sortMode {
-		case SortLatest:
-			return cands[i].CreatedAt.After(cands[j].CreatedAt)
 		case SortTop:
 			return cands[i].ReactionCount > cands[j].ReactionCount
 		case SortRising:
 			return cands[i].VelocityScore > cands[j].VelocityScore
-		default: // SortRelevant
-			return computeForYouScore(cands[i], now, maxVel, vc, roadmapSlugs, w) > computeForYouScore(cands[j], now, maxVel, vc, roadmapSlugs, w)
+		default: // SortLatest
+			return cands[i].CreatedAt.After(cands[j].CreatedAt)
 		}
 	})
 

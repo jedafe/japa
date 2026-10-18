@@ -475,10 +475,11 @@ func (s *Service) getProfileFeedItems(ctx context.Context, authorID, viewerID pg
 }
 
 // UpdateVelocityScores batch updates velocity scores for published content
-// < 30 days old. gravity is the decay exponent (default 1.8), hot-reloadable
-// via the feed.velocity.gravity system setting.
-func (s *Service) UpdateVelocityScores(ctx context.Context, gravity float64) error {
-	return s.store.updateVelocityScores(ctx, gravity)
+// < windowDays days old. gravity is the decay exponent (default 1.8),
+// hot-reloadable via the feed.velocity.gravity system setting; windowDays
+// comes from feed.velocity_window_days (default 30).
+func (s *Service) UpdateVelocityScores(ctx context.Context, gravity float64, windowDays int32) error {
+	return s.store.updateVelocityScores(ctx, gravity, windowDays)
 }
 
 // UpdateContentScore updates a single content's score.
@@ -1097,18 +1098,21 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 // This Go helper mirrors the SQL formula in feeds.sql (UpdateVelocityScores)
 // so the cron-written content_scores.velocity_score and any in-process
 // computation agree. Formula:
-// //	(reaction_count*2 + comment_count + view_count/100) / hours^gravity
+// //	(reaction_count*2 + comment_count + view_count/100) / (hours+2)^gravity
+// The +2 age smoothing prevents fresh posts from exploding to near-infinite
+// velocity (ALG-001); gravity is a parameter because it is hot-reloadable via
+// feed.velocity.gravity (default 1.8).
 // // Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
-func ComputeVelocity(reactionCount, commentCount, viewCount, bookmarkCount int32, hoursOld float64) float64 {
+func ComputeVelocity(reactionCount, commentCount, viewCount, bookmarkCount int32, hoursOld, gravity float64) float64 {
 	// Match the SQL formula: reactions*2 + comment + view/100.
 	// bookmark_count is not in the SQL formula; kept as a param for API compat.
 	engagement := float64(reactionCount*2) + float64(commentCount) + float64(viewCount)/100.0
 
-	if hoursOld <= 0 {
-		hoursOld = 1 // avoid division by zero for very fresh posts
+	if hoursOld < 0 {
+		hoursOld = 0 // clamp negative ages (clock skew)
 	}
 
-	denominator := math.Pow(hoursOld, 1.8)
+	denominator := math.Pow(hoursOld+2, gravity)
 	if denominator == 0 {
 		return 0
 	}

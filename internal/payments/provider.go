@@ -906,26 +906,13 @@ func (p *NOWPaymentsProvider) InitiatePayment(ctx context.Context, req PaymentRe
 }
 
 // VerifyWebhookSignature validates the NOWPayments webhook signature.
+// NOWPayments IPN signs HMAC-SHA512 of the key-sorted JSON payload (ALG-012).
 func (p *NOWPaymentsProvider) VerifyWebhookSignature(payload []byte, signature string) error {
 	if p.apiKey == "" {
-		return errors.New("nowpayments API key not configured (JC_NOWPAYMENTS_IPN_SECRET)")
+		return errors.New("nowpayments IPN secret not configured (JC_NOWPAYMENTS_IPN_SECRET)")
 	}
 
-	if signature == "" {
-		return errors.New("missing nowpayments webhook signature")
-	}
-
-	// NOWPayments IPN sends HMAC-SHA256 of the payload using the IPN secret.
-	// The signature is sent in the x-nowpayments-sig header as a hex-encoded hash.
-	mac := hmac.New(sha256.New, []byte(p.apiKey))
-	mac.Write(payload)
-	expected := hex.EncodeToString(mac.Sum(nil))
-
-	if !hmac.Equal([]byte(signature), []byte(expected)) {
-		return errors.New("invalid nowpayments webhook signature")
-	}
-
-	return nil
+	return verifyNOWPaymentsSignature(payload, signature, p.apiKey)
 }
 
 // ProcessWebhookEvent processes a NOWPayments webhook event.

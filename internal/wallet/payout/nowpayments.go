@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -163,11 +164,77 @@ func (p *NOWPaymentsPayoutProvider) InitiatePayout(ctx context.Context, req Payo
 	}, nil
 }
 
-// VerifyWebhookSignature validates a NOWPayments IPN HMAC-SHA256 signature.
-// The signature is sent in the x-nowpayments-sig header as a hex-encoded hash.
-// The apiKey here must be the IPN secret (JC_NOWPAYMENTS_IPN_SECRET) —
-// server.go wires payout and inbound providers with their own credentials,
-// never substituted.
+// PayoutStatus implements StatusProvider (ALG-005) via GET /v1/payout/{id}.
+// NOWPayments payout statuses: waiting, processing, sending, finished,
+// failed, rejected. The reconcile task maps these onto the wallet
+// withdrawal state machine (pending/processing/completed/failed).
+func (p *NOWPaymentsPayoutProvider) PayoutStatus(ctx context.Context, providerRef string) (PayoutResponse, error) {
+	if p.apiKey == "" {
+		return PayoutResponse{}, errors.New("nowpayments API key not configured")
+	}
+
+	providerRef = strings.TrimSpace(providerRef)
+	if providerRef == "" {
+		return PayoutResponse{}, errors.New("provider ref is required")
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://api.nowpayments.io/v1/payout/"+providerRef, nil)
+	if err != nil {
+		return PayoutResponse{}, fmt.Errorf("creating nowpayments status request: %w", err)
+	}
+
+	httpReq.Header.Set("x-api-key", p.apiKey)
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return PayoutResponse{}, fmt.Errorf("nowpayments payout status: %w", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return PayoutResponse{}, fmt.Errorf("reading nowpayments status response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return PayoutResponse{}, fmt.Errorf("nowpayments payout status error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var pr struct {
+		PayoutID string `json:"payout_id"`
+		Status   string `json:"status"`
+	}
+	if err := json.Unmarshal(respBody, &pr); err != nil {
+		return PayoutResponse{}, fmt.Errorf("parsing nowpayments status response: %w", err)
+	}
+
+	return PayoutResponse{
+		ProviderRef: providerRef,
+		Status:      mapNOWPaymentsPayoutStatus(pr.Status),
+	}, nil
+}
+
+// mapNOWPaymentsPayoutStatus normalizes NOWPayments payout statuses onto the
+// wallet withdrawal state machine.
+func mapNOWPaymentsPayoutStatus(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "finished":
+		return "completed"
+	case "failed", "rejected":
+		return "failed"
+	case "waiting", "processing", "sending":
+		return "processing"
+	default:
+		return "pending"
+	}
+}
+
+// VerifyWebhookSignature validates a NOWPayments IPN signature. Their scheme
+// (ALG-012) is HMAC-SHA512 of the payload canonicalized with object keys
+// sorted recursively — not HMAC-SHA256 of the raw body. The apiKey here must
+// be the IPN secret (JC_NOWPAYMENTS_IPN_SECRET).
 func (p *NOWPaymentsPayoutProvider) VerifyWebhookSignature(payload []byte, signature string) error {
 	if p.apiKey == "" {
 		return errors.New("nowpayments IPN secret not configured")
@@ -177,8 +244,13 @@ func (p *NOWPaymentsPayoutProvider) VerifyWebhookSignature(payload []byte, signa
 		return errors.New("missing nowpayments signature")
 	}
 
-	mac := hmac.New(sha256.New, []byte(p.apiKey))
-	mac.Write(payload)
+	canonical, err := canonicalizeSortedJSON(payload)
+	if err != nil {
+		return fmt.Errorf("canonicalizing ipn payload: %w", err)
+	}
+
+	mac := hmac.New(sha512.New, []byte(p.apiKey))
+	mac.Write(canonical)
 	expected := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(strings.TrimSpace(signature)), []byte(expected)) {
@@ -186,4 +258,77 @@ func (p *NOWPaymentsPayoutProvider) VerifyWebhookSignature(payload []byte, signa
 	}
 
 	return nil
+}
+
+// canonicalizeSortedJSON re-serializes a JSON document with every object's
+// keys sorted alphabetically (recursive), matching the NOWPayments IPN
+// signing convention.
+func canonicalizeSortedJSON(raw []byte) ([]byte, error) {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	if err := writeSortedJSON(&buf, v); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func writeSortedJSON(buf *bytes.Buffer, v any) error {
+	switch t := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		buf.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+
+			kb, _ := json.Marshal(k)
+			buf.Write(kb)
+			buf.WriteByte(':')
+
+			if err := writeSortedJSON(buf, t[k]); err != nil {
+				return err
+			}
+		}
+
+		buf.WriteByte('}')
+
+		return nil
+	case []any:
+		buf.WriteByte('[')
+
+		for i, e := range t {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+
+			if err := writeSortedJSON(buf, e); err != nil {
+				return err
+			}
+		}
+
+		buf.WriteByte(']')
+
+		return nil
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+
+		buf.Write(b)
+
+		return nil
+	}
 }

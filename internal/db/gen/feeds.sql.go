@@ -246,6 +246,7 @@ SELECT entity_id
 FROM follows
 WHERE follower_id = $1
  AND entity_type = $2
+ORDER BY created_at DESC
 `
 
 type GetFollowedEntityIDsByTypeParams struct {
@@ -254,6 +255,8 @@ type GetFollowedEntityIDsByTypeParams struct {
 }
 
 // Lean ID-only lookup of everything a user follows of one entity type.
+// Ordered newest-first so truncation (feed.max_followed_spaces_in_feed)
+// keeps the most recent follows rather than an arbitrary subset (ALG-018).
 func (q *Queries) GetFollowedEntityIDsByType(ctx context.Context, arg GetFollowedEntityIDsByTypeParams) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, getFollowedEntityIDsByType, arg.FollowerID, arg.EntityType)
 	if err != nil {
@@ -1701,7 +1704,7 @@ UPDATE content_scores cs
 SET velocity_score = CASE
  WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
  THEN GREATEST(0, (cs.reaction_count * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
- / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0, $1))
+ / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0 + 2, $1))
  ELSE 0
 END,
 last_scored_at = now()
@@ -1709,15 +1712,24 @@ FROM contents c
 WHERE cs.content_id = c.id
  AND c.status = 'published'
  AND c.deleted_at IS NULL
- AND c.created_at >= now() - interval '30 days'
+ AND c.published_at >= now() - make_interval(days => $2::int)
 `
 
-// Batch update velocity scores for published content < 30 days old.
-// velocity = (vote_score * 2 + comment_count + view_count / 100) /
-// (hours_since_publish ^ gravity)
+type UpdateVelocityScoresParams struct {
+	Gravity    float64 `json:"gravity"`
+	WindowDays int32   `json:"window_days"`
+}
+
+// Batch update velocity scores for published content < @window_days days old.
+// velocity = (reaction_count * 2 + comment_count + view_count / 100) /
+// (hours_since_publish + 2 ^ gravity) — the +2 smoothing prevents fresh posts
+// from exploding to near-infinite velocity (Section 32 formula).
 // gravity is passed as a parameter so it can be hot-reloaded from
-// system_settings (feed.velocity.gravity, default 1.8).
-func (q *Queries) UpdateVelocityScores(ctx context.Context, gravity float64) error {
-	_, err := q.db.Exec(ctx, updateVelocityScores, gravity)
+// system_settings (feed.velocity.gravity, default 1.8); the window comes from
+// feed.velocity_window_days (default 30).
+// Windowing uses published_at (not created_at) so long-lived drafts and
+// scheduled posts are scored from when they actually went live.
+func (q *Queries) UpdateVelocityScores(ctx context.Context, arg UpdateVelocityScoresParams) error {
+	_, err := q.db.Exec(ctx, updateVelocityScores, arg.Gravity, arg.WindowDays)
 	return err
 }

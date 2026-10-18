@@ -471,16 +471,20 @@ SET vote_score = @vote_score,
 WHERE content_id = @content_id;
 
 -- name: UpdateVelocityScores :exec
--- Batch update velocity scores for published content < 30 days old.
--- velocity = (vote_score * 2 + comment_count + view_count / 100) /
--- (hours_since_publish ^ gravity)
+-- Batch update velocity scores for published content < @window_days days old.
+-- velocity = (reaction_count * 2 + comment_count + view_count / 100) /
+-- (hours_since_publish + 2 ^ gravity) — the +2 smoothing prevents fresh posts
+-- from exploding to near-infinite velocity (Section 32 formula).
 -- gravity is passed as a parameter so it can be hot-reloaded from
--- system_settings (feed.velocity.gravity, default 1.8).
+-- system_settings (feed.velocity.gravity, default 1.8); the window comes from
+-- feed.velocity_window_days (default 30).
+-- Windowing uses published_at (not created_at) so long-lived drafts and
+-- scheduled posts are scored from when they actually went live.
 UPDATE content_scores cs
 SET velocity_score = CASE
  WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
  THEN GREATEST(0, (cs.reaction_count * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
- / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0, @gravity))
+ / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0 + 2, @gravity))
  ELSE 0
 END,
 last_scored_at = now()
@@ -488,7 +492,7 @@ FROM contents c
 WHERE cs.content_id = c.id
  AND c.status = 'published'
  AND c.deleted_at IS NULL
- AND c.created_at >= now() - interval '30 days';
+ AND c.published_at >= now() - make_interval(days => @window_days::int);
 
 -- name: DeleteFeedItemsByContent :exec
 DELETE FROM feeds WHERE content_id = @content_id;
@@ -501,10 +505,13 @@ SELECT COUNT(*)::int AS count FROM feeds WHERE user_id = @user_id;
 
 -- name: GetFollowedEntityIDsByType :many
 -- Lean ID-only lookup of everything a user follows of one entity type.
+-- Ordered newest-first so truncation (feed.max_followed_spaces_in_feed)
+-- keeps the most recent follows rather than an arbitrary subset (ALG-018).
 SELECT entity_id
 FROM follows
 WHERE follower_id = @follower_id
- AND entity_type = @entity_type;
+ AND entity_type = @entity_type
+ORDER BY created_at DESC;
 
 -- name: GetMemberSpaceIDs :many
 -- Space IDs the user is a member of (affinity signal, distinct from follows).

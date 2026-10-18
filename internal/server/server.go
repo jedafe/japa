@@ -503,9 +503,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	contentService.SetSettings(settingsService)
 
 	// Template-literal platform name: {{Platform_Name}}/{{Tenant_Name}}
-	// resolve from the hot-reloadable site.name setting (env config fallback).
+	// resolves from the hot-reloadable general.site_name setting (env config
+	// fallback). Key must match system-settings-catalog.md.
 	literals.SetPlatformNameResolver(func(ctx context.Context) string {
-		return settingsService.GetStringOr(ctx, "site.name", cfg.SiteName)
+		return settingsService.GetStringOr(ctx, "general.site_name", cfg.SiteName)
 	})
 
 	// Unified user tier service (regular/pro/business). Resolves effective tier

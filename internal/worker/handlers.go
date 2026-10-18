@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -10,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
 	"html/template"
 	"log/slog"
 	"math"
@@ -2165,13 +2165,24 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 }
 
 // fanOutToFollowers writes a feed row for each follower of the author, up to
-// the maxFanOut threshold. The author is skipped.
+// the feed.follower_fanout_cap (default 1000) — the fetch limit and the cap
+// now come from the same setting so admins can actually tune reach
+// (ALG-009). The author is skipped.
 func fanOutToFollowers(ctx context.Context, queries *gen.Queries, contentID, authorID, spaceID pgtype.UUID, contentType string, maxFanOut int) error {
+	followerCap := 1000
+	if appSettings != nil {
+		followerCap = appSettings.GetIntOr(ctx, "feed.follower_fanout_cap", 1000)
+	}
+
+	if followerCap <= 0 {
+		followerCap = 1000
+	}
+
 	followers, err := queries.GetFollowersByEntity(ctx, gen.GetFollowersByEntityParams{
 		EntityType: "user",
 		EntityID:   authorID,
 		PageOffset: 0,
-		PageLimit:  1000,
+		PageLimit:  int32(followerCap), // #nosec G115
 	})
 	if err != nil {
 		slog.Error("task:content:fan_out_to_feeds: failed to get followers", "author_id", authorID, "error", err)
@@ -2182,7 +2193,7 @@ func fanOutToFollowers(ctx context.Context, queries *gen.Queries, contentID, aut
 	fedCount := 0
 
 	for _, f := range followers {
-		if fedCount >= maxFanOut {
+		if fedCount >= followerCap {
 			break
 		}
 
@@ -2303,7 +2314,21 @@ func fanOutToBubble(ctx context.Context, queries *gen.Queries, contentID, spaceI
 
 // fanOutToSpaceMembers writes a feed row for every member of a space.
 // Individual insert failures are skipped (best-effort bubble fan-out).
+// The same push/pull threshold as fanOutToSpace applies (ALG-008): a
+// parent space over feed.fanout_threshold gets no forced pushes — its
+// members pull via the space feed query at read time.
 func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType string, maxFanOut int) int {
+	memberCount, err := gen.New(dbPool.Reader).CountSpaceMembers(ctx, spaceID)
+	if err != nil {
+		slog.Warn("task:content:fan_out_to_feeds: bubble member count failed", "space_id", spaceID, "error", err)
+		return 0
+	}
+
+	if memberCount > int64(maxFanOut) {
+		slog.Info("task:content:fan_out_to_feeds: bubble pull strategy (parent space over threshold)", "content_id", contentID, "space_id", spaceID, "member_count", memberCount)
+		return 0
+	}
+
 	memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
 		SpaceID: spaceID, LimitVal: int32(maxFanOut), // #nosec
 	})
@@ -2902,6 +2927,19 @@ func HandleWalletDeductCredits(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return walletProcessor.DeductCreditsTask(ctx, t.Payload())
+}
+
+// HandleWalletReconcilePayouts settles in-flight withdrawals against provider
+// status (ALG-005): completed → mark completed, failed → mark failed + refund.
+func HandleWalletReconcilePayouts(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("task:wallet:reconcile_payouts")
+
+	if walletProcessor == nil {
+		slog.Warn("task:wallet:reconcile_payouts: no processor registered, skipping")
+		return nil
+	}
+
+	return walletProcessor.ReconcilePayoutsTask(ctx, nil)
 }
 
 // HandleNewsletterSend sends a newsletter campaign to all subscribers
@@ -3816,18 +3854,22 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 	_ = parsePayload(t, &payload)
 
 	// Update velocity scores for recently active content.
-	// Velocity = (vote_score * 2 + comment_count + view_count / 100) /
-	// (hours_since_publish ^ gravity)
-	// gravity is hot-reloadable via feed.velocity.gravity (default 1.8).
+	// Velocity = (reaction_count * 2 + comment_count + view_count / 100) /
+	// (hours_since_publish + 2 ^ gravity) — +2 smoothing per §32 (ALG-001).
+	// gravity is hot-reloadable via feed.velocity.gravity (default 1.8);
+	// window via feed.velocity_window_days (default 30).
 	gravity := 1.8
+	windowDays := int32(30)
 	if appSettings != nil {
 		gravity = appSettings.GetFloatOr(ctx, "feed.velocity.gravity", 1.8)
+		windowDays = int32(appSettings.GetIntOr(ctx, "feed.velocity_window_days", 30)) // #nosec G115
 	}
 
 	q := gen.New(dbPool.Writer)
-	if err := q.UpdateVelocityScores(ctx,
-		gravity,
-	); err != nil {
+	if err := q.UpdateVelocityScores(ctx, gen.UpdateVelocityScoresParams{
+		Gravity:    gravity,
+		WindowDays: windowDays,
+	}); err != nil {
 		slog.Error("task:maintenance:update_velocity_scores: failed to update scores", "error", err)
 	}
 
@@ -5637,7 +5679,10 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 func creditCommissionTx(ctx context.Context, tx pgx.Tx, memberUserID, linkID, paymentID pgtype.UUID, commission int64, paymentIDStr string) (bool, error) {
 	qtx := gen.New(tx)
 
-	lockKey := "wallet:" + memberUserID.String()
+	// Lock key MUST match the wallet package's "wallet::<user>" form (double
+	// colon) — a single-colon key hashes to a different advisory lock and the
+	// two paths would run concurrently, corrupting resulting_balance (ALG-023).
+	lockKey := "wallet::" + memberUserID.String()
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return false, fmt.Errorf("affiliate:credit_commission: acquiring wallet lock: %w", err)
 	}
@@ -5647,6 +5692,12 @@ func creditCommissionTx(ctx context.Context, tx pgx.Tx, memberUserID, linkID, pa
 		LedgerType: "credits",
 	})
 	if err != nil {
+		// No rows = zero balance; a real error must propagate rather than
+		// write a ledger row with a wrong resulting_balance.
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return false, fmt.Errorf("affiliate:credit_commission: reading credits balance: %w", err)
+		}
+
 		currentBalance = 0
 	}
 

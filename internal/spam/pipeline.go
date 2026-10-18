@@ -45,6 +45,24 @@ const (
 	flagThreshold = 0.4
 )
 
+// hardBlockLayers are §41 layers that express a prohibition, not a
+// confidence signal. When one fires at or above hardBlockScore the check
+// short-circuits to Blocked — the weighted sum dilutes them below
+// blockThreshold otherwise (ALG-003): e.g. the Layer-3 new-user link
+// restriction must actually prevent the post, not contribute 0.095.
+var hardBlockLayers = map[string]bool{
+	"ip_reputation":  true, // blocked CIDR — Layer 5
+	"censored_words": true, // action=block pattern — Layer 7
+	"content_hash":   true, // exact duplicate — Layer 4
+	"new_user_links": true, // links before min posts — Layer 3
+}
+
+// hardBlockScore is the layer score at which a hardBlockLayer short-circuits
+// the pipeline to a block. 0.9 covers the deliberate "near-block" returns
+// (new_user_links=0.95, censored/block=1.0, duplicate hash=0.9, blocked
+// IP=1.0) while letting softer signals stay advisory.
+const hardBlockScore = 0.9
+
 // --- Default layer weights ---
 
 // DefaultWeights maps layer names to their contribution to the final score.
@@ -156,9 +174,15 @@ func (p *SpamPipeline) Check(ctx context.Context, req SpamCheckRequest) (SpamChe
 
 	var results []layerResult
 
+	hardBlock := false
+
 	for _, layer := range layers {
 		name, score, reasons := layer(ctx, req)
 		results = append(results, layerResult{name: name, score: score, reasons: reasons})
+
+		if hardBlockLayers[name] && score >= hardBlockScore {
+			hardBlock = true
+		}
 	}
 
 	// Aggregate: weighted sum across layers.
@@ -180,8 +204,8 @@ func (p *SpamPipeline) Check(ctx context.Context, req SpamCheckRequest) (SpamChe
 
 	return SpamCheckResult{
 		Score:   totalScore,
-		Blocked: totalScore >= blockThreshold,
-		Flagged: totalScore >= flagThreshold,
+		Blocked: hardBlock || totalScore >= blockThreshold,
+		Flagged: hardBlock || totalScore >= flagThreshold,
 		Reasons: allReasons,
 	}, nil
 }
@@ -238,11 +262,19 @@ func (p *SpamPipeline) checkRateLimit(ctx context.Context, req SpamCheckRequest)
 		return name, 0.0, nil
 	}
 
-	// Thresholds: >10 posts in 10 min → high, >5 → medium, else zero.
+	// Thresholds are hot-reloadable via moderation.spam_rate_* settings
+	// (ALG-021); defaults: >10 posts in 10 min → high, >5 → medium.
+	high := 10
+	medium := 5
+	if p.settings != nil {
+		high = p.settings.GetIntOr(ctx, "moderation.spam_rate_high_10min", high)
+		medium = p.settings.GetIntOr(ctx, "moderation.spam_rate_medium_10min", medium)
+	}
+
 	switch {
-	case count > 10:
+	case int(count) > high:
 		return name, 0.8, []string{fmt.Sprintf("rate limit: %d posts in 10 min (high)", count)}
-	case count > 5:
+	case int(count) > medium:
 		return name, 0.4, []string{fmt.Sprintf("rate limit: %d posts in 10 min (medium)", count)}
 	default:
 		return name, 0.0, nil
@@ -451,8 +483,9 @@ const newUserMinPostsForLinks = 3
 // moderation.new_account_threshold_days) may not include external links in
 // their posts until they have published at least moderation.new_user_min_posts_for_links
 // posts. This stops brand-new spam accounts from dropping links in their first
-// posts. The layer returns a near-block score (0.95) when violated, so the
-// pipeline's blockThreshold (default 0.6) rejects the post.
+// posts. The layer returns a near-block score (0.95) when violated, which the
+// hardBlockLayers short-circuit turns into an actual block (ALG-003) — the
+// weighted sum alone could never reach the 0.7 blockThreshold.
 // Ref: japaconnect-engineering/sections/41-spam-content-safety.md (Layer 3).
 func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 	const name = "new_user_links"

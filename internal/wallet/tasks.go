@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet/payout"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -249,6 +250,81 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 	}
 
 	return s.creditWallet(ctx, userID, ledgerType, OperationEarn, amount, source, reference, idempotencyKey)
+}
+
+// ── wallet:reconcile_payouts (ALG-005, Section 58) ─────────────────────────
+
+// ReconcilePayoutsTask is the Asynq task handler for wallet:reconcile_payouts.
+// It settles withdrawals stuck in pending/processing by asking each provider
+// for the live payout status.
+func (s *Service) ReconcilePayoutsTask(ctx context.Context, _ []byte) error {
+	return s.ReconcilePayouts(ctx)
+}
+
+// ReconcilePayouts polls in-flight withdrawals (pending / processing) and asks
+// each provider for the current payout status. Providers without a status API
+// (manual, manual_crypto, or any non-StatusProvider) are skipped — admins
+// settle those by hand. "completed" marks the withdrawal completed; "failed"
+// marks it failed and refunds the reserved credits.
+func (s *Service) ReconcilePayouts(ctx context.Context) error {
+	for _, st := range []string{WithdrawalStatusPending, WithdrawalStatusProcessing} {
+		status := st
+
+		rows, err := s.store.read.ListWithdrawals(ctx, gen.ListWithdrawalsParams{
+			Status:    &status,
+			PageLimit: 200,
+		})
+		if err != nil {
+			return fmt.Errorf("listing %s withdrawals: %w", st, err)
+		}
+
+		for _, w := range rows {
+			s.settleWithdrawal(ctx, w)
+		}
+	}
+
+	return nil
+}
+
+// settleWithdrawal resolves one in-flight withdrawal against its provider.
+func (s *Service) settleWithdrawal(ctx context.Context, w gen.WalletWithdrawal) {
+	provider, ok := s.payoutProviders[w.PayoutProvider]
+	if !ok {
+		return
+	}
+
+	sp, ok := provider.(payout.StatusProvider)
+	if !ok {
+		return
+	}
+
+	if w.ProviderRef == nil || *w.ProviderRef == "" {
+		return
+	}
+
+	resp, err := sp.PayoutStatus(ctx, *w.ProviderRef)
+	if err != nil {
+		slog.Warn("wallet: reconcile: payout status check failed",
+			"withdrawal_id", w.ID.String(), "provider", provider.Type(), "error", err)
+		return
+	}
+
+	switch resp.Status {
+	case WithdrawalStatusCompleted:
+		if _, err := s.store.write.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
+			ID: w.ID, Status: WithdrawalStatusCompleted,
+		}); err != nil {
+			slog.Error("wallet: reconcile: mark completed failed", "withdrawal_id", w.ID.String(), "error", err)
+		}
+	case WithdrawalStatusFailed:
+		if _, err := s.store.write.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
+			ID: w.ID, Status: WithdrawalStatusFailed,
+		}); err != nil {
+			slog.Error("wallet: reconcile: mark failed failed", "withdrawal_id", w.ID.String(), "error", err)
+		} else if rerr := s.refundWithdrawalCredits(ctx, w.UserID, w.CreditAmount, w.ID); rerr != nil {
+			slog.Error("wallet: reconcile: refund failed withdrawal", "withdrawal_id", w.ID.String(), "error", rerr)
+		}
+	}
 }
 
 // ── wallet:deduct_credits (Section 61 — Self-Serve Ads) ────────────────────

@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -264,6 +265,23 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		Reason:           nil,
 	})
 	if err != nil {
+		// A duplicate idempotency key means an equivalent event was already
+		// credited — a second activity_events row for the same
+		// (user, key, reference) arrives here when emitters replay. Treat it
+		// as already-processed instead of dead-lettering the task (ALG-019).
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			if merr := qtx.MarkEventProcessed(ctx, eventID); merr != nil {
+				return fmt.Errorf("marking duplicate event processed: %w", merr)
+			}
+
+			if cerr := tx.Commit(ctx); cerr != nil {
+				return fmt.Errorf("committing duplicate event skip: %w", cerr)
+			}
+
+			return nil
+		}
+
 		return fmt.Errorf("inserting ledger entry: %w", err)
 	}
 
@@ -452,12 +470,18 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, userID pgtype.UUID
 	// New points balance — remainder stays with the user.
 	newPointsBalance := currentPoints - pointsToDebit
 
-	// Get current credits balance within the transaction.
+	// Get current credits balance within the transaction. No rows = zero
+	// balance; a real error must propagate — writing a ledger entry with a
+	// wrong resulting_balance corrupts the denormalized trail (ALG-016).
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return 0, 0, fmt.Errorf("getting credits balance: %w", err)
+		}
+
 		currentCredits = 0
 	}
 

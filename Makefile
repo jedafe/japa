@@ -1,4 +1,4 @@
-.PHONY: build run test test-integration migrate docker-up docker-down sqlc-gen lint lint-fix lint-changed fmt vet gosec check clean
+.PHONY: build run test test-integration migrate docker-up docker-down sqlc-gen check-raw-sql lint lint-fix lint-changed fmt vet gosec check clean
 
 # Go binary path (for tools installed via go install)
 GOBIN := $(shell go env GOPATH)/bin
@@ -37,6 +37,10 @@ docker-down:
 # Generate Go code from SQL queries using sqlc
 sqlc-gen:
 	sqlc generate
+
+# Fail if inline raw-SQL call sites grow beyond scripts/raw_sql_baseline.txt
+check-raw-sql:
+	python3 scripts/check_raw_sql.py
 
 # Run the linter
 lint:

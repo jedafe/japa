@@ -539,11 +539,13 @@ func (s *Service) resolveBaseURL(ctx context.Context) string {
 }
 
 // emailSubject resolves the site name for the digest email subject line.
+// Reads general.site_name — the catalogued key (site.name was a stale key
+// that admin edits never populated).
 func (s *Service) emailSubject(ctx context.Context) string {
 	name := brand.Get()
 
 	if s.settings != nil {
-		if v := s.settings.GetStringOr(ctx, "site.name", ""); v != "" {
+		if v := s.settings.GetStringOr(ctx, "general.site_name", ""); v != "" {
 			name = v
 		}
 	}

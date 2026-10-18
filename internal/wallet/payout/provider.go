@@ -44,3 +44,13 @@ type Provider interface {
 	// Supports reports whether this provider can handle the given currency.
 	Supports(currency string) bool
 }
+
+// StatusProvider is an optional capability interface for providers that can
+// report the live status of an in-flight payout. The wallet:reconcile_payouts
+// task uses it to settle or refund withdrawals stuck in pending/processing
+// (ALG-005).
+type StatusProvider interface {
+	Provider
+	// PayoutStatus returns the latest known status for a provider reference.
+	PayoutStatus(ctx context.Context, providerRef string) (PayoutResponse, error)
+}

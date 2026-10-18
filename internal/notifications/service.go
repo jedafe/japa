@@ -56,7 +56,10 @@ func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.U
 	// still create a notification if the user had no saved preference.
 	prefs, err := s.resolveEffectivePreferences(ctx, recipientID)
 	if err == nil {
-		if ep, ok := prefs[nType]; ok && !ep.InApp {
+		// Only skip when every channel is off — a user with in-app disabled
+		// but push/email enabled must still get the batch so DispatchBatch
+		// can deliver on those channels (ALG-006).
+		if ep, ok := prefs[nType]; ok && !ep.InApp && !ep.Push && !ep.Email {
 			return DispatchResult{Action: "skipped"}, nil
 		}
 	}

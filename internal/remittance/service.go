@@ -517,10 +517,23 @@ func (s *Service) GetBestRate(ctx context.Context, sendCurrency, receiveCurrency
 		return nil, nil
 	}
 
+	// Rank by effective receive amount at a reference send amount
+	// (remit.reference_send_amount, default 500) — the best raw rate can lose
+	// on real payout once flat/pct fees apply (ALG-013).
+	refAmount := 500.0
+	if s.settings != nil {
+		if v := s.settings.GetFloatOr(ctx, "remit.reference_send_amount", refAmount); v > 0 {
+			refAmount = v
+		}
+	}
+
 	best := providers[0]
+	bestCalc := computeProviderCalculation(providers[0], refAmount)
+
 	for _, r := range providers[1:] {
-		if r.Rate > best.Rate {
+		if c := computeProviderCalculation(r, refAmount); c.ReceiveAmount > bestCalc.ReceiveAmount {
 			best = r
+			bestCalc = c
 		}
 	}
 

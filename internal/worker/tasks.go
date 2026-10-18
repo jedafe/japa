@@ -61,6 +61,7 @@ const (
 	TypeWalletProcessCreditPurchase   = "wallet:process_credit_purchase"
 	TypeWalletAwardPoints             = "wallet:award_points"
 	TypeWalletDeductCredits           = "wallet:deduct_credits" // #nosec
+	TypeWalletReconcilePayouts        = "wallet:reconcile_payouts"
 	TypeNewsletterSend                = "newsletter:send"
 	TypeScholarshipSyncFromGuide      = "scholarship:sync_from_guide"
 	TypeDocsGeneratePage              = "docs:generate_page"
@@ -235,6 +236,7 @@ var handlerRegistry = []struct {
 	{TypeWalletProcessCreditPurchase, HandleWalletProcessCreditPurchase},
 	{TypeWalletAwardPoints, HandleWalletAwardPoints},
 	{TypeWalletDeductCredits, HandleWalletDeductCredits},
+	{TypeWalletReconcilePayouts, HandleWalletReconcilePayouts},
 	{TypeNewsletterSend, HandleNewsletterSend},
 	{TypeScholarshipSyncFromGuide, HandleScholarshipSyncFromGuide},
 	{TypeDocsGeneratePage, HandleDocsGeneratePage},

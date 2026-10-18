@@ -358,8 +358,9 @@ WITH mentors AS (
  COALESCE(
  (SELECT COUNT(*)::double precision / NULLIF(array_length($4::text[], 1), 0)
  FROM unnest($4::text[]) AS a
- WHERE EXISTS (
- SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+ WHERE length(a) >= 2
+ AND EXISTS (
+ SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\'
  )),
  0
  ) AS area_overlap
@@ -401,8 +402,9 @@ WITH mentors AS (
  OR COALESCE(array_length($4::text[], 1), 0) = 0
  OR EXISTS (
  SELECT 1 FROM unnest($4::text[]) AS a
- WHERE EXISTS (
- SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+ WHERE length(a) >= 2
+ AND EXISTS (
+ SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\'
  )
  )
  )
@@ -512,8 +514,9 @@ WITH mentors AS (
  COALESCE(
  (SELECT COUNT(*)::double precision / NULLIF(array_length($4::text[], 1), 0)
  FROM unnest($4::text[]) AS a
- WHERE EXISTS (
- SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+ WHERE length(a) >= 2
+ AND EXISTS (
+ SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\'
  )),
  0
  ) AS area_overlap
@@ -555,8 +558,9 @@ WITH mentors AS (
  OR COALESCE(array_length($4::text[], 1), 0) = 0
  OR EXISTS (
  SELECT 1 FROM unnest($4::text[]) AS a
- WHERE EXISTS (
- SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+ WHERE length(a) >= 2
+ AND EXISTS (
+ SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\'
  )
  )
  )

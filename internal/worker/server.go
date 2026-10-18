@@ -411,6 +411,7 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// cron cluster; low queue. New uploads land as video_sources + contents
 	// via the same path as bulk import (no YouTube Data API key required).
 	schedule("20 * * * *", TypeVideoSyncChannels, 1*time.Hour)
+	schedule("*/15 * * * *", TypeWalletReconcilePayouts, 15*time.Minute)
 
 	return scheduler
 }

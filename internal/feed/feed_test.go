@@ -58,7 +58,7 @@ func TestComputeVelocity(t *testing.T) {
 	t.Parallel()
 
 	// Formula mirrors the SQL in feeds.sql (UpdateVelocityScores):
-	//   (reaction_count*2 + comment_count + view_count/100) / hours^1.8
+	//   (reaction_count*2 + comment_count + view_count/100) / (hours+2)^1.8
 	tests := []struct {
 		name          string
 		reactionCount int32
@@ -75,7 +75,7 @@ func TestComputeVelocity(t *testing.T) {
 			viewCount:     100,
 			bookmarkCount: 3,
 			hoursOld:      1,
-			want:          (10*2 + 5 + 100.0/100) / math.Pow(1, 1.8), // =26 / 1^1.8 = 26
+			want:          (10*2 + 5 + 100.0/100) / math.Pow(1+2, 1.8), // =26 / 1^1.8 = 26
 		},
 		{
 			name:          "old post with engagement",
@@ -84,7 +84,7 @@ func TestComputeVelocity(t *testing.T) {
 			viewCount:     500,
 			bookmarkCount: 10,
 			hoursOld:      24,
-			want:          (50*2 + 20 + 500.0/100) / math.Pow(24, 1.8), // =125 / 24^1.8
+			want:          (50*2 + 20 + 500.0/100) / math.Pow(24+2, 1.8), // =125 / 24^1.8
 		},
 		{
 			name:          "no engagement",
@@ -102,7 +102,7 @@ func TestComputeVelocity(t *testing.T) {
 			viewCount:     10,
 			bookmarkCount: 0,
 			hoursOld:      0.1,
-			want:          (1*2 + 0 + 10.0/100) / math.Pow(0.1, 1.8), // =2.1 / 0.1^1.8
+			want:          (1*2 + 0 + 10.0/100) / math.Pow(0.1+2, 1.8), // =2.1 / 0.1^1.8
 		},
 	}
 
@@ -110,7 +110,7 @@ func TestComputeVelocity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := ComputeVelocity(tt.reactionCount, tt.commentCount, tt.viewCount, tt.bookmarkCount, tt.hoursOld)
+			got := ComputeVelocity(tt.reactionCount, tt.commentCount, tt.viewCount, tt.bookmarkCount, tt.hoursOld, 1.8)
 			if math.Abs(got-tt.want) > 1e-6 {
 				t.Errorf("ComputeVelocity(%d, %d, %d, %d, %f) = %f, want %f",
 					tt.reactionCount, tt.commentCount, tt.viewCount, tt.bookmarkCount, tt.hoursOld, got, tt.want)
@@ -122,8 +122,8 @@ func TestComputeVelocity(t *testing.T) {
 func TestComputeVelocityDenominatorGrowsWithAge(t *testing.T) {
 	t.Parallel()
 	// As hoursOld increases, velocity should decrease for same engagement.
-	v1 := ComputeVelocity(10, 5, 100, 3, 1)
-	v2 := ComputeVelocity(10, 5, 100, 3, 24)
+	v1 := ComputeVelocity(10, 5, 100, 3, 1, 1.8)
+	v2 := ComputeVelocity(10, 5, 100, 3, 24, 1.8)
 
 	if v1 <= v2 {
 		t.Errorf("velocity at 1h (%f) should be > velocity at 24h (%f)", v1, v2)
@@ -133,8 +133,8 @@ func TestComputeVelocityDenominatorGrowsWithAge(t *testing.T) {
 func TestComputeVelocityEngagementScalesLinearly(t *testing.T) {
 	t.Parallel()
 	// Double engagement should double velocity for same age.
-	v1 := ComputeVelocity(10, 5, 100, 3, 5)
-	v2 := ComputeVelocity(20, 10, 200, 6, 5)
+	v1 := ComputeVelocity(10, 5, 100, 3, 5, 1.8)
+	v2 := ComputeVelocity(20, 10, 200, 6, 5, 1.8)
 
 	if math.Abs(v2-2*v1) > 1e-10 {
 		t.Errorf("double engagement should double velocity: v1=%f, v2=%f", v1, v2)
@@ -355,8 +355,8 @@ func TestProfileRowsToItemsEmpty(t *testing.T) {
 func TestComputeVelocityScoreUpdateLogic(t *testing.T) {
 	t.Parallel()
 	// Verify that velocity increases when engagement increases.
-	lowEngagement := ComputeVelocity(5, 2, 50, 1, 5)
-	highEngagement := ComputeVelocity(20, 10, 200, 5, 5)
+	lowEngagement := ComputeVelocity(5, 2, 50, 1, 5, 1.8)
+	highEngagement := ComputeVelocity(20, 10, 200, 5, 5, 1.8)
 
 	if lowEngagement >= highEngagement {
 		t.Errorf("higher engagement should yield higher velocity: low=%f, high=%f", lowEngagement, highEngagement)
@@ -366,8 +366,8 @@ func TestComputeVelocityScoreUpdateLogic(t *testing.T) {
 func TestComputeVelocityScoreDecay(t *testing.T) {
 	t.Parallel()
 	// Verify that velocity decays over time.
-	recent := ComputeVelocity(10, 5, 100, 3, 2)
-	old := ComputeVelocity(10, 5, 100, 3, 48)
+	recent := ComputeVelocity(10, 5, 100, 3, 2, 1.8)
+	old := ComputeVelocity(10, 5, 100, 3, 48, 1.8)
 
 	if recent <= old {
 		t.Errorf("recent velocity (%f) should be > old velocity (%f)", recent, old)

@@ -103,7 +103,10 @@ func creditAuthorCommissionTx(ctx context.Context, row gen.GetAffiliateContentCo
 
 	qtx := gen.New(tx)
 
-	lockKey := "wallet:" + row.AuthorUserID.String()
+	// Lock key MUST match the wallet package's "wallet::<user>" form (double
+	// colon) — a single-colon key hashes to a different advisory lock and the
+	// two paths would run concurrently, corrupting resulting_balance (ALG-023).
+	lockKey := "wallet::" + row.AuthorUserID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("affiliate: acquiring wallet lock: %w", err)
 	}
@@ -113,6 +116,12 @@ func creditAuthorCommissionTx(ctx context.Context, row gen.GetAffiliateContentCo
 		LedgerType: affiliateLedgerTypeCredits,
 	})
 	if err != nil {
+		// No rows = zero balance; a real error must propagate rather than
+		// write a ledger row with a wrong resulting_balance.
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("affiliate: reading credits balance: %w", err)
+		}
+
 		currentCredits = 0
 	}
 

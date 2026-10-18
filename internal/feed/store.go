@@ -195,10 +195,11 @@ func (s *Store) updateContentScore(ctx context.Context, params gen.UpdateContent
 // < 30 days old. gravity is the decay exponent (default 1.8).
 //
 
-func (s *Store) updateVelocityScores(ctx context.Context, gravity float64) error {
-	if err := s.write.UpdateVelocityScores(ctx,
-		gravity,
-	); err != nil {
+func (s *Store) updateVelocityScores(ctx context.Context, gravity float64, windowDays int32) error {
+	if err := s.write.UpdateVelocityScores(ctx, gen.UpdateVelocityScoresParams{
+		Gravity:    gravity,
+		WindowDays: windowDays,
+	}); err != nil {
 		return fmt.Errorf("updating velocity scores: %w", err)
 	}
 

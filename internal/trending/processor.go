@@ -354,7 +354,10 @@ func (p *Processor) computeTagTrending(ctx context.Context, window string, expir
 		SELECT
 			'tag',
 			t.id,
-			COALESCE(t.follower_count, 0)::float * $4 +
+			-- follower_count is a global signal; in geo-scoped snapshots it is
+			-- excluded so a globally popular tag can't top a local list off a
+			-- single local post (ALG-010).
+			(CASE WHEN $6::text IS NULL THEN COALESCE(t.follower_count, 0)::float * $4 ELSE 0 END) +
 				COUNT(DISTINCT CASE WHEN $6::text IS NULL OR g.content_id IS NOT NULL THEN c.id END)::float * $5 AS score,
 			$1,
 			$6,
@@ -456,12 +459,13 @@ func (p *Processor) computeUserTrending(ctx context.Context, window string, expi
 			c.author_id,
 			GREATEST(0,
 				SUM(
-					COALESCE(cs.view_count, 0) * $4 +
-					COALESCE(cs.comment_count, 0) * $5 +
-					COALESCE(cs.vote_score, 0) * $6 +
-					COALESCE(cs.bookmark_count, 0) * $7 +
-					(COALESCE(c.share_count, 0) + COALESCE(c.reshare_count, 0)) * $8
-				) / POWER(GREATEST(1, EXTRACT(EPOCH FROM (now() - MIN(c.published_at))) / 3600.0) + 2, $9)
+					(COALESCE(cs.view_count, 0) * $4 +
+					 COALESCE(cs.comment_count, 0) * $5 +
+					 COALESCE(cs.vote_score, 0) * $6 +
+					 COALESCE(cs.bookmark_count, 0) * $7 +
+					 (COALESCE(c.share_count, 0) + COALESCE(c.reshare_count, 0)) * $8)
+					/ POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0 + 2, $9)
+				)
 			) AS score,
 			$1,
 			$10,

@@ -587,6 +587,7 @@ var taskTypeCatalog = []struct {
 	// §85 Mutual Aid Board (ADR-093) — nightly expiry sweep, low tier.
 	{TypeMutualAidExpire, "low", "Expire mutual aid posts past their 30-day expires_at and notify owners 3 days before (§85)"},
 	// §INTEL — daily freshness decay cron, low tier (ADR-112).
+	{TypeWalletReconcilePayouts, "low", "Every 15m — settle in-flight withdrawals via provider status (§58, ALG-005)"},
 	{TypeIntelRefreshFreshness, "low", "Daily freshness decay + stale re-crawl enqueue"},
 }
 

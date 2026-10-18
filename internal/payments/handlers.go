@@ -7,9 +7,11 @@
 package payments
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -575,7 +578,7 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 		}
 	} else {
 		sig := r.Header.Get("x-nowpayments-sig")
-		if err := verifyHMACSHA256(body, sig, h.NOWPaymentsIPNKey); err != nil {
+		if err := verifyNOWPaymentsSignature(body, sig, h.NOWPaymentsIPNKey); err != nil {
 			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Invalid webhook signature")
 			return
 		}
@@ -1229,6 +1232,107 @@ func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 // Webhook Signature Verification Helpers
 // ---------------------------------------------------------------------------
+
+// verifyNOWPaymentsSignature validates a NOWPayments IPN signature. Their
+// scheme (ALG-012) is HMAC-SHA512 of the payload canonicalized with object
+// keys sorted recursively — NOT HMAC-SHA256 of the raw body. Verifying the
+// raw bytes can never match, which silently rejected every real IPN.
+func verifyNOWPaymentsSignature(payload []byte, signature, secret string) error {
+	if secret == "" {
+		return errors.New("nowpayments IPN secret not configured")
+	}
+
+	if signature == "" {
+		return errors.New("missing signature")
+	}
+
+	canonical, err := canonicalJSONSorted(payload)
+	if err != nil {
+		return fmt.Errorf("canonicalizing ipn payload: %w", err)
+	}
+
+	mac := hmac.New(sha512.New, []byte(secret))
+	mac.Write(canonical)
+	expected := hex.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(signature), []byte(expected)) {
+		return errors.New("invalid signature")
+	}
+
+	return nil
+}
+
+// canonicalJSONSorted re-serializes a JSON document with every object's keys
+// sorted alphabetically (recursive), matching the NOWPayments IPN convention.
+func canonicalJSONSorted(raw []byte) ([]byte, error) {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	if err := writeSortedJSON(&buf, v); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func writeSortedJSON(buf *bytes.Buffer, v any) error {
+	switch t := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		buf.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+
+			kb, _ := json.Marshal(k)
+			buf.Write(kb)
+			buf.WriteByte(':')
+
+			if err := writeSortedJSON(buf, t[k]); err != nil {
+				return err
+			}
+		}
+
+		buf.WriteByte('}')
+
+		return nil
+	case []any:
+		buf.WriteByte('[')
+
+		for i, e := range t {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+
+			if err := writeSortedJSON(buf, e); err != nil {
+				return err
+			}
+		}
+
+		buf.WriteByte(']')
+
+		return nil
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+
+		buf.Write(b)
+
+		return nil
+	}
+}
 
 // verifyHMACSHA256 computes HMAC-SHA256 of payload with the given secret and
 // compares it against the provided signature using constant-time comparison.

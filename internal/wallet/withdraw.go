@@ -270,8 +270,18 @@ func (s *Service) CreateWithdrawal(ctx context.Context, userID pgtype.UUID, inpu
 		return WithdrawalResult{}, fmt.Errorf("inserting withdrawal: %w", err)
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return WithdrawalResult{}, fmt.Errorf("committing withdrawal: %w", err)
+	}
+
 	providerRef := ""
 
+	// Initiate the payout AFTER the debit + withdrawal row are committed
+	// (ALG-004). A provider call inside the tx holds the per-user wallet
+	// advisory lock for the whole network round-trip, and a post-payout
+	// commit failure would send money with no record. Post-commit
+	// initiation plus a compensating mark-failed + refund keeps the ledger
+	// truthful either way.
 	if !requiresApproval && provider != nil {
 		// Manual providers are a no-op at creation time; they require an
 		// admin to review and mark the withdrawal completed. Real providers
@@ -281,31 +291,17 @@ func (s *Service) CreateWithdrawal(ctx context.Context, userID pgtype.UUID, inpu
 			if perr != nil {
 				slog.Error("payout initiation failed; marking withdrawal failed and refunding credits", "withdrawal_id", withdrawal.ID, "error", perr)
 
-				_, uerr := qtx.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
-					ID: withdrawal.ID,
-
+				if _, uerr := s.store.write.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
+					ID:     withdrawal.ID,
 					Status: WithdrawalStatusFailed,
-				})
-				if uerr != nil {
+				}); uerr != nil {
 					slog.Error("failed to update withdrawal status to failed", "withdrawal_id", withdrawal.ID, "error", uerr)
 				}
 
-				ref := withdrawal.ID.String()
-				reason := "payout initiation failed - refund"
+				status = WithdrawalStatusFailed
 
-				_, lerr := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-					UserID:           userID,
-					LedgerType:       LedgerTypeCredits,
-					Operation:        OperationRefund,
-					Amount:           input.CreditAmount,
-					ResultingBalance: currentBalance,
-					Reference:        &ref,
-					Reason:           &reason,
-				})
-				if lerr != nil {
-					slog.Error("failed to insert refund ledger entry for failed auto payout", "withdrawal_id", withdrawal.ID, "error", lerr)
-				} else {
-					status = WithdrawalStatusFailed
+				if rerr := s.refundWithdrawalCredits(ctx, userID, input.CreditAmount, withdrawal.ID); rerr != nil {
+					slog.Error("failed to refund failed auto payout", "withdrawal_id", withdrawal.ID, "error", rerr)
 				}
 			} else {
 				providerRef = resp.ProviderRef
@@ -316,21 +312,23 @@ func (s *Service) CreateWithdrawal(ctx context.Context, userID pgtype.UUID, inpu
 					status = WithdrawalStatusProcessing
 				}
 
-				_, uerr := qtx.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
-					ID: withdrawal.ID,
-
-					Status:      status,
-					ProviderRef: &providerRef,
-				})
+				// Persist the provider ref before returning — without it the
+				// reconcile task cannot track this payout (ALG-005). Retry
+				// once, then page ops via the error tracker: a payout is
+				// in flight but untraceable.
+				uerr := s.persistPayoutStatus(ctx, withdrawal.ID, status, providerRef)
 				if uerr != nil {
-					slog.Error("failed to update withdrawal provider ref", "withdrawal_id", withdrawal.ID, "error", uerr)
+					uerr = s.persistPayoutStatus(ctx, withdrawal.ID, status, providerRef)
+				}
+
+				if uerr != nil {
+					slog.Error("withdrawal provider ref NOT persisted — payout in flight but untracked",
+						"withdrawal_id", withdrawal.ID, "provider_ref", providerRef, "error", uerr)
+					errpkg.CaptureException(fmt.Errorf("withdrawal %s provider_ref %q not persisted: %w",
+						withdrawal.ID, providerRef, uerr))
 				}
 			}
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return WithdrawalResult{}, fmt.Errorf("committing withdrawal: %w", err)
 	}
 
 	return WithdrawalResult{
@@ -530,11 +528,14 @@ func (s *Service) resolveWithdrawalStatus(ctx context.Context, userID pgtype.UUI
 		return WithdrawalStatusPendingApproval, true, nil
 	}
 
-	if group.AutoWithdrawalLimit == nil {
+	// A positive limit is required for auto-approval — a limit of 0 means
+	// "never auto-approve", not "no limit" (ALG-015). Reading 0 as
+	// unlimited would auto-approve arbitrary amounts.
+	if group.AutoWithdrawalLimit == nil || *group.AutoWithdrawalLimit <= 0 {
 		return WithdrawalStatusPendingApproval, true, nil
 	}
 
-	if *group.AutoWithdrawalLimit == 0 || creditAmount <= int64(*group.AutoWithdrawalLimit) {
+	if creditAmount <= int64(*group.AutoWithdrawalLimit) {
 		return WithdrawalStatusPending, false, nil
 	}
 
@@ -692,7 +693,22 @@ func (s *Service) RejectWithdrawal(ctx context.Context, adminUserID, withdrawalI
 	}, nil
 }
 
+// persistPayoutStatus records the post-commit payout status + provider ref on
+// a withdrawal row. Kept as a small standalone helper so the call site can
+// retry it once (ALG-005) — a lost provider_ref orphans an in-flight payout.
+func (s *Service) persistPayoutStatus(ctx context.Context, withdrawalID pgtype.UUID, status, providerRef string) error {
+	_, err := s.store.write.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
+		ID:          withdrawalID,
+		Status:      status,
+		ProviderRef: &providerRef,
+	})
+	return err
+}
+
 // refundWithdrawalCredits re-credits the user's wallet when a payout fails.
+// Takes the same per-user advisory lock as every other balance mutation
+// (ALG-007) — without it a concurrent spend could interleave the
+// GetLatestBalance read and write a wrong resulting_balance snapshot.
 func (s *Service) refundWithdrawalCredits(ctx context.Context, userID pgtype.UUID, creditAmount int64, withdrawalID pgtype.UUID) error {
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
@@ -702,6 +718,11 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, userID pgtype.UUI
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
+
+	lockKey := "wallet::" + userID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return fmt.Errorf("acquiring wallet lock: %w", err)
+	}
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 		UserID:     userID,
