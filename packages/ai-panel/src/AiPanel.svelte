@@ -15,7 +15,6 @@
 		Square,
 		ExternalLink,
 		Loader2,
-		Wrench,
 		CheckCircle2,
 		XCircle,
 		AlertCircle
@@ -61,7 +60,7 @@
 	let composer = $state('');
 	let loadedAnchor = $state('');
 	let agentCapable = $state<boolean | null>(null);
-	let toolsOn = $state(true); // the panel's purpose is agent ops
+	let mode = $state<'chat' | 'agent'>('agent'); // the panel's purpose is agent ops
 	let loadingThread = $state(false);
 	let turnSeq = 0;
 	let activeAbort: AbortController | null = null;
@@ -284,7 +283,7 @@
 				conversationId: conversationId || undefined,
 				anchor: conversationId ? undefined : anchor,
 				context: ctxNow?.context,
-				tools: agentCapable && toolsOn ? { enabled: true } : { enabled: false },
+				tools: agentCapable && mode === 'agent' ? { enabled: true } : { enabled: false },
 				signal: abort.signal
 			})) {
 				handleEvent(ev, live);
@@ -324,6 +323,15 @@
 <svelte:window onkeydown={open ? onEsc : undefined} />
 
 {#if open}
+	<!-- §115: scrim — click outside the panel closes it. A <button> keeps
+	     the a11y linter happy (interactive element, labeled). -->
+	<button
+		type="button"
+		class="ai-panel-backdrop"
+		aria-label={pt('ai.panel.close', 'Close')}
+		tabindex="-1"
+		onclick={onclose}
+	></button>
 	<div
 		class="ai-panel"
 		role="dialog"
@@ -429,16 +437,32 @@
 
 			<footer class="ai-panel-composer">
 				{#if agentCapable}
-					<button
-						type="button"
-						class="ai-panel-iconbtn"
-						class:ai-tools-on={toolsOn}
-						aria-pressed={toolsOn}
-						title={pt('ai.panel.tools', 'Agent tools')}
-						onclick={() => (toolsOn = !toolsOn)}
+					<!-- Chat vs Agent mode: agent turns get the tool catalog and
+					     can act on the current page; chat turns are read-only. -->
+					<div
+						class="ai-mode-switch"
+						role="radiogroup"
+						aria-label={pt('ai.panel.mode', 'Mode')}
 					>
-						<Wrench size={15} />
-					</button>
+						<button
+							type="button"
+							role="radio"
+							aria-checked={mode === 'chat'}
+							class:active={mode === 'chat'}
+							onclick={() => (mode = 'chat')}
+						>
+							{pt('ai.panel.mode_chat', 'Chat')}
+						</button>
+						<button
+							type="button"
+							role="radio"
+							aria-checked={mode === 'agent'}
+							class:active={mode === 'agent'}
+							onclick={() => (mode = 'agent')}
+						>
+							{pt('ai.panel.mode_agent', 'Agent')}
+						</button>
+					</div>
 				{/if}
 				<textarea
 					bind:value={composer}
@@ -473,6 +497,23 @@
 {/if}
 
 <style>
+	.ai-panel-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgb(0 0 0 / 0.25);
+		border: 0;
+		padding: 0;
+		z-index: 55;
+		animation: ai-fade-in 0.15s ease-out;
+	}
+	@keyframes ai-fade-in {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
 	.ai-panel {
 		position: fixed;
 		top: 0;
@@ -548,8 +589,30 @@
 		color: var(--color-text);
 		background: var(--color-surface-subtle);
 	}
-	.ai-tools-on {
-		color: var(--color-primary);
+	.ai-mode-switch {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		padding: 2px;
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		background: var(--color-surface-subtle);
+		flex-shrink: 0;
+	}
+	.ai-mode-switch button {
+		font-size: 0.6875rem;
+		font-weight: 500;
+		line-height: 1;
+		padding: 0.3125rem 0.5rem;
+		border-radius: 999px;
+		color: var(--color-muted);
+		transition:
+			background 0.15s,
+			color 0.15s;
+	}
+	.ai-mode-switch button.active {
+		background: var(--color-primary);
+		color: var(--color-primary-contrast);
 	}
 	.ai-panel-guest {
 		flex: 1;

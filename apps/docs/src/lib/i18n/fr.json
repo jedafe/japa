@@ -532,5 +532,8 @@
 	"ai.panel.thinking": "Réflexion…",
 	"ai.panel.title": "Japa AI",
 	"ai.panel.tools": "Outils agent",
-	"ai.panel.welcome": "Posez-moi une question — je vois la page affichée."
+	"ai.panel.welcome": "Posez-moi une question — je vois la page affichée.",
+	"ai.panel.mode": "Mode",
+	"ai.panel.mode_chat": "Discussion",
+	"ai.panel.mode_agent": "Agent"
 }
