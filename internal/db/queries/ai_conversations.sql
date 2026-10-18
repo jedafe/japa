@@ -11,8 +11,14 @@
 -- =====================================================================
 
 -- name: CreateAIConversation :one
-INSERT INTO ai_conversations (user_id, title, project_id) VALUES (@user_id, @title, @project_id)
+INSERT INTO ai_conversations (user_id, title, project_id, anchor) VALUES (@user_id, @title, @project_id, sqlc.narg(anchor))
 RETURNING *;
+
+-- §115 AI Quick Panel: anchored (page-scoped) thread lookup for the
+-- slide-in panel — one live conversation per (user_id, anchor).
+-- name: GetAIConversationByAnchor :one
+SELECT * FROM ai_conversations
+WHERE user_id = @user_id AND anchor = @anchor AND deleted_at IS NULL;
 
 -- Owner-scoped fetch — a foreign or unknown id returns no rows so the
 -- caller can fall back to creating a fresh conversation (legacy clients

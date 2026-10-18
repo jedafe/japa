@@ -62,14 +62,15 @@ func (q *Queries) CountAIConversationsForUser(ctx context.Context, userID pgtype
 const createAIConversation = `-- name: CreateAIConversation :one
 
 
-INSERT INTO ai_conversations (user_id, title, project_id) VALUES ($1, $2, $3)
-RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id
+INSERT INTO ai_conversations (user_id, title, project_id, anchor) VALUES ($1, $2, $3, $4)
+RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id, anchor
 `
 
 type CreateAIConversationParams struct {
 	UserID    pgtype.UUID `json:"user_id"`
 	Title     string      `json:"title"`
 	ProjectID pgtype.UUID `json:"project_id"`
+	Anchor    *string     `json:"anchor"`
 }
 
 // ai_conversations.sql — Unified Japa AI transcript store (ADR-130).
@@ -83,7 +84,12 @@ type CreateAIConversationParams struct {
 // Conversations
 // =====================================================================
 func (q *Queries) CreateAIConversation(ctx context.Context, arg CreateAIConversationParams) (AiConversation, error) {
-	row := q.db.QueryRow(ctx, createAIConversation, arg.UserID, arg.Title, arg.ProjectID)
+	row := q.db.QueryRow(ctx, createAIConversation,
+		arg.UserID,
+		arg.Title,
+		arg.ProjectID,
+		arg.Anchor,
+	)
 	var i AiConversation
 	err := row.Scan(
 		&i.ID,
@@ -94,6 +100,7 @@ func (q *Queries) CreateAIConversation(ctx context.Context, arg CreateAIConversa
 		&i.DeletedAt,
 		&i.LegacyRef,
 		&i.ProjectID,
+		&i.Anchor,
 	)
 	return i, err
 }
@@ -103,7 +110,7 @@ const createAIConversationWithLegacyRef = `-- name: CreateAIConversationWithLega
 INSERT INTO ai_conversations (id, user_id, title, legacy_ref, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT DO NOTHING
-RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id
+RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id, anchor
 `
 
 type CreateAIConversationWithLegacyRefParams struct {
@@ -142,12 +149,42 @@ func (q *Queries) CreateAIConversationWithLegacyRef(ctx context.Context, arg Cre
 		&i.DeletedAt,
 		&i.LegacyRef,
 		&i.ProjectID,
+		&i.Anchor,
+	)
+	return i, err
+}
+
+const getAIConversationByAnchor = `-- name: GetAIConversationByAnchor :one
+SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id, anchor FROM ai_conversations
+WHERE user_id = $1 AND anchor = $2 AND deleted_at IS NULL
+`
+
+type GetAIConversationByAnchorParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Anchor *string     `json:"anchor"`
+}
+
+// §115 AI Quick Panel: anchored (page-scoped) thread lookup for the
+// slide-in panel — one live conversation per (user_id, anchor).
+func (q *Queries) GetAIConversationByAnchor(ctx context.Context, arg GetAIConversationByAnchorParams) (AiConversation, error) {
+	row := q.db.QueryRow(ctx, getAIConversationByAnchor, arg.UserID, arg.Anchor)
+	var i AiConversation
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Title,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.LegacyRef,
+		&i.ProjectID,
+		&i.Anchor,
 	)
 	return i, err
 }
 
 const getAIConversationByLegacyRef = `-- name: GetAIConversationByLegacyRef :one
-SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id FROM ai_conversations
+SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id, anchor FROM ai_conversations
 WHERE user_id = $1 AND legacy_ref = $2
 `
 
@@ -171,12 +208,13 @@ func (q *Queries) GetAIConversationByLegacyRef(ctx context.Context, arg GetAICon
 		&i.DeletedAt,
 		&i.LegacyRef,
 		&i.ProjectID,
+		&i.Anchor,
 	)
 	return i, err
 }
 
 const getAIConversationForUser = `-- name: GetAIConversationForUser :one
-SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id FROM ai_conversations
+SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id, anchor FROM ai_conversations
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 `
 
@@ -200,6 +238,7 @@ func (q *Queries) GetAIConversationForUser(ctx context.Context, arg GetAIConvers
 		&i.DeletedAt,
 		&i.LegacyRef,
 		&i.ProjectID,
+		&i.Anchor,
 	)
 	return i, err
 }
@@ -511,7 +550,7 @@ func (q *Queries) ListAIConversationMessages(ctx context.Context, arg ListAIConv
 }
 
 const listAIConversationsForUser = `-- name: ListAIConversationsForUser :many
-SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at, c.deleted_at, c.legacy_ref, c.project_id,
+SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at, c.deleted_at, c.legacy_ref, c.project_id, c.anchor,
     (SELECT COUNT(*) FROM ai_messages m WHERE m.conversation_id = c.id) AS turn_count,
     COALESCE((SELECT m.content FROM ai_messages m WHERE m.conversation_id = c.id
      ORDER BY m.created_at DESC LIMIT 1), '')::text AS last_message
@@ -536,6 +575,7 @@ type ListAIConversationsForUserRow struct {
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 	LegacyRef   string             `json:"legacy_ref"`
 	ProjectID   pgtype.UUID        `json:"project_id"`
+	Anchor      *string            `json:"anchor"`
 	TurnCount   int64              `json:"turn_count"`
 	LastMessage string             `json:"last_message"`
 }
@@ -561,6 +601,7 @@ func (q *Queries) ListAIConversationsForUser(ctx context.Context, arg ListAIConv
 			&i.DeletedAt,
 			&i.LegacyRef,
 			&i.ProjectID,
+			&i.Anchor,
 			&i.TurnCount,
 			&i.LastMessage,
 		); err != nil {

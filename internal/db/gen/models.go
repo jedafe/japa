@@ -477,6 +477,7 @@ type AiConversation struct {
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	LegacyRef string             `json:"legacy_ref"`
 	ProjectID pgtype.UUID        `json:"project_id"`
+	Anchor    *string            `json:"anchor"`
 }
 
 type AiHitlReview struct {
