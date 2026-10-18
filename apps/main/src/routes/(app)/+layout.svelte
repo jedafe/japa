@@ -17,6 +17,10 @@
 	import { chatTemplateRail } from '$lib/ai/chatTemplateRail.svelte';
 	import { Sparkles } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
+	import { ensureAiPanelDeps } from '$lib/ai/panel';
+	import { resolveAiPageContext } from '$lib/ai/pageContext';
+	import { afterNavigate } from '$app/navigation';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -154,7 +158,21 @@
 		data.features?.['feature.japabot'] === true &&
 			!page.route.id?.startsWith('/(app)/ai')
 	);
+
+	// §115 AI Quick Panel: the FAB now toggles a page-aware slide-in panel
+	// instead of linking to /ai. Deps init on every page — /ai hides the
+	// FAB but JapaAIChat streams through the same package factory.
+	let aiPanelOpen = $state(false);
+
+	// Page-context registry: recompute on every path/data change; cleared
+	// while navigating so a stale entity context can't leak across pages.
+	$effect(() => {
+		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
+	});
+	afterNavigate(() => setAiPageContext(null));
+
 	onMount(() => {
+		ensureAiPanelDeps();
 		if (data.user) realtime.connect();
 		// Register the PWA service worker so push subscriptions can be created.
 		// Ref: japaconnect-engineering/sections/35-notification-system.md
@@ -289,16 +307,19 @@
 		<MobileBottomTabBar user={data.user} features={data.features} menu={data.mobileMenu} />
 	{/if}
 	{#if showChatFab}
-		<!-- §23 JapaBot FAB — sits above the mobile tab bar (bottom-20),
-		     flush to the right edge on desktop (bottom-5). -->
-		<a
-			href="/ai"
-			aria-label={t('ai.chat.title') ?? 'JapaBot Chat'}
-			title={t('ai.chat.title') ?? 'JapaBot Chat'}
+		<!-- §115 Japa AI FAB — opens the page-aware quick panel. Sits above
+		     the mobile tab bar (bottom-20), flush right on desktop. -->
+		<button
+			type="button"
+			onclick={() => (aiPanelOpen = !aiPanelOpen)}
+			aria-label={t('ai.panel.title', 'Japa AI')}
+			title={t('ai.panel.title', 'Japa AI')}
+			aria-expanded={aiPanelOpen}
 			class="fixed bottom-20 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"
 		>
 			<Sparkles size={22} />
-		</a>
+		</button>
+		<AiPanel open={aiPanelOpen} user={data.user ?? null} onclose={() => (aiPanelOpen = false)} />
 	{/if}
 	{#if tourMounted}
 		<!-- §09 Product Tour: steps come from onboarding.tour_steps (admin-managed) -->

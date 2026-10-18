@@ -324,7 +324,7 @@
 <svelte:window onkeydown={open ? onEsc : undefined} />
 
 {#if open}
-	<aside
+	<div
 		class="ai-panel"
 		role="dialog"
 		aria-label={pt('ai.panel.title', 'Japa AI')}
@@ -469,7 +469,7 @@
 				{/if}
 			</footer>
 		{/if}
-	</aside>
+	</div>
 {/if}
 
 <style>

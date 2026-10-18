@@ -7,6 +7,7 @@
 	// Ref: japaconnect-engineering/adr/ADR-130-unified-japa-ai.md
 
 	import { t, siteName} from '$lib/i18n';
+	import { page } from '$app/state';
 	import { Sparkles } from 'lucide-svelte';
 	import JapaAIChat from '$lib/ai/JapaAIChat.svelte';
 	import type { PageData } from './$types';
@@ -62,6 +63,7 @@
 				data.user?.permissions?.includes('*') ||
 				data.user?.permissions?.includes('agent.skip_hitl')
 			)}
+			initialConversationId={page.url.searchParams.get('c') ?? undefined}
 		/>
 	</div>
 {/if}

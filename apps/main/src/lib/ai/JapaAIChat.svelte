@@ -111,6 +111,9 @@
 		/** Actor holds agent.skip_hitl — high-stakes categories don't force
 		 * the in_review status restriction in the template editor (§103). */
 		canSkipHitl?: boolean;
+		/** §115: open this thread on mount — the panel's "Open in Japa AI"
+		 * CTA deep-links /ai?c={conversation_id}. */
+		initialConversationId?: string;
 	}
 
 	let {
@@ -127,7 +130,8 @@
 		maxTags,
 		statusOptions,
 		visibilityOptions,
-		canSkipHitl = false
+		canSkipHitl = false,
+		initialConversationId = undefined
 	}: Props = $props();
 
 	type ToolStatus = 'pending' | 'success' | 'error' | 'unauthorized' | 'privacy_blocked' | 'hitl_queued';
@@ -849,6 +853,10 @@
 	}
 
 	onMount(() => {
+		// §115: ?c= deep link from the quick panel — land on the anchored
+		// thread. A bad/foreign id fails soft via loadConversation's error
+		// path, same as a bad sidebar click.
+		if (initialConversationId) void loadConversation(initialConversationId);
 		// Open the rail on desktop (it's a static column there); on small
 		// screens it stays closed as an on-demand overlay.
 		chatTemplateRail.mounted = true;
