@@ -5942,5 +5942,20 @@
   "settings.profile.marital_married": "Married",
   "settings.profile.marital_divorced": "Divorced",
   "settings.profile.marital_widowed": "Widowed",
-  "settings.profile.marital_other": "Other"
+  "settings.profile.marital_other": "Other",
+  "ai.panel.bg_running": "Working in the background…",
+  "ai.panel.cancel": "Cancel",
+  "ai.panel.close": "Close",
+  "ai.panel.error": "Something went wrong. Try again.",
+  "ai.panel.open_full": "Open in Japa AI",
+  "ai.panel.placeholder": "Ask about this page…",
+  "ai.panel.send": "Send",
+  "ai.panel.sign_in": "Sign in to chat",
+  "ai.panel.sign_in_help": "Japa AI is available to signed-in members.",
+  "ai.panel.stop": "Stop",
+  "ai.panel.stream_closed": "Stream closed.",
+  "ai.panel.thinking": "Thinking…",
+  "ai.panel.title": "Japa AI",
+  "ai.panel.tools": "Agent tools",
+  "ai.panel.welcome": "Ask me anything — I can see what page you're on."
 }

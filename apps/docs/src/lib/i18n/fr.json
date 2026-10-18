@@ -517,5 +517,20 @@
 	"landing.guide_one": "guide",
 	"landing.guide_other": "guides",
 	"landing.page_one": "page",
-	"landing.page_other": "pages"
+	"landing.page_other": "pages",
+	"ai.panel.bg_running": "Traitement en arrière-plan…",
+	"ai.panel.cancel": "Annuler",
+	"ai.panel.close": "Fermer",
+	"ai.panel.error": "Une erreur est survenue. Réessayez.",
+	"ai.panel.open_full": "Ouvrir dans Japa AI",
+	"ai.panel.placeholder": "Posez une question sur cette page…",
+	"ai.panel.send": "Envoyer",
+	"ai.panel.sign_in": "Connectez-vous pour discuter",
+	"ai.panel.sign_in_help": "Japa AI est réservé aux membres connectés.",
+	"ai.panel.stop": "Arrêter",
+	"ai.panel.stream_closed": "Flux interrompu.",
+	"ai.panel.thinking": "Réflexion…",
+	"ai.panel.title": "Japa AI",
+	"ai.panel.tools": "Outils agent",
+	"ai.panel.welcome": "Posez-moi une question — je vois la page affichée."
 }
