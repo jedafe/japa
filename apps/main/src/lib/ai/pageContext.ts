@@ -84,21 +84,34 @@ function wikiPageContext(d: Data): AiPageContext | null {
 
 export function resolveAiPageContext(pathname: string, data: Data): AiPageContext {
 	const segs = pathname.split('/').filter(Boolean);
+	// During client navigation pathname updates before page data — only
+	// trust entity payloads whose slug agrees with the URL, otherwise a
+	// stale object from the previous page would mint a wrong-entity anchor.
+	const lastSeg = segs[segs.length - 1] ?? '';
 	// /wiki/{space_slug}/{page_slug} → page; /wiki/{space_slug} → space.
 	// (/wiki/{space}/{page}/history shares the page anchor — same entity.)
 	if (segs[0] === 'wiki' && segs.length >= 3) {
-		const ctx = wikiPageContext(data);
-		if (ctx) return ctx;
+		const p = data.page as { slug?: string } | null;
+		if (p?.slug && (segs[2] === p.slug || segs[segs.length - 2] === p.slug)) {
+			const ctx = wikiPageContext(data);
+			if (ctx) return ctx;
+		}
 	}
 	if (segs[0] === 'wiki' && segs.length === 2) {
-		const ctx = spaceContext(data);
-		if (ctx) return ctx;
+		const s = (data.spaceDetail ?? data.space) as { slug?: string } | null;
+		if (!s?.slug || s.slug === segs[1]) {
+			const ctx = spaceContext(data);
+			if (ctx) return ctx;
+		}
 	}
 	// Generic entity fallback: article-bearing pages (blog, content,
 	// guides, stories, comparisons) and space-bearing pages get their
 	// entity anchor regardless of the route segment shape.
-	const viaArticle = articleContext(data);
-	if (viaArticle) return viaArticle;
+	const a = data.article as { slug?: string } | null;
+	if (!a?.slug || a.slug === lastSeg) {
+		const viaArticle = articleContext(data);
+		if (viaArticle) return viaArticle;
+	}
 	const viaSpace = spaceContext(data);
 	if (viaSpace) return viaSpace;
 	return pathAnchor(pathname, data);

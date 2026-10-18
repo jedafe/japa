@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { afterNavigate } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
 	import { Sparkles } from 'lucide-svelte';
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
 	import { ensureAiPanelDeps } from '$lib/ai/panel';
@@ -75,7 +75,7 @@
 	$effect(() => {
 		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
 	});
-	afterNavigate(() => setAiPageContext(null));
+	beforeNavigate(() => setAiPageContext(null));
 
 	onMount(() => ensureAiPanelDeps());
 </script>

@@ -2,7 +2,7 @@
 	import { untrack, onMount, type Snippet } from 'svelte';
 	import { env } from '$env/dynamic/public';
 	import { page } from '$app/state';
-	import { afterNavigate } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
 	import { Sparkles } from 'lucide-svelte';
 	import HubHeader from '$lib/components/shell/HubHeader.svelte';
 	import SingleToolHeader from '$lib/components/shell/SingleToolHeader.svelte';
@@ -73,7 +73,7 @@
 	$effect(() => {
 		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
 	});
-	afterNavigate(() => setAiPageContext(null));
+	beforeNavigate(() => setAiPageContext(null));
 
 	onMount(() => ensureAiPanelDeps());
 </script>

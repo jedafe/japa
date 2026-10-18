@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack, onMount, type Snippet } from 'svelte';
 	import { page } from '$app/state';
-	import { afterNavigate } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
 	import { Sparkles } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
@@ -53,7 +53,7 @@
 	$effect(() => {
 		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
 	});
-	afterNavigate(() => setAiPageContext(null));
+	beforeNavigate(() => setAiPageContext(null));
 
 	onMount(() => ensureAiPanelDeps());
 

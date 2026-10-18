@@ -164,9 +164,11 @@
 		);
 		const conv = list?.[0];
 		if (!conv) {
-			conversationId = '';
-			turns = [];
-			loadingThread = false;
+			if (loadedAnchor === a) {
+				conversationId = '';
+				turns = [];
+				loadingThread = false;
+			}
 			return;
 		}
 		const detail = await apiGet<{
@@ -174,6 +176,8 @@
 			running_session_id?: string;
 			messages?: ConversationMessage[];
 		}>(`/ai/conversations/${conv.conversation_id}`);
+		// A navigation may have started a newer load — don't clobber it.
+		if (loadedAnchor !== a) return;
 		conversationId = detail?.conversation_id ?? conv.conversation_id;
 		turns = (detail?.messages ?? []).map((m) => ({
 			id: ++turnSeq,
@@ -187,18 +191,17 @@
 		if (detail?.running_session_id && !sending) startSessionPoll(detail.running_session_id);
 	}
 
+	// Load on open → anchor-change while open → reopen (fresh copy each
+	// time, so another device's appends show up).
+	let prevOpen = false;
 	$effect(() => {
-		if (open && user && anchor !== loadedAnchor) void loadAnchoredThread(anchor);
+		if (open && user && (!prevOpen || anchor !== loadedAnchor)) {
+			void loadAnchoredThread(anchor);
+		}
+		prevOpen = open;
 	});
 	$effect(() => {
 		if (open && user && agentCapable === null) void probeCapabilities();
-	});
-	// Reload the thread when the panel is reopened for the same anchor
-	// (another device may have appended).
-	$effect(() => {
-		if (open && user && anchor === loadedAnchor && turns.length === 0 && !loadingThread) {
-			void loadAnchoredThread(anchor);
-		}
 	});
 
 	function scrollToBottom() {
@@ -304,10 +307,14 @@
 			}
 		} catch (e) {
 			live.in_progress = false;
-			live.error =
-				e instanceof AgentRequestError
-					? e.message
-					: pt('ai.panel.error', 'Something went wrong.');
+			if (!abort.signal.aborted) {
+				// User-stopped turns keep their partial content silently.
+				live.error =
+					e instanceof AgentRequestError
+						? e.message
+						: pt('ai.panel.error', 'Something went wrong.');
+				if (!composer) composer = message; // don't eat the user's draft
+			}
 			turns = [...turns];
 		} finally {
 			sending = false;

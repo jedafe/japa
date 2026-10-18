@@ -20,7 +20,7 @@
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
 	import { ensureAiPanelDeps } from '$lib/ai/panel';
 	import { resolveAiPageContext } from '$lib/ai/pageContext';
-	import { afterNavigate } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -169,7 +169,7 @@
 	$effect(() => {
 		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
 	});
-	afterNavigate(() => setAiPageContext(null));
+	beforeNavigate(() => setAiPageContext(null));
 
 	onMount(() => {
 		ensureAiPanelDeps();
