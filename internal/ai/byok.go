@@ -63,6 +63,7 @@ type ByokProvider struct {
 	DisplayName    string      `json:"display_name"`
 	Models         []ModelInfo `json:"models"`
 	SignupURL      string      `json:"signup_url"`
+	SignupLabel    string      `json:"signup_label"`
 	Enabled        bool        `json:"enabled"`
 	ReferralClicks int         `json:"referral_clicks"`
 	CreatedAt      time.Time   `json:"created_at"`
@@ -95,7 +96,7 @@ func NewByokProviderStore(read, write *pgxpool.Pool) *ByokProviderStore {
 	return &ByokProviderStore{read: read, write: write}
 }
 
-const byokProviderCols = `id, provider_type, display_name, signup_url, models, enabled, referral_clicks, created_at, updated_at`
+const byokProviderCols = `id, provider_type, display_name, signup_url, signup_label, models, enabled, referral_clicks, created_at, updated_at`
 
 // scanByokProvider scans a row into a ByokProvider, decoding the models
 // jsonb catalog.
@@ -108,7 +109,7 @@ func scanByokProvider(row interface {
 	var modelsJSON []byte
 
 	if err := row.Scan(
-		&bp.ID, &bp.ProviderType, &bp.DisplayName, &bp.SignupURL,
+		&bp.ID, &bp.ProviderType, &bp.DisplayName, &bp.SignupURL, &bp.SignupLabel,
 		&modelsJSON, &bp.Enabled, &bp.ReferralClicks, &bp.CreatedAt, &bp.UpdatedAt,
 	); err != nil {
 		return ByokProvider{}, fmt.Errorf("scanning ai_byok_provider: %w", err)
@@ -201,6 +202,7 @@ type CreateByokProviderInput struct {
 	DisplayName  string
 	Models       []ModelInfo
 	SignupURL    string
+	SignupLabel  string
 	Enabled      bool
 }
 
@@ -213,10 +215,10 @@ func (s *ByokProviderStore) Create(ctx context.Context, input CreateByokProvider
 
 	row := s.write.QueryRow(ctx, `
 		INSERT INTO ai_byok_providers
-			(provider_type, display_name, models, signup_url, enabled)
-		VALUES ($1, $2, $3, $4, $5)
+			(provider_type, display_name, models, signup_url, signup_label, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING `+byokProviderCols+`
-	`, input.ProviderType, input.DisplayName, modelsJSON, input.SignupURL, input.Enabled)
+	`, input.ProviderType, input.DisplayName, modelsJSON, input.SignupURL, input.SignupLabel, input.Enabled)
 
 	return scanByokProvider(row)
 }
@@ -228,6 +230,7 @@ type UpdateByokProviderInput struct {
 	DisplayName  *string
 	Models       *[]ModelInfo
 	SignupURL    *string
+	SignupLabel  *string
 	Enabled      *bool
 }
 
@@ -260,6 +263,12 @@ func (s *ByokProviderStore) Update(ctx context.Context, input UpdateByokProvider
 	if input.SignupURL != nil {
 		setParts = append(setParts, fmt.Sprintf("signup_url = $%d", argIdx))
 		args = append(args, *input.SignupURL)
+		argIdx++
+	}
+
+	if input.SignupLabel != nil {
+		setParts = append(setParts, fmt.Sprintf("signup_label = $%d", argIdx))
+		args = append(args, *input.SignupLabel)
 		argIdx++
 	}
 
@@ -342,7 +351,7 @@ func NewUserAIKeyStore(read, write *pgxpool.Pool) *UserAIKeyStore {
 
 const userAIKeyCols = `k.id, k.user_id, k.byok_provider_id, k.label, k.api_key_encrypted,
 	k.status, k.last_error, k.created_at, k.updated_at,
-	p.id, p.provider_type, p.display_name, p.signup_url, p.models, p.enabled, p.referral_clicks, p.created_at, p.updated_at`
+	p.id, p.provider_type, p.display_name, p.signup_url, p.signup_label, p.models, p.enabled, p.referral_clicks, p.created_at, p.updated_at`
 
 const userAIKeyJoin = `FROM user_ai_keys k JOIN ai_byok_providers p ON p.id = k.byok_provider_id`
 
@@ -365,7 +374,7 @@ func scanUserAIKey(row interface {
 		&k.ID, &k.UserID, &k.ByokProviderID, &k.Label, &encryptedKey,
 		&k.Status, &k.LastError, &k.CreatedAt, &k.UpdatedAt,
 		&providerID, &k.Provider.ProviderType, &k.Provider.DisplayName,
-		&k.Provider.SignupURL, &modelsJSON, &k.Provider.Enabled,
+		&k.Provider.SignupURL, &k.Provider.SignupLabel, &modelsJSON, &k.Provider.Enabled,
 		&k.Provider.ReferralClicks, &pCreatedAt, &pUpdatedAt,
 	); err != nil {
 		return UserAIKey{}, fmt.Errorf("scanning user_ai_key: %w", err)

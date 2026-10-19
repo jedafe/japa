@@ -202,6 +202,13 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 			return nil, perr
 		}
 
+		// BYOK turns must run on an admin-curated model — an empty model
+		// would bypass the catalog check and hit the provider's own
+		// default instead.
+		if effModel == "" {
+			return nil, errInvalidModel
+		}
+
 		bp, rerr := h.userKeys.ResolveProvider(ctx, userID, *req.ByokKeyID, effModel)
 		if rerr != nil {
 			return nil, rerr

@@ -257,6 +257,7 @@ export interface AiByokProvider {
 	display_name: string;
 	models: { id: string; label: string }[];
 	signup_url: string;
+	signup_label: string;
 	enabled: boolean;
 	referral_clicks: number;
 	created_at: string;

@@ -76,6 +76,7 @@ type byokProviderPublic struct {
 	DisplayName  string      `json:"display_name"`
 	Models       []ModelInfo `json:"models"`
 	SignupURL    string      `json:"signup_url"`
+	SignupLabel  string      `json:"signup_label"`
 }
 
 func byokPublic(bp ByokProvider) byokProviderPublic {
@@ -86,7 +87,7 @@ func byokPublic(bp ByokProvider) byokProviderPublic {
 
 	return byokProviderPublic{
 		ID: bp.ID, ProviderType: bp.ProviderType, DisplayName: bp.DisplayName,
-		Models: models, SignupURL: bp.SignupURL,
+		Models: models, SignupURL: bp.SignupURL, SignupLabel: bp.SignupLabel,
 	}
 }
 

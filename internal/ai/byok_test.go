@@ -66,7 +66,7 @@ func TestScanByokProvider(t *testing.T) {
 	t.Parallel()
 
 	row := &fakeRow{vals: []any{
-		mustUUID(t, "11111111-2222-3333-4444-555555555555"), "openai", "OpenAI", "https://ref.example/openai",
+		mustUUID(t, "11111111-2222-3333-4444-555555555555"), "openai", "OpenAI", "https://ref.example/openai", "Get $5 free",
 		[]byte(`[{"id":"gpt-4o","label":"GPT-4o"}]`), true, 3,
 		time.Now(), time.Now(),
 	}}
@@ -89,7 +89,7 @@ func TestScanByokProviderEmptyModels(t *testing.T) {
 	t.Parallel()
 
 	row := &fakeRow{vals: []any{
-		mustUUID(t, "11111111-2222-3333-4444-555555555555"), "groq", "Groq", "",
+		mustUUID(t, "11111111-2222-3333-4444-555555555555"), "groq", "Groq", "", "",
 		nil, false, 0, time.Now(), time.Now(),
 	}}
 	bp, err := scanByokProvider(row)

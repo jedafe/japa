@@ -145,6 +145,7 @@ export interface ByokProviderOption {
 	display_name: string;
 	models: { id: string; label: string }[];
 	signup_url: string;
+	signup_label: string;
 	has_key: boolean;
 	keys: { id: string; label: string; api_key_masked: string; status: string }[];
 }

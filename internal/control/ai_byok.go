@@ -107,6 +107,7 @@ func (h *Handlers) CreateByokProvider(w http.ResponseWriter, r *http.Request) {
 		DisplayName  string         `json:"display_name"`
 		Models       []ai.ModelInfo `json:"models"`
 		SignupURL    string         `json:"signup_url"`
+		SignupLabel  string         `json:"signup_label"`
 		Enabled      *bool          `json:"enabled"`
 	}
 
@@ -145,6 +146,7 @@ func (h *Handlers) CreateByokProvider(w http.ResponseWriter, r *http.Request) {
 		DisplayName:  strings.TrimSpace(input.DisplayName),
 		Models:       input.Models,
 		SignupURL:    strings.TrimSpace(input.SignupURL),
+		SignupLabel:  strings.TrimSpace(input.SignupLabel),
 		Enabled:      enabled,
 	})
 	if err != nil {
@@ -184,6 +186,7 @@ func (h *Handlers) UpdateByokProvider(w http.ResponseWriter, r *http.Request) {
 		DisplayName  *string         `json:"display_name"`
 		Models       *[]ai.ModelInfo `json:"models"`
 		SignupURL    *string         `json:"signup_url"`
+		SignupLabel  *string         `json:"signup_label"`
 		Enabled      *bool           `json:"enabled"`
 	}
 
@@ -213,6 +216,7 @@ func (h *Handlers) UpdateByokProvider(w http.ResponseWriter, r *http.Request) {
 		DisplayName:  input.DisplayName,
 		Models:       input.Models,
 		SignupURL:    input.SignupURL,
+		SignupLabel:  input.SignupLabel,
 		Enabled:      input.Enabled,
 	})
 	if err != nil {

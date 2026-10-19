@@ -36,6 +36,7 @@
 		display_name: '',
 		modelsText: '', // one "id|Label" per line
 		signup_url: '',
+		signup_label: '',
 		enabled: true
 	});
 
@@ -87,7 +88,7 @@
 	}
 
 	function openCreate() {
-		form = { provider_type: 'openai', display_name: '', modelsText: '', signup_url: '', enabled: true };
+		form = { provider_type: 'openai', display_name: '', modelsText: '', signup_url: '', signup_label: '', enabled: true };
 		formError = '';
 		createModalOpen = true;
 	}
@@ -99,6 +100,7 @@
 			display_name: p.display_name,
 			modelsText: modelsToText(p.models),
 			signup_url: p.signup_url,
+			signup_label: p.signup_label,
 			enabled: p.enabled
 		};
 		formError = '';
@@ -127,6 +129,7 @@
 			display_name: form.display_name.trim(),
 			models,
 			signup_url: form.signup_url.trim(),
+			signup_label: form.signup_label.trim(),
 			enabled: form.enabled
 		};
 		const res = editing
@@ -281,6 +284,18 @@
 				type="url"
 				bind:value={form.signup_url}
 				placeholder="https://…"
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+			/>
+		</div>
+		<div>
+			<label for="bp-label" class="mb-1 block text-sm font-medium text-[var(--color-text)]"
+				>{t('byok.col_label', 'Signup label')} <span class="text-xs text-[var(--color-muted)]">({t('byok.label_hint', 'CTA text on the affiliate link; empty = default')})</span></label
+			>
+			<input
+				id="bp-label"
+				type="text"
+				bind:value={form.signup_label}
+				placeholder={t('byok.label_placeholder', 'Get an API key')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
 			/>
 		</div>
