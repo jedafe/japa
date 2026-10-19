@@ -236,6 +236,40 @@ func (h *Handlers) HandleCreateMyAIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Abuse control: cap keys per user (key farming — registering hundreds
+	// of free-tier/stolen credentials to launder provider rate limits).
+	maxKeys := 10
+	if h.Settings != nil {
+		maxKeys = h.Settings.GetIntOr(r.Context(), "ai.byok.max_keys_per_user", 10)
+	}
+
+	if existing, lerr := h.userKeys.ListForUser(r.Context(), user.UserID); lerr == nil && len(existing) >= maxKeys {
+		errpkg.WriteError(w, http.StatusForbidden, "key_limit_reached", "Maximum number of API keys reached — remove one first")
+		return
+	}
+
+	// Verify-before-save: dead credentials are rejected instead of stored.
+	// Transient provider failures don't block the save — the key lands
+	// unverified and the user can re-verify later.
+	if h.byokProviders != nil {
+		if bp, gerr := h.byokProviders.Get(r.Context(), providerID); gerr == nil && bp.Enabled {
+			p, perr := NewProviderFromConfig(ProviderConfig{
+				Name:         bp.DisplayName,
+				ProviderType: bp.ProviderType,
+			}, apiKey)
+			if perr == nil {
+				vctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+				_, verr := p.FetchModels(vctx)
+				cancel()
+
+				if IsProviderKeyRejected(verr) {
+					errpkg.WriteError(w, http.StatusUnprocessableEntity, "key_rejected", "The provider rejected this API key")
+					return
+				}
+			}
+		}
+	}
+
 	key, err := h.userKeys.Create(r.Context(), user.UserID, providerID, apiKey, label)
 	if err != nil {
 		byokErrorStatus(w, err)

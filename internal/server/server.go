@@ -1,12 +1,12 @@
 package server
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
 	"log/slog"
 	"net/http"
 	"os"
@@ -344,6 +344,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		CookieDomain:        cfg.CookieDomain,
 		SecureCookies:       cfg.IsProduction(),
 		DefaultFolderSetter: defaultFolderResolver,
+		OwnerEmail:          cfg.OwnerEmail,
 	}
 
 	// TOTP 2FA handlers — uses the same auth store for TOTP credential storage.
@@ -387,6 +388,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		CookieDomain:        cfg.CookieDomain,
 		SecureCookies:       cfg.IsProduction(),
 		DefaultFolderSetter: defaultFolderResolver,
+		OwnerEmail:          cfg.OwnerEmail,
 	}
 
 	// Feature flag checker — uses Valkey L2 cache for cross-instance
@@ -403,6 +405,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// RBAC admin management handlers.
 	rbacHandlers := rbac.NewHandlers(rbacStore, rbacResolver)
+	rbacHandlers.SetOwnerEmail(cfg.OwnerEmail)
+
+	// §03 owner amendment: the JC_OWNER_EMAIL account is the platform owner.
+	// The promoter grants super_admin membership at registration; the
+	// boot-time reconciliation below re-asserts it for accounts that existed
+	// before the env var was configured.
+	ownerPromoter := &superAdminPromoter{q: authQueries, r: rbacResolver}
+	authHandlers.SetOwnerPromoter(ownerPromoter)
+	oauthHandlers.OwnerPromoter = ownerPromoter
+
+	if cfg.OwnerEmail != "" {
+		if owner, err := authQueries.GetUserByEmail(context.Background(), cfg.OwnerEmail); err == nil && owner.ID.Valid {
+			if err := ownerPromoter.PromoteToSuperAdmin(context.Background(), owner.ID); err != nil {
+				slog.Warn("owner reconciliation: failed to ensure super_admin membership", "error", err)
+			} else {
+				slog.Info("owner reconciliation: super_admin membership verified", "email", cfg.OwnerEmail)
+			}
+		}
+	}
 
 	// Permission bootstrap is now handled by migration 000099_seed_data.sql.
 	// The runtime bootstrap path was removed per AUDIT-BE-039 to avoid
@@ -965,6 +986,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	}
 	gdprService.SetSessionDeleter(gdpr.NewValkeySessionDeleter(vkClient.Redis()))
 	gdprService.SetSettings(settingsService)
+	gdprService.SetOwnerEmail(cfg.OwnerEmail)
 	// GAP-GDPR-A: explicit LocalStorage wiring so the data export file is
 	// persisted to data/gdpr-exports/{ID}/. Swap for an S3/SeaweedFS
 	// adapter (ADR-048) in production via gdprService.SetStorage(...).
@@ -1179,6 +1201,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetTaskEnqueuer(taskEnqueuer)
 	adminHandlers.SetDefaultFolderProvider(defaultFolderResolver)
 	adminHandlers.SetTierManager(tierService)
+	adminHandlers.SetOwnerEmail(cfg.OwnerEmail)
 	adminHandlers.SetLiteralCatalog(literalsCatalog)
 
 	// Bot & Crawler Management subsystem (Section 43).
@@ -2129,6 +2152,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// points provider, etc.) happens later — only the base service is
 	// needed for the AI agent's GetProfile/UpdateProfile calls.
 	agentUsersSvc := users.NewService(database)
+	agentUsersSvc.SetOwnerEmail(cfg.OwnerEmail)
 
 	agentDeps := ai.NewToolDeps().
 		WithContent(contentService).
@@ -2748,6 +2772,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// User Profile & Preferences subsystem.
 	usersService := users.NewService(database)
+	usersService.SetOwnerEmail(cfg.OwnerEmail)
 	usersService.SetTierService(tierService)
 	// Public base URL for canonical profile URLs (Person JSON-LD `url`).
 	usersService.SetSiteURL(cfg.SiteURL)
@@ -5521,7 +5546,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// (Section 20). The unified handler serves SSE
 			// (Accept: text/event-stream) or the JSON {reply, conversation_id,
 			// sources} contract with OR admission (ai.context.use OR agent.use).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			// ai.byok is in the OR-gate so own-key users reach the handler —
+			// the handler confines them to BYOK turns (byok_key_id required).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use", "ai.byok"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/chat", agentHTTPHandlers.HandleUnifiedChat)
 
 			// Content AI Assist endpoints (catalog: /ai/assist/*), gated by the
@@ -5633,13 +5660,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/ai/byok/providers/{id}/referral-click", aiHandlers.HandleByokReferralClick)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
 				Get("/me/ai-keys", aiHandlers.HandleListMyAIKeys)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/me/ai-keys", aiHandlers.HandleCreateMyAIKey)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
 				Patch("/me/ai-keys/{id}", aiHandlers.HandleUpdateMyAIKey)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
 				Delete("/me/ai-keys/{id}", aiHandlers.HandleDeleteMyAIKey)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok"), mw.RateLimit(vkClient.Redis(), "tight")).
 				Post("/me/ai-keys/{id}/verify", aiHandlers.HandleVerifyMyAIKey)
 
 			// AI categories — gated by ai.generate so only users with generation
@@ -9394,4 +9421,30 @@ func (a pofFXAdapter) Calculate(ctx context.Context, sendAmount float64, sendCur
 	}
 
 	return &pofcalculator.CalculateResult{BestReceiveAmount: res.BestReceiveAmount}, nil
+}
+
+// superAdminPromoter implements auth.SuperAdminPromoter — grants a user
+// super_admin group membership and invalidates their permission cache
+// (§03 owner amendment).
+type superAdminPromoter struct {
+	q *gen.Queries
+	r *rbac.RBAC
+}
+
+func (p *superAdminPromoter) PromoteToSuperAdmin(ctx context.Context, userID pgtype.UUID) error {
+	group, err := p.q.GetUserGroupBySlug(ctx, rbac.SystemGroupSuperAdmin)
+	if err != nil {
+		return err
+	}
+
+	if err := p.q.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+		UserID:  userID,
+		GroupID: group.ID,
+	}); err != nil {
+		return err
+	}
+
+	p.r.InvalidateUserCache(ctx, userID)
+
+	return nil
 }

@@ -23,11 +23,11 @@
 package ai
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
 	"log/slog"
 	"math/big"
 	"strconv"

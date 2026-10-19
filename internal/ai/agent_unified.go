@@ -35,11 +35,11 @@ type UnifiedChatRequest struct {
 	// §103 AI Projects: stamps a newly created conversation into the
 	// project. Validated owner-side before Resolve; ignored for existing
 	// threads (explicit moves go through PUT …/project).
-	ProjectID     *pgtype.UUID
+	ProjectID *pgtype.UUID
 	// §115 AI Quick Panel: page-anchored thread key (sanitized upstream).
-	Anchor        string
-	Context       map[string]any // client-supplied context (lowest precedence, ADR-025)
-	Model         string
+	Anchor  string
+	Context map[string]any // client-supplied context (lowest precedence, ADR-025)
+	Model   string
 	// ByokKeyID selects a user-owned provider key (BYOK): the turn dispatches
 	// to an ephemeral provider built from the caller's encrypted key instead
 	// of the platform registry — no fallback to platform providers, platform

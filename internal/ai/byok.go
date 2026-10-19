@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -453,6 +454,9 @@ func (s *UserAIKeyStore) Create(ctx context.Context, userID, providerID pgtype.U
 		return UserAIKey{}, fmt.Errorf("inserting user_ai_key: %w", err)
 	}
 
+	s.auditByok(ctx, "ai.byok.key_created", userID, id,
+		fmt.Sprintf(`{"byok_provider_id":%q}`, providerID.String()))
+
 	return s.GetForUser(ctx, userID, id)
 }
 
@@ -512,19 +516,39 @@ func (s *UserAIKeyStore) Delete(ctx context.Context, userID, keyID pgtype.UUID) 
 		return ErrAIKeyNotFound
 	}
 
+	s.auditByok(ctx, "ai.byok.key_deleted", userID, keyID, "{}")
+
 	return nil
 }
 
 // MarkStatus sets the key's status flag and last_error. Called by the
 // verify endpoint and by the agent loop when the provider rejects the key
-// with an auth-class (401/403) failure.
+// with a 401 (credential rejection).
 func (s *UserAIKeyStore) MarkStatus(ctx context.Context, keyID pgtype.UUID, status, lastError string) error {
+	// Provider error bodies can be large or echo request details — cap what
+	// we persist so last_error stays a diagnostic, not a data sink.
+	const maxErrLen = 512
+	if len(lastError) > maxErrLen {
+		lastError = lastError[:maxErrLen]
+	}
+
 	_, err := s.write.Exec(ctx, `
 		UPDATE user_ai_keys SET status = $2, last_error = $3, updated_at = now()
 		WHERE id = $1
 	`, keyID, status, lastError)
 
 	return err
+}
+
+// auditByok writes an audit_logs row for BYOK credential lifecycle events.
+// Failures are logged and swallowed — audit must not break the operation.
+func (s *UserAIKeyStore) auditByok(ctx context.Context, action string, userID, keyID pgtype.UUID, meta string) {
+	if _, err := s.write.Exec(ctx, `
+		INSERT INTO audit_logs (action_type, actor_user_id, target_type, target_id, metadata)
+		VALUES ($1, $2, 'user_ai_key', $3, $4::jsonb)
+	`, action, userID, keyID, meta); err != nil {
+		slog.Warn("ai: byok audit write failed", "action", action, "error", err)
+	}
 }
 
 // decryptedKey returns the plaintext API key for internal provider
