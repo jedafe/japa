@@ -775,7 +775,7 @@
 		border-radius: var(--radius);
 		background: var(--color-bg);
 		color: var(--color-text);
-		font-size: 1rem;
+		font-size: 1.125rem;
 		line-height: 1.5;
 		padding: 0.75rem 0.875rem;
 		/* Room for the in-field send/stop button. */
