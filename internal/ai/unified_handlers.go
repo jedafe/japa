@@ -43,6 +43,7 @@ type unifiedChatInput struct {
 	Anchor        string         `json:"anchor,omitempty"`
 	Context       map[string]any `json:"context,omitempty"`
 	Model         string         `json:"model,omitempty"`
+	ByokKeyID     string         `json:"byok_key_id,omitempty"`
 	VoiceID       string         `json:"voice_id,omitempty"`
 	Humanize      *bool          `json:"humanize,omitempty"`
 	HumanizeLevel string         `json:"humanize_level,omitempty"`
@@ -120,6 +121,18 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 		projectID = &u
 	}
 
+	var byokKeyID *pgtype.UUID
+
+	if input.ByokKeyID != "" {
+		u, err := scanUUID(input.ByokKeyID)
+		if err != nil || !u.Valid {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "byok_key_id must be a UUID")
+			return
+		}
+
+		byokKeyID = &u
+	}
+
 	req := UnifiedChatRequest{
 		Prompt:         prompt,
 		ConversationID: convID,
@@ -127,6 +140,7 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 		Anchor:         anchor,
 		Context:        input.Context,
 		Model:          input.Model,
+		ByokKeyID:      byokKeyID,
 		VoiceID:        input.VoiceID,
 		Humanize:       input.Humanize,
 		HumanizeLevel:  input.HumanizeLevel,

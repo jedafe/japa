@@ -40,6 +40,11 @@ type UnifiedChatRequest struct {
 	Anchor        string
 	Context       map[string]any // client-supplied context (lowest precedence, ADR-025)
 	Model         string
+	// ByokKeyID selects a user-owned provider key (BYOK): the turn dispatches
+	// to an ephemeral provider built from the caller's encrypted key instead
+	// of the platform registry — no fallback to platform providers, platform
+	// cost counters skipped.
+	ByokKeyID     *pgtype.UUID
 	VoiceID       string
 	Humanize      *bool // nil → inherit global ai.humanize.* settings
 	HumanizeLevel string
@@ -50,6 +55,8 @@ type UnifiedChatRequest struct {
 // agent sentinels.
 var (
 	errAINoPermission   = errors.New("ai: user lacks ai.context.use or agent.use permission")
+	errByokNoPermission = errors.New("ai: user lacks ai.byok permission")
+	errByokUnavailable  = errors.New("ai: byok not configured")
 	errInvalidModel     = errors.New("ai: model is not available for the chat category")
 	errConversationBusy = errors.New("ai: conversation already has a running turn")
 	errProjectNotFound  = errors.New("ai: project not found")
@@ -163,7 +170,26 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		effModel = h.getStringSetting(ctx, "ai.model.default.chat", "")
 	}
 
-	if effModel != "" && h.modelValidator != nil && !h.modelValidator(effModel, h.llmCategory) {
+	// BYOK: resolve the caller's key (owner-scoped — a foreign id is a 404),
+	// provider-enabled + catalog-model checks inside ResolveProvider. The
+	// ai.byok gate is defense-in-depth on top of key-creation gating.
+	var byokProvider Provider
+	if req.ByokKeyID != nil && req.ByokKeyID.Valid {
+		if h.perms != nil && !h.perms.HasPermission(ctx, userID, "ai.byok") {
+			return nil, errByokNoPermission
+		}
+
+		if h.userKeys == nil {
+			return nil, errByokUnavailable
+		}
+
+		bp, rerr := h.userKeys.ResolveProvider(ctx, userID, *req.ByokKeyID, effModel)
+		if rerr != nil {
+			return nil, rerr
+		}
+
+		byokProvider = bp
+	} else if effModel != "" && h.modelValidator != nil && !h.modelValidator(effModel, h.llmCategory) {
 		return nil, errInvalidModel
 	}
 
@@ -329,6 +355,8 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		detached:      len(catalog) > 0, // tools on → run to completion in background
 		history:       history,
 		model:         effModel,
+		byok:          byokProvider,
+		byokKeyID:     req.ByokKeyID,
 		unified:       &unifiedTurn{req: req, conv: conv, hasConv: hasConv, msgCount: msgCount, userMsgPersisted: userMsgPersisted},
 	}, events)
 

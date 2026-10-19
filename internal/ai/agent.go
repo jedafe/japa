@@ -165,6 +165,7 @@ type AgentHandler struct {
 	persistTurnFn  func(ctx context.Context, userID, message, reply, conversationID string, unified bool)
 	voiceResolver  PersonaVoiceResolver
 	modelValidator func(model, category string) bool
+	userKeys       userAIKeyStore // BYOK credential resolver (nil = byok_key_id rejected)
 
 	// llmCategory is the gateway provider category used for ChatWithTools
 	// dispatch. Defaults to "chat" — the agent uses the same chat-capable
@@ -289,6 +290,12 @@ func WithAgentChatPersist(fn func(ctx context.Context, userID, message, reply, c
 // resolve to an empty prompt and are ignored (BUG-009).
 func WithAgentVoiceResolver(v PersonaVoiceResolver) AgentOption {
 	return func(h *AgentHandler) { h.voiceResolver = v }
+}
+
+// WithAgentUserKeys injects the BYOK credential store used to resolve
+// byok_key_id on unified chat requests.
+func WithAgentUserKeys(s userAIKeyStore) AgentOption {
+	return func(h *AgentHandler) { h.userKeys = s }
 }
 
 // WithAgentModelValidator injects the per-category model validator
@@ -465,6 +472,11 @@ type loopParams struct {
 	// for the working ctx and sendEvent becomes non-blocking (§103
 	// amendment: detached turns).
 	detached bool
+	// byok is the ephemeral provider built from the caller's own API key
+	// (BYOK). Non-nil → the loop dispatches to it directly instead of the
+	// platform gateway, and platform cost counters are skipped.
+	byok      Provider
+	byokKeyID *pgtype.UUID
 }
 
 // persistTerminalNotice writes a best-effort assistant message recording a
@@ -741,13 +753,34 @@ func (h *AgentHandler) runLoop(
 			break
 		}
 
-		resp, err := h.gateway.ChatWithToolsStream(loopCtx, h.llmCategory, ChatWithToolsRequest{
-			Messages:    messages,
-			Tools:       toolDefs,
-			Model:       p.model,
-			Temperature: temperature,
-		}, deltaSink)
+		// BYOK turns go to the caller's own provider directly — never
+		// through the gateway's fallback chain, so a rejected user key
+		// can't silently burn platform quota.
+		var resp ChatWithToolsResponse
+		var err error
+
+		if p.byok != nil {
+			resp, err = chatWithToolsStreamOn(loopCtx, p.byok, ChatWithToolsRequest{
+				Messages:    messages,
+				Tools:       toolDefs,
+				Model:       p.model,
+				Temperature: temperature,
+			}, deltaSink)
+		} else {
+			resp, err = h.gateway.ChatWithToolsStream(loopCtx, h.llmCategory, ChatWithToolsRequest{
+				Messages:    messages,
+				Tools:       toolDefs,
+				Model:       p.model,
+				Temperature: temperature,
+			}, deltaSink)
+		}
 		if err != nil {
+			// A provider 401/403 marks the BYOK key invalid so the UI flags
+			// it; rate-limit/5xx leave the status untouched.
+			if p.byok != nil && p.byokKeyID != nil && h.userKeys != nil && IsProviderAuthError(err) {
+				_ = h.userKeys.MarkStatus(context.WithoutCancel(loopCtx), *p.byokKeyID, "invalid", err.Error())
+			}
+
 			loopErr = fmt.Errorf("agent: LLM call failed: %w", err)
 			break
 		}
@@ -767,8 +800,10 @@ func (h *AgentHandler) runLoop(
 		totalTokens += resp.Usage.TotalTokens
 		estimatedCost += costEstimator.Estimate(loopCtx, resp.ProviderName, resp.Model, resp.Usage.TotalTokens)
 
-		// --- Cost limit check (task 5.10) ---
-		if estimatedCost > costLimit {
+		// --- Cost limit check (task 5.10) — BYOK turns spend the caller's
+		// key, not platform budget, so the platform cap doesn't apply.
+		// estimatedCost still accumulates for the session/message record.
+		if p.byok == nil && estimatedCost > costLimit {
 			loopErr = fmt.Errorf("agent: cost limit exceeded (%.4f > %.4f USD)", estimatedCost, costLimit)
 			break
 		}
@@ -859,6 +894,10 @@ func (h *AgentHandler) runLoop(
 	// catalog non-empty on the unified path, always on legacy). Pure-chat
 	// turns still record the shared jc:ai:cost via preflight (ADR-130).
 	trackCost := func() {
+		if p.byok != nil {
+			return // user-paid turn: platform cost counters stay untouched
+		}
+
 		if p.agentCounters {
 			h.trackCost(ctx, userID, estimatedCost)
 		} else if h.preflight != nil {

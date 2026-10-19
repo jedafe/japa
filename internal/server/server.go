@@ -2269,6 +2269,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	agentPreSearcher := ai.NewPreSearcher(agentDeps)
 
+	// BYOK: admin-curated provider allowlist + encrypted per-user keys.
+	// userAIKeyStore resolves byok_key_id on unified chat turns.
+	byokProviderStore := ai.NewByokProviderStore(database.Reader, database.Writer)
+	userAIKeyStore := ai.NewUserAIKeyStore(database.Reader, database.Writer)
+
 	agentHandler := ai.NewAgentHandler(
 		aiDispatcher, agentExecutor, agentRegistry, agentPreSearcher,
 		ai.WithAgentPerms(rbacResolver),
@@ -2288,6 +2293,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		ai.WithAgentChatPersist(aiHandlers.PersistChatTurnFunc()),
 		ai.WithAgentVoiceResolver(personasService),
 		ai.WithAgentModelValidator(aiHandlers.ChatModelValidator()),
+		ai.WithAgentUserKeys(userAIKeyStore), // BYOK: resolves byok_key_id on unified chat turns
 	)
 
 	agentHTTPHandlers := ai.NewAgentHTTPHandlers(
@@ -3054,8 +3060,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// BYOK: admin-curated provider allowlist + encrypted per-user keys.
 	// The user-facing handlers live on aiHandlers; the control-plane CRUD on
 	// controlHandlers.
-	byokProviderStore := ai.NewByokProviderStore(database.Reader, database.Writer)
-	userAIKeyStore := ai.NewUserAIKeyStore(database.Reader, database.Writer)
+	// BYOK stores are constructed before the agent handler (which takes
+	// userAIKeyStore as an option) — see the wiring block near
+	// NewAgentHandler.
 	aiHandlers.SetByokStores(byokProviderStore, userAIKeyStore)
 	controlHandlers.SetByokProviderStore(byokProviderStore)
 

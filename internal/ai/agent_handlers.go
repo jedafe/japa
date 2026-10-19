@@ -166,6 +166,16 @@ func writeAgentError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusForbidden, "ai_permission_required", "You do not have permission to use Japa AI")
 	case errors.Is(err, errInvalidModel):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_model", "The requested model is not available")
+	case errors.Is(err, errByokNoPermission):
+		errpkg.WriteError(w, http.StatusForbidden, "permission_denied", "You do not have permission to use your own API keys")
+	case errors.Is(err, errByokUnavailable):
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "byok_unavailable", "BYOK is not configured")
+	case errors.Is(err, ErrAIKeyNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "ai_key_not_found", "API key not found")
+	case errors.Is(err, ErrByokProviderDisabled):
+		errpkg.WriteError(w, http.StatusForbidden, "byok_provider_disabled", "This provider is not accepting keys right now")
+	case errors.Is(err, ErrByokModelNotAllowed):
+		errpkg.WriteError(w, http.StatusBadRequest, "model_not_allowed", "Model is not in the provider's catalog")
 	case errors.Is(err, errConversationBusy):
 		errpkg.WriteError(w, http.StatusConflict, "conversation_busy", "A response is already in progress for this conversation")
 	case errors.Is(err, errProjectNotFound):
