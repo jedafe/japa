@@ -8453,6 +8453,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
 				Post("/ai-providers/{id}/test", controlHandlers.TestAIProvider)
 
+			// AI BYOK provider allowlist — same ai.providers.* nodes as
+			// ai-providers. Rows are the storefront users attach keys against.
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.view")).
+				Get("/ai-byok-providers", controlHandlers.ListByokProviders)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
+				Post("/ai-byok-providers", controlHandlers.CreateByokProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.view")).
+				Get("/ai-byok-providers/{id}", controlHandlers.GetByokProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
+				Patch("/ai-byok-providers/{id}", controlHandlers.UpdateByokProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
+				Delete("/ai-byok-providers/{id}", controlHandlers.DeleteByokProvider)
+
 			// Audit Log — granular RBAC (audit.logs.*). Viewing is read-only;
 			// delete/clear are destructive and gated by audit.logs.delete.
 			r.With(rbac.RequirePermission(rbacResolver, "audit.logs.view")).
