@@ -11,8 +11,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +59,8 @@ func byokErrorStatus(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusForbidden, "byok_provider_disabled", "This provider is not accepting keys right now")
 	case errors.Is(err, ErrByokModelNotAllowed):
 		errpkg.WriteError(w, http.StatusBadRequest, "model_not_allowed", "Model is not in the provider's catalog")
+	case errors.Is(err, ErrByokKeyInUse):
+		errpkg.WriteError(w, http.StatusConflict, "key_in_use", "This API key is already attached to another account")
 	default:
 		slog.Error("ai: byok handler error", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Request failed")
@@ -248,6 +252,26 @@ func (h *Handlers) HandleCreateMyAIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject throttle: repeated 401s look like key-probing/laundering
+	// (trying lists of credentials until one sticks). After
+	// ai.byok.max_reject_attempts within the hour the create endpoint is
+	// temporarily blocked for this user.
+	if h.cache != nil {
+		rejectKey := fmt.Sprintf("jc:ai:byok:rejects:%s", user.UserID.String())
+
+		if raw, gerr := h.cache.Get(r.Context(), rejectKey); gerr == nil && raw != "" {
+			maxRejects := 5
+			if h.Settings != nil {
+				maxRejects = h.Settings.GetIntOr(r.Context(), "ai.byok.max_reject_attempts", 5)
+			}
+
+			if n, perr := strconv.Atoi(raw); perr == nil && n >= maxRejects {
+				errpkg.WriteError(w, http.StatusTooManyRequests, "too_many_rejected_keys", "Too many rejected keys — try again later")
+				return
+			}
+		}
+	}
+
 	// Verify-before-save: dead credentials are rejected instead of stored.
 	// Transient provider failures don't block the save — the key lands
 	// unverified and the user can re-verify later.
@@ -263,6 +287,18 @@ func (h *Handlers) HandleCreateMyAIKey(w http.ResponseWriter, r *http.Request) {
 				cancel()
 
 				if IsProviderKeyRejected(verr) {
+					// Count the rejection toward the probe throttle.
+					if h.cache != nil {
+						rk := fmt.Sprintf("jc:ai:byok:rejects:%s", user.UserID.String())
+						n := 1
+						if raw, gerr := h.cache.Get(r.Context(), rk); gerr == nil && raw != "" {
+							if v, perr := strconv.Atoi(raw); perr == nil {
+								n = v + 1
+							}
+						}
+						_ = h.cache.Set(r.Context(), rk, strconv.Itoa(n), 3600)
+					}
+
 					errpkg.WriteError(w, http.StatusUnprocessableEntity, "key_rejected", "The provider rejected this API key")
 					return
 				}

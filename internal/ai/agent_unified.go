@@ -189,6 +189,13 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 			return nil, errByokUnavailable
 		}
 
+		// Dedicated BYOK daily cap — own-key turns still consume platform
+		// tool/memory/transcript infra, so they get their own counter
+		// (jc:ai:byok:queries) separate from the platform budget.
+		if perr := h.preflight.CheckByokBudget(ctx, userID); perr != nil {
+			return nil, perr
+		}
+
 		bp, rerr := h.userKeys.ResolveProvider(ctx, userID, *req.ByokKeyID, effModel)
 		if rerr != nil {
 			return nil, rerr

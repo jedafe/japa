@@ -10,6 +10,8 @@ package ai
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +23,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/crypto"
 )
+
+// ErrByokKeyInUse is returned when the submitted key is already attached to
+// a different account — the same credential appearing on multiple Japa
+// accounts is a strong stolen-key laundering signal.
+var ErrByokKeyInUse = errors.New("ai: byok key already in use on another account")
+
+// byokKeyHash fingerprints a submitted key for the cross-account dedup
+// check. sha256 over the trimmed plaintext — high-entropy input, no salt.
+func byokKeyHash(apiKey string) string {
+	sum := sha256.Sum256([]byte(apiKey))
+	return hex.EncodeToString(sum[:])
+}
 
 // BYOK sentinels — mapped to HTTP codes by byokErrorStatus (byok_handlers.go)
 // and writeAgentError (agent_handlers.go).
@@ -442,14 +456,26 @@ func (s *UserAIKeyStore) Create(ctx context.Context, userID, providerID pgtype.U
 		return UserAIKey{}, fmt.Errorf("encrypting api key: %w", err)
 	}
 
+	// Cross-account dedup: the same credential on another user's row means
+	// the key is shared or stolen — refuse to attach it.
+	keyHash := byokKeyHash(apiKey)
+
+	var other bool
+
+	if err := s.read.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM user_ai_keys WHERE api_key_hash = $1 AND user_id <> $2)`,
+		keyHash, userID).Scan(&other); err == nil && other {
+		return UserAIKey{}, ErrByokKeyInUse
+	}
+
 	var id pgtype.UUID
 
 	err = s.write.QueryRow(ctx, `
 		INSERT INTO user_ai_keys
-			(user_id, byok_provider_id, label, api_key_encrypted)
-		VALUES ($1, $2, $3, $4)
+			(user_id, byok_provider_id, label, api_key_encrypted, api_key_hash)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
-	`, userID, providerID, label, encryptedKey).Scan(&id)
+	`, userID, providerID, label, encryptedKey, keyHash).Scan(&id)
 	if err != nil {
 		return UserAIKey{}, fmt.Errorf("inserting user_ai_key: %w", err)
 	}
@@ -474,6 +500,16 @@ func (s *UserAIKeyStore) Update(ctx context.Context, userID, keyID pgtype.UUID, 
 	}
 
 	if apiKey != nil && *apiKey != "" {
+		keyHash := byokKeyHash(*apiKey)
+
+		var other bool
+
+		if err := s.read.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM user_ai_keys WHERE api_key_hash = $1 AND user_id <> $2 AND id <> $3)`,
+			keyHash, userID, keyID).Scan(&other); err == nil && other {
+			return UserAIKey{}, ErrByokKeyInUse
+		}
+
 		encrypted, err := crypto.Encrypt(*apiKey)
 		if err != nil {
 			return UserAIKey{}, fmt.Errorf("encrypting api key: %w", err)
@@ -481,9 +517,10 @@ func (s *UserAIKeyStore) Update(ctx context.Context, userID, keyID pgtype.UUID, 
 
 		setParts = append(setParts,
 			fmt.Sprintf("api_key_encrypted = $%d", argIdx),
+			fmt.Sprintf("api_key_hash = $%d", argIdx+1),
 			"status = 'active'", "last_error = ''")
-		args = append(args, encrypted)
-		argIdx++
+		args = append(args, encrypted, keyHash)
+		argIdx += 2
 	}
 
 	query := fmt.Sprintf(`
