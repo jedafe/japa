@@ -483,8 +483,20 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{/if}
 		</div>
 	{:else}
-		<!-- Followed countries feed — pinned to top (authed only) -->
 		{#if authed}
+			<!-- Authed layout — "Following" and "Browse countries" as tabs -->
+			<UrlTabs tabs={radarTabs} bind:value={activeTab} urlParam="tab" />
+		{:else}
+			<div class="border-b border-[var(--color-border)] px-4 py-3">
+				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-text-subtle)]">
+					{t('radar.signin_prompt', 'Sign in to follow countries and get a personalized radar feed.')}
+				</div>
+			</div>
+		{/if}
+
+		{#if !authed || activeTab === 'countries'}
+			{@render countryList()}
+		{:else}
 			<div class="border-b border-[var(--color-border)] px-4 py-4">
 				<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 					<Pin size={16} class="text-[var(--color-primary)]" />
@@ -542,112 +554,108 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					{/if}
 				{/if}
 			</div>
-		{:else}
-			<div class="border-b border-[var(--color-border)] px-4 py-3">
-				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-text-subtle)]">
-					{t('radar.signin_prompt', 'Sign in to follow countries and get a personalized radar feed.')}
-				</div>
-			</div>
 		{/if}
-
-		<!-- Browse countries — followed pinned to top, then the rest -->
-		<div class="p-4">
-			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-				<Globe size={16} />
-				{t('radar.browse_countries', 'Browse countries')}
-				{#if countries.length > 0}
-					<span class="text-xs font-normal text-[var(--color-muted)]">({countries.length})</span>
-				{/if}
-			</h2>
-
-			{#if data.countriesError}
-				<p class="py-8 text-center text-sm text-[var(--color-text-subtle)]">
-					{t('radar.countries_error', 'Failed to load the country list. Please try again later.')}
-				</p>
-			{:else if countries.length === 0}
-				<EmptyState
-					icon={Globe}
-					title={t('radar.no_countries', 'No country spaces yet')}
-					body={t('radar.no_countries_body', 'Country spaces will appear here once they are created.')}
-				/>
-			{:else}
-				<div class="space-y-1.5">
-					<!-- Followed countries first -->
-					{#each followedCountries as space (space.id)}
-						<div
-							class="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-3 py-2"
-						>
-							<a
-								href={`/spaces/${space.slug}`}
-								class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
-							>
-								<Pin size={14} class="shrink-0 text-[var(--color-primary)]" />
-								<span class="truncate">{space.name}</span>
-								{#if space.follower_count}
-									<span class="text-xs font-normal text-[var(--color-muted)]">· {space.follower_count}</span>
-								{/if}
-							</a>
-							{#if authed}
-								<button
-									type="button"
-									onclick={() => toggleFollow(space)}
-									disabled={pendingSpaceId === space.id}
-									aria-busy={pendingSpaceId === space.id}
-									class="shrink-0 rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-								>
-									{#if pendingSpaceId === space.id}
-										<Loader2 size={12} class="animate-spin" />
-									{:else}
-										{t('radar.unfollow', 'Unfollow')}
-									{/if}
-								</button>
-							{/if}
-						</div>
-					{/each}
-
-					<!-- Remaining countries -->
-					{#each browseCountries as space (space.id)}
-						<div
-							class="group flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 transition-colors hover:border-[var(--color-primary)]/40"
-						>
-							<a
-								href={`/spaces/${space.slug}`}
-								class="flex min-w-0 flex-1 items-center gap-2 text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]"
-							>
-								<Globe size={14} class="shrink-0 text-[var(--color-muted)]" />
-								<span class="truncate">{space.name}</span>
-								{#if space.follower_count}
-									<span class="text-xs font-normal text-[var(--color-muted)]">· {space.follower_count}</span>
-								{/if}
-							</a>
-							{#if authed}
-								<button
-									type="button"
-									onclick={() => toggleFollow(space)}
-									disabled={pendingSpaceId === space.id}
-									aria-busy={pendingSpaceId === space.id}
-									class="shrink-0 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-								>
-									{#if pendingSpaceId === space.id}
-										<Loader2 size={12} class="animate-spin" />
-									{:else}
-										{t('radar.follow', 'Follow')}
-									{/if}
-								</button>
-							{:else}
-								<a
-									href={`/spaces/${space.slug}`}
-									class="flex shrink-0 items-center gap-0.5 text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
-								>
-									{t('common.view', 'View')}
-									<ChevronRight size={12} />
-								</a>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</div>
 	{/if}
 	</div>
 </div>
+
+{#snippet countryList()}
+	<!-- Browse countries — followed pinned to top, then the rest -->
+<div class="p-4">
+		<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+			<Globe size={16} />
+			{t('radar.browse_countries', 'Browse countries')}
+			{#if countries.length > 0}
+				<span class="text-xs font-normal text-[var(--color-muted)]">({countries.length})</span>
+			{/if}
+		</h2>
+
+		{#if data.countriesError}
+			<p class="py-8 text-center text-sm text-[var(--color-text-subtle)]">
+				{t('radar.countries_error', 'Failed to load the country list. Please try again later.')}
+			</p>
+		{:else if countries.length === 0}
+			<EmptyState
+				icon={Globe}
+				title={t('radar.no_countries', 'No country spaces yet')}
+				body={t('radar.no_countries_body', 'Country spaces will appear here once they are created.')}
+			/>
+		{:else}
+			<div class="space-y-1.5">
+				<!-- Followed countries first -->
+				{#each followedCountries as space (space.id)}
+					<div
+						class="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-3 py-2"
+					>
+						<a
+							href={`/spaces/${space.slug}`}
+							class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+						>
+							<Pin size={14} class="shrink-0 text-[var(--color-primary)]" />
+							<span class="truncate">{space.name}</span>
+							{#if space.follower_count}
+								<span class="text-xs font-normal text-[var(--color-muted)]">· {space.follower_count}</span>
+							{/if}
+						</a>
+						{#if authed}
+							<button
+								type="button"
+								onclick={() => toggleFollow(space)}
+								disabled={pendingSpaceId === space.id}
+								aria-busy={pendingSpaceId === space.id}
+								class="shrink-0 rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+							>
+								{#if pendingSpaceId === space.id}
+									<Loader2 size={12} class="animate-spin" />
+								{:else}
+									{t('radar.unfollow', 'Unfollow')}
+								{/if}
+							</button>
+						{/if}
+					</div>
+				{/each}
+
+				<!-- Remaining countries -->
+				{#each browseCountries as space (space.id)}
+					<div
+						class="group flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 transition-colors hover:border-[var(--color-primary)]/40"
+					>
+						<a
+							href={`/spaces/${space.slug}`}
+							class="flex min-w-0 flex-1 items-center gap-2 text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]"
+						>
+							<Globe size={14} class="shrink-0 text-[var(--color-muted)]" />
+							<span class="truncate">{space.name}</span>
+							{#if space.follower_count}
+								<span class="text-xs font-normal text-[var(--color-muted)]">· {space.follower_count}</span>
+							{/if}
+						</a>
+						{#if authed}
+							<button
+								type="button"
+								onclick={() => toggleFollow(space)}
+								disabled={pendingSpaceId === space.id}
+								aria-busy={pendingSpaceId === space.id}
+								class="shrink-0 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+							>
+								{#if pendingSpaceId === space.id}
+									<Loader2 size={12} class="animate-spin" />
+								{:else}
+									{t('radar.follow', 'Follow')}
+								{/if}
+							</button>
+						{:else}
+							<a
+								href={`/spaces/${space.slug}`}
+								class="flex shrink-0 items-center gap-0.5 text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+							>
+								{t('common.view', 'View')}
+								<ChevronRight size={12} />
+							</a>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+{/snippet}
