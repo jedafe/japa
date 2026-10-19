@@ -281,10 +281,9 @@ func byokQueriesKey(userID pgtype.UUID) string {
 	return fmt.Sprintf("jc:ai:byok:queries:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
 }
 
-// CheckByokBudget enforces ai.byok.daily_query_cap — a per-user daily
-// ceiling on BYOK turns. The provider call is the caller's expense, but
-// tool calls, memory, and transcripts still run on platform infra, so
-// usage gets its own bounded counter. Mirrors CheckBudget's Incr+Expire.
+// CheckByokBudget reads jc:ai:byok:queries WITHOUT incrementing — the turn
+// is only counted after the provider answers (RecordByokTurn), so failed
+// or rejected BYOK turns don't burn the caller's daily cap.
 func (p *Preflight) CheckByokBudget(ctx context.Context, userID pgtype.UUID) *PreflightError {
 	if p == nil || p.budget == nil || !userID.Valid {
 		return nil
@@ -299,21 +298,12 @@ func (p *Preflight) CheckByokBudget(ctx context.Context, userID pgtype.UUID) *Pr
 		return nil // disabled
 	}
 
-	key := byokQueriesKey(userID)
-
-	count, err := p.budget.Incr(ctx, key)
-	if err != nil {
-		slog.Warn("ai: byok daily query check failed, allowing request", "error", err)
+	raw, err := p.budget.Get(ctx, byokQueriesKey(userID))
+	if err != nil || raw == "" {
 		return nil
 	}
 
-	if count == 1 {
-		if err := p.budget.Expire(ctx, key, int(aiBudgetDailyTTL.Seconds())); err != nil {
-			slog.Warn("ai: failed to set byok query key TTL", "error", err)
-		}
-	}
-
-	if count > int64(limit) {
+	if n, perr := strconv.Atoi(raw); perr == nil && n >= limit {
 		return &PreflightError{
 			Status:  http.StatusTooManyRequests,
 			Code:    "byok_daily_limit",
@@ -322,6 +312,24 @@ func (p *Preflight) CheckByokBudget(ctx context.Context, userID pgtype.UUID) *Pr
 	}
 
 	return nil
+}
+
+// RecordByokTurn increments jc:ai:byok:queries after the provider's first
+// successful response. Best-effort — Valkey failures are logged, never
+// propagated (mirrors RecordCost).
+func (p *Preflight) RecordByokTurn(ctx context.Context, userID pgtype.UUID) {
+	if p == nil || p.budget == nil || !userID.Valid {
+		return
+	}
+
+	key := byokQueriesKey(userID)
+
+	if _, err := p.budget.Incr(ctx, key); err != nil {
+		slog.Warn("ai: byok turn record failed", "error", err)
+		return
+	}
+
+	_ = p.budget.Expire(ctx, key, int(aiBudgetDailyTTL.Seconds()))
 }
 
 // RecordCost accumulates a completed request's estimated USD cost into

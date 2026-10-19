@@ -735,6 +735,8 @@ func (h *AgentHandler) runLoop(
 		})
 	}
 
+	byokCounted := false
+
 	for iteration := range maxToolCalls {
 		// Check for user-initiated cancellation (jc:agent:session:{}:{id} = "cancelled").
 		if h.isCancelled(loopCtx, session.ID) {
@@ -784,6 +786,14 @@ func (h *AgentHandler) runLoop(
 
 			loopErr = fmt.Errorf("agent: LLM call failed: %w", err)
 			break
+		}
+
+		// Count the BYOK turn on first successful provider response —
+		// failed turns never consume the caller's daily BYOK cap
+		// (CheckByokBudget peeked without incrementing at admission).
+		if p.byok != nil && !byokCounted {
+			h.preflight.RecordByokTurn(loopCtx, userID)
+			byokCounted = true
 		}
 
 		// ADR-130 Phase 2: streams that report no usage (provider never sent

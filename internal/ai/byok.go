@@ -602,11 +602,11 @@ func (s *UserAIKeyStore) auditByok(ctx context.Context, action string, userID, k
 // decryptedKey returns the plaintext API key for internal provider
 // construction — never crosses the HTTP boundary.
 func (s *UserAIKeyStore) decryptedKey(ctx context.Context, keyID pgtype.UUID) (string, error) {
-	var encrypted string
+	var encrypted, hash string
 
 	err := s.read.QueryRow(ctx, `
-		SELECT api_key_encrypted FROM user_ai_keys WHERE id = $1
-	`, keyID).Scan(&encrypted)
+		SELECT api_key_encrypted, api_key_hash FROM user_ai_keys WHERE id = $1
+	`, keyID).Scan(&encrypted, &hash)
 	if err != nil {
 		return "", fmt.Errorf("getting api key: %w", err)
 	}
@@ -614,6 +614,17 @@ func (s *UserAIKeyStore) decryptedKey(ctx context.Context, keyID pgtype.UUID) (s
 	plaintext, err := crypto.Decrypt(encrypted)
 	if err != nil {
 		return "", fmt.Errorf("ai: decrypt user api key: %w", err)
+	}
+
+	// Lazy backfill: rows predating api_key_hash get hashed on first use so
+	// the dedup index covers them without a migration-time decrypt (the
+	// encryption key lives in app env, not in SQL).
+	if hash == "" {
+		if _, uerr := s.write.Exec(ctx,
+			`UPDATE user_ai_keys SET api_key_hash = $1 WHERE id = $2 AND api_key_hash = ''`,
+			byokKeyHash(plaintext), keyID); uerr != nil {
+			slog.Warn("ai: byok key-hash backfill failed", "key_id", keyID, "error", uerr)
+		}
 	}
 
 	return plaintext, nil
