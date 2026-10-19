@@ -2411,6 +2411,29 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			registered = h.Dispatcher.RegisteredModels()
 		}
 
+		// ai.chat.allowed_models (csv) narrows the platform picker list —
+		// display-only; dispatch is unaffected. Empty = all registered.
+		if h.Settings != nil {
+			if raw := h.Settings.GetStringOr(r.Context(), "ai.chat.allowed_models", ""); raw != "" {
+				allowed := make(map[string]struct{})
+				for _, m := range strings.Split(raw, ",") {
+					if s := strings.TrimSpace(m); s != "" {
+						allowed[s] = struct{}{}
+					}
+				}
+
+				if len(allowed) > 0 {
+					kept := registered[:0]
+					for _, m := range registered {
+						if _, ok := allowed[m.ID]; ok {
+							kept = append(kept, m)
+						}
+					}
+					registered = kept
+				}
+			}
+		}
+
 		slog.Info("ai: HandleListModels registered", "category", category, "count", len(registered))
 
 		models = append(models, registered...)
