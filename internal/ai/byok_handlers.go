@@ -337,35 +337,10 @@ func (h *Handlers) HandleCreateMyAIKey(w http.ResponseWriter, r *http.Request) {
 	// Verify-before-save: dead credentials are rejected instead of stored.
 	// Transient provider failures don't block the save — the key lands
 	// unverified and the user can re-verify later.
-	if h.byokProviders != nil {
-		if bp, gerr := h.byokProviders.Get(r.Context(), providerID); gerr == nil && bp.Enabled {
-			p, perr := NewProviderFromConfig(ProviderConfig{
-				Name:         bp.DisplayName,
-				ProviderType: bp.ProviderType,
-			}, apiKey)
-			if perr == nil {
-				vctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-				_, verr := p.FetchModels(vctx)
-				cancel()
-
-				if IsProviderKeyRejected(verr) {
-					// Count the rejection toward the probe throttle.
-					if h.cache != nil {
-						rk := fmt.Sprintf("jc:ai:byok:rejects:%s", user.UserID.String())
-						n := 1
-						if raw, gerr := h.cache.Get(r.Context(), rk); gerr == nil && raw != "" {
-							if v, perr := strconv.Atoi(raw); perr == nil {
-								n = v + 1
-							}
-						}
-						_ = h.cache.Set(r.Context(), rk, strconv.Itoa(n), 3600)
-					}
-
-					errpkg.WriteError(w, http.StatusUnprocessableEntity, "key_rejected", "The provider rejected this API key")
-					return
-				}
-			}
-		}
+	if h.byokKeyRejected(r.Context(), providerID, apiKey) {
+		h.bumpByokRejects(r.Context(), user.UserID)
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "key_rejected", "The provider rejected this API key")
+		return
 	}
 
 	key, err := h.userKeys.Create(r.Context(), user.UserID, providerID, apiKey, label)
@@ -436,6 +411,23 @@ func (h *Handlers) HandleUpdateMyAIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rotating to a dead credential would silently flag 'active' again —
+	// re-verify before persisting, same as create. The probe throttle is
+	// shared so probing via rotate is covered too.
+	if input.APIKey != nil && *input.APIKey != "" {
+		existing, gerr := h.userKeys.GetForUser(r.Context(), user.UserID, keyID)
+		if gerr != nil {
+			byokErrorStatus(w, gerr)
+			return
+		}
+
+		if h.byokKeyRejected(r.Context(), existing.ByokProviderID, *input.APIKey) {
+			h.bumpByokRejects(r.Context(), user.UserID)
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "key_rejected", "The provider rejected this API key")
+			return
+		}
+	}
+
 	key, err := h.userKeys.Update(r.Context(), user.UserID, keyID, input.Label, input.APIKey)
 	if err != nil {
 		byokErrorStatus(w, err)
@@ -473,9 +465,57 @@ func (h *Handlers) HandleDeleteMyAIKey(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// byokKeyRejected builds an ephemeral provider from the submitted
+// credential and calls FetchModels; true only when the provider rejects
+// the credential outright (401). Transient failures return false — they
+// must not block saves or mark keys dead.
+func (h *Handlers) byokKeyRejected(ctx context.Context, providerID pgtype.UUID, apiKey string) bool {
+	if h.byokProviders == nil {
+		return false
+	}
+
+	bp, err := h.byokProviders.Get(ctx, providerID)
+	if err != nil || !bp.Enabled {
+		return false
+	}
+
+	p, perr := NewProviderFromConfig(ProviderConfig{
+		Name:         bp.DisplayName,
+		ProviderType: bp.ProviderType,
+	}, apiKey)
+	if perr != nil {
+		return false
+	}
+
+	vctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	_, verr := p.FetchModels(vctx)
+
+	return IsProviderKeyRejected(verr)
+}
+
+// bumpByokRejects increments the probe-throttle counter for a user.
+func (h *Handlers) bumpByokRejects(ctx context.Context, userID pgtype.UUID) {
+	if h.cache == nil {
+		return
+	}
+
+	rk := fmt.Sprintf("jc:ai:byok:rejects:%s", userID.String())
+	n := 1
+
+	if raw, gerr := h.cache.Get(ctx, rk); gerr == nil && raw != "" {
+		if v, perr := strconv.Atoi(raw); perr == nil {
+			n = v + 1
+		}
+	}
+
+	_ = h.cache.Set(ctx, rk, strconv.Itoa(n), 3600)
+}
+
 // HandleVerifyMyAIKey serves POST /me/ai-keys/{id}/verify. Uses the
 // provider's FetchModels endpoint as the cheapest possible liveness check;
-// a 401/403 marks the key invalid, anything else leaves status untouched.
+// a 401 marks the key invalid, anything else leaves status untouched.
 func (h *Handlers) HandleVerifyMyAIKey(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
