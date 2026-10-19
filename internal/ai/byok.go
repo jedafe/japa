@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/crypto"
@@ -477,6 +478,11 @@ func (s *UserAIKeyStore) Create(ctx context.Context, userID, providerID pgtype.U
 		RETURNING id
 	`, userID, providerID, label, encryptedKey, keyHash).Scan(&id)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "key_hash") {
+			return UserAIKey{}, ErrByokKeyInUse
+		}
+
 		return UserAIKey{}, fmt.Errorf("inserting user_ai_key: %w", err)
 	}
 
@@ -530,6 +536,11 @@ func (s *UserAIKeyStore) Update(ctx context.Context, userID, keyID pgtype.UUID, 
 
 	tag, err := s.write.Exec(ctx, query, args...)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "key_hash") {
+			return UserAIKey{}, ErrByokKeyInUse
+		}
+
 		return UserAIKey{}, fmt.Errorf("updating user_ai_key: %w", err)
 	}
 

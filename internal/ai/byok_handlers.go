@@ -67,11 +67,34 @@ func byokErrorStatus(w http.ResponseWriter, err error) {
 	}
 }
 
+// byokProviderPublic is the user-facing projection of a allowlist row —
+// referral_clicks, enabled, and timestamps are admin internals and stay
+// off the public contract.
+type byokProviderPublic struct {
+	ID           pgtype.UUID `json:"id"`
+	ProviderType string      `json:"provider_type"`
+	DisplayName  string      `json:"display_name"`
+	Models       []ModelInfo `json:"models"`
+	SignupURL    string      `json:"signup_url"`
+}
+
+func byokPublic(bp ByokProvider) byokProviderPublic {
+	models := bp.Models
+	if models == nil {
+		models = []ModelInfo{}
+	}
+
+	return byokProviderPublic{
+		ID: bp.ID, ProviderType: bp.ProviderType, DisplayName: bp.DisplayName,
+		Models: models, SignupURL: bp.SignupURL,
+	}
+}
+
 // byokProviderView is the GET /ai/byok/providers row — the allowlist entry
 // plus the caller's attached keys so one fetch feeds both the picker group
 // and the add-key dialog.
 type byokProviderView struct {
-	ByokProvider
+	byokProviderPublic
 	HasKey bool             `json:"has_key"`
 	Keys   []userAIKeyBrief `json:"keys"`
 }
@@ -81,6 +104,29 @@ type userAIKeyBrief struct {
 	Label        string      `json:"label"`
 	APIKeyMasked string      `json:"api_key_masked"`
 	Status       string      `json:"status"`
+}
+
+// userAIKeyPublic is the /me/ai-keys response shape — same fields as
+// UserAIKey but the embedded provider goes through byokProviderPublic so
+// admin internals (referral_clicks, enabled, timestamps) stay off the wire.
+type userAIKeyPublic struct {
+	ID             pgtype.UUID        `json:"id"`
+	ByokProviderID pgtype.UUID        `json:"byok_provider_id"`
+	Label          string             `json:"label"`
+	APIKeyMasked   string             `json:"api_key_masked"`
+	Status         string             `json:"status"`
+	LastError      string             `json:"last_error,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+	Provider       byokProviderPublic `json:"provider"`
+}
+
+func byokKeyPublic(k UserAIKey) userAIKeyPublic {
+	return userAIKeyPublic{
+		ID: k.ID, ByokProviderID: k.ByokProviderID, Label: k.Label,
+		APIKeyMasked: k.APIKeyMasked, Status: k.Status, LastError: k.LastError,
+		CreatedAt: k.CreatedAt, UpdatedAt: k.UpdatedAt, Provider: byokPublic(k.Provider),
+	}
 }
 
 // HandleListByokProviders serves GET /ai/byok/providers.
@@ -130,9 +176,9 @@ func (h *Handlers) HandleListByokProviders(w http.ResponseWriter, r *http.Reques
 		}
 
 		out = append(out, byokProviderView{
-			ByokProvider: bp,
-			HasKey:       len(ks) > 0,
-			Keys:         ks,
+			byokProviderPublic: byokPublic(bp),
+			HasKey:             len(ks) > 0,
+			Keys:               ks,
 		})
 	}
 
@@ -163,8 +209,23 @@ func (h *Handlers) HandleByokReferralClick(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.byokProviders.IncrementReferralClicks(r.Context(), id); err != nil {
-		slog.Warn("ai: referral click increment failed", "provider_id", id, "error", err)
+	// One click per user per provider per day — raw spam would inflate the
+	// affiliate counter and distort reporting.
+	already := false
+	if h.cache != nil {
+		ck := fmt.Sprintf("jc:ai:byok:refclick:%s:%s", user.UserID.String(), id.String())
+
+		if v, gerr := h.cache.Get(r.Context(), ck); gerr == nil && v != "" {
+			already = true
+		} else {
+			_ = h.cache.Set(r.Context(), ck, "1", 86400)
+		}
+	}
+
+	if !already {
+		if err := h.byokProviders.IncrementReferralClicks(r.Context(), id); err != nil {
+			slog.Warn("ai: referral click increment failed", "provider_id", id, "error", err)
+		}
 	}
 
 	slog.Info("ai: byok referral click", "provider_id", id, "user_id", user.UserID)
@@ -191,11 +252,12 @@ func (h *Handlers) HandleListMyAIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if keys == nil {
-		keys = []UserAIKey{}
+	out := make([]userAIKeyPublic, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, byokKeyPublic(k))
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": keys})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // HandleCreateMyAIKey serves POST /me/ai-keys.
@@ -312,8 +374,14 @@ func (h *Handlers) HandleCreateMyAIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Successful save clears the probe counter — a legitimate user who
+	// mistyped a few keys isn't throttled for the rest of the hour.
+	if h.cache != nil {
+		_ = h.cache.Set(r.Context(), fmt.Sprintf("jc:ai:byok:rejects:%s", user.UserID.String()), "0", 3600)
+	}
+
 	slog.Info("ai: user api key created", "user_id", user.UserID, "provider_id", providerID, "key_id", key.ID)
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": key})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": byokKeyPublic(key)})
 }
 
 // HandleUpdateMyAIKey serves PATCH /me/ai-keys/{id}.
@@ -375,7 +443,7 @@ func (h *Handlers) HandleUpdateMyAIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("ai: user api key updated", "user_id", user.UserID, "key_id", keyID)
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": key})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": byokKeyPublic(key)})
 }
 
 // HandleDeleteMyAIKey serves DELETE /me/ai-keys/{id}.

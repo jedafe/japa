@@ -181,6 +181,12 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	// ai.byok gate is defense-in-depth on top of key-creation gating.
 	var byokProvider Provider
 	if req.ByokKeyID != nil && req.ByokKeyID.Valid {
+		// The flag must gate dispatch, not just the key-management routes —
+		// the /ai/chat OR-gate admits ai.byok holders unconditionally.
+		if h.checker != nil && !h.checker.IsEnabled(ctx, "feature.ai_byok") {
+			return nil, errByokUnavailable
+		}
+
 		if h.perms != nil && !h.perms.HasPermission(ctx, userID, "ai.byok") {
 			return nil, errByokNoPermission
 		}
