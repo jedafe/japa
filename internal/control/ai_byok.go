@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/ai"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -147,6 +148,12 @@ func (h *Handlers) CreateByokProvider(w http.ResponseWriter, r *http.Request) {
 		Enabled:      enabled,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_provider_type", "A BYOK provider for this type already exists")
+			return
+		}
+
 		slog.Error("control: create byok provider", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create BYOK provider")
 		return

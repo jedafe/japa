@@ -13,6 +13,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -217,12 +218,15 @@ func (h *Handlers) HandleCreateMyAIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.APIKey == "" || len(input.APIKey) > 4096 {
+	apiKey := strings.TrimSpace(input.APIKey)
+	label := strings.TrimSpace(input.Label)
+
+	if apiKey == "" || len(apiKey) > 4096 {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "api_key is required (max 4096 chars)")
 		return
 	}
 
-	if len(input.Label) > 120 {
+	if len(label) > 120 {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "label is too long (max 120 chars)")
 		return
 	}
@@ -232,7 +236,7 @@ func (h *Handlers) HandleCreateMyAIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, err := h.userKeys.Create(r.Context(), user.UserID, providerID, input.APIKey, input.Label)
+	key, err := h.userKeys.Create(r.Context(), user.UserID, providerID, apiKey, label)
 	if err != nil {
 		byokErrorStatus(w, err)
 		return
@@ -263,6 +267,15 @@ func (h *Handlers) HandleUpdateMyAIKey(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
+	}
+
+	if input.Label != nil {
+		l := strings.TrimSpace(*input.Label)
+		input.Label = &l
+	}
+	if input.APIKey != nil {
+		k := strings.TrimSpace(*input.APIKey)
+		input.APIKey = &k
 	}
 
 	if input.Label == nil && (input.APIKey == nil || *input.APIKey == "") {

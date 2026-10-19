@@ -2413,7 +2413,9 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
 
 		// ai.chat.allowed_models (csv) narrows the platform picker list —
 		// display-only; dispatch is unaffected. Empty = all registered.
-		if h.Settings != nil {
+		// Chat-category only: other pickers (embedding, tts, …) share this
+		// endpoint and must not be filtered by chat model ids.
+		if h.Settings != nil && (category == "chat" || category == "") {
 			if raw := h.Settings.GetStringOr(r.Context(), "ai.chat.allowed_models", ""); raw != "" {
 				allowed := make(map[string]struct{})
 				for _, m := range strings.Split(raw, ",") {
