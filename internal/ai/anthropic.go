@@ -209,7 +209,7 @@ func (p *AnthropicProvider) Send(ctx context.Context, req Request) (Response, er
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return Response{}, fmt.Errorf("anthropic: API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return Response{}, &HTTPStatusError{Provider: "anthropic", Status: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var msgResp anthropicMessageResponse
@@ -394,7 +394,7 @@ func (p *AnthropicProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return ChatWithToolsResponse{}, fmt.Errorf("anthropic: tools API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return ChatWithToolsResponse{}, &HTTPStatusError{Provider: "anthropic", Op: "tools", Status: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var msgResp anthropicToolsResponse
@@ -604,7 +604,7 @@ func (p *AnthropicProvider) FetchModels(ctx context.Context) ([]ModelInfo, error
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("anthropic: models API error (status %d): %s", resp.StatusCode, truncate(string(respBody), 500))
+		return nil, &HTTPStatusError{Provider: "anthropic", Op: "models", Status: resp.StatusCode, Body: string(respBody)}
 	}
 
 	// Anthropic uses the OpenAI-compatible models response format.

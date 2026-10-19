@@ -14,6 +14,8 @@ package ai
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 )
 
 // ErrFunctionCallingUnsupported is returned by providers that do not support
@@ -22,6 +24,37 @@ import (
 // The gateway treats this as a hard failure for the agent category and falls
 // back to the next provider.
 var ErrFunctionCallingUnsupported = errors.New("ai: function calling not supported by this provider")
+
+// HTTPStatusError wraps a provider's non-2xx response so callers can classify
+// failures — e.g. mark a BYOK user key invalid on a 401/403 rejection —
+// without string-parsing. Error() preserves the legacy message format.
+type HTTPStatusError struct {
+	Provider string
+	// Op is the operation context that appeared in the legacy message
+	// ("tools", "models", "embeddings", "stream"); "" yields plain "API error".
+	Op     string
+	Status int
+	Body   string
+}
+
+func (e *HTTPStatusError) Error() string {
+	if e.Op != "" {
+		return fmt.Sprintf("%s: %s API error (status %d): %s", e.Provider, e.Op, e.Status, truncate(e.Body, 500))
+	}
+
+	return fmt.Sprintf("%s: API error (status %d): %s", e.Provider, e.Status, truncate(e.Body, 500))
+}
+
+// IsProviderAuthError reports whether err (possibly wrapped) is a provider
+// 401/403 rejection — the only failure class that marks a BYOK key invalid.
+func IsProviderAuthError(err error) bool {
+	var he *HTTPStatusError
+	if errors.As(err, &he) {
+		return he.Status == http.StatusUnauthorized || he.Status == http.StatusForbidden
+	}
+
+	return false
+}
 
 // LLMToolDefinition describes a single tool the LLM may invoke during a
 // function-calling conversation. The Parameters field is a JSON Schema object

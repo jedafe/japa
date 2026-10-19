@@ -130,7 +130,7 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatWithToolsReq
 
 	if httpResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
-		return ChatWithToolsResponse{}, fmt.Errorf("anthropic: stream API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return ChatWithToolsResponse{}, &HTTPStatusError{Provider: "anthropic", Op: "stream", Status: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var (

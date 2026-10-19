@@ -253,7 +253,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return Response{}, fmt.Errorf("openai: API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return Response{}, &HTTPStatusError{Provider: "openai", Status: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var chatResp openAIChatResponse
@@ -498,7 +498,7 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return ChatWithToolsResponse{}, fmt.Errorf("openai: tools API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return ChatWithToolsResponse{}, &HTTPStatusError{Provider: "openai", Op: "tools", Status: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var chatResp openAIToolsChatResponse
@@ -626,7 +626,7 @@ func (p *OpenAIProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("openai: models API error (status %d): %s", resp.StatusCode, truncate(string(respBody), 500))
+		return nil, &HTTPStatusError{Provider: "openai", Op: "models", Status: resp.StatusCode, Body: string(respBody)}
 	}
 
 	var modelsResp openAIModelsResponse
@@ -694,7 +694,7 @@ func (p *OpenAIProvider) sendEmbedding(ctx context.Context, req Request) (Respon
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return Response{}, fmt.Errorf("openai: embeddings API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return Response{}, &HTTPStatusError{Provider: "openai", Op: "embeddings", Status: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var parsed struct {

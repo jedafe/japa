@@ -486,7 +486,7 @@ func (p *PerplexityProvider) doAgentRequest(ctx context.Context, agentReq *perpl
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return Response{}, fmt.Errorf("perplexity: API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return Response{}, &HTTPStatusError{Provider: "perplexity", Status: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var agentResp perplexityAgentResponse
@@ -567,7 +567,7 @@ func (p *PerplexityProvider) doAgentToolsRequest(ctx context.Context, agentReq *
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return ChatWithToolsResponse{}, fmt.Errorf("perplexity: tools API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return ChatWithToolsResponse{}, &HTTPStatusError{Provider: "perplexity", Op: "tools", Status: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var agentResp perplexityAgentResponse
@@ -724,7 +724,7 @@ func (p *PerplexityProvider) FetchModels(ctx context.Context) ([]ModelInfo, erro
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("perplexity: models API error (status %d): %s", resp.StatusCode, truncate(string(respBody), 500))
+		return nil, &HTTPStatusError{Provider: "perplexity", Op: "models", Status: resp.StatusCode, Body: string(respBody)}
 	}
 
 	var modelsResp openAIModelsResponse

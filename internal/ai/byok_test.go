@@ -115,3 +115,23 @@ func TestSupportedByokProviderTypes(t *testing.T) {
 		}
 	}
 }
+
+func TestIsProviderAuthError(t *testing.T) {
+	t.Parallel()
+
+	if !IsProviderAuthError(fmt.Errorf("wrap: %w", &HTTPStatusError{Provider: "openai", Status: 401})) {
+		t.Error("401 must be detected through wrapping")
+	}
+	if !IsProviderAuthError(&HTTPStatusError{Provider: "anthropic", Status: 403}) {
+		t.Error("403 must be auth")
+	}
+	if IsProviderAuthError(&HTTPStatusError{Status: 429}) {
+		t.Error("429 is not auth")
+	}
+	if IsProviderAuthError(&HTTPStatusError{Status: 500}) {
+		t.Error("500 is not auth")
+	}
+	if IsProviderAuthError(fmt.Errorf("plain error")) {
+		t.Error("untyped error is not auth")
+	}
+}

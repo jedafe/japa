@@ -92,7 +92,7 @@ func streamChatCompletions(
 
 	if httpResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
-		return ChatWithToolsResponse{}, fmt.Errorf("stream API error (status %d): %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return ChatWithToolsResponse{}, &HTTPStatusError{Provider: "openai", Op: "stream", Status: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var (
