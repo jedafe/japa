@@ -35,6 +35,7 @@ type radarItem struct {
 	Title             string             `json:"title"`
 	Description       *string            `json:"description,omitempty"`
 	Country           string             `json:"country"`
+	SpaceID           pgtype.UUID        `json:"space_id,omitempty"`
 	University        *string            `json:"university,omitempty"`
 	DegreeLevel       *string            `json:"degree_level,omitempty"`
 	Deadline          pgtype.Date        `json:"deadline"`
@@ -63,6 +64,7 @@ func scholarshipToRadarItem(s gen.Scholarship) radarItem {
 		Title:             s.Title,
 		Description:       s.Description,
 		Country:           s.Country,
+		SpaceID:           s.CountrySpaceID,
 		University:        s.University,
 		DegreeLevel:       s.DegreeLevel,
 		Deadline:          s.Deadline,
@@ -84,6 +86,7 @@ func jobToRadarItem(j gen.IntelJob) radarItem {
 		Title:             j.Title,
 		Description:       j.Description,
 		Country:           j.Country,
+		SpaceID:           j.CountrySpaceID,
 		Deadline:          j.Deadline,
 		ApplicationURL:    j.ApplicationUrl,
 		ConfidenceOverall: j.ConfidenceOverall,
@@ -106,6 +109,7 @@ func visaRouteToRadarItem(v gen.VisaRoute) radarItem {
 		IntelRecordID:     v.IntelRecordID,
 		Type:              "visa",
 		Title:             v.Name,
+		SpaceID:           v.DestinationSpaceID,
 		Description:       v.EligibilitySummary,
 		ApplicationURL:    &govURL,
 		ConfidenceOverall: v.ConfidenceOverall,
@@ -129,6 +133,7 @@ func housingGuideToRadarItem(h gen.HousingGuide) radarItem {
 		IntelRecordID:     h.IntelRecordID,
 		Type:              "housing",
 		Title:             title,
+		SpaceID:           func() pgtype.UUID { if h.DestinationSpaceID.Valid { return h.DestinationSpaceID }; return h.CitySpaceID }(),
 		Description:       h.Tips,
 		ConfidenceOverall: h.ConfidenceOverall,
 		TrustLevel:        0,
@@ -169,6 +174,7 @@ func comparisonItemToRadarItem(c gen.ComparisonItem) radarItem {
 		IntelRecordID:     c.IntelRecordID,
 		Type:              "cost_of_living",
 		Title:             c.Title,
+		SpaceID:           c.GeoSpaceID,
 		Description:       c.Description,
 		ConfidenceOverall: c.ConfidenceOverall,
 		TrustLevel:        0,
@@ -226,6 +232,22 @@ func encodeRadarCursor(checkpoints map[string]radarCursorCheckpoint) string {
 	}
 
 	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+// parseSinceParam parses the ?since= filter (catalog INTEL): accepts an
+// RFC3339 timestamp or a Unix epoch (seconds); anything else yields an
+// invalid timestamp, which the queries treat as "no filter".
+func parseSinceParam(raw string) pgtype.Timestamptz {
+	if raw == "" {
+		return pgtype.Timestamptz{}
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return pgtype.Timestamptz{Time: t.UTC(), Valid: true}
+	}
+	if secs, err := strconv.ParseInt(raw, 10, 64); err == nil && secs > 0 {
+		return pgtype.Timestamptz{Time: time.Unix(secs, 0).UTC(), Valid: true}
+	}
+	return pgtype.Timestamptz{}
 }
 
 // parseRadarCursor decodes the keyset cursor. Returns nil when absent or
@@ -307,6 +329,45 @@ func normalizeRadarItemType(v string) string {
 		return "announcement"
 	default:
 		return v
+	}
+}
+
+
+// resolveRadarCountryNames replaces each item's raw extraction text
+// ("USA", "Japan") with the canonical space name ("United States",
+// "Japan") when a geo space is linked — and fills Country for items whose
+// domain has no country text column (visa_routes, housing_guides). One
+// batch query per page. Best-effort: failures leave raw text in place.
+func (h *Handlers) resolveRadarCountryNames(ctx context.Context, items []radarItem) {
+	if h.intelStores == nil {
+		return
+	}
+
+	seen := map[pgtype.UUID]bool{}
+	var ids []pgtype.UUID
+	for _, it := range items {
+		if it.SpaceID.Valid && !seen[it.SpaceID] {
+			seen[it.SpaceID] = true
+			ids = append(ids, it.SpaceID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	rows, err := h.intelStores.GetSpacesByIDs(ctx, ids)
+	if err != nil {
+		slog.Warn("intel: radar country-name resolution failed", "error", err)
+		return
+	}
+	names := make(map[pgtype.UUID]string, len(rows))
+	for _, r := range rows {
+		names[r.ID] = r.Name
+	}
+	for i := range items {
+		if n, ok := names[items[i].SpaceID]; ok && n != "" {
+			items[i].Country = n
+		}
 	}
 }
 
@@ -409,7 +470,7 @@ func convertRadarRows[T any](rows []T, convert func(T) radarItem) []radarItem {
 // whenever a cursor was present. remittance_rates has no geo columns, so
 // it is excluded when a geo filter is active rather than leaking
 // unrelated corridors into a country-scoped feed.
-func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, country string) []radarFetch {
+func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, country string, since pgtype.Timestamptz) []radarFetch {
 	geoActive := spaceID.Valid || country != ""
 
 	out := make([]radarFetch, 0, 6)
@@ -421,7 +482,7 @@ func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, co
 
 	add("scholarship", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 		rows, err := h.intelStores.ListScholarshipsKeyset(ctx, gen.ListScholarshipsKeysetParams{
-			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Column5: since, Limit: lim,
 		})
 		if err != nil {
 			return nil, err
@@ -432,7 +493,7 @@ func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, co
 
 	add("job", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 		rows, err := h.intelStores.ListIntelJobsKeyset(ctx, gen.ListIntelJobsKeysetParams{
-			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Column5: since, Limit: lim,
 		})
 		if err != nil {
 			return nil, err
@@ -443,7 +504,7 @@ func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, co
 
 	add("visa", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 		rows, err := h.intelStores.ListVisaRoutesIntelKeyset(ctx, gen.ListVisaRoutesIntelKeysetParams{
-			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Column5: since, Limit: lim,
 		})
 		if err != nil {
 			return nil, err
@@ -454,7 +515,7 @@ func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, co
 
 	add("housing", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 		rows, err := h.intelStores.ListHousingGuidesIntelKeyset(ctx, gen.ListHousingGuidesIntelKeysetParams{
-			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Column5: since, Limit: lim,
 		})
 		if err != nil {
 			return nil, err
@@ -466,7 +527,7 @@ func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, co
 	if !geoActive {
 		add("remittance", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 			rows, err := h.intelStores.ListRemittanceRatesIntelKeyset(ctx, gen.ListRemittanceRatesIntelKeysetParams{
-				Column1: ts, ID: id, Limit: lim,
+				Column1: ts, ID: id, Column3: since, Limit: lim,
 			})
 			if err != nil {
 				return nil, err
@@ -478,7 +539,7 @@ func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, co
 
 	add("cost_of_living", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 		rows, err := h.intelStores.ListComparisonItemsIntelKeyset(ctx, gen.ListComparisonItemsIntelKeysetParams{
-			Column1: ts, ID: id, Column3: spaceID, Column4: country, Limit: lim,
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Column5: since, Limit: lim,
 		})
 		if err != nil {
 			return nil, err
@@ -493,60 +554,68 @@ func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, co
 // radarFollowedDomains builds the per-domain fetch list for
 // GET /intel/radar/followed — the space-keyed domains filtered to the
 // caller's followed country spaces. remittance is excluded (no geo
-// columns, and the followed feed is itself a geo filter).
-func (h *Handlers) radarFollowedDomains(spaceIDs []pgtype.UUID) []radarFetch {
-	return []radarFetch{
-		{domain: "scholarship", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+// columns, and the followed feed is itself a geo filter). domainFilter
+// applies the same ?item_type= narrowing as the public feed.
+func (h *Handlers) radarFollowedDomains(spaceIDs []pgtype.UUID, since pgtype.Timestamptz, domainFilter string) []radarFetch {
+	out := make([]radarFetch, 0, 5)
+	add := func(domain string, list func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, limit int32) ([]radarItem, error)) {
+		if domainFilter == "" || domainFilter == domain {
+			out = append(out, radarFetch{domain: domain, list: list})
+		}
+	}
+
+	add("scholarship", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 			rows, err := h.intelStores.ListScholarshipsBySpaces(ctx, gen.ListScholarshipsBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 			})
 			if err != nil {
 				return nil, err
 			}
 
 			return convertRadarRows(rows, scholarshipToRadarItem), nil
-		}},
-		{domain: "job", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		})
+		add("job", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 			rows, err := h.intelStores.ListIntelJobsBySpaces(ctx, gen.ListIntelJobsBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 			})
 			if err != nil {
 				return nil, err
 			}
 
 			return convertRadarRows(rows, jobToRadarItem), nil
-		}},
-		{domain: "visa", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		})
+		add("visa", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 			rows, err := h.intelStores.ListVisaRoutesBySpaces(ctx, gen.ListVisaRoutesBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 			})
 			if err != nil {
 				return nil, err
 			}
 
 			return convertRadarRows(rows, visaRouteToRadarItem), nil
-		}},
-		{domain: "housing", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		})
+		add("housing", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 			rows, err := h.intelStores.ListHousingGuidesBySpaces(ctx, gen.ListHousingGuidesBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 			})
 			if err != nil {
 				return nil, err
 			}
 
 			return convertRadarRows(rows, housingGuideToRadarItem), nil
-		}},
-		{domain: "cost_of_living", list: func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		})
+		add("cost_of_living", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 			rows, err := h.intelStores.ListComparisonItemsBySpaces(ctx, gen.ListComparisonItemsBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Limit: lim,
+				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 			})
 			if err != nil {
 				return nil, err
 			}
 
 			return convertRadarRows(rows, comparisonItemToRadarItem), nil
-		}},
-	}
+		})
+
+	return out
 }
 
 // radarMergePage fetches every domain's next batch, merges, sorts,
@@ -561,9 +630,13 @@ func (h *Handlers) radarFollowedDomains(spaceIDs []pgtype.UUID) []radarFetch {
 // next_cursor (incoming checkpoints are preserved for domains that
 // emitted nothing), and hasMore.
 func (h *Handlers) radarMergePage(ctx context.Context, userID pgtype.UUID, domains []radarFetch, checkpoints map[string]radarCursorCheckpoint, offset, limit int) ([]radarItem, map[string]radarCursorCheckpoint, bool, error) {
-	fetchLimit := limit
+	// Fetch one row beyond the page window so hasMore can distinguish
+	// "exactly N rows remain" from "more than N remain" — a plain
+	// LIMIT offset+limit returns the same row count in both cases and
+	// previously reported has_more=false while pages still existed.
+	fetchLimit := limit + 1
 	if checkpoints == nil {
-		fetchLimit = offset + limit
+		fetchLimit = offset + limit + 1
 	}
 
 	// Fan the domain queries out concurrently — the feed unions up to six
@@ -670,6 +743,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	offset := (page - 1) * limit
 
 	checkpoints := parseRadarCursor(q.Get("cursor"))
+	since := parseSinceParam(q.Get("since"))
 
 	var spaceID pgtype.UUID
 	if spaceIDStr := q.Get("space_id"); spaceIDStr != "" {
@@ -688,7 +762,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 		domainFilter = normalizeRadarItemType(q.Get("type"))
 	}
 
-	domains := h.radarFeedDomains(domainFilter, spaceID, country)
+	domains := h.radarFeedDomains(domainFilter, spaceID, country, since)
 
 	items, next, hasMore, err := h.radarMergePage(r.Context(), userID, domains, checkpoints, offset, limit)
 	if err != nil {
@@ -700,6 +774,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 
 	followedSpaces := h.resolveFollowedSpaceIDs(r.Context(), userID)
 
+	h.resolveRadarCountryNames(r.Context(), items)
 	h.resolveLiterals(r, &items)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -745,7 +820,15 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	typeRows, err := h.intelStores.CountIntelRadarByType(r.Context())
+	var spaceID pgtype.UUID
+	if raw := r.URL.Query().Get("space_id"); raw != "" {
+		if e := spaceID.Scan(raw); e != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
+			return
+		}
+	}
+
+	typeRows, err := h.intelStores.CountIntelRadarByType(r.Context(), spaceID)
 	if err != nil {
 		slog.Error("intel: radar counts by type failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "counts_failed", "Failed to load radar counts")
@@ -753,7 +836,7 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	countryRows, err := h.intelStores.CountIntelRadarByCountry(r.Context())
+	countryRows, err := h.intelStores.CountIntelRadarByCountry(r.Context(), spaceID)
 	if err != nil {
 		slog.Error("intel: radar counts by country failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "counts_failed", "Failed to load radar counts")
@@ -817,6 +900,11 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	page, limit := h.parsePagination(r)
 	offset := (page - 1) * limit
 	checkpoints := parseRadarCursor(q.Get("cursor"))
+	since := parseSinceParam(q.Get("since"))
+	domainFilter := normalizeRadarItemType(q.Get("item_type"))
+	if domainFilter == "" {
+		domainFilter = normalizeRadarItemType(q.Get("type"))
+	}
 
 	spaceIDs, followedSpaceStrs, ok := h.resolveRadarFollowedSpaces(w, r, userID)
 	if !ok {
@@ -831,7 +919,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	if len(spaceIDs) > 0 {
 		var err error
 
-		items, next, hasMore, err = h.radarMergePage(r.Context(), userID, h.radarFollowedDomains(spaceIDs), checkpoints, offset, limit)
+		items, next, hasMore, err = h.radarMergePage(r.Context(), userID, h.radarFollowedDomains(spaceIDs, since, domainFilter), checkpoints, offset, limit)
 		if err != nil {
 			slog.Error("intel: radar followed merge failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
@@ -845,6 +933,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Radar envelope (spec §739), NOT the generic {data, meta} envelope.
+	h.resolveRadarCountryNames(r.Context(), items)
 	h.resolveLiterals(r, &items)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -927,7 +1016,7 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	followed, err := h.followsSvc.ToggleFollow(r.Context(), userID, follows.EntityTypeSpace, spaceID)
+	followed, err := h.followsSvc.EnsureFollow(r.Context(), userID, follows.EntityTypeSpace, spaceID)
 	if err != nil {
 		slog.Error("intel: radar follow failed", "space_id", body.SpaceID, "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "follow_failed", "Failed to follow space")
@@ -982,7 +1071,7 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	followed, err := h.followsSvc.ToggleFollow(r.Context(), userID, follows.EntityTypeSpace, spaceID)
+	followed, err := h.followsSvc.EnsureUnfollow(r.Context(), userID, follows.EntityTypeSpace, spaceID)
 	if err != nil {
 		slog.Error("intel: radar unfollow failed", "space_id", spaceIDStr, "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "unfollow_failed", "Failed to unfollow space")
@@ -1127,6 +1216,9 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	resolved := []radarItem{item}
+	h.resolveRadarCountryNames(r.Context(), resolved)
+	item = resolved[0]
 	h.resolveLiterals(r, &item)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -1305,12 +1397,23 @@ func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 
 // resolveFollowedSpaceIDs returns the set of space IDs the user follows, as
 // a slice of strings. It is best-effort: any error returns an empty slice.
+// Honors intel.radar.max_followed_spaces (INTEL-016) — the same cap as the
+// followed-feed resolver, so the badge sidecar and the feed agree.
 func (h *Handlers) resolveFollowedSpaceIDs(ctx context.Context, userID pgtype.UUID) []string {
 	if h.followsSvc == nil || !userID.Valid {
 		return []string{}
 	}
 
-	followed, err := h.followsSvc.GetFollowingByType(ctx, userID, userID, follows.EntityTypeSpace, 100, 0)
+	maxFollowed := 100
+	if h.settings != nil {
+		maxFollowed = h.settings.GetIntOr(ctx, "intel.radar.max_followed_spaces", 100)
+	}
+	if maxFollowed > math.MaxInt32 {
+		maxFollowed = math.MaxInt32
+	}
+
+	// #nosec G115 -- maxFollowed is clamped to math.MaxInt32 above.
+	followed, err := h.followsSvc.GetFollowingByType(ctx, userID, userID, follows.EntityTypeSpace, int32(maxFollowed), 0)
 	if err != nil {
 		return []string{}
 	}

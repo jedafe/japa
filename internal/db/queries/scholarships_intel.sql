@@ -85,8 +85,9 @@ WHERE ($1::timestamptz IS NULL
  AND ($3::uuid IS NULL OR scholarships.country_space_id = $3)
  AND (NULLIF($4::text, '') IS NULL OR scholarships.country = $4
       OR scholarships.country_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ AND ($5::timestamptz IS NULL OR scholarships.created_at >= $5)
 ORDER BY scholarships.created_at DESC, scholarships.id DESC
-LIMIT $5;
+LIMIT $6;
 
 -- name: ListScholarshipsBySpaces :many
 -- Union query for the followed-countries radar feed (spec §739). Replaces
@@ -100,8 +101,9 @@ WHERE country_space_id = ANY($1::uuid[])
  AND ($2::timestamptz IS NULL
  OR created_at < $2
  OR (created_at = $2 AND id < $3))
+ AND ($4::timestamptz IS NULL OR created_at >= $4)
 ORDER BY created_at DESC, id DESC
-LIMIT $4;
+LIMIT $5;
 
 -- name: SearchScholarships :many
 -- Optional text filters use NULLIF($n,'') because sqlc types $n::text as a

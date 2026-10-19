@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -242,21 +243,52 @@ func (s *Store) GetPersonaUserID(ctx context.Context, personaID pgtype.UUID) (pg
 	return row, nil
 }
 
-// GetCountrySpace resolves the country-level geo space (§05) id for an ISO-3
-// country code via the existing GetSpaceByGeoCode query. Returns an invalid
-// pgtype.UUID (NULL) when no country space exists for the code so the caller
-// can leave scholarships.country_space_id nullable. BUG-005 fix (spec §455).
+// GetCountrySpace resolves the country-level geo space (§05) id for an
+// extracted country value. Extractions carry ISO-3 codes ("USA"), ISO-2
+// codes ("US"), and English names ("Japan", "United Kingdom") while
+// spaces.geo_code stores ISO-2 — so the value is normalized through the
+// ISO-3 map and common aliases first, then matched by geo_code, then by
+// name as a last resort. Returns an invalid pgtype.UUID (NULL) when no
+// country space matches so the caller can leave country_space_id nullable.
+// BUG-005 fix (spec §455).
 func (s *Store) GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error) {
-	code := countryCode
-
-	row, err := s.queries.GetSpaceByGeoCode(ctx,
-		&code,
-	)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("stores: get country space: %w", err)
+	raw := strings.TrimSpace(countryCode)
+	if raw == "" {
+		return pgtype.UUID{}, nil
 	}
 
-	return row.ID, nil
+	for _, code := range countryCodeCandidates(raw) {
+		row, err := s.queries.GetSpaceByGeoCode(ctx, &code)
+		if err == nil {
+			return row.ID, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, fmt.Errorf("stores: get country space: %w", err)
+		}
+	}
+
+	name := countryNameCandidate(raw)
+	row, err := s.queries.GetCountrySpaceByName(ctx, name)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, nil
+		}
+		return pgtype.UUID{}, fmt.Errorf("stores: get country space by name: %w", err)
+	}
+
+	return row, nil
+}
+
+// GetSpacesByIDs returns id/name/geo_code for a set of spaces — used by the
+// radar handler to resolve canonical country display names for geo-linked
+// intel items in one batch query.
+func (s *Store) GetSpacesByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.GetSpacesByIDsRow, error) {
+	rows, err := s.queries.GetSpacesByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("stores: get spaces by ids: %w", err)
+	}
+
+	return rows, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -734,8 +766,8 @@ func (s *Store) CountScholarshipsByCountry(ctx context.Context) ([]gen.CountScho
 
 // CountIntelRadarByType returns per-domain promoted-item totals for the
 // radar counts endpoint (GET /intel/radar/counts).
-func (s *Store) CountIntelRadarByType(ctx context.Context) ([]gen.CountIntelRadarByTypeRow, error) {
-	rows, err := s.queries.CountIntelRadarByType(ctx)
+func (s *Store) CountIntelRadarByType(ctx context.Context, spaceID pgtype.UUID) ([]gen.CountIntelRadarByTypeRow, error) {
+	rows, err := s.queries.CountIntelRadarByType(ctx, spaceID)
 	if err != nil {
 		return nil, fmt.Errorf("stores: count radar by type: %w", err)
 	}
@@ -745,8 +777,8 @@ func (s *Store) CountIntelRadarByType(ctx context.Context) ([]gen.CountIntelRada
 
 // CountIntelRadarByCountry returns per-country promoted-item totals across
 // the geo-scopable domains for the radar counts endpoint.
-func (s *Store) CountIntelRadarByCountry(ctx context.Context) ([]gen.CountIntelRadarByCountryRow, error) {
-	rows, err := s.queries.CountIntelRadarByCountry(ctx)
+func (s *Store) CountIntelRadarByCountry(ctx context.Context, spaceID pgtype.UUID) ([]gen.CountIntelRadarByCountryRow, error) {
+	rows, err := s.queries.CountIntelRadarByCountry(ctx, spaceID)
 	if err != nil {
 		return nil, fmt.Errorf("stores: count radar by country: %w", err)
 	}

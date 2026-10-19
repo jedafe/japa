@@ -47,8 +47,6 @@ var attractionKindByQID = map[string]string{
 	"Q4989906": "monument",       // monument
 	"Q839954":  "historic-site",  // archaeological site
 	"Q23413":   "historic-site",  // castle
-	"Q16970":   "religious-site", // church building
-	"Q32815":   "religious-site", // mosque
 	"Q330284":  "market",         // market
 	"Q34038":   "waterfall",      // waterfall
 	"Q8502":    "mountain",       // mountain
@@ -88,7 +86,6 @@ var attractionKindKeywords = []struct {
 	{"garden", []string{"garden"}},
 	{"museum", []string{"museum"}},
 	{"monument", []string{"monument", "memorial"}},
-	{"religious-site", []string{"church", "mosque", "cathedral", "shrine", "temple", "monastery"}},
 	{"market", []string{"market"}},
 	{"historic-site", []string{"historic site", "archaeological", "fort", "castle", "ruins", "palace"}},
 	{"landmark", []string{"landmark", "tower", "tourist attraction", "monument"}},
@@ -408,7 +405,7 @@ func (a *ProcessorAdapter) attractionWikidataEntity(ctx context.Context, space *
 	keys := []string{
 		"attraction", "landmark", "museum", "monument", "waterfall", "mountain",
 		"rock", "lake", "cave", "beach", "park", "garden", "zoo", "falls",
-		"site", "fort", "castle", "church", "mosque", "market",
+		"site", "fort", "castle", "market",
 	}
 	score := func(r wikidataSearchResult) int {
 		desc := strings.ToLower(r.Description)

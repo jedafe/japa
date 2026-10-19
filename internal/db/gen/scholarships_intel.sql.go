@@ -582,14 +582,16 @@ WHERE country_space_id = ANY($1::uuid[])
  AND ($2::timestamptz IS NULL
  OR created_at < $2
  OR (created_at = $2 AND id < $3))
+ AND ($4::timestamptz IS NULL OR created_at >= $4)
 ORDER BY created_at DESC, id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListScholarshipsBySpacesParams struct {
 	Column1 []pgtype.UUID      `json:"column_1"`
 	Column2 pgtype.Timestamptz `json:"column_2"`
 	ID      pgtype.UUID        `json:"id"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -604,6 +606,7 @@ func (q *Queries) ListScholarshipsBySpaces(ctx context.Context, arg ListScholars
 		arg.Column1,
 		arg.Column2,
 		arg.ID,
+		arg.Column4,
 		arg.Limit,
 	)
 	if err != nil {
@@ -661,8 +664,9 @@ WHERE ($1::timestamptz IS NULL
  AND ($3::uuid IS NULL OR scholarships.country_space_id = $3)
  AND (NULLIF($4::text, '') IS NULL OR scholarships.country = $4
       OR scholarships.country_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ AND ($5::timestamptz IS NULL OR scholarships.created_at >= $5)
 ORDER BY scholarships.created_at DESC, scholarships.id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListScholarshipsKeysetParams struct {
@@ -670,6 +674,7 @@ type ListScholarshipsKeysetParams struct {
 	ID      pgtype.UUID        `json:"id"`
 	Column3 pgtype.UUID        `json:"column_3"`
 	Column4 string             `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -689,6 +694,7 @@ func (q *Queries) ListScholarshipsKeyset(ctx context.Context, arg ListScholarshi
 		arg.ID,
 		arg.Column3,
 		arg.Column4,
+		arg.Column5,
 		arg.Limit,
 	)
 	if err != nil {

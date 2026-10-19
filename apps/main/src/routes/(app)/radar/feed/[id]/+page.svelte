@@ -24,6 +24,7 @@
 	import type { RadarItem } from '$lib/types';
 	import { api } from '$lib/api/client';
 	import { invalidate } from '$app/navigation';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 
 	let { data } = $props();
 	const item = $derived(data.item as RadarItem);
@@ -40,6 +41,7 @@
 
 	async function toggleSave() {
 		if (saving) return;
+		if (!(await requireAuthOrRedirect())) return;
 		saving = true;
 		const wasSaved = saved;
 		saved = !wasSaved; // optimistic
@@ -65,8 +67,10 @@
 
 	const verified = $derived(item.trust_level <= 2);
 
+	// Parse the YYYY-MM-DD date as local midnight — `new Date('YYYY-MM-DD')`
+	// parses as UTC and displays as the previous day in western timezones.
 	const deadlineDate = $derived(
-		item.deadline ? new Date(item.deadline) : null
+		item.deadline ? new Date(String(item.deadline).slice(0, 10) + 'T00:00:00') : null
 	);
 	const deadlineValid = $derived(
 		deadlineDate !== null && !isNaN(deadlineDate.getTime())
@@ -111,6 +115,7 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 <div class="mx-auto max-w-3xl px-4 py-6">
 	<!-- Back link + save button -->
 	<div class="flex items-center justify-between">
@@ -145,7 +150,7 @@
 		<div class="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-5 py-3">
 			<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium capitalize text-[var(--color-primary)]">
 				<Radar size={12} />
-				{item.type}
+				{t(`radar.type.${item.type}`, item.type.replaceAll('_', ' '))}
 			</span>
 			{#if item.country}
 				<span class="inline-flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
@@ -292,4 +297,5 @@
 			{/if}
 		</div>
 	</article>
+</div>
 </div>

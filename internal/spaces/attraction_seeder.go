@@ -44,12 +44,11 @@ var attractionClassQIDs = []string{
 	// Q811979 (architectural structure) is intentionally NOT here: hospitals,
 	// schools, and other civic buildings subclass it, so the P31/P279*
 	// closure seeded them as "attractions". Concrete built kinds stay listed.
-	"Q839954",  // archaeological site
-	"Q23413",   // castle
-	"Q12518",   // tower
-	"Q16970",   // church building
-	"Q32815",   // mosque
-	"Q44539",   // temple
+	"Q839954", // archaeological site
+	"Q23413",  // castle
+	"Q12518",  // tower
+	// Places of worship are intentionally NOT here — religious sites are
+	// not attractions; Q1370598 sits in the exclusion list below.
 	"Q330284",  // market
 	"Q34038",   // waterfall
 	"Q8502",    // mountain
@@ -80,6 +79,46 @@ var attractionExcludedQIDs = []string{
 	"Q1248784", // airport
 	"Q40357",   // prison
 	"Q55488",   // railway station
+	// Religious sites are not attractions — the two umbrellas cover the
+	// P279* closure; the concrete classes are belt-and-suspenders for
+	// items Wikidata models loosely (typed only "tourist attraction"
+	// or under a class that doesn't reach the umbrellas).
+	"Q1370598",   // structure of worship
+	"Q105889895", // religious site
+	"Q16970",     // church building
+	"Q32815",     // mosque
+	"Q44539",     // temple
+	"Q34627",     // synagogue
+	"Q2977",      // cathedral
+	"Q163687",    // basilica
+	"Q108325",    // chapel
+	"Q44613",     // monastery
+	"Q334383",    // abbey church
+	"Q697295",    // shrine
+	"Q845945",    // Shinto shrine
+}
+
+// attractionDenyKeywords is the lexical denylist applied to candidate
+// name+description after the SPARQL class/exclusion filter — the catch
+// for religious items whose Wikidata typing doesn't reach the excluded
+// classes (e.g. a pilgrimage site typed only "tourist attraction").
+var attractionDenyKeywords = []string{
+	"church", "mosque", "cathedral", "synagogue", "chapel", "basilica",
+	"shrine", "monastery", "convent", "abbey", "temple", "worship",
+	"parish", "religious", "pilgrimage", "shinto",
+}
+
+// isDeniedAttraction reports whether a candidate's name or description
+// trips the religious-site denylist.
+func isDeniedAttraction(c AttractionCandidate) bool {
+	haystack := strings.ToLower(c.Name + " " + c.Description)
+	for _, k := range attractionDenyKeywords {
+		if strings.Contains(haystack, k) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // AttractionCandidate is one Wikidata hit for the admin dry-run preview.
@@ -588,11 +627,17 @@ LIMIT %d`, classValues.String(), parentQID, excludedValues.String(), limit)
 
 	out := make([]AttractionCandidate, 0, len(order))
 	for _, qid := range order {
-		out = append(out, *byItem[qid])
+		c := *byItem[qid]
+		if isDeniedAttraction(c) {
+			continue
+		}
+
+		out = append(out, c)
 	}
 
 	slog.Info("wiki:seed_attractions: SPARQL returned candidates",
-		"parent_qid", parentQID, "bindings", len(sr.Results.Bindings), "candidates", len(out))
+		"parent_qid", parentQID, "bindings", len(sr.Results.Bindings),
+		"candidates", len(out), "denied", len(order)-len(out))
 
 	return out, nil
 }

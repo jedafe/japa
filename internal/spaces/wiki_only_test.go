@@ -5,13 +5,13 @@ package spaces
 // IsWikiOnlyType, axis coercion, and post denial.
 
 import (
-	"strconv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -181,6 +181,9 @@ func TestClassifyAttractionKind(t *testing.T) {
 		{"p31 museum", &wikidataUniversity{InstanceOf: []string{"Q33506"}}, "museum"},
 		{"p31 waterfall", &wikidataUniversity{InstanceOf: []string{"Q34038"}}, "waterfall"},
 		{"p31 national park", &wikidataUniversity{InstanceOf: []string{"Q46169"}}, "national-park"},
+		{"p31 church→other", &wikidataUniversity{InstanceOf: []string{"Q16970"}}, "other"},
+		{"desc mosque→other", &wikidataUniversity{Description: "grand mosque in Kano"}, "other"},
+		{"desc cathedral→other", &wikidataUniversity{Description: "cathedral in Lagos"}, "other"},
 		{"desc monolith", &wikidataUniversity{Description: "Inselberg and monolith in Abeokuta"}, "rock-formation"},
 		{"desc falls", &wikidataUniversity{Description: "waterfall on the Zambezi"}, "waterfall"},
 		{"desc mountain", &wikidataUniversity{Description: "Highest mountain in Africa"}, "mountain"},
@@ -287,7 +290,10 @@ func TestFetchAttractionCandidates_ParsesBindings(t *testing.T) {
 			 "itemDescription":{"value":"unlabeled — label service fallback"}},
 			{"item":{"value":"http://www.wikidata.org/entity/Q13911"},
 			 "itemLabel":{"value":"Olumo Rock"},
-			 "itemDescription":{"value":"rock formation in Abeokuta"}}
+			 "itemDescription":{"value":"rock formation in Abeokuta"}},
+			{"item":{"value":"http://www.wikidata.org/entity/Q77777"},
+			 "itemLabel":{"value":"Grand Mosque of Testville"},
+			 "itemDescription":{"value":"mosque and tourist attraction"}}
 		]}}`)
 	}))
 	defer srv.Close()
@@ -303,7 +309,7 @@ func TestFetchAttractionCandidates_ParsesBindings(t *testing.T) {
 	}
 
 	if len(got) != 2 {
-		t.Fatalf("got %d candidates, want 2 (dedup + unlabeled drop): %+v", len(got), got)
+		t.Fatalf("got %d candidates, want 2 (dedup + unlabeled + denylist drop): %+v", len(got), got)
 	}
 
 	if got[0].QID != "Q38324" || got[0].Name != "Victoria Falls" {

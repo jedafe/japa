@@ -76,7 +76,7 @@
 </script>
 
 <a
-	href={`/radar/feed/${item.id}`}
+	href={`/radar/feed/${item.id}?item_type=${encodeURIComponent(item.type)}`}
 	class="group block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 >
 	<div class="flex items-start justify-between gap-3">

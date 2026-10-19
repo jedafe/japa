@@ -23,6 +23,7 @@
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
+	import { imgLightbox } from '$lib/lightbox.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -34,11 +35,13 @@
 	const crumbKind = $derived(
 		data.wikiScope === 'university'
 			? t('wiki.breadcrumb_university_guides', 'University Guides')
-			: spaceLevel === 'city'
-				? t('wiki.breadcrumb_city_guides', 'City Guides')
-				: spaceLevel === 'state'
-					? t('wiki.breadcrumb_state_guides', 'State Guides')
-					: t('wiki.breadcrumb_country_guides', 'Country Guides')
+			: data.wikiScope === 'attraction'
+				? t('wiki.breadcrumb_attractions', 'Attractions')
+				: spaceLevel === 'city'
+					? t('wiki.breadcrumb_city_guides', 'City Guides')
+					: spaceLevel === 'state'
+						? t('wiki.breadcrumb_state_guides', 'State Guides')
+						: t('wiki.breadcrumb_country_guides', 'Country Guides')
 	);
 
 	function categoryLabel(cat: WikiCategory): string {
@@ -638,7 +641,7 @@
 					</form>
 				{:else}
 					{#if htmlContent}
-						<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]">
+						<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]" use:imgLightbox>
 							<InArticleAd html={htmlContent} {spaceId} />
 						</div>
 					{:else if !data.page.directory}

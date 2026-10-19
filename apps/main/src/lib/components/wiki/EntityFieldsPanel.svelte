@@ -17,6 +17,8 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import SuggestEdit from './SuggestEdit.svelte';
 	import { formatWikiFieldValue, isMediaFieldType, mediaFieldItems } from '$lib/utils/wikiFieldValue';
+	import { openLightbox } from '$lib/lightbox.svelte';
+	import type { LightboxItem } from '$lib/components/ui/MediaLightbox.svelte';
 	import type { CurrencyInfo } from '$lib/utils/currency';
 
 	let {
@@ -198,6 +200,9 @@
 									<!-- §80 attractions: image fields render as a thumbnail
 									     grid (the attraction gallery), not text. -->
 									{@const media = mediaFieldItems(f.value)}
+									{@const items = media.map(
+										(m): LightboxItem => ({ id: m.id || m.url, url: m.url, alt_text: m.alt ?? null })
+									)}
 									{#if media.length > 0}
 										<div class="py-1.5">
 											<div class="flex items-baseline justify-between gap-3 text-sm">
@@ -215,13 +220,12 @@
 												{/if}
 											</div>
 											<dd class="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
-												{#each media as m (m.id || m.url)}
-													<!-- §80 — v1 thumbnails link the full media URL. -->
-													<a
-														href={m.url}
-														target="_blank"
-														rel="noopener noreferrer"
-														class="block transition-opacity hover:opacity-90"
+												{#each media as m, i (m.id || m.url)}
+													<button
+														type="button"
+														onclick={() => openLightbox(items, i)}
+														class="block cursor-zoom-in transition-opacity hover:opacity-90"
+														aria-label={t('lightbox.view_image', 'View image')}
 													>
 														<img
 															src={m.url}
@@ -229,7 +233,7 @@
 															loading="lazy"
 															class="aspect-[4/3] w-full rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
 														/>
-													</a>
+													</button>
 												{/each}
 											</dd>
 										</div>

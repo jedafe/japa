@@ -1241,6 +1241,22 @@ func (q *Queries) GetChildSpacesByParentID(ctx context.Context, parentSpaceID pg
 	return items, nil
 }
 
+const getCountrySpaceByName = `-- name: GetCountrySpaceByName :one
+SELECT id FROM spaces
+WHERE lower(name) = lower($1) AND level = 'country' AND deleted_at IS NULL
+LIMIT 1
+`
+
+// Finds a country-level space by its display name (case-insensitive) so intel
+// country resolution can match extractions that carry the English country
+// name ("Japan", "United Kingdom") rather than an ISO code.
+func (q *Queries) GetCountrySpaceByName(ctx context.Context, lower string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getCountrySpaceByName, lower)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getParentSpacesBySpaceID = `-- name: GetParentSpacesBySpaceID :many
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
@@ -1979,6 +1995,39 @@ func (q *Queries) GetSpaceTypesByIDs(ctx context.Context, ids []pgtype.UUID) ([]
 			&i.Category,
 			&i.WikiOnly,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSpacesByIDs = `-- name: GetSpacesByIDs :many
+SELECT id, name, geo_code FROM spaces
+WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+`
+
+type GetSpacesByIDsRow struct {
+	ID      pgtype.UUID `json:"id"`
+	Name    string      `json:"name"`
+	GeoCode *string     `json:"geo_code"`
+}
+
+// Lightweight id/name/geo_code lookup for a set of spaces — used to resolve
+// canonical display names for geo-linked intel radar items.
+func (q *Queries) GetSpacesByIDs(ctx context.Context, ids []pgtype.UUID) ([]GetSpacesByIDsRow, error) {
+	rows, err := q.db.Query(ctx, getSpacesByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSpacesByIDsRow
+	for rows.Next() {
+		var i GetSpacesByIDsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.GeoCode); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

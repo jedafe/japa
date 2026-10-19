@@ -15,23 +15,25 @@ const countIntelRadarByCountry = `-- name: CountIntelRadarByCountry :many
 SELECT country, SUM(count) AS count FROM (
  SELECT COALESCE(sp.geo_code, s.country) AS country, COUNT(*) AS count
   FROM scholarships s LEFT JOIN spaces sp ON sp.id = s.country_space_id
+  WHERE ($1::uuid IS NULL OR s.country_space_id = $1)
   GROUP BY 1
  UNION ALL
  SELECT COALESCE(sp.geo_code, j.country) AS country, COUNT(*) AS count
   FROM intel_jobs j LEFT JOIN spaces sp ON sp.id = j.country_space_id
+  WHERE ($1::uuid IS NULL OR j.country_space_id = $1)
   GROUP BY 1
  UNION ALL
  SELECT sp.geo_code AS country, COUNT(*) AS count
   FROM visa_routes v JOIN spaces sp ON sp.id = v.destination_space_id
-  WHERE v.intel_record_id IS NOT NULL GROUP BY 1
+  WHERE v.intel_record_id IS NOT NULL AND ($1::uuid IS NULL OR v.destination_space_id = $1) GROUP BY 1
  UNION ALL
  SELECT sp.geo_code AS country, COUNT(*) AS count
   FROM housing_guides h JOIN spaces sp ON sp.id = h.destination_space_id
-  WHERE h.intel_record_id IS NOT NULL GROUP BY 1
+  WHERE h.intel_record_id IS NOT NULL AND ($1::uuid IS NULL OR h.destination_space_id = $1) GROUP BY 1
  UNION ALL
  SELECT sp.geo_code AS country, COUNT(*) AS count
   FROM comparison_items c JOIN spaces sp ON sp.id = c.geo_space_id
-  WHERE c.intel_record_id IS NOT NULL GROUP BY 1
+  WHERE c.intel_record_id IS NOT NULL AND ($1::uuid IS NULL OR c.geo_space_id = $1) GROUP BY 1
 ) t GROUP BY country
 `
 
@@ -43,8 +45,9 @@ type CountIntelRadarByCountryRow struct {
 // Per-country totals across the geo-scopable domains. The canonical key is
 // the country space's geo_code; rows whose space link is unresolved fall
 // back to their raw ISO country text so they still appear.
-func (q *Queries) CountIntelRadarByCountry(ctx context.Context) ([]CountIntelRadarByCountryRow, error) {
-	rows, err := q.db.Query(ctx, countIntelRadarByCountry)
+// $1::uuid is the same optional space filter as CountIntelRadarByType.
+func (q *Queries) CountIntelRadarByCountry(ctx context.Context, dollar_1 pgtype.UUID) ([]CountIntelRadarByCountryRow, error) {
+	rows, err := q.db.Query(ctx, countIntelRadarByCountry, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -66,11 +69,17 @@ func (q *Queries) CountIntelRadarByCountry(ctx context.Context) ([]CountIntelRad
 const countIntelRadarByType = `-- name: CountIntelRadarByType :many
 
 SELECT 'scholarship' AS item_type, COUNT(*) AS count FROM scholarships
+ WHERE ($1::uuid IS NULL OR scholarships.country_space_id = $1)
 UNION ALL SELECT 'job', COUNT(*) FROM intel_jobs
+ WHERE ($1::uuid IS NULL OR intel_jobs.country_space_id = $1)
 UNION ALL SELECT 'visa', COUNT(*) FROM visa_routes WHERE intel_record_id IS NOT NULL
+ AND ($1::uuid IS NULL OR visa_routes.destination_space_id = $1)
 UNION ALL SELECT 'housing', COUNT(*) FROM housing_guides WHERE intel_record_id IS NOT NULL
+ AND ($1::uuid IS NULL OR housing_guides.destination_space_id = $1 OR housing_guides.city_space_id = $1)
 UNION ALL SELECT 'remittance', COUNT(*) FROM remittance_rates WHERE intel_record_id IS NOT NULL
+ AND $1::uuid IS NULL
 UNION ALL SELECT 'cost_of_living', COUNT(*) FROM comparison_items WHERE intel_record_id IS NOT NULL
+ AND ($1::uuid IS NULL OR comparison_items.geo_space_id = $1)
 `
 
 type CountIntelRadarByTypeRow struct {
@@ -86,8 +95,11 @@ type CountIntelRadarByTypeRow struct {
 // editorial rows (Studio-authored visa routes, etc.) do not inflate the
 // intelligence counts. Replaces the scholarship-only counts that left the
 // unioned feed unrepresented.
-func (q *Queries) CountIntelRadarByType(ctx context.Context) ([]CountIntelRadarByTypeRow, error) {
-	rows, err := q.db.Query(ctx, countIntelRadarByType)
+// $1::uuid is an optional space filter (catalog ?space_id=): when set, each
+// domain counts only rows geo-scoped to that space; remittance has no geo
+// columns and is excluded (returns 0 rows for that branch).
+func (q *Queries) CountIntelRadarByType(ctx context.Context, dollar_1 pgtype.UUID) ([]CountIntelRadarByTypeRow, error) {
+	rows, err := q.db.Query(ctx, countIntelRadarByType, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -1786,14 +1798,16 @@ WHERE intel_record_id IS NOT NULL
  AND ($2::timestamptz IS NULL
  OR created_at < $2
  OR (created_at = $2 AND id < $3))
+ AND ($4::timestamptz IS NULL OR created_at >= $4)
 ORDER BY created_at DESC, id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListComparisonItemsBySpacesParams struct {
 	Column1 []pgtype.UUID      `json:"column_1"`
 	Column2 pgtype.Timestamptz `json:"column_2"`
 	ID      pgtype.UUID        `json:"id"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -1802,6 +1816,7 @@ func (q *Queries) ListComparisonItemsBySpaces(ctx context.Context, arg ListCompa
 		arg.Column1,
 		arg.Column2,
 		arg.ID,
+		arg.Column4,
 		arg.Limit,
 	)
 	if err != nil {
@@ -1852,8 +1867,9 @@ WHERE comparison_items.intel_record_id IS NOT NULL
  AND ($3::uuid IS NULL OR comparison_items.geo_space_id = $3)
  AND (NULLIF($4::text, '') IS NULL
       OR comparison_items.geo_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ AND ($5::timestamptz IS NULL OR comparison_items.created_at >= $5)
 ORDER BY comparison_items.created_at DESC, comparison_items.id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListComparisonItemsIntelKeysetParams struct {
@@ -1861,6 +1877,7 @@ type ListComparisonItemsIntelKeysetParams struct {
 	ID      pgtype.UUID        `json:"id"`
 	Column3 pgtype.UUID        `json:"column_3"`
 	Column4 string             `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -1870,6 +1887,7 @@ func (q *Queries) ListComparisonItemsIntelKeyset(ctx context.Context, arg ListCo
 		arg.ID,
 		arg.Column3,
 		arg.Column4,
+		arg.Column5,
 		arg.Limit,
 	)
 	if err != nil {
@@ -1985,14 +2003,16 @@ WHERE intel_record_id IS NOT NULL
  AND ($2::timestamptz IS NULL
  OR created_at < $2
  OR (created_at = $2 AND id < $3))
+ AND ($4::timestamptz IS NULL OR created_at >= $4)
 ORDER BY created_at DESC, id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListHousingGuidesBySpacesParams struct {
 	Column1 []pgtype.UUID      `json:"column_1"`
 	Column2 pgtype.Timestamptz `json:"column_2"`
 	ID      pgtype.UUID        `json:"id"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -2001,6 +2021,7 @@ func (q *Queries) ListHousingGuidesBySpaces(ctx context.Context, arg ListHousing
 		arg.Column1,
 		arg.Column2,
 		arg.ID,
+		arg.Column4,
 		arg.Limit,
 	)
 	if err != nil {
@@ -2060,8 +2081,9 @@ WHERE housing_guides.intel_record_id IS NOT NULL
  AND (NULLIF($4::text, '') IS NULL
       OR housing_guides.destination_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4)
       OR housing_guides.city_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ AND ($5::timestamptz IS NULL OR housing_guides.created_at >= $5)
 ORDER BY housing_guides.created_at DESC, housing_guides.id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListHousingGuidesIntelKeysetParams struct {
@@ -2069,6 +2091,7 @@ type ListHousingGuidesIntelKeysetParams struct {
 	ID      pgtype.UUID        `json:"id"`
 	Column3 pgtype.UUID        `json:"column_3"`
 	Column4 string             `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -2080,6 +2103,7 @@ func (q *Queries) ListHousingGuidesIntelKeyset(ctx context.Context, arg ListHous
 		arg.ID,
 		arg.Column3,
 		arg.Column4,
+		arg.Column5,
 		arg.Limit,
 	)
 	if err != nil {
@@ -2135,14 +2159,16 @@ WHERE country_space_id = ANY($1::uuid[])
  AND ($2::timestamptz IS NULL
  OR created_at < $2
  OR (created_at = $2 AND id < $3))
+ AND ($4::timestamptz IS NULL OR created_at >= $4)
 ORDER BY created_at DESC, id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListIntelJobsBySpacesParams struct {
 	Column1 []pgtype.UUID      `json:"column_1"`
 	Column2 pgtype.Timestamptz `json:"column_2"`
 	ID      pgtype.UUID        `json:"id"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -2151,6 +2177,7 @@ func (q *Queries) ListIntelJobsBySpaces(ctx context.Context, arg ListIntelJobsBy
 		arg.Column1,
 		arg.Column2,
 		arg.ID,
+		arg.Column4,
 		arg.Limit,
 	)
 	if err != nil {
@@ -2209,8 +2236,9 @@ WHERE ($1::timestamptz IS NULL
  AND ($3::uuid IS NULL OR intel_jobs.country_space_id = $3)
  AND (NULLIF($4::text, '') IS NULL OR intel_jobs.country = $4
       OR intel_jobs.country_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ AND ($5::timestamptz IS NULL OR intel_jobs.created_at >= $5)
 ORDER BY intel_jobs.created_at DESC, intel_jobs.id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListIntelJobsKeysetParams struct {
@@ -2218,6 +2246,7 @@ type ListIntelJobsKeysetParams struct {
 	ID      pgtype.UUID        `json:"id"`
 	Column3 pgtype.UUID        `json:"column_3"`
 	Column4 string             `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -2229,6 +2258,7 @@ func (q *Queries) ListIntelJobsKeyset(ctx context.Context, arg ListIntelJobsKeys
 		arg.ID,
 		arg.Column3,
 		arg.Column4,
+		arg.Column5,
 		arg.Limit,
 	)
 	if err != nil {
@@ -2348,20 +2378,27 @@ WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
  OR (created_at = $1 AND id < $2))
+ AND ($3::timestamptz IS NULL OR fetched_at >= $3)
 ORDER BY fetched_at DESC, id DESC
-LIMIT $3
+LIMIT $4
 `
 
 type ListRemittanceRatesIntelKeysetParams struct {
 	Column1 pgtype.Timestamptz `json:"column_1"`
 	ID      pgtype.UUID        `json:"id"`
+	Column3 pgtype.Timestamptz `json:"column_3"`
 	Limit   int32              `json:"limit"`
 }
 
 // remittance_rates has no geo columns (corridors are currency pairs) — the
 // radar handler excludes this domain when a geo filter is active.
 func (q *Queries) ListRemittanceRatesIntelKeyset(ctx context.Context, arg ListRemittanceRatesIntelKeysetParams) ([]RemittanceRate, error) {
-	rows, err := q.db.Query(ctx, listRemittanceRatesIntelKeyset, arg.Column1, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listRemittanceRatesIntelKeyset,
+		arg.Column1,
+		arg.ID,
+		arg.Column3,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2467,14 +2504,16 @@ WHERE intel_record_id IS NOT NULL
  AND ($2::timestamptz IS NULL
  OR created_at < $2
  OR (created_at = $2 AND id < $3))
+ AND ($4::timestamptz IS NULL OR created_at >= $4)
 ORDER BY created_at DESC, id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListVisaRoutesBySpacesParams struct {
 	Column1 []pgtype.UUID      `json:"column_1"`
 	Column2 pgtype.Timestamptz `json:"column_2"`
 	ID      pgtype.UUID        `json:"id"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -2484,6 +2523,7 @@ func (q *Queries) ListVisaRoutesBySpaces(ctx context.Context, arg ListVisaRoutes
 		arg.Column1,
 		arg.Column2,
 		arg.ID,
+		arg.Column4,
 		arg.Limit,
 	)
 	if err != nil {
@@ -2545,8 +2585,9 @@ WHERE visa_routes.intel_record_id IS NOT NULL
  AND ($3::uuid IS NULL OR visa_routes.destination_space_id = $3)
  AND (NULLIF($4::text, '') IS NULL
       OR visa_routes.destination_space_id IN (SELECT spaces.id FROM spaces WHERE spaces.geo_code = $4))
+ AND ($5::timestamptz IS NULL OR visa_routes.created_at >= $5)
 ORDER BY visa_routes.created_at DESC, visa_routes.id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListVisaRoutesIntelKeysetParams struct {
@@ -2554,6 +2595,7 @@ type ListVisaRoutesIntelKeysetParams struct {
 	ID      pgtype.UUID        `json:"id"`
 	Column3 pgtype.UUID        `json:"column_3"`
 	Column4 string             `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
 	Limit   int32              `json:"limit"`
 }
 
@@ -2566,6 +2608,7 @@ func (q *Queries) ListVisaRoutesIntelKeyset(ctx context.Context, arg ListVisaRou
 		arg.ID,
 		arg.Column3,
 		arg.Column4,
+		arg.Column5,
 		arg.Limit,
 	)
 	if err != nil {

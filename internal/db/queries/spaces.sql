@@ -742,6 +742,20 @@ FROM spaces
 WHERE geo_code = $1 AND level = 'country' AND deleted_at IS NULL
 LIMIT 1;
 
+-- name: GetCountrySpaceByName :one
+-- Finds a country-level space by its display name (case-insensitive) so intel
+-- country resolution can match extractions that carry the English country
+-- name ("Japan", "United Kingdom") rather than an ISO code.
+SELECT id FROM spaces
+WHERE lower(name) = lower($1) AND level = 'country' AND deleted_at IS NULL
+LIMIT 1;
+
+-- name: GetSpacesByIDs :many
+-- Lightweight id/name/geo_code lookup for a set of spaces — used to resolve
+-- canonical display names for geo-linked intel radar items.
+SELECT id, name, geo_code FROM spaces
+WHERE id = ANY(@ids::uuid[]) AND deleted_at IS NULL;
+
 -- name: GetSpaceRegionByGeoCode :one
 -- Returns the region for a country-level space identified by its geo_code.
 -- Used to map a resolved country code to its UN region for feed ranking.

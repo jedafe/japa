@@ -32,52 +32,114 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const selectedSpaceId = $derived(data.spaceId);
 	const selectedDest = $derived(data.dest);
 
+	// Followed feed items + country browse list (SSR-seeded).
+	const followedItems = $derived<RadarItem[]>(data.followedItems);
+	const countries = $derived<GeoCountry[]>(data.countries);
+
 	// Builds the radar URL for the country selector.
 	function radarUrl(spaceId?: string): string {
-		const p = new URLSearchParams();
-		if (spaceId) p.set('space_id', spaceId);
-		const qs = p.toString();
-		return qs ? `?${qs}` : '?';
+		if (!spaceId) return '/radar';
+		return `?space_id=${encodeURIComponent(spaceId)}`;
 	}
 
 	// The selected country name (for the filter badge). Resolved from the
-	// countries list by space_id, or from the dest param.
+	// countries list by space_id, or from the dest param — which per the
+	// geo-aware convention carries a country code or name, so resolve it
+	// against the countries list (geo_code then name) before falling back
+	// to the raw value.
 	const selectedCountryName = $derived.by(() => {
 		if (selectedSpaceId) {
 			const space = countries.find((c) => c.id === selectedSpaceId);
 			return space?.name ?? selectedSpaceId;
 		}
-		if (selectedDest) return selectedDest;
+		if (selectedDest) {
+			const d = selectedDest.trim().toLowerCase();
+			const space = countries.find(
+				(c) => c.geo_code.toLowerCase() === d || c.slug === d || c.name.toLowerCase() === d
+			);
+			return space?.name ?? selectedDest;
+		}
 		return '';
 	});
 
-	// Followed feed items + country browse list (SSR-seeded).
-	const followedItems = $derived<RadarItem[]>(data.followedItems);
-	const countries = $derived<GeoCountry[]>(data.countries);
+	// Domain filter (?item_type=) — URL-driven so deep links work and the
+	// SSR feed stays the source of truth.
+	const selectedItemType = $derived(data.itemType ?? '');
+	const radarTypeOptions = ['', 'scholarship', 'job', 'visa', 'housing', 'remittance', 'cost_of_living'] as const;
+	function typeUrl(t: string): string {
+		const p = new URLSearchParams();
+		if (selectedSpaceId) p.set('space_id', selectedSpaceId);
+		else if (selectedDest) p.set('dest', selectedDest);
+		if (t) p.set('item_type', t);
+		const qs = p.toString();
+		return qs ? `?${qs}` : '/radar';
+	}
 
-	// Followed space IDs — seeded from SSR, mutated optimistically on toggle.
+	// The resolved space for the geo filter — enables the follow button in
+	// the geo view header. Resolves dest (geo_code/slug/name) too so
+	// ?dest=united-states and ?dest=US follow the same space.
+	const selectedSpace = $derived.by(() => {
+		if (selectedSpaceId) {
+			return countries.find((c) => c.id === selectedSpaceId) ?? null;
+		}
+		if (selectedDest) {
+			const d = selectedDest.trim().toLowerCase();
+			return (
+				countries.find(
+					(c) => c.geo_code.toLowerCase() === d || c.slug === d || c.name.toLowerCase() === d
+				) ?? null
+			);
+		}
+		return null;
+	});
+
+	// Followed space IDs — seeded from SSR, mutated optimistically on toggle,
+	// re-synced to server truth whenever the load re-runs (e.g. after a
+	// follow toggle invalidates the followed feed).
 	let followedSpaceIds = $state<Set<string>>(untrack(() => new Set(data.followedSpaceIds ?? [])));
+	let pendingSpaceId = $state<string | null>(null);
+
+	$effect(() => {
+		const server = new Set(data.followedSpaceIds ?? []);
+		if (pendingSpaceId) return; // a toggle is in flight — keep optimistic state
+		followedSpaceIds = server;
+	});
 
 	// Group the followed feed by country so each followed country renders as
 	// a pinned section with its items beneath. Uses allFollowedItems (SSR +
-	// load-more) so paginated items appear in the grouped view.
+	// load-more) so paginated items appear in the grouped view. Grouped by
+	// country_space_id (spec §844) and sorted by the feed's counts_by_country
+	// sidecar desc; items without a space link fall back to their country
+	// text as the group key.
 	const followedByCountry = $derived.by(() => {
-		const map = new Map<string, RadarItem[]>();
+		const map = new Map<string, { key: string; country: string; items: RadarItem[] }>();
 		for (const item of allFollowedItems) {
-			const key = item.country || t('radar.uncategorized', 'Uncategorized');
-			const arr = map.get(key);
-			if (arr) arr.push(item);
-			else map.set(key, [item]);
+			const key = item.space_id ?? `~${item.country}`;
+			const entry = map.get(key);
+			if (entry) entry.items.push(item);
+			else map.set(key, { key, country: item.country, items: [item] });
 		}
-		return Array.from(map.entries());
+		const counts = data.followedCountsByCountry ?? {};
+		return [...map.values()].sort(
+			(a, b) => (counts[b.country] ?? b.items.length) - (counts[a.country] ?? a.items.length)
+		);
 	});
 
 	// Countries the user follows — pinned to the top of the browse list.
+	// ADR-064 served markets pin first, matching the country autocomplete.
 	const followedCountries = $derived(
-		countries.filter((c) => followedSpaceIds.has(c.id))
+		pinMarketsFirst(
+			countries.filter((c) => followedSpaceIds.has(c.id)),
+			servedMarkets(data.siteSettings),
+			(c) => c.geo_code
+		)
 	);
 	const browseCountries = $derived(
-		countries.filter((c) => !followedSpaceIds.has(c.id))
+		pinMarketsFirst(
+			countries.filter((c) => !followedSpaceIds.has(c.id)),
+			servedMarkets(data.siteSettings),
+			(c) => c.geo_code
+		)
 	);
 
 	// Autocomplete fetchers — filter the full /geo/countries list client-side.
@@ -112,26 +174,96 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// reads body.data) cannot be used. We fetch directly and read `items`.
 	let loadingMore = $state(false);
 	let extraItems = $state<RadarItem[]>([]);
-	let serverHasMore = $state(true);
+	let serverHasMore = $state(untrack(() => data.followedHasMore));
+	let followedCursor = $state(untrack(() => data.followedNextCursor));
 	const allFollowedItems = $derived([...followedItems, ...extraItems]);
 	const hasMore = $derived(serverHasMore && allFollowedItems.length >= data.pageSize);
 
-	async function loadMore() {
-		if (loadingMore || !authed) return;
-		loadingMore = true;
-		const nextOffset = allFollowedItems.length;
+	// Reset load-more accumulators whenever the SSR data is refreshed
+	// (follow toggles invalidate the load, which returns a fresh page 1 —
+	// stale extras would duplicate/ghost items). Also applies to the
+	// geo-filtered feed below.
+	let geoExtraItems = $state<RadarItem[]>([]);
+	let geoServerHasMore = $state(untrack(() => data.geoHasMore));
+	let geoCursor = $state(untrack(() => data.geoNextCursor));
+	let loadingGeoMore = $state(false);
+	const allGeoItems = $derived([...geoItems, ...geoExtraItems]);
+	const geoHasMore = $derived(geoServerHasMore && allGeoItems.length >= data.pageSize);
+
+	$effect(() => {
+		data.followedItems;
+		extraItems = [];
+		serverHasMore = data.followedHasMore;
+		followedCursor = data.followedNextCursor;
+	});
+	$effect(() => {
+		data.geoItems;
+		geoExtraItems = [];
+		geoServerHasMore = data.geoHasMore;
+		geoCursor = data.geoNextCursor;
+	});
+
+	// Compact per-type breakdown of the loaded page (spec §739
+	// counts_by_type sidecar) — shown under the feed heading.
+	function typeBreakdown(counts: Record<string, number> | undefined): string {
+		if (!counts) return '';
+		return Object.entries(counts)
+			.filter(([, n]) => n > 0)
+			.sort((a, b) => b[1] - a[1])
+			.map(([type, n]) => `${t(`radar.type.${type}`, type.replaceAll('_', ' '))}: ${n}`)
+			.join(' · ');
+	}
+
+	async function loadMoreGeo() {
+		// Keyset cursor pagination per spec §848 — the cursor already encodes
+		// the SSR page offset, so no page_offset math is needed and newly
+		// promoted rows can't shift the window (no client-side dedupe gaps).
+		if (loadingGeoMore || !geoCursor) return;
+		loadingGeoMore = true;
 		try {
-			const res = await api.getEnvelope<{ items: RadarItem[]; has_more?: boolean }>(
-				`/intel/radar/followed?page_size=${data.pageSize}&page_offset=${nextOffset}`
+			const params = new URLSearchParams();
+			params.set('page_size', String(data.pageSize));
+			params.set('cursor', geoCursor);
+			if (selectedSpaceId) params.set('space_id', selectedSpaceId);
+			else if (selectedSpace) params.set('space_id', selectedSpace.id);
+			else if (selectedDest) params.set('country', selectedDest);
+			if (data.itemType) params.set('item_type', data.itemType);
+			const res = await api.getEnvelope<{ items: RadarItem[]; has_more?: boolean; next_cursor?: string }>(
+				`/intel/radar?${params.toString()}`
 			);
-			const env = res.envelope as { items?: RadarItem[]; has_more?: boolean } | undefined;
+			const env = res.envelope as { items?: RadarItem[]; has_more?: boolean; next_cursor?: string } | undefined;
 			if (env?.items) {
-				// Dedupe by id — rows promoted between page fetches can shift the
-				// offset window and re-emit an item from the previous page.
+				const seen = new Set(allGeoItems.map((i) => i.id));
+				geoExtraItems = [...geoExtraItems, ...env.items.filter((i) => !seen.has(i.id))];
+			}
+			if (env?.next_cursor) geoCursor = env.next_cursor;
+			if (env && env.has_more === false) geoServerHasMore = false;
+		} catch {
+			// network error — keep existing items
+		}
+		loadingGeoMore = false;
+	}
+
+	async function loadMore() {
+		if (loadingMore || !authed || !followedCursor) return;
+		loadingMore = true;
+		const params = new URLSearchParams();
+		params.set('page_size', String(data.pageSize));
+		params.set('cursor', followedCursor);
+		if (data.itemType) params.set('item_type', data.itemType);
+		try {
+			const res = await api.getEnvelope<{ items: RadarItem[]; has_more?: boolean; next_cursor?: string }>(
+				`/intel/radar/followed?${params.toString()}`
+			);
+			const env = res.envelope as { items?: RadarItem[]; has_more?: boolean; next_cursor?: string } | undefined;
+			if (env?.items) {
+				// Dedupe by id — belt-and-braces; the keyset cursor already makes
+				// overlap impossible, but a stale response can't hurt.
 				const seen = new Set(allFollowedItems.map((i) => i.id));
 				const fresh = env.items.filter((i) => !seen.has(i.id));
 				extraItems = [...extraItems, ...fresh];
 			}
+			if (env?.next_cursor) followedCursor = env.next_cursor;
 			if (env && env.has_more === false) {
 				serverHasMore = false;
 			}
@@ -144,8 +276,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// Follow / unfollow a country space. Calls POST/DELETE on the radar
 	// follow endpoint, then invalidates the page load so the SSR data
 	// (followed feed + followed_space_ids) re-fetches from the server.
-	let pendingSpaceId = $state<string | null>(null);
-
 	async function toggleFollow(space: GeoCountry) {
 		if (pendingSpaceId) return;
 		if (!(await requireAuthOrRedirect())) return;
@@ -205,7 +335,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
+	<div class="mx-auto w-full max-w-3xl p-4">
 	<!-- Header -->
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
@@ -244,6 +375,26 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					</button>
 				{/if}
 			</div>
+
+			<!-- Domain filter — ?item_type= per catalog. Only shown when there
+			     is a feed to filter: the followed feed (authed) or the
+			     geo-filtered feed (anyone). -->
+			{#if authed || hasGeoFilter}
+				<div class="mt-2.5 flex flex-wrap items-center gap-1.5" role="group" aria-label={t('radar.filter_type', 'Filter by type')}>
+					{#each radarTypeOptions as opt (opt)}
+						<button
+							type="button"
+							onclick={() => goto(typeUrl(opt), { keepFocus: true })}
+							aria-pressed={selectedItemType === opt}
+							class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors {selectedItemType === opt
+								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+								: 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+						>
+							{opt === '' ? t('radar.type.all', 'All') : t(`radar.type.${opt}`, opt.replaceAll('_', ' '))}
+						</button>
+					{/each}
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -263,23 +414,62 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 				<Globe size={16} class="text-[var(--color-primary)]" />
 				{selectedCountryName}
-				{#if data.geoCount > 0}
-					<span class="text-xs font-normal text-[var(--color-muted)]">({data.geoCount})</span>
+				{#if allGeoItems.length > 0}
+					<span class="text-xs font-normal text-[var(--color-muted)]">({allGeoItems.length})</span>
+				{/if}
+				{#if typeBreakdown(data.geoCountsByType)}
+					<span class="text-xs font-normal normal-case text-[var(--color-muted)]">
+						{typeBreakdown(data.geoCountsByType)}
+					</span>
+				{/if}
+				{#if authed && selectedSpace}
+					<button
+						type="button"
+						onclick={() => toggleFollow(selectedSpace!)}
+						disabled={pendingSpaceId === selectedSpace!.id}
+						aria-busy={pendingSpaceId === selectedSpace!.id}
+						class="ml-auto shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 {followedSpaceIds.has(selectedSpace!.id)
+							? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
+							: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
+					>
+						{#if pendingSpaceId === selectedSpace!.id}
+							<Loader2 size={12} class="inline animate-spin" />
+						{:else}
+							{followedSpaceIds.has(selectedSpace!.id) ? t('radar.unfollow', 'Unfollow') : t('radar.follow', 'Follow')}
+						{/if}
+					</button>
 				{/if}
 			</h2>
 
-			{#if geoItems.length === 0}
+			{#if allGeoItems.length === 0}
 				<EmptyState
 					icon={Radar}
-					title={t('radar.empty_followed', 'No opportunities in your followed countries yet')}
-					body={t('radar.empty_followed_body', 'Follow countries below to surface their latest scholarships here.')}
+					title={t('radar.empty_geo', 'No opportunities for {country} yet', { country: selectedCountryName })}
+					body={t('radar.empty_geo_body', "We'll surface new items here as sources publish them.", { country: selectedCountryName })}
 				/>
 			{:else}
 				<div class="space-y-2">
-					{#each geoItems as item (item.id)}
+					{#each allGeoItems as item (item.id)}
 						<RadarItemRow {item} />
 					{/each}
 				</div>
+
+				{#if geoHasMore}
+					<div class="mt-4 flex justify-center">
+						<button
+							type="button"
+							onclick={loadMoreGeo}
+							disabled={loadingGeoMore}
+							aria-busy={loadingGeoMore}
+							class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						>
+							{#if loadingGeoMore}
+								<Loader2 size={16} class="animate-spin" />
+							{/if}
+							{t('radar.load_more', 'Load more')}
+						</button>
+					</div>
+				{/if}
 			{/if}
 		</div>
 	{:else}
@@ -294,6 +484,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							({data.followedTotal} {t('radar.countries', 'countries')})
 						</span>
 					{/if}
+					{#if typeBreakdown(data.followedCountsByType)}
+						<span class="ml-auto text-xs font-normal normal-case text-[var(--color-muted)]">
+							{typeBreakdown(data.followedCountsByType)}
+						</span>
+					{/if}
 				</h2>
 
 				{#if allFollowedItems.length === 0}
@@ -304,14 +499,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					/>
 				{:else}
 					<div class="space-y-5">
-						{#each followedByCountry as [country, items] (country)}
+						{#each followedByCountry as group (group.key)}
 							<section>
 								<h3 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-									<Globe size={12} /> {country}
-									<span class="font-normal normal-case text-[var(--color-muted)]">· {items.length}</span>
+									<Globe size={12} /> {group.country || t('radar.uncategorized', 'Uncategorized')}
+									<span class="font-normal normal-case text-[var(--color-muted)]">· {group.items.length}</span>
 								</h3>
 								<div class="space-y-2">
-									{#each items as item (item.id)}
+									{#each group.items as item (item.id)}
 										<RadarItemRow {item} />
 									{/each}
 								</div>
@@ -444,4 +639,5 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{/if}
 		</div>
 	{/if}
+	</div>
 </div>

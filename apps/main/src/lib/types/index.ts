@@ -4954,6 +4954,8 @@ export interface RadarItem {
 	title: string;
 	description?: string | null;
 	country: string;
+	/** Country-space UUID (§05) when the item is geo-linked; lets the UI render the canonical space name and deep-link. */
+	space_id?: string | null;
 	university?: string | null;
 	degree_level?: string | null;
 	deadline?: string | null;

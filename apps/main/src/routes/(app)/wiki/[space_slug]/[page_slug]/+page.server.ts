@@ -64,7 +64,10 @@ export const load: PageServerLoad = async (event) => {
 			spaceDetail,
 			index: indexRes?.items ?? [],
 			apiCategories: catRes?.data ?? ([] as WikiApiCategory[]),
-			wikiScope: catRes?.scope === 'university' ? ('university' as const) : ('geo' as const)
+			wikiScope:
+				catRes?.scope === 'university' || catRes?.scope === 'attraction'
+					? catRes.scope
+					: ('geo' as const)
 		};
 	} catch (e) {
 		if (e instanceof ApiError && (e.status === 404 || e.status === 410)) {

@@ -112,7 +112,10 @@ export const load: PageServerLoad = async (event) => {
 			countryGeoCode,
 			stateGeoCode,
 			apiCategories: catRes?.data ?? [],
-			wikiScope: catRes?.scope === 'university' ? 'university' : 'geo'
+			wikiScope:
+				catRes?.scope === 'university' || catRes?.scope === 'attraction'
+					? catRes.scope
+					: 'geo'
 		};
 	} catch (e) {
 		if (e instanceof ApiError && e.status === 404) {

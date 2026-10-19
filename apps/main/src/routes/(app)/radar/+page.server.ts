@@ -18,9 +18,19 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
+	// Explicit invalidation dependencies: SSR fetches go through ctx.fetch
+	// against the backend origin, so client-side invalidate('/api/v1/...')
+	// never matches a recorded fetch URL. Declaring the keys makes the
+	// follow/unfollow toggle's invalidate() calls re-run this load.
+	event.depends('/api/v1/intel/radar/followed');
+	event.depends('/api/v1/intel/radar');
+
 	// 1-based page index for the followed feed (matches the rest of the app).
 	const page = Math.max(1, parseInt(event.url.searchParams.get('page') ?? '1', 10) || 1);
 	const offset = (page - 1) * PAGE_SIZE;
+	// Domain filter — ?item_type= per catalog; ?type= is the backend alias.
+	const itemType =
+		event.url.searchParams.get('item_type') ?? event.url.searchParams.get('type') ?? '';
 
 	// Geo-aware filter: ?space_id= or ?dest= (country code). When present,
 	// the radar feed is filtered to that country/space instead of showing
@@ -45,22 +55,32 @@ export const load: PageServerLoad = async (event) => {
 	// page renders the browse list only. Best-effort: any backend error
 	// degrades to an empty list rather than failing the whole page.
 	let followedItems: RadarItem[] = [];
-	let followedCount = 0;
 	let followedTotal = 0;
+	let followedHasMore = false;
+	let followedNextCursor = '';
+	let followedCountsByType: Record<string, number> = {};
+	let followedCountsByCountry: Record<string, number> = {};
+	let followedSpaceIds: string[] = [];
 	let intelUnavailable = false;
 	if (authed) {
 		try {
 			const params = new URLSearchParams();
 			params.set('page_size', String(PAGE_SIZE));
 			params.set('page_offset', String(offset));
+			if (itemType) params.set('item_type', itemType);
 			const res = await apiRadarList<RadarItem>(ctx, `/intel/radar/followed?${params.toString()}`);
 			followedItems = res.items;
 			const meta = res.meta;
-			const countsByType = meta?.['counts_by_type'] as Record<string, number> | undefined;
-			followedCount = countsByType
-				? Object.values(countsByType).reduce((a, b) => a + b, 0)
-				: followedItems.length;
-			followedTotal = (meta?.['followed_space_ids'] as string[] | undefined)?.length ?? 0;
+			// The followed feed already emits followed_space_ids in its meta —
+			// reuse it for the browse-list badges instead of a second 1-row
+			// fetch of /intel/radar just for the sidecar.
+			followedSpaceIds = (meta?.['followed_space_ids'] as string[] | undefined) ?? [];
+			followedTotal = followedSpaceIds.length;
+			followedHasMore = meta?.['has_more'] === true;
+			// Spec §739 sidecars: keyset cursor + per-type/per-country counts.
+			followedNextCursor = (meta?.['next_cursor'] as string | undefined) ?? '';
+			followedCountsByType = (meta?.['counts_by_type'] as Record<string, number> | undefined) ?? {};
+			followedCountsByCountry = (meta?.['counts_by_country'] as Record<string, number> | undefined) ?? {};
 		} catch (err) {
 			if (err instanceof ApiError && err.status === 503) {
 				intelUnavailable = true;
@@ -73,22 +93,49 @@ export const load: PageServerLoad = async (event) => {
 	// Geo-filtered feed — when ?space_id= or ?dest= is present, fetch the
 	// radar feed filtered to that country/space. This is public (no auth
 	// required) so guests can browse a specific country's opportunities.
+	// `dest` carries a geo_code, slug, or country name — resolve it to the
+	// country space id so the backend's space-keyed filter applies (the raw
+	// `country=` param only matches exact stored text or geo_code). When no
+	// country matches, fall back to the raw value normalized for casing.
 	let geoItems: RadarItem[] = [];
-	let geoCount = 0;
+	let geoHasMore = false;
+	let geoNextCursor = '';
+	let geoCountsByType: Record<string, number> = {};
 	if (hasGeoFilter && !intelUnavailable) {
 		try {
 			const params = new URLSearchParams();
 			params.set('page_size', String(PAGE_SIZE));
 			params.set('page_offset', String(offset));
+			if (itemType) params.set('item_type', itemType);
+			const resolvedSpace = spaceId
+				? null
+				: (countries.find((c) => {
+						const d = dest.trim().toLowerCase();
+						return (
+							c.geo_code.toLowerCase() === d ||
+							c.slug === d ||
+							c.name.toLowerCase() === d
+						);
+					}) ?? null);
 			if (spaceId) params.set('space_id', spaceId);
-			else if (dest) params.set('country', dest);
+			else if (resolvedSpace) params.set('space_id', resolvedSpace.id);
+			else if (dest) {
+				const d = dest.trim();
+				params.set(
+					'country',
+					d.length <= 4
+						? d.toUpperCase()
+						: d
+								.split(/[\s-]+/)
+								.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+								.join(' ')
+				);
+			}
 			const res = await apiRadarList<RadarItem>(ctx, `/intel/radar?${params.toString()}`);
 			geoItems = res.items;
-			const meta = res.meta;
-			const countsByType = meta?.['counts_by_type'] as Record<string, number> | undefined;
-			geoCount = countsByType
-				? Object.values(countsByType).reduce((a, b) => a + b, 0)
-				: geoItems.length;
+			geoHasMore = res.meta?.['has_more'] === true;
+			geoNextCursor = (res.meta?.['next_cursor'] as string | undefined) ?? '';
+			geoCountsByType = (res.meta?.['counts_by_type'] as Record<string, number> | undefined) ?? {};
 		} catch (err) {
 			if (err instanceof ApiError && err.status === 503) {
 				intelUnavailable = true;
@@ -97,27 +144,15 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	// Resolve the caller's followed space IDs so the browse list can badge
-	// followed countries. The public radar feed emits `followed_space_ids` in
-	// its meta; we fetch a single-row page just to read that sidecar. Best-
-	// effort: any error degrades to an empty set (the page falls back to an
-	// optimistic toggle for the follow button state).
-	let followedSpaceIds: string[] = [];
-	if (authed && !intelUnavailable) {
-		try {
-			const res = await apiRadarList<RadarItem>(ctx, `/intel/radar?page_size=1&page_offset=0`);
-			followedSpaceIds = (res.meta?.['followed_space_ids'] as string[] | undefined) ?? [];
-		} catch {
-			followedSpaceIds = [];
-		}
-	}
-
 	return {
 		countries,
 		countriesError,
 		followedItems,
-		followedCount,
 		followedTotal,
+		followedHasMore,
+		followedNextCursor,
+		followedCountsByType,
+		followedCountsByCountry,
 		followedSpaceIds,
 		intelUnavailable,
 		authed,
@@ -126,8 +161,11 @@ export const load: PageServerLoad = async (event) => {
 		// Geo-aware filter state
 		spaceId,
 		dest,
+		itemType,
 		hasGeoFilter,
 		geoItems,
-		geoCount
+		geoHasMore,
+		geoNextCursor,
+		geoCountsByType
 	};
 };

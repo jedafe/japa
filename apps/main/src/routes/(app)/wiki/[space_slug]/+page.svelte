@@ -20,6 +20,7 @@
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 	import { categoryIconResolved, categoryTint } from '$lib/components/wiki/icons';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
+	import { openLightbox } from '$lib/lightbox.svelte';
 	import {
 		BookOpen,
 		Bookmark,
@@ -27,6 +28,7 @@
 		ChevronRight,
 		CircleHelp,
 		Lock,
+		Maximize2,
 		Plus,
 		Star,
 		Table2,
@@ -70,6 +72,7 @@
 	};
 	const apiCategories = $derived<ApiCategory[]>(data.apiCategories ?? []);
 	const isUniversityWiki = $derived(data.wikiScope === 'university');
+	const isAttractionWiki = $derived(data.wikiScope === 'attraction');
 
 	function categoryDesc(cat: string): string {
 		return t(`wiki.category_desc_${cat}`, t('wiki.category_desc_other', 'Guides and resources.'), { name: spaceName });
@@ -133,16 +136,20 @@
 	const tagline = $derived(
 		isUniversityWiki
 			? t('wiki.guide_tagline_university', 'Your complete guide to {name} — admissions, programs, tuition, and campus life.', { name: spaceName })
-			: t('wiki.guide_tagline', 'Your complete guide to living, studying, and building a successful life in {name}.', { name: spaceName })
+			: isAttractionWiki
+				? t('wiki.guide_tagline_attraction', 'Your complete guide to {name} — what to see, hours, entry fees, and how to plan your visit.', { name: spaceName })
+				: t('wiki.guide_tagline', 'Your complete guide to living, studying, and building a successful life in {name}.', { name: spaceName })
 	);
 	const crumbKind = $derived(
 		isUniversityWiki
 			? t('wiki.breadcrumb_university_guides', 'University Guides')
-			: spaceLevel === 'city'
-				? t('wiki.breadcrumb_city_guides', 'City Guides')
-				: spaceLevel === 'state'
-					? t('wiki.breadcrumb_state_guides', 'State Guides')
-					: t('wiki.breadcrumb_country_guides', 'Country Guides')
+			: isAttractionWiki
+				? t('wiki.breadcrumb_attractions', 'Attractions')
+				: spaceLevel === 'city'
+					? t('wiki.breadcrumb_city_guides', 'City Guides')
+					: spaceLevel === 'state'
+						? t('wiki.breadcrumb_state_guides', 'State Guides')
+						: t('wiki.breadcrumb_country_guides', 'Country Guides')
 	);
 
 	// Section cards — one card per category (matching the guide design),
@@ -464,11 +471,23 @@
 		{#if space && wikiEnabled && !data.loadError && space.geo_code}
 			<WikiExploreMap {space} {fetchCtx} countryCode={data.countryGeoCode} stateCode={data.stateGeoCode} />
 		{:else if heroUrl}
-			<img
-				src={heroUrl}
-				alt={spaceName}
-				class="mt-4 max-h-72 w-full rounded-[12px] border border-[var(--color-border)] object-cover"
-			/>
+			<button
+				type="button"
+				class="group relative mt-4 block w-full cursor-zoom-in overflow-hidden rounded-[12px] border border-[var(--color-border)]"
+				onclick={() => openLightbox([{ id: `wiki-hero-${spaceId}`, url: heroUrl, alt_text: spaceName }])}
+				aria-label={t('lightbox.view_image', 'View image')}
+			>
+				<img
+					src={heroUrl}
+					alt={spaceName}
+					class="max-h-72 w-full object-cover"
+				/>
+				<span
+					class="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+				>
+					<Maximize2 size={15} />
+				</span>
+			</button>
 		{/if}
 		<!-- §80 attractions — full-width gallery strip under the hero when a
 		     media field (e.g. the overview group's "gallery") has values. -->

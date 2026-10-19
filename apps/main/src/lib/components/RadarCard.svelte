@@ -135,7 +135,7 @@
 					{#each teasers as item (item.id)}
 						<li>
 							<a
-								href={`/radar/feed/${item.id}`}
+								href={`/radar/feed/${item.id}?item_type=${encodeURIComponent(item.type)}`}
 								class="block rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2 transition-colors hover:bg-[var(--color-primary)]/5"
 							>
 								<div class="flex items-center gap-2">
