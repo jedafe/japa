@@ -56,6 +56,15 @@ func IsProviderAuthError(err error) bool {
 	return false
 }
 
+// IsProviderKeyRejected reports whether err is the provider rejecting the
+// credential itself (HTTP 401). 403 is deliberately excluded: providers
+// return it for scope/permission problems on an otherwise valid key (model
+// access, region blocks), so it must not flag a BYOK key as dead.
+func IsProviderKeyRejected(err error) bool {
+	var he *HTTPStatusError
+	return errors.As(err, &he) && he.Status == http.StatusUnauthorized
+}
+
 // LLMToolDefinition describes a single tool the LLM may invoke during a
 // function-calling conversation. The Parameters field is a JSON Schema object
 // (draft 2020-12) describing the arguments the LLM must produce.

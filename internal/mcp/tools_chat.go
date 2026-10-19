@@ -47,6 +47,14 @@ func (s *Server) japaChatDescriptor() mcpTool {
 						"enabled": map[string]any{"type": "boolean"},
 					},
 				},
+				"byok_key_id": map[string]any{
+					"type":        "string",
+					"description": "UUID of a key from /me/ai-keys — routes the turn through the caller's own provider credential (BYOK) instead of platform providers",
+				},
+				"model": map[string]any{
+					"type":        "string",
+					"description": "Model id to run the turn on; required when byok_key_id is set (validated against the provider's catalog)",
+				},
 			},
 			"required": []any{"message"},
 		},
@@ -69,6 +77,8 @@ func (s *Server) handleJapaChat(ctx context.Context, user *auth.AuthenticatedUse
 	var args struct {
 		Message        string `json:"message"`
 		ConversationID string `json:"conversation_id"`
+		ByokKeyID      string `json:"byok_key_id"`
+		Model          string `json:"model"`
 		Tools          *struct {
 			Enabled *bool `json:"enabled"`
 		} `json:"tools"`
@@ -100,9 +110,20 @@ func (s *Server) handleJapaChat(ctx context.Context, user *auth.AuthenticatedUse
 		tools = &ai.ToolSelection{Enabled: args.Tools.Enabled}
 	}
 
+	var byokKeyID *pgtype.UUID
+	if args.ByokKeyID != "" {
+		var u pgtype.UUID
+		if err := u.Scan(args.ByokKeyID); err != nil || !u.Valid {
+			return s.errorResp(req.ID, -32602, "Invalid params", "byok_key_id must be a UUID"), false
+		}
+		byokKeyID = &u
+	}
+
 	events, err := s.agent.HandleUnifiedChat(ctx, user.UserID, ai.UnifiedChatRequest{
 		Prompt:         args.Message,
 		ConversationID: convID,
+		ByokKeyID:      byokKeyID,
+		Model:          args.Model,
 		Tools:          tools,
 	})
 	if err != nil {

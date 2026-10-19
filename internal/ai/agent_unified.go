@@ -97,7 +97,13 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		hasChat = h.perms.HasPermission(ctx, userID, "ai.context.use")
 		hasAgent = h.perms.HasPermission(ctx, userID, "agent.use")
 
-		if !hasChat && !hasAgent {
+		// BYOK turns admit on ai.byok alone — the caller pays for the
+		// provider call with their own key. Tool eligibility still
+		// requires agent.use below.
+		hasByok := req.ByokKeyID != nil && req.ByokKeyID.Valid &&
+			h.perms.HasPermission(ctx, userID, "ai.byok")
+
+		if !hasChat && !hasAgent && !hasByok {
 			return nil, errAINoPermission
 		}
 	}

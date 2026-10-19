@@ -775,9 +775,10 @@ func (h *AgentHandler) runLoop(
 			}, deltaSink)
 		}
 		if err != nil {
-			// A provider 401/403 marks the BYOK key invalid so the UI flags
-			// it; rate-limit/5xx leave the status untouched.
-			if p.byok != nil && p.byokKeyID != nil && h.userKeys != nil && IsProviderAuthError(err) {
+			// A provider 401 marks the BYOK key invalid so the UI flags
+			// it; 403/429/5xx leave the status untouched (scope or
+			// transient problems on an otherwise valid key).
+			if p.byok != nil && p.byokKeyID != nil && h.userKeys != nil && IsProviderKeyRejected(err) {
 				_ = h.userKeys.MarkStatus(context.WithoutCancel(loopCtx), *p.byokKeyID, "invalid", err.Error())
 			}
 
@@ -797,8 +798,12 @@ func (h *AgentHandler) runLoop(
 		}
 
 		// Accumulate token usage + cost using the per-provider/model price.
+		// BYOK turns don't cost the platform anything — tokens are still
+		// recorded (informational), cost is not.
 		totalTokens += resp.Usage.TotalTokens
-		estimatedCost += costEstimator.Estimate(loopCtx, resp.ProviderName, resp.Model, resp.Usage.TotalTokens)
+		if p.byok == nil {
+			estimatedCost += costEstimator.Estimate(loopCtx, resp.ProviderName, resp.Model, resp.Usage.TotalTokens)
+		}
 
 		// --- Cost limit check (task 5.10) — BYOK turns spend the caller's
 		// key, not platform budget, so the platform cap doesn't apply.

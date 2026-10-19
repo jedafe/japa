@@ -375,7 +375,7 @@ func (h *Handlers) HandleVerifyMyAIKey(w http.ResponseWriter, r *http.Request) {
 	case verr == nil:
 		_ = h.userKeys.MarkStatus(r.Context(), keyID, "active", "")
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "active"}})
-	case IsProviderAuthError(verr):
+	case IsProviderKeyRejected(verr):
 		_ = h.userKeys.MarkStatus(r.Context(), keyID, "invalid", verr.Error())
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "invalid"}})
 	default:
