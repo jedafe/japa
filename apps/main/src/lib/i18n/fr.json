@@ -5927,5 +5927,6 @@
   "ai.panel.welcome": "Posez-moi une question — je vois la page affichée.",
   "ai.panel.mode": "Mode",
   "ai.panel.mode_chat": "Discussion",
-  "ai.panel.mode_agent": "Agent"
+  "ai.panel.mode_agent": "Agent",
+  "ai.panel.placeholder_chat": "Envoyer un message à Japa AI…"
 }
