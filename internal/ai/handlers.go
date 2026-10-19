@@ -99,6 +99,8 @@ type Handlers struct {
 	Convos               *ConversationService // ADR-130 unified transcript store (nil = unified surface off)
 	Projects             *ProjectService      // §103 amendment: AI project collections
 	agentSessions        AgentSessionQueries  // tool-call reader for conversation detail (ADR-130)
+	byokProviders        byokProviderLister   // BYOK allowlist store (nil = BYOK endpoints degrade)
+	userKeys             userAIKeyStore       // BYOK per-user credentials store
 }
 
 // SetStudioReviewHook injects the studio hook so AI HITL review

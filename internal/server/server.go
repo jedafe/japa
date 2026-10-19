@@ -3051,6 +3051,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetProviderStore(providerStore)
 	controlHandlers.SetAIDispatcher(aiDispatcher)
 
+	// BYOK: admin-curated provider allowlist + encrypted per-user keys.
+	// The user-facing handlers live on aiHandlers; the control-plane CRUD on
+	// controlHandlers.
+	byokProviderStore := ai.NewByokProviderStore(database.Reader, database.Writer)
+	userAIKeyStore := ai.NewUserAIKeyStore(database.Reader, database.Writer)
+	aiHandlers.SetByokStores(byokProviderStore, userAIKeyStore)
+	controlHandlers.SetByokProviderStore(byokProviderStore)
+
 	// Load DB-backed provider configs and register them with the dispatcher.
 	// This runs AFTER env-var providers are registered above, so DB configs
 	// take priority (LoadAndRegisterProviders clears and re-registers
@@ -5608,6 +5616,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				personasHandlers.HandleListVoices(w, r)
 			})
+
+			// AI BYOK — user-owned provider keys (spec:
+			// docs/superpowers/specs/2026-10-19-ai-byok-design.md).
+			// feature.ai_byok flag + ai.byok node gate every route.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
+				Get("/ai/byok/providers", aiHandlers.HandleListByokProviders)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
+				Post("/ai/byok/providers/{id}/referral-click", aiHandlers.HandleByokReferralClick)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
+				Get("/me/ai-keys", aiHandlers.HandleListMyAIKeys)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
+				Post("/me/ai-keys", aiHandlers.HandleCreateMyAIKey)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
+				Patch("/me/ai-keys/{id}", aiHandlers.HandleUpdateMyAIKey)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
+				Delete("/me/ai-keys/{id}", aiHandlers.HandleDeleteMyAIKey)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_byok"), rbac.RequirePermission(rbacResolver, "ai.byok")).
+				Post("/me/ai-keys/{id}/verify", aiHandlers.HandleVerifyMyAIKey)
 
 			// AI categories — gated by ai.generate so only users with generation
 			// permission can enumerate available AI capabilities.

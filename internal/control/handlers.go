@@ -93,6 +93,7 @@ type Handlers struct {
 	Honcho            HonchoHealthChecker
 	AIStore           *ai.Store
 	ProviderStore     *ai.ProviderStore
+	ByokStore         *ai.ByokProviderStore
 	AIDispatcher      *ai.Dispatcher
 	StartTime         time.Time
 	DeploymentVersion string
@@ -175,6 +176,12 @@ func (h *Handlers) SetHoncho(hc HonchoHealthChecker) {
 // (GET/PATCH /control/ai-budget). When nil, spend defaults to 0.
 func (h *Handlers) SetAIStore(s *ai.Store) {
 	h.AIStore = s
+}
+
+// SetByokProviderStore injects the BYOK allowlist store for the
+// /control/ai-byok-providers endpoints.
+func (h *Handlers) SetByokProviderStore(s *ai.ByokProviderStore) {
+	h.ByokStore = s
 }
 
 // SetProviderStore injects the AI provider config store for the AI Providers
