@@ -789,7 +789,7 @@
 	.ai-panel-send {
 		position: absolute;
 		right: 0.375rem;
-		bottom: 0.375rem;
+		top: 0.4375rem;
 		display: grid;
 		place-items: center;
 		width: 1.625rem;
