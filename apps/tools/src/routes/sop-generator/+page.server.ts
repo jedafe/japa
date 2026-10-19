@@ -38,49 +38,30 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let destinations: GeoSpaceOption[] = [];
-	try {
-		destinations = await loadCountries(ctx);
-	} catch {
-		destinations = [];
-	}
-
-	let templates: SopTemplate[] = [];
-	try {
-		templates = (await apiList<SopTemplate>(ctx, '/sop/templates')).items;
-	} catch {
-		templates = [];
-	}
-
-	let samples: SopSample[] = [];
-	try {
-		samples = (await apiList<SopSample>(ctx, '/sop/samples')).items;
-	} catch {
-		samples = [];
-	}
-
-	let fields: SopField[] = [];
-	try {
-		fields = (await apiList<SopField>(ctx, '/sop/fields')).items;
-	} catch {
-		fields = [];
-	}
-
-	// Auth-only: quota + drafts.
-	let quota: SopQuota | null = null;
-	let drafts: SopDraft[] = [];
-	if (event.locals.user) {
-		try {
-			quota = await apiGet<SopQuota>(ctx, '/sop/quota');
-		} catch {
-			quota = null;
-		}
-		try {
-			drafts = (await apiList<SopDraft>(ctx, '/sop/drafts')).items;
-		} catch {
-			drafts = [];
-		}
-	}
+	// All datasets are independent — one wave. Each call degrades to its
+	// empty fallback on failure so a broken endpoint never blanks the page.
+	const authed = !!event.locals.user;
+	const [destinations, templates, samples, fields, quota, drafts] = await Promise.all([
+		loadCountries(ctx).catch(() => [] as GeoSpaceOption[]),
+		apiList<SopTemplate>(ctx, '/sop/templates')
+			.then((r) => r.items)
+			.catch(() => [] as SopTemplate[]),
+		apiList<SopSample>(ctx, '/sop/samples')
+			.then((r) => r.items)
+			.catch(() => [] as SopSample[]),
+		apiList<SopField>(ctx, '/sop/fields')
+			.then((r) => r.items)
+			.catch(() => [] as SopField[]),
+		// Auth-only: quota + drafts.
+		authed
+			? apiGet<SopQuota>(ctx, '/sop/quota').catch(() => null)
+			: Promise.resolve(null),
+		authed
+			? apiList<SopDraft>(ctx, '/sop/drafts')
+					.then((r) => r.items)
+					.catch(() => [] as SopDraft[])
+			: Promise.resolve([] as SopDraft[])
+	]);
 
 	return {
 		enabled: true,

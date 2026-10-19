@@ -17,42 +17,36 @@ export const load: PageServerLoad = async (event) => {
 	const scam_type = event.url.searchParams.get('scam_type') ?? '';
 	const submitted = event.url.searchParams.get('submitted') === '1';
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
-	let scamTypes: ScamType[] = [];
-	let scamPlatforms: ScamPlatform[] = [];
-	try {
-		const schema = await apiGet<{ scam_types: { value: string; label: string }[]; platforms: { value: string; label: string }[] }>(ctx, '/scam-alerts/schema');
-		scamTypes = (schema.scam_types ?? []).map((o) => o.value as ScamType);
-		scamPlatforms = (schema.platforms ?? []).map((o) => o.value as ScamPlatform);
-	} catch {
-		scamTypes = [];
-		scamPlatforms = [];
-	}
-
 	const params = new URLSearchParams({ page: '1', limit: String(PAGE_SIZE) });
 	if (dest) params.set('dest', dest);
 	if (scam_type) params.set('scam_type', scam_type);
 
-	try {
-		const { items } = await apiList<ScamReport>(ctx, `/scam-alerts?${params.toString()}`);
-		return { alerts: items, pageSize: PAGE_SIZE, loadError: false, filters: { dest, scam_type }, submitted, countries, scamTypes, scamPlatforms };
-	} catch {
-		return {
-			alerts: [] as ScamReport[],
-			pageSize: PAGE_SIZE,
-			loadError: true,
-			filters: { dest, scam_type },
-			submitted,
-			countries,
-			scamTypes,
-			scamPlatforms
-		};
+	// Countries, the schema catalog, and the filtered alert list are
+	// independent — one wave, each degrading to its empty fallback.
+	const [countries, schema, alertsRes] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		apiGet<{ scam_types: { value: string; label: string }[]; platforms: { value: string; label: string }[] }>(ctx, '/scam-alerts/schema').catch(() => null),
+		apiList<ScamReport>(ctx, `/scam-alerts?${params.toString()}`)
+			.then((r) => ({ ok: true as const, items: r.items }))
+			.catch(() => ({ ok: false as const, items: [] as ScamReport[] }))
+	]);
+
+	const scamTypes = (schema?.scam_types ?? []).map((o) => o.value as ScamType);
+	const scamPlatforms = (schema?.platforms ?? []).map((o) => o.value as ScamPlatform);
+
+	if (alertsRes.ok) {
+		return { alerts: alertsRes.items, pageSize: PAGE_SIZE, loadError: false, filters: { dest, scam_type }, submitted, countries, scamTypes, scamPlatforms };
 	}
+	return {
+		alerts: [] as ScamReport[],
+		pageSize: PAGE_SIZE,
+		loadError: true,
+		filters: { dest, scam_type },
+		submitted,
+		countries,
+		scamTypes,
+		scamPlatforms
+	};
 };

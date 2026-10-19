@@ -17,24 +17,22 @@ export const load: PageServerLoad = async (event) => {
 	const dest = event.url.searchParams.get('dest') ?? '';
 	const visa = event.url.searchParams.get('visa') ?? '';
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
+	const params = new URLSearchParams({ page_size: String(PAGE_SIZE) });
+	if (dest) params.set('dest', dest);
+	if (visa) params.set('visa', visa);
 
-	let groups: PlanningGroup[] = [];
 	let loadError = false;
-	try {
-		const params = new URLSearchParams({ page_size: String(PAGE_SIZE) });
-		if (dest) params.set('dest', dest);
-		if (visa) params.set('visa', visa);
-		groups = (await apiList<PlanningGroup>(ctx, `/planning-groups?${params.toString()}`)).items;
-	} catch {
-		loadError = true;
-	}
+	const [countries, groups] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		apiList<PlanningGroup>(ctx, `/planning-groups?${params.toString()}`)
+			.then((r) => r.items)
+			.catch(() => {
+				loadError = true;
+				return [] as PlanningGroup[];
+			})
+	]);
 
 	return {
 		groups,

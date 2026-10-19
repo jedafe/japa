@@ -15,6 +15,10 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
+	const countriesPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then((r) => r.items)
+		.catch(() => [] as GeoCountry[]);
+
 	let achievement: Achievement;
 	try {
 		achievement = await apiGet<Achievement>(ctx, `/achievements/${slug}?raw=1`);
@@ -32,13 +36,7 @@ export const load: PageServerLoad = async (event) => {
 		throw error(403, { code: 'not_owner', message: 'You can only edit your own achievements' });
 	}
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
+	const countries = await countriesPromise;
 
 	return { achievement, countries };
 };

@@ -38,24 +38,21 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	// Fetch the selector — this is the source of truth for available
-	// destinations (only those with published guides appear here).
-	let selectorEntries: ArrivalChecklistSelectorEntry[] = [];
-	try {
-		selectorEntries = (
-			await apiList<ArrivalChecklistSelectorEntry>(ctx, '/arrival-checklist/selector')
-		).items;
-	} catch {
-		selectorEntries = [];
-	}
-
-	// Destination country list — the full 250 primary geo space countries.
-	let destinations: GeoSpaceOption[] = [];
-	try {
-		destinations = await loadCountries(ctx);
-	} catch {
-		destinations = [];
-	}
+	// Selector (source of truth for published destinations), the full
+	// countries list, and the user's checklists are independent — one wave.
+	// Guide items go in wave 2 since they need selector + ?dest= resolved.
+	const authed = !!event.locals.user;
+	const [selectorEntries, destinations, myChecklists] = await Promise.all([
+		apiList<ArrivalChecklistSelectorEntry>(ctx, '/arrival-checklist/selector')
+			.then((r) => r.items)
+			.catch(() => [] as ArrivalChecklistSelectorEntry[]),
+		loadCountries(ctx).catch(() => [] as GeoSpaceOption[]),
+		authed
+			? apiList<UserArrivalChecklist>(ctx, '/me/arrival-checklists')
+					.then((r) => r.items)
+					.catch(() => [] as UserArrivalChecklist[])
+			: Promise.resolve([] as UserArrivalChecklist[])
+	]);
 
 	// If ?dest= is present and valid, fetch the guide items for that
 	// destination so the page renders with content on first paint (SSR).
@@ -74,17 +71,6 @@ export const load: PageServerLoad = async (event) => {
 			} catch {
 				items = [];
 			}
-		}
-	}
-
-	// The user's in-progress checklists (§92 — GET /me/arrival-checklists).
-	// Powers the "your checklists" strip so returning users can resume.
-	let myChecklists: UserArrivalChecklist[] = [];
-	if (event.locals.user) {
-		try {
-			myChecklists = (await apiList<UserArrivalChecklist>(ctx, '/me/arrival-checklists')).items;
-		} catch {
-			myChecklists = [];
 		}
 	}
 

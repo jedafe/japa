@@ -14,17 +14,32 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
-	let challenges: Challenge[] = [];
-	let disabled = false;
-	try {
-		challenges = (await apiList<Challenge>(ctx, '/gamification/challenges')).items;
-	} catch (e: unknown) {
-		const code = (e as { code?: string })?.code;
-		const status = (e as { status?: number })?.status;
-		if (code === 'gamification_disabled' || status === 404) {
-			disabled = true;
-		}
-	}
+	// Challenges and the user's progress are independent — one wave. The
+	// badge catalog goes in wave 2 since it depends on whether any returned
+	// challenge actually grants a badge.
+	const challengesPromise = apiList<Challenge>(ctx, '/gamification/challenges')
+		.then((r) => ({ items: r.items, disabled: false }))
+		.catch((e: unknown) => {
+			const code = (e as { code?: string })?.code;
+			const status = (e as { status?: number })?.status;
+			return {
+				items: [] as Challenge[],
+				disabled: code === 'gamification_disabled' || status === 404
+			};
+		});
+	// Phase 34.04 — fetch the authenticated user's challenge progress so we
+	// can render progress bars and reward details. Best-effort: guests and
+	// any backend error degrade to an empty map (challenges still render
+	// without progress).
+	const myProgressPromise = authed
+		? apiList<{ id: string; target_count: number; current_count: number; completed: boolean }>(ctx, '/me/challenges')
+				.then((r) => r.items)
+				.catch(() => [] as { id: string; target_count: number; current_count: number; completed: boolean }[])
+		: Promise.resolve([] as { id: string; target_count: number; current_count: number; completed: boolean }[]);
+
+	const [challengesRes, myProgress] = await Promise.all([challengesPromise, myProgressPromise]);
+	const challenges = challengesRes.items;
+	const disabled = challengesRes.disabled;
 
 	// Badge catalog — used to resolve reward_badge_id to a badge name so the
 	// card can show "badge reward" instead of a bare id. Best-effort: when
@@ -36,19 +51,6 @@ export const load: PageServerLoad = async (event) => {
 			badges = (await apiList<{ id: string; name: string }>(ctx, '/gamification/badges')).items;
 		} catch {
 			badges = [];
-		}
-	}
-
-	// Phase 34.04 — fetch the authenticated user's challenge progress so we
-	// can render progress bars and reward details. Best-effort: guests and
-	// any backend error degrade to an empty map (challenges still render
-	// without progress).
-	let myProgress: Array<{ id: string; target_count: number; current_count: number; completed: boolean }> = [];
-	if (authed) {
-		try {
-			myProgress = (await apiList<typeof myProgress[number]>(ctx, '/me/challenges')).items;
-		} catch {
-			myProgress = [];
 		}
 	}
 

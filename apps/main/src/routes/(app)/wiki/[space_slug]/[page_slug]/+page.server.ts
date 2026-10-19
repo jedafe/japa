@@ -36,13 +36,15 @@ export const load: PageServerLoad = async (event) => {
 	const userPermissions = event.locals.user?.permissions ?? [];
 
 	try {
-		const page = await apiGet<WikiPage>(
+		// Index, space detail, and the scoped category set all fail soft — the
+		// article body is the essential payload. They only need space_slug, so
+		// they fire alongside the page fetch rather than waiting for it.
+		const pagePromise = apiGet<WikiPage>(
 			ctx,
 			`/wiki/${encodeURIComponent(spaceSlug)}/${encodeURIComponent(pageSlug)}`
 		);
-		// Index, space detail, and the scoped category set all fail soft — the
-		// article body is the essential payload.
-		const [indexRes, spaceDetail, catRes] = await Promise.all([
+		const [page, indexRes, spaceDetail, catRes] = await Promise.all([
+			pagePromise,
 			apiList<WikiPageIndex>(ctx, `/wiki/${encodeURIComponent(spaceSlug)}`).catch(() => null),
 			apiGet<SpaceDetail>(ctx, `/spaces/${encodeURIComponent(spaceSlug)}`).catch(() => null),
 			apiGetEnvelope<WikiApiCategory[]>(

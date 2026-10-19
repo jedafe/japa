@@ -26,6 +26,13 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
+	// service.booking.manage = org_member on the owning org (§111) — the
+	// backend re-checks membership on every call, so this gate mirrors it.
+	// Independent of the org lookup, so it rides the same wave.
+	const myOrgsPromise = apiList<MyOrganization>(ctx, '/me/organizations')
+		.then((r) => r.items)
+		.catch(() => [] as MyOrganization[]);
+
 	let org: PublicOrganization;
 	try {
 		org = await apiGet<PublicOrganization>(ctx, `/organizations/${slug}`);
@@ -36,15 +43,8 @@ export const load: PageServerLoad = async (event) => {
 		throw error(500, { code: 'load_failed', message: 'Failed to load organization' });
 	}
 
-	// service.booking.manage = org_member on the owning org (§111) — the
-	// backend re-checks membership on every call, so this gate mirrors it.
-	let memberRole = '';
-	try {
-		const myOrgs = await apiList<MyOrganization>(ctx, '/me/organizations');
-		memberRole = myOrgs.items.find((o) => o.id === org.id)?.member_role ?? '';
-	} catch {
-		memberRole = '';
-	}
+	const myOrgs = await myOrgsPromise;
+	const memberRole = myOrgs.find((o) => o.id === org.id)?.member_role ?? '';
 	if (!memberRole) {
 		throw error(403, {
 			code: 'not_org_member',

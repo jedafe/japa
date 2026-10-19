@@ -45,67 +45,46 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let form: AssessmentForm | null = null;
-	try {
-		form = await apiGet<AssessmentForm>(ctx, '/assessment');
-	} catch {
-		form = null;
-	}
-
 	// If a result ID is in the URL, load it directly (shareable results page).
 	const resultId = event.url.searchParams.get('result');
-	let result: AssessmentResult | null = null;
-	if (resultId) {
-		try {
-			result = await apiGetOrNull<AssessmentResult>(ctx, `/assessment/result/${resultId}`);
-		} catch {
-			result = null;
-		}
-	}
+	const authed = !!event.locals.user;
 
-	// Load the authenticated user's past results (§71 history).
-	// Ref: §71 — "authenticated users get persistent history".
-	let history: AssessmentHistoryItem[] = [];
-	if (event.locals.user) {
-		try {
-			const res = await apiList<AssessmentHistoryItem>(ctx, '/assessment/history?limit=50');
-			history = res.items;
-		} catch {
-			history = [];
-		}
-	}
-
-	// Journey option lists and canonical country options are fetched separately
-	// from the form definition so country selectors are never hardcoded.
-	let journeyOptions: JourneyOptions = { purposes: [], stages: [], visa_routes: [] };
-	let countryOptions: CountryOption[] = [];
-
-	try {
-		journeyOptions = await apiGet<JourneyOptions>(ctx, '/feed/journey-options');
-	} catch {
-		journeyOptions = { purposes: [], stages: [], visa_routes: [] };
-	}
-
-	try {
-		const allSpaces: SpaceOption[] = [];
-		let offset = 0;
-		while (true) {
-			const { items, meta } = await apiList<SpaceOption>(
-				ctx,
-				`/spaces?level=country&sort=name&page_size=100&page_offset=${offset}`
-			);
-			if (!items.length) break;
-			allSpaces.push(...items);
-			if (meta?.total && allSpaces.length >= meta.total) break;
-			offset += items.length;
-		}
-		countryOptions = allSpaces
-			.filter((s) => s.geo_code)
-			.map((s) => ({ value: s.geo_code as string, label: s.name }))
-			.sort((a, b) => a.label.localeCompare(b.label));
-	} catch {
-		countryOptions = [];
-	}
+	// Form, shared result, history, journey options, and the country list are
+	// all independent — one wave, each degrading to its empty fallback.
+	const [form, result, history, journeyOptions, countryOptions] = await Promise.all([
+		apiGet<AssessmentForm>(ctx, '/assessment').catch(() => null),
+		resultId
+			? apiGetOrNull<AssessmentResult>(ctx, `/assessment/result/${resultId}`).catch(() => null)
+			: Promise.resolve(null),
+		authed
+			? apiList<AssessmentHistoryItem>(ctx, '/assessment/history?limit=50')
+					.then((r) => r.items)
+					.catch(() => [] as AssessmentHistoryItem[])
+			: Promise.resolve([] as AssessmentHistoryItem[]),
+		apiGet<JourneyOptions>(ctx, '/feed/journey-options').catch(() => ({
+			purposes: [] as CountryOption[],
+			stages: [] as CountryOption[],
+			visa_routes: [] as CountryOption[]
+		})),
+		(async () => {
+			const allSpaces: SpaceOption[] = [];
+			let offset = 0;
+			while (true) {
+				const { items, meta } = await apiList<SpaceOption>(
+					ctx,
+					`/spaces?level=country&sort=name&page_size=100&page_offset=${offset}`
+				);
+				if (!items.length) break;
+				allSpaces.push(...items);
+				if (meta?.total && allSpaces.length >= meta.total) break;
+				offset += items.length;
+			}
+			return allSpaces
+				.filter((s) => s.geo_code)
+				.map((s) => ({ value: s.geo_code as string, label: s.name }))
+				.sort((a, b) => a.label.localeCompare(b.label));
+		})().catch(() => [] as CountryOption[])
+	]);
 
 	return {
 		enabled: true,

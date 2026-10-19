@@ -19,24 +19,18 @@ export const load: PageServerLoad = async (event) => {
 	// page_size=100: the handler's parsePageSize default is 20 and the
 	// response carries no meta, so without it a user in >20 orgs would
 	// silently lose the tail of the list.
-	const organizations = (await apiList<MyOrganizationRow>(ctx, '/me/organizations?page_size=100')).items;
-
-	// BUG-022: Fetch org type options from the API (Rule 16).
-	let orgMeta: OrgMeta | null = null;
-	try {
-		orgMeta = await apiGet<OrgMeta>(ctx, '/organizations/meta');
-	} catch {
-		// Non-fatal — selects are disabled when meta is unavailable (Rule 16).
-	}
-
-	// Country list sourced from the spaces country table (/geo/countries)
-	// so the country_code picker is never hardcoded (Rule 16).
-	let countries: GeoCountry[] = [];
-	try {
-		countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
-	} catch {
-		countries = [];
-	}
+	const [organizationsRes, orgMeta, countries] = await Promise.all([
+		apiList<MyOrganizationRow>(ctx, '/me/organizations?page_size=100'),
+		// BUG-022: Fetch org type options from the API (Rule 16). Non-fatal —
+		// selects are disabled when meta is unavailable.
+		apiGet<OrgMeta>(ctx, '/organizations/meta').catch(() => null),
+		// Country list sourced from the spaces country table (/geo/countries)
+		// so the country_code picker is never hardcoded (Rule 16).
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[])
+	]);
+	const organizations = organizationsRes.items;
 
 	return { organizations, orgMeta, countries };
 };

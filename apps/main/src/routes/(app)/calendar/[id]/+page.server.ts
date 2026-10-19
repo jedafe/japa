@@ -18,6 +18,10 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 	const id = event.params.id;
+	const categoriesPromise = apiGet<{ value: string; label: string }[]>(ctx, '/calendar/categories')
+		.then((r) => r ?? [])
+		.catch(() => [] as { value: string; label: string }[]);
+
 	let entry: CalendarEntry;
 	try {
 		entry = await apiGet<CalendarEntry>(ctx, `/calendar/${id}`);
@@ -36,12 +40,7 @@ export const load: PageServerLoad = async (event) => {
 		(entry.submitted_by === user?.id ||
 			!!user?.permissions?.includes('calendar.edit_any'));
 
-	let categories: { value: string; label: string }[] = [];
-	try {
-		categories = await apiGet<{ value: string; label: string }[]>(ctx, '/calendar/categories');
-	} catch {
-		categories = [];
-	}
+	const categories = await categoriesPromise;
 
 	return { entry, authed, loadError: false, canEdit, categories };
 };

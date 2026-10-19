@@ -12,6 +12,14 @@ export const load: PageServerLoad = async (event) => {
 		error(404, { code: 'not_found', message: 'Source not found' });
 	}
 
+	const sourceMetaPromise = apiGet<SourceMeta>(ctx, '/sources/meta').catch(() => ({
+		categories: [],
+		source_types: [],
+		entity_types: [],
+		sorts: [],
+		item_sorts: []
+	}));
+
 	const source = await apiGet<Source>(ctx, `/sources/${encodeURIComponent(slug)}`).catch(() => {
 		error(404, { code: 'not_found', message: 'Source not found' });
 	});
@@ -22,13 +30,7 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(301, `/sources/${source.slug}${event.url.search}`);
 	}
 
-	const sourceMeta = await apiGet<SourceMeta>(ctx, '/sources/meta').catch(() => ({
-		categories: [],
-		source_types: [],
-		entity_types: [],
-		sorts: [],
-		item_sorts: []
-	}));
+	const sourceMeta = await sourceMetaPromise;
 
 	// Scope the filter pills to the entity types this source actually
 	// publishes (GET /sources/{slug}.entity_types). The field is omitempty

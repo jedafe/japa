@@ -73,23 +73,26 @@ export async function buildGuestHome(
 	let topDestinations = asArray<SpaceSuggestion>(siteSettings['landing.top_destinations']);
 
 	// If no curated top destinations are configured, try the directory API.
-	if (topDestinations.length === 0) {
-		try {
-			const spaceRes = await apiList<SpaceSuggestion>(ctx, `/spaces?level=country&sort=members&page_size=4`);
-			topDestinations = spaceRes.items.slice(0, 4);
-		} catch (err) {
-			console.error('[HOME] top destinations load failed', err);
-		}
-	}
+	// Both remote calls are independent — fetch them in one wave.
+	const destinationsPromise = topDestinations.length === 0
+		? apiList<SpaceSuggestion>(ctx, `/spaces?level=country&sort=members&page_size=4`)
+				.then((res) => res.items.slice(0, 4))
+				.catch((err) => {
+					console.error('[HOME] top destinations load failed', err);
+					return [] as SpaceSuggestion[];
+				})
+		: Promise.resolve(topDestinations);
+	const storiesPromise = apiList<Story>(ctx, '/stories?limit=10&sort=top')
+		.then((res) => res.items.slice(0, 10))
+		.catch((err) => {
+			console.error('[HOME] stories load failed', err);
+			return [] as Story[];
+		});
 
-	let stories: GuestHomeStory[] = [];
-	try {
-		const storyRes = await apiList<Story>(ctx, '/stories?limit=10&sort=top');
-		const site = (siteSettings['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME;
-		stories = storyRes.items.slice(0, 10).map((s) => mapStoryToGuestHome(s, site));
-	} catch (err) {
-		console.error('[HOME] stories load failed', err);
-	}
+	const site = (siteSettings['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME;
+	const [destinations, storyItems] = await Promise.all([destinationsPromise, storiesPromise]);
+	topDestinations = destinations;
+	const stories = storyItems.map((s) => mapStoryToGuestHome(s, site));
 
 	return {
 		topDestinations,

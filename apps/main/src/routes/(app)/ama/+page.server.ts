@@ -16,14 +16,11 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 
 	// Fetch country spaces for the destination filter dropdown and for
-	// resolving host_dest_country_id to a human-readable name (BUG-007).
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
+	// resolving host_dest_country_id to a human-readable name (BUG-007) —
+	// same wave as the session list.
+	const countriesPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then((r) => r.items)
+		.catch(() => [] as GeoCountry[]);
 
 	// Forward ?dest= and ?profession= filters to the backend (BUG-006).
 	const url = event.url;
@@ -33,7 +30,10 @@ export const load: PageServerLoad = async (event) => {
 	if (url.searchParams.get('status') === 'closed') params.set('status', 'closed');
 
 	try {
-		const { items } = await apiList<AMAThread>(ctx, `/forum/ama?${params.toString()}`);
+		const [{ items }, countries] = await Promise.all([
+			apiList<AMAThread>(ctx, `/forum/ama?${params.toString()}`),
+			countriesPromise
+		]);
 		return {
 			sessions: items,
 			countries,
@@ -44,7 +44,7 @@ export const load: PageServerLoad = async (event) => {
 	} catch {
 		return {
 			sessions: [] as AMAThread[],
-			countries,
+			countries: await countriesPromise,
 			authed,
 			pageSize: PAGE_SIZE,
 			loadError: true

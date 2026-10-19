@@ -15,6 +15,12 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 	const currentUserId = event.locals.user?.id ?? null;
 
+	// Countries resolve host_dest_country_id to a name (BUG-007) — independent
+	// of the session, so it rides the same wave.
+	const countriesPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then((r) => r.items)
+		.catch(() => [] as GeoCountry[]);
+
 	let session: AMAThread;
 	try {
 		session = await apiGet<AMAThread>(ctx, `/forum/ama/${id}`);
@@ -25,22 +31,13 @@ export const load: PageServerLoad = async (event) => {
 		return { session: null, replies: [], countries: [], authed, isHost: false, loadError: true };
 	}
 
-	let replies: ForumReply[] = [];
-	try {
-		const { items } = await apiList<ForumReply>(ctx, `/forum/${session.id}/replies`);
-		replies = items;
-	} catch {
-		replies = [];
-	}
-
-	// Fetch countries for resolving host_dest_country_id to a name (BUG-007).
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
+	const [fetchedReplies, countries] = await Promise.all([
+		apiList<ForumReply>(ctx, `/forum/${session.id}/replies`)
+			.then((r) => r.items)
+			.catch(() => [] as ForumReply[]),
+		countriesPromise
+	]);
+	let replies = fetchedReplies;
 
 	const isHost = authed && !!session.author_user_id && session.author_user_id === currentUserId;
 

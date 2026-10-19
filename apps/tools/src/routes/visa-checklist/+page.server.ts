@@ -28,44 +28,30 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	// Country list (origins and destinations share the same canonical source).
-	let origins: GeoSpaceOption[] = [];
-	let destinations: GeoSpaceOption[] = [];
-	try {
-		const countries = await loadCountries(ctx);
-		origins = countries;
-		destinations = countries;
-	} catch {
-		origins = [];
-		destinations = [];
-	}
-
-	let selector: ChecklistSelector | null = null;
-	try {
-		selector = await apiGet<ChecklistSelector>(ctx, '/checklist/selector');
-	} catch {
-		selector = null;
-	}
-
-	// If the URL has a pre-selected guide_id (shareable link), load it directly.
+	// Country list (origins and destinations share the same canonical source),
+	// the checklist selector, and a deep-linked guide are independent — one
+	// wave. Progress still waits on the guide since it only exists when the
+	// guide resolves for a signed-in user.
 	const guideId = event.url.searchParams.get('guide_id');
-	let guide: ChecklistGuide | null = null;
+	const [countries, selector, guide] = await Promise.all([
+		loadCountries(ctx).catch(() => [] as GeoSpaceOption[]),
+		apiGet<ChecklistSelector>(ctx, '/checklist/selector').catch(() => null),
+		guideId
+			? apiGetOrNull<ChecklistGuide>(ctx, `/checklist/${guideId}`).catch(() => null)
+			: Promise.resolve(null)
+	]);
+	const origins = countries;
+	const destinations = countries;
+
 	let progress: ChecklistProgress | null = null;
-	if (guideId) {
+	if (guide && event.locals.user && guideId) {
 		try {
-			guide = await apiGetOrNull<ChecklistGuide>(ctx, `/checklist/${guideId}`);
+			progress = await apiGetOrNull<ChecklistProgress>(
+				ctx,
+				`/checklist/${guideId}/progress`
+			);
 		} catch {
-			guide = null;
-		}
-		if (guide && event.locals.user) {
-			try {
-				progress = await apiGetOrNull<ChecklistProgress>(
-					ctx,
-					`/checklist/${guideId}/progress`
-				);
-			} catch {
-				progress = null;
-			}
+			progress = null;
 		}
 	}
 

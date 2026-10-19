@@ -35,42 +35,24 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	// Active ruleset + factor tables — used for the public factor preview
-	// and the "how points work" explainer.
-	let factors: CrsFactorsResponse | null = null;
-	try {
-		factors = await apiGet<CrsFactorsResponse>(ctx, '/crs/factors');
-	} catch {
-		factors = null;
-	}
-
-	// Latest draw per category — headline cut-off cards.
-	let latestDraws: CrsDraw[] = [];
-	try {
-		latestDraws = await apiGet<CrsDraw[]>(ctx, '/crs/draws/latest');
-	} catch {
-		latestDraws = [];
-	}
-
-	// Recent draw history for the cut-off trend chart (general stream).
-	let drawHistory: CrsDraw[] = [];
-	try {
-		drawHistory = (await apiList<CrsDraw>(ctx, '/crs/draws?limit=40')).items;
-	} catch {
-		drawHistory = [];
-	}
-
-	// Saved score history — auth-only; silently empty when signed out.
-	let scoreHistory: CrsScoreHistoryItem[] = [];
-	if (event.locals.user) {
-		try {
-			scoreHistory = (
-				await apiList<CrsScoreHistoryItem>(ctx, '/me/crs-scores')
-			).items;
-		} catch {
-			scoreHistory = [];
-		}
-	}
+	// All datasets are independent — one wave, each degrading to its empty
+	// fallback so a broken endpoint never blanks the page.
+	// factors: active ruleset + factor tables (public factor preview).
+	// latestDraws: headline cut-off cards. drawHistory: trend chart.
+	// scoreHistory: auth-only; silently empty when signed out.
+	const authed = !!event.locals.user;
+	const [factors, latestDraws, drawHistory, scoreHistory] = await Promise.all([
+		apiGet<CrsFactorsResponse>(ctx, '/crs/factors').catch(() => null),
+		apiGet<CrsDraw[]>(ctx, '/crs/draws/latest').catch(() => [] as CrsDraw[]),
+		apiList<CrsDraw>(ctx, '/crs/draws?limit=40')
+			.then((r) => r.items)
+			.catch(() => [] as CrsDraw[]),
+		authed
+			? apiList<CrsScoreHistoryItem>(ctx, '/me/crs-scores')
+					.then((r) => r.items)
+					.catch(() => [] as CrsScoreHistoryItem[])
+			: Promise.resolve([] as CrsScoreHistoryItem[])
+	]);
 
 	return {
 		enabled: true,

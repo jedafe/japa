@@ -34,6 +34,17 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
+	// If ?dest= is present, fetch routes for that destination so the page
+	// renders with content on first paint (SSR). The backend validates the
+	// dest itself, so the routes call rides the same wave as the country
+	// list — a bogus ?dest= degrades to an empty list either way.
+	const destParam = event.url.searchParams.get('dest');
+	const routesPromise = destParam
+		? apiList<VisaRouteWithAi>(ctx, `/visa-routes?dest=${encodeURIComponent(destParam)}`)
+				.then((r) => r.items)
+				.catch(() => [] as VisaRouteWithAi[])
+		: Promise.resolve([] as VisaRouteWithAi[]);
+
 	// Destination list — the geo-aware selector source (Rule 16).
 	// A 404 or visa_routes_disabled code means the tool is turned off.
 	let destinations: GeoCountry[] = [];
@@ -47,20 +58,8 @@ export const load: PageServerLoad = async (event) => {
 		destinations = [];
 	}
 
-	// If ?dest= is present, fetch routes for that destination so the page
-	// renders with content on first paint (SSR). Otherwise the user picks a
-	// destination client-side.
-	const destParam = event.url.searchParams.get('dest');
+	const routes = await routesPromise;
 	const initialDestId = destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
-
-	let routes: VisaRouteWithAi[] = [];
-	if (initialDestId) {
-		try {
-			routes = (await apiList<VisaRouteWithAi>(ctx, `/visa-routes?dest=${initialDestId}`)).items;
-		} catch {
-			routes = [];
-		}
-	}
 
 	return {
 		destinations,

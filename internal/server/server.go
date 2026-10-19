@@ -4514,6 +4514,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/jce/comparisons", comparisonHandlers.CreateJCEComparison)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparisons/{idOrSlug}", comparisonHandlers.GetJCEComparison)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparisons/{id}/matrix", comparisonHandlers.GetJCEComparisonMatrix)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparisons/{idOrSlug}/page", comparisonHandlers.GetJCEComparisonPage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
 					Patch("/jce/comparisons/{id}", comparisonHandlers.UpdateJCEComparison)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.delete_own", "comparison.delete_any"), rbac.RequireForceDelete(rbacResolver)).

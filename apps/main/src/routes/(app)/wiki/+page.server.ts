@@ -50,6 +50,10 @@ export const load: PageServerLoad = async (event) => {
 			return null;
 		});
 
+	// Geo context is needed whenever the builder page carries blocks — fire it
+	// alongside instead of paying a GeoIP round-trip after the envelope lands.
+	const geoPromise = resolveGeoContext(event);
+
 	try {
 		const typesRes = await apiList<WikiTypeItem>(ctx, '/wiki/types');
 		types = (typesRes.items ?? [])
@@ -79,7 +83,7 @@ export const load: PageServerLoad = async (event) => {
 	const builderEnvelope = await builderPagePromise;
 	const rawBlocks = builderEnvelope?.data?.blocks;
 	if (Array.isArray(rawBlocks) && rawBlocks.length > 0) {
-		const { geoCountry, geoCountryName } = await resolveGeoContext(event);
+		const { geoCountry, geoCountryName } = await geoPromise;
 		const tokens = getGeoTokens(geoCountry, 'en', geoCountryName);
 		const literals = builderEnvelope?.literals ?? {};
 		const blocks = normalizeLegacyBlocks(rawBlocks) as Block[];

@@ -377,5 +377,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+	// Let nginx/CDN flush SSR chunks as they stream — without this, a proxy
+	// buffers the full body and streaming SSR gains nothing. Scoped to HTML
+	// page loads; API/asset responses keep default buffering.
+	if (response.headers.get('content-type')?.startsWith('text/html')) {
+		response.headers.set('X-Accel-Buffering', 'no');
+	}
 	return response;
 };

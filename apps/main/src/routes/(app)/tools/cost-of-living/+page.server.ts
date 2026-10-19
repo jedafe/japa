@@ -44,17 +44,6 @@ export const load: PageServerLoad = async (event) => {
 	const staleDays =
 		Number.isInteger(configuredStale) && configuredStale > 0 ? configuredStale : 180;
 
-	let cities: ColCity[] = [];
-	let disabled = false;
-	try {
-		const res = await apiGet<ColCitiesListResponse>(ctx, '/calculator/cost-of-living/cities?page=1&limit=200');
-		cities = res.cities ?? [];
-	} catch (e) {
-		if (e instanceof ApiError && (e.code === 'col_calculator_disabled' || e.status === 404)) {
-			disabled = true;
-		}
-	}
-
 	// Pre-select from shareable URL ?city_ids=a,b,c&baseline_id=x and SSR the
 	// matrix if present. baseline_id names the ratio reference city (§72
 	// amendment: user-selectable baseline).
@@ -69,19 +58,35 @@ export const load: PageServerLoad = async (event) => {
 		: [];
 	const preselectedBaseline =
 		baselineParam && UUID_RE.test(baselineParam.trim()) ? baselineParam.trim() : null;
-	let matrix: ColComparisonMatrix | null = null;
-	if (preselected.length > 0) {
+
+	// The matrix needs only the URL params — it rides the same wave as the
+	// city list.
+	const matrixPromise = (async () => {
+		if (preselected.length === 0) return null;
 		try {
 			const params = new URLSearchParams({ city_ids: preselected.join(',') });
 			if (preselectedBaseline) params.set('baseline_id', preselectedBaseline);
-			matrix = await apiGet<ColComparisonMatrix>(
+			return await apiGet<ColComparisonMatrix>(
 				ctx,
 				`/calculator/cost-of-living/compare?${params.toString()}`
 			);
 		} catch {
-			matrix = null;
+			return null;
+		}
+	})();
+
+	let cities: ColCity[] = [];
+	let disabled = false;
+	try {
+		const res = await apiGet<ColCitiesListResponse>(ctx, '/calculator/cost-of-living/cities?page=1&limit=200');
+		cities = res.cities ?? [];
+	} catch (e) {
+		if (e instanceof ApiError && (e.code === 'col_calculator_disabled' || e.status === 404)) {
+			disabled = true;
 		}
 	}
+
+	const matrix = await matrixPromise;
 
 	return { cities, disabled, authed, preselected, preselectedBaseline, maxCities, staleDays, matrix };
 };

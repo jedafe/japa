@@ -29,6 +29,13 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
+	// requireOrgEditor parity: owner|admin|editor only. Membership comes
+	// from /me/organizations — the API re-checks on every call. Independent
+	// of the org lookup, so it rides the same wave.
+	const myOrgsPromise = apiList<MyOrganization>(ctx, '/me/organizations')
+		.then((r) => r.items)
+		.catch(() => [] as MyOrganization[]);
+
 	let org: PublicOrganization;
 	try {
 		org = await apiGet<PublicOrganization>(ctx, `/organizations/${slug}`);
@@ -39,15 +46,8 @@ export const load: PageServerLoad = async (event) => {
 		throw error(500, { code: 'load_failed', message: 'Failed to load organization' });
 	}
 
-	// requireOrgEditor parity: owner|admin|editor only. Membership comes
-	// from /me/organizations — the API re-checks on every call.
-	let memberRole = '';
-	try {
-		const myOrgs = await apiList<MyOrganization>(ctx, '/me/organizations');
-		memberRole = myOrgs.items.find((o) => o.id === org.id)?.member_role ?? '';
-	} catch {
-		memberRole = '';
-	}
+	const myOrgs = await myOrgsPromise;
+	const memberRole = myOrgs.find((o) => o.id === org.id)?.member_role ?? '';
 	if (!['owner', 'admin', 'editor'].includes(memberRole)) {
 		throw error(403, {
 			code: 'not_org_editor',

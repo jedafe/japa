@@ -43,22 +43,19 @@ export const load: PageServerLoad = async (event) => {
 
 	// Provider directory + dropdown options — destination-scoped when a
 	// deep link pre-selects a destination (GET /eca/providers?dest=).
-	let providers: EcaProvider[] = [];
-	try {
-		const path = initialDestId ? `/eca/providers?dest=${initialDestId}` : '/eca/providers';
-		providers = (await apiList<EcaProvider>(ctx, path)).items;
-	} catch {
-		providers = [];
-	}
-
-	let guides: EcaGuide[] = [];
-	if (initialDestId) {
-		try {
-			guides = (await apiList<EcaGuide>(ctx, `/eca/guides?dest=${initialDestId}`)).items;
-		} catch {
-			guides = [];
-		}
-	}
+	const [providers, guides] = await Promise.all([
+		apiList<EcaProvider>(
+			ctx,
+			initialDestId ? `/eca/providers?dest=${initialDestId}` : '/eca/providers'
+		)
+			.then((r) => r.items)
+			.catch(() => [] as EcaProvider[]),
+		initialDestId
+			? apiList<EcaGuide>(ctx, `/eca/guides?dest=${initialDestId}`)
+					.then((r) => r.items)
+					.catch(() => [] as EcaGuide[])
+			: Promise.resolve([] as EcaGuide[])
+	]);
 
 	return { destinations, providers, guides, initialDestId, authed };
 };

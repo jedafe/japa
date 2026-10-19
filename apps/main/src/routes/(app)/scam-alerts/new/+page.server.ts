@@ -17,24 +17,17 @@ export const load: PageServerLoad = async (event) => {
 	// handles auth-or-anonymous. The submit form works for guests.
 	const ctx = apiContext(event);
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
-	let scamTypes: ScamType[] = [];
-	let scamPlatforms: ScamPlatform[] = [];
-	try {
-		const schema = await apiGet<{ scam_types: { value: string; label: string }[]; platforms: { value: string; label: string }[] }>(ctx, '/scam-alerts/schema');
-		scamTypes = (schema.scam_types ?? []).map((o) => o.value as ScamType);
-		scamPlatforms = (schema.platforms ?? []).map((o) => o.value as ScamPlatform);
-	} catch {
-		scamTypes = [];
-		scamPlatforms = [];
-	}
+	const [countries, schema] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		apiGet<{ scam_types: { value: string; label: string }[]; platforms: { value: string; label: string }[] }>(
+			ctx,
+			'/scam-alerts/schema'
+		).catch(() => null)
+	]);
+	const scamTypes = (schema?.scam_types ?? []).map((o) => o.value as ScamType);
+	const scamPlatforms = (schema?.platforms ?? []).map((o) => o.value as ScamPlatform);
 
 	return { countries, scamTypes, scamPlatforms, user, features };
 };

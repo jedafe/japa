@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { goto, invalidate } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Radar, Pin, Loader2, Lock, Globe, ChevronRight } from 'lucide-svelte';
+	import { Radar, Pin, Loader2, Lock, Globe } from 'lucide-svelte';
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
@@ -13,6 +13,7 @@
 	import type { GeoCountry, RadarItem } from '$lib/types';
 	import type { PageData } from './$types';
 	import { servedMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
+	import { flagUrl, flagEmoji } from '$lib/utils/flags';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
@@ -142,15 +143,23 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		)
 	);
 
-	// Authed layout — the followed feed and "Browse countries" render as
-	// tabs. Instant client-side switch; ?tab=countries deep-links the list.
+	// Authed layout — feed, followed countries, and the country gallery
+	// render as tabs. Instant client-side switch; ?tab= deep-links.
 	let activeTab = $state<string>(
-		untrack(() => (page.url.searchParams.get('tab') === 'countries' ? 'countries' : 'following'))
+		untrack(() => {
+			const p = page.url.searchParams.get('tab');
+			return p === 'following' || p === 'countries' ? p : 'opportunities';
+		})
 	);
 	const radarTabs = $derived<UrlTab[]>([
+		{ value: 'opportunities', label: t('radar.opportunities', 'Opportunities') },
 		{ value: 'following', label: t('radar.followed', 'Following') },
 		{ value: 'countries', label: t('radar.browse_countries', 'Browse countries') }
 	]);
+
+	// Gallery order — followed countries first, then the rest (each list is
+	// already pinMarketsFirst-sorted).
+	const galleryCountries = $derived([...followedCountries, ...browseCountries]);
 
 	// Autocomplete fetchers — filter the full /geo/countries list client-side.
 	// The "Browse countries" option (id: '') is always included at the top.
@@ -495,12 +504,33 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{/if}
 
 		{#if !authed || activeTab === 'countries'}
-			{@render countryList()}
-		{:else}
-			<div class="border-b border-[var(--color-border)] px-4 py-4">
+			<!-- Countries gallery — all countries for guests; un-followed
+			     countries for authed (followed ones live in the Following tab). -->
+			{@render countryList(authed ? browseCountries : galleryCountries)}
+		{:else if activeTab === 'following'}
+			<div class="p-4">
 				<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 					<Pin size={16} class="text-[var(--color-primary)]" />
 					{t('radar.followed', 'Following')}
+					{#if followedCountries.length > 0}
+						<span class="text-xs font-normal text-[var(--color-muted)]">({followedCountries.length})</span>
+					{/if}
+				</h2>
+				{#if followedCountries.length === 0}
+					<EmptyState
+						icon={Pin}
+						title={t('radar.following_empty', 'No followed countries yet')}
+						body={t('radar.following_empty_body', 'Follow countries from the Browse countries tab to pin them here.')}
+					/>
+				{:else}
+					{@render countryGallery(followedCountries)}
+				{/if}
+			</div>
+		{:else}
+			<div class="border-b border-[var(--color-border)] px-4 py-4">
+				<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+					<Radar size={16} class="text-[var(--color-primary)]" />
+					{t('radar.opportunities', 'Opportunities')}
 					{#if data.followedTotal > 0}
 						<span class="text-xs font-normal text-[var(--color-muted)]">
 							({data.followedTotal} {t('radar.countries', 'countries')})
@@ -559,14 +589,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	</div>
 </div>
 
-{#snippet countryList()}
-	<!-- Browse countries — followed pinned to top, then the rest -->
-<div class="p-4">
+{#snippet countryList(items: GeoCountry[])}
+	<!-- Browse countries — flag gallery over the given country set -->
+	<div class="p-4">
 		<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 			<Globe size={16} />
 			{t('radar.browse_countries', 'Browse countries')}
-			{#if countries.length > 0}
-				<span class="text-xs font-normal text-[var(--color-muted)]">({countries.length})</span>
+			{#if items.length > 0}
+				<span class="text-xs font-normal text-[var(--color-muted)]">({items.length})</span>
 			{/if}
 		</h2>
 
@@ -580,82 +610,79 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				title={t('radar.no_countries', 'No country spaces yet')}
 				body={t('radar.no_countries_body', 'Country spaces will appear here once they are created.')}
 			/>
+		{:else if items.length === 0}
+			<!-- Authed edge — every country is followed, nothing left to browse -->
+			<EmptyState
+				icon={Pin}
+				title={t('radar.all_followed', 'You follow every country')}
+				body={t('radar.all_followed_body', 'Every country is in your Following tab.')}
+			/>
 		{:else}
-			<div class="space-y-1.5">
-				<!-- Followed countries first -->
-				{#each followedCountries as space (space.id)}
-					<div
-						class="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-3 py-2"
-					>
-						<a
-							href={`/spaces/${space.slug}`}
-							class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
-						>
-							<Pin size={14} class="shrink-0 text-[var(--color-primary)]" />
-							<span class="truncate">{space.name}</span>
-							{#if space.follower_count}
-								<span class="text-xs font-normal text-[var(--color-muted)]">· {space.follower_count}</span>
-							{/if}
-						</a>
-						{#if authed}
-							<button
-								type="button"
-								onclick={() => toggleFollow(space)}
-								disabled={pendingSpaceId === space.id}
-								aria-busy={pendingSpaceId === space.id}
-								class="shrink-0 rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-							>
-								{#if pendingSpaceId === space.id}
-									<Loader2 size={12} class="animate-spin" />
-								{:else}
-									{t('radar.unfollow', 'Unfollow')}
-								{/if}
-							</button>
-						{/if}
-					</div>
-				{/each}
+			{@render countryGallery(items)}
+		{/if}
+	</div>
+{/snippet}
 
-				<!-- Remaining countries -->
-				{#each browseCountries as space (space.id)}
-					<div
-						class="group flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 transition-colors hover:border-[var(--color-primary)]/40"
-					>
-						<a
-							href={`/spaces/${space.slug}`}
-							class="flex min-w-0 flex-1 items-center gap-2 text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]"
-						>
-							<Globe size={14} class="shrink-0 text-[var(--color-muted)]" />
-							<span class="truncate">{space.name}</span>
-							{#if space.follower_count}
-								<span class="text-xs font-normal text-[var(--color-muted)]">· {space.follower_count}</span>
-							{/if}
-						</a>
-						{#if authed}
-							<button
-								type="button"
-								onclick={() => toggleFollow(space)}
-								disabled={pendingSpaceId === space.id}
-								aria-busy={pendingSpaceId === space.id}
-								class="shrink-0 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-							>
-								{#if pendingSpaceId === space.id}
-									<Loader2 size={12} class="animate-spin" />
-								{:else}
-									{t('radar.follow', 'Follow')}
-								{/if}
-							</button>
-						{:else}
-							<a
-								href={`/spaces/${space.slug}`}
-								class="flex shrink-0 items-center gap-0.5 text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
-							>
-								{t('common.view', 'View')}
-								<ChevronRight size={12} />
-							</a>
-						{/if}
-					</div>
-				{/each}
+{#snippet countryGallery(items: GeoCountry[])}
+	<div class="grid grid-cols-3 gap-2">
+		{#each items as space (space.id)}
+			{@render countryCard(space)}
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet countryCard(space: GeoCountry)}
+	{@const following = followedSpaceIds.has(space.id)}
+	{@const flag = flagUrl(space.geo_code)}
+	<div
+		class="group relative aspect-[4/3] overflow-hidden rounded-[var(--radius)] border bg-[var(--color-surface-subtle)] [content-visibility:auto] [contain-intrinsic-size:auto_120px] {following
+			? 'border-[var(--color-primary)]/50'
+			: 'border-[var(--color-border)]'} transition-colors hover:border-[var(--color-primary)]/60"
+	>
+		{#if flag}
+			<img
+				src={flag}
+				alt=""
+				loading="lazy"
+				decoding="async"
+				class="absolute inset-0 h-full w-full object-cover motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-105"
+			/>
+		{:else}
+			<div
+				class="absolute inset-0 flex items-center justify-center bg-[var(--color-surface-subtle)] text-4xl"
+				aria-hidden="true"
+			>
+				{flagEmoji(space.geo_code)}
 			</div>
+		{/if}
+		<a
+			href={`/spaces/${space.slug}`}
+			class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/25 to-transparent p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]"
+		>
+			<span class="flex items-center gap-1 text-xs font-semibold leading-tight text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.6)]">
+				{#if following}<Pin size={10} class="shrink-0" />{/if}
+				<span class="min-w-0 truncate">{space.name}</span>
+				{#if space.follower_count}
+					<span class="shrink-0 font-normal text-white/80 tabular-nums">· {space.follower_count}</span>
+				{/if}
+			</span>
+		</a>
+		{#if authed}
+			<button
+				type="button"
+				onclick={() => toggleFollow(space)}
+				disabled={pendingSpaceId === space.id}
+				aria-busy={pendingSpaceId === space.id}
+				class="absolute right-1.5 top-1.5 z-10 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:opacity-60 {following
+					? 'bg-black/50 text-white backdrop-blur hover:bg-black/70'
+					: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
+			>
+				{#if pendingSpaceId === space.id}
+					<Loader2 size={10} class="animate-spin" />
+				{:else}
+					{following ? t('radar.unfollow', 'Unfollow') : t('radar.follow', 'Follow')}
+				{/if}
+			</button>
 		{/if}
 	</div>
 {/snippet}

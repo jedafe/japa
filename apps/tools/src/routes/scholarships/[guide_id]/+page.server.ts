@@ -33,39 +33,32 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const guideId = event.params.guide_id;
 
-	let scholarship: ScholarshipDetail | null = null;
-	try {
-		scholarship = await apiGet<ScholarshipDetail>(ctx, `/scholarships/${guideId}`);
-	} catch (err) {
-		// A 404 means the scholarship doesn't exist — surface a proper 404.
-		if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
-			throw error(404, { code: 'scholarship_not_found', message: 'Scholarship not found' });
-		}
-		scholarship = null;
-	}
+	// Detail, saved list, and canonical status options (Rule 16 — no
+	// hardcoded list) are independent — one wave. The saved lookup only
+	// needs the user session; the find narrows it to this guide.
+	const [scholarshipRes, savedList, statusOptions] = await Promise.all([
+		apiGet<ScholarshipDetail>(ctx, `/scholarships/${guideId}`).catch((err) => {
+			// A 404 means the scholarship doesn't exist — surface a proper 404.
+			if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
+				throw error(404, { code: 'scholarship_not_found', message: 'Scholarship not found' });
+			}
+			return null;
+		}),
+		event.locals.user
+			? apiGetOrNull<SavedScholarship[]>(ctx, '/scholarships/saved?page_size=100').catch(() => null)
+			: Promise.resolve(null),
+		apiList<CatalogOption>(ctx, '/scholarships/statuses')
+			.then((r) => r.items)
+			.catch(() => [] as CatalogOption[])
+	]);
+	const scholarship = scholarshipRes;
 
 	// For authenticated users, find the saved record for this scholarship
 	// (if any) so the detail page can show the save status + notes editor.
-	let savedItem: SavedScholarship | null = null;
-	if (event.locals.user && scholarship) {
-		try {
-			const res = await apiGetOrNull<SavedScholarship[]>(ctx, '/scholarships/saved?page_size=100');
-			if (res) {
-				savedItem = res.find((s) => s.scholarship.guide_id === guideId) ?? null;
-			}
-		} catch {
-			savedItem = null;
-		}
-	}
-
-	// Canonical status options from the backend (Rule 16 — no hardcoded list).
-	let statusOptions: CatalogOption[] = [];
-	try {
-		const res = await apiList<CatalogOption>(ctx, '/scholarships/statuses');
-		statusOptions = res.items;
-	} catch {
-		statusOptions = [];
-	}
+	const savedItem =
+		scholarship && savedList
+			? (savedList.find((s) => s.scholarship.guide_id === guideId) ?? null)
+			: null;
 
 	return {
 		enabled: true,

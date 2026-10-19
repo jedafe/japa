@@ -22,15 +22,11 @@ export const load: PageServerLoad = async (event) => {
 	const milestone = event.url.searchParams.get('milestone') ?? '';
 	const sort = event.url.searchParams.get('sort') ?? 'latest';
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
 	const filters = { dest, milestone, sort };
+
+	const countriesPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then((r) => r.items)
+		.catch(() => [] as GeoCountry[]);
 
 	try {
 		const params = new URLSearchParams();
@@ -38,7 +34,10 @@ export const load: PageServerLoad = async (event) => {
 		if (dest) params.set('dest', dest);
 		if (milestone) params.set('milestone', milestone);
 		params.set('sort', sort);
-		const { items, meta } = await apiList<Achievement>(ctx, `/achievements?${params.toString()}`);
+		const [{ items, meta }, countries] = await Promise.all([
+			apiList<Achievement>(ctx, `/achievements?${params.toString()}`),
+			countriesPromise
+		]);
 		return { achievements: items, total: meta?.total, authed, pageSize: PAGE_SIZE, loadError: false, filters, countries };
 	} catch {
 		return {
@@ -48,7 +47,7 @@ export const load: PageServerLoad = async (event) => {
 			pageSize: PAGE_SIZE,
 			loadError: true,
 			filters,
-			countries
+			countries: await countriesPromise
 		};
 	}
 };

@@ -17,21 +17,16 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let imports: ContentImport[] = [];
-	try {
-		imports = (await apiList<ContentImport>(ctx, '/me/imports')).items;
-	} catch {
-		imports = [];
-	}
-
-	// Fetch the allowed source types from the backend so the frontend never
-	// hardcodes the enum (Rule 16). Degrades to an empty list on failure.
-	let sources: ImportSource[] = [];
-	try {
-		sources = (await apiList<ImportSource>(ctx, '/me/imports/sources')).items;
-	} catch {
-		sources = [];
-	}
+	const [imports, sources] = await Promise.all([
+		apiList<ContentImport>(ctx, '/me/imports')
+			.then((r) => r.items)
+			.catch(() => [] as ContentImport[]),
+		// Fetch the allowed source types from the backend so the frontend never
+		// hardcodes the enum (Rule 16). Degrades to an empty list on failure.
+		apiList<ImportSource>(ctx, '/me/imports/sources')
+			.then((r) => r.items)
+			.catch(() => [] as ImportSource[])
+	]);
 
 	return { imports, sources };
 };

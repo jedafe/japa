@@ -23,31 +23,27 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let destinations: GeoSpaceOption[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		destinations = items.map((c) => ({ id: c.id, name: c.name, slug: c.slug, code: c.geo_code ?? null }));
-	} catch {
-		destinations = [];
-	}
-
-	let requirements: PofRequirement[] = [];
-	let visaTypes: string[] = [];
 	const destParam = event.url.searchParams.get('dest') ?? '';
 	const visaTypeParam = event.url.searchParams.get('visa_type') ?? '';
-	if (destParam) {
-		const enc = encodeURIComponent(destParam);
-		try {
-			requirements = (await apiList<PofRequirement>(ctx, `/pof/requirements?dest=${enc}`)).items;
-		} catch {
-			requirements = [];
-		}
-		try {
-			visaTypes = (await apiList<string>(ctx, `/pof/visa-types?dest=${enc}`)).items;
-		} catch {
-			visaTypes = [];
-		}
-	}
+	const enc = encodeURIComponent(destParam);
+
+	const [destinations, requirements, visaTypes] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then(({ items }) =>
+				items.map((c) => ({ id: c.id, name: c.name, slug: c.slug, code: c.geo_code ?? null }))
+			)
+			.catch(() => [] as GeoSpaceOption[]),
+		destParam
+			? apiList<PofRequirement>(ctx, `/pof/requirements?dest=${enc}`)
+					.then((r) => r.items)
+					.catch(() => [] as PofRequirement[])
+			: Promise.resolve([] as PofRequirement[]),
+		destParam
+			? apiList<string>(ctx, `/pof/visa-types?dest=${enc}`)
+					.then((r) => r.items)
+					.catch(() => [] as string[])
+			: Promise.resolve([] as string[])
+	]);
 
 	// initialDestId/initialVisaType restore the shareable-URL selection so
 	// the hydrated page matches what the link author saw.

@@ -63,23 +63,19 @@ export const load: PageServerLoad = async (event) => {
 		? (viewRaw as CalendarView)
 		: 'list';
 
-	// BUG-009: fetch categories from the API (calendar.categories system_setting).
-	let categories: { value: string; label: string }[] = [];
-	try {
-		categories = await apiGet<{ value: string; label: string }[]>(ctx, '/calendar/categories');
-	} catch {
-		categories = [];
-	}
+	// Categories (BUG-009: calendar.categories system_setting) and the
+	// country list are independent — one wave. The entries fetch below needs
+	// `category` resolved, so it stays a second wave.
+	const [categories, countries] = await Promise.all([
+		apiGet<{ value: string; label: string }[]>(ctx, '/calendar/categories').catch(
+			() => [] as { value: string; label: string }[]
+		),
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[])
+	]);
 	const validCategoryValues = new Set(categories.map((c) => c.value));
 	const category = validCategoryValues.has(categoryRaw) ? categoryRaw : '';
-
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
 
 	// Resolve the API date range and the focused period (month/week views).
 	const today = new Date();

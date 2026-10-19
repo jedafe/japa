@@ -305,5 +305,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+	if (response.headers.get('content-type')?.startsWith('text/html')) {
+		response.headers.set('X-Accel-Buffering', 'no');
+	}
 	return response;
 };

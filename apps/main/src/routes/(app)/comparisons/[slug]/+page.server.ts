@@ -24,15 +24,17 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 	const currentUserId = event.locals.user?.id ?? null;
 
-	// Kick off the matrix fetch in parallel with the detail fetch — both only
-	// need the slug, so there's no reason to serialize them on the SSR path.
-	const matrixPromise = apiGet<MatrixItem[]>(ctx, `/jce/comparisons/${slug}/matrix`).catch(
-		() => [] as MatrixItem[]
-	);
-
+	// Single batched request — the /page endpoint returns detail + matrix so
+	// the backend doesn't fetch the same items/dimensions rows twice.
 	let comparison: JCEComparisonDetail | null = null;
+	let matrix: MatrixItem[] = [];
 	try {
-		comparison = await apiGet<JCEComparisonDetail>(ctx, `/jce/comparisons/${slug}`);
+		const page = await apiGet<{ comparison: JCEComparisonDetail; matrix: MatrixItem[] }>(
+			ctx,
+			`/jce/comparisons/${slug}/page`
+		);
+		comparison = page?.comparison ?? null;
+		matrix = page?.matrix ?? [];
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			if (err.code === 'feature_disabled') {
@@ -93,8 +95,7 @@ export const load: PageServerLoad = async (event) => {
 		.then((r) => r ?? [])
 		.catch(() => [] as ContentArticle[]);
 
-	const [matrix, commentsResult, analytics, isFollowing, recommendedContent] = await Promise.all([
-		matrixPromise,
+	const [commentsResult, analytics, isFollowing, recommendedContent] = await Promise.all([
 		commentsPromise,
 		analyticsPromise,
 		followingPromise,

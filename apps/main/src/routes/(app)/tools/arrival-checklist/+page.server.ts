@@ -25,25 +25,35 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
-	let selector: ArrivalChecklistSelectorEntry[] = [];
 	let destinations: GeoSpaceOption[] = [];
 	let disabled = false;
 	let loadError: string | null = null;
-	try {
-		selector = (
-			await apiList<ArrivalChecklistSelectorEntry>(ctx, '/arrival-checklist/selector')
-		).items;
-	} catch (e) {
-		if (e instanceof ApiError && (e.status === 404 || e.code === 'arrival_checklist_disabled')) {
-			disabled = true;
-		} else if (e instanceof ApiError) {
-			loadError = e.message;
-		} else if (e instanceof Error) {
-			loadError = e.message;
-		} else {
-			loadError = 'Failed to load arrival checklist selector.';
-		}
-	}
+	const [selector, myChecklistsRes] = await Promise.all([
+		apiList<ArrivalChecklistSelectorEntry>(ctx, '/arrival-checklist/selector')
+			.then((r) => r.items)
+			.catch((e) => {
+				if (e instanceof ApiError && (e.status === 404 || e.code === 'arrival_checklist_disabled')) {
+					disabled = true;
+				} else if (e instanceof ApiError || e instanceof Error) {
+					loadError = e.message;
+				} else {
+					loadError = 'Failed to load arrival checklist selector.';
+				}
+				return [] as ArrivalChecklistSelectorEntry[];
+			}),
+		authed
+			? apiList<UserArrivalChecklist>(ctx, '/me/arrival-checklists')
+					.then((r) => r.items)
+					.catch((e) => {
+						if (e instanceof ApiError || e instanceof Error) {
+							loadError = loadError ? `${loadError} ${e.message}` : e.message;
+						} else {
+							loadError = loadError ? `${loadError} Failed to load your checklists.` : 'Failed to load your checklists.';
+						}
+						return [] as UserArrivalChecklist[];
+					})
+			: Promise.resolve(null)
+	]);
 
 	// Build the destination dropdown from the selector data (Rule 16 — no
 	// hardcoded data). Group by destination_space_id to deduplicate.
@@ -87,21 +97,7 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	let myChecklists: UserArrivalChecklist[] = [];
-	if (authed && !disabled) {
-		try {
-			myChecklists = (await apiList<UserArrivalChecklist>(ctx, '/me/arrival-checklists')).items;
-		} catch (e) {
-			myChecklists = [];
-			if (e instanceof ApiError) {
-				loadError = loadError ? `${loadError} ${e.message}` : e.message;
-			} else if (e instanceof Error) {
-				loadError = loadError ? `${loadError} ${e.message}` : e.message;
-			} else {
-				loadError = loadError ? `${loadError} Failed to load your checklists.` : 'Failed to load your checklists.';
-			}
-		}
-	}
+	const myChecklists: UserArrivalChecklist[] = disabled ? [] : (myChecklistsRes ?? []);
 
 	return { selector, destinations, items, initialDestId, disabled, authed, myChecklists, loadError };
 };

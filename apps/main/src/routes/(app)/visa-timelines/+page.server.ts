@@ -24,14 +24,6 @@ export const load: PageServerLoad = async (event) => {
 		months: event.url.searchParams.get('months') ?? ''
 	};
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
 	const qs = new URLSearchParams();
 	if (filters.dest) qs.set('dest', filters.dest);
 	if (filters.origin) qs.set('origin', filters.origin);
@@ -40,22 +32,23 @@ export const load: PageServerLoad = async (event) => {
 	if (filters.months) qs.set('months', filters.months);
 	const query = qs.toString();
 
-	let stats: VisaProcessingStats[] = [];
-	let trend: TrendPoint[] = [];
 	let loadError = false;
-	try {
-		const statsPath = '/visa-timelines/stats' + (query ? `?${query}` : '');
-		stats = await apiGet<VisaProcessingStats[]>(ctx, statsPath);
-	} catch {
-		loadError = true;
-	}
-	try {
-		const trendQuery = qs.toString();
-		const trendPath = '/visa-timelines/stats/trend' + (trendQuery ? `?${trendQuery}` : '');
-		trend = await apiGet<TrendPoint[]>(ctx, trendPath);
-	} catch {
-		trend = [];
-	}
+	const [countries, stats, trend] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		apiGet<VisaProcessingStats[]>(
+			ctx,
+			'/visa-timelines/stats' + (query ? `?${query}` : '')
+		).catch(() => {
+			loadError = true;
+			return [] as VisaProcessingStats[];
+		}),
+		apiGet<TrendPoint[]>(
+			ctx,
+			'/visa-timelines/stats/trend' + (query ? `?${query}` : '')
+		).catch(() => [] as TrendPoint[])
+	]);
 
 	return { stats, trend, countries, loadError, filters, authed };
 };

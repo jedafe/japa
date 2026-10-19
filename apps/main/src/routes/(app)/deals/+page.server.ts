@@ -27,10 +27,6 @@ export const load: PageServerLoad = async (event) => {
 	const rawSort = params.get('sort')?.trim() ?? '';
 	const sort = VALID_SORTS.has(rawSort) ? rawSort : 'newest';
 
-	let coupons: Coupon[] = [];
-	let partners: DealPartnerRef[] = [];
-	let loadError = false;
-
 	const qs = new URLSearchParams();
 	qs.set('page_size', String(PAGE_SIZE));
 	if (q) qs.set('q', q);
@@ -38,38 +34,51 @@ export const load: PageServerLoad = async (event) => {
 	if (couponType) qs.set('type', couponType);
 	if (sort !== 'newest') qs.set('sort', sort);
 
-	try {
-		coupons = (await apiList<Coupon>(ctx, `/coupons?${qs}`)).items;
-	} catch {
-		loadError = true;
-	}
+	// Coupons, partner options, and the org-role check are independent —
+	// one wave. Provider options are best-effort — a partners outage must
+	// not take the listing down; the dropdown degrades to "All providers".
+	// The org fetch only matters when the user lacks coupons.manage (§55).
+	const needsOrgCheck =
+		!hasPerm(event.locals.user?.permissions, 'coupons.manage') && !!event.locals.user;
+	const canManage = hasPerm(event.locals.user?.permissions, 'coupons.manage');
+	const [couponsRes, partners, orgs, providers] = await Promise.all([
+		apiList<Coupon>(ctx, `/coupons?${qs}`)
+			.then((r) => ({ ok: true as const, items: r.items }))
+			.catch(() => ({ ok: false as const, items: [] as Coupon[] })),
+		apiList<DealPartnerRef>(ctx, '/deals/partners')
+			.then((r) => r.items)
+			.catch(() => [] as DealPartnerRef[]),
+		needsOrgCheck
+			? apiList<MyOrganization>(ctx, '/me/organizations?page_size=50').catch(() => null)
+			: Promise.resolve(null),
+		canManage
+			? apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')
+					.then((r) => r.items)
+					.catch(() => [] as DealPartnerRef[])
+			: Promise.resolve([] as DealPartnerRef[])
+	]);
 
-	// Provider options are best-effort — a partners outage must not take the
-	// listing down; the dropdown just degrades to "All providers".
-	try {
-		partners = (await apiList<DealPartnerRef>(ctx, '/deals/partners')).items;
-	} catch {
-		partners = [];
-	}
+	const coupons = couponsRes.items;
+	const loadError = !couponsRes.ok;
 
 	// "New deal" CTA (§55 org submissions): staff holding the coupons.manage
 	// RBAC node, or any member with an owner/admin/editor role in at least
 	// one organization (resolved via GET /me/organizations).
-	let canSubmit = hasPerm(event.locals.user?.permissions, 'coupons.manage');
-	if (!canSubmit && event.locals.user) {
-		try {
-			const orgs = await apiList<MyOrganization>(ctx, '/me/organizations?page_size=50');
-			canSubmit = orgs.items.some((o) => ['owner', 'admin', 'editor'].includes(o.member_role));
-		} catch {
-			canSubmit = false;
-		}
-	}
+	const canSubmit =
+		hasPerm(event.locals.user?.permissions, 'coupons.manage') ||
+		(orgs?.items.some((o) => ['owner', 'admin', 'editor'].includes(o.member_role)) ?? false);
 	return {
 		coupons,
 		partners,
 		pageSize: PAGE_SIZE,
 		loadError,
 		canSubmit,
+		canManage,
+		canManageProviders: hasPerm(
+			event.locals.user?.permissions,
+			'affiliate.providers.manage'
+		),
+		providers,
 		filters: { q, providerId, couponType, sort }
 	};
 };

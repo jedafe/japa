@@ -20,6 +20,7 @@
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 	import { categoryIconResolved, categoryTint } from '$lib/components/wiki/icons';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
+	import { flagUrl } from '$lib/utils/flags';
 	import { openLightbox } from '$lib/lightbox.svelte';
 	import {
 		BookOpen,
@@ -95,6 +96,11 @@
 	const spaceLevel = $derived(data.spaceDetail?.space?.level ?? '');
 	const spaceId = $derived(data.spaceDetail?.space?.id ?? data.index[0]?.space_id ?? '');
 	const logoUrl = $derived(data.spaceDetail?.logo_url ?? data.spaceDetail?.space?.logo_url ?? '');
+	// Country spaces use the bundled flag as identity artwork — logo_url
+	// remains for other space types and unresolvable codes.
+	const displayLogo = $derived(
+		spaceLevel === 'country' ? (flagUrl(space?.geo_code) ?? logoUrl) : logoUrl
+	);
 	// §80 Wiki Types — the index is the overview tab (WikiTabs
 	// active="overview"), so its fields panel and SuggestEdit scope to the
 	// overview category's bound group. Space types without an overview
@@ -438,9 +444,9 @@
 		</div>
 	{/if}
 	<div class="mx-auto flex w-full max-w-3xl items-start gap-3 px-4 pt-5">
-		{#if logoUrl}
+		{#if displayLogo}
 			<img
-				src={logoUrl}
+				src={displayLogo}
 				alt=""
 				class="h-11 w-11 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
 			/>

@@ -30,10 +30,16 @@
 	} from '$lib/types';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
+import { flagUrl } from '$lib/utils/flags';
 
 	let { data }: { data: PageData } = $props();
 
 	const space = $derived(data.space);
+	// Country spaces use the bundled flag as their identity artwork —
+	// logo_url remains for other space types and unresolvable codes.
+	const spaceLogo = $derived(
+		space?.level === 'country' ? (flagUrl(space.geo_code) ?? data.logoUrl) : data.logoUrl
+	);
 	const authed = $derived(!!page.data.user);
 	// Native ad insertion interval — public system setting (§25, Rule 3).
 	const adInterval = $derived(
@@ -560,7 +566,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <SetSidebar>
-	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={data.logoUrl} {initialJoined} {initialPending} following={data.initiallyFollowing} onFollowChange={(v) => (following = v)} achievements={data.achievements} members={data.members} />
+	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={spaceLogo} {initialJoined} {initialPending} following={data.initiallyFollowing} onFollowChange={(v) => (following = v)} achievements={data.achievements} members={data.members} />
 </SetSidebar>
 
 <!-- Space header — cover banner + overlapping logo, follows ProfileHeader pattern -->
@@ -585,9 +591,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	<div class="relative px-4 pb-4">
 		<div class="-mt-12 flex flex-col gap-3 sm:-mt-16 sm:flex-row sm:items-end sm:gap-4">
 			<!-- Logo — overlaps the cover, falls back to first letter -->
-			{#if data.logoUrl}
+			{#if spaceLogo}
 				<img
-					src={data.logoUrl}
+					src={spaceLogo}
 					alt={space.name}
 					class="h-24 w-24 shrink-0 rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-surface)] object-cover shadow-lg sm:h-28 sm:w-28"
 				/>
@@ -928,8 +934,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{#if wikiData}
 					<div class="mt-4 border-t border-[var(--color-border)] pt-4" use:imgLightbox>
 						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki_summary', 'From Wikipedia')}</h2>
-						{#if space.logo_url}
-							<img src={space.logo_url} alt={wikiData.title ?? space.name} class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
+						{#if spaceLogo}
+							<img src={spaceLogo} alt={wikiData.title ?? space.name} class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
 						{/if}
 						{#if wikiData.description}
 							<p class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{wikiData.description}</p>

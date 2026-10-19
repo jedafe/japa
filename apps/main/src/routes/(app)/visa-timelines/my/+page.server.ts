@@ -15,21 +15,18 @@ export const load: PageServerLoad = async (event) => {
 	}
 	const ctx = apiContext(event);
 
-	let timelines: VisaTimeline[] = [];
 	let loadError = false;
-	try {
-		timelines = (await apiList<VisaTimeline>(ctx, '/me/visa-timelines')).items;
-	} catch {
-		loadError = true;
-	}
-
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
+	const [timelines, countries] = await Promise.all([
+		apiList<VisaTimeline>(ctx, '/me/visa-timelines')
+			.then((r) => r.items)
+			.catch(() => {
+				loadError = true;
+				return [] as VisaTimeline[];
+			}),
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[])
+	]);
 
 	return { timelines, loadError, countries };
 };

@@ -92,6 +92,20 @@ export const load: PageServerLoad = async (event) => {
 		event.locals.user?.content_country_preference ??
 		null;
 	let geoCountryName: string | undefined;
+
+	// Fire every geo-independent call up front so the serial chain collapses
+	// to a single wave: the landing fetch, the countries catalog (needed to
+	// name-resolve whatever geo code wins; 5m-cached so usually free), and
+	// the guest-home data — required by any guest_* block on the landing AND
+	// by the no-landing fallback, so the only wasted prefetch is a landing
+	// with zero guest_* blocks.
+	const landingPromise = apiGetEnvelope<LandingPageData>(ctx, '/pages/homepage').then(
+		(envelope) => ({ ok: true as const, envelope }),
+		(err) => ({ ok: false as const, err })
+	);
+	const countriesPromise = apiGet<GeoCountry[]>(ctx, '/geo/countries').catch(() => null);
+	const homePromise = buildGuestHome(ctx, event).catch(() => emptyGuestHome);
+
 	if (!geoCountry) {
 		try {
 			const geo = await apiGet<GeoContext>(ctx, '/geo/me');
@@ -104,19 +118,16 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 	if (geoCountry && geoCountry !== 'global' && !geoCountryName) {
-		try {
-			const countries = await apiGet<GeoCountry[]>(ctx, '/geo/countries');
-			const match = countries.find((c) => c.geo_code === geoCountry!.toUpperCase());
-			if (match) geoCountryName = match.name;
-		} catch {
-			// Countries endpoint unavailable — getGeoTokens will use the
-			// country code as a fallback name.
-		}
+		// Countries fetch was already in flight — usually a cache hit anyway.
+		const countries = await countriesPromise;
+		const match = countries?.find((c) => c.geo_code === geoCountry!.toUpperCase());
+		if (match) geoCountryName = match.name;
 	}
 	if (!geoCountry) geoCountry = 'global';
 
-	try {
-		const envelope = await apiGetEnvelope<LandingPageData>(ctx, '/pages/homepage');
+	const landingResult = await landingPromise;
+	if (landingResult.ok) {
+		const envelope = landingResult.envelope;
 		const landing = envelope.data;
 		const literals = envelope.literals ?? {};
 		const tokens = getGeoTokens(geoCountry, 'en', geoCountryName);
@@ -129,9 +140,10 @@ export const load: PageServerLoad = async (event) => {
 		const hasGuestHome = (landing.blocks as Block[]).some((b) => b.type === 'guest_home');
 		// Guest-home context data is needed by ANY guest_* block on the page
 		// (standalone blocks consume stats/categories/etc. too), not just
-		// the guest_home wrapper.
+		// the guest_home wrapper. The prefetch is already in flight — await it
+		// only when the landing actually contains guest_* blocks.
 		const home = containsGuestBlocks(landing.blocks as Block[])
-			? await buildGuestHome(ctx, event)
+			? await homePromise
 			: emptyGuestHome;
 		return {
 			authed: false,
@@ -152,25 +164,25 @@ export const load: PageServerLoad = async (event) => {
 			loadError: false,
 			home
 		};
-	} catch {
-		// No published "homepage" page — render the new default guest homepage.
-		// All marketing data is sourced from public settings (Rule 16); live
-		// content (stories, destinations) comes from the backend API.
-		const home = await buildGuestHome(ctx, event);
-
-		return {
-			authed: false,
-			landing: null,
-			guestHome: true,
-			hasGuestHomeBlock: true,
-			home,
-			contentCountry: geoCountry,
-			items: [] as FeedItem[],
-			tab: 'explore' as FeedTab,
-			sort: 'top' as SortValue,
-			hasMore: false,
-			pageSize: PAGE_SIZE,
-			loadError: false
-		};
 	}
+
+	// No published "homepage" page — render the new default guest homepage.
+	// All marketing data is sourced from public settings (Rule 16); live
+	// content (stories, destinations) comes from the backend API.
+	const home = await homePromise;
+
+	return {
+		authed: false,
+		landing: null,
+		guestHome: true,
+		hasGuestHomeBlock: true,
+		home,
+		contentCountry: geoCountry,
+		items: [] as FeedItem[],
+		tab: 'explore' as FeedTab,
+		sort: 'top' as SortValue,
+		hasMore: false,
+		pageSize: PAGE_SIZE,
+		loadError: false
+	};
 };

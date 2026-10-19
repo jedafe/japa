@@ -42,14 +42,6 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	// Country list — the geo-aware selector source (Rule 16).
-	let countries: GeoSpaceOption[] = [];
-	try {
-		countries = await loadCountries(ctx);
-	} catch {
-		countries = [];
-	}
-
 	// Pass through any filter params from the URL for SSR + shareability.
 	// Pagination is 1-based in the URL, converted to 0-based page_offset.
 	const searchParams = event.url.searchParams;
@@ -65,55 +57,32 @@ export const load: PageServerLoad = async (event) => {
 	const filterQuery = searchParams.toString();
 	const filterPath = filterQuery ? `/scholarships?${filterQuery}` : '/scholarships';
 
-	let scholarships: Scholarship[] = [];
-	let total = 0;
-	try {
-		const res = await apiList<Scholarship>(ctx, filterPath);
-		scholarships = res.items;
-		total = res.meta?.total ?? scholarships.length;
-	} catch {
-		scholarships = [];
-		total = 0;
-	}
+	// All datasets are independent — one wave. Saved is auth-only; the rest
+	// are public catalogs/lists, each degrading to empty on failure.
+	const authed = !!event.locals.user;
+	const [countries, scholRes, saved, statusOptions, renewableOptions, levelOptions] =
+		await Promise.all([
+			loadCountries(ctx).catch(() => [] as GeoSpaceOption[]),
+			apiList<Scholarship>(ctx, filterPath).catch(() => ({
+				items: [] as Scholarship[],
+				meta: undefined
+			})),
+			authed
+				? apiList<SavedScholarship>(ctx, '/scholarships/saved')
+						.then((r) => r.items)
+						.catch(() => [] as SavedScholarship[])
+				: Promise.resolve([] as SavedScholarship[]),
+			apiList<CatalogOption>(ctx, '/scholarships/statuses')
+				.then((r) => r.items)
+				.catch(() => [] as CatalogOption[]),
+			loadCatalog(ctx, 'scholarships.renewable').catch(() => [] as CatalogOption[]),
+			apiList<CatalogOption>(ctx, '/scholarships/levels')
+				.then((r) => r.items)
+				.catch(() => [] as CatalogOption[])
+		]);
 
-	// Load saved scholarships for authenticated users.
-	let saved: SavedScholarship[] = [];
-	if (event.locals.user) {
-		try {
-			const res = await apiList<SavedScholarship>(ctx, '/scholarships/saved');
-			saved = res.items;
-		} catch {
-			saved = [];
-		}
-	}
-
-	// Canonical status options from the backend (Rule 16 — no hardcoded list).
-	let statusOptions: CatalogOption[] = [];
-	try {
-		const res = await apiList<CatalogOption>(ctx, '/scholarships/statuses');
-		statusOptions = res.items;
-	} catch {
-		statusOptions = [];
-	}
-
-	// Renewable filter options from the public catalog (Rule 16).
-	let renewableOptions: CatalogOption[] = [];
-	try {
-		renewableOptions = await loadCatalog(ctx, 'scholarships.renewable');
-	} catch {
-		renewableOptions = [];
-	}
-
-	// Level-of-study filter options from the backend — the canonical distinct
-	// set across all published scholarships, not just the current page of
-	// results (Rule 16 — no deriving filter options from paged data).
-	let levelOptions: CatalogOption[] = [];
-	try {
-		const res = await apiList<CatalogOption>(ctx, '/scholarships/levels');
-		levelOptions = res.items;
-	} catch {
-		levelOptions = [];
-	}
+	const scholarships = scholRes.items;
+	const total = scholRes.meta?.total ?? scholarships.length;
 
 	return {
 		enabled: true,

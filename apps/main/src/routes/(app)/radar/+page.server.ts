@@ -40,55 +40,8 @@ export const load: PageServerLoad = async (event) => {
 	const dest = event.url.searchParams.get('dest') ?? '';
 	const hasGeoFilter = spaceId !== '' || dest !== '';
 
-	// Country list — public. Consumes the canonical /geo/countries endpoint
-	// (ADR-005), which returns all 250 primary country geo spaces.
-	let countries: GeoCountry[] = [];
 	let countriesError = false;
-	try {
-		const res = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = res.items;
-	} catch {
-		countriesError = true;
-	}
-
-	// Followed-countries feed — auth-gated. Guests get an empty feed; the
-	// page renders the browse list only. Best-effort: any backend error
-	// degrades to an empty list rather than failing the whole page.
-	let followedItems: RadarItem[] = [];
-	let followedTotal = 0;
-	let followedHasMore = false;
-	let followedNextCursor = '';
-	let followedCountsByType: Record<string, number> = {};
-	let followedCountsByCountry: Record<string, number> = {};
-	let followedSpaceIds: string[] = [];
 	let intelUnavailable = false;
-	if (authed) {
-		try {
-			const params = new URLSearchParams();
-			params.set('page_size', String(PAGE_SIZE));
-			params.set('page_offset', String(offset));
-			if (itemType) params.set('item_type', itemType);
-			const res = await apiRadarList<RadarItem>(ctx, `/intel/radar/followed?${params.toString()}`);
-			followedItems = res.items;
-			const meta = res.meta;
-			// The followed feed already emits followed_space_ids in its meta —
-			// reuse it for the browse-list badges instead of a second 1-row
-			// fetch of /intel/radar just for the sidecar.
-			followedSpaceIds = (meta?.['followed_space_ids'] as string[] | undefined) ?? [];
-			followedTotal = followedSpaceIds.length;
-			followedHasMore = meta?.['has_more'] === true;
-			// Spec §739 sidecars: keyset cursor + per-type/per-country counts.
-			followedNextCursor = (meta?.['next_cursor'] as string | undefined) ?? '';
-			followedCountsByType = (meta?.['counts_by_type'] as Record<string, number> | undefined) ?? {};
-			followedCountsByCountry = (meta?.['counts_by_country'] as Record<string, number> | undefined) ?? {};
-		} catch (err) {
-			if (err instanceof ApiError && err.status === 503) {
-				intelUnavailable = true;
-			}
-			// 401 (token revoked mid-session) or any other error → empty feed.
-			followedItems = [];
-		}
-	}
 
 	// Geo-filtered feed — when ?space_id= or ?dest= is present, fetch the
 	// radar feed filtered to that country/space. This is public (no auth
@@ -97,52 +50,110 @@ export const load: PageServerLoad = async (event) => {
 	// country space id so the backend's space-keyed filter applies (the raw
 	// `country=` param only matches exact stored text or geo_code). When no
 	// country matches, fall back to the raw value normalized for casing.
-	let geoItems: RadarItem[] = [];
-	let geoHasMore = false;
-	let geoNextCursor = '';
-	let geoCountsByType: Record<string, number> = {};
-	if (hasGeoFilter && !intelUnavailable) {
-		try {
-			const params = new URLSearchParams();
-			params.set('page_size', String(PAGE_SIZE));
-			params.set('page_offset', String(offset));
-			if (itemType) params.set('item_type', itemType);
-			const resolvedSpace = spaceId
-				? null
-				: (countries.find((c) => {
-						const d = dest.trim().toLowerCase();
-						return (
-							c.geo_code.toLowerCase() === d ||
-							c.slug === d ||
-							c.name.toLowerCase() === d
-						);
-					}) ?? null);
-			if (spaceId) params.set('space_id', spaceId);
-			else if (resolvedSpace) params.set('space_id', resolvedSpace.id);
-			else if (dest) {
-				const d = dest.trim();
-				params.set(
-					'country',
-					d.length <= 4
-						? d.toUpperCase()
-						: d
-								.split(/[\s-]+/)
-								.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-								.join(' ')
-				);
-			}
-			const res = await apiRadarList<RadarItem>(ctx, `/intel/radar?${params.toString()}`);
-			geoItems = res.items;
-			geoHasMore = res.meta?.['has_more'] === true;
-			geoNextCursor = (res.meta?.['next_cursor'] as string | undefined) ?? '';
-			geoCountsByType = (res.meta?.['counts_by_type'] as Record<string, number> | undefined) ?? {};
-		} catch (err) {
+	const fetchGeoFeed = (countryList: GeoCountry[]) =>
+		apiRadarList<RadarItem>(
+			ctx,
+			`/intel/radar?${(() => {
+				const params = new URLSearchParams();
+				params.set('page_size', String(PAGE_SIZE));
+				params.set('page_offset', String(offset));
+				if (itemType) params.set('item_type', itemType);
+				const resolvedSpace = spaceId
+					? null
+					: (countryList.find((c) => {
+							const d = dest.trim().toLowerCase();
+							return (
+								c.geo_code.toLowerCase() === d ||
+								c.slug === d ||
+								c.name.toLowerCase() === d
+							);
+						}) ?? null);
+				if (spaceId) params.set('space_id', spaceId);
+				else if (resolvedSpace) params.set('space_id', resolvedSpace.id);
+				else if (dest) {
+					const d = dest.trim();
+					params.set(
+						'country',
+						d.length <= 4
+							? d.toUpperCase()
+							: d
+									.split(/[\s-]+/)
+									.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+									.join(' ')
+					);
+				}
+				return params.toString();
+			})()}`
+		).catch((err) => {
 			if (err instanceof ApiError && err.status === 503) {
 				intelUnavailable = true;
 			}
-			geoItems = [];
-		}
-	}
+			return null;
+		});
+
+	// Wave 1 — countries, followed feed (auth), and the geo feed when
+	// ?space_id= is given (no country resolution needed). A ?dest=-only
+	// filter still waits on the country list to resolve the space id.
+	const [countries, followedRes, geoRes] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => {
+				countriesError = true;
+				return [] as GeoCountry[];
+			}),
+		// Followed-countries feed — auth-gated. Guests get an empty feed; the
+		// page renders the browse list only. Best-effort: any backend error
+		// degrades to an empty list rather than failing the whole page.
+		authed
+			? apiRadarList<RadarItem>(
+					ctx,
+					`/intel/radar/followed?${(() => {
+						const params = new URLSearchParams();
+						params.set('page_size', String(PAGE_SIZE));
+						params.set('page_offset', String(offset));
+						if (itemType) params.set('item_type', itemType);
+						return params.toString();
+					})()}`
+				).catch((err) => {
+					if (err instanceof ApiError && err.status === 503) {
+						intelUnavailable = true;
+					}
+					// 401 (token revoked mid-session) or any other error → empty feed.
+					return null;
+				})
+			: Promise.resolve(null),
+		hasGeoFilter && spaceId ? fetchGeoFeed([]) : Promise.resolve(undefined)
+	]);
+
+	// Followed-countries feed — auth-gated. Guests get an empty feed; the
+	// page renders the browse list only. Best-effort: any backend error
+	// degrades to an empty list rather than failing the whole page.
+	const followedMeta = followedRes?.meta;
+	const followedItems = followedRes?.items ?? [];
+	// The followed feed already emits followed_space_ids in its meta —
+	// reuse it for the browse-list badges instead of a second 1-row
+	// fetch of /intel/radar just for the sidecar.
+	const followedSpaceIds = (followedMeta?.['followed_space_ids'] as string[] | undefined) ?? [];
+	const followedTotal = followedSpaceIds.length;
+	const followedHasMore = followedMeta?.['has_more'] === true;
+	// Spec §739 sidecars: keyset cursor + per-type/per-country counts.
+	const followedNextCursor = (followedMeta?.['next_cursor'] as string | undefined) ?? '';
+	const followedCountsByType = (followedMeta?.['counts_by_type'] as Record<string, number> | undefined) ?? {};
+	const followedCountsByCountry = (followedMeta?.['counts_by_country'] as Record<string, number> | undefined) ?? {};
+
+	// ?dest=-only filter — resolve the country space id now that the list
+	// has landed (genuine dependency), unless intel already reported 503.
+	const geoFeed =
+		geoRes !== undefined
+			? geoRes
+			: hasGeoFilter && !intelUnavailable
+				? await fetchGeoFeed(countries)
+				: null;
+
+	const geoItems = geoFeed?.items ?? [];
+	const geoHasMore = geoFeed?.meta?.['has_more'] === true;
+	const geoNextCursor = (geoFeed?.meta?.['next_cursor'] as string | undefined) ?? '';
+	const geoCountsByType = (geoFeed?.meta?.['counts_by_type'] as Record<string, number> | undefined) ?? {};
 
 	return {
 		countries,

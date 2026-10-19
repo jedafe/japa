@@ -45,21 +45,14 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	// Destination list — the geo-aware selector source (Rule 16).
-	let destinations: GeoSpaceOption[] = [];
-	try {
-		destinations = await loadCountries(ctx);
-	} catch {
-		destinations = [];
-	}
-
-	// All language tests — fetched once on SSR (public, not destination-specific).
-	let tests: LanguageTest[] = [];
-	try {
-		tests = (await apiList<LanguageTest>(ctx, '/language-tests')).items;
-	} catch {
-		tests = [];
-	}
+	// Destination list (the geo-aware selector source, Rule 16) and all
+	// language tests (public, not destination-specific) — independent catalogs.
+	const [destinations, tests] = await Promise.all([
+		loadCountries(ctx).catch(() => [] as GeoSpaceOption[]),
+		apiList<LanguageTest>(ctx, '/language-tests')
+			.then((r) => r.items)
+			.catch(() => [] as LanguageTest[])
+	]);
 
 	// If ?dest= is present, fetch requirements for that destination.
 	const destParam = event.url.searchParams.get('dest');

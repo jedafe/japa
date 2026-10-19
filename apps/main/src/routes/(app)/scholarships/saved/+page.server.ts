@@ -33,23 +33,17 @@ export const load: PageServerLoad = async (event) => {
 	// comes from GET /scholarships/statuses below.
 	const statusFilter = event.url.searchParams.get('status') ?? '';
 
-	let saved: SavedScholarship[] = [];
-	try {
-		const res = await apiList<SavedScholarship>(
+	const [saved, statuses] = await Promise.all([
+		apiList<SavedScholarship>(
 			ctx,
 			`/scholarships/saved?page_size=100${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`
-		);
-		saved = res.items;
-	} catch {
-		saved = [];
-	}
-
-	let statuses: { value: string; label: string }[] = [];
-	try {
-		statuses = await apiGet<{ value: string; label: string }[]>(ctx, '/scholarships/statuses');
-	} catch {
-		statuses = [];
-	}
+		)
+			.then((r) => r.items)
+			.catch(() => [] as SavedScholarship[]),
+		apiGet<{ value: string; label: string }[]>(ctx, '/scholarships/statuses').catch(
+			() => [] as { value: string; label: string }[]
+		)
+	]);
 
 	return { saved, statuses, statusFilter, defaultReminderDays: defaultReminderDays(event.locals.siteSettings) };
 };

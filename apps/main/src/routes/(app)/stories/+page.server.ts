@@ -69,14 +69,6 @@ export const load: PageServerLoad = async (event) => {
 		return { ...base, series: items };
 	}
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
 	const params = new URLSearchParams();
 	params.set('sort', sort === 'latest' ? 'latest' : 'top');
 	params.set('page_size', String(PAGE_SIZE));
@@ -85,11 +77,19 @@ export const load: PageServerLoad = async (event) => {
 	if (visa) params.set('visa', visa);
 	if (profession) params.set('profession', profession);
 
-	try {
-		const { items, meta } = await apiList<Story>(ctx, `/stories?${params.toString()}`);
-		await attachAuthorUsernames(ctx, items);
-		return { ...base, stories: items, total: meta?.total, countries };
-	} catch {
-		return { ...base, loadError: true, countries };
+	// Countries and the story list are independent — one wave.
+	const [countries, storiesRes] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		apiList<Story>(ctx, `/stories?${params.toString()}`)
+			.then((r) => ({ ok: true as const, items: r.items, total: r.meta?.total }))
+			.catch(() => ({ ok: false as const, items: [] as Story[], total: undefined as number | undefined }))
+	]);
+
+	if (storiesRes.ok) {
+		await attachAuthorUsernames(ctx, storiesRes.items);
+		return { ...base, stories: storiesRes.items, total: storiesRes.total, countries };
 	}
+	return { ...base, loadError: true, countries };
 };

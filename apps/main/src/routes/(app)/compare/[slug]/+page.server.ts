@@ -28,8 +28,16 @@ export const load: PageServerLoad = async (event) => {
 	let comparison: JCEComparisonDetail | null = null;
 	let matrix: MatrixItem[] = [];
 
+	// Batch endpoint — detail + matrix in one request (§30). The matrix
+	// degrades to [] on a partial-failure envelope the same way the old
+	// separate /matrix call did.
 	try {
-		comparison = await apiGet<JCEComparisonDetail>(ctx, `/jce/comparisons/${slug}`);
+		const page = await apiGet<{ comparison: JCEComparisonDetail; matrix: MatrixItem[] }>(
+			ctx,
+			`/jce/comparisons/${slug}/page`
+		);
+		comparison = page.comparison;
+		matrix = page.matrix ?? [];
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			if (err.code === 'feature_disabled') {
@@ -42,13 +50,6 @@ export const load: PageServerLoad = async (event) => {
 
 	if (!comparison) {
 		error(404, { code: 'not_found', message: 'jce.error.not_found' });
-	}
-
-	try {
-		matrix = await apiGet<MatrixItem[]>(ctx, `/jce/comparisons/${slug}/matrix`);
-	} catch (err) {
-		console.warn('JCE matrix load failed for', slug, err);
-		matrix = [];
 	}
 
 	return {

@@ -20,6 +20,7 @@
 	import { page } from '$app/state';
 	import { BookOpen, Globe, MapPin, MessageSquarePlus, Table2 } from 'lucide-svelte';
 	import { ListPageBar } from '$lib/components/ui';
+	import { flagUrl, flagEmoji } from '$lib/utils/flags';
 	import { ExploreMapBlock, LandingRenderer } from '@japaconnect/landing-blocks';
 	import { browser } from '$app/environment';
 	import { apiBaseUrl } from '$lib/api/client';
@@ -221,32 +222,48 @@
 						/>
 					</div>
 				</div>
-				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<!-- Flag gallery cards — same pattern as the radar country
+				     gallery: bundled flag as the card background, name overlaid
+				     on a gradient. -->
+				<div class="grid grid-cols-3 gap-2">
 					{#each destinations as dest (dest.slug)}
+						{@const bg = flagUrl(dest.geo_code)}
 						<a
 							href="/wiki/{encodeURIComponent(dest.slug)}"
-							class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+							title={dest.name}
+							class="group relative block aspect-[4/3] overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] [content-visibility:auto] transition-colors hover:border-[var(--color-primary)]/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
 						>
-							<span class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-								{#if dest.logo_url}
-									<img
-										src={dest.logo_url}
-										alt=""
-										class="h-5 w-5 shrink-0 rounded-sm object-cover"
-										loading="lazy"
-									/>
-								{:else}
-									<Globe size={15} class="shrink-0 text-[var(--color-muted)]" />
-								{/if}
-								{dest.name}
-								{#if dest.geo_code}
-									<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--color-muted)]">{dest.geo_code}</span>
-								{/if}
-							</span>
-							{#if dest.description}
-								<span class="line-clamp-2 text-xs text-[var(--color-text-subtle)]">{dest.description}</span>
+							{#if bg}
+								<img
+									src={bg}
+									alt=""
+									loading="lazy"
+									decoding="async"
+									class="absolute inset-0 h-full w-full object-cover motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-105"
+								/>
+							{:else}
+								<div
+									class="absolute inset-0 flex items-center justify-center bg-[var(--color-surface-subtle)]"
+									aria-hidden="true"
+								>
+									{#if flagEmoji(dest.geo_code)}
+										<span class="text-4xl">{flagEmoji(dest.geo_code)}</span>
+									{:else}
+										<Globe size={32} class="text-[var(--color-muted)]" />
+									{/if}
+								</div>
 							{/if}
-							<span class="text-xs text-[var(--color-muted)]">{pageCountLabel(dest.page_count)}</span>
+							<span
+								class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/25 to-transparent p-2"
+							>
+								<span class="flex items-center gap-1 text-xs font-semibold leading-tight text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.6)]">
+									<span class="min-w-0 truncate">{dest.name}</span>
+									{#if dest.geo_code}
+										<span class="shrink-0 rounded bg-black/40 px-1 py-0.5 text-[9px] uppercase text-white/80">{dest.geo_code}</span>
+									{/if}
+								</span>
+								<span class="mt-0.5 text-[10px] font-normal text-white/80 tabular-nums">{pageCountLabel(dest.page_count)}</span>
+							</span>
 						</a>
 					{/each}
 				</div>

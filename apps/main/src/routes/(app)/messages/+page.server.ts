@@ -52,41 +52,38 @@ export const load: PageServerLoad = async (event) => {
 	if (filter) convQuery.set('filter', filter);
 	if (sort !== 'recent') convQuery.set('sort', sort);
 
-	let conversations: DMConversation[] = [];
-	let conversationsCursor: string | null = null;
 	let loadError = false;
-	try {
-		const res = await apiList<DMConversation>(ctx, `/dm/conversations?${convQuery}`);
-		conversations = res.items;
-		conversationsCursor = res.meta?.next_cursor ?? null;
-	} catch {
-		loadError = true;
-	}
-
-	let activeMessages: DMMessage[] = [];
-	let messagesCursor: string | null = null;
-	if (activeId) {
-		try {
-			const res = await apiList<DMMessage>(
-				ctx,
-				`/dm/conversations/${encodeURIComponent(activeId)}/messages?page_size=${MESSAGES_PAGE_SIZE}`
-			);
-			// The API returns newest-first; the thread renders oldest→newest.
-			activeMessages = res.items.reverse();
-			messagesCursor = res.meta?.next_cursor ?? null;
-		} catch {
-			activeMessages = [];
-		}
-	}
-
-	// Pending-request count drives the Requests tab badge.
-	let requestCount = 0;
-	try {
-		const res = await apiList<DMRequest>(ctx, '/dm/requests?page_size=50');
-		requestCount = res.items.length;
-	} catch {
-		requestCount = 0;
-	}
+	const [conversationsRes, activeRes, requestCount] = await Promise.all([
+		apiList<DMConversation>(ctx, `/dm/conversations?${convQuery}`)
+			.then((res) => ({
+				items: res.items,
+				cursor: res.meta?.next_cursor ?? null
+			}))
+			.catch(() => {
+				loadError = true;
+				return { items: [] as DMConversation[], cursor: null };
+			}),
+		activeId
+			? apiList<DMMessage>(
+					ctx,
+					`/dm/conversations/${encodeURIComponent(activeId)}/messages?page_size=${MESSAGES_PAGE_SIZE}`
+				)
+					.then((res) => ({
+						// The API returns newest-first; the thread renders oldest→newest.
+						items: res.items.reverse(),
+						cursor: res.meta?.next_cursor ?? null
+					}))
+					.catch(() => ({ items: [] as DMMessage[], cursor: null }))
+			: Promise.resolve({ items: [] as DMMessage[], cursor: null }),
+		// Pending-request count drives the Requests tab badge.
+		apiList<DMRequest>(ctx, '/dm/requests?page_size=50')
+			.then((res) => res.items.length)
+			.catch(() => 0)
+	]);
+	const conversations = conversationsRes.items;
+	const conversationsCursor = conversationsRes.cursor;
+	const activeMessages = activeRes.items;
+	const messagesCursor = activeRes.cursor;
 
 	return {
 		conversations,

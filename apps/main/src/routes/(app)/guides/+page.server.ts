@@ -26,15 +26,21 @@ export const load: PageServerLoad = async (event) => {
 	const cursor = event.url.searchParams.get('cursor') ?? '';
 	const offset = parseInt(event.url.searchParams.get('offset') ?? '0', 10) || 0;
 
-	const typesRes = await apiGetEnvelope<ContentTypeMeta[]>(ctx, '/content-types').catch(() => ({ data: [] }));
-	const types = typesRes.data ?? [];
-	const categories = types.find((t) => t.value === 'guide')?.categories ?? [];
+	const typesPromise = apiGetEnvelope<ContentTypeMeta[]>(ctx, '/content-types').catch(() => ({
+		data: [] as ContentTypeMeta[]
+	}));
+	const categoriesOf = (typesRes: { data: ContentTypeMeta[] }) =>
+		(typesRes.data ?? []).find((t) => t.value === 'guide')?.categories ?? [];
 
 	if (tab === 'series') {
-		const { items, meta } = await apiList<BlogSeries>(
-			ctx,
-			`/series?content_type=guide&page_size=${PAGE_SIZE}`
-		).catch(() => ({ items: [] as BlogSeries[], meta: null }));
+		const [typesRes, { items, meta }] = await Promise.all([
+			typesPromise,
+			apiList<BlogSeries>(ctx, `/series?content_type=guide&page_size=${PAGE_SIZE}`).catch(() => ({
+				items: [] as BlogSeries[],
+				meta: null
+			}))
+		]);
+		const categories = categoriesOf(typesRes);
 		return {
 			items: [] as GuideListItem[],
 			series: items,
@@ -70,14 +76,17 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	const [typesRes, contentRes] = await Promise.all([
+		typesPromise,
+		apiGetEnvelope<GuideListItem[]>(ctx, `/content?${params.toString()}`).catch(() => null)
+	]);
+	const categories = categoriesOf(typesRes);
+
 	let items: GuideListItem[] = [];
-	let loadError = false;
-	try {
-		const res = await apiGetEnvelope<GuideListItem[]>(ctx, `/content?${params.toString()}`);
-		items = res.data ?? [];
+	const loadError = contentRes === null;
+	if (contentRes) {
+		items = contentRes.data ?? [];
 		await attachAuthorUsernames(ctx, items);
-	} catch {
-		loadError = true;
 	}
 
 	// GET /content returns a bare list envelope. Latest uses a composite

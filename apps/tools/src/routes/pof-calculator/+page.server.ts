@@ -34,33 +34,25 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let destinations: GeoSpaceOption[] = [];
-	try {
-		destinations = await loadCountries(ctx);
-	} catch {
-		destinations = [];
-	}
-
-	// Pre-fetch requirements + visa types when ?dest= is present.
-	let requirements: PofRequirement[] = [];
-	let visaTypes: string[] = [];
+	// Pre-fetch requirements + visa types when ?dest= is present — the dest
+	// comes straight from the URL, so all three ride one wave.
 	const destParam = event.url.searchParams.get('dest') ?? '';
 	const visaTypeParam = event.url.searchParams.get('visa_type') ?? '';
-	if (destParam) {
-		const enc = encodeURIComponent(destParam);
-		try {
-			requirements = (
-				await apiList<PofRequirement>(ctx, `/pof/requirements?dest=${enc}`)
-			).items;
-		} catch {
-			requirements = [];
-		}
-		try {
-			visaTypes = (await apiList<string>(ctx, `/pof/visa-types?dest=${enc}`)).items;
-		} catch {
-			visaTypes = [];
-		}
-	}
+	const enc = encodeURIComponent(destParam);
+
+	const [destinations, requirements, visaTypes] = await Promise.all([
+		loadCountries(ctx).catch(() => [] as GeoSpaceOption[]),
+		destParam
+			? apiList<PofRequirement>(ctx, `/pof/requirements?dest=${enc}`)
+					.then((r) => r.items)
+					.catch(() => [] as PofRequirement[])
+			: Promise.resolve([] as PofRequirement[]),
+		destParam
+			? apiList<string>(ctx, `/pof/visa-types?dest=${enc}`)
+					.then((r) => r.items)
+					.catch(() => [] as string[])
+			: Promise.resolve([] as string[])
+	]);
 
 	// initialDestId/initialVisaType restore the shareable-URL selection so
 	// the hydrated page matches what the link author saw.

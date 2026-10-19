@@ -11,6 +11,10 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const id = event.params.id;
 
+	const countriesPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then((r) => r.items)
+		.catch(() => [] as GeoCountry[]);
+
 	let group: PlanningGroup | null = null;
 	try {
 		group = await apiGet<PlanningGroup>(ctx, `/planning-groups/${id}?raw=1`);
@@ -26,13 +30,7 @@ export const load: PageServerLoad = async (event) => {
 		throw error(403, { code: 'not_owner', message: 'Only the group owner can edit this group' });
 	}
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
+	const countries = await countriesPromise;
 
 	return { group, countries };
 };

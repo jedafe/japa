@@ -24,23 +24,16 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
-	// §114: keep the taxonomy label — the category dropdown renders the
-	// API label (dynamic slugs have no i18n cat_* key to re-derive it).
-	let serviceCategories: ServiceCategoryInfo[] = [];
-	try {
-		const cat = await apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories');
-		serviceCategories = cat ?? [];
-	} catch {
-		serviceCategories = [];
-	}
+	const [countries, serviceCategories] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		// §114: keep the taxonomy label — the category dropdown renders the
+		// API label (dynamic slugs have no i18n cat_* key to re-derive it).
+		apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories')
+			.then((cat) => cat ?? [])
+			.catch(() => [] as ServiceCategoryInfo[])
+	]);
 
 	// §114: the booking/pricing section is gated on the
 	// packages flag (it now means "bookings & pricing" —

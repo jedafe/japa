@@ -44,19 +44,24 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let corridors: RemittanceCorridor[] = [];
-	try {
-		corridors = (await apiList<RemittanceCorridor>(ctx, '/remittance/corridors')).items;
-	} catch {
-		corridors = [];
-	}
-
-	let providers: RemittanceProvider[] = [];
-	try {
-		providers = (await apiList<RemittanceProvider>(ctx, '/remittance/providers')).items;
-	} catch {
-		providers = [];
-	}
+	// Corridors, providers, alerts, and direction options are independent —
+	// one wave. Rates depend on the resolved default corridor, so they go in
+	// a second wave after corridors land.
+	const authed = !!event.locals.user;
+	const [corridors, providers, alerts, directionOptions] = await Promise.all([
+		apiList<RemittanceCorridor>(ctx, '/remittance/corridors')
+			.then((r) => r.items)
+			.catch(() => [] as RemittanceCorridor[]),
+		apiList<RemittanceProvider>(ctx, '/remittance/providers')
+			.then((r) => r.items)
+			.catch(() => [] as RemittanceProvider[]),
+		authed
+			? apiList<RemittanceAlert>(ctx, '/remittance/alerts')
+					.then((r) => r.items)
+					.catch(() => [] as RemittanceAlert[])
+			: Promise.resolve([] as RemittanceAlert[]),
+		loadCatalog(ctx, 'remittance.alert_direction').catch(() => [] as CatalogOption[])
+	]);
 
 	// Default corridor: use the remittance.default_send_currency setting
 	// (Rule 3 / Rule 16 — never hardcode config values). The first corridor
@@ -83,24 +88,6 @@ export const load: PageServerLoad = async (event) => {
 		).items;
 	} catch {
 		rates = [];
-	}
-
-	// Load user's alerts if authenticated.
-	let alerts: RemittanceAlert[] = [];
-	if (event.locals.user) {
-		try {
-			alerts = (await apiList<RemittanceAlert>(ctx, '/remittance/alerts')).items;
-		} catch {
-			alerts = [];
-		}
-	}
-
-	// Rate alert direction options from the public catalog (Rule 16).
-	let directionOptions: CatalogOption[] = [];
-	try {
-		directionOptions = await loadCatalog(ctx, 'remittance.alert_direction');
-	} catch {
-		directionOptions = [];
 	}
 
 	// Manual-rate staleness threshold from system_settings (Rule 3 — never

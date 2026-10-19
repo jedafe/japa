@@ -19,25 +19,18 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let notifications: Notification[] = [];
-	let total: number | null = null;
-	let unreadCount = 0;
-	try {
-		const res = await apiList<Notification>(ctx, `/me/notifications?page_size=${PAGE_SIZE}`);
-		notifications = res.items;
+	const [listRes, unreadCount] = await Promise.all([
 		// §35: the list endpoint reports { total, has_more } alongside `data`
 		// so clients can stop paginating deterministically.
-		total = res.meta?.total ?? null;
-	} catch {
-		notifications = [];
-	}
-
-	try {
-		const res = await apiGet<{ count: number }>(ctx, '/me/notifications/unread-count');
-		unreadCount = res.count;
-	} catch {
-		unreadCount = 0;
-	}
+		apiList<Notification>(ctx, `/me/notifications?page_size=${PAGE_SIZE}`)
+			.then((res) => ({ items: res.items, total: res.meta?.total ?? null as number | null }))
+			.catch(() => ({ items: [] as Notification[], total: null as number | null })),
+		apiGet<{ count: number }>(ctx, '/me/notifications/unread-count')
+			.then((res) => res.count)
+			.catch(() => 0)
+	]);
+	const notifications = listRes.items;
+	const total = listRes.total;
 
 	return { notifications, total, unreadCount, pageSize: PAGE_SIZE };
 };

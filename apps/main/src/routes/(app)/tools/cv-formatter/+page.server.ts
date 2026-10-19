@@ -35,14 +35,22 @@ export const load: PageServerLoad = async (event) => {
 	// 404) means the tool is turned off. Also used to filter the destination
 	// dropdown to only show destinations that have a standard available, and to
 	// display the standard inline when a destination is selected.
-	try {
-		standards = (await apiList<CvStandard>(ctx, '/cv-formatter/standards')).items;
-	} catch (e) {
-		if (e instanceof ApiError && (e.code === 'cv_formatter_disabled' || e.status === 404)) {
-			disabled = true;
-		}
-		// Other errors: leave standards empty; page shows an empty state.
-	}
+	const [standardsRes, formatOptions] = await Promise.all([
+		apiList<CvStandard>(ctx, '/cv-formatter/standards')
+			.then((r) => r.items)
+			.catch((e) => {
+				if (e instanceof ApiError && (e.code === 'cv_formatter_disabled' || e.status === 404)) {
+					disabled = true;
+				}
+				// Other errors: leave standards empty; page shows an empty state.
+				return [] as CvStandard[];
+			}),
+		apiGet<CatalogOption[]>(ctx, '/catalogs/cv_formatter.format').catch((e) => {
+			console.error('failed to load CV formatter format catalog:', e);
+			return [] as CatalogOption[];
+		})
+	]);
+	standards = standardsRes;
 
 	// Destination country list — the primary data axis (ADR-088). Rule 16.
 	if (!disabled) {
@@ -51,13 +59,6 @@ export const load: PageServerLoad = async (event) => {
 		} catch {
 			destinations = [];
 		}
-	}
-
-	let formatOptions: CatalogOption[] = [];
-	try {
-		formatOptions = await apiGet<CatalogOption[]>(ctx, '/catalogs/cv_formatter.format');
-	} catch (e) {
-		console.error('failed to load CV formatter format catalog:', e);
 	}
 
 	return { destinations, standards, disabled, authed, formatOptions };

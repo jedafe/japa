@@ -11,25 +11,25 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
+	const countriesPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then((r) => r.items)
+		.catch(() => [] as GeoCountry[]);
 
 	let postTypes: MutualAidPostType[] = [];
 	let categories: MutualAidCategory[] = [];
 	try {
-		const pt = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/post-types');
+		const [pt, cat] = await Promise.all([
+			apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/post-types'),
+			apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/categories')
+		]);
 		postTypes = (pt ?? []).map((o) => o.value as MutualAidPostType);
-		const cat = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/categories');
 		categories = (cat ?? []).map((o) => o.value as MutualAidCategory);
 	} catch {
 		postTypes = [];
 		categories = [];
 	}
+
+	const countries = await countriesPromise;
 
 	return { countries, postTypes, categories };
 };

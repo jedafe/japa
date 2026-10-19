@@ -19,13 +19,20 @@ import { dealPath, type Coupon, type DealPartnerRef } from '$lib/types';
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	try {
+		const canManage = hasPerm(event.locals.user?.permissions, 'coupons.manage');
+		// The provider list (staff edit form) doesn't depend on the coupon —
+		// fire it alongside the detail fetch.
+		const providersPromise = canManage
+			? apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')
+					.then((r) => r.items)
+					.catch(() => [] as DealPartnerRef[])
+			: Promise.resolve([] as DealPartnerRef[]);
+
 		const coupon = await apiGet<Coupon>(ctx, `/deals/${event.params.slug}`);
 		const canonical = dealPath(coupon);
 		if (event.url.pathname !== canonical) {
 			throw redirect(301, canonical);
 		}
-
-		const canManage = hasPerm(event.locals.user?.permissions, 'coupons.manage');
 
 		// Sibling deals — GET /coupons accepts a provider_id filter
 		// (ListPublicCoupons → ListActiveCoupons). Public endpoint, so this
@@ -41,14 +48,7 @@ export const load: PageServerLoad = async (event) => {
 			}
 		}
 
-		let providers: DealPartnerRef[] = [];
-		if (canManage) {
-			try {
-				providers = (await apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')).items;
-			} catch {
-				providers = [];
-			}
-		}
+		const providers = await providersPromise;
 
 		return {
 			coupon,

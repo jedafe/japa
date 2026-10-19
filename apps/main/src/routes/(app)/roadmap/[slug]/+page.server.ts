@@ -48,22 +48,6 @@ export const load: PageServerLoad = async (event) => {
 		throw error(500, { code: 'internal_error', message: 'Failed to load roadmap item' });
 	}
 
-	// Flag-linked items get an enriched rollout badge driven by the flag's
-	// live phase/percentage (§113 + unified-rollout spec §5.3). The
-	// single-key details endpoint is public; a fetch failure degrades to
-	// the generic badge — the item must still render.
-	let flagDetail: FeatureFlagDetail | null = null;
-	if (item.feature_flag_key) {
-		try {
-			flagDetail = await apiGet<FeatureFlagDetail>(
-				ctx,
-				'/feature-flags/details/' + encodeURIComponent(item.feature_flag_key)
-			);
-		} catch {
-			flagDetail = null;
-		}
-	}
-
 	const currentUserId = event.locals.user?.id ?? null;
 	const authed = !!event.locals.user;
 	// Inline-edit affordance: the viewer carries roadmap.moderate. The backend
@@ -71,22 +55,49 @@ export const load: PageServerLoad = async (event) => {
 	// only gates the UI control.
 	const canModerate = !!event.locals.user?.permissions?.includes('roadmap.moderate');
 
-	// SSR-seed the comment thread from the shadow contents row (§113).
-	let comments: Comment[] = [];
+	// Flag detail, comment thread, and related board are all keyed off the
+	// resolved item but independent of each other — one wave.
 	let commentsLoadError = false;
-	let commentDeletedUserIds: string[] | null = null;
-	if (item.content_id) {
-		try {
-			const envelope = await apiGetEnvelope<Comment[]>(
-				ctx,
-				`/content/${item.content_id}/comments?page_size=50`
-			);
-			comments = envelope.data ?? [];
-			commentDeletedUserIds = envelope.deleted_user_ids ?? null;
-		} catch {
-			commentsLoadError = true;
-		}
-	}
+	const [flagDetail, commentsRes, related] = await Promise.all([
+		// Flag-linked items get an enriched rollout badge driven by the flag's
+		// live phase/percentage (§113 + unified-rollout spec §5.3). The
+		// single-key details endpoint is public; a fetch failure degrades to
+		// the generic badge — the item must still render.
+		item.feature_flag_key
+			? apiGet<FeatureFlagDetail>(
+					ctx,
+					'/feature-flags/details/' + encodeURIComponent(item.feature_flag_key)
+				).catch(() => null)
+			: Promise.resolve(null),
+		// SSR-seed the comment thread from the shadow contents row (§113).
+		item.content_id
+			? apiGetEnvelope<Comment[]>(ctx, `/content/${item.content_id}/comments?page_size=50`).catch(
+					() => {
+						commentsLoadError = true;
+						return null;
+					}
+				)
+			: Promise.resolve(null),
+		// Related items — same category via the board endpoint (Rule 16: no
+		// dedicated related-items route exists; reuse /roadmap/board?category=).
+		// Best-effort; a failure degrades to an empty list.
+		item.category_slug
+			? apiGet<RoadmapBoard>(
+					ctx,
+					`/roadmap/board?category=${encodeURIComponent(item.category_slug)}`
+				)
+					.then(
+						(board) =>
+							board.columns
+								.flatMap((c) => c.items)
+								.filter((i) => i.id !== item.id)
+								.slice(0, 3) as RoadmapBoardItem[]
+					)
+					.catch(() => [] as RoadmapBoardItem[])
+			: Promise.resolve([] as RoadmapBoardItem[])
+	]);
+	const comments = commentsRes?.data ?? [];
+	const commentDeletedUserIds = commentsRes?.deleted_user_ids ?? null;
 
 	// Merge deleted user IDs from the item and comments so the frontend can
 	// render @[deleted user] for all erased mentions (ADR-029).
@@ -94,25 +105,6 @@ export const load: PageServerLoad = async (event) => {
 	if (deletedUserIds) for (const id of deletedUserIds) allDeletedUserIds.add(id);
 	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
 	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
-
-	// Related items — same category via the board endpoint (Rule 16: no
-	// dedicated related-items route exists; reuse /roadmap/board?category=).
-	// Best-effort; a failure degrades to an empty list.
-	let related: RoadmapBoardItem[] = [];
-	if (item.category_slug) {
-		try {
-			const board = await apiGet<RoadmapBoard>(
-				ctx,
-				`/roadmap/board?category=${encodeURIComponent(item.category_slug)}`
-			);
-			related = board.columns
-				.flatMap((c) => c.items)
-				.filter((i) => i.id !== item.id)
-				.slice(0, 3);
-		} catch {
-			related = [];
-		}
-	}
 
 	return {
 		item,

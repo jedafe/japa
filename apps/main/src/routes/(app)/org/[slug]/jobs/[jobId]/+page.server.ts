@@ -31,6 +31,10 @@ export const load: PageServerLoad = async (event) => {
 	const slug = event.params.slug;
 	const jobId = event.params.jobId;
 
+	const orgsPromise = apiList<ComposerOrganization>(ctx, '/me/organizations')
+		.then((r) => r.items)
+		.catch(() => []);
+
 	let org: PublicOrganization;
 	try {
 		org = await apiGet<PublicOrganization>(ctx, `/organizations/${slug}`);
@@ -42,9 +46,7 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
-	const orgs = await apiList<ComposerOrganization>(ctx, '/me/organizations')
-		.then((r) => r.items)
-		.catch(() => []);
+	const orgs = await orgsPromise;
 	const membership = orgs.find((o) => o.id === org.id);
 	if (!membership || !JOB_ADMIN_ROLES.has(membership.member_role)) {
 		throw error(403, {
@@ -57,6 +59,13 @@ export const load: PageServerLoad = async (event) => {
 	const status = event.url.searchParams.get('status') ?? '';
 	const params = new URLSearchParams({ page, limit: String(PAGE_SIZE) });
 	if (status) params.set('status', status);
+
+	// The applications payload does not carry the job title — resolve it from
+	// the org's listings (JOBS-012 already verified the job belongs here).
+	// Independent of the applications call — same wave.
+	const jobPromise = apiList<JobListing>(ctx, `/org/${org.id}/jobs?limit=50`)
+		.then((r) => r.items.find((j) => j.id === jobId) ?? null)
+		.catch(() => null);
 
 	let applications: JobApplication[] = [];
 	let meta: { total?: number; page?: number; limit?: number; total_pages?: number } | undefined;
@@ -77,11 +86,7 @@ export const load: PageServerLoad = async (event) => {
 		throw error(500, { code: 'applications_list_failed', message: 'Failed to load applications' });
 	}
 
-	// The applications payload does not carry the job title — resolve it from
-	// the org's listings (JOBS-012 already verified the job belongs here).
-	const job = await apiList<JobListing>(ctx, `/org/${org.id}/jobs?limit=50`)
-		.then((r) => r.items.find((j) => j.id === jobId) ?? null)
-		.catch(() => null);
+	const job = await jobPromise;
 
 	return { org, job, jobId, applications, meta, statusFilter: status };
 };

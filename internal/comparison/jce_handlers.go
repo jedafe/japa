@@ -589,6 +589,49 @@ func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": jceMatrixResponse(matrix)})
 }
 
+// GetJCEComparisonPage handles GET /api/v1/jce/comparisons/{idOrSlug}/page —
+// the batched detail + matrix payload the SSR comparison page consumes in one
+// request. Visibility and literal resolution match the detail endpoint.
+func (h *Handlers) GetJCEComparisonPage(w http.ResponseWriter, r *http.Request) {
+	idOrSlug := chi.URLParam(r, "idOrSlug")
+	if idOrSlug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID or slug")
+		return
+	}
+
+	page, err := h.Service.GetJCEComparisonPage(r.Context(), idOrSlug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
+			return
+		}
+
+		handleServiceError(w, err)
+
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	bypass := user != nil && hasAnyPermission(r, user, "comparison.edit_any")
+
+	if !canAccessJCEComparison(page.Comparison, user, bypass) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
+		return
+	}
+
+	// §14 Global Template Literals — resolve {{...}} placeholders against the
+	// comparison's own geo metadata (never the reader's context).
+	if h.Service.contentSvc != nil {
+		rc := literals.NewRequestContext(r, "")
+		_ = h.Service.contentSvc.ResolveContentFields(r.Context(), &page.Comparison.Content, rc)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"comparison": jceComparisonResponse(page.Comparison),
+		"matrix":     jceMatrixResponse(page.Matrix),
+	}})
+}
+
 // SearchJCEEntities handles GET /api/v1/jce/entities/{type}.
 func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 	entityType := chi.URLParam(r, "type")

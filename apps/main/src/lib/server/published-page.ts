@@ -38,6 +38,12 @@ export async function resolveGeoContext(event: ServerLoadEvent): Promise<{
 		event.locals.user?.content_country_preference ??
 		null;
 	let geoCountryName: string | undefined;
+
+	// The countries catalog doesn't depend on the resolved country — fire it
+	// alongside GeoIP so a needed name lookup never waits a second round-trip.
+	// It's a 5m-cached public catalog, so the speculative call is usually free.
+	const countriesPromise = apiGet<GeoCountry[]>(ctx, '/geo/countries').catch(() => null);
+
 	if (!geoCountry) {
 		try {
 			const geo = await apiGet<GeoContext>(ctx, '/geo/me');
@@ -55,14 +61,9 @@ export async function resolveGeoContext(event: ServerLoadEvent): Promise<{
 	// When geo was set via ?geo= param (not GeoIP), resolve the country name
 	// from the backend so any of the seeded countries gets its real name.
 	if (geoCountry && geoCountry !== 'global' && !geoCountryName) {
-		try {
-			const countries = await apiGet<GeoCountry[]>(ctx, '/geo/countries');
-			const match = countries.find((c) => c.geo_code === geoCountry!.toUpperCase());
-			if (match) geoCountryName = match.name;
-		} catch {
-			// Countries endpoint unavailable — getGeoTokens will use the
-			// country code as a fallback name.
-		}
+		const countries = await countriesPromise;
+		const match = countries?.find((c) => c.geo_code === geoCountry!.toUpperCase());
+		if (match) geoCountryName = match.name;
 	}
 
 	return { geoCountry: geoCountry || 'global', geoCountryName };
@@ -72,10 +73,13 @@ export async function loadPublishedPage(event: ServerLoadEvent) {
 	const ctx = apiContext(event);
 	const slug = event.params.slug!;
 
-	const { geoCountry, geoCountryName } = await resolveGeoContext(event);
+	// Geo context and the page fetch are independent — run them in one wave
+	// instead of paying a GeoIP round-trip before the page even starts.
+	const geoPromise = resolveGeoContext(event);
 
 	try {
 		const envelope = await apiGetEnvelope<PageBuilderPage>(ctx, `/pages/${slug}`);
+		const { geoCountry, geoCountryName } = await geoPromise;
 		const page = envelope.data;
 		const tokens = getGeoTokens(geoCountry, 'en', geoCountryName);
 		const literals = envelope.literals ?? {};

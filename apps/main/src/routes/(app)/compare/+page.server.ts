@@ -184,75 +184,18 @@ export const load: PageServerLoad = async (event) => {
 		if (v) scopeParams[step] = v;
 	}
 
-	let items: ResolvedItem[] = [];
-	let itemsTotal: number | null = null;
-	if (selectedType) {
-		// Course search requires a university scope. Don't call the resolver before
-		// the user has selected one; the scope dropdown is the prompt.
-		if (source === 'course' && !scopeParams['university']) {
-			items = [];
-		} else {
-			try {
-				const params = new URLSearchParams({ q });
-				params.set('limit', String(fetchLimit));
-				params.set('offset', String(fetchOffset));
-				if (source === 'comparison' && allowNestedComparisons && allowedNestedTypes.length > 0) {
-					params.set('nested_types', allowedNestedTypes.join(','));
-				}
-				if (source === 'comparison' && nestedType) {
-					params.set('nested_type', nestedType);
-				}
-				for (const [step, value] of Object.entries(scopeParams)) {
-					const key = scopeParamKey(step);
-					params.set(key, value);
-				}
-				const contentType = selectedType?.config?.content_type as string | undefined;
-				if (contentType) {
-					params.set('content_type', contentType);
-				}
-				const res = await apiList<ResolvedItem>(ctx, `/jce/entities/${source}?${params.toString()}`);
-				items = res.items ?? [];
-				itemsTotal = res.meta?.total ?? null;
-			} catch (err) {
-				if (err instanceof ApiError && err.status !== 404) {
-					loadError = loadError || 'jce.compare.errors.load_items';
-					loadErrorParams = { type: selectedType.name, message: err.message };
-				}
-			}
-		}
-	}
-
-	let preselectedItems: ResolvedItem[] = [];
-	const preselectFailures: string[] = [];
-	const preselect = searchParams.get('preselect') ?? '';
-	if (preselect && selectedType) {
-		// Cap pre-selections at the type's max_item_count so a crafted URL
-		// cannot stage more items than the tray (and create) allows.
-		const preselectCap =
-			typeof selectedType.config?.max_item_count === 'number' && selectedType.config.max_item_count > 0
-				? selectedType.config.max_item_count
-				: 4;
-		const ids = preselect.split(',').filter(Boolean).slice(0, preselectCap);
-		for (const id of ids) {
-			try {
-				const item = await apiGet<ResolvedItem>(ctx, `/jce/entities/${source}/${id}`);
-				if (item) preselectedItems.push(item);
-			} catch (err) {
-				preselectFailures.push(id);
-				console.warn(`compare preselect: could not resolve ${source}/${id}`, err);
-			}
-		}
-	}
-	if (preselectFailures.length > 0 && !loadError) {
-		loadError = 'jce.compare.errors.preselect_failed';
-		loadErrorParams = { ids: preselectFailures.join(', ') };
-	}
-
 	const compareToken = searchParams.get('compare_token') ?? '';
+	const mine = searchParams.get('mine') === 'true';
+	const preselect = searchParams.get('preselect') ?? '';
 
 	// Guest selections that survive login are consumed server-side and the
-	// user is redirected to the new quick comparison.
+	// user is redirected to the new quick comparison. Runs before the read
+	// wave so a successful consume doesn't pay for fetches the redirect
+	// discards. The error is captured and applied after the wave so the
+	// original load-error priority (items → preselect → from_token → mine)
+	// is preserved.
 	let fromTokenSlug = '';
+	let fromTokenErr: { key: string; params: Record<string, string> } | null = null;
 	if (compareToken && event.locals.user && selectedType) {
 		try {
 			const cmp = await apiPost<{ slug: string }>(ctx, '/jce/comparisons/from-token', {
@@ -264,11 +207,9 @@ export const load: PageServerLoad = async (event) => {
 			}
 		} catch (err) {
 			if (err instanceof ApiError) {
-				loadError = loadError || 'jce.compare.errors.from_token';
-				loadErrorParams = { message: err.message };
+				fromTokenErr = { key: 'jce.compare.errors.from_token', params: { message: err.message } };
 			} else if (err instanceof Error) {
-				loadError = loadError || 'jce.compare.errors.api_unreachable';
-				loadErrorParams = { message: err.message };
+				fromTokenErr = { key: 'jce.compare.errors.api_unreachable', params: { message: err.message } };
 			}
 		}
 	}
@@ -276,58 +217,155 @@ export const load: PageServerLoad = async (event) => {
 		redirect(302, `/compare/${fromTokenSlug}`);
 	}
 
-	const mine = searchParams.get('mine') === 'true';
-
-	let myComparisons: JCEComparisonSummary[] = [];
-	let myMeta: ListMeta = { total: 0, page: 1, limit: defaultPageSize };
-	if (event.locals.user) {
+	// Read wave — entity items, pre-selection hydration, the user's quick
+	// comparisons, the landing-mode discovery strip, and the AI Quick
+	// Compare permission are all independent once the type is resolved.
+	const itemsPromise = (async () => {
+		if (!selectedType) return { items: [] as ResolvedItem[], itemsTotal: null as number | null, error: null as Record<string, string> | null };
+		// Course search requires a university scope. Don't call the resolver
+		// before the user has selected one; the scope dropdown is the prompt.
+		if (source === 'course' && !scopeParams['university']) {
+			return { items: [] as ResolvedItem[], itemsTotal: null as number | null, error: null as Record<string, string> | null };
+		}
 		try {
-			const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?mine=true&filter_depth=quick&page_size=${defaultPageSize}&sort=created_at`);
-			myComparisons = mapComparisonTypes(res.items, allTypes);
-			myMeta = res.meta ?? myMeta;
+			const params = new URLSearchParams({ q });
+			params.set('limit', String(fetchLimit));
+			params.set('offset', String(fetchOffset));
+			if (source === 'comparison' && allowNestedComparisons && allowedNestedTypes.length > 0) {
+				params.set('nested_types', allowedNestedTypes.join(','));
+			}
+			if (source === 'comparison' && nestedType) {
+				params.set('nested_type', nestedType);
+			}
+			for (const [step, value] of Object.entries(scopeParams)) {
+				const key = scopeParamKey(step);
+				params.set(key, value);
+			}
+			const contentType = selectedType?.config?.content_type as string | undefined;
+			if (contentType) {
+				params.set('content_type', contentType);
+			}
+			const res = await apiList<ResolvedItem>(ctx, `/jce/entities/${source}?${params.toString()}`);
+			return { items: res.items ?? [], itemsTotal: res.meta?.total ?? null as number | null, error: null as Record<string, string> | null };
 		} catch (err) {
 			if (err instanceof ApiError && err.status !== 404) {
-				loadError = loadError || 'jce.compare.errors.load_mine';
-				loadErrorParams = { message: err.message };
+				return {
+					items: [] as ResolvedItem[],
+					itemsTotal: null as number | null,
+					error: { type: selectedType.name, message: err.message }
+				};
 			}
+			return { items: [] as ResolvedItem[], itemsTotal: null as number | null, error: null as Record<string, string> | null };
 		}
-	}
+	})();
+
+	const preselectPromise = (async () => {
+		if (!preselect || !selectedType) {
+			return { items: [] as ResolvedItem[], failures: [] as string[] };
+		}
+		// Cap pre-selections at the type's max_item_count so a crafted URL
+		// cannot stage more items than the tray (and create) allows.
+		const preselectCap =
+			typeof selectedType.config?.max_item_count === 'number' && selectedType.config.max_item_count > 0
+				? selectedType.config.max_item_count
+				: 4;
+		const ids = preselect.split(',').filter(Boolean).slice(0, preselectCap);
+		const results = await Promise.all(
+			ids.map((id) =>
+				apiGet<ResolvedItem>(ctx, `/jce/entities/${source}/${id}`)
+					.then((item) => ({ id, item: item ?? null, failed: false }))
+					.catch((err) => {
+						console.warn(`compare preselect: could not resolve ${source}/${id}`, err);
+						return { id, item: null, failed: true };
+					})
+			)
+		);
+		return {
+			items: results.flatMap((r) => (r.item ? [r.item] : [])),
+			failures: results.flatMap((r) => (r.failed ? [r.id] : []))
+		};
+	})();
+
+	const minePromise = (async () => {
+		if (!event.locals.user) {
+			return { comparisons: [] as JCEComparisonSummary[], meta: null as ListMeta | null, failed: false, message: '' };
+		}
+		try {
+			const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?mine=true&filter_depth=quick&page_size=${defaultPageSize}&sort=created_at`);
+			return { comparisons: res.items, meta: res.meta ?? null, failed: false, message: '' };
+		} catch (err) {
+			return {
+				comparisons: [] as JCEComparisonSummary[],
+				meta: null,
+				failed: err instanceof ApiError && err.status !== 404,
+				message: err instanceof Error ? err.message : ''
+			};
+		}
+	})();
 
 	// Landing-mode discovery strip — published public detailed comparisons.
 	// Only fetched when the picker is in landing mode (no ?type, not the
 	// "mine" tab). Best-effort: failure hides the strip.
-	let popularComparisons: JCEComparisonSummary[] = [];
-	if (!typeSlug && !mine) {
-		try {
-			const res = await apiList<JCEComparisonSummary>(
-				ctx,
-				'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=6&sort=popularity'
-			);
-			popularComparisons = mapComparisonTypes(res.items, allTypes);
-		} catch {
-			popularComparisons = [];
-		}
-	}
+	const popularPromise =
+		!typeSlug && !mine
+			? apiList<JCEComparisonSummary>(
+					ctx,
+					'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=6&sort=popularity'
+				)
+					.then((res) => res.items)
+					.catch(() => [] as JCEComparisonSummary[])
+			: Promise.resolve([] as JCEComparisonSummary[]);
 
 	// §30 AI Quick Compare — the POST /ai/compare-entities endpoint is gated
 	// by agent.use. /me/permissions only returns explicitly resolved nodes,
 	// so super_admin (which bypasses RBAC at middleware) is checked via groups.
 	// Best-effort: a failed lookup degrades to false, never blocks the page.
-	let canAiQuick = false;
-	if (event.locals.user) {
+	const canAiQuickPromise = (async () => {
+		if (!event.locals.user) return false;
 		const isSuperAdmin = (event.locals.user.groups ?? []).some(
 			(g) => g === 'Super Admin' || g === 'super_admin'
 		);
-		if (isSuperAdmin) {
-			canAiQuick = true;
-		} else {
-			try {
-				const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
-				canAiQuick = (permRes?.permissions ?? []).includes('agent.use');
-			} catch {
-				canAiQuick = false;
-			}
+		if (isSuperAdmin) return true;
+		try {
+			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+			return (permRes?.permissions ?? []).includes('agent.use');
+		} catch {
+			return false;
 		}
+	})();
+
+	const [itemsRes, preselectRes, mineRes, popularItems, canAiQuick] = await Promise.all([
+		itemsPromise,
+		preselectPromise,
+		minePromise,
+		popularPromise,
+		canAiQuickPromise
+	]);
+
+	const items = itemsRes.items;
+	const itemsTotal = itemsRes.itemsTotal;
+	const preselectedItems = preselectRes.items;
+	const preselectFailures = preselectRes.failures;
+	const myComparisons = mapComparisonTypes(mineRes.comparisons, allTypes);
+	const myMeta: ListMeta = mineRes.meta ?? { total: 0, page: 1, limit: defaultPageSize };
+	const popularComparisons = mapComparisonTypes(popularItems, allTypes);
+
+	// Apply load errors in the original priority order.
+	if (itemsRes.error && !loadError) {
+		loadError = 'jce.compare.errors.load_items';
+		loadErrorParams = itemsRes.error;
+	}
+	if (preselectFailures.length > 0 && !loadError) {
+		loadError = 'jce.compare.errors.preselect_failed';
+		loadErrorParams = { ids: preselectFailures.join(', ') };
+	}
+	if (fromTokenErr && !loadError) {
+		loadError = fromTokenErr.key;
+		loadErrorParams = fromTokenErr.params;
+	}
+	if (mineRes.failed && !loadError) {
+		loadError = 'jce.compare.errors.load_mine';
+		loadErrorParams = { message: mineRes.message };
 	}
 
 	return {

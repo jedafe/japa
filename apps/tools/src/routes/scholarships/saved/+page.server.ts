@@ -37,22 +37,16 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let saved: SavedScholarship[] = [];
-	try {
-		const res = await apiList<SavedScholarship>(ctx, '/scholarships/saved?page_size=100');
-		saved = res.items;
-	} catch {
-		saved = [];
-	}
-
-	// Canonical status options from the backend (Rule 16 — no hardcoded list).
-	let statusOptions: CatalogOption[] = [];
-	try {
-		const res = await apiList<CatalogOption>(ctx, '/scholarships/statuses');
-		statusOptions = res.items;
-	} catch {
-		statusOptions = [];
-	}
+	// Canonical status options ride the same wave as the saved list
+	// (Rule 16 — no hardcoded list).
+	const [saved, statusOptions] = await Promise.all([
+		apiList<SavedScholarship>(ctx, '/scholarships/saved?page_size=100')
+			.then((r) => r.items)
+			.catch(() => [] as SavedScholarship[]),
+		apiList<CatalogOption>(ctx, '/scholarships/statuses')
+			.then((r) => r.items)
+			.catch(() => [] as CatalogOption[])
+	]);
 
 	return {
 		enabled: true,

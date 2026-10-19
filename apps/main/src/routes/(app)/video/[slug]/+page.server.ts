@@ -52,6 +52,19 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const id = event.params.slug!;
+
+	// §106: POST /videos/{id}/summarize enqueues an AI draft — exposed to
+	// video.create holders only when video.ai_summary.enabled is on. The
+	// permission lookup doesn't depend on the video fetch — same wave.
+	const siteSettings =
+		((await event.parent()) as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
+	const canSummarizePromise =
+		event.locals.user && siteSettings['video.ai_summary.enabled'] === true
+			? apiGet<{ permissions: string[] }>(ctx, '/me/permissions')
+					.then((perms) => (perms?.permissions ?? []).includes('video.create'))
+					.catch(() => false)
+			: Promise.resolve(false);
+
 	try {
 		const videoSource = await apiGet<VideoSource>(ctx, `/videos/${id}`);
 		// Canonicalize — a UUID param that resolves to a slugged row redirects
@@ -60,19 +73,7 @@ export const load: PageServerLoad = async (event) => {
 			throw redirect(301, `/video/${videoSource.slug}${event.url.search}`);
 		}
 
-		// §106: POST /videos/{id}/summarize enqueues an AI draft — exposed to
-		// video.create holders only when video.ai_summary.enabled is on.
-		const siteSettings =
-			((await event.parent()) as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
-		let canSummarize = false;
-		if (event.locals.user && siteSettings['video.ai_summary.enabled'] === true) {
-			try {
-				const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
-				canSummarize = (perms?.permissions ?? []).includes('video.create');
-			} catch {
-				canSummarize = false;
-			}
-		}
+		const canSummarize = await canSummarizePromise;
 
 		return { videoSource, sourceOnly: true as const, canSummarize, currentUserId: event.locals.user?.id ?? null };
 	} catch (err) {

@@ -50,21 +50,14 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	// Destination list — the geo-aware selector source (Rule 16).
-	let destinations: GeoSpaceOption[] = [];
-	try {
-		destinations = await loadCountries(ctx);
-	} catch {
-		destinations = [];
-	}
-
-	// BUG-005: org-type allow-list from the backend (Rule 16).
-	let orgTypes: OrgTypeOption[] = [];
-	try {
-		orgTypes = (await apiList<OrgTypeOption>(ctx, '/community-locator/org-types')).items;
-	} catch {
-		orgTypes = [];
-	}
+	// Destination list (the geo-aware selector source, Rule 16) and the
+	// BUG-005 org-type allow-list — independent catalogs, one wave.
+	const [destinations, orgTypes] = await Promise.all([
+		loadCountries(ctx).catch(() => [] as GeoSpaceOption[]),
+		apiList<OrgTypeOption>(ctx, '/community-locator/org-types')
+			.then((r) => r.items)
+			.catch(() => [] as OrgTypeOption[])
+	]);
 
 	// If ?dest= is present, fetch community orgs for that destination so the
 	// page renders with content on first paint (SSR). Filters (?type=,

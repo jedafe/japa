@@ -5,9 +5,10 @@
 	import { goto, replaceState } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { Ticket, BadgeCheck, ExternalLink, Plus, Loader2, Search } from 'lucide-svelte';
-	import { EmptyState, ListPageBar, PageAction } from '$lib/components/ui';
+	import { Ticket, Tag, House, Scissors, Music, UtensilsCrossed, LayoutGrid, List, Copy, Check, BadgeCheck, ExternalLink, Plus, Loader2, Search, Pencil } from 'lucide-svelte';
+	import { EmptyState, ListPageBar, Modal, PageAction } from '$lib/components/ui';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import DealForm from '$lib/components/deals/DealForm.svelte';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { dealPath, type Coupon } from '$lib/types';
@@ -230,10 +231,114 @@
 		return c.provider_name ?? t('deals.internal', '{site}');
 	}
 
+	// Grid / list view — grid is the default (matches the Local Deals mockup).
+	let viewMode = $state<'grid' | 'list'>('grid');
+
+	// Mockup category-tab icons. Categories are dynamic (Rule 16 — derived from
+	// provider_category), so map by keyword with a Ticket fallback.
+	function categoryIcon(cat: string): typeof Ticket {
+		const c = cat.toLowerCase();
+		if (/apart|hous|rent|estate|hotel|stay|room|bnb/.test(c)) return House;
+		if (/barber|salon|beauty|spa|hair|nail/.test(c)) return Scissors;
+		if (/event|music|concert|show|band|party|night|club/.test(c)) return Music;
+		if (/food|eat|drink|restaur|caf|bar|pizza|burger|bakery|coffee|dining/.test(c))
+			return UtensilsCrossed;
+		return Ticket;
+	}
+
+	// Card header banner — coupons carry no image URL (only a provider logo
+	// media id), so use a deterministic hue gradient + category watermark.
+	function hueFor(id: string): number {
+		let h = 0;
+		for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+		return h;
+	}
+
+	// Compact badge label for the card header ("-20%", "-$5").
+	function discountShort(c: Coupon): string {
+		if (c.discount_type === 'percent') {
+			return `-${c.discount_value ?? ''}%`;
+		}
+		if (c.discount_type === 'fixed') {
+			const cur = currencySymbol(c.currency, data.currencies) || (c.currency ?? '');
+			return `-${cur}${c.discount_value ?? ''}`;
+		}
+		return discountLabel(c);
+	}
+
+	// Mockup card: bold business name + offer subline.
+	function cardTitle(c: Coupon): string {
+		return c.provider_name ?? c.title;
+	}
+
+	function cardSub(c: Coupon): string {
+		if (!c.provider_name) return c.description ?? '';
+		if (c.description) return c.description;
+		return c.title !== c.provider_name ? c.title : '';
+	}
+
+	function expiryDate(c: Coupon): string {
+		return c.expires_at ? new Date(c.expires_at).toLocaleDateString(i18n.locale) : '';
+	}
+
+	let copiedId = $state<string | null>(null);
+	let editOpen = $state(false);
+	let editingCoupon = $state<Coupon | null>(null);
+
+	// Staff inline edit (coupons.manage — same gate as the /deal detail page).
+	// Stops propagation so list-row click-through doesn't fire underneath.
+	function openEdit(e: MouseEvent, coupon: Coupon) {
+		e.preventDefault();
+		e.stopPropagation();
+		editingCoupon = coupon;
+		editOpen = true;
+	}
+
+	function closeEdit() {
+		editOpen = false;
+		editingCoupon = null;
+	}
+
+	function onEditSaved(updated: Coupon) {
+		coupons = coupons.map((c) => (c.id === updated.id ? updated : c));
+		closeEdit();
+	}
+
+	async function copyCouponCode(coupon: Coupon) {
+		if (!coupon.code) return;
+		let ok = false;
+		try {
+			await navigator.clipboard.writeText(coupon.code);
+			ok = true;
+		} catch {
+			try {
+				const ta = document.createElement('textarea');
+				ta.value = coupon.code;
+				ta.setAttribute('readonly', '');
+				ta.style.position = 'fixed';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.select();
+				ok = document.execCommand('copy');
+				ta.remove();
+			} catch {
+				ok = false;
+			}
+		}
+		if (!ok) return;
+		copiedId = coupon.id;
+		api.post(`/coupons/${coupon.id}/click`, { event_type: 'copy' }).catch(() => {});
+		setTimeout(() => {
+			if (copiedId === coupon.id) copiedId = null;
+		}, 2000);
+	}
+
 	function onRowClick(e: MouseEvent, coupon: Coupon) {
 		// The deal title is a real anchor — let its native navigation handle
 		// clicks (incl. middle-click / open-in-new-tab) instead of goto().
-		if ((e.target as HTMLElement).closest('a')) return;
+		// The staff edit button stops propagation itself; the closest('button')
+		// guard covers keyboard-activated clicks that bubble from it.
+		if ((e.target as HTMLElement).closest('a, button')) return;
 		goto(dealPath(coupon));
 	}
 
@@ -241,7 +346,7 @@
 		// role="link" rows activate on Enter AND Space per APG.
 		if (e.key === 'Enter' || e.key === ' ') {
 			e.preventDefault();
-			if ((e.target as HTMLElement).closest('a')) return;
+			if ((e.target as HTMLElement).closest('a, button')) return;
 			goto(dealPath(coupon));
 		}
 	}
@@ -264,6 +369,35 @@
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<ListPageBar title={t('deals.heading', 'Deals')}>
 		{#snippet actions()}
+			<!-- Grid / list view toggle (same pattern as /universities) -->
+			<div
+				class="flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] p-0.5"
+			>
+				<button
+					type="button"
+					onclick={() => (viewMode = 'grid')}
+					class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode ===
+					'grid'
+						? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
+						: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					aria-label={t('deals.view_grid', 'Grid view')}
+					aria-pressed={viewMode === 'grid'}
+				>
+					<LayoutGrid size={15} />
+				</button>
+				<button
+					type="button"
+					onclick={() => (viewMode = 'list')}
+					class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode ===
+					'list'
+						? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
+						: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					aria-label={t('deals.view_list', 'List view')}
+					aria-pressed={viewMode === 'list'}
+				>
+					<List size={15} />
+				</button>
+			</div>
 			{#if lastUpdated}
 				<span class="hidden text-xs text-[var(--color-text-subtle)] sm:inline">
 					{t('deals.last_updated', 'Last updated {date}', { date: lastUpdated })}
@@ -333,36 +467,47 @@
 				title={serverFiltersActive
 					? t('deals.empty_filtered', 'No deals match your filters.')
 					: t('deals.empty', 'No deals available right now.')}
+				action={data.canSubmit && !serverFiltersActive
+					? { label: t('deals.new_deal', 'New deal'), href: '/deals/new' }
+					: undefined}
 			/>
 		{:else}
 			{#if categories.length > 0}
-				<nav aria-label={t('deals.table.category', 'Category')} class="mb-4">
-					<ul class="flex flex-wrap gap-2">
+				{#if viewMode === 'grid'}
+					<p class="mb-5 text-center text-sm text-[var(--color-text-subtle)]">
+						{t('deals.subtitle', 'Exclusive neighborhood coupons')}
+					</p>
+				{/if}
+				<nav aria-label={t('deals.table.category', 'Category')} class="mb-6">
+					<ul class="flex flex-wrap items-start justify-center gap-1 sm:gap-6">
 						<li>
 							<button
 								type="button"
 								onclick={() => selectCategory('')}
 								aria-pressed={selectedCategory === ''}
-								class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {selectedCategory ===
+								class="flex w-20 flex-col items-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium transition-colors {selectedCategory ===
 								''
-									? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-									: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
+									? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+									: 'text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
 							>
-								{t('deals.categories.all', 'All')}
+								<Tag size={20} />
+								<span>{t('deals.categories.all_coupons', 'All Coupons')}</span>
 							</button>
 						</li>
 						{#each categories as category (category)}
+							{@const TabIcon = categoryIcon(category)}
 							<li>
 								<button
 									type="button"
 									onclick={() => selectCategory(category)}
 									aria-pressed={selectedCategory === category}
-									class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {selectedCategory ===
+									class="flex w-20 flex-col items-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium transition-colors {selectedCategory ===
 									category
-										? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-										: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
+										? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+										: 'text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
 								>
-									{category}
+									<TabIcon size={20} />
+									<span class="max-w-full truncate">{category}</span>
 								</button>
 							</li>
 						{/each}
@@ -373,7 +518,99 @@
 			{#if filteredCoupons.length === 0}
 				<EmptyState icon={Ticket} title={t('deals.empty_filtered', 'No deals match your filters.')} />
 			{:else}
-				<!-- Desktop: costgoat-style table (Provider / Category / Deal / Details / Claim) -->
+				{#if viewMode === 'grid'}
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+						{#each filteredCoupons as coupon (coupon.id)}
+							{@const hue = hueFor(coupon.id)}
+							{@const CardIcon = categoryIcon(coupon.provider_category ?? coupon.title)}
+							{@const sub = cardSub(coupon)}
+							<article
+								class="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] transition-shadow hover:shadow-md"
+							>
+								<a
+									href={dealPath(coupon)}
+									aria-label={cardTitle(coupon)}
+									class="relative block h-36 overflow-hidden"
+									style="background: linear-gradient(135deg, hsl({hue} 70% 85%), hsl({(hue +
+										40) %
+										360} 70% 68%))"
+								>
+									{#if discountShort(coupon)}
+										<span
+											class="absolute top-3 left-3 inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-gray-900 shadow"
+										>
+											🔥 {discountShort(coupon)}
+										</span>
+									{/if}
+									<CardIcon
+										size={96}
+										class="absolute -right-4 -bottom-4 text-white opacity-30"
+									/>
+								</a>
+								<div class="p-4">
+									<h2
+										class="flex items-center gap-1.5 text-[15px] font-bold text-[var(--color-text)]"
+									>
+										<a href={dealPath(coupon)} class="min-w-0 flex-1 truncate hover:underline">
+											{cardTitle(coupon)}
+										</a>
+										{#if coupon.is_verified}
+											<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" />
+										{/if}
+										{#if data.canManage}
+											<button
+												type="button"
+												onclick={(e) => openEdit(e, coupon)}
+												class="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+												aria-label={t('deal.edit', 'Edit')}
+											>
+												<Pencil size={14} />
+											</button>
+										{/if}
+									</h2>
+									<p
+										class="mt-0.5 line-clamp-2 min-h-[2.5rem] text-[13px] text-[var(--color-text-subtle)]"
+									>
+										{sub}
+									</p>
+									<p class="mt-1.5 text-xs font-medium text-[var(--color-success)]">
+										{#if coupon.expires_at}
+											{t('deals.valid_till', 'Valid till: {date}', {
+												date: expiryDate(coupon)
+											})}
+										{:else}
+											{t('coupons.no_expiry', 'No expiry date')}
+										{/if}
+									</p>
+									{#if coupon.code}
+										<button
+											type="button"
+											onclick={() => copyCouponCode(coupon)}
+											aria-label={t('coupons.copy_code', 'Copy code')}
+											class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-dashed border-[var(--color-primary)]/60 px-3 py-2 font-mono text-sm font-bold tracking-widest text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/5"
+										>
+											{#if copiedId === coupon.id}
+												<Check size={15} />
+											{:else}
+												<Copy size={15} />
+											{/if}
+											{coupon.code}
+										</button>
+									{:else}
+										<a
+											href={dealPath(coupon)}
+											class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-dashed border-[var(--color-primary)]/60 px-3 py-2 text-sm font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/5"
+										>
+											<ExternalLink size={15} />
+											{t('coupons.claim', 'Claim')}
+										</a>
+									{/if}
+								</div>
+							</article>
+						{/each}
+					</div>
+				{:else}
+					<!-- List view: costgoat-style table (Provider / Category / Deal / Details / Claim) -->
 				<div class="hidden overflow-x-auto sm:block">
 					<table class="w-full border-collapse text-left text-sm">
 						<thead>
@@ -385,6 +622,9 @@
 								<th class="px-3 py-2 font-medium">{t('deals.table.deal', 'Deal')}</th>
 								<th class="px-3 py-2 font-medium">{t('deals.table.details', 'Details')}</th>
 								<th class="px-3 py-2 font-medium">{t('deals.table.claim', 'Claim')}</th>
+								{#if data.canManage}
+									<th class="px-3 py-2 font-medium"><span class="sr-only">{t('deal.edit', 'Edit')}</span></th>
+								{/if}
 							</tr>
 						</thead>
 						<tbody>
@@ -445,6 +685,18 @@
 											{t('coupons.claim', 'Claim')}
 										</span>
 									</td>
+									{#if data.canManage}
+										<td class="px-3 py-3">
+											<button
+												type="button"
+												onclick={(e) => openEdit(e, coupon)}
+												class="grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+												aria-label={t('deal.edit', 'Edit')}
+											>
+												<Pencil size={14} />
+											</button>
+										</td>
+									{/if}
 								</tr>
 							{/each}
 						</tbody>
@@ -454,11 +706,8 @@
 				<!-- Mobile: compact stacked rows, same click-through -->
 				<div class="sm:hidden">
 					{#each filteredCoupons as coupon (coupon.id)}
-						<a
-							href={dealPath(coupon)}
-							class="flex items-start justify-between gap-3 border-b border-[var(--color-border)] py-3"
-						>
-							<div class="min-w-0">
+						<div class="flex items-start justify-between gap-3 border-b border-[var(--color-border)] py-3">
+							<a href={dealPath(coupon)} class="min-w-0 flex-1">
 								<div class="flex items-center gap-1.5">
 									<h2 class="truncate text-sm font-semibold text-[var(--color-text)]">
 										{coupon.title}
@@ -476,19 +725,32 @@
 										{coupon.description}
 									</p>
 								{/if}
-							</div>
-							<span
-								class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
-							>
-								{#if discountLabel(coupon)}
-									{discountLabel(coupon)}
-								{:else}
-									<ExternalLink size={14} />
+							</a>
+							<div class="flex shrink-0 items-center gap-1">
+								<span
+									class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
+								>
+									{#if discountLabel(coupon)}
+										{discountLabel(coupon)}
+									{:else}
+										<ExternalLink size={14} />
+									{/if}
+								</span>
+								{#if data.canManage}
+									<button
+										type="button"
+										onclick={(e) => openEdit(e, coupon)}
+										class="grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+										aria-label={t('deal.edit', 'Edit')}
+									>
+										<Pencil size={14} />
+									</button>
 								{/if}
-							</span>
-						</a>
+							</div>
+						</div>
 					{/each}
-				</div>
+					</div>
+				{/if}
 			{/if}
 
 			{#if hasMore}
@@ -513,4 +775,31 @@
 			{/if}
 		{/if}
 	</div>
+
+	{#if data.canManage}
+		<Modal
+			bind:open={editOpen}
+			onOpenChange={(v) => {
+				if (!v) editingCoupon = null;
+			}}
+			icon={Pencil}
+			title={t('deals.edit_deal', 'Edit deal')}
+			size="max-w-[640px]"
+		>
+			{#if editingCoupon}
+				{#key editingCoupon.id}
+					<DealForm
+						mode="edit"
+						audience="staff"
+						coupon={editingCoupon}
+						providers={data.providers}
+						canManageProviders={data.canManageProviders}
+						currencies={data.currencies}
+						onsaved={onEditSaved}
+						oncancel={closeEdit}
+					/>
+				{/key}
+			{/if}
+		</Modal>
+	{/if}
 </div>

@@ -26,21 +26,17 @@ export const load: PageServerLoad = async (event) => {
 	let milestones: PlanningMilestone[] = [];
 	let checkins: PlanningCheckin[] = [];
 	if (group && authed) {
-		try {
-			members = (await apiList<MemberDTO>(ctx, `/planning-groups/${id}/members`)).items;
-		} catch {
-			members = [];
-		}
-		try {
-			milestones = (await apiList<PlanningMilestone>(ctx, `/planning-groups/${id}/milestones`)).items;
-		} catch {
-			milestones = [];
-		}
-		try {
-			checkins = (await apiList<PlanningCheckin>(ctx, `/planning-groups/${id}/checkins`)).items;
-		} catch {
-			checkins = [];
-		}
+		[members, milestones, checkins] = await Promise.all([
+			apiList<MemberDTO>(ctx, `/planning-groups/${id}/members`)
+				.then((r) => r.items)
+				.catch(() => [] as MemberDTO[]),
+			apiList<PlanningMilestone>(ctx, `/planning-groups/${id}/milestones`)
+				.then((r) => r.items)
+				.catch(() => [] as PlanningMilestone[]),
+			apiList<PlanningCheckin>(ctx, `/planning-groups/${id}/checkins`)
+				.then((r) => r.items)
+				.catch(() => [] as PlanningCheckin[])
+		]);
 	}
 
 	return { group, members, milestones, checkins, authed, currentUserId, loadError };

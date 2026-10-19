@@ -11,6 +11,7 @@
 	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import { pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
+	import { flagUrl } from '$lib/utils/flags';
 	import type { Space } from '$lib/types';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -468,7 +469,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						title={space.name}
 						subtitle={spaceTypeMap[space.space_type_id] ?? 'Space'}
 						description={cardExcerpt(space) || null}
-						imageUrl={space.logo_url}
+						imageUrl={(space.level === 'country' && flagUrl(space.geo_code)) || space.logo_url}
 						fallback={space.name.charAt(0).toUpperCase()}
 						hueSeed={space.id}
 						meta={cardMeta}

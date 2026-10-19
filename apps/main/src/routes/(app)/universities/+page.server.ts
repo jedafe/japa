@@ -35,31 +35,33 @@ export const load: PageServerLoad = async (event) => {
 	const cityParam = event.url.searchParams.get('city') ?? '';
 	const defaultCountry = event.locals.user?.content_country_preference ?? null;
 
-	// Canonical country list for the filter dropdown (ADR-005). Loaded first
-	// because a state selection also implies its parent country — resolved via
-	// the countries' ids — on hand-crafted URLs like ?state=lagos.
-	let countries: GeoCountry[] = [];
-	try {
-		countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
-	} catch {
-		countries = [];
-	}
+	// Canonical country list for the filter dropdown (ADR-005) plus the
+	// ?state= / ?city= space resolutions — all three only need URL params,
+	// so they ride one wave. A state selection implies its parent country —
+	// resolved via the countries' ids — on hand-crafted URLs like
+	// ?state=lagos.
+	const [countries, stateDetail, cityDetail] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		stateParam
+			? apiGet<SpaceDetail>(ctx, `/spaces/${encodeURIComponent(stateParam)}`).catch(() => null)
+			: Promise.resolve(null),
+		cityParam && !stateParam
+			? apiGet<SpaceDetail>(ctx, `/spaces/${encodeURIComponent(cityParam)}`).catch(() => null)
+			: Promise.resolve(null)
+	]);
 
 	// Resolve the state space when ?state= is set: its id feeds the cities
 	// endpoint and its parent_id lets a state-only URL imply the country,
 	// which wins over the user-preference default.
 	let effectiveCountry = explicitCountry ?? defaultCountry;
 	let stateSpaceId: string | null = null;
-	if (stateParam) {
-		try {
-			const detail = await apiGet<SpaceDetail>(ctx, `/spaces/${encodeURIComponent(stateParam)}`);
-			stateSpaceId = detail.space.id;
-			if (!explicitCountry && detail.space.parent_id) {
-				const parent = countries.find((c) => c.id === detail.space.parent_id);
-				if (parent) effectiveCountry = parent.geo_code;
-			}
-		} catch {
-			// Unknown slug — the backend within filter simply matches nothing.
+	if (stateDetail) {
+		stateSpaceId = stateDetail.space.id;
+		if (!explicitCountry && stateDetail.space.parent_id) {
+			const parent = countries.find((c) => c.id === stateDetail.space.parent_id);
+			if (parent) effectiveCountry = parent.geo_code;
 		}
 	}
 
@@ -68,18 +70,11 @@ export const load: PageServerLoad = async (event) => {
 	// resolves server-side — the state/city dropdowns render populated and
 	// selected instead of dead.
 	let resolvedStateSlug: string | null = null;
-	if (cityParam && !stateParam) {
-		try {
-			const detail = await apiGet<SpaceDetail>(ctx, `/spaces/${encodeURIComponent(cityParam)}`);
-			if (detail.space.level === 'city' && detail.space.parent_id) {
-				stateSpaceId = detail.space.parent_id;
-				if (!explicitCountry && detail.space.geo_code) {
-					const parent = countries.find((c) => c.geo_code === detail.space.geo_code);
-					if (parent) effectiveCountry = parent.geo_code;
-				}
-			}
-		} catch {
-			// Unknown slug — the backend within filter simply matches nothing.
+	if (cityDetail && cityDetail.space.level === 'city' && cityDetail.space.parent_id) {
+		stateSpaceId = cityDetail.space.parent_id;
+		if (!explicitCountry && cityDetail.space.geo_code) {
+			const parent = countries.find((c) => c.geo_code === cityDetail.space.geo_code);
+			if (parent) effectiveCountry = parent.geo_code;
 		}
 	}
 
@@ -98,39 +93,37 @@ export const load: PageServerLoad = async (event) => {
 	const sort = event.url.searchParams.get('sort');
 	if (sort) params.set('sort', sort);
 
-	// State options for the effective country, and city options for the
-	// selected state (its UUID is required by the cities endpoint).
-	let states: GeoState[] = [];
-	let cities: GeoCity[] = [];
-	if (effectiveCountry) {
-		try {
-			states = (await apiList<GeoState>(ctx, `/geo/countries/${encodeURIComponent(effectiveCountry)}/states`)).items;
-		} catch {
-			states = [];
-		}
-	}
+	// State options for the effective country ride the same wave as the
+	// universities list — both are settled once effectiveCountry is known.
+	const [states, uniResult] = await Promise.all([
+		effectiveCountry
+			? apiList<GeoState>(ctx, `/geo/countries/${encodeURIComponent(effectiveCountry)}/states`)
+					.then((r) => r.items)
+					.catch(() => [] as GeoState[])
+			: Promise.resolve([] as GeoState[]),
+		apiList<University>(ctx, `/universities?${params.toString()}`)
+			.then((result) => ({ items: result.items, meta: result.meta }))
+			.catch(() => ({ items: [] as University[], meta: undefined }))
+	]);
+	const universities = uniResult.items;
+	const meta = uniResult.meta;
+
 	const selectedStateId = states.find((s) => s.slug === stateParam)?.id ?? stateSpaceId;
 	if (!stateParam && stateSpaceId) {
 		// City-only URL — the resolved parent state's slug preselects the
 		// state dropdown (and lets the next UI change emit a canonical URL).
 		resolvedStateSlug = states.find((s) => s.id === stateSpaceId)?.slug ?? null;
 	}
+
+	// City options for the selected state (its UUID is required by the
+	// cities endpoint — a genuine dependency on the states wave).
+	let cities: GeoCity[] = [];
 	if ((stateParam || cityParam) && selectedStateId) {
 		try {
 			cities = (await apiList<GeoCity>(ctx, `/geo/states/${selectedStateId}/cities`)).items;
 		} catch {
 			cities = [];
 		}
-	}
-
-	let universities: University[] = [];
-	let meta: ListMeta | undefined;
-	try {
-		const result = await apiList<University>(ctx, `/universities?${params.toString()}`);
-		universities = result.items;
-		meta = result.meta;
-	} catch {
-		universities = [];
 	}
 
 	return {

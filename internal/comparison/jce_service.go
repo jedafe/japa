@@ -1063,6 +1063,115 @@ func (s *Service) GetJCEComparisonMatrix(ctx context.Context, id pgtype.UUID) ([
 	return s.GetComparisonMatrix(ctx, id)
 }
 
+// JCEComparisonPage is the batched detail + matrix payload for the comparison
+// detail page — the SSR frontend previously issued two requests that each
+// re-fetched the same items/dimensions rows.
+type JCEComparisonPage struct {
+	Comparison JCEComparison
+	Matrix     []ComparisonMatrixItem
+}
+
+// GetJCEComparisonPage resolves a comparison by ID or slug and returns the
+// detail payload together with the assembled matrix, fetching the shared
+// items/dimensions rows once. Callers must enforce visibility before
+// returning to users.
+func (s *Service) GetJCEComparisonPage(ctx context.Context, idOrSlug string) (JCEComparisonPage, error) {
+	var id pgtype.UUID
+
+	var slug *string
+
+	if parsed, err := uuid.Parse(idOrSlug); err == nil {
+		id = pgtype.UUID{Bytes: parsed, Valid: true}
+	} else {
+		slug = &idOrSlug
+	}
+
+	contentRow, err := s.store.getComparisonBySlugOrID(ctx, id, slug)
+	if err != nil {
+		return JCEComparisonPage{}, fmt.Errorf("getting comparison: %w", err)
+	}
+
+	var (
+		metadata gen.ComparisonContentMetadatum
+		items    []gen.ListComparisonItemsByContentRow
+		dims     []gen.ListComparisonDimensionsByContentRow
+		values   []gen.ComparisonValue
+	)
+
+	// Metadata, items, dimensions, and values depend only on the resolved
+	// content ID — fetch them in one concurrent wave.
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		var err error
+		metadata, err = s.store.getComparisonContentMetadata(gctx, contentRow.ID)
+		if err != nil {
+			return fmt.Errorf("getting comparison metadata: %w", err)
+		}
+
+		return nil
+	})
+	g.Go(func() error {
+		var err error
+		items, err = s.store.listComparisonItemsByContent(gctx, contentRow.ID)
+		if err != nil {
+			return fmt.Errorf("listing comparison items: %w", err)
+		}
+
+		return nil
+	})
+	g.Go(func() error {
+		var err error
+		dims, err = s.store.listComparisonDimensionsByContent(gctx, contentRow.ID)
+		if err != nil {
+			return fmt.Errorf("listing comparison dimensions: %w", err)
+		}
+
+		return nil
+	})
+	g.Go(func() error {
+		var err error
+		values, err = s.store.getComparisonValuesByContent(gctx, contentRow.ID)
+		if err != nil {
+			return fmt.Errorf("listing values for matrix: %w", err)
+		}
+
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return JCEComparisonPage{}, err
+	}
+
+	dedupedItems, itemIDMap := dedupeComparisonItems(items)
+	dedupedDims, dimIDMap := dedupeComparisonDimensions(dims)
+
+	cmp := JCEComparison{
+		Content:    contentRow,
+		Metadata:   metadata,
+		Items:      dedupedItems,
+		Dimensions: dedupedDims,
+	}
+
+	for _, it := range dedupedItems {
+		if it.TypeID.Valid {
+			typeRow, err := s.store.getComparisonTypeByID(ctx, it.TypeID)
+			if err == nil {
+				cmp.TypeSlug = typeRow.Slug
+			}
+
+			break
+		}
+	}
+
+	matrix, err := s.assembleComparisonMatrix(ctx, dedupedItems, itemIDMap, dedupedDims, dimIDMap, values)
+	if err != nil {
+		return JCEComparisonPage{}, err
+	}
+
+	return JCEComparisonPage{Comparison: cmp, Matrix: matrix}, nil
+}
+
 // defaultSelectionTokenTTL is the fallback lifetime of a guest comparison selection token (15 minutes).
 const defaultSelectionTokenTTL = 15 * time.Minute
 

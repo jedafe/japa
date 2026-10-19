@@ -53,22 +53,28 @@ export const load: PageServerLoad = async (event) => {
 	const fromSpace = event.url.searchParams.get('from_space') === '1';
 
 	try {
-		const idx = await apiGetEnvelope<WikiPageIndex[]>(
+		// All three calls depend only on space_slug — one wave. The index
+		// fetch stays the 404 gate; detail and categories fail soft.
+		const idxPromise = apiGetEnvelope<WikiPageIndex[]>(
 			ctx,
 			`/wiki/${encodeURIComponent(spaceSlug)}`
 		);
-		const indexEnvelope = idx as unknown as WikiIndexEnvelope;
-		const items = indexEnvelope.data ?? [];
-		const spaceDetail = await apiGet<SpaceDetail>(
+		const spaceDetailPromise = apiGet<SpaceDetail>(
 			ctx,
 			`/spaces/${encodeURIComponent(spaceSlug)}`
 		).catch(() => null);
 		// Scoped category set + scope flag — university spaces get the
 		// university categories and a university search input (§80 amendment).
-		const catRes = await apiGetEnvelope<WikiApiCategory[]>(
+		const catPromise = apiGetEnvelope<WikiApiCategory[]>(
 			ctx,
 			`/wiki/categories?space=${encodeURIComponent(spaceSlug)}`
 		).catch(() => null);
+
+		const idx = await idxPromise;
+		const indexEnvelope = idx as unknown as WikiIndexEnvelope;
+		const items = indexEnvelope.data ?? [];
+		const spaceDetail = await spaceDetailPromise;
+		const catRes = await catPromise;
 		// §16 explore_map — state/city spaces carry a *local* geo_code ("AD"),
 		// not a full ISO-3166-2 ("NG-AD"). Resolve ancestor geo_codes so the
 		// wiki map can pin the admin-1 unit, highlight the parent country, and

@@ -49,41 +49,8 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
-	let form: AssessmentForm | null = null;
 	let disabled = false;
-	try {
-		form = await apiGet<AssessmentForm>(ctx, '/assessment');
-	} catch (e) {
-		if (e instanceof ApiError && (e.code === 'assessment_disabled' || e.code === 'no_active_assessment' || e.status === 404)) {
-			disabled = true;
-		}
-	}
-
-	// Phase 33.02 — fetch the authenticated user's score history so the page
-	// can render the score history LineChart. Best-effort: guests and any
-	// backend error degrade to an empty list.
-	let history: AssessmentHistoryEntry[] = [];
-	if (authed) {
-		try {
-			history = (await apiList<AssessmentHistoryEntry>(ctx, '/assessment/history?limit=50')).items;
-		} catch {
-			history = [];
-		}
-	}
-
-	// Journey field option lists. The form uses dynamic custom-field options
-	// for stage/visa/purpose, but country selectors are populated from the
-	// canonical Spaces directory (ADR-064) so the list is never hardcoded.
-	let journeyOptions: JourneyOptions = { purposes: [], stages: [], visa_routes: [] };
-	let countryOptions: CountryOption[] = [];
-
-	try {
-		journeyOptions = await apiGet<JourneyOptions>(ctx, '/feed/journey-options');
-	} catch {
-		journeyOptions = { purposes: [], stages: [], visa_routes: [] };
-	}
-
-	try {
+	const loadCountries = async (): Promise<CountryOption[]> => {
 		const allSpaces: SpaceOption[] = [];
 		let offset = 0;
 		while (true) {
@@ -96,13 +63,36 @@ export const load: PageServerLoad = async (event) => {
 			if (meta?.total && allSpaces.length >= meta.total) break;
 			offset += items.length;
 		}
-		countryOptions = allSpaces
+		return allSpaces
 			.filter((s) => s.geo_code)
 			.map((s) => ({ value: s.geo_code as string, label: s.name }))
 			.sort((a, b) => a.label.localeCompare(b.label));
-	} catch {
-		countryOptions = [];
-	}
+	};
+
+	const [form, history, journeyOptions, countryOptions] = await Promise.all([
+		apiGet<AssessmentForm>(ctx, '/assessment').catch((e) => {
+			if (e instanceof ApiError && (e.code === 'assessment_disabled' || e.code === 'no_active_assessment' || e.status === 404)) {
+				disabled = true;
+			}
+			return null;
+		}),
+		// Phase 33.02 — fetch the authenticated user's score history so the
+		// page can render the score history LineChart. Best-effort: guests and
+		// any backend error degrade to an empty list.
+		authed
+			? apiList<AssessmentHistoryEntry>(ctx, '/assessment/history?limit=50')
+					.then((r) => r.items)
+					.catch(() => [] as AssessmentHistoryEntry[])
+			: Promise.resolve([] as AssessmentHistoryEntry[]),
+		// Journey field option lists. The form uses dynamic custom-field
+		// options for stage/visa/purpose, but country selectors are populated
+		// from the canonical Spaces directory (ADR-064) so the list is never
+		// hardcoded.
+		apiGet<JourneyOptions>(ctx, '/feed/journey-options').catch(
+			() => ({ purposes: [], stages: [], visa_routes: [] }) as JourneyOptions
+		),
+		loadCountries().catch(() => [] as CountryOption[])
+	]);
 
 	return { form, disabled, authed, history, journeyOptions, countryOptions };
 };

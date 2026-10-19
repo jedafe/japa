@@ -21,6 +21,10 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const id = event.params.id;
 
+	const countriesPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then((r) => r.items)
+		.catch(() => [] as GeoCountry[]);
+
 	let session: AMAThread;
 	try {
 		// ?raw=1 keeps authored {{...}} literals unresolved for the edit form.
@@ -39,13 +43,7 @@ export const load: PageServerLoad = async (event) => {
 		throw error(403, { code: 'not_owner', message: 'Only the host or a moderator can edit this AMA' });
 	}
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
+	const countries = await countriesPromise;
 
 	return { session, countries, user: event.locals.user, features };
 };

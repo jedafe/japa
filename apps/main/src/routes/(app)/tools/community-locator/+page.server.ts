@@ -45,26 +45,27 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
-	// Destination list — the geo-aware selector source (Rule 16).
+	// Destination list — the geo-aware selector source (Rule 16), fetched in
+	// the same wave as the BUG-005 org-type allow-list (independent catalogs).
 	let destinations: GeoCountry[] = [];
 	let disabled = false;
-	try {
-		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
-	} catch (e) {
-		if (e instanceof ApiError && (e.status === 404 || e.code === 'community_locator_disabled')) {
-			disabled = true;
-		}
-		// Other errors: leave destinations empty; page shows an empty state.
-	}
-
-	// BUG-005: org-type allow-list from the backend (Rule 16). Falls back
-	// to an empty list on error; the page renders an empty select.
-	let orgTypes: OrgTypeOption[] = [];
-	try {
-		orgTypes = (await apiList<OrgTypeOption>(ctx, '/community-locator/org-types')).items;
-	} catch {
-		orgTypes = [];
-	}
+	const [destinationsRes, orgTypes] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch((e) => {
+				if (e instanceof ApiError && (e.status === 404 || e.code === 'community_locator_disabled')) {
+					disabled = true;
+				}
+				// Other errors: leave destinations empty; page shows an empty state.
+				return [] as GeoCountry[];
+			}),
+		// BUG-005: org-type allow-list from the backend (Rule 16). Falls back
+		// to an empty list on error; the page renders an empty select.
+		apiList<OrgTypeOption>(ctx, '/community-locator/org-types')
+			.then((r) => r.items)
+			.catch(() => [] as OrgTypeOption[])
+	]);
+	destinations = destinationsRes;
 
 	// If ?dest= is present, fetch community orgs for that destination so the
 	// page renders with content on first paint (SSR). Filters (?type=,

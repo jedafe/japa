@@ -21,6 +21,33 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
+	// §39 — Resolve the comparison picker URL from the backend's redirect
+	// endpoint (GET /universities/{slug}/compare) rather than hardcoding the
+	// /compare/universities path and query shape in the frontend. Only needs
+	// the slug — same wave as the detail fetch.
+	const comparePromise = ctx
+		.fetch(buildApiUrl(`/universities/${slug}/compare`, API_BASE), {
+			method: 'GET',
+			headers: {
+				host: ctx.host,
+				'x-forwarded-host': ctx.host,
+				'x-jc-surface': JC_SURFACE,
+				...(ctx.clientIP ? { 'x-forwarded-for': ctx.clientIP } : {})
+			},
+			redirect: 'manual'
+		})
+		.then((res) => {
+			const location = res.headers.get('location');
+			if (location && res.status >= 300 && res.status < 400) {
+				// The backend returns a relative path; strip any origin prefix
+				// if it is ever configured to return an absolute URL.
+				return location.replace(/^https?:\/\/[^/]+/, '');
+			}
+			return `/compare?type=universities&source=university&preselect=${encodeURIComponent(slug)}`;
+		})
+		.catch(() => `/compare?type=universities&source=university&preselect=${encodeURIComponent(slug)}`);
+	const parentPromise = event.parent();
+
 	let university: UniversityDetail;
 	try {
 		university = await apiGet<UniversityDetail>(ctx, `/universities/${slug}`);
@@ -31,37 +58,19 @@ export const load: PageServerLoad = async (event) => {
 		throw error(500, { code: 'internal_error', message: 'Failed to load university' });
 	}
 
-	// §39 — Resolve the comparison picker URL from the backend's redirect
-	// endpoint (GET /universities/{slug}/compare) rather than hardcoding the
-	// /compare/universities path and query shape in the frontend.
-	let compareHref = `/compare?type=universities&source=university&preselect=${encodeURIComponent(slug)}`;
-	try {
-		const res = await ctx.fetch(buildApiUrl(`/universities/${slug}/compare`, API_BASE), {
-			method: 'GET',
-			headers: {
-				host: ctx.host,
-				'x-forwarded-host': ctx.host,
-				'x-jc-surface': JC_SURFACE,
-				...(ctx.clientIP ? { 'x-forwarded-for': ctx.clientIP } : {})
-			},
-			redirect: 'manual'
-		});
-		const location = res.headers.get('location');
-		if (location && res.status >= 300 && res.status < 400) {
-			// The backend returns a relative path; strip any origin prefix if
-			// it is ever configured to return an absolute URL.
-			compareHref = location.replace(/^https?:\/\/[^/]+/, '');
-		}
-	} catch {
-		// Keep the fallback path if the redirect endpoint is unavailable.
-	}
+	// §80 amendment — university spaces may carry community wiki pages.
+	// Gated by the wiki.enabled feature flag; a 404/empty index just means the
+	// space has no wiki pages yet.
+	const parent = await parentPromise;
+	const features = (parent?.features as Record<string, boolean> | undefined) ?? {};
+	const wikiEnabled = !!features['wiki.enabled'];
 
 	// Best-effort fetch of all tab content in parallel. Each degrades to [] on
 	// failure so a single endpoint outage never blanks the whole page.
 	// Reviews use the canonical catalog routes (Section 29):
 	// GET /reviews/{entity_type}/{entity_id} and .../aggregate.
 	// Space content and membership are slug-routed, not UUID-routed.
-	const [spaceContent, reviews, reviewAggregate, members, programs] = await Promise.all([
+	const [spaceContent, reviews, reviewAggregate, members, programs, wikiPages] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/spaces/${university.slug}/content?page_size=10`)
 			.then((r) => r.items)
 			.catch(() => []),
@@ -77,7 +86,12 @@ export const load: PageServerLoad = async (event) => {
 		// §39 — institutional degree offerings (Programs tab).
 		apiList<CourseOffering>(ctx, `/universities/${university.slug}/courses?limit=20`)
 			.then((r) => r.items)
-			.catch(() => [])
+			.catch(() => []),
+		wikiEnabled
+			? apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
+					.then((r) => r.items)
+					.catch(() => [] as WikiPageIndex[])
+			: Promise.resolve([] as WikiPageIndex[])
 	]);
 
 	// Posts = all space content; Forums = forum_thread subset. Splitting here
@@ -86,18 +100,7 @@ export const load: PageServerLoad = async (event) => {
 	const posts = spaceContent;
 	const forums = spaceContent.filter((c) => c.content_type === 'forum_thread');
 
-	// §80 amendment — university spaces may carry community wiki pages.
-	// Gated by the wiki.enabled feature flag; a 404/empty index just means the
-	// space has no wiki pages yet.
-	const parent = await event.parent();
-	const features = (parent?.features as Record<string, boolean> | undefined) ?? {};
-	const wikiEnabled = !!features['wiki.enabled'];
-	let wikiPages: WikiPageIndex[] = [];
-	if (wikiEnabled) {
-		wikiPages = await apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
-			.then((r) => r.items)
-			.catch(() => []);
-	}
+	const compareHref = await comparePromise;
 
 	return { university, posts, reviews, reviewAggregate, members, forums, programs, wikiEnabled, wikiPages, compareHref };
 };

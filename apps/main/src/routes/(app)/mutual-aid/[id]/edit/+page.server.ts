@@ -17,6 +17,13 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const id = event.params.id;
 
+	// Form catalogs don't depend on the post — same wave.
+	const catalogsPromise = Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries').then((r) => r.items),
+		apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/post-types'),
+		apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/categories')
+	]).catch(() => null);
+
 	let post: MutualAidPost;
 	try {
 		post = await apiGet<MutualAidPost>(ctx, `/mutual-aid/${id}?raw=1`);
@@ -32,25 +39,10 @@ export const load: PageServerLoad = async (event) => {
 		throw error(403, { code: 'forbidden', message: 'You can only edit your own posts' });
 	}
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
-	let postTypes: MutualAidPostType[] = [];
-	let categories: MutualAidCategory[] = [];
-	try {
-		const pt = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/post-types');
-		postTypes = (pt ?? []).map((o) => o.value as MutualAidPostType);
-		const cat = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/categories');
-		categories = (cat ?? []).map((o) => o.value as MutualAidCategory);
-	} catch {
-		postTypes = [];
-		categories = [];
-	}
+	const catalogs = await catalogsPromise;
+	const countries = catalogs?.[0] ?? ([] as GeoCountry[]);
+	const postTypes = (catalogs?.[1] ?? []).map((o) => o.value as MutualAidPostType);
+	const categories = (catalogs?.[2] ?? []).map((o) => o.value as MutualAidCategory);
 
 	return { post, countries, postTypes, categories };
 };

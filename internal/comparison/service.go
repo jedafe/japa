@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"golang.org/x/sync/errgroup"
 )
 
 // ---------------------------------------------------------------------------
@@ -1563,26 +1564,67 @@ type ComparisonMatrixDimension struct { //nolint:revive // stuttering type name 
 // Duplicate item or dimension rows (same position + title/label) are collapsed and
 // their values are merged so the matrix never renders repeated columns or rows.
 func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID) ([]ComparisonMatrixItem, error) {
-	items, err := s.store.listComparisonItemsByContent(ctx, contentID)
-	if err != nil {
-		return nil, fmt.Errorf("listing items for matrix: %w", err)
+	var (
+		items      []gen.ListComparisonItemsByContentRow
+		dimensions []gen.ListComparisonDimensionsByContentRow
+		values     []gen.ComparisonValue
+	)
+
+	// Items, dimensions, and values depend only on contentID — fetch them
+	// concurrently rather than stacking sequential round-trips.
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		var err error
+		items, err = s.store.listComparisonItemsByContent(gctx, contentID)
+		if err != nil {
+			return fmt.Errorf("listing items for matrix: %w", err)
+		}
+
+		return nil
+	})
+	g.Go(func() error {
+		var err error
+		dimensions, err = s.store.listComparisonDimensionsByContent(gctx, contentID)
+		if err != nil {
+			return fmt.Errorf("listing dimensions for matrix: %w", err)
+		}
+
+		return nil
+	})
+	g.Go(func() error {
+		var err error
+		// Fetch all values in a single query instead of M×N individual lookups.
+		values, err = s.store.getComparisonValuesByContent(gctx, contentID)
+		if err != nil {
+			return fmt.Errorf("listing values for matrix: %w", err)
+		}
+
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	dedupedItems, itemIDMap := dedupeComparisonItems(items)
-
-	dimensions, err := s.store.listComparisonDimensionsByContent(ctx, contentID)
-	if err != nil {
-		return nil, fmt.Errorf("listing dimensions for matrix: %w", err)
-	}
-
 	dedupedDimensions, dimIDMap := dedupeComparisonDimensions(dimensions)
 
-	// Fetch all values in a single query instead of M×N individual lookups.
-	values, err := s.store.getComparisonValuesByContent(ctx, contentID)
-	if err != nil {
-		return nil, fmt.Errorf("listing values for matrix: %w", err)
-	}
+	return s.assembleComparisonMatrix(ctx, dedupedItems, itemIDMap, dedupedDimensions, dimIDMap, values)
+}
 
+// assembleComparisonMatrix builds the items×dimensions matrix from already
+// fetched, deduplicated rows — shared by GetComparisonMatrix (standalone
+// endpoint) and GetJCEComparisonPage (batched detail+matrix endpoint), which
+// both need the same value indexing, item_ref resolution, and fx handling.
+func (s *Service) assembleComparisonMatrix(
+	ctx context.Context,
+	dedupedItems []gen.ListComparisonItemsByContentRow,
+	itemIDMap map[pgtype.UUID]pgtype.UUID,
+	dedupedDimensions []gen.ListComparisonDimensionsByContentRow,
+	dimIDMap map[pgtype.UUID]pgtype.UUID,
+	values []gen.ComparisonValue,
+) ([]ComparisonMatrixItem, error) {
 	// Index values by (dedupedItemID, dedupedDimensionID), merging any values
 	// attached to removed duplicate rows into the surviving row.
 	type valueKey struct {

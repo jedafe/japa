@@ -26,35 +26,18 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
-	let factors: CrsFactorsResponse | null = null;
-	try {
-		factors = await apiGet<CrsFactorsResponse>(ctx, '/crs/factors');
-	} catch {
-		factors = null;
-	}
-
-	let latestDraws: CrsDraw[] = [];
-	try {
-		latestDraws = await apiGet<CrsDraw[]>(ctx, '/crs/draws/latest');
-	} catch {
-		latestDraws = [];
-	}
-
-	let drawHistory: CrsDraw[] = [];
-	try {
-		drawHistory = (await apiList<CrsDraw>(ctx, '/crs/draws?limit=40')).items;
-	} catch {
-		drawHistory = [];
-	}
-
-	let scoreHistory: CrsScoreHistoryItem[] = [];
-	if (authed) {
-		try {
-			scoreHistory = (await apiList<CrsScoreHistoryItem>(ctx, '/me/crs-scores')).items;
-		} catch {
-			scoreHistory = [];
-		}
-	}
+	const [factors, latestDraws, drawHistory, scoreHistory] = await Promise.all([
+		apiGet<CrsFactorsResponse>(ctx, '/crs/factors').catch(() => null),
+		apiGet<CrsDraw[]>(ctx, '/crs/draws/latest').catch(() => [] as CrsDraw[]),
+		apiList<CrsDraw>(ctx, '/crs/draws?limit=40')
+			.then((r) => r.items)
+			.catch(() => [] as CrsDraw[]),
+		authed
+			? apiList<CrsScoreHistoryItem>(ctx, '/me/crs-scores')
+					.then((r) => r.items)
+					.catch(() => [] as CrsScoreHistoryItem[])
+			: Promise.resolve([] as CrsScoreHistoryItem[])
+	]);
 
 	return { factors, latestDraws, drawHistory, scoreHistory, authed };
 };

@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { Scholarship, SavedScholarship } from '$lib/types';
 import { defaultReminderDays } from '$lib/scholarships/defaultReminder';
 
@@ -24,40 +24,26 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const guideId = event.params.guide_id;
 
-	let scholarship: Scholarship | null = null;
-	try {
-		scholarship = await apiGet<Scholarship>(ctx, `/scholarships/${guideId}`);
-	} catch (err) {
-		if (err instanceof ApiError && err.status === 404) {
-			throw error(404, { code: 'scholarship_not_found', message: 'Scholarship not found' });
-		}
-		scholarship = null;
-	}
+	const [scholarshipRes, savedItem, statuses] = await Promise.all([
+		apiGet<Scholarship>(ctx, `/scholarships/${guideId}`).catch(() => null),
+		// Server-side guide_id filter — correct even when the user has more
+		// saved scholarships than a single page would return.
+		event.locals.user
+			? apiList<SavedScholarship>(
+					ctx,
+					`/scholarships/saved?guide_id=${encodeURIComponent(guideId)}&page_size=1`
+				)
+					.then((r) => r.items[0] ?? null)
+					.catch(() => null)
+			: Promise.resolve(null),
+		apiGet<{ value: string; label: string }[]>(ctx, '/scholarships/statuses').catch(
+			() => [] as { value: string; label: string }[]
+		)
+	]);
+	const scholarship = scholarshipRes;
 
 	if (!scholarship) {
 		throw error(404, { code: 'scholarship_not_found', message: 'Scholarship not found' });
-	}
-
-	let savedItem: SavedScholarship | null = null;
-	if (event.locals.user) {
-		try {
-			// Server-side guide_id filter — correct even when the user has more
-			// saved scholarships than a single page would return.
-			const res = await apiList<SavedScholarship>(
-				ctx,
-				`/scholarships/saved?guide_id=${encodeURIComponent(guideId)}&page_size=1`
-			);
-			savedItem = res.items[0] ?? null;
-		} catch {
-			savedItem = null;
-		}
-	}
-
-	let statuses: { value: string; label: string }[] = [];
-	try {
-		statuses = await apiGet<{ value: string; label: string }[]>(ctx, '/scholarships/statuses');
-	} catch {
-		statuses = [];
 	}
 
 	return {

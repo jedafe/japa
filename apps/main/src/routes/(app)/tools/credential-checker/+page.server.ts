@@ -33,26 +33,25 @@ export const load: PageServerLoad = async (event) => {
 
 	// Destination country list — the primary data axis (ADR-088). Rule 16.
 	// A 404 or credential_checker_disabled code means the tool is turned off.
+	// Professions (the second selector axis) is independent, so it rides the
+	// same wave and is dropped when the tool reports disabled.
 	let destinations: GeoCountry[] = [];
 	let disabled = false;
-	try {
-		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
-	} catch (e) {
-		if (e instanceof ApiError && (e.status === 404 || e.code === 'credential_checker_disabled')) {
-			disabled = true;
-		}
-		destinations = [];
-	}
-
-	// Professions list — the second selector axis. Public endpoint.
-	let professions: CredentialProfession[] = [];
-	if (!disabled) {
-		try {
-			professions = (await apiList<CredentialProfession>(ctx, '/credentials/professions')).items;
-		} catch {
-			professions = [];
-		}
-	}
+	const [destinationsRes, professionsRes] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch((e) => {
+				if (e instanceof ApiError && (e.status === 404 || e.code === 'credential_checker_disabled')) {
+					disabled = true;
+				}
+				return [] as GeoCountry[];
+			}),
+		apiList<CredentialProfession>(ctx, '/credentials/professions')
+			.then((r) => r.items)
+			.catch(() => [] as CredentialProfession[])
+	]);
+	destinations = destinationsRes;
+	const professions: CredentialProfession[] = disabled ? [] : professionsRes;
 
 	// Optional SSR pre-fetch of pathways when ?dest= and ?profession= are
 	// present in the URL — improves first paint for deep links.

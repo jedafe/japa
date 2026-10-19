@@ -30,25 +30,22 @@ export const load: PageServerLoad = async (event) => {
 	// (Rule 16 — the country list comes from the backend API, never hardcoded).
 	let destinations: GeoCountry[] = [];
 	let disabled = false;
-	try {
-		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
-	} catch (e) {
-		if (e instanceof ApiError && (e.status === 404 || e.code.endsWith('_disabled'))) {
-			disabled = true;
-		}
-		destinations = [];
-	}
-
-	let employmentOptions: CatalogOption[] = [];
-	try {
-		employmentOptions = await apiGet<CatalogOption[]>(
-			ctx,
-			'/catalogs/tax_calculator.employment_status'
-		);
-	} catch (e) {
-		// Non-fatal: fall back to an empty list; the UI can show a plain text input.
-		console.error('failed to load tax calculator employment catalog:', e);
-	}
+	const [destinationsRes, employmentOptions] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch((e) => {
+				if (e instanceof ApiError && (e.status === 404 || e.code.endsWith('_disabled'))) {
+					disabled = true;
+				}
+				return [] as GeoCountry[];
+			}),
+		apiGet<CatalogOption[]>(ctx, '/catalogs/tax_calculator.employment_status').catch((e) => {
+			// Non-fatal: fall back to an empty list; the UI can show a plain text input.
+			console.error('failed to load tax calculator employment catalog:', e);
+			return [] as CatalogOption[];
+		})
+	]);
+	destinations = destinationsRes;
 
 	return { destinations, disabled, authed, employmentOptions };
 };

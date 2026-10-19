@@ -30,19 +30,27 @@ export const load: PageServerLoad = async (event) => {
 	let destinations: GeoCountry[] = [];
 	let disabled = false;
 	let loadError: string | null = null;
-	try {
-		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
-	} catch (e) {
-		if (e instanceof ApiError && (e.status === 404 || e.code === 'appointment_alert_disabled')) {
-			disabled = true;
-		} else if (e instanceof ApiError) {
-			loadError = e.message;
-		} else if (e instanceof Error) {
-			loadError = e.message;
-		} else {
-			loadError = 'Failed to load destinations.';
-		}
-	}
+	const [countriesRes, channelOptions] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch((e) => {
+				if (e instanceof ApiError && (e.status === 404 || e.code === 'appointment_alert_disabled')) {
+					disabled = true;
+				} else if (e instanceof ApiError || e instanceof Error) {
+					loadError = e.message;
+				} else {
+					loadError = 'Failed to load destinations.';
+				}
+				return [] as GeoCountry[];
+			}),
+		apiGet<CatalogOption[]>(ctx, '/catalogs/appointment_alert.notification_channels').catch(
+			(e) => {
+				console.error('failed to load appointment alert notification channel catalog:', e);
+				return [] as CatalogOption[];
+			}
+		)
+	]);
+	destinations = countriesRes;
 
 	// If ?dest= is present, fetch embassies for that destination (SSR).
 	const destParam = event.url.searchParams.get('dest');
@@ -73,16 +81,6 @@ export const load: PageServerLoad = async (event) => {
 	// UI (e.g. the SMS channel checkbox) on the appointment_alert.premium
 	// permission node (§91, ADR-099, Rule 16).
 	const userPermissions = event.locals.user?.permissions ?? [];
-
-	let channelOptions: CatalogOption[] = [];
-	try {
-		channelOptions = await apiGet<CatalogOption[]>(
-			ctx,
-			'/catalogs/appointment_alert.notification_channels'
-		);
-	} catch (e) {
-		console.error('failed to load appointment alert notification channel catalog:', e);
-	}
 
 	return { destinations, embassies, initialDestId, disabled, authed, userPermissions, channelOptions, loadError };
 };

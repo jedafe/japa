@@ -73,43 +73,31 @@ export const load: PageServerLoad = async (event) => {
 	const monthsParam = event.url.searchParams.get('months');
 	const months = monthsParam && /^\d{1,3}$/.test(monthsParam) ? monthsParam : null;
 
-	// Corridor stats.
-	let stats: ProcessingStat[] = [];
-	{
-		const params = new URLSearchParams({ dest: country.id, visa: visaCategory });
-		if (originId) params.set('origin', originId);
-		if (consulate) params.set('consulate', consulate);
-		if (months) params.set('months', months);
-		try {
-			stats = (await apiList<ProcessingStat>(ctx, `/visa-timelines/stats?${params}`)).items;
-		} catch {
-			stats = [];
-		}
-	}
+	// Corridor stats, 12-month trend, and sibling visa categories (SEO
+	// interlinking) are independent — one wave.
+	const statsParams = new URLSearchParams({ dest: country.id, visa: visaCategory });
+	if (originId) statsParams.set('origin', originId);
+	if (consulate) statsParams.set('consulate', consulate);
+	if (months) statsParams.set('months', months);
 
-	// 12-month trend for the corridor.
-	let trend: ProcessingTrendPoint[] = [];
-	{
-		const params = new URLSearchParams({ dest: country.id, visa: visaCategory, months: '12' });
-		if (consulate) params.set('consulate', consulate);
-		try {
-			trend = (await apiList<ProcessingTrendPoint>(ctx, `/visa-timelines/stats/trend?${params}`)).items;
-		} catch {
-			trend = [];
-		}
-	}
+	const trendParams = new URLSearchParams({ dest: country.id, visa: visaCategory, months: '12' });
+	if (consulate) trendParams.set('consulate', consulate);
 
-	// Sibling visa categories for this destination — used for SEO
-	// interlinking ("other visa types for {country}").
-	let siblingCategories: string[] = [];
-	try {
-		const all = (await apiList<ProcessingStat>(ctx, `/visa-timelines/stats?dest=${country.id}`)).items;
-		siblingCategories = [...new Set(all.map((s) => s.visa_category))]
-			.filter((v) => v && v !== visaCategory)
-			.sort();
-	} catch {
-		siblingCategories = [];
-	}
+	const [stats, trend, allSiblingStats] = await Promise.all([
+		apiList<ProcessingStat>(ctx, `/visa-timelines/stats?${statsParams}`)
+			.then((r) => r.items)
+			.catch(() => [] as ProcessingStat[]),
+		apiList<ProcessingTrendPoint>(ctx, `/visa-timelines/stats/trend?${trendParams}`)
+			.then((r) => r.items)
+			.catch(() => [] as ProcessingTrendPoint[]),
+		apiList<ProcessingStat>(ctx, `/visa-timelines/stats?dest=${country.id}`)
+			.then((r) => r.items)
+			.catch(() => [] as ProcessingStat[])
+	]);
+
+	const siblingCategories = [...new Set(allSiblingStats.map((s) => s.visa_category))]
+		.filter((v) => v && v !== visaCategory)
+		.sort();
 
 	return {
 		enabled: true,

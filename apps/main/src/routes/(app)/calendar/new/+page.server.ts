@@ -16,21 +16,15 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
-	// BUG-009: fetch categories from the API (calendar.categories system_setting).
-	let categories: { value: string; label: string }[] = [];
-	try {
-		categories = await apiGet<{ value: string; label: string }[]>(ctx, '/calendar/categories');
-	} catch {
-		categories = [];
-	}
+	const [countries, categories] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		// BUG-009: fetch categories from the API (calendar.categories system_setting).
+		apiGet<{ value: string; label: string }[]>(ctx, '/calendar/categories').catch(
+			() => [] as { value: string; label: string }[]
+		)
+	]);
 
 	return { countries, categories };
 };

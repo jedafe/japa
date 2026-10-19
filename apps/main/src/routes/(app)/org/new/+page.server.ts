@@ -15,22 +15,17 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
-	// BUG-022: Fetch org type options from the API (Rule 16).
-	let orgMeta: OrgMeta | null = null;
-	try {
-		orgMeta = await apiGet<OrgMeta>(apiContext(event), '/organizations/meta');
-	} catch {
-		// Non-fatal — the form falls back to hardcoded options.
-	}
-
-	// Country list sourced from the spaces country table (/geo/countries)
-	// so the country_code picker is never hardcoded (Rule 16).
-	let countries: GeoCountry[] = [];
-	try {
-		countries = (await apiList<GeoCountry>(apiContext(event), '/geo/countries')).items;
-	} catch {
-		countries = [];
-	}
+	const ctx = apiContext(event);
+	const [orgMeta, countries] = await Promise.all([
+		// BUG-022: Fetch org type options from the API (Rule 16). Non-fatal —
+		// the form falls back to hardcoded options.
+		apiGet<OrgMeta>(ctx, '/organizations/meta').catch(() => null),
+		// Country list sourced from the spaces country table (/geo/countries)
+		// so the country_code picker is never hardcoded (Rule 16).
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[])
+	]);
 
 	return { orgMeta, countries };
 };

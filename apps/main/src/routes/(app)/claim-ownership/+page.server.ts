@@ -32,6 +32,11 @@ export const load: PageServerLoad = async (event) => {
 		return { org: null, form: null, claims };
 	}
 
+	// Load the claim-ownership form from the Form Builder (Section 06) in the
+	// same wave as the org — the form slug is configurable via system_settings
+	// 'claim_ownership.form_slug' (default: 'claim-ownership').
+	const formPromise = apiGet<FormEmbed>(ctx, '/forms/claim-ownership/embed').catch(() => null);
+
 	let org: PublicOrganization;
 	try {
 		org = await apiGet<PublicOrganization>(ctx, `/organizations/${slug}`);
@@ -43,15 +48,7 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
-	// Load the claim-ownership form from the Form Builder (Section 06).
-	// The form slug is configurable via system_settings
-	// 'claim_ownership.form_slug' (default: 'claim-ownership').
-	let form: FormEmbed | null = null;
-	try {
-		form = await apiGet<FormEmbed>(ctx, '/forms/claim-ownership/embed');
-	} catch {
-		form = null;
-	}
+	const form = await formPromise;
 
 	return { org, form, claims: [] };
 };
