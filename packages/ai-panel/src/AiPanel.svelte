@@ -70,6 +70,13 @@
 
 	const ctxNow = $derived(aiPageContext.current);
 	const anchor = $derived(ctxNow?.anchor ?? 'panel:general');
+	// Placeholder reflects the effective mode — non-agent users are always
+	// in chat, so they get the generic prompt too.
+	const composerPlaceholder = $derived(
+		agentCapable && mode === 'agent'
+			? pt('ai.panel.placeholder', 'Ask about this page…')
+			: pt('ai.panel.placeholder_chat', 'Message Japa AI…')
+	);
 	const streamChat = createStreamChat();
 
 	// --- Detached-turn polling (trimmed from JapaAIChat) ------------------
@@ -493,8 +500,8 @@
 						bind:value={composer}
 						onkeydown={onKeydown}
 						rows="2"
-						placeholder={pt('ai.panel.placeholder', 'Ask about this page…')}
-						aria-label={pt('ai.panel.placeholder', 'Ask about this page…')}
+						placeholder={composerPlaceholder}
+						aria-label={composerPlaceholder}
 					></textarea>
 					{#if sending}
 						<button
