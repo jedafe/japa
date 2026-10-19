@@ -37,7 +37,7 @@ SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
  m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path,
  ip.id AS academy_instructor_profile_id, ip.display_name AS instructor_name,
  ip.bio AS instructor_bio,
- u.username AS instructor_username,
+ COALESCE(u.public_username, u.username, '') AS instructor_username,
  up.avatar_url AS instructor_avatar_url
 FROM academy_tracks lt
 LEFT JOIN media m ON m.id = lt.cover_media_id
@@ -274,8 +274,8 @@ RETURNING id, user_id, track_id, certificate_number, media_id, issued_at;
 -- name: ListAcademyCertificatesByUser :many
 SELECT lc.id, lc.user_id, lc.track_id, lc.certificate_number, lc.media_id, lc.issued_at,
  lt.title AS track_title, lt.slug AS track_slug,
- u.username AS recipient_username,
- COALESCE(up.display_name, u.username) AS recipient_name
+ COALESCE(u.public_username, u.username, '') AS recipient_username,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS recipient_name
 FROM academy_certificates lc
 LEFT JOIN academy_tracks lt ON lt.id = lc.track_id
 LEFT JOIN users u ON u.id = lc.user_id
@@ -286,8 +286,8 @@ ORDER BY lc.issued_at DESC;
 -- name: GetAcademyCertificateByID :one
 SELECT lc.id, lc.user_id, lc.track_id, lc.certificate_number, lc.media_id, lc.issued_at,
  lt.title AS track_title, lt.slug AS track_slug,
- u.username AS recipient_username,
- COALESCE(up.display_name, u.username) AS recipient_name
+ COALESCE(u.public_username, u.username, '') AS recipient_username,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS recipient_name
 FROM academy_certificates lc
 LEFT JOIN academy_tracks lt ON lt.id = lc.track_id
 LEFT JOIN users u ON u.id = lc.user_id

@@ -87,7 +87,7 @@ SELECT id, entity_id, score, "window", geo_code, computed_at,
 FROM (
  SELECT DISTINCT ON (u.id)
  ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
- u.id AS user_id, u.username, up.display_name, up.avatar_url, up.bio
+ u.id AS user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, up.bio
  FROM trending_snapshots ts
  JOIN users u ON u.id = ts.entity_id
  LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -142,8 +142,8 @@ LIMIT $1;
 -- display_name falls back to username: the LEFT JOIN on user_profiles can
 -- produce NULL (no profile row / empty name) and the API contract exposes
 -- display_name as a non-null string consumed directly by suggestion UIs.
-SELECT DISTINCT u.id, u.username,
- COALESCE(NULLIF(up.display_name, ''), u.username) AS display_name,
+SELECT DISTINCT u.id, COALESCE(u.public_username, u.username, '') AS username,
+ COALESCE(NULLIF(up.display_name, ''), u.public_username, u.username, '') AS display_name,
  up.avatar_url, up.bio,
  COUNT(DISTINCT sm2.space_id) AS shared_spaces,
  COUNT(DISTINCT CASE WHEN sp.geo_code = sqlc.narg(geo_code) THEN sm2.space_id END) AS geo_shared_spaces

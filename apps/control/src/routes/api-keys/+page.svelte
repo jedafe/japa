@@ -84,6 +84,9 @@
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 	let selectedIds = $state(new Set<string>());
 
+	let bulkConfirmOpen = $state(false);
+	let pendingBulk = $state<{ action: 'suspend' | 'revoke' | 'delete'; ids: string[] } | null>(null);
+
 	let createModalOpen = $state(false);
 	let availableScopes = $state<{ value: string; label: string; description: string }[]>([]);
 
@@ -130,19 +133,16 @@
 				}
 				return true;
 			})
-			.sort((a, b) => {
-				if (!sortKey) return 0;
-				const aVal = String((a as unknown as Record<string, unknown>)[sortKey] ?? '');
-				const bVal = String((b as unknown as Record<string, unknown>)[sortKey] ?? '');
-				const cmp = aVal.localeCompare(bVal);
-				return sortDirection === 'asc' ? cmp : -cmp;
-			})
 	);
 
 	let totalRows = $derived(filtered.length);
 
+	// DataTable owns sorting + pagination (it receives the full filtered
+	// list below) — no parent-side sort/slice, which would sort only the
+	// visible page and misorder rows across pages.
+
 	let rows = $derived(
-		filtered.slice(page * pageSize, page * pageSize + pageSize).map((k) => ({
+		filtered.map((k) => ({
 			...k,
 			id: k.id
 		}))
@@ -262,34 +262,57 @@
 	const bulkActions: DataTableBulkAction[] = [
 		{
 			label: t('api_keys.suspend_selected'),
-			onClick: async (ids: string[]) => {
-				for (const id of ids) {
-					await suspendKey(id);
-				}
+			onClick: (ids: string[]) => {
+				pendingBulk = { action: 'suspend', ids };
+				bulkConfirmOpen = true;
 			}
 		},
 		{
 			label: t('api_keys.revoke_selected'),
 			variant: 'destructive',
-			onClick: async (ids: string[]) => {
-				await Promise.allSettled(ids.map((id) => revokeKey(id)));
+			onClick: (ids: string[]) => {
+				pendingBulk = { action: 'revoke', ids };
+				bulkConfirmOpen = true;
 			}
 		},
 		{
 			label: t('api_keys.delete_selected'),
 			variant: 'destructive',
-			onClick: async (ids: string[]) => {
-				await deleteKeysBatch(ids);
+			onClick: (ids: string[]) => {
+				pendingBulk = { action: 'delete', ids };
+				bulkConfirmOpen = true;
 			}
 		}
 	];
 
-	async function suspendKey(id: string) {
+	async function confirmBulk() {
+		if (!pendingBulk) return;
+		const { action, ids } = pendingBulk;
+		try {
+			if (action === 'suspend') {
+				const results = await Promise.allSettled(ids.map((id) => suspendKey(id)));
+				const failed = results.filter((r) => r.status === 'rejected').length;
+				if (failed > 0) errorMessage = t('api_keys.bulk_suspend_partial', '{n} key(s) could not be suspended.').replace('{n}', String(failed));
+			} else if (action === 'revoke') {
+				const results = await Promise.allSettled(ids.map((id) => revokeKey(id)));
+				const failed = results.filter((r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value)).length;
+				if (failed > 0) errorMessage = t('api_keys.bulk_revoke_partial', '{n} key(s) could not be revoked.').replace('{n}', String(failed));
+			} else {
+				await deleteKeysBatch(ids);
+			}
+		} finally {
+			pendingBulk = null;
+		}
+	}
+
+	async function suspendKey(id: string): Promise<boolean> {
 		const result = await api(`/control/api-keys/${id}/suspend`, { method: 'POST' });
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'suspended' } : k));
+			return true;
 		} else {
 			errorMessage = result.error || t('api_keys.suspend_error');
+			return false;
 		}
 	}
 
@@ -311,15 +334,14 @@
 		}
 	}
 
-	async function revokeKey(id: string) {
-		// M1: Use the dedicated POST /control/api-keys/:id/revoke endpoint
-		// instead of PATCH with status:'revoked'. This is more explicit and
-		// idempotent — the route name communicates intent.
+	async function revokeKey(id: string): Promise<boolean> {
 		const result = await api(`/control/api-keys/${id}/revoke`, { method: 'POST' });
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'revoked' } : k));
+			return true;
 		} else {
 			errorMessage = result.error || t('api_keys.revoke_error');
+			return false;
 		}
 	}
 
@@ -679,6 +701,17 @@
 			onCancel={() => (confirmAction = null)}
 		/>
 	{/if}
+{/if}
+
+{#if pendingBulk}
+	<ConfirmModal
+		bind:open={bulkConfirmOpen}
+		title={pendingBulk.action === 'suspend' ? t('api_keys.bulk_suspend_title', 'Suspend selected keys') : pendingBulk.action === 'revoke' ? t('api_keys.bulk_revoke_title', 'Revoke selected keys') : t('api_keys.bulk_delete_title', 'Delete selected keys')}
+		consequence={(pendingBulk.action === 'suspend' ? t('api_keys.bulk_suspend_confirm', 'Suspend {count} selected key(s)? Suspended keys stop working until unsuspended.') : pendingBulk.action === 'revoke' ? t('api_keys.bulk_revoke_confirm', 'Revoke {count} selected key(s)? Revoked keys stop working permanently.') : t('api_keys.bulk_delete_confirm', 'Permanently delete {count} selected key(s)? This cannot be undone.')).replace('{count}', String(pendingBulk.ids.length))}
+		confirmText={pendingBulk.action === 'delete' ? t('api_keys.delete_text') : t('common.confirm', 'Confirm')}
+		onConfirm={confirmBulk}
+		onCancel={() => (pendingBulk = null)}
+	/>
 {/if}
 
 <Modal

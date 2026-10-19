@@ -82,7 +82,7 @@ SELECT
 FROM user_badges ub
 JOIN badge_definitions bd ON bd.id = ub.badge_id
 JOIN users u ON u.id = ub.user_id
-WHERE u.username = @username
+WHERE (u.username = @username OR lower(u.public_username) = lower(@username))
 ORDER BY ub.awarded_at DESC;
 
 -- name: GetUserBadge :one
@@ -216,7 +216,7 @@ WHERE id = @id;
 SELECT
  wl.user_id,
  COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS lifetime_points,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,
  u.profile_type
@@ -239,7 +239,7 @@ LIMIT @top_n;
 SELECT
  wl.user_id,
  COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS period_points,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,
  u.profile_type

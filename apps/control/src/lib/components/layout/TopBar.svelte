@@ -5,6 +5,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import { Menu, MenuItem, MenuSeparator } from '@japaconnect/ui';
+	import { goto } from '$app/navigation';
 
 	let showDropdown = $state(false);
 </script>
@@ -50,9 +51,7 @@
 				</MenuItem>
 				<MenuSeparator />
 				<MenuItem>
-					<form method="POST" action="/logout" class="w-full">
-						<button type="submit" class="w-full text-left">{t('nav.sign_out')}</button>
-					</form>
+					<button type="button" class="w-full text-left" onclick={() => { showDropdown = false; void goto('/logout'); }}>{t('nav.sign_out')}</button>
 				</MenuItem>
 			</Menu>
 		{/if}

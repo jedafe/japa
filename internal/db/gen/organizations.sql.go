@@ -300,7 +300,7 @@ func (q *Queries) ExpireOrganizationBoosts(ctx context.Context) error {
 }
 
 const getOrgOwnerPublicProfile = `-- name: GetOrgOwnerPublicProfile :one
-SELECT u.id, u.username, up.display_name, up.avatar_url
+SELECT u.id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
 FROM organizations o
 JOIN users u ON u.id = o.owner_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -807,7 +807,7 @@ func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationI
 }
 
 const listOrganizationMembers = `-- name: ListOrganizationMembers :many
-SELECT om.organization_id, om.user_id, om.role, om.invited_by, om.joined_at, u.username, up.display_name, up.avatar_url
+SELECT om.organization_id, om.user_id, om.role, om.invited_by, om.joined_at, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
 FROM organization_members om
 JOIN users u ON u.id = om.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -857,7 +857,7 @@ func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID pg
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT o.id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, u.username AS owner_username
+SELECT o.id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, COALESCE(u.public_username, u.username, '') AS owner_username
 FROM organizations o
 LEFT JOIN users u ON u.id = o.owner_user_id
 WHERE ($1::text = '' OR o.org_type = $1)
@@ -906,7 +906,7 @@ type ListOrganizationsRow struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	SourceID         pgtype.UUID        `json:"source_id"`
-	OwnerUsername    *string            `json:"owner_username"`
+	OwnerUsername    string             `json:"owner_username"`
 }
 
 // Soft-deleted orgs are hidden by default; $7 'only'|'all' surfaces them so
@@ -1261,7 +1261,7 @@ func (q *Queries) ListOwnershipClaimsForAdmin(ctx context.Context, dollar_1 stri
 
 const listPublicOrganizationMembers = `-- name: ListPublicOrganizationMembers :many
 SELECT om.organization_id, om.user_id, om.role, om.joined_at,
- u.username, up.display_name, up.avatar_url
+ COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
 FROM organization_members om
 JOIN users u ON u.id = om.user_id AND u.status = 'active'
 LEFT JOIN user_profiles up ON up.user_id = u.id

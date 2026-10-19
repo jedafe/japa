@@ -13,7 +13,7 @@ import (
 
 const listRSSFeedItems = `-- name: ListRSSFeedItems :many
 
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
@@ -68,7 +68,7 @@ func (q *Queries) ListRSSFeedItems(ctx context.Context, pageLimit int32) ([]List
 }
 
 const listRSSFeedItemsByContentType = `-- name: ListRSSFeedItemsByContentType :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
@@ -125,7 +125,7 @@ func (q *Queries) ListRSSFeedItemsByContentType(ctx context.Context, arg ListRSS
 }
 
 const listRSSSpaceFeedItems = `-- name: ListRSSSpaceFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 JOIN spaces s ON c.space_id = s.id
@@ -183,7 +183,7 @@ func (q *Queries) ListRSSSpaceFeedItems(ctx context.Context, arg ListRSSSpaceFee
 }
 
 const listRSSTagFeedItems = `-- name: ListRSSTagFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 JOIN content_tags ct ON ct.content_id = c.id
@@ -242,11 +242,11 @@ func (q *Queries) ListRSSTagFeedItems(ctx context.Context, arg ListRSSTagFeedIte
 }
 
 const listRSSUserFeedItems = `-- name: ListRSSUserFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
- AND u.username = $1
+ AND (u.username = $1 OR lower(u.public_username) = lower($1))
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false
 ORDER BY c.published_at DESC NULLS LAST

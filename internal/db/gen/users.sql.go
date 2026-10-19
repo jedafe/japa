@@ -35,7 +35,7 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%')
+ AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.public_username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR u.profile_type = $2)
 `
 
@@ -389,9 +389,9 @@ func (q *Queries) GetContentByIDForEditor(ctx context.Context, id pgtype.UUID) (
 }
 
 const getPublicProfileByUsername = `-- name: GetPublicProfileByUsername :one
-SELECT DISTINCT ON (u.id)
+SELECT
  u.id AS user_id,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
  u.follower_count,
  u.is_synthetic,
@@ -403,6 +403,7 @@ SELECT DISTINCT ON (u.id)
  up.website_url,
  up.location,
  up.banner_media_id,
+ pg.name AS public_role,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
  (SELECT COUNT(*)::int
@@ -411,9 +412,11 @@ SELECT DISTINCT ON (u.id)
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
-WHERE u.username = $1
+LEFT JOIN user_groups pg ON pg.id = u.public_group_id
+WHERE (u.username = $1 OR lower(u.public_username) = lower($1))
  AND u.status = 'active'
-ORDER BY u.id
+ORDER BY (u.username = $1) DESC, u.id
+LIMIT 1
 `
 
 type GetPublicProfileByUsernameRow struct {
@@ -430,6 +433,7 @@ type GetPublicProfileByUsernameRow struct {
 	WebsiteUrl         *string            `json:"website_url"`
 	Location           *string            `json:"location"`
 	BannerMediaID      pgtype.UUID        `json:"banner_media_id"`
+	PublicRole         *string            `json:"public_role"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	ShowPointsPublicly bool               `json:"show_points_publicly"`
 	FollowingCount     int32              `json:"following_count"`
@@ -440,6 +444,8 @@ type GetPublicProfileByUsernameRow struct {
 // layer can conditionally include the user's Points balance (Section 28).
 // is_synthetic/synthetic_source identify imported video channels; location and
 // banner_media_id carry the channel's public metadata (migration 000633).
+// §03 alias amendment: projects the public_username alias when set and
+// resolves the profile by canonical username OR alias (canonical preferred).
 func (q *Queries) GetPublicProfileByUsername(ctx context.Context, username string) (GetPublicProfileByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, getPublicProfileByUsername, username)
 	var i GetPublicProfileByUsernameRow
@@ -457,6 +463,7 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, username strin
 		&i.WebsiteUrl,
 		&i.Location,
 		&i.BannerMediaID,
+		&i.PublicRole,
 		&i.CreatedAt,
 		&i.ShowPointsPublicly,
 		&i.FollowingCount,
@@ -466,7 +473,7 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, username strin
 
 const getPublicUserByID = `-- name: GetPublicUserByID :one
 SELECT u.id AS user_id,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
  u.follower_count,
  up.display_name,
@@ -558,7 +565,8 @@ func (q *Queries) GetSyntheticUserByUsername(ctx context.Context, username strin
 
 const getUserAccountForUpdate = `-- name: GetUserAccountForUpdate :one
 
-SELECT id, username, email, email_verified_at, username_changed_at
+SELECT id, username, email, email_verified_at, username_changed_at,
+ public_username, public_group_id
 FROM users
 WHERE id = $1
 FOR UPDATE
@@ -570,6 +578,8 @@ type GetUserAccountForUpdateRow struct {
 	Email             string             `json:"email"`
 	EmailVerifiedAt   pgtype.Timestamptz `json:"email_verified_at"`
 	UsernameChangedAt pgtype.Timestamptz `json:"username_changed_at"`
+	PublicUsername    *string            `json:"public_username"`
+	PublicGroupID     pgtype.UUID        `json:"public_group_id"`
 }
 
 // ---------------------------------------------------------------------------
@@ -588,6 +598,8 @@ func (q *Queries) GetUserAccountForUpdate(ctx context.Context, id pgtype.UUID) (
 		&i.Email,
 		&i.EmailVerifiedAt,
 		&i.UsernameChangedAt,
+		&i.PublicUsername,
+		&i.PublicGroupID,
 	)
 	return i, err
 }
@@ -1181,6 +1193,19 @@ func (q *Queries) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string,
 	return email, err
 }
 
+const getUserEmailByID = `-- name: GetUserEmailByID :one
+SELECT email FROM users WHERE id = $1
+`
+
+// Owner-amendment helper: resolves a user's email so callers can compare it
+// against JC_OWNER_EMAIL for owner-protected paths.
+func (q *Queries) GetUserEmailByID(ctx context.Context, userID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserEmailByID, userID)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
 const getUserEmailVerifiedStatus = `-- name: GetUserEmailVerifiedStatus :one
 SELECT email_verified_at FROM users WHERE id = $1
 `
@@ -1526,40 +1551,46 @@ SELECT DISTINCT ON (u.id)
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
  u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
- ug.slug AS user_group_name
+ u.public_username, u.public_group_id,
+ ug.slug AS user_group_name,
+ pg.name AS public_group_name
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id
+LEFT JOIN user_groups pg ON pg.id = u.public_group_id
 WHERE u.id = $1
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END
 `
 
 type GetUserProfileRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	UserID        pgtype.UUID        `json:"user_id"`
-	DisplayName   *string            `json:"display_name"`
-	AvatarUrl     *string            `json:"avatar_url"`
-	AvatarMediaID pgtype.UUID        `json:"avatar_media_id"`
-	HeaderMediaID pgtype.UUID        `json:"header_media_id"`
-	Bio           *string            `json:"bio"`
-	Timezone      *string            `json:"timezone"`
-	CoverUrl      *string            `json:"cover_url"`
-	WebsiteUrl    *string            `json:"website_url"`
-	Education     *string            `json:"education"`
-	Profession    *string            `json:"profession"`
-	MaritalStatus *string            `json:"marital_status"`
-	DateOfBirth   pgtype.Date        `json:"date_of_birth"`
-	Gender        *string            `json:"gender"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	Email         string             `json:"email"`
-	Username      string             `json:"username"`
-	ProfileType   string             `json:"profile_type"`
-	Status        string             `json:"status"`
-	FollowerCount int32              `json:"follower_count"`
-	LastLoginAt   pgtype.Timestamptz `json:"last_login_at"`
-	UserGroupName *string            `json:"user_group_name"`
+	ID              pgtype.UUID        `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	DisplayName     *string            `json:"display_name"`
+	AvatarUrl       *string            `json:"avatar_url"`
+	AvatarMediaID   pgtype.UUID        `json:"avatar_media_id"`
+	HeaderMediaID   pgtype.UUID        `json:"header_media_id"`
+	Bio             *string            `json:"bio"`
+	Timezone        *string            `json:"timezone"`
+	CoverUrl        *string            `json:"cover_url"`
+	WebsiteUrl      *string            `json:"website_url"`
+	Education       *string            `json:"education"`
+	Profession      *string            `json:"profession"`
+	MaritalStatus   *string            `json:"marital_status"`
+	DateOfBirth     pgtype.Date        `json:"date_of_birth"`
+	Gender          *string            `json:"gender"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Email           string             `json:"email"`
+	Username        string             `json:"username"`
+	ProfileType     string             `json:"profile_type"`
+	Status          string             `json:"status"`
+	FollowerCount   int32              `json:"follower_count"`
+	LastLoginAt     pgtype.Timestamptz `json:"last_login_at"`
+	PublicUsername  *string            `json:"public_username"`
+	PublicGroupID   pgtype.UUID        `json:"public_group_id"`
+	UserGroupName   *string            `json:"user_group_name"`
+	PublicGroupName *string            `json:"public_group_name"`
 }
 
 func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUserProfileRow, error) {
@@ -1589,7 +1620,10 @@ func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUs
 		&i.Status,
 		&i.FollowerCount,
 		&i.LastLoginAt,
+		&i.PublicUsername,
+		&i.PublicGroupID,
 		&i.UserGroupName,
+		&i.PublicGroupName,
 	)
 	return i, err
 }
@@ -1897,7 +1931,7 @@ func (q *Queries) ListOAuthAccounts(ctx context.Context, userID pgtype.UUID) ([]
 
 const listPublicUsers = `-- name: ListPublicUsers :many
 SELECT u.id AS user_id,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
  u.follower_count,
  u.is_synthetic,
@@ -1917,13 +1951,13 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%')
+ AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.public_username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR u.profile_type = $2)
 ORDER BY
  CASE WHEN $3::text = 'followers' THEN u.follower_count END DESC NULLS LAST,
  CASE WHEN $3::text = 'newest' THEN COALESCE(up.created_at, u.created_at) END DESC NULLS LAST,
  CASE WHEN $3::text = 'oldest' THEN COALESCE(up.created_at, u.created_at) END ASC NULLS LAST,
- CASE WHEN $3::text = 'name' THEN lower(COALESCE(up.display_name, u.username)) END ASC NULLS LAST,
+ CASE WHEN $3::text = 'name' THEN lower(COALESCE(up.display_name, u.public_username, u.username, '')) END ASC NULLS LAST,
  CASE WHEN $3::text = 'name' THEN u.username END ASC,
  u.follower_count DESC NULLS LAST, u.created_at DESC, u.id
 LIMIT $5 OFFSET $4
@@ -2402,6 +2436,29 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 	return items, nil
 }
 
+const publicHandleTaken = `-- name: PublicHandleTaken :one
+SELECT COUNT(*)::int AS count
+FROM users
+WHERE (username = $1 OR lower(public_username) = lower($1))
+ AND ($2::uuid IS NULL OR id != $2)
+`
+
+type PublicHandleTakenParams struct {
+	Handle    string      `json:"handle"`
+	ExcludeID pgtype.UUID `json:"exclude_id"`
+}
+
+// §03 alias amendment: counts users (other than @exclude_id) whose canonical
+// username OR public alias matches the candidate, case-insensitively. Used
+// both when setting an alias (the alias must not collide with any handle) and
+// when changing a canonical username (must not collide with someone's alias).
+func (q *Queries) PublicHandleTaken(ctx context.Context, arg PublicHandleTakenParams) (int32, error) {
+	row := q.db.QueryRow(ctx, publicHandleTaken, arg.Handle, arg.ExcludeID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const revokeAllUserSessions = `-- name: RevokeAllUserSessions :exec
 UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL AND id != $2
 `
@@ -2444,6 +2501,28 @@ type SetUserDisplayNameParams struct {
 // display_name without touching the other profile columns.
 func (q *Queries) SetUserDisplayName(ctx context.Context, arg SetUserDisplayNameParams) error {
 	_, err := q.db.Exec(ctx, setUserDisplayName, arg.UserID, arg.DisplayName)
+	return err
+}
+
+const setUserPublicIdentity = `-- name: SetUserPublicIdentity :exec
+UPDATE users
+SET public_username = $1,
+ public_group_id = $2,
+ updated_at = now()
+WHERE id = $3
+`
+
+type SetUserPublicIdentityParams struct {
+	PublicUsername *string     `json:"public_username"`
+	PublicGroupID  pgtype.UUID `json:"public_group_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+// §03 alias amendment: sets the super-admin's public-facing alias handle and
+// public role group. NULL clears each field. Only super_admin members may set
+// these (enforced in the service layer).
+func (q *Queries) SetUserPublicIdentity(ctx context.Context, arg SetUserPublicIdentityParams) error {
+	_, err := q.db.Exec(ctx, setUserPublicIdentity, arg.PublicUsername, arg.PublicGroupID, arg.UserID)
 	return err
 }
 

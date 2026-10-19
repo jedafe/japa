@@ -225,20 +225,26 @@ const providerPresets: ProviderPreset[] = [
 	async function load() {
 		loading = true;
 		errorMessage = '';
+		if (!canView) {
+			loading = false;
+			return;
+		}
 		const result = await api<AiProvider[]>('/control/ai-providers');
 		if (result.ok) {
 			providers = Array.isArray(result.data) ? result.data : [];
 		} else {
 			errorMessage = result.error;
 		}
-		loading = false;
 
 		// Fetch valid provider types and categories from the API (Rule 16).
 		const typesResult = await api<{ provider_types: string[]; categories: string[] }>('/control/ai-providers/types');
 		if (typesResult.ok && typesResult.data) {
 			apiProviderTypes = typesResult.data.provider_types ?? [];
 			apiCategories = typesResult.data.categories ?? [];
+		} else if (result.ok) {
+			errorMessage = (!typesResult.ok ? typesResult.error : null) || t('ai_providers.types_error', 'Could not load provider types; category selection may be limited.');
 		}
+		loading = false;
 	}
 
 	let filtered = $derived(

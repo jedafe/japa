@@ -69,45 +69,31 @@ export const load: PageServerLoad = async (event) => {
 		replies = [];
 	}
 
-	// Fetch the universal tags attached to the thread's backing content
-	// (GET /content/{id}/tags — tags are universal, Section 14). Best-effort —
-	// degrades to empty if the endpoint is unavailable.
-	let tags: ForumTag[] = [];
-	try {
-		if (thread.content_id) {
-			const { items } = await apiList<ForumTag>(ctx, `/content/${thread.content_id}/tags`);
-			tags = items;
-		}
-	} catch {
-		tags = [];
-	}
-
-	// Fetch the thread's poll if one exists (GET /forum/polls/{threadId}).
-	// The endpoint returns 404 when no poll is attached — degrade to null.
-	let poll: PollWithResults | null = null;
-	try {
-		poll = await apiGet<PollWithResults>(ctx, `/forum/polls/${thread.id}`);
-	} catch {
-		poll = null;
-	}
-
-	// Fetch related content for the sidebar (GET /content/{content_id}/related).
-	// Best-effort — degrades to empty if the endpoint is unavailable.
-	// Ref: Phase 05.14. The forum thread has a backing contents row; related
-	// content must be looked up by that content_id, not the forum thread id.
-	let related: { id: string; title: string; slug: string; content_type: string }[] = [];
-	try {
-		if (thread.content_id) {
-			related = (
-				await apiList<{ id: string; title: string; slug: string; content_type: string }>(
+	// Tags, poll, and related content are independent once the thread is
+	// known — fetch concurrently. Each degrades independently on failure.
+	const [tags, poll, related] = await Promise.all([
+		// Universal tags on the backing content (GET /content/{id}/tags,
+		// Section 14). Best-effort — degrades to empty.
+		thread.content_id
+			? apiList<ForumTag>(ctx, `/content/${thread.content_id}/tags`)
+					.then((r) => r.items)
+					.catch(() => [] as ForumTag[])
+			: Promise.resolve([] as ForumTag[]),
+		// The thread's poll (GET /forum/polls/{threadId}) — 404s when none is
+		// attached; degrade to null.
+		apiGet<PollWithResults>(ctx, `/forum/polls/${thread.id}`).catch(() => null),
+		// Related content for the sidebar (GET /content/{content_id}/related)
+		// — forum threads have a backing contents row; related content must
+		// be looked up by content_id, not the forum thread id.
+		thread.content_id
+			? apiList<{ id: string; title: string; slug: string; content_type: string }>(
 					ctx,
 					`/content/${thread.content_id}/related?page_size=5`
 				)
-			).items;
-		}
-	} catch {
-		related = [];
-	}
+					.then((r) => r.items)
+					.catch(() => [] as { id: string; title: string; slug: string; content_type: string }[])
+			: Promise.resolve([] as { id: string; title: string; slug: string; content_type: string }[])
+	]);
 
 	// BUG-014: canSolve now uses the backend-provided can_solve flag which
 	// correctly includes moderators and permission-holders, not just the

@@ -2128,7 +2128,7 @@ func (q *Queries) IsUserSpaceMember(ctx context.Context, arg IsUserSpaceMemberPa
 }
 
 const listAllSpaceJoinRequests = `-- name: ListAllSpaceJoinRequests :many
-SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
+SELECT sm.space_id, sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
  s.name AS space_name
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
@@ -2702,7 +2702,7 @@ func (q *Queries) ListSpaceAncestors(ctx context.Context, spaceID pgtype.UUID) (
 const listSpaceJoinRequests = `-- name: ListSpaceJoinRequests :many
 
 
-SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -2784,7 +2784,7 @@ func (q *Queries) ListSpaceMemberUserIDs(ctx context.Context, arg ListSpaceMembe
 }
 
 const listSpaceMembersWithProfile = `-- name: ListSpaceMembersWithProfile :many
-SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at
+SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -2837,7 +2837,7 @@ func (q *Queries) ListSpaceMembersWithProfile(ctx context.Context, arg ListSpace
 const listSpaceModerators = `-- name: ListSpaceModerators :many
 SELECT sm.id, sm.space_id, sm.user_id, sm.assigned_by,
  sm.assigned_by_user_id, sm.created_at,
- u.username AS user_username, up.display_name AS user_display_name
+ COALESCE(u.public_username, u.username, '') AS user_username, up.display_name AS user_display_name
 FROM space_moderators sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id

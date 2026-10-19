@@ -620,7 +620,7 @@
 														{#each taskActions(taskTab) as action (action)}
 															<button
 																class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-50 {action === 'delete' ? 'text-destructive hover:bg-destructive/10' : 'text-accent-foreground hover:bg-accent'}"
-																disabled={!task.id || taskBusy !== ''}
+																disabled={!task.id || taskBusy === `${task.id}:${action}`}
 																onclick={() => taskAction(task, action)}
 																aria-label={taskActionLabel(action, taskTab)}
 															>

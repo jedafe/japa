@@ -96,8 +96,11 @@
 		return ms.toFixed(0) + 'ms';
 	}
 
-	function formatTimestamp(ts: string): string {
-		return new Date(ts).toLocaleString();
+	function formatTimestamp(ts: string | undefined | null): string {
+		if (!ts) return '—';
+		const d = new Date(ts);
+		if (Number.isNaN(d.getTime())) return '—';
+		return d.toLocaleString();
 	}
 
 	function formatVacuum(v: string | null): string {
@@ -121,7 +124,10 @@
 	}
 
 	function hasReplicationWarning(): boolean {
-		return (dbHealth?.replication?.lag_seconds ?? 0) > 5;
+		// Backend bases replication health on WAL-lag bytes (lag_bytes),
+		// not the replay-timestamp lag — lag_seconds grows artificially
+		// during idle periods (see the "How to read these numbers" note).
+		return dbHealth?.replication?.healthy === false;
 	}
 
 	function poolBarColor(): string {
@@ -414,7 +420,7 @@
 						</div>
 						<div class="flex items-center justify-between">
 							<span class="text-sm text-muted-foreground">{t('db.db_latency')}</span>
-							<span class="text-sm font-mono text-foreground">{dbHealth.latency_ms?.toFixed(1) ?? '—'}ms</span>
+							<span class="text-sm font-mono text-foreground">{dbHealth.latency_ms != null ? `${dbHealth.latency_ms.toFixed(1)}ms` : '—'}</span>
 						</div>
 					</div>
 				</div>

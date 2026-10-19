@@ -72,15 +72,29 @@ JC_STRIPE_SECRET_KEY / webhook / price ids…
 ## GitHub → Coolify webhook deploys
 
 `.github/workflows/deploy.yml` POSTs each app's **Deploy Webhook**
-(App → Webhooks → Deploy Webhook URL) after green CI. Repo secrets:
-`COOLIFY_WEBHOOK_API`, `_MAIN`, `_ADMIN`, `_CONTROL`, `_ACADEMY`, `_DOCS`, `_TOOLS`.
+(App → Webhooks → Deploy Webhook URL) after green CI on `main`. Repo
+secrets: `COOLIFY_WEBHOOK_API`, `_MAIN`, `_ADMIN`, `_CONTROL`, `_ACADEMY`,
+`_DOCS`, `_TOOLS` (+ `_STAGING` variants for the staging environment).
+
+**Update flow (gated promotion):** every green CI run on `main`
+auto-deploys staging, then the `deploy-production` job pauses on the
+GitHub `production` environment — a reviewer clicks **Approve** in the
+Actions run and prod ships the exact commit that was exercised on staging.
+There is no `staging` branch; staging Coolify apps track `main` so the
+deployed SHA is identical in both environments.
+
+One-time GitHub setup: **Settings → Environments** → create `staging` and
+`production`, add yourself as a **required reviewer** on `production`
+(optionally a `staging` environment too — ungated).
 
 ## Staging environment
 
 Coolify projects have built-in **environments** — create a `staging` environment
 in the same project and clone each application service into it (same Dockerfiles;
-same server, or a second VPS if the box is tight on memory). Point the staging
-copies at the `staging` git branch; production keeps tracking `main`.
+same server, or a second VPS if the box is tight on memory). Both staging and
+production apps track the `main` branch — the environments differ only by
+Coolify env vars/build args, and the GitHub environments gate decides which
+fires (see "Update flow" above).
 
 ### Domains
 
@@ -151,20 +165,132 @@ staging site IDs (or leave `PUBLIC_JC_UMAMI_*` empty to disable).
 
 ### Migrations & seeding
 
-`cmd/migrate` is a separate binary — the root Dockerfile only builds `cmd/api`.
-Run migrations on staging as a pre-deployment command or a one-off exec before
-each deploy, same as prod. Seed fresh data with `cmd/seed` +
-`cmd/seed-geo-cities` — note `cmd/seed` requires `JC_SEED_ADMIN_PASSWORD` when
-`JC_ENV=production` (no dev default). Never point staging at the prod database.
+`cmd/migrate` is a separate binary — it ships in the api image as
+`/app/japa-migrate` alongside `/app/japa-seed`, `/app/japa-seed-geo-cities`,
+and `/app/japa-requeue-universities` (migrations/ and db/seed/ are copied
+in too). `japa-seed` requires `JC_SEED_ADMIN_PASSWORD` when
+`JC_ENV=production` (no dev default). Never point staging at the prod
+database.
+
+**Wiring automatic migrations:** on the api application → **Advanced** →
+set **Post-Deployment Command** to `/app/japa-migrate` (leave the container
+field empty for a single-container app). Do the same on the staging api
+app so schema follows every staging deploy.
+
+Why post- and not pre-: Coolify runs *pre*-deployment commands inside the
+**old** container (which doesn't carry the new migration files — and it's
+skipped on first deploy). *Post*-deployment runs inside the new container,
+which has the new `migrations/` and the binary. A post-deploy failure is
+logged but doesn't roll back the deploy — additive zero-downtime
+migrations keep that window safe (new code must already tolerate the old
+schema), but check the deployment log / `schema_migrations` count when a
+release ships a migration.
+
+Manual equivalent any time: `docker exec <api-container> /app/japa-migrate`.
 
 ### Staging deploys
 
-`deploy.yml` POSTs the staging apps' deploy webhooks after green CI on the
-`staging` branch. Additional repo secrets — same names as prod with a
+Automatic — `deploy-staging` in `deploy.yml` POSTs the staging apps' deploy
+webhooks after every green CI on `main`, then `deploy-production` waits for
+environment approval. Staging repo secrets are the prod names with a
 `_STAGING` suffix: `COOLIFY_WEBHOOK_API_STAGING`, `COOLIFY_WEBHOOK_MAIN_STAGING`,
 `COOLIFY_WEBHOOK_ADMIN_STAGING`, `COOLIFY_WEBHOOK_CONTROL_STAGING`,
 `COOLIFY_WEBHOOK_ACADEMY_STAGING`, `COOLIFY_WEBHOOK_DOCS_STAGING`,
 `COOLIFY_WEBHOOK_TOOLS_STAGING`.
 
-Lighter-weight alternative: enable **push-to-deploy** on the staging Coolify
-apps and drop the CI gate — staging then rebuilds on every push to the branch.
+## Migrating a dev database to production
+
+You can seed prod from a `pg_dump` of the dev database instead of starting
+from the baseline — but decide what to do about media first, because the
+files and the DB rows are separate problems.
+
+### Media files live in SeaweedFS, not the app container
+
+Dev stores uploads under `data/media/<storage_bucket>/<storage_path>`
+(`JC_MEDIA_ROOT`, ~8 GB for a mature dev DB — almost all images). Prod uses
+the `JC_S3_*` backend against the SeaweedFS service, so there is nothing to
+copy into the image or a volume — if you want the dev files in prod, sync
+them into the SeaweedFS buckets directly:
+
+```bash
+aws s3 sync data/media/japaconnect s3://japaconnect \
+  --endpoint-url http://<seaweedfs-host>:8333 --exclude "temp/*"
+aws s3 sync data/media/media s3://media \
+  --endpoint-url http://<seaweedfs-host>:8333 --exclude "temp/*"
+```
+
+`temp/` subtrees are scratch — always exclude them. This is a one-time
+transfer of the full media set over your connection; `aws s3 sync` / `rsync`
+are resumable if the link drops.
+
+### Space imagery re-downloads server-side — you can skip the sync
+
+Country flags, state/city/university logos, space headers, and attraction
+images are all fetched from remote sources (flagcdn, Wikidata, Wikipedia)
+by the `space:auto_populate` Asynq task — they are **not** user uploads and
+do not need to be transferred. To go live with a dev dump but no media files:
+
+```sql
+-- detach spaces from media rows whose files you didn't ship
+update spaces set logo_media_id = null, header_image_id = null;
+```
+
+```bash
+# then re-enqueue enrichment — workers download the images on the server
+go run ./cmd/requeue-universities -types=country,state,city,university,attraction
+```
+
+Note the ordering: `requeue-universities` selects spaces **missing** a logo
+or header, so `logo_media_id`/`header_image_id` must be NULLed first —
+a media row pointing at a nonexistent object counts as "has a logo" and
+would be skipped while serving broken images.
+
+(Country-flag chips in the frontend need nothing at all — they're emoji
+rendered client-side via `countryCodeToEmoji`.)
+
+### User-uploaded media is not recoverable
+
+Post attachments, avatars, blog/content images, etc. have no recorded
+source URL (~all `media` rows lack `source_platform`). If you restore the
+dev dump without syncing the files, those rows serve broken images
+permanently — either sync the `media`/`japaconnect` buckets as above, or
+delete/mark the dangling rows (`deleted_at`) so they don't render.
+
+### Fresh prod (no dev dump) — chosen launch path
+
+Nothing uploads from your connection. The baseline seed migration
+(`migrations/000735_baseline_seed.up.sql`) ships all platform-owned
+reference/config data — space types, ~15.7k geo/university spaces with
+their `wiki_content`, wiki type configs/categories (`000739`), i18n, RBAC,
+system settings — while `media` and all user-generated tables are excluded
+by `scripts/baseline_seed_exclusions.txt`. Everything else regenerates
+on the server:
+
+```bash
+# All four ops binaries ship inside the api image — run each as a
+# one-off exec on the api container (env is already wired there):
+#   docker exec -e JC_SEED_ADMIN_PASSWORD=<pw> <api-container> /app/japa-seed
+
+# 1. schema + baseline seed + all later migrations
+/app/japa-migrate
+
+# 2. admin user + default community spaces
+#    (JC_SEED_ADMIN_PASSWORD required — no dev default in production)
+/app/japa-seed
+
+# 3. ~69k city/state geo spaces from local TSVs (db/seed/ ships in-image)
+/app/japa-seed-geo-cities
+
+# 4. re-enqueue enrichment — workers pull Wikidata/Wikipedia content,
+#    flagcdn flags, logos/headers, and seed stub wiki pages server-side
+/app/japa-requeue-universities -types=country,state,city,university,attraction
+```
+
+Step 4 runs as Asynq tasks on the worker — images land in SeaweedFS and
+`wiki_content`/stub `wiki_pages` fill in progressively. Re-run it any time;
+it's idempotent (selects spaces still missing a logo/header).
+
+What this deliberately does **not** carry over: dev user accounts, posts,
+and user-uploaded media. If the baseline ever feels stale relative to dev
+(it's a snapshot — regenerated via `python3 scripts/gen_baseline.py`),
+regenerate it rather than dumping the dev DB.

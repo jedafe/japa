@@ -53,7 +53,7 @@ func (a serviceReviewAdapter) ListByEntity(ctx context.Context, entityType strin
 		item := servicedir.ReviewItem{
 			ID:                r.ID.String(),
 			AuthorID:          r.ReviewerUserID.String(),
-			AuthorUsername:    derefStr(r.AuthorUsername),
+			AuthorUsername:    r.AuthorUsername,
 			AuthorDisplayName: r.AuthorDisplayName,
 			AuthorAvatarURL:   r.AuthorAvatarUrl,
 			Rating:            r.Rating,

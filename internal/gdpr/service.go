@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -53,7 +54,17 @@ type Service struct {
 	siteName       string
 	settings       SettingsProvider
 	storage        Storage
+	// ownerEmail is the JC_OWNER_EMAIL platform-owner designation (§03 owner
+	// amendment). The owner account cannot be erased.
+	ownerEmail string
 }
+
+// SetOwnerEmail wires the JC_OWNER_EMAIL designation (§03 owner amendment).
+func (s *Service) SetOwnerEmail(email string) { s.ownerEmail = email }
+
+// ErrOwnerProtected is returned when an erasure targets the JC_OWNER_EMAIL
+// platform owner (§03 owner amendment). Maps to 403 owner_protected.
+var ErrOwnerProtected = errors.New("the owner account cannot be deleted")
 
 // SettingsProvider abstracts system settings access for hard-delete configuration.
 type SettingsProvider interface {
@@ -458,6 +469,19 @@ func (s *Service) RequestAccountDeletion(ctx context.Context, userID pgtype.UUID
 	if err == nil && isBot {
 		return gen.AccountDeletionRequest{}, fmt.Errorf("%w: cannot erase AI persona backing account (system account, not a data subject)", errpkg.ErrForbidden)
 	}
+
+	// §03 owner amendment: the owner account cannot be erased — not even by
+	// itself (the account anchors super_admin administration). A lookup
+	// failure fails closed: erasure must not proceed when the owner check
+	// cannot run.
+	email, emailErr := s.store.read.GetUserEmailByID(ctx, userID)
+	if emailErr != nil {
+		return gen.AccountDeletionRequest{}, fmt.Errorf("verifying owner status: %w", emailErr)
+	}
+
+	if auth.IsOwnerEmail(email, s.ownerEmail) {
+		return gen.AccountDeletionRequest{}, ErrOwnerProtected
+	}
 	// If the user doesn't exist (pgx.ErrNoRows), let the create call below
 	// surface the appropriate error — don't mask it here.
 
@@ -514,6 +538,20 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	request, err := s.store.getAccountDeletionRequest(ctx, requestID)
 	if err != nil {
 		return fmt.Errorf("fetching deletion request: %w", err)
+	}
+
+	// §03 owner amendment (defense-in-depth): abort processing if the target
+	// is the owner account — a stale request predating the guard must not
+	// run. A lookup failure fails closed — never erase without the check.
+	targetEmail, emailErr := s.store.read.GetUserEmailByID(ctx, request.UserID)
+	if emailErr != nil {
+		s.markDeletionFailed(ctx, requestID)
+		return fmt.Errorf("verifying owner status: %w", emailErr)
+	}
+
+	if auth.IsOwnerEmail(targetEmail, s.ownerEmail) {
+		s.markDeletionFailed(ctx, requestID)
+		return ErrOwnerProtected
 	}
 
 	// ADR-068 compliance (defense-in-depth): if the target user is a persona

@@ -184,6 +184,15 @@ func (s *Store) RemoveUserFromGroup(ctx context.Context, userID, groupID pgtype.
 		return fmt.Errorf("removing user from group: %w", err)
 	}
 
+	// §03 alias amendment: if the removed group was the user's public role,
+	// clear the dangling pointer so public surfaces stop showing it.
+	if err := s.write.ClearPublicGroupRole(ctx, gen.ClearPublicGroupRoleParams{
+		UserID:  userID,
+		GroupID: groupID,
+	}); err != nil {
+		return fmt.Errorf("clearing public role: %w", err)
+	}
+
 	s.invalidateUserCache(ctx, userID)
 
 	return nil

@@ -28,25 +28,20 @@ export const load: PageServerLoad = async (event) => {
 
 	const filters = { dest, type, category, sort, page };
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
-	let postTypes: MutualAidPostType[] = [];
-	let categories: MutualAidCategory[] = [];
-	try {
-		const pt = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/post-types');
-		postTypes = (pt ?? []).map((o) => o.value as MutualAidPostType);
-		const cat = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/categories');
-		categories = (cat ?? []).map((o) => o.value as MutualAidCategory);
-	} catch {
-		postTypes = [];
-		categories = [];
-	}
+	// Countries, the post-type/category option lists, and the posts feed are
+	// independent — fetch concurrently instead of stacking round-trips.
+	const countriesPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then((r) => r.items)
+		.catch(() => [] as GeoCountry[]);
+	const typesCategoriesPromise = Promise.all([
+		apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/post-types'),
+		apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/categories')
+	])
+		.then(([pt, cat]) => ({
+			postTypes: (pt ?? []).map((o) => o.value as MutualAidPostType),
+			categories: (cat ?? []).map((o) => o.value as MutualAidCategory)
+		}))
+		.catch(() => ({ postTypes: [] as MutualAidPostType[], categories: [] as MutualAidCategory[] }));
 
 	const params = new URLSearchParams();
 	params.set('page_size', String(PAGE_SIZE));
@@ -54,6 +49,11 @@ export const load: PageServerLoad = async (event) => {
 	if (type) params.set('type', type);
 	if (category) params.set('category', category);
 	if (sort) params.set('sort', sort);
+
+	const [countries, { postTypes, categories }] = await Promise.all([
+		countriesPromise,
+		typesCategoriesPromise
+	]);
 
 	try {
 		const { items, meta } = await apiList<MutualAidPost>(ctx, `/mutual-aid?${params.toString()}`);

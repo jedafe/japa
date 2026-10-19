@@ -101,7 +101,7 @@
 	async function retryTask(taskId: string) {
 		retrying = taskId;
 		try {
-			const result = await api(`/control/queue/dlq/${taskId}/retry`, { method: 'POST' });
+			const result = await api(`/control/queue/dlq/${encodeURIComponent(taskId)}/retry`, { method: 'POST' });
 			if (result.ok) {
 				showSuccess(t('dlq.retry_success'));
 				await load();
@@ -119,7 +119,7 @@
 	async function discardTask(taskId: string) {
 		deleting = taskId;
 		try {
-			const result = await api(`/control/queue/dlq/${taskId}`, { method: 'DELETE' });
+			const result = await api(`/control/queue/dlq/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
 			if (result.ok) {
 				showSuccess(t('dlq.discard_success'));
 				await load();
@@ -168,17 +168,22 @@
 	}
 
 	function extractTaskId(rowId: string): string {
-		// Row ids are `${task_id}::${pageIndex}` — strip the trailing index
-		// suffix rather than splitting on '::' (task ids may contain '::').
+		// Row ids are stable Asynq task ids (globally unique) — extractTaskId
+		// is kept for backward compatibility with any persisted selection.
 		const idx = rowId.lastIndexOf('::');
-		return idx === -1 ? rowId : rowId.slice(0, idx);
+		// Only strip the suffix when it looks like a legacy page-index
+		// suffix (trailing digits); task ids may themselves contain '::'.
+		if (idx !== -1 && /^\d+$/.test(rowId.slice(idx + 2))) {
+			return rowId.slice(0, idx);
+		}
+		return rowId;
 	}
 
 	async function bulkDiscard(ids: string[]) {
 		const taskIds = ids.map(extractTaskId);
 		const deleted = new Set<string>();
 		for (const taskId of taskIds) {
-			const result = await api(`/control/queue/dlq/${taskId}`, { method: 'DELETE' });
+			const result = await api(`/control/queue/dlq/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
 			if (result.ok) deleted.add(taskId);
 		}
 		// Remove only confirmed deletions — failed ids stay in the list.
@@ -194,11 +199,15 @@
 
 	let filtered = $derived(
 		filter
-			? entries.filter(
-					(e) =>
-						e.task_type.toLowerCase().includes(filter.toLowerCase()) ||
-						e.error_message.toLowerCase().includes(filter.toLowerCase())
-				)
+			? entries.filter((e) => {
+					const q = filter.toLowerCase();
+					return (
+						(e.task_type ?? '').toLowerCase().includes(q) ||
+						(e.error_message ?? '').toLowerCase().includes(q) ||
+						(e.queue ?? '').toLowerCase().includes(q) ||
+						(e.task_id ?? '').toLowerCase().includes(q)
+					);
+				})
 			: entries
 	);
 
@@ -223,8 +232,8 @@
 	});
 
 	let rows = $derived(
-		paginatedEntries.map((e, i) => ({
-			id: `${e.task_id}::${page * pageSize + i}`,
+		paginatedEntries.map((e) => ({
+			id: e.task_id,
 			task_id: e.task_id,
 			task_type: e.task_type,
 			queue: e.queue,

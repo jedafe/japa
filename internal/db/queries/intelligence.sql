@@ -296,7 +296,7 @@ WHERE ap.id = $1;
 -- resolve proposed_by into a human-readable name (display_name falling back
 -- to username, then the raw UUID string) so the review surface never shows
 -- a bare UUID.
-SELECT s.*, COALESCE(up.display_name, u.username, s.proposed_by::text) AS proposer_name
+SELECT s.*, COALESCE(up.display_name, u.username, s.proposed_by::text, 'system') AS proposer_name
 FROM intel_sources s
 LEFT JOIN users u ON u.id = s.proposed_by
 LEFT JOIN user_profiles up ON up.user_id = s.proposed_by

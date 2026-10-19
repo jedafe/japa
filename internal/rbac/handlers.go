@@ -3,10 +3,12 @@ package rbac
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
@@ -18,6 +20,9 @@ import (
 type Handlers struct {
 	store *Store
 	rbac  *RBAC
+	// ownerEmail is the JC_OWNER_EMAIL platform-owner designation (§03 owner
+	// amendment). super_admin group membership mutations are owner-only.
+	ownerEmail string
 	// fieldPermInvalidator clears a user's cached custom-field permission
 	// sets (jc:field_perm:{user_id} + jc:field_perm_edit:{user_id}) after
 	// membership add/remove (CF8). Nil disables the hook (no customfields
@@ -42,6 +47,34 @@ func NewHandlers(store *Store, rbac *RBAC) *Handlers {
 // (CF8). Production wires *customfields.Service; tests may omit it.
 func (h *Handlers) SetFieldPermissionCacheInvalidator(f FieldPermissionCacheInvalidator) {
 	h.fieldPermInvalidator = f
+}
+
+// SetOwnerEmail wires the JC_OWNER_EMAIL designation (§03 owner amendment).
+func (h *Handlers) SetOwnerEmail(email string) {
+	h.ownerEmail = email
+}
+
+// callerIsOwner reports whether the authenticated caller is the configured
+// platform owner. Fails closed on lookup error.
+func (h *Handlers) callerIsOwner(r *http.Request) bool {
+	u := auth.FromContext(r.Context())
+	if u == nil || !u.UserID.Valid {
+		return false
+	}
+
+	email, err := h.store.read.GetUserEmailByID(r.Context(), u.UserID)
+	if err != nil {
+		return false
+	}
+
+	return auth.IsOwnerEmail(email, h.ownerEmail)
+}
+
+// isSuperAdminGroup resolves the group and reports whether it is the
+// super_admin system group.
+func (h *Handlers) isSuperAdminGroup(ctx context.Context, groupID pgtype.UUID) bool {
+	g, err := h.store.read.GetUserGroupByID(ctx, groupID)
+	return err == nil && g.Slug == SystemGroupSuperAdmin
 }
 
 // ListGroups handles GET /api/v1/admin/user-groups.
@@ -254,6 +287,12 @@ func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §03 owner amendment: granting super_admin membership is owner-only.
+	if h.isSuperAdminGroup(r.Context(), groupID) && !h.callerIsOwner(r) {
+		errpkg.WriteError(w, http.StatusForbidden, "owner_required", "Only the owner can grant super_admin membership")
+		return
+	}
+
 	if err := h.store.AddUserToGroup(r.Context(), userID, groupID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add user to group")
 		return
@@ -280,6 +319,32 @@ func (h *Handlers) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
+	}
+
+	// §03 owner amendment: removing super_admin membership is owner-only, and
+	// the owner can never be demoted (even by themselves). A target-email
+	// lookup failure aborts — the owner check must never be skipped silently.
+	if h.isSuperAdminGroup(r.Context(), groupID) {
+		email, emailErr := h.store.read.GetUserEmailByID(r.Context(), userID)
+		if emailErr != nil {
+			if errors.Is(emailErr, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
+			} else {
+				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify target account")
+			}
+
+			return
+		}
+
+		if auth.IsOwnerEmail(email, h.ownerEmail) {
+			errpkg.WriteError(w, http.StatusForbidden, "owner_protected", "The owner cannot be removed from the super_admin group")
+			return
+		}
+
+		if !h.callerIsOwner(r) {
+			errpkg.WriteError(w, http.StatusForbidden, "owner_required", "Only the owner can remove super_admin members")
+			return
+		}
 	}
 
 	if err := h.store.RemoveUserFromGroup(r.Context(), userID, groupID); err != nil {

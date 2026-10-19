@@ -60,6 +60,26 @@ type Service struct {
 	// journeyWriter promotes purpose/japa_status edits into the canonical
 	// japa_intent / japa_stage columns (ADR-128). Optional.
 	journeyWriter journeyClassWriter
+	// ownerEmail is the JC_OWNER_EMAIL platform-owner address (§03 owner
+	// amendment). Used to flag is_owner on responses and to enforce
+	// owner-protected paths. Empty = ownership disabled.
+	ownerEmail string
+}
+
+// SetOwnerEmail wires the JC_OWNER_EMAIL designation. Called once during
+// server setup.
+func (s *Service) SetOwnerEmail(email string) {
+	s.ownerEmail = strings.ToLower(strings.TrimSpace(email))
+}
+
+// IsOwnerEmail reports whether the given email is the configured owner.
+func (s *Service) IsOwnerEmail(email string) bool {
+	return auth.IsOwnerEmail(email, s.ownerEmail)
+}
+
+// GetUserEmail resolves a user's email for owner/super_admin checks.
+func (s *Service) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
+	return s.store.read.GetUserEmailByID(ctx, userID)
 }
 
 // userEnqueuer is the subset of worker.Enqueuer that users needs.
@@ -235,6 +255,15 @@ func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProf
 		headerMediaID = &s
 	}
 
+	// §03 alias amendment: the chosen public-role group, surfaced as a
+	// string id so account settings can pre-select it.
+	var publicGroupID *string
+
+	if p.PublicGroupID.Valid {
+		s := uuid.UUID(p.PublicGroupID.Bytes).String()
+		publicGroupID = &s
+	}
+
 	return &UserProfileResponse{
 		ID:                       p.UserID.String(),
 		Email:                    p.Email,
@@ -266,6 +295,10 @@ func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProf
 		OriginCityID:             originCityID,
 		DestinationCountry:       destCountry,
 		CurrentGeoSpaceID:        currentGeoSpaceID,
+		PublicUsername:           p.PublicUsername,
+		PublicGroupID:            publicGroupID,
+		PublicRole:               p.PublicGroupName,
+		IsOwner:                  auth.IsOwnerEmail(p.Email, s.ownerEmail),
 	}, nil
 }
 
@@ -327,6 +360,7 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, username strin
 		IsSynthetic:     p.IsSynthetic,
 		SyntheticSource: p.SyntheticSource,
 		Location:        p.Location,
+		Role:            p.PublicRole,
 	}
 
 	// §106 video channels: resolve the channel banner from
@@ -922,6 +956,7 @@ func (s *Service) ListUsers(ctx context.Context, search, status, groupSlug, sort
 			Status:        parseString(u.Status),
 			FollowerCount: u.FollowerCount,
 			Groups:        groups,
+			IsOwner:       auth.IsOwnerEmail(u.Email, s.ownerEmail),
 			CreatedAt:     u.CreatedAt.Time.Format(time.RFC3339),
 			UpdatedAt:     u.UpdatedAt.Time.Format(time.RFC3339),
 		}
@@ -1868,7 +1903,22 @@ type UpdateAccountResult struct {
 	EmailChanged            bool `json:"email_changed"`
 	EmailVerificationNeeded bool `json:"email_verification_needed"`
 	DisplayNameChanged      bool `json:"display_name_changed"`
+	PublicIdentityChanged   bool `json:"public_identity_changed"`
 }
+
+// ErrNotGroupMember is returned when a user picks a public role group they do
+// not belong to (§03 alias amendment).
+var ErrNotGroupMember = errors.New("public_group_id must be a group the user belongs to")
+
+// ErrInvalidPublicGroupID is returned when public_group_id is not a valid UUID
+// (§03 alias amendment).
+var ErrInvalidPublicGroupID = errors.New("invalid public_group_id")
+
+// ErrOwnerEmailImmutable is returned when an account tries to claim the
+// JC_OWNER_EMAIL address or the owner tries to move off it (§03 owner
+// amendment). Ownership is bound to that exact address — neither direction is
+// permitted through self-service.
+var ErrOwnerEmailImmutable = errors.New("the owner account email is immutable")
 
 // UpdateAccount updates the user's account-level fields (username, email,
 // display_name) per Section 50. Username changes are rate-limited to once
@@ -1924,6 +1974,20 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 					return nil, ErrUsernameTaken
 				}
 
+				// §03 alias amendment: a canonical username must not collide
+				// with another user's public_username alias either.
+				aliasCount, err := q.PublicHandleTaken(ctx, gen.PublicHandleTakenParams{
+					Handle:    newUsername,
+					ExcludeID: userID,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("checking public handle uniqueness: %w", err)
+				}
+
+				if aliasCount > 0 {
+					return nil, ErrUsernameTaken
+				}
+
 				if err := s.store.updateUsernameTx(ctx, q, userID, newUsername); err != nil {
 					return nil, fmt.Errorf("updating username: %w", err)
 				}
@@ -1940,6 +2004,16 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 			}
 
 			if newEmail != acct.Email {
+				// §03 owner amendment: the owner email is the ownership
+				// anchor. Nobody may claim JC_OWNER_EMAIL as their address
+				// (instant ownership takeover — email_verified_at resets only
+				// after the write), and the owner may not move off it either
+				// (that would shed owner protection and leave the configured
+				// address claimable). Transfers happen via the env var.
+				if s.IsOwnerEmail(newEmail) || s.IsOwnerEmail(acct.Email) {
+					return nil, ErrOwnerEmailImmutable
+				}
+
 				// Check uniqueness within the platform.
 				count, err := s.store.emailExistsForPlatformTx(ctx, q, userID, newEmail)
 				if err != nil {
@@ -1973,6 +2047,77 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 			txResult.DisplayNameChanged = true
 		}
 
+		// --- Public identity (§03 alias amendment; super_admin-gated by the
+		// handler). Merged against the locked row so each field is only
+		// overwritten when present in the request; empty string clears.
+		if req.PublicUsername != nil || req.PublicGroupID != nil {
+			pubUsername := acct.PublicUsername
+			pubGroupID := acct.PublicGroupID
+
+			if req.PublicUsername != nil {
+				v := strings.TrimSpace(*req.PublicUsername)
+				if v == "" {
+					pubUsername = nil
+				} else {
+					if !auth.ValidateUsername(v) {
+						return nil, ErrInvalidUsername
+					}
+
+					taken, err := q.PublicHandleTaken(ctx, gen.PublicHandleTakenParams{
+						Handle:    v,
+						ExcludeID: userID,
+					})
+					if err != nil {
+						return nil, fmt.Errorf("checking public handle uniqueness: %w", err)
+					}
+
+					if taken > 0 {
+						return nil, ErrUsernameTaken
+					}
+
+					pubUsername = &v
+				}
+			}
+
+			if req.PublicGroupID != nil {
+				g := strings.TrimSpace(*req.PublicGroupID)
+				if g == "" {
+					pubGroupID = pgtype.UUID{}
+				} else {
+					var gid pgtype.UUID
+					if err := gid.Scan(g); err != nil {
+						return nil, ErrInvalidPublicGroupID
+					}
+
+					// The public role must be a group the user actually
+					// belongs to ("pick from own groups").
+					member, err := q.IsUserInGroupID(ctx, gen.IsUserInGroupIDParams{
+						UserID:  userID,
+						GroupID: gid,
+					})
+					if err != nil {
+						return nil, fmt.Errorf("checking group membership: %w", err)
+					}
+
+					if !member {
+						return nil, ErrNotGroupMember
+					}
+
+					pubGroupID = gid
+				}
+			}
+
+			if err := q.SetUserPublicIdentity(ctx, gen.SetUserPublicIdentityParams{
+				PublicUsername: pubUsername,
+				PublicGroupID:  pubGroupID,
+				UserID:         userID,
+			}); err != nil {
+				return nil, fmt.Errorf("updating public identity: %w", err)
+			}
+
+			txResult.PublicIdentityChanged = true
+		}
+
 		return txResult, nil
 	})
 	if err != nil {
@@ -1992,7 +2137,7 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 	// Re-index the user in Meilisearch when username or display_name
 	// changes so the search index reflects the new values (§13/§19).
 	// Enqueued after commit so we don't index a row that might roll back.
-	if result.UsernameChanged || result.DisplayNameChanged {
+	if result.UsernameChanged || result.DisplayNameChanged || result.PublicIdentityChanged {
 		s.enqueueUserSearchIndex(userID)
 	}
 
@@ -2017,6 +2162,14 @@ func (s *Service) EnsureSyntheticUser(ctx context.Context, input SyntheticUserIn
 
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("looking up synthetic user: %w", err)
+		}
+
+		// §03 alias amendment: a synthetic canonical username must not shadow
+		// an existing public_username alias.
+		if taken, terr := q.PublicHandleTaken(ctx, gen.PublicHandleTakenParams{
+			Handle: input.Username,
+		}); terr == nil && taken > 0 {
+			return ErrUsernameTaken
 		}
 
 		newID, err := q.CreateSyntheticUser(ctx, gen.CreateSyntheticUserParams{

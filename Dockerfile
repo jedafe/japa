@@ -30,7 +30,16 @@ RUN VERSION="1.0.0"; \
         COUNT=$(git rev-list --count HEAD 2>/dev/null || echo 0); \
         if [ "$COUNT" -gt 0 ]; then VERSION="1.0.$COUNT"; fi; \
     fi; \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags "-X github.com/jedafe/japa/internal/control.BuildVersion=$VERSION" -o /japa-api ./cmd/api/
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w -X github.com/jedafe/japa/internal/control.BuildVersion=$VERSION" -o /japa-api ./cmd/api/
+
+# Ops binaries for one-off execs on the deployed container — the api image
+# has no Go toolchain, so these must be prebuilt: migrations on every
+# update, seed/geo-seed/requeue for the fresh-prod launch sequence
+# (docs/deployment-coolify.md).
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-migrate ./cmd/migrate/ && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-seed ./cmd/seed/ && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-seed-geo-cities ./cmd/seed-geo-cities/ && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-requeue-universities ./cmd/requeue-universities/
 
 # Stage 2: minimal runtime image
 FROM alpine:latest
@@ -47,6 +56,16 @@ WORKDIR /app
 RUN mkdir -p /app/data/media && chown -R japa:japa /app
 
 COPY --from=builder /japa-api /app/japa-api
+COPY --from=builder /japa-migrate /app/japa-migrate
+COPY --from=builder /japa-seed /app/japa-seed
+COPY --from=builder /japa-seed-geo-cities /app/japa-seed-geo-cities
+COPY --from=builder /japa-requeue-universities /app/japa-requeue-universities
+
+# Migration files (FindMigrationsDir resolves ./migrations under WORKDIR)
+# and the geo/university seed data seed-geo-cities + wikifacts read via
+# db/seed/... relative paths.
+COPY migrations/ /app/migrations/
+COPY db/seed/ /app/db/seed/
 
 USER japa
 

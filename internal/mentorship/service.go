@@ -242,8 +242,8 @@ func (s *Service) ListMatches(ctx context.Context, limit, offset int32) ([]Match
 			CreatedAt:      r.CreatedAt,
 			UpdatedAt:      r.UpdatedAt,
 			ProgramName:    r.ProgramName,
-			MentorUsername: r.MentorUsername,
-			MenteeUsername: r.MenteeUsername,
+			MentorUsername: &r.MentorUsername,
+			MenteeUsername: &r.MenteeUsername,
 		}
 	}
 

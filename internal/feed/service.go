@@ -665,8 +665,8 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 		authorName := ""
 		if r.AuthorDisplayName != nil && *r.AuthorDisplayName != "" {
 			authorName = *r.AuthorDisplayName
-		} else if r.AuthorUsername != nil {
-			authorName = *r.AuthorUsername
+		} else if r.AuthorUsername != "" {
+			authorName = r.AuthorUsername
 		}
 
 		excerpt := CleanExcerpt(r.Excerpt, r.Title)

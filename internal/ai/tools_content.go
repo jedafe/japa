@@ -276,8 +276,8 @@ func contentSearchResultsFromPlatform(rows []gen.ListContentsRow) []contentSearc
 
 		if r.AuthorDisplayName != nil {
 			item.AuthorName = *r.AuthorDisplayName
-		} else if r.AuthorUsername != nil {
-			item.AuthorName = *r.AuthorUsername
+		} else if r.AuthorUsername != "" {
+			item.AuthorName = r.AuthorUsername
 		}
 
 		out = append(out, item)
@@ -1465,8 +1465,8 @@ func contentListResultsFromType(rows []gen.ListContentsByTypeRow) []contentSearc
 			GeoSpaceID:  uuidString(r.GeoSpaceID),
 			CreatedAt:   timestampString(r.CreatedAt),
 		}
-		if r.AuthorUsername != nil {
-			item.AuthorName = *r.AuthorUsername
+		if r.AuthorUsername != "" {
+			item.AuthorName = r.AuthorUsername
 		}
 
 		out = append(out, item)

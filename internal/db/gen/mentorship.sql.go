@@ -76,11 +76,11 @@ func (q *Queries) GetMenteeDestinationSpaceID(ctx context.Context, userID pgtype
 const getMentorByUsername = `-- name: GetMentorByUsername :one
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username,
  up.profession, up.website_url
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE u.username = $1 AND up.is_mentor = true
+WHERE (u.username = $1 OR lower(u.public_username) = lower($1)) AND up.is_mentor = true
  AND EXISTS (
    SELECT 1 FROM contents sc
    JOIN service_listing_meta sm ON sm.content_id = sc.id
@@ -153,7 +153,7 @@ const getMentorProfile = `-- name: GetMentorProfile :one
 
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, up.mentor_listing_content_id, u.username,
+ up.display_name, up.avatar_url, up.mentor_listing_content_id, COALESCE(u.public_username, u.username, '') AS username,
  up.profession, up.website_url,
  -- 000829 mentor card fields (§114 detail-page rebuild).
  up.location, up.mentor_title, up.mentor_response_time, up.mentor_availability,
@@ -234,7 +234,7 @@ func (q *Queries) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Get
 const getMentorsByIDs = `-- name: GetMentorsByIDs :many
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
@@ -352,7 +352,7 @@ const listMentors = `-- name: ListMentors :many
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  COALESCE(
@@ -504,7 +504,7 @@ const listMentorsByMatch = `-- name: ListMentorsByMatch :many
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  CASE WHEN up.mentor_embedding IS NOT NULL
@@ -716,8 +716,8 @@ func (q *Queries) ListMentorsWithEmbeddings(ctx context.Context) ([]ListMentorsW
 const listMentorshipMatches = `-- name: ListMentorshipMatches :many
 SELECT m.id, m.program_id, m.mentor_id, m.mentee_id, m.status, m.created_at, m.updated_at,
  p.name AS program_name,
- mu.username AS mentor_username,
- eu.username AS mentee_username
+ COALESCE(mu.public_username, mu.username, '') AS mentor_username,
+ COALESCE(eu.public_username, eu.username, '') AS mentee_username
 FROM mentorship_matches m
 LEFT JOIN mentorship_programs p ON p.id = m.program_id
 LEFT JOIN users mu ON mu.id = m.mentor_id
@@ -741,8 +741,8 @@ type ListMentorshipMatchesRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	ProgramName    *string            `json:"program_name"`
-	MentorUsername *string            `json:"mentor_username"`
-	MenteeUsername *string            `json:"mentee_username"`
+	MentorUsername string             `json:"mentor_username"`
+	MenteeUsername string             `json:"mentee_username"`
 }
 
 func (q *Queries) ListMentorshipMatches(ctx context.Context, arg ListMentorshipMatchesParams) ([]ListMentorshipMatchesRow, error) {
@@ -892,7 +892,7 @@ func (q *Queries) ListMentorshipProgramsWithCounts(ctx context.Context, arg List
 const searchMentors = `-- name: SearchMentors :many
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id

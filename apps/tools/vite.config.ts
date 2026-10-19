@@ -39,6 +39,12 @@ function apiHeadersPlugin(): Plugin {
 export default defineConfig({
 	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit()],
 	server: {
+		// Pre-transform the heaviest routes at server start so the first hit
+		// doesn't pay multi-second on-demand compile (measured: visa-routes
+		// ~13.5s, scholarships/[guide_id] ~7s cold).
+		warmup: {
+			clientFiles: ['./src/routes/visa-routes/+page.svelte', './src/routes/scholarships/[guide_id]/+page.svelte', './src/routes/+page.svelte']
+		},
 		proxy: {
 			'/api/v1/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
 			'/api/v1': { target: API_TARGET, changeOrigin: true },

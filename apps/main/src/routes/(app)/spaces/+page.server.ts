@@ -35,12 +35,17 @@ export const load: PageServerLoad = async (event) => {
 	const page = isNaN(pageParam) || pageParam < 0 ? 0 : pageParam;
 
 	// Rule 3 / Rule 16: configurable page size and level set from system_settings.
-	let siteSettings: Record<string, unknown> = {};
-	try {
-		siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
-	} catch {
-		siteSettings = {};
-	}
+	// Settings + space types are shared catalogs; fetch them concurrently.
+	const [siteSettingsRes, spaceTypesRes] = await Promise.all([
+		apiGet<Record<string, unknown>>(ctx, '/site/settings/public')
+			.then((s) => s ?? {})
+			.catch(() => ({})),
+		apiGet<SpaceType[]>(ctx, '/space-types')
+			.then((t) => (Array.isArray(t) ? t : []))
+			.catch(() => [] as SpaceType[])
+	]);
+	const siteSettings = siteSettingsRes;
+	const spaceTypes = spaceTypesRes;
 
 	const levels = Array.isArray(siteSettings['spaces.levels'])
 		? (siteSettings['spaces.levels'] as string[])
@@ -51,15 +56,6 @@ export const load: PageServerLoad = async (event) => {
 			: DEFAULT_PAGE_SIZE;
 	const offset = page * pageSize;
 
-	// Fetch space types first so we can resolve the slug → ID and render chips.
-	let spaceTypes: SpaceType[] = [];
-	try {
-		spaceTypes = await apiGet<SpaceType[]>(ctx, '/space-types');
-		if (!Array.isArray(spaceTypes)) spaceTypes = [];
-	} catch {
-		spaceTypes = [];
-	}
-
 	// Resolve the type slug (from the URL) to the space_type_id the backend
 	// expects. If the slug doesn't match any type, the filter is ignored.
 	let typeID = '';
@@ -68,77 +64,76 @@ export const load: PageServerLoad = async (event) => {
 		if (match) typeID = match.id;
 	}
 
-	let spaces: Space[] = [];
-	let total = 0;
-	let totalPages = 0;
-	let loadError = false;
-	let forbidden = false;
-	let followingSpaceIds: string[] = [];
+	const params = new URLSearchParams();
+	params.set('page_size', String(pageSize));
+	params.set('page_offset', String(offset));
+	if (q) params.set('q', q);
+	if (typeID) params.set('type', typeID);
+	if (levelFilter) params.set('level', levelFilter);
+	if (sort) params.set('sort', sort);
+	if (geoFilter) params.set('geo', geoFilter);
+	if (regionFilter) params.set('region', regionFilter);
+	if (subregionFilter) params.set('subregion', subregionFilter);
+	if (parentFilter) params.set('parent', parentFilter);
+	if (joinedOnly) params.set('joined', '1');
 
-	if (event.locals.user) {
-		try {
-			const following = await apiGet<{ entity_id: string }[]>(ctx, '/me/following?type=space&page_size=100');
-			followingSpaceIds = (following ?? []).map((f) => f.entity_id);
-		} catch {
-			followingSpaceIds = [];
-		}
-	}
+	// Second wave — the spaces list, viewer's following state, region options,
+	// the country picker list, and the parent-name chip are all independent
+	// once typeID is resolved. Run them concurrently.
+	const followingPromise = event.locals.user
+		? apiGet<{ entity_id: string }[]>(ctx, '/me/following?type=space&page_size=100')
+				.then((f) => (f ?? []).map((x) => x.entity_id))
+				.catch(() => [] as string[])
+		: Promise.resolve([] as string[]);
 
-	try {
-		const params = new URLSearchParams();
-		params.set('page_size', String(pageSize));
-		params.set('page_offset', String(offset));
-		if (q) params.set('q', q);
-		if (typeID) params.set('type', typeID);
-		if (levelFilter) params.set('level', levelFilter);
-		if (sort) params.set('sort', sort);
-		if (geoFilter) params.set('geo', geoFilter);
-		if (regionFilter) params.set('region', regionFilter);
-		if (subregionFilter) params.set('subregion', subregionFilter);
-		if (parentFilter) params.set('parent', parentFilter);
-		if (joinedOnly) params.set('joined', '1');
-
-		const result = await apiList<Space>(ctx, `/spaces?${params.toString()}`);
-		spaces = result.items;
-		total = result.meta?.total ?? 0;
-		totalPages = result.meta?.total_pages ?? 0;
-	} catch (err) {
-		if (err instanceof ApiError && err.status === 403) {
-			forbidden = true;
-		} else {
-			loadError = true;
-		}
-	}
+	const spacesPromise = apiList<Space>(ctx, `/spaces?${params.toString()}`).then(
+		(result) => ({
+			items: result.items,
+			total: result.meta?.total ?? 0,
+			totalPages: result.meta?.total_pages ?? 0,
+			forbidden: false,
+			loadError: false
+		}),
+		(err: unknown) => ({
+			items: [] as Space[],
+			total: 0,
+			totalPages: 0,
+			forbidden: err instanceof ApiError && err.status === 403,
+			loadError: !(err instanceof ApiError && err.status === 403)
+		})
+	);
 
 	// Country list powers the ?geo= filter picker (was a free-text code input).
-	let countries: GeoCountry[] = [];
-	try {
-		countries = await apiGet<GeoCountry[]>(ctx, '/geo/countries');
-		if (!Array.isArray(countries)) countries = [];
-	} catch {
-		countries = [];
-	}
+	const countriesPromise = apiGet<GeoCountry[]>(ctx, '/geo/countries')
+		.then((c) => (Array.isArray(c) ? c : []))
+		.catch(() => [] as GeoCountry[]);
 
 	// Fetch region options for the directory filters. ?subregion= remains a
 	// valid URL-only param (passed through above) — no dedicated UI control.
-	let regions: string[] = [];
-	try {
-		regions = await apiGet<string[]>(ctx, '/spaces/regions');
-		if (!Array.isArray(regions)) regions = [];
-	} catch {
-		regions = [];
-	}
+	const regionsPromise = apiGet<string[]>(ctx, '/spaces/regions')
+		.then((r) => (Array.isArray(r) ? r : []))
+		.catch(() => [] as string[]);
 
 	// Try to resolve the parent filter name so the UI can display a chip.
-	let parentName = '';
-	if (parentFilter) {
-		try {
-			const parents = await apiGet<{ id: string; name: string }[]>(ctx, '/spaces/suggest-parents');
-			parentName = parents?.find((p) => p.id === parentFilter)?.name ?? '';
-		} catch {
-			parentName = '';
-		}
-	}
+	const parentNamePromise = parentFilter
+		? apiGet<{ id: string; name: string }[]>(ctx, '/spaces/suggest-parents')
+				.then((parents) => parents?.find((p) => p.id === parentFilter)?.name ?? '')
+				.catch(() => '')
+		: Promise.resolve('');
+
+	const [followingSpaceIds, spacesResult, countries, regions, parentName] = await Promise.all([
+		followingPromise,
+		spacesPromise,
+		countriesPromise,
+		regionsPromise,
+		parentNamePromise
+	]);
+
+	const spaces = spacesResult.items;
+	const total = spacesResult.total;
+	const totalPages = spacesResult.totalPages;
+	const loadError = spacesResult.loadError;
+	const forbidden = spacesResult.forbidden;
 
 	return {
 		spaces,

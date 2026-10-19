@@ -460,7 +460,7 @@ func (q *Queries) ListFirstTagModerators(ctx context.Context, tagIds []pgtype.UU
 
 const listTagModerators = `-- name: ListTagModerators :many
 
-SELECT tm.user_id, u.username, tm.created_at,
+SELECT tm.user_id, COALESCE(u.public_username, u.username, '') AS username, tm.created_at,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url
 FROM tag_moderators tm

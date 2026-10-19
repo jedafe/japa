@@ -252,3 +252,25 @@ JOIN group_roles gr ON gr.group_id = ug.id
 JOIN role_permissions rp ON rp.role_id = gr.role_id
 JOIN permissions p ON rp.permission_id = p.id
 WHERE p.key = @permission_key;
+
+-- name: GetUserGroupBySlug :one
+-- Resolves a group by slug — used by the owner/super_admin lifecycle paths to
+-- find the super_admin group (§03 owner amendment).
+SELECT id, name, slug, is_system, description
+FROM user_groups
+WHERE slug = @slug;
+
+-- name: IsUserInGroupID :one
+-- Membership check by group id — validates a chosen public_group_id belongs to
+-- the user's own groups (§03 alias amendment).
+SELECT EXISTS(
+ SELECT 1 FROM user_group_memberships
+ WHERE user_id = @user_id AND group_id = @group_id
+) AS in_group;
+
+-- name: ClearPublicGroupRole :exec
+-- §03 alias amendment: when a user loses membership of the group they chose
+-- as their public role, clear the dangling pointer so public surfaces no
+-- longer show a role they no longer hold.
+UPDATE users SET public_group_id = NULL, updated_at = now()
+WHERE id = @user_id AND public_group_id = @group_id;

@@ -32,10 +32,15 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3003
 
-COPY --from=build /repo/package.json /repo/bun.lock ./
-COPY --from=build /repo/node_modules ./node_modules
+# Production-only deps — the build stage's node_modules carries vite,
+# typescript, eslint, etc. Reinstall from manifests with --production;
+# the adapter-node bundle only needs runtime deps at serve time.
+COPY --parents package.json bun.lock apps/*/package.json packages/*/package.json ./
+RUN bun install --frozen-lockfile --ignore-scripts --production
+
 COPY --from=build /repo/packages ./packages
-COPY --from=build /repo/apps/academy ./apps/academy
+COPY --from=build /repo/apps/academy/build ./apps/academy/build
+COPY --from=build /repo/apps/academy/package.json ./apps/academy/package.json
 
 USER bun
 

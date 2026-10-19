@@ -23,12 +23,13 @@ export function initLocale(serverLocale: Locale, serverTranslations?: Record<str
 	if (browser) document.documentElement.lang = serverLocale;
 }
 
-export function setLocale(locale: Locale) {
+export async function setLocale(locale: Locale) {
 	currentLocale = locale;
 	if (browser) {
 		document.documentElement.lang = locale;
 		document.cookie = `jc_locale=${locale};path=/;max-age=31536000;samesite=lax`;
 	}
+	await loadTranslations(locale);
 }
 
 export function t(key: string, fallback?: string): string {

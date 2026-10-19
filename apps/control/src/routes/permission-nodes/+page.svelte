@@ -4,7 +4,7 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Shield, Search, RefreshCw } from 'lucide-svelte';
 	import type { DataTableColumn } from '$lib/api/types';
@@ -27,22 +27,25 @@
 	let sortKey = $state('');
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 
-	const columns: DataTableColumn[] = [
-		{
-			key: 'key',
-			label: t('permission_nodes.key', 'Permission Key'),
-			sortable: true,
-			render: (val: unknown) =>
-				`<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">${escapeHtml(val) || '—'}</span>`
-		},
-		{
-			key: 'description',
-			label: t('permission_nodes.description', 'Description'),
-			sortable: false,
-			render: (val: unknown) =>
-				`<span class="text-muted-foreground text-sm">${escapeHtml(val) || '—'}</span>`
-		}
-	];
+	const columns = $derived.by<DataTableColumn[]>(() => {
+		translations();
+		return [
+			{
+				key: 'key',
+				label: t('permission_nodes.key', 'Permission Key'),
+				sortable: true,
+				render: (val: unknown) =>
+					`<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">${escapeHtml(val) || '—'}</span>`
+			},
+			{
+				key: 'description',
+				label: t('permission_nodes.description', 'Description'),
+				sortable: false,
+				render: (val: unknown) =>
+					`<span class="text-muted-foreground text-sm">${escapeHtml(val) || '—'}</span>`
+			}
+		];
+	});
 
 	async function load() {
 		loading = true;

@@ -627,7 +627,7 @@ func (s *Store) GetTrackDetail(ctx context.Context, slug string) (*TrackDetail, 
 	if row.AcademyInstructorProfileID.Valid && row.InstructorName != nil {
 		detail.Instructor = &InstructorRef{
 			ID:          row.AcademyInstructorProfileID.String(),
-			Username:    strOrEmpty(row.InstructorUsername),
+			Username:    strOrEmpty(&row.InstructorUsername),
 			DisplayName: *row.InstructorName,
 			AvatarURL:   row.InstructorAvatarUrl,
 			Bio:         row.InstructorBio,
@@ -1459,9 +1459,7 @@ func certFromListRow(r gen.ListAcademyCertificatesByUserRow) Certificate {
 	}
 
 	recipientUsername := ""
-	if r.RecipientUsername != nil {
-		recipientUsername = *r.RecipientUsername
-	}
+	recipientUsername = r.RecipientUsername
 
 	return Certificate{
 		ID: r.ID,
@@ -1553,9 +1551,7 @@ func (s *Store) GetCertificateByID(ctx context.Context, certID pgtype.UUID) (*Ce
 	}
 
 	recipientUsername := ""
-	if r.RecipientUsername != nil {
-		recipientUsername = *r.RecipientUsername
-	}
+	recipientUsername = r.RecipientUsername
 
 	c := Certificate{
 		ID: r.ID,
@@ -2091,7 +2087,7 @@ func trackReviewWithAuthorFromRow(r gen.ListReviewsByEntityWithAuthorRow) TrackR
 		ID:                r.ID.String(),
 		TrackID:           r.EntityID.String(),
 		AuthorID:          r.ReviewerUserID.String(),
-		AuthorUsername:    strOrEmpty(r.AuthorUsername),
+		AuthorUsername:    strOrEmpty(&r.AuthorUsername),
 		AuthorDisplayName: r.AuthorDisplayName,
 		AuthorAvatarURL:   r.AuthorAvatarUrl,
 		Rating:            r.Rating,

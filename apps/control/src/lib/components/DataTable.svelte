@@ -175,13 +175,14 @@
 		<thead>
 			<tr class="border-border-card border-b">
 				{#if selectable}
-					<th class="text-muted-foreground bg-muted w-10 px-3 py-2.5">
+					<th scope="col" class="text-muted-foreground bg-muted w-10 px-3 py-2.5">
 						<label class="flex cursor-pointer items-center justify-center">
 							<input
 								type="checkbox"
 								checked={allSelected}
 								indeterminate={someSelected}
 								onchange={toggleAll}
+								aria-label={t('lib.components.DataTable.select_all', 'Select all rows')}
 								class="border-border-input bg-background size-3.5 cursor-pointer rounded-sm accent-accent-foreground"
 							/>
 						</label>
@@ -189,6 +190,7 @@
 				{/if}
 				{#each columns as col}
 					<th
+						scope="col"
 						class="text-muted-foreground bg-muted px-4 py-2.5 text-left font-medium {col.class ?? ''}"
 					>
 						{#if col.sortable}
@@ -341,7 +343,7 @@
 			<div class="text-muted-foreground flex items-center gap-3 text-sm">
 				<span>{totalRows} {totalRows !== 1 ? t('lib.components.DataTable.items', 'items') : t('lib.components.DataTable.item', 'item')}</span>
 				<div class="flex items-center gap-1.5">
-					<span class="text-xs">{t('lib.components.DataTable.svelte.per_page')}</span>
+					<span class="text-xs">{t('lib.components.DataTable.per_page', 'Per page')}</span>
 					<AutocompleteSelect
 						value={String(pageSize)}
 						onValueChange={(v) => {
@@ -349,7 +351,7 @@
 							page = 0;
 						}}
 						options={pageSizeOptions.map((opt) => ({ value: String(opt), label: String(opt) }))}
-						ariaLabel={t('lib.components.DataTable.svelte.per_page')}
+						ariaLabel={t('lib.components.DataTable.per_page', 'Per page')}
 						compact
 					/>
 				</div>
@@ -360,7 +362,7 @@
 					class="text-foreground hover:bg-dark-04 flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
 					disabled={page === 0}
 					onclick={() => goTo(0)}
-					aria-label="First page"
+					aria-label={t('lib.components.DataTable.first_page', 'First page')}
 				>
 					<ChevronsLeft class="size-4" />
 				</button>
@@ -368,7 +370,7 @@
 					class="text-foreground hover:bg-dark-04 flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
 					disabled={page === 0}
 					onclick={() => goTo(page - 1)}
-					aria-label="Previous page"
+					aria-label={t('lib.components.DataTable.prev_page', 'Previous page')}
 				>
 					<ChevronLeft class="size-4" />
 				</button>
@@ -387,7 +389,7 @@
 					class="text-foreground hover:bg-dark-04 flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
 					disabled={page >= totalPages - 1}
 					onclick={() => goTo(totalPages - 1)}
-					aria-label="Last page"
+					aria-label={t('lib.components.DataTable.last_page', 'Last page')}
 				>
 					<ChevronsRight class="size-4" />
 				</button>

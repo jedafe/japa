@@ -23,6 +23,7 @@
 
 	let budget = $state<AiBudget | null>(null);
 	let loading = $state(true);
+	let loadError = $state('');
 	let activeTab = $state('overview');
 	let editModalOpen = $state(false);
 	let editThreshold = $state('');
@@ -30,15 +31,26 @@
 	let editError = $state('');
 
 	async function load(quiet = false) {
+		if (!canView) {
+			loading = false;
+			return;
+		}
 		if (!quiet) loading = true;
 		const result = await api<AiBudget>('/control/ai-budget');
 		if (result.ok) {
 			budget = result.data;
+			loadError = '';
+		} else {
+			loadError = result.error;
 		}
 		loading = false;
 	}
 
 	$effect(() => {
+		if (!canView) {
+			loading = false;
+			return;
+		}
 		load();
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') load(true);
@@ -93,6 +105,10 @@
 	}
 
 	async function saveThreshold() {
+		if (!String(editThreshold).trim()) {
+			editError = t('ai_budget.invalid_threshold', 'Threshold must be a non-negative number.');
+			return;
+		}
 		const val = Number(editThreshold);
 		if (Number.isNaN(val) || val < 0) {
 			editError = t('ai_budget.invalid_threshold', 'Threshold must be a non-negative number.');
@@ -141,7 +157,12 @@
 </div>
 
 {#if loading}
-	<p class="text-muted-foreground py-8 text-center text-sm">{t('ai_budget.loading')}</p>
+	<p class="text-muted-foreground py-8 text-center text-sm">{t('ai_budget.loading', 'Loading...')}</p>
+{:else if loadError}
+	<div class="border-destructive bg-destructive/10 text-destructive mb-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm">
+		<AlertTriangle class="size-4" />
+		{loadError}
+	</div>
 {:else if budget}
 		{#if budget.alert_triggered}
 		<div class="border-destructive bg-destructive/10 text-destructive mb-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm">

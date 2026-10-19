@@ -244,6 +244,7 @@
         "leaflet": "^1.9.4",
         "lucide-svelte": "^1.0.1",
         "marked": "^14",
+        "memoize": "^10.2.0",
         "qrcode": "^1.5.4",
       },
       "devDependencies": {
@@ -317,6 +318,7 @@
         "layerchart": "2.0.1",
         "leaflet": "^1.9.4",
         "lucide-svelte": "^1.0.1",
+        "memoize": "^10.2.0",
       },
       "devDependencies": {
         "@sveltejs/adapter-node": "^5.5.7",

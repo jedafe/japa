@@ -144,6 +144,7 @@
 					clearUser();
 					if (!isAuthPage) redirectViaLogin();
 					authChecked = true;
+					authInflight = false;
 					return;
 				}
 				// C1: Fetch the resolved permission set from /me/permissions
@@ -162,6 +163,7 @@
 					clearUser();
 					if (!isAuthPage) redirectViaLogin();
 					authChecked = true;
+					authInflight = false;
 					return;
 				}
 				setUser({

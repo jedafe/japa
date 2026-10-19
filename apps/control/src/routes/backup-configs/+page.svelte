@@ -72,14 +72,20 @@
 		const result = await api<{ presets: SchedulePreset[]; tiers: string[] }>("/control/cron/schedule-presets");
 		if (result.ok && result.data) {
 			schedulePresets = result.data.presets;
+		} else {
+			// Preset catalog unavailable — fall back to raw cron input so
+			// the schedule stays settable instead of a dead end.
+			customScheduleMode = true;
+			message = result && !result.ok ? result.error : message;
+			if (message) messageType = 'error';
 		}
 	}
 
 	function onSchedulePresetChange(value: string) {
 		selectedSchedulePreset = value;
-		if (value === 'custom') {
+		if (value === 'custom' || value === '') {
 			customScheduleMode = true;
-			createForm.schedule = '';
+			if (value === 'custom') createForm.schedule = '';
 		} else {
 			customScheduleMode = false;
 			const preset = schedulePresets.find((p) => p.value === value);
@@ -125,6 +131,9 @@
 	let selectedIds = $state(new Set<string>());
 	let confirmBulkDeleteOpen = $state(false);
 	let pendingBulkIds = $state<string[]>([]);
+	// Per-row in-flight guard for trigger/toggle: double-clicks must not
+	// enqueue duplicate backups or double-toggle.
+	let busyConfigs = $state(new Set<string>());
 
 	const storageTypeOptions: { value: BackupConfig['storage_type']; label: string }[] = [
 		{ value: 'local', label: 'Local' },
@@ -205,6 +214,8 @@
 	];
 
 	function triggerBackup(config: BackupConfig) {
+		if (busyConfigs.has(config.id)) return;
+		busyConfigs.add(config.id);
 		void (async () => {
 			message = '';
 			try {
@@ -220,11 +231,15 @@
 			} catch {
 				message = t('backup_configs.trigger_error', 'Failed to trigger backup.');
 				messageType = 'error';
+			} finally {
+				busyConfigs.delete(config.id);
 			}
 		})();
 	}
 
 	function toggleEnabled(config: BackupConfig) {
+		if (busyConfigs.has(config.id)) return;
+		busyConfigs.add(config.id);
 		void (async () => {
 			message = '';
 			const next = !config.enabled;
@@ -246,6 +261,8 @@
 			} catch {
 				message = t('backup_configs.toggle_error', 'Failed to update backup config.');
 				messageType = 'error';
+			} finally {
+				busyConfigs.delete(config.id);
 			}
 		})();
 	}
@@ -447,13 +464,24 @@
 
 	async function confirmBulkDelete() {
 		const ids = pendingBulkIds;
-		await Promise.allSettled(
+		message = '';
+		const results = await Promise.allSettled(
 			ids.map((id) => api(`/control/backup-configs/${id}`, { method: 'DELETE' }))
 		);
+		const failed = results.filter(
+			(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
+		).length;
 		selectedIds = new Set();
 		pendingBulkIds = [];
 		confirmBulkDeleteOpen = false;
 		await load();
+		if (failed > 0) {
+			message = t('backup_configs.bulk_delete_partial', '{n} config(s) could not be deleted.').replace('{n}', String(failed));
+			messageType = 'error';
+		} else {
+			message = t('backup_configs.bulk_delete_success', 'Selected backup configs deleted.');
+			messageType = 'success';
+		}
 	}
 
 	// --- Autocomplete fetchers (client-side filter of loaded options) ---

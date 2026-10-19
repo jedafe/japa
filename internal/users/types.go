@@ -39,10 +39,15 @@ type UpdateProfileRequest struct {
 // Per Section 50: username may be changed once per 30 days; email change
 // triggers re-verification (email_verified_at reset to NULL); display_name
 // is also editable here. All fields are optional (partial update).
+// §03 alias amendment: public_username (alias handle) and public_group_id
+// (public role) are super_admin-gated presentation fields — the handler
+// rejects non-super_admin callers when either is present.
 type UpdateAccountRequest struct {
-	Username    *string `json:"username"`
-	Email       *string `json:"email"`
-	DisplayName *string `json:"display_name"`
+	Username       *string `json:"username"`
+	Email          *string `json:"email"`
+	DisplayName    *string `json:"display_name"`
+	PublicUsername *string `json:"public_username"`
+	PublicGroupID  *string `json:"public_group_id"`
 }
 
 // UpdatePreferencesRequest is the JSON body for PUT /api/v1/users/me/preferences.
@@ -124,6 +129,13 @@ type UserProfileResponse struct {
 	// hardcoded role names (§26 RBAC wiring, Rule 16). Nil for public
 	// profiles (only populated by GetMyProfile). Sorted for stable output.
 	EffectivePermissions []string `json:"permissions,omitempty"`
+	// §03 alias amendment — super_admin public identity fields. Surfaced on
+	// /me so account settings can pre-populate; nil/empty when unset.
+	PublicUsername *string `json:"public_username"`
+	PublicGroupID  *string `json:"public_group_id"`
+	PublicRole     *string `json:"public_role"`
+	// IsOwner marks the JC_OWNER_EMAIL platform owner account.
+	IsOwner bool `json:"is_owner"`
 }
 
 // UserPreferencesResponse is the API response for user preferences.
@@ -173,6 +185,7 @@ type UserListItem struct {
 	Status        string   `json:"status"`
 	FollowerCount int32    `json:"follower_count"`
 	Groups        []string `json:"groups"`
+	IsOwner       bool     `json:"is_owner"`
 	CreatedAt     string   `json:"created_at"`
 	UpdatedAt     string   `json:"updated_at"`
 }
@@ -207,6 +220,10 @@ type PublicProfileResponse struct {
 	SyntheticSource *string `json:"synthetic_source"`
 	Location        *string `json:"location"`
 	BannerURL       *string `json:"banner_url"`
+	// Role is the display name of the user's chosen public group
+	// (users.public_group_id → user_groups.name). Null when unset.
+	// Ref: §03 alias amendment — super_admin public role.
+	Role *string `json:"role"`
 }
 
 // DraftResponse is the API response for GET /api/v1/me/drafts/{id}, used by

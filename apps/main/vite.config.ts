@@ -57,6 +57,11 @@ export default defineConfig({
 	envPrefix: ['VITE_', 'PUBLIC_'],
 	server: {
 		allowedHosts: devAllowedHosts,
+		// Pre-transform the heaviest pages at server start so the first hit
+		// doesn't pay multi-second on-demand compile.
+		warmup: {
+			clientFiles: ['./src/routes/(app)/comparisons/[slug]/+page.svelte', './src/routes/(app)/spaces/[slug]/+page.svelte', './src/routes/(app)/+page.svelte']
+		},
 		// Allow serving workspace-level .bun node_modules (e.g. @fontsource
 		// fonts installed by Bun at the monorepo root). Without this, Vite
 		// rejects requests like:

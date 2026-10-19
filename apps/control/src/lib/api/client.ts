@@ -222,8 +222,8 @@ export async function apiFetch<T>(
 			return { data: null, meta: null, error: err, status: res.status };
 		}
 
-		const meta = (body as ApiOk<T> & { meta?: Record<string, unknown> })?.meta ?? null;
-		return { data: (body as ApiOk<T>).data, meta, error: null, status: res.status };
+		const meta = (body as (ApiOk<T> & { meta?: Record<string, unknown> }) | null)?.meta ?? null;
+		return { data: (body as ApiOk<T> | null)?.data ?? null, meta, error: null, status: res.status };
 	} catch (err) {
 		return {
 			data: null,

@@ -75,6 +75,8 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	DefaultFolderSetter DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 	TierManager         TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 	SourceManager       SourceManager         // Optional — wired by server for v2 source directory auto-creation
+	OwnerEmail          string                // JC_OWNER_EMAIL — designates the platform owner account (§03 owner amendment)
+	OwnerPromoter       SuperAdminPromoter    // Optional — promotes the owner account into the super_admin group at registration
 }
 
 // SetReferralCapturer injects the referral capture dependency (§60, ADR-078).
@@ -90,6 +92,24 @@ func (h *AuthHandlers) SetTierManager(m TierManager) { h.TierManager = m }
 // SetSourceManager injects the canonical source registry for auto-creating
 // user publisher profiles in the v2 source directory.
 func (h *AuthHandlers) SetSourceManager(m SourceManager) { h.SourceManager = m }
+
+// SetOwnerPromoter injects the promoter used to grant the owner account
+// super_admin membership at registration (§03 owner amendment).
+func (h *AuthHandlers) SetOwnerPromoter(p SuperAdminPromoter) { h.OwnerPromoter = p }
+
+// PromoteOwnerIfMatch grants super_admin membership when the registered email
+// is the configured owner email (JC_OWNER_EMAIL). Non-fatal: a failure logs a
+// warning and the boot-time reconciliation re-asserts membership on next
+// start. Shared by the password and OAuth registration paths.
+func PromoteOwnerIfMatch(ctx context.Context, promoter SuperAdminPromoter, ownerEmail, email string, userID pgtype.UUID) {
+	if !IsOwnerEmail(email, ownerEmail) || promoter == nil {
+		return
+	}
+
+	if err := promoter.PromoteToSuperAdmin(ctx, userID); err != nil {
+		slog.Error("register: failed to promote owner to super_admin", "error", err, "user_id", userID.String())
+	}
+}
 
 func (h *AuthHandlers) maybeCreateUserSource(ctx context.Context, userID pgtype.UUID, username string) {
 	if h.SourceManager == nil {
@@ -282,6 +302,16 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §03 alias amendment: a canonical username must not shadow another
+	// user's public_username alias — the DB unique index only covers the
+	// username column itself.
+	if taken, terr := h.Queries.PublicHandleTaken(r.Context(), gen.PublicHandleTakenParams{
+		Handle: req.Username,
+	}); terr == nil && taken > 0 {
+		errpkg.WriteError(w, http.StatusConflict, "username_exists", "Username already in use")
+		return
+	}
+
 	userID, err := h.Queries.CreateUser(r.Context(), gen.CreateUserParams{
 		Email:        req.Email,
 		Username:     req.Username,
@@ -324,6 +354,10 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// §03 owner amendment: the JC_OWNER_EMAIL account is the platform owner —
+	// grant it super_admin membership on first registration.
+	PromoteOwnerIfMatch(r.Context(), h.OwnerPromoter, h.OwnerEmail, req.Email, userID)
 
 	// Record the initial password in history so it cannot be reused later.
 	if err := h.Queries.InsertPasswordHistory(r.Context(), gen.InsertPasswordHistoryParams{

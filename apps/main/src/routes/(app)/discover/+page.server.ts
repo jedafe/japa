@@ -59,16 +59,12 @@ export const load: PageServerLoad = async (event) => {
 				people = (await apiList<SuggestedUser>(ctx, `/suggestions/users?limit=${PAGE_SIZE}`)).items;
 				break;
 			case 'organizations': {
-				const res = await apiList<PublicOrgListItem>(
-					ctx,
-					`/organizations?page_size=${PAGE_SIZE}`
-				);
+				const [res, followed] = await Promise.all([
+					apiList<PublicOrgListItem>(ctx, `/organizations?page_size=${PAGE_SIZE}`),
+					apiList<{ entity_id: string }>(ctx, '/me/following?type=organization&page_size=100')
+				]);
 				organizations = res.items;
 				orgsTotal = res.meta?.total ?? res.items.length;
-				const followed = await apiList<{ entity_id: string }>(
-					ctx,
-					'/me/following?type=organization&page_size=100'
-				);
 				followedOrgIds = followed.items.map((f) => f.entity_id);
 				break;
 			}
@@ -92,17 +88,20 @@ export const load: PageServerLoad = async (event) => {
 				break;
 			}
 			case 'sources': {
-				sources = (await apiList<Source>(ctx, `/sources?sort=popular&page_size=${PAGE_SIZE}&page_offset=0`)).items;
-				const followed = await apiList<{ entity_id: string }>(ctx, '/me/following?type=source&page_size=100');
+				const [res, followed] = await Promise.all([
+					apiList<Source>(ctx, `/sources?sort=popular&page_size=${PAGE_SIZE}&page_offset=0`),
+					apiList<{ entity_id: string }>(ctx, '/me/following?type=source&page_size=100')
+				]);
+				sources = res.items;
 				followedSourceIds = followed.items.map((f) => f.entity_id);
 				break;
 			}
 			default: {
-				spaces = (await apiList<SuggestedSpace>(ctx, `/suggestions/spaces?limit=${PAGE_SIZE}`)).items;
-				const followed = await apiList<{ entity_id: string }>(
-					ctx,
-					'/me/following?type=space&page_size=100'
-				);
+				const [res, followed] = await Promise.all([
+					apiList<SuggestedSpace>(ctx, `/suggestions/spaces?limit=${PAGE_SIZE}`),
+					apiList<{ entity_id: string }>(ctx, '/me/following?type=space&page_size=100')
+				]);
+				spaces = res.items;
 				followedSpaceIds = followed.items.map((f) => f.entity_id);
 				break;
 			}

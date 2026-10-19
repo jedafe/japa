@@ -6,6 +6,7 @@
 	import ExtractionPane from '$lib/components/intelligence/ExtractionPane.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
+	import { isSafeUrl } from '$lib/utils';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import {
@@ -644,10 +645,14 @@
 							<div>
 								<dt class="text-muted-foreground text-xs font-medium uppercase">{t('intel.field_source_url', 'Source URL')}</dt>
 								<dd>
-									<a href={source.source_url} target="_blank" rel="noopener noreferrer" class="text-accent-foreground inline-flex items-center gap-1 truncate font-mono text-xs hover:underline">
-										{source.source_url}
-										<ExternalLink class="size-3 shrink-0" />
-									</a>
+									{#if isSafeUrl(source.source_url)}
+										<a href={source.source_url} target="_blank" rel="noopener noreferrer" class="text-accent-foreground inline-flex items-center gap-1 truncate font-mono text-xs hover:underline">
+											{source.source_url}
+											<ExternalLink class="size-3 shrink-0" />
+										</a>
+									{:else}
+										<span class="font-mono text-xs break-all">{source.source_url}</span>
+									{/if}
 								</dd>
 							</div>
 							<div class="grid grid-cols-2 gap-3">

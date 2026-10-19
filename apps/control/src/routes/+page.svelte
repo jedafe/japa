@@ -28,7 +28,8 @@
 		background: [],
 		realtime: []
 	});
-	let lastRefresh = $state(new Date().toLocaleTimeString());
+	let loading = $state(true);
+	let lastRefresh = $state('');
 	let apiAvailable = $state(true);
 	// M10: Time-series history of healthy-service-count for the dashboard
 	// sparkline. Appends a point on each poll tick, capped at 60 points.
@@ -98,6 +99,8 @@
 			}
 		} catch {
 			apiAvailable = false;
+		} finally {
+			loading = false;
 		}
 	}
 
@@ -128,7 +131,13 @@
 {/if}
 
 <div class="mb-4 flex items-center justify-between">
-	<p class="text-muted-foreground text-xs font-medium">{t('dashboard.last_refresh', 'Last refresh: {time}').replace('{time}', lastRefresh)}</p>
+	<p class="text-muted-foreground text-xs font-medium">
+		{#if lastRefresh}
+			{t('dashboard.last_refresh', 'Last refresh: {time}').replace('{time}', lastRefresh)}{#if !apiAvailable} <span class="text-destructive font-semibold">({t('dashboard.stale', 'stale')})</span>{/if}
+		{:else}
+			{t('common.loading', 'Loading...')}
+		{/if}
+	</p>
 	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
 		onclick={refresh}
@@ -139,10 +148,16 @@
 </div>
 
 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+	{#if loading}
+		{#each Array(4) as _}
+			<div class="h-24 animate-pulse rounded-card border border-border-card bg-background-alt"></div>
+		{/each}
+	{:else}
 	<MetricCard label={t('dashboard.total_services', 'Total Services')} value={totalServices} />
 	<MetricCard label={t('dashboard.healthy_services', 'Healthy Services')} value={healthyCount} subtitle="{uptimePercent}%" trend={uptimePercent >= 80 ? 'up' : 'down'} />
 	<MetricCard label={t('dashboard.api_uptime', 'API Uptime')} value="{uptimePercent}%" subtitle={t('dashboard.units.percent', '%')} trend={uptimePercent >= 90 ? 'up' : 'down'} />
-	<MetricCard label={t('dashboard.last_check', 'Last Check')} value={lastRefresh} />
+	<MetricCard label={t('dashboard.last_check', 'Last Check')} value={lastRefresh || '—'} />
+	{/if}
 </div>
 
 <!-- M10: Time-series sparkline of healthy-service-count over polling history -->

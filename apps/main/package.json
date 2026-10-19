@@ -64,6 +64,7 @@
 		"isomorphic-dompurify": "^2",
 		"js-yaml": "^4.1.0",
 		"layerchart": "2.0.1",
+		"memoize": "^10.2.0",
 		"leaflet": "^1.9.4",
 		"lucide-svelte": "^1.0.1",
 		"marked": "^14",

@@ -34,3 +34,13 @@ WHERE ugm.user_id = @user_id
 INSERT INTO user_group_memberships (user_id, group_id) VALUES (@user_id, @group_id)
 
 ON CONFLICT (user_id, group_id) DO NOTHING;
+
+-- name: ClearPublicGroupTierRole :exec
+-- §03 alias amendment: after a tier reset, clear public_group_id when it
+-- pointed at a tier-bearing group the user no longer belongs to.
+UPDATE users u SET public_group_id = NULL, updated_at = now()
+WHERE u.id = @user_id
+ AND EXISTS (
+   SELECT 1 FROM user_groups g
+   WHERE g.id = u.public_group_id AND g.tier IS NOT NULL AND g.tier <> ''
+ );

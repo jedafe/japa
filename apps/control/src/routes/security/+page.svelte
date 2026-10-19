@@ -134,18 +134,21 @@
 
 	let scanColumns = $derived.by<DataTableColumn[]>(() => {
 		translations();
+		// NOTE: the scan endpoint serves one 20-row page ordered by
+		// created_at DESC with no search/sort params — search and sort here
+		// apply to the visible page only.
 		return [
 		{
 			key: 'severity',
 			label: t('security.severity'),
-			sortable: true,
+			sortable: false,
 			render: (val) => {
 				const sev = escapeHtml(val);
 				const cls = severityClasses[sev] ?? 'bg-muted text-foreground';
 				return `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${sev}</span>`;
 			}
 		},
-		{ key: 'title', label: t('security.title_label'), sortable: true, class: 'font-medium' },
+		{ key: 'title', label: t('security.title_label'), sortable: false, class: 'font-medium' },
 		{
 			key: 'description',
 			label: t('security.description_label'),
@@ -154,7 +157,7 @@
 		{
 			key: 'created_at',
 			label: t('security.found'),
-			sortable: true,
+			sortable: false,
 			render: (val) => `<span>${escapeHtml(formatDate(String(val)))}</span>`
 		},
 		{
@@ -280,9 +283,11 @@
 		const results = await Promise.allSettled(
 			ids.map((id) => api(`/control/security/ip-blocks/${id}`, { method: 'DELETE' }))
 		);
-		const failed = results.filter((r) => r.status === 'rejected').length;
+		const failed = results.filter(
+			(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
+		).length;
 		if (failed > 0) {
-			deleteError = t('security.bulk_delete_partial_error', `{failed} of ${ids.length} deletes failed.`).replace('{failed}', String(failed));
+			deleteError = t('security.bulk_delete_partial_error', '{failed} of {count} deletes failed.').replace('{failed}', String(failed)).replace('{count}', String(ids.length));
 		}
 		selectedIpIds = new Set();
 		pendingBulkIpIds = [];
@@ -536,7 +541,9 @@
 		const settled = await Promise.allSettled(
 			ids.map((id) => api(`/control/security/${id}`, { method: 'DELETE' }))
 		);
-		const failed = settled.filter((r) => r.status === 'rejected').length;
+		const failed = settled.filter(
+			(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
+		).length;
 		const deletedIds = new Set(
 			ids.filter((_, i) => settled[i].status === 'fulfilled' && (settled[i] as PromiseFulfilledResult<{ ok: boolean }>).value.ok)
 		);
@@ -570,8 +577,10 @@
 			createError = t('security.cidr_required', 'CIDR is required.');
 			return;
 		}
-		// Basic CIDR validation
-		if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(cidr.trim())) {
+		// Basic CIDR format check (IPv4 or IPv6 with prefix length).
+		// The backend is authoritative on validity — this only catches
+		// obvious typos before the round trip.
+		if (!/^[^/\s]+\/\d{1,3}$/.test(cidr.trim())) {
 			createError = t('security.invalid_cidr', 'Please enter a valid CIDR (e.g. 192.168.1.0/24).');
 			return;
 		}
@@ -590,10 +599,10 @@
 				ipBlocks = [result.data, ...ipBlocks];
 				closeCreateModal();
 			} else {
-				createError = t('security.create_block_error');
+				createError = result.error || t('security.create_block_error', 'Failed to create IP block.');
 			}
 		} catch {
-			createError = t('security.create_block_error');
+			createError = t('security.create_block_error', 'Failed to create IP block.');
 		} finally {
 			createLoading = false;
 		}
@@ -623,10 +632,10 @@
 				ipBlocks = ipBlocks.filter((b) => b.id !== deleteTarget!.id);
 				closeDeleteConfirm();
 			} else {
-				deleteError = t('security.delete_block_error');
+				deleteError = result.error || t('security.delete_block_error', 'Failed to delete IP block.');
 			}
 		} catch {
-			deleteError = t('security.delete_block_error');
+			deleteError = t('security.delete_block_error', 'Failed to delete IP block.');
 		} finally {
 			deleteLoading = false;
 		}
@@ -676,7 +685,7 @@
 				ariaLabel={t('security.filter_severity')}
 				class="w-44"
 			/>
-			<SearchInput bind:value={searchQuery} placeholder={t('security.search_findings', 'Search findings...')} class="w-64" />
+			<SearchInput bind:value={searchQuery} placeholder={t('security.search_findings_page', 'Filter this page...')} class="w-64" />
 			<div class="flex-1"></div>
 			<button
 				type="button"

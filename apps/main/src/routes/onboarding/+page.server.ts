@@ -39,66 +39,56 @@ export const load: PageServerLoad = async (event) => {
 	// returns tags attached to the caller's own published content, which is
 	// always empty for a new user. The public tag directory is the correct
 	// source for topic selection.
-	let tags: TagSuggestion[] = [];
-	try {
-		tags = (await apiList<TagSuggestion>(ctx, '/tags?sort=popular&page_size=30')).items;
-	} catch {
-		tags = [];
-	}
+	const tagsPromise = apiList<TagSuggestion>(ctx, '/tags?sort=popular&page_size=30')
+		.then((r) => r.items)
+		.catch(() => [] as TagSuggestion[]);
 
 	// Preload recommendations for steps 4 (users) and 5 (spaces).
-	let recommendations: OnboardingRecommendation[] = [];
-	try {
-		recommendations = (await apiGet<OnboardingRecommendation[]>(ctx, '/onboarding/recommendations')) ?? [];
-	} catch {
-		recommendations = [];
-	}
+	const recommendationsPromise = apiGet<OnboardingRecommendation[]>(ctx, '/onboarding/recommendations')
+		.then((r) => r ?? [])
+		.catch(() => [] as OnboardingRecommendation[]);
 
 	// Preload popular sources for step 6 — the public directory, not the
 	// recommendation engine (Rule 16: from API, not hardcoded).
-	let sources: Source[] = [];
-	try {
-		sources = (await apiList<Source>(ctx, '/sources?sort=popular&page_size=12')).items;
-	} catch {
-		sources = [];
-	}
+	const sourcesPromise = apiList<Source>(ctx, '/sources?sort=popular&page_size=12')
+		.then((r) => r.items)
+		.catch(() => [] as Source[]);
 
 	// Geo detection (ADR-037): pre-fill the Step 1 "Current location" field
 	// from the user's GeoIP context so they don't have to type it manually.
 	// Best-effort — degrades to null when the GeoIP DB is unavailable.
-	let geoContext: GeoContext | null = null;
-	try {
-		geoContext = await apiGet<GeoContext>(ctx, '/geo/me');
-	} catch {
-		geoContext = null;
-	}
+	const geoContextPromise = apiGet<GeoContext>(ctx, '/geo/me').catch(() => null);
 
 	// Preload countries for the Step 1 location picker (ADR-005 geo spaces).
-	let countries: GeoCountry[] = [];
-	try {
-		countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
-	} catch {
-		countries = [];
-	}
+	const countriesPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then((r) => r.items)
+		.catch(() => [] as GeoCountry[]);
 
 	// Preload onboarding option lists (japa status, primary goal) — Rule 16:
 	// from API, not hardcoded in the component.
-	let onboardingOptions: OnboardingOptions | null = null;
-	try {
-		onboardingOptions = await apiGet<OnboardingOptions>(ctx, '/onboarding/options');
-	} catch {
-		onboardingOptions = null;
-	}
+	const onboardingOptionsPromise = apiGet<OnboardingOptions>(ctx, '/onboarding/options').catch(
+		() => null
+	);
 
 	// §89 Community Achievement Feed — preload latest achievements for the
 	// final-step social-proof preview. Best-effort: the feature may be disabled
 	// (returns 404), in which case the preview section is hidden.
-	let achievements: Achievement[] = [];
-	try {
-		achievements = (await apiList<Achievement>(ctx, '/achievements?sort=latest&limit=4')).items;
-	} catch {
-		achievements = [];
-	}
+	const achievementsPromise = apiList<Achievement>(ctx, '/achievements?sort=latest&limit=4')
+		.then((r) => r.items)
+		.catch(() => [] as Achievement[]);
+
+	// All seven preloads are independent — run them concurrently so the
+	// wizard pays one round-trip, not seven.
+	const [tags, recommendations, sources, geoContext, countries, onboardingOptions, achievements] =
+		await Promise.all([
+			tagsPromise,
+			recommendationsPromise,
+			sourcesPromise,
+			geoContextPromise,
+			countriesPromise,
+			onboardingOptionsPromise,
+			achievementsPromise
+		]);
 
 	return {
 		user: event.locals.user,

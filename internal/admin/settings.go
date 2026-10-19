@@ -4,9 +4,9 @@
 package admin
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
+	"github.com/jedafe/japa/internal/brand"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -74,6 +74,7 @@ type Handlers struct {
 	TierManager         auth.TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 	Catalog             *literals.Catalog          // Optional — caches active platform literals and resolves maps.
 	AppealResolver      AppealResolver             // Optional — §22 appeal resolution + per-type overturn effects
+	ownerEmail          string                     // JC_OWNER_EMAIL — platform owner designation (§03 owner amendment)
 }
 
 // AppealResolver is the subset of the §22 appeals service the moderation

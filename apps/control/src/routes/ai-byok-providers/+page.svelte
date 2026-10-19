@@ -59,9 +59,13 @@
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const res = await api('/control/ai-byok-providers');
+		if (!canView) {
+			loading = false;
+			return;
+		}
+		const res = await api<AiByokProvider[]>('/control/ai-byok-providers');
 		if (res.ok) {
-			providers = (res.data as { data?: AiByokProvider[] })?.data ?? [];
+			providers = Array.isArray(res.data) ? res.data : [];
 		} else {
 			errorMessage = res.error ?? t('common.load_failed', 'Failed to load');
 		}
@@ -133,8 +137,8 @@
 			enabled: form.enabled
 		};
 		const res = editing
-			? await api(`/control/ai-byok-providers/${editing.id}`, { method: 'PATCH', body: JSON.stringify(body) })
-			: await api('/control/ai-byok-providers', { method: 'POST', body: JSON.stringify(body) });
+			? await api(`/control/ai-byok-providers/${editing.id}`, { method: 'PATCH', body })
+			: await api('/control/ai-byok-providers', { method: 'POST', body });
 
 		if (res.ok) {
 			createModalOpen = false;
@@ -143,6 +147,8 @@
 			await load();
 		} else {
 			formError = res.error ?? t('common.save_failed', 'Failed to save');
+			saving = false;
+			return;
 		}
 		saving = false;
 	}

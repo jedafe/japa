@@ -183,7 +183,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
- CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
@@ -318,7 +318,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
- CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
@@ -427,7 +427,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
- CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
@@ -565,7 +565,7 @@ RETURNING ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
- CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 `
 

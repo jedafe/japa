@@ -24,9 +24,13 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 	const currentUserId = event.locals.user?.id ?? null;
 
-	let comparison: JCEComparisonDetail | null = null;
-	let matrix: MatrixItem[] = [];
+	// Kick off the matrix fetch in parallel with the detail fetch — both only
+	// need the slug, so there's no reason to serialize them on the SSR path.
+	const matrixPromise = apiGet<MatrixItem[]>(ctx, `/jce/comparisons/${slug}/matrix`).catch(
+		() => [] as MatrixItem[]
+	);
 
+	let comparison: JCEComparisonDetail | null = null;
 	try {
 		comparison = await apiGet<JCEComparisonDetail>(ctx, `/jce/comparisons/${slug}`);
 	} catch (err) {
@@ -43,48 +47,36 @@ export const load: PageServerLoad = async (event) => {
 		error(404, { code: 'not_found', message: 'jce.error.not_found' });
 	}
 
-	try {
-		matrix = await apiGet<MatrixItem[]>(ctx, `/jce/comparisons/${slug}/matrix`);
-	} catch {
-		matrix = [];
-	}
+	const isOwner = !!event.locals.user?.id && comparison.content.author_id === event.locals.user.id;
+	const isOwnComparison = isOwner;
+	const contentId = comparison.content.id;
 
-	// Unified comment engine (Section 49) — top-level comments are SSR-seeded.
-	let comments: Comment[] = [];
-	let commentsLoadError = false;
-	let commentDeletedUserIds: string[] | null = null;
-	try {
-		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${comparison.content.id}/comments?page_size=50`);
-		comments = envelope.data ?? [];
-		commentDeletedUserIds = envelope.deleted_user_ids ?? null;
-	} catch {
-		commentsLoadError = true;
-	}
+	// Second wave — everything downstream of the detail fetch is independent
+	// of each other (comments, owner analytics, follow status, related items),
+	// so they run concurrently instead of stacking round-trips.
+	const commentsPromise = apiGetEnvelope<Comment[]>(
+		ctx,
+		`/content/${contentId}/comments?page_size=50`
+	).then(
+		(envelope) => ({
+			comments: envelope.data ?? [],
+			deletedUserIds: envelope.deleted_user_ids ?? null,
+			loadError: false
+		}),
+		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, loadError: true })
+	);
 
 	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
 	// analytics.admin only). Fetch only for the author to avoid guaranteed
 	// 403s for other viewers; a failure degrades to no stats card.
-	let analytics: ContentAnalytics | null = null;
-	if (event.locals.user?.id && comparison.content.author_id === event.locals.user.id) {
-		try {
-			analytics = await apiGet<ContentAnalytics>(ctx, `/content/${comparison.content.id}/analytics`);
-		} catch {
-			analytics = null;
-		}
-	}
-
-	// §30 edit affordance: the author or a comparison moderator can jump
-	// straight to the unified composer for this comparison.
-	const isOwner = !!event.locals.user?.id && comparison.content.author_id === event.locals.user.id;
-	const canEdit =
-		isOwner ||
-		!!event.locals.user?.permissions?.includes('comparison.edit_any');
+	const analyticsPromise = isOwner
+		? apiGet<ContentAnalytics>(ctx, `/content/${contentId}/analytics`).catch(() => null)
+		: Promise.resolve(null);
 
 	// Hydrate the CreatorCard follow button's initial state. Best-effort:
 	// a failure degrades to `false` (not following). Skip when the viewer
 	// is the author (no self-follow) or the author is unknown.
-	const isOwnComparison = !!currentUserId && comparison.content.author_id === currentUserId;
-	const initiallyFollowing =
+	const followingPromise =
 		authed && comparison.content.author_id && !isOwnComparison
 			? apiGet<{ following: boolean }>(ctx, `/users/${comparison.content.author_id}/follow-status`)
 					.then((r) => r.following)
@@ -94,16 +86,29 @@ export const load: PageServerLoad = async (event) => {
 	// "Recommended Comparisons" sidebar card — same-type items ranked by the
 	// related endpoint's content_type filter (Section 14). Best-effort; the
 	// card hides itself when the list is empty.
-	let recommendedContent: ContentArticle[] = [];
-	try {
-		recommendedContent =
-			(await apiGet<ContentArticle[]>(
-				ctx,
-				`/content/${comparison.content.id}/related?content_type=comparison&page_size=5`
-			)) ?? [];
-	} catch {
-		recommendedContent = [];
-	}
+	const recommendedPromise = apiGet<ContentArticle[]>(
+		ctx,
+		`/content/${contentId}/related?content_type=comparison&page_size=5`
+	)
+		.then((r) => r ?? [])
+		.catch(() => [] as ContentArticle[]);
+
+	const [matrix, commentsResult, analytics, isFollowing, recommendedContent] = await Promise.all([
+		matrixPromise,
+		commentsPromise,
+		analyticsPromise,
+		followingPromise,
+		recommendedPromise
+	]);
+
+	const { comments, deletedUserIds: commentDeletedUserIds, loadError: commentsLoadError } =
+		commentsResult;
+
+	// §30 edit affordance: the author or a comparison moderator can jump
+	// straight to the unified composer for this comparison.
+	const canEdit =
+		isOwner ||
+		!!event.locals.user?.permissions?.includes('comparison.edit_any');
 
 	// Moderation affordances: comment pinning needs comments.pin; the Edit
 	// affordance is already handled by canEdit. Backend enforces actual permissions.
@@ -114,8 +119,6 @@ export const load: PageServerLoad = async (event) => {
 		isOwner ||
 		isSuperAdmin ||
 		!!event.locals.user?.permissions?.includes('comments.pin');
-
-	const isFollowing = await initiallyFollowing;
 
 	return {
 		comparison,

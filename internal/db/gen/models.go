@@ -468,6 +468,19 @@ type AiAgentToolCall struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type AiByokProvider struct {
+	ID             pgtype.UUID        `json:"id"`
+	ProviderType   string             `json:"provider_type"`
+	DisplayName    string             `json:"display_name"`
+	Models         []byte             `json:"models"`
+	SignupUrl      string             `json:"signup_url"`
+	Enabled        bool               `json:"enabled"`
+	ReferralClicks int32              `json:"referral_clicks"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	SignupLabel    string             `json:"signup_label"`
+}
+
 type AiConversation struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
@@ -4358,6 +4371,8 @@ type User struct {
 	IsSynthetic         bool               `json:"is_synthetic"`
 	SyntheticSource     *string            `json:"synthetic_source"`
 	SourceID            pgtype.UUID        `json:"source_id"`
+	PublicUsername      *string            `json:"public_username"`
+	PublicGroupID       pgtype.UUID        `json:"public_group_id"`
 }
 
 type UserAffiliateLink struct {
@@ -4373,6 +4388,19 @@ type UserAffiliateLink struct {
 	TotalEarned     pgtype.Numeric     `json:"total_earned"`
 	IsActive        bool               `json:"is_active"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type UserAiKey struct {
+	ID              pgtype.UUID        `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	ByokProviderID  pgtype.UUID        `json:"byok_provider_id"`
+	Label           string             `json:"label"`
+	ApiKeyEncrypted string             `json:"api_key_encrypted"`
+	Status          string             `json:"status"`
+	LastError       string             `json:"last_error"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ApiKeyHash      string             `json:"api_key_hash"`
 }
 
 type UserBadge struct {

@@ -44,6 +44,10 @@
 	let selectedIds = $state(new Set<string>());
 	let confirmBulkDeleteOpen = $state(false);
 	let pendingBulkIds = $state<string[]>([]);
+	let bulkBusy = $state(false);
+
+	let createdSecret = $state<string | null>(null);
+	let showSecretModal = $state(false);
 
 	const columns: DataTableColumn[] = [
 		{
@@ -141,11 +145,6 @@
 
 	let totalRows = $derived(sortedWebhooks.length);
 
-	let paginatedWebhooks = $derived.by(() => {
-		const start = page * pageSize;
-		return sortedWebhooks.slice(start, start + pageSize);
-	});
-
 	let formValid = $derived(
 		form.name.trim() !== '' &&
 			form.url.trim() !== '' &&
@@ -202,15 +201,17 @@
 					messageType = 'error';
 				}
 			} else {
-				const result = await api<WebhookEndpoint>('/control/webhooks', {
+				const result = await api<WebhookEndpoint & { secret?: string }>('/control/webhooks', {
 					method: 'POST',
 					body
 				});
 				if (result.ok) {
+					createdSecret = result.data.secret ?? null;
 					closeCreateModal();
 					await load();
 					message = t('webhooks.create_success', 'Webhook created successfully.');
 					messageType = 'success';
+					if (createdSecret) showSecretModal = true;
 				} else {
 					message = result.error || t('webhooks.create_error', 'Failed to create webhook.');
 					messageType = 'error';
@@ -229,7 +230,8 @@
 			message = '';
 			try {
 				const result = await api<{ ok: boolean }>(`/control/webhooks/${webhook.id}/test`, {
-					method: 'POST'
+					method: 'POST',
+					body: { event_type: 'webhook.test' }
 				});
 				if (result.ok) {
 					message = t('webhooks.test_success', 'Test event sent successfully.');
@@ -306,23 +308,30 @@
 	async function confirmBulkDelete() {
 		const ids = pendingBulkIds;
 		message = '';
-		const results = await Promise.allSettled(
-			ids.map((id) => api(`/control/webhooks/${id}`, { method: 'DELETE' }))
-		);
-		const failed = results.filter((r) => r.status === 'rejected').length;
-		selectedIds = new Set();
-		pendingBulkIds = [];
-		confirmBulkDeleteOpen = false;
-		await load();
-		if (failed > 0) {
-			message = t(
-				'webhooks.bulk_delete_partial',
-				'{n} webhook(s) could not be deleted.'
-			).replace('{n}', String(failed));
-			messageType = 'error';
-		} else {
-			message = t('webhooks.bulk_delete_success', 'Selected webhooks deleted successfully.');
-			messageType = 'success';
+		bulkBusy = true;
+		try {
+			const results = await Promise.allSettled(
+				ids.map((id) => api(`/control/webhooks/${id}`, { method: 'DELETE' }))
+			);
+			const failed = results.filter(
+				(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
+			).length;
+			selectedIds = new Set();
+			pendingBulkIds = [];
+			confirmBulkDeleteOpen = false;
+			await load();
+			if (failed > 0) {
+				message = t(
+					'webhooks.bulk_delete_partial',
+					'{n} webhook(s) could not be deleted.'
+				).replace('{n}', String(failed));
+				messageType = 'error';
+			} else {
+				message = t('webhooks.bulk_delete_success', 'Selected webhooks deleted successfully.');
+				messageType = 'success';
+			}
+		} finally {
+			bulkBusy = false;
 		}
 	}
 </script>
@@ -359,7 +368,7 @@
 
 <DataTable
 	{columns}
-	rows={paginatedWebhooks}
+	rows={sortedWebhooks}
 	{totalRows}
 	bind:page
 	bind:pageSize
@@ -471,5 +480,45 @@
 	onConfirm={confirmBulkDelete}
 	onCancel={() => { confirmBulkDeleteOpen = false; pendingBulkIds = []; }}
 />
+
+<Modal
+	bind:open={showSecretModal}
+	onOpenChange={(isOpen) => { if (!isOpen) createdSecret = null; }}
+	title={t('webhooks.secret_title', 'Signing secret — copy it now')}
+	description={t('webhooks.secret_description', 'This secret is shown exactly once and is never stored in readable form. Copy it before closing.')}
+>
+	{#if createdSecret}
+		<div class="mt-4">
+			<label for="webhook-secret" class="text-foreground block text-sm font-medium">
+				{t('webhooks.secret_label', 'Signing secret')}
+			</label>
+			<div class="mt-1 flex items-center gap-2">
+				<input
+					id="webhook-secret"
+					type="text"
+					readonly
+					value={createdSecret}
+					class="border-border-input bg-background text-foreground flex-1 rounded-9px border px-3 py-2 font-mono text-sm"
+				/>
+				<button
+					type="button"
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-2 text-sm font-medium transition-colors"
+					onclick={() => { if (createdSecret) void navigator.clipboard.writeText(createdSecret).catch(() => {}); }}
+				>
+					{t('common.copy', 'Copy')}
+				</button>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<button
+			type="button"
+			class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90"
+			onclick={() => { showSecretModal = false; createdSecret = null; }}
+		>
+			{t('common.done', 'Done')}
+		</button>
+	</div>
+</Modal>
 
 <!-- RBAC CRUD: Webhook Endpoints management -->

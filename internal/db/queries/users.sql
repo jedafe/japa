@@ -18,11 +18,14 @@ SELECT DISTINCT ON (u.id)
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
  u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
- ug.slug AS user_group_name
+ u.public_username, u.public_group_id,
+ ug.slug AS user_group_name,
+ pg.name AS public_group_name
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id
+LEFT JOIN user_groups pg ON pg.id = u.public_group_id
 WHERE u.id = @user_id
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
@@ -463,9 +466,11 @@ UPDATE users SET profile_type = $2, updated_at = now() WHERE id = $1;
 -- layer can conditionally include the user's Points balance (Section 28).
 -- is_synthetic/synthetic_source identify imported video channels; location and
 -- banner_media_id carry the channel's public metadata (migration 000633).
-SELECT DISTINCT ON (u.id)
+-- §03 alias amendment: projects the public_username alias when set and
+-- resolves the profile by canonical username OR alias (canonical preferred).
+SELECT
  u.id AS user_id,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
  u.follower_count,
  u.is_synthetic,
@@ -477,6 +482,7 @@ SELECT DISTINCT ON (u.id)
  up.website_url,
  up.location,
  up.banner_media_id,
+ pg.name AS public_role,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
  (SELECT COUNT(*)::int
@@ -485,9 +491,11 @@ SELECT DISTINCT ON (u.id)
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
-WHERE u.username = @username
+LEFT JOIN user_groups pg ON pg.id = u.public_group_id
+WHERE (u.username = @username OR lower(u.public_username) = lower(@username))
  AND u.status = 'active'
-ORDER BY u.id;
+ORDER BY (u.username = @username) DESC, u.id
+LIMIT 1;
 
 -- name: ListPublicUsers :many
 -- Public user directory at GET /users — PII-safe (no email/status/last_login/groups).
@@ -501,7 +509,7 @@ ORDER BY u.id;
 -- Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 -- japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 SELECT u.id AS user_id,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
  u.follower_count,
  u.is_synthetic,
@@ -521,13 +529,13 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
+ AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.public_username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
  AND (@profile_type::text = '' OR u.profile_type = @profile_type)
 ORDER BY
  CASE WHEN @sort_key::text = 'followers' THEN u.follower_count END DESC NULLS LAST,
  CASE WHEN @sort_key::text = 'newest' THEN COALESCE(up.created_at, u.created_at) END DESC NULLS LAST,
  CASE WHEN @sort_key::text = 'oldest' THEN COALESCE(up.created_at, u.created_at) END ASC NULLS LAST,
- CASE WHEN @sort_key::text = 'name' THEN lower(COALESCE(up.display_name, u.username)) END ASC NULLS LAST,
+ CASE WHEN @sort_key::text = 'name' THEN lower(COALESCE(up.display_name, u.public_username, u.username, '')) END ASC NULLS LAST,
  CASE WHEN @sort_key::text = 'name' THEN u.username END ASC,
  u.follower_count DESC NULLS LAST, u.created_at DESC, u.id
 LIMIT @page_limit OFFSET @page_offset;
@@ -540,7 +548,7 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
+ AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.public_username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
  AND (@profile_type::text = '' OR u.profile_type = @profile_type);
 
 -- name: GetPublicUserByID :one
@@ -551,7 +559,7 @@ WHERE u.status = 'active'
 -- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 -- japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 SELECT u.id AS user_id,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
  u.follower_count,
  up.display_name,
@@ -739,7 +747,8 @@ ORDER BY u.id;
 -- Fetches the fields needed to validate an account update (username cooldown,
 -- email uniqueness, current verified state). Row-locks the user for the
 -- duration of the transaction to prevent concurrent account edits.
-SELECT id, username, email, email_verified_at, username_changed_at
+SELECT id, username, email, email_verified_at, username_changed_at,
+ public_username, public_group_id
 FROM users
 WHERE id = $1
 FOR UPDATE;
@@ -926,3 +935,28 @@ WHERE id = $2;
 UPDATE users
 SET is_synthetic = false, synthetic_source = NULL, updated_at = now()
 WHERE id = @user_id AND is_synthetic = true;
+
+-- name: SetUserPublicIdentity :exec
+-- §03 alias amendment: sets the super-admin's public-facing alias handle and
+-- public role group. NULL clears each field. Only super_admin members may set
+-- these (enforced in the service layer).
+UPDATE users
+SET public_username = @public_username,
+ public_group_id = @public_group_id,
+ updated_at = now()
+WHERE id = @user_id;
+
+-- name: PublicHandleTaken :one
+-- §03 alias amendment: counts users (other than @exclude_id) whose canonical
+-- username OR public alias matches the candidate, case-insensitively. Used
+-- both when setting an alias (the alias must not collide with any handle) and
+-- when changing a canonical username (must not collide with someone's alias).
+SELECT COUNT(*)::int AS count
+FROM users
+WHERE (username = @handle OR lower(public_username) = lower(@handle))
+ AND (@exclude_id::uuid IS NULL OR id != @exclude_id);
+
+-- name: GetUserEmailByID :one
+-- Owner-amendment helper: resolves a user's email so callers can compare it
+-- against JC_OWNER_EMAIL for owner-protected paths.
+SELECT email FROM users WHERE id = @user_id;

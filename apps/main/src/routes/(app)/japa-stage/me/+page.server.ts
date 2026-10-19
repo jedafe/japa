@@ -22,37 +22,23 @@ export const load: PageServerLoad = async (event) => {
 		myStage = null;
 	}
 
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-
-	let stages: JapaStageOption[] = [];
-	try {
-		const list = await apiGet<{ value: string; label: string; intents?: JapaIntent[] }[]>(ctx, '/japa-stage/stages');
-		stages = (list ?? []).map((o) => ({ value: o.value, intents: o.intents }) as JapaStageOption);
-	} catch {
-		stages = [];
-	}
-
-	let intents: JapaIntent[] = [];
-	try {
-		const list = await apiGet<{ value: string; label: string }[]>(ctx, '/japa-stage/intents');
-		intents = (list ?? []).map((o) => o.value as JapaIntent);
-	} catch {
-		intents = [];
-	}
-
-	// ADR-129: concurrent/past journey records beside the primary stage.
-	let journeys: UserJourney[] = [];
-	try {
-		journeys = (await apiGet<UserJourney[]>(ctx, '/me/japa-stage/journeys')) ?? [];
-	} catch {
-		journeys = [];
-	}
+	// Countries, stage/intent option lists, and journey records are
+	// independent — fetch concurrently.
+	const [countries, stages, intents, journeys] = await Promise.all([
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		apiGet<{ value: string; label: string; intents?: JapaIntent[] }[]>(ctx, '/japa-stage/stages')
+			.then((list) => (list ?? []).map((o) => ({ value: o.value, intents: o.intents }) as JapaStageOption))
+			.catch(() => [] as JapaStageOption[]),
+		apiGet<{ value: string; label: string }[]>(ctx, '/japa-stage/intents')
+			.then((list) => (list ?? []).map((o) => o.value as JapaIntent))
+			.catch(() => [] as JapaIntent[]),
+		// ADR-129: concurrent/past journey records beside the primary stage.
+		apiGet<UserJourney[]>(ctx, '/me/japa-stage/journeys')
+			.then((j) => j ?? [])
+			.catch(() => [] as UserJourney[])
+	]);
 
 	return { myStage, countries, stages, intents, journeys };
 };

@@ -101,7 +101,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -156,7 +156,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -219,7 +219,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -362,7 +362,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -526,7 +526,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -845,9 +845,9 @@ SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title,
        o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username, up.display_name AS booker_display_name,
+       COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
        up.avatar_url AS booker_avatar,
-       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
        pup.avatar_url AS provider_avatar,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
@@ -889,7 +889,7 @@ SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS lis
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
        pup.avatar_url AS provider_avatar,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
@@ -926,9 +926,9 @@ WHERE sb.booker_user_id = @booker_user_id
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username, up.display_name AS booker_display_name,
+       COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
        up.avatar_url AS booker_avatar,
-       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
        pup.avatar_url AS provider_avatar,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
@@ -978,9 +978,9 @@ SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS lis
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username, up.display_name AS booker_display_name,
+       COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
        up.avatar_url AS booker_avatar,
-       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
        pup.avatar_url AS provider_avatar,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name

@@ -27,6 +27,22 @@ func (q *Queries) AddUserToTierGroup(ctx context.Context, arg AddUserToTierGroup
 	return err
 }
 
+const clearPublicGroupTierRole = `-- name: ClearPublicGroupTierRole :exec
+UPDATE users u SET public_group_id = NULL, updated_at = now()
+WHERE u.id = $1
+ AND EXISTS (
+   SELECT 1 FROM user_groups g
+   WHERE g.id = u.public_group_id AND g.tier IS NOT NULL AND g.tier <> ''
+ )
+`
+
+// §03 alias amendment: after a tier reset, clear public_group_id when it
+// pointed at a tier-bearing group the user no longer belongs to.
+func (q *Queries) ClearPublicGroupTierRole(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearPublicGroupTierRole, userID)
+	return err
+}
+
 const getTierGroupID = `-- name: GetTierGroupID :one
 SELECT id FROM user_groups
 WHERE slug = $1

@@ -76,12 +76,15 @@
 	}
 
 	// Safe polling pattern: refresh every 30s while the tab is visible, and
-	// clean up the interval on component destroy. Avoids the leak where a
-	// one-shot $effect fetch runs without returning a teardown.
+	// clean up the interval on component destroy. The poll pauses while an
+	// optimistic toggle/rollout or the manage sheet is active so a background
+	// refresh cannot clobber in-flight state or roll back a revert.
 	$effect(() => {
 		load();
 		const interval = setInterval(() => {
-			if (document.visibilityState === 'visible') load(true);
+			if (document.visibilityState !== 'visible') return;
+			if (toggling !== null || savingRollout || manageOpen) return;
+			load(true);
 		}, 30_000);
 		return () => clearInterval(interval);
 	});
@@ -182,18 +185,24 @@
 	}
 
 	async function saveRollout(ext: Extension) {
+		const pct = Math.floor(Number(rolloutInput));
+		if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+			messageType = 'error';
+			message = t('extensions.rollout_invalid', 'Rollout must be a whole number between 0 and 100.');
+			return;
+		}
 		savingRollout = true;
 		try {
 			const result = await api(`/control/extensions/${ext.key}/rollout`, {
 				method: 'PATCH',
-				body: { rollout_percentage: rolloutInput }
+				body: { rollout_percentage: pct }
 			});
 			if (result.ok) {
 				extensions = extensions.map((e) =>
-					e.key === ext.key ? { ...e, rollout_percentage: rolloutInput } : e
+					e.key === ext.key ? { ...e, rollout_percentage: pct } : e
 				);
 				messageType = 'success';
-				message = t('extensions.rollout_saved', 'Rollout updated to {p}%').replace('{p}', String(rolloutInput));
+				message = t('extensions.rollout_saved', 'Rollout updated to {p}%').replace('{p}', String(pct));
 			} else {
 				messageType = 'error';
 				message = result.error || t('extensions.rollout_error', 'Failed to update rollout.');

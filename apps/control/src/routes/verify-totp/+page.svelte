@@ -12,6 +12,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { setToken } from '$lib/api';
 	import { clearChallenge, getChallengeEmail, getChallengeToken } from '$lib/api/challenge';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 
 	let code = $state('');
 	let backupCode = $state('');
@@ -21,6 +23,12 @@
 
 	const challengeToken = getChallengeToken();
 	const email = getChallengeEmail();
+
+	onMount(() => {
+		if (!getChallengeToken()) {
+			void goto('/login', { replaceState: true });
+		}
+	});
 
 	function sanitizeCode(value: string): string {
 		return value.replace(/\D/g, '').slice(0, 6);

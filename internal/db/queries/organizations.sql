@@ -26,7 +26,7 @@ WHERE slug = $1 AND deleted_at IS NULL;
 -- name: ListOrganizations :many
 -- Soft-deleted orgs are hidden by default; $7 'only'|'all' surfaces them so
 -- admins can force-delete (same contract as AdminListWikiPages).
-SELECT o.*, u.username AS owner_username
+SELECT o.*, COALESCE(u.public_username, u.username, '') AS owner_username
 FROM organizations o
 LEFT JOIN users u ON u.id = o.owner_user_id
 WHERE ($1::text = '' OR o.org_type = $1)
@@ -102,7 +102,7 @@ WHERE organization_id = $1 AND user_id = $2;
 
 -- name: ListOrganizationMembers :many
 -- Platform-scoped via the users join (defense-in-depth, BUG-004).
-SELECT om.*, u.username, up.display_name, up.avatar_url
+SELECT om.*, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
 FROM organization_members om
 JOIN users u ON u.id = om.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -299,7 +299,7 @@ WHERE slug = @slug
 -- owner is shown even if their account is restricted (they are the org's
 -- leader regardless of their own account standing). Platform-scoped for
 -- defense-in-depth.
-SELECT u.id, u.username, up.display_name, up.avatar_url
+SELECT u.id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
 FROM organizations o
 JOIN users u ON u.id = o.owner_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -310,7 +310,7 @@ WHERE o.id = @organization_id AND o.deleted_at IS NULL;
 -- excluded), platform-scoped via the users join (defense-in-depth). Excludes the
 -- internal invited_by column by projecting only public fields.
 SELECT om.organization_id, om.user_id, om.role, om.joined_at,
- u.username, up.display_name, up.avatar_url
+ COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
 FROM organization_members om
 JOIN users u ON u.id = om.user_id AND u.status = 'active'
 LEFT JOIN user_profiles up ON up.user_id = u.id

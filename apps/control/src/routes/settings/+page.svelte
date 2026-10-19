@@ -785,6 +785,17 @@
 		}
 	});
 
+	// beforeNavigate only covers SPA navigations — a browser reload or tab
+	// close with unsaved edits would otherwise lose them silently.
+	$effect(() => {
+		if (!isDirty) return;
+		const handler = (e: BeforeUnloadEvent) => {
+			e.preventDefault();
+		};
+		window.addEventListener('beforeunload', handler);
+		return () => window.removeEventListener('beforeunload', handler);
+	});
+
 	// selectCategory sets the active category and updates the URL so the
 	// selection is shareable and survives navigation.
 	function selectCategory(cat: string) {
@@ -913,6 +924,10 @@
 		if (isUploadKey(setting.key)) return 'upload';
 		if (isColorKey(setting.key)) return 'color';
 		if (setting.type === 'int' || setting.type === 'float') return 'number';
+		// JSON-typed settings without a structured editor (e.g.
+		// geo_personalization.intent_matrix) need a multi-line editor —
+		// a single-line input cannot hold large JSON documents.
+		if (setting.type === 'json') return 'textarea';
 		return 'text';
 	}
 
@@ -988,7 +1003,6 @@
 				'SVG uploads are blocked — use a raster image (PNG, JPEG, or WebP).'
 			);
 			if (inputEl) inputEl.value = '';
-			uploadingKey = '';
 			return;
 		}
 
@@ -996,7 +1010,7 @@
 		const maxBytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 		if (file.size > maxBytes) {
 			uploadError = `File is ${(file.size / 1024 / 1024).toFixed(1)}MB — max is ${MAX_UPLOAD_SIZE_MB}MB`;
-			uploadingKey = '';
+			if (inputEl) inputEl.value = '';
 			return;
 		}
 

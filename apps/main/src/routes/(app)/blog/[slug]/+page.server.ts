@@ -58,22 +58,87 @@ export const load: PageServerLoad = async (event) => {
 	const isOwner = authed && !!article.author_id && currentUserId === article.author_id;
 	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
 
-	let hasContentEditOwn = false;
-	let hasContentEditAny = false;
-	let hasCommentsPinPermission = false;
-	if (!isOwner && !isSuperAdmin && event.locals.user) {
-		try {
-			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
-			const perms = permRes?.permissions ?? [];
-			hasContentEditOwn = perms.includes('content.edit_own');
-			hasContentEditAny = perms.includes('content.edit_any');
-			hasCommentsPinPermission = perms.includes('comments.pin');
-		} catch {
-			hasContentEditOwn = false;
-			hasContentEditAny = false;
-			hasCommentsPinPermission = false;
-		}
-	}
+	const isOwnArticle = !!currentUserId && article.author_id === currentUserId;
+
+	// Everything downstream of the article fetch is independent — run the
+	// whole wave concurrently (permissions, follow state, comments, series,
+	// related, recommended, analytics) instead of stacking round-trips.
+	const permPromise =
+		!isOwner && !isSuperAdmin && event.locals.user
+			? apiGet<{ permissions: string[] }>(ctx, '/me/permissions')
+					.then((r) => r?.permissions ?? [])
+					.catch(() => [] as string[])
+			: Promise.resolve([] as string[]);
+
+	// Hydrate the CreatorCard follow button's initial state. Best-effort:
+	// a failure degrades to `false` (not following). Skip when the viewer
+	// is the author (no self-follow), the author is unknown, or the viewer
+	// is a guest (guests can't follow).
+	const followingPromise =
+		authed && article.author_id && !isOwnArticle
+			? apiGet<{ following: boolean }>(ctx, `/users/${article.author_id}/follow-status`)
+					.then((r) => r.following)
+					.catch(() => false)
+			: Promise.resolve(false);
+
+	const commentsPromise = apiGetEnvelope<Comment[]>(
+		ctx,
+		`/content/${article.id}/comments?page_size=50`
+	).then(
+		(envelope) => ({
+			comments: envelope.data ?? [],
+			deletedUserIds: envelope.deleted_user_ids ?? null,
+			loadError: false
+		}),
+		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, loadError: true })
+	);
+
+	// Series parts (Section 34 / Phase 06.10). Public series detail now shows
+	// every published part ordered by position, mirroring dev.to's series card.
+	const seriesPromise = article.series_id
+		? apiGet<SeriesPost[]>(ctx, `/series/${article.series_id}/posts`)
+				.then((r) => r ?? [])
+				.catch(() => [] as SeriesPost[])
+		: Promise.resolve([] as SeriesPost[]);
+
+	// Related content (Section 14 — GET /content/{id}/related). Best-effort:
+	// a failure degrades to an empty list. NB: the endpoint reads `page_size`,
+	// not `limit`.
+	const relatedPromise = apiGet<ContentArticle[]>(ctx, `/content/${article.id}/related?page_size=4`)
+		.then((r) => r ?? [])
+		.catch(() => [] as ContentArticle[]);
+
+	// "Recommended Posts" sidebar card — same-type items ranked by the
+	// related endpoint's content_type filter. Best-effort; the card hides
+	// itself when the list is empty.
+	const recommendedPromise = apiGet<ContentArticle[]>(
+		ctx,
+		`/content/${article.id}/related?content_type=${article.content_type}&page_size=5`
+	)
+		.then((r) => r ?? [])
+		.catch(() => [] as ContentArticle[]);
+
+	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
+	// analytics.admin only). Fetch only for the author to avoid guaranteed
+	// 403s for other viewers; a failure degrades to no stats card.
+	const analyticsPromise = isOwnArticle
+		? apiGet<ContentAnalytics>(ctx, `/content/${article.id}/analytics`).catch(() => null)
+		: Promise.resolve(null);
+
+	const [perms, isFollowing, commentsResult, seriesPosts, relatedContent, recommendedContent, analytics] =
+		await Promise.all([
+			permPromise,
+			followingPromise,
+			commentsPromise,
+			seriesPromise,
+			relatedPromise,
+			recommendedPromise,
+			analyticsPromise
+		]);
+
+	const hasContentEditOwn = perms.includes('content.edit_own');
+	const hasContentEditAny = perms.includes('content.edit_any');
+	const hasCommentsPinPermission = perms.includes('comments.pin');
 	const canEdit = isSuperAdmin || isOwner || hasContentEditOwn || hasContentEditAny;
 	const canDelete = isSuperAdmin || isOwner;
 
@@ -82,28 +147,8 @@ export const load: PageServerLoad = async (event) => {
 	// BUG-004: include moderator permission check, not just content author.
 	const canModerate = isOwner || isSuperAdmin || hasCommentsPinPermission;
 
-	// Hydrate the CreatorCard follow button's initial state. Best-effort:
-	// a failure degrades to `false` (not following). Skip when the viewer
-	// is the author (no self-follow), the author is unknown, or the viewer
-	// is a guest (guests can't follow).
-	const isOwnArticle = !!currentUserId && article.author_id === currentUserId;
-	const initiallyFollowing =
-		authed && article.author_id && !isOwnArticle
-			? apiGet<{ following: boolean }>(ctx, `/users/${article.author_id}/follow-status`)
-					.then((r) => r.following)
-					.catch(() => false)
-			: Promise.resolve(false);
-
-	let comments: Comment[] = [];
-	let commentsLoadError = false;
-	let commentDeletedUserIds: string[] | null = null;
-	try {
-		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${article.id}/comments?page_size=50`);
-		comments = envelope.data ?? [];
-		commentDeletedUserIds = envelope.deleted_user_ids ?? null;
-	} catch {
-		commentsLoadError = true;
-	}
+	const { comments, deletedUserIds: commentDeletedUserIds, loadError: commentsLoadError } =
+		commentsResult;
 
 	// Merge deleted user IDs from the article body and comments so the
 	// frontend can render @[deleted user] for all erased mentions (ADR-029).
@@ -116,18 +161,6 @@ export const load: PageServerLoad = async (event) => {
 	// data — (app)/+layout.server.ts already resolves /sidebars/resolve for
 	// this exact pathname, so a second call here would be a duplicate request.
 	// `data.rightSidebarWidgets` flows through SvelteKit's data merging.
-
-	// Series parts (Section 34 / Phase 06.10). Public series detail now shows
-	// every published part ordered by position, mirroring dev.to's series card.
-	let seriesPosts: SeriesPost[] = [];
-	if (article.series_id) {
-		try {
-			seriesPosts = await apiGet<SeriesPost[]>(ctx, `/series/${article.series_id}/posts`);
-			seriesPosts = seriesPosts ?? [];
-		} catch {
-			// series posts endpoint not available — keep empty
-		}
-	}
 
 	// If the current post is a draft and not returned by the public list, splice
 	// it in at its known position so the author still sees it in the series card.
@@ -143,49 +176,10 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
-	// Related content (Section 14 — GET /content/{id}/related). Best-effort:
-	// a failure degrades to an empty list. NB: the endpoint reads `page_size`,
-	// not `limit`.
-	let relatedContent: ContentArticle[] = [];
-	try {
-		const relRes = await apiGet<ContentArticle[]>(ctx, `/content/${article.id}/related?page_size=4`);
-		relatedContent = relRes ?? [];
-	} catch {
-		// related endpoint not available — keep empty
-	}
-
-	// "Recommended Posts" sidebar card — same-type items ranked by the
-	// related endpoint's content_type filter. Best-effort; the card hides
-	// itself when the list is empty.
-	let recommendedContent: ContentArticle[] = [];
-	try {
-		recommendedContent =
-			(await apiGet<ContentArticle[]>(
-				ctx,
-				`/content/${article.id}/related?content_type=${article.content_type}&page_size=5`
-			)) ?? [];
-	} catch {
-		recommendedContent = [];
-	}
-
-	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
-	// analytics.admin only). Fetch only for the author to avoid guaranteed
-	// 403s for other viewers; a failure degrades to no stats card.
-	let analytics: ContentAnalytics | null = null;
-	if (isOwnArticle) {
-		try {
-			analytics = await apiGet<ContentAnalytics>(ctx, `/content/${article.id}/analytics`);
-		} catch {
-			analytics = null;
-		}
-	}
-
 	// JSON-LD structured data is now resolved server-side by the backend
 	// (Section 14 / Section 26 — admin-managed Article template interpolated
 	// with the post's field values) and returned in the response envelope's
 	// `json_ld` sidecar. No separate template fetch is needed.
-
-	const isFollowing = await initiallyFollowing;
 
 	return {
 		article,

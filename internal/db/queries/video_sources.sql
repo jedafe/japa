@@ -44,7 +44,7 @@ WHERE source_type = @source_type AND external_id = @external_id;
 SELECT vs.*
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
-WHERE u.username = @username AND vs.status = 'active'
+WHERE (u.username = @username OR lower(u.public_username) = lower(@username)) AND vs.status = 'active'
 ORDER BY vs.created_at DESC, vs.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -82,7 +82,7 @@ WHERE source_id = @source_id AND status = 'active';
 -- sort by them — without them popular/discussed/upvoted were all-zero ties.
 SELECT vs.id, vs.title, vs.description, vs.source_url, vs.thumbnail_url,
        vs.duration_secs, vs.created_at, vs.slug AS video_slug,
-       u.username AS author_username,
+       COALESCE(u.public_username, u.username, '') AS author_username,
        COALESCE(c.slug, '') AS content_slug,
        COALESCE(c.view_count, 0) AS view_count,
        COALESCE(c.comment_count, 0) AS comment_count,
@@ -133,7 +133,7 @@ WHERE id = @id;
 -- name: GetVideoChannelUsernameBySourceID :one
 -- The channel account username behind a video_channel intel source — every
 -- non-upload video under the source shares the synthetic channel author.
-SELECT u.username
+SELECT COALESCE(u.public_username, u.username, '') AS username
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
 WHERE vs.source_id = @source_id AND vs.source_type != 'upload'

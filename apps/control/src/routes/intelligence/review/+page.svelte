@@ -4,6 +4,7 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
@@ -54,19 +55,25 @@
 
 	let actionLoading = $state<string | null>(null);
 	let bulkBusy = $state(false);
+	let confirmOpen = $state(false);
+	let pendingConfirm = $state<{ action: 'approve' | 'reject'; ids: string[] } | null>(null);
 
 	// Status filter: read from URL query param ?status=. Defaults to
 	// 'review_required' (the standard review queue). Supported values:
-	// review_required, approved, published, rejected, extracted, stale.
+	// review_required, approved, published, rejected, extracted, stale,
+	// deduped, auto_published, off_topic.
 	const statusFilter = $derived(pageStore.url.searchParams.get('status') || 'review_required');
 
 	const statusLabels: Record<string, string> = {
-		review_required: 'Review Required',
-		approved: 'Approved',
-		published: 'Published',
-		rejected: 'Rejected',
-		extracted: 'Extracted',
-		stale: 'Stale'
+		review_required: t('intel.status_review_required', 'Review Required'),
+		approved: t('intel.status_approved', 'Approved'),
+		published: t('intel.status_published', 'Published'),
+		rejected: t('intel.status_rejected', 'Rejected'),
+		extracted: t('intel.status_extracted', 'Extracted'),
+		stale: t('intel.status_stale', 'Stale'),
+		deduped: t('intel.status_deduped', 'Deduped'),
+		auto_published: t('intel.status_auto_published', 'Auto-published'),
+		off_topic: t('intel.status_off_topic', 'Off-topic')
 	};
 
 	const statusIsReviewable = $derived(statusFilter === 'review_required');
@@ -172,19 +179,19 @@
 			key: 'confidence_overall',
 			label: t('intel.confidence', 'Confidence'),
 			sortable: true,
-			render: (val) => `<span class="font-mono text-xs">${confidencePct(Number(val))}</span>`
+			render: (val) => `<span class="font-mono text-xs">${val == null ? '—' : confidencePct(Number(val))}</span>`
 		},
 		{
 			key: 'freshness_score',
 			label: t('intel.freshness', 'Freshness'),
 			sortable: true,
-			render: (val) => `<span class="font-mono text-xs text-muted-foreground">${val ?? '—'}</span>`
+			render: (val) => `<span class="font-mono text-xs text-muted-foreground">${escapeHtml(val ?? '—')}</span>`
 		},
 		{
 			key: 'extracted_at',
 			label: t('intel.extracted_at', 'Extracted At'),
 			sortable: true,
-			render: (val) => `<span class="text-muted-foreground text-xs">${formatTime(val as string)}</span>`
+			render: (val) => `<span class="text-muted-foreground text-xs">${escapeHtml(formatTime(val as string))}</span>`
 		},
 		{
 			key: 'status',
@@ -205,14 +212,20 @@
 			label: t('intel.approve', 'Approve'),
 			icon: CheckCircle2,
 			hidden: () => !canApprove || !statusIsReviewable,
-			onClick: (row) => approveRecord((row as unknown as IntelRecord).id)
+			onClick: (row) => {
+				pendingConfirm = { action: 'approve', ids: [(row as unknown as IntelRecord).id] };
+				confirmOpen = true;
+			}
 		},
 		{
 			label: t('intel.reject', 'Reject'),
 			icon: XCircle,
 			variant: 'destructive',
 			hidden: () => !canReject || !statusIsReviewable,
-			onClick: (row) => rejectRecord((row as unknown as IntelRecord).id)
+			onClick: (row) => {
+				pendingConfirm = { action: 'reject', ids: [(row as unknown as IntelRecord).id] };
+				confirmOpen = true;
+			}
 		},
 		{
 			// Recovery path for records stuck in 'approved' when the promote
@@ -231,14 +244,20 @@
 						? [{
 								label: t('intel.approve_selected', 'Approve selected'),
 								icon: CheckCircle2,
-								onClick: (ids: string[]) => bulkApprove(ids)
+								onClick: (ids: string[]) => {
+									pendingConfirm = { action: 'approve', ids };
+									confirmOpen = true;
+								}
 							}]
 						: []),
 					...(canReject
 						? [{
 								label: t('intel.reject_selected', 'Reject selected'),
 								icon: XCircle,
-								onClick: (ids: string[]) => bulkReject(ids)
+								onClick: (ids: string[]) => {
+									pendingConfirm = { action: 'reject', ids };
+									confirmOpen = true;
+								}
 							}]
 						: [])
 				]
@@ -256,8 +275,9 @@
 		const path = action === 'promote'
 			? `/api/v1/intel/records/${id}/promote`
 			: `/api/v1/intel/review/${id}/${action}`;
-		const result = await api<{ promote_queued?: boolean }>(path, { method: 'POST' });
+		const result = await api<{ promote_queued?: boolean; queued?: boolean }>(path, { method: 'POST' });
 		if (!result.ok) return { err: result.error, promoteQueued: false };
+		if (action === 'promote') return { err: null, promoteQueued: result.data?.queued !== false };
 		return { err: null, promoteQueued: result.data?.promote_queued !== false };
 	}
 
@@ -307,12 +327,15 @@
 		errorMessage = '';
 		const results = await Promise.allSettled(ids.map((id) => doReviewAction(id, action)));
 		const failures: string[] = [];
+		const failedIds: string[] = [];
 		let unqueued = 0;
 		results.forEach((r, i) => {
 			if (r.status === 'rejected') {
 				failures.push(ids[i]);
+				failedIds.push(ids[i]);
 			} else if (r.value.err) {
 				failures.push(`${ids[i].slice(0, 8)}: ${r.value.err}`);
+				failedIds.push(ids[i]);
 			} else if (!r.value.promoteQueued) {
 				unqueued++;
 			}
@@ -333,17 +356,18 @@
 				.replace('{failed}', String(failures.length))
 				.replace('{list}', failures.slice(0, 5).join('; '));
 		}
-		selectedIds = new Set();
+		// Retain failed rows for in-place retry; clear only successes.
+		selectedIds = new Set(failedIds);
 		await load();
 		bulkBusy = false;
 	}
 
-	async function bulkApprove(ids: string[]) {
-		await bulkReview(ids, 'approve');
-	}
-
-	async function bulkReject(ids: string[]) {
-		await bulkReview(ids, 'reject');
+	async function confirmPending() {
+		if (!pendingConfirm) return;
+		const { action, ids } = pendingConfirm;
+		pendingConfirm = null;
+		if (action === 'approve') await bulkReview(ids, 'approve');
+		else await bulkReview(ids, 'reject');
 	}
 </script>
 
@@ -351,7 +375,7 @@
 	title={statusFilter === 'review_required' ? t('intel.review_title', 'Review Queue') : `${statusLabels[statusFilter] ?? statusFilter} Records`}
 	description={statusFilter === 'review_required'
 		? t('intel.review_desc', 'Records extracted by the pipeline awaiting human moderation before publication.')
-		: `Intelligence records with status: ${statusLabels[statusFilter] ?? statusFilter}`}
+		: t('intel.records_status_desc', 'Intelligence records with status: {status}').replace('{status}', statusLabels[statusFilter] ?? statusFilter)}
 />
 
 {#if !canView}
@@ -384,7 +408,7 @@
 					} else {
 						url.searchParams.set('status', v);
 					}
-					goto(url.pathname + url.search, { replaceState: false });
+					goto(url.pathname + url.search, { replaceState: true });
 				}}
 				options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))}
 				class="w-44"
@@ -422,5 +446,16 @@
 		emptyMessage={t('intel.no_review_records', 'No records awaiting review')}
 		emptyIcon={ClipboardList}
 		onRowClick={(row) => goto(`/intelligence/review/${(row as unknown as IntelRecord).id}`)}
+	/>
+{/if}
+
+{#if pendingConfirm}
+	<ConfirmModal
+		bind:open={confirmOpen}
+		title={pendingConfirm.action === 'approve' ? t('intel.approve_title', 'Approve records') : t('intel.reject_title', 'Reject records')}
+		consequence={(pendingConfirm.action === 'approve' ? t('intel.approve_confirm', 'Approve {count} record(s)? Approved records queue for promotion.') : t('intel.reject_confirm', 'Reject {count} record(s)? Rejected records leave the review queue.')).replace('{count}', String(pendingConfirm.ids.length))}
+		confirmText={pendingConfirm.action === 'approve' ? t('intel.approve', 'Approve') : t('intel.reject', 'Reject')}
+		onConfirm={confirmPending}
+		onCancel={() => (pendingConfirm = null)}
 	/>
 {/if}

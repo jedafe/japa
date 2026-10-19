@@ -83,7 +83,13 @@ jobs:
       - name: Production build
         run: bun run build
 
-  # WXT extension: no vitest suite — type check + wxt build only.
+      # adapter-node externalizes each app's `dependencies` — every bare
+      # import in the bundle must be declared, or it 500s in production
+      # (bun's isolated node_modules hides undeclared transitives).
+      # Skips apps without build/ (adapter-static: control, studio-desktop).
+      - name: Check runtime imports
+        working-directory: .
+        run: python3 scripts/check_runtime_imports.py apps/${{ matrix.app }}
   extension:
     name: Extension
     runs-on: ubuntu-latest

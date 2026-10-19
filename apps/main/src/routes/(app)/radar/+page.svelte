@@ -4,7 +4,7 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Radar, Pin, Loader2, Lock, Globe, ChevronRight } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
@@ -141,6 +141,16 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			(c) => c.geo_code
 		)
 	);
+
+	// Authed layout — the followed feed and "Browse countries" render as
+	// tabs. Instant client-side switch; ?tab=countries deep-links the list.
+	let activeTab = $state<string>(
+		untrack(() => (page.url.searchParams.get('tab') === 'countries' ? 'countries' : 'following'))
+	);
+	const radarTabs = $derived<UrlTab[]>([
+		{ value: 'following', label: t('radar.followed', 'Following') },
+		{ value: 'countries', label: t('radar.browse_countries', 'Browse countries') }
+	]);
 
 	// Autocomplete fetchers — filter the full /geo/countries list client-side.
 	// The "Browse countries" option (id: '') is always included at the top.

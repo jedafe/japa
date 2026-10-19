@@ -95,6 +95,14 @@ func (s *Service) SetUserTier(ctx context.Context, userID pgtype.UUID, tier stri
 		return fmt.Errorf("remove tier groups: %w", err)
 	}
 
+	// §03 alias amendment: if the user's public role pointed at a tier group
+	// just removed, clear the dangling pointer.
+	if err := txStore.write.ClearPublicGroupTierRole(ctx,
+		userID,
+	); err != nil {
+		return fmt.Errorf("clear public tier role: %w", err)
+	}
+
 	// Always keep the user in the base members group.
 	baseID, err := txStore.read.GetTierGroupID(ctx,
 

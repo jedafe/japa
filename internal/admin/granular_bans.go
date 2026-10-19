@@ -87,6 +87,11 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	// §03 owner amendment: owner immutable; restricting a super_admin is owner-only.
+	if !h.guardSuperAdminTarget(w, r, uid) {
+		return
+	}
+
 	for _, op := range input.Operations {
 		if !validOperations[op] {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_operation", "Invalid operation: "+op)
@@ -335,6 +340,11 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	if curStatus == "banned" || curStatus == "deleted" {
 		errpkg.WriteError(w, http.StatusConflict, "invalid_status_transition",
 			"Cannot suspend a "+curStatus+" user")
+		return
+	}
+
+	// §03 owner amendment: owner immutable; suspending a super_admin is owner-only.
+	if !h.guardSuperAdminTarget(w, r, uid) {
 		return
 	}
 

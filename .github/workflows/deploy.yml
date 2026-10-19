@@ -4,15 +4,17 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: [main, staging]
+    branches: [main]
 
 # Coolify deployment: each application in Coolify exposes a deploy webhook
 # (Applications → <app> → Webhooks → "Deploy Webhook"). CI calls the webhook;
 # Coolify pulls the repo, rebuilds the Dockerfile, and rolls the service.
 #
-# Production deploys after green CI on `main`; staging deploys after green CI
-# on `staging`. Each environment has its own set of Coolify apps (and thus its
-# own webhook URLs) — see docs/deployment-coolify.md.
+# Flow: every green CI run on `main` auto-deploys the STAGING environment
+# (staging Coolify apps track `main` — same commit, staging config). The
+# production job then waits on GitHub's `production` environment approval
+# (Settings → Environments → required reviewers), so prod ships the exact
+# commit that was exercised on staging.
 #
 # Required repo secrets (Settings → Secrets → Actions), production:
 #   COOLIFY_WEBHOOK_API        — api service    (Dockerfile at repo root)
@@ -31,40 +33,17 @@ on:
 #
 # Each secret holds the full webhook URL, e.g.
 #   https://coolify.example.com/api/v1/deploy?uuid=<app-uuid>&token=<token>&force=false
+#
+# Required GitHub environment: create `production` (Settings → Environments)
+# with at least one required reviewer — that approval is the prod gate.
 
 jobs:
-  deploy-production:
-    runs-on: ubuntu-latest
-    if: >-
-      ${{ github.event.workflow_run.conclusion == 'success'
-          && github.event.workflow_run.head_branch == 'main' }}
-    steps:
-      - name: Deploy api
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API }}"
-
-      - name: Deploy main
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_MAIN }}"
-
-      - name: Deploy admin
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ADMIN }}"
-
-      - name: Deploy control
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_CONTROL }}"
-
-      - name: Deploy academy
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ACADEMY }}"
-
-      - name: Deploy docs
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_DOCS }}"
-
-      - name: Deploy tools
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS }}"
-
   deploy-staging:
     runs-on: ubuntu-latest
     if: >-
       ${{ github.event.workflow_run.conclusion == 'success'
-          && github.event.workflow_run.head_branch == 'staging' }}
+          && github.event.workflow_run.head_branch == 'main' }}
+    environment: staging
     steps:
       - name: Deploy api (staging)
         run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API_STAGING }}"
@@ -86,3 +65,29 @@ jobs:
 
       - name: Deploy tools (staging)
         run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS_STAGING }}"
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    environment: production
+    steps:
+      - name: Deploy api
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API }}"
+
+      - name: Deploy main
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_MAIN }}"
+
+      - name: Deploy admin
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ADMIN }}"
+
+      - name: Deploy control
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_CONTROL }}"
+
+      - name: Deploy academy
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ACADEMY }}"
+
+      - name: Deploy docs
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_DOCS }}"
+
+      - name: Deploy tools
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS }}"

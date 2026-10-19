@@ -8,7 +8,7 @@
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import { escapeHtml, isSafeUrl } from '$lib/utils';
 	import { RefreshCw, Database, Eye, CheckCircle, XCircle } from 'lucide-svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 
@@ -279,7 +279,9 @@
 			label: t('intel.source_url', 'URL'),
 			sortable: true,
 			render: (val) => {
-				const url = escapeHtml(val as string);
+				const raw = String(val ?? '');
+				if (!isSafeUrl(raw)) return `<span class="font-mono text-xs">${escapeHtml(raw) || '—'}</span>`;
+				const url = escapeHtml(raw);
 				return `<a href="${url}" target="_blank" rel="noopener" class="text-primary hover:underline text-xs truncate max-w-[16rem] inline-block">${url}</a>`;
 			}
 		}
@@ -423,9 +425,13 @@
 
 						<div class="col-span-2 text-muted-foreground">{t('intel.source_url', 'URL')}</div>
 						<div class="col-span-2">
-							<a href={detailSource.source_url} target="_blank" rel="noopener" class="text-primary hover:underline break-all">
-								{detailSource.source_url}
-							</a>
+							{#if isSafeUrl(detailSource.source_url)}
+								<a href={detailSource.source_url} target="_blank" rel="noopener" class="text-primary hover:underline break-all">
+									{detailSource.source_url}
+								</a>
+							{:else}
+								<span class="font-mono text-xs break-all">{detailSource.source_url}</span>
+							{/if}
 						</div>
 
 						{#if detailSource.keywords?.length}

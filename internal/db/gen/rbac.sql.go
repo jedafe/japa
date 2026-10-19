@@ -59,6 +59,24 @@ func (q *Queries) AssignRoleToGroup(ctx context.Context, arg AssignRoleToGroupPa
 	return err
 }
 
+const clearPublicGroupRole = `-- name: ClearPublicGroupRole :exec
+UPDATE users SET public_group_id = NULL, updated_at = now()
+WHERE id = $1 AND public_group_id = $2
+`
+
+type ClearPublicGroupRoleParams struct {
+	UserID  pgtype.UUID `json:"user_id"`
+	GroupID pgtype.UUID `json:"group_id"`
+}
+
+// §03 alias amendment: when a user loses membership of the group they chose
+// as their public role, clear the dangling pointer so public surfaces no
+// longer show a role they no longer hold.
+func (q *Queries) ClearPublicGroupRole(ctx context.Context, arg ClearPublicGroupRoleParams) error {
+	_, err := q.db.Exec(ctx, clearPublicGroupRole, arg.UserID, arg.GroupID)
+	return err
+}
+
 const countGroupMembers = `-- name: CountGroupMembers :many
 SELECT ug.id AS group_id, COUNT(ugm.user_id)::int AS member_count
 FROM user_groups ug
@@ -257,6 +275,35 @@ func (q *Queries) GetUserGroupByID(ctx context.Context, id pgtype.UUID) (GetUser
 	return i, err
 }
 
+const getUserGroupBySlug = `-- name: GetUserGroupBySlug :one
+SELECT id, name, slug, is_system, description
+FROM user_groups
+WHERE slug = $1
+`
+
+type GetUserGroupBySlugRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	IsSystem    bool        `json:"is_system"`
+	Description *string     `json:"description"`
+}
+
+// Resolves a group by slug — used by the owner/super_admin lifecycle paths to
+// find the super_admin group (§03 owner amendment).
+func (q *Queries) GetUserGroupBySlug(ctx context.Context, slug string) (GetUserGroupBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getUserGroupBySlug, slug)
+	var i GetUserGroupBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.IsSystem,
+		&i.Description,
+	)
+	return i, err
+}
+
 const insertRolePermissionByKey = `-- name: InsertRolePermissionByKey :exec
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT $1, id FROM permissions WHERE key = $2
@@ -289,6 +336,27 @@ type IsUserInGroupParams struct {
 
 func (q *Queries) IsUserInGroup(ctx context.Context, arg IsUserInGroupParams) (bool, error) {
 	row := q.db.QueryRow(ctx, isUserInGroup, arg.UserID, arg.GroupSlug)
+	var in_group bool
+	err := row.Scan(&in_group)
+	return in_group, err
+}
+
+const isUserInGroupID = `-- name: IsUserInGroupID :one
+SELECT EXISTS(
+ SELECT 1 FROM user_group_memberships
+ WHERE user_id = $1 AND group_id = $2
+) AS in_group
+`
+
+type IsUserInGroupIDParams struct {
+	UserID  pgtype.UUID `json:"user_id"`
+	GroupID pgtype.UUID `json:"group_id"`
+}
+
+// Membership check by group id — validates a chosen public_group_id belongs to
+// the user's own groups (§03 alias amendment).
+func (q *Queries) IsUserInGroupID(ctx context.Context, arg IsUserInGroupIDParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isUserInGroupID, arg.UserID, arg.GroupID)
 	var in_group bool
 	err := row.Scan(&in_group)
 	return in_group, err

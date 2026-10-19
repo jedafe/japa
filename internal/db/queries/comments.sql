@@ -8,7 +8,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.status,
  c.is_anonymous,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url
 FROM comments c
@@ -28,7 +28,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  LIMIT 1
  ), 0)::smallint AS user_vote,
  c.is_anonymous,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url
 FROM comments c
@@ -57,7 +57,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  LIMIT 1
  ), 0)::smallint AS user_vote,
  c.is_anonymous,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url
 FROM comments c
@@ -87,7 +87,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  LIMIT 1
  ), 0)::smallint AS user_vote,
  c.is_anonymous,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url
 FROM comments c
@@ -112,7 +112,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  LIMIT 1
  ), 0)::smallint AS user_vote,
  c.is_anonymous,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url
 FROM comments c
@@ -136,7 +136,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  LIMIT 1
  ), 0)::smallint AS user_vote,
  c.is_anonymous,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url
 FROM comments c

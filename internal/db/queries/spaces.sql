@@ -1112,7 +1112,7 @@ WHERE space_id = @space_id AND user_id = @user_id;
 -- SPACES-015: platform-scoped for defense-in-depth.
 SELECT sm.id, sm.space_id, sm.user_id, sm.assigned_by,
  sm.assigned_by_user_id, sm.created_at,
- u.username AS user_username, up.display_name AS user_display_name
+ COALESCE(u.public_username, u.username, '') AS user_username, up.display_name AS user_display_name
 FROM space_moderators sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -1137,7 +1137,7 @@ SELECT EXISTS (
 
 -- name: ListSpaceMembersWithProfile :many
 -- SPACES-007: only list approved members, not pending join requests.
-SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at
+SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -1211,7 +1211,7 @@ WHERE sps.space_id = @space_id
 -- =====================
 
 -- name: ListSpaceJoinRequests :many
-SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -1222,7 +1222,7 @@ ORDER BY sm.joined_at ASC;
 -- Admin-wide pending join requests across every space in the admin's platform.
 -- space_id is included so the admin panel can build a composite request id
 -- (space_id::user_id) for the approve/reject endpoints.
-SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
+SELECT sm.space_id, sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
  s.name AS space_name
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id

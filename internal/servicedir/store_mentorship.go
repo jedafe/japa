@@ -155,7 +155,7 @@ func rowFromMentorShadow(r gen.GetMentorshipListingByAuthorRow) ServiceRow {
 		VerificationType: r.VerificationType,
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
-		VerifiedAt: r.VerifiedAt, AuthorName: r.AuthorName, AuthorAvatar: r.AuthorAvatar,
+		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,

@@ -30,6 +30,7 @@
 	let activeTab = $state('stats');
 	let stats = $state<CacheStats | null>(null);
 	let loadingStats = $state(false);
+	let lastRefresh = $state('');
 
 	// H1: Add real polling interval for live cache dashboard updates.
 	// The previous $effect was a one-shot fetch with an empty cleanup return.
@@ -52,6 +53,7 @@
 				} else {
 					stats = raw as CacheStats;
 				}
+				lastRefresh = new Date().toLocaleTimeString();
 			}
 		} catch {
 			// Stats unavailable — leave stats as null
@@ -123,7 +125,14 @@
 
 <PageHeader title={t('cache.title')} description={t('cache.description')} />
 
-<div class="mb-4 flex items-center justify-end">
+<div class="mb-4 flex items-center justify-between">
+	<p class="text-muted-foreground text-xs font-medium">
+		{#if lastRefresh}
+			{t('cache.last_updated', 'Last updated: {time}').replace('{time}', lastRefresh)}
+		{:else}
+			{t('common.loading', 'Loading...')}
+		{/if}
+	</p>
 	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition-colors"
 		onclick={() => loadStats()}

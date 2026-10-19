@@ -86,41 +86,64 @@
 	let groupOptions = $state<Option[]>([]);
 	let permOptions = $state<Option[]>([]);
 	let countryOptions = $state<Option[]>([]);
-	let optionsRequested = false;
+	let groupsLoaded = $state(false);
+	let permsLoaded = $state(false);
+	let countriesLoaded = $state(false);
+	let optionsError = $state('');
 
 	let audienceOptions = $derived<Option[]>([...groupOptions, ...permOptions]);
 
 	async function loadOptions() {
-		if (optionsRequested) return;
-		optionsRequested = true;
-		const [groups, perms, countries] = await Promise.all([
-			api<{ groups: { id: string; name: string; slug: string }[]; total: number }>(
-				'/api/v1/admin/user-groups'
-			),
-			api<{ key: string; description: string }[]>('/control/permission-nodes'),
-			api<{ geo_code?: string; name: string }[]>('/api/v1/geo/countries')
-		]);
-		if (groups.ok) {
-			groupOptions = (groups.data?.groups ?? []).map((g) => ({
-				value: `group:${g.slug}`,
-				label: g.name,
-				sublabel: `group:${g.slug}`
-			}));
+		optionsError = '';
+		const tasks: Promise<void>[] = [];
+		if (!groupsLoaded) {
+			tasks.push(
+				api<{ groups: { id: string; name: string; slug: string }[]; total: number }>(
+					'/api/v1/admin/user-groups'
+				).then((groups) => {
+					if (groups.ok) {
+						groupOptions = (groups.data?.groups ?? []).map((g) => ({
+							value: `group:${g.slug}`,
+							label: g.name,
+							sublabel: `group:${g.slug}`
+						}));
+						groupsLoaded = true;
+					}
+				})
+			);
 		}
-		if (perms.ok) {
-			permOptions = (perms.data ?? []).map((p) => ({
-				value: `perm:${p.key}`,
-				label: p.key,
-				sublabel: p.description
-			}));
+		if (!permsLoaded) {
+			tasks.push(
+				api<{ key: string; description: string }[]>('/control/permission-nodes').then((perms) => {
+					if (perms.ok) {
+						permOptions = (perms.data ?? []).map((p) => ({
+							value: `perm:${p.key}`,
+							label: p.key,
+							sublabel: p.description
+						}));
+						permsLoaded = true;
+					}
+				})
+			);
 		}
-		if (countries.ok) {
-			countryOptions = (countries.data ?? [])
-				.filter((c) => !!c.geo_code)
-				.map((c) => ({ value: c.geo_code!, label: c.name, sublabel: c.geo_code }));
+		if (!countriesLoaded) {
+			tasks.push(
+				api<{ geo_code?: string; name: string }[]>('/api/v1/geo/countries').then((countries) => {
+					if (countries.ok) {
+						countryOptions = (countries.data ?? [])
+							.filter((c) => !!c.geo_code)
+							.map((c) => ({ value: c.geo_code!, label: c.name, sublabel: c.geo_code }));
+						countriesLoaded = true;
+					}
+				})
+			);
 		}
-		// If every source failed, allow a retry on the next open.
-		if (!groups.ok && !perms.ok && !countries.ok) optionsRequested = false;
+		await Promise.all(tasks);
+		// Surface a retry hint when any vocabulary failed to load — an empty
+		// audience/country list otherwise looks like "no data".
+		if (!groupsLoaded || !permsLoaded || !countriesLoaded) {
+			optionsError = t('extensions.options_error', 'Some option lists failed to load — reopen the panel to retry.');
+		}
 	}
 
 	function seed(e: Extension) {
@@ -161,6 +184,7 @@
 	});
 
 	function handleOpenChange(o: boolean) {
+		if (!o && (saving || deleting)) return;
 		open = o;
 		if (!o) {
 			seededKey = '';
@@ -172,7 +196,6 @@
 	// next open reseeds the draft — setting `open = false` directly would
 	// leave a stale draft behind for the same key.
 	function closeSheet() {
-		if (saving) return;
 		handleOpenChange(false);
 	}
 
@@ -273,7 +296,15 @@
 	function presetBetaStaff(surface: string) {
 		const r = ruleFor(surface);
 		if (!r) return;
-		r.audience = ['group:beta_testers', 'group:admin'];
+		// Resolve group slugs against the loaded vocabulary so renamed or
+		// missing groups never produce dangling entries.
+		const slugs = new Set(groupOptions.map((g) => g.value));
+		const candidates = groupOptions.some((g) => g.value === 'group:beta_testers')
+			? ['group:beta_testers']
+			: [];
+		const staff = groupOptions.find((g) => /staff|admin/i.test(g.label) || g.value === 'group:admin')?.value;
+		if (staff) candidates.push(staff);
+		r.audience = candidates.filter((c) => slugs.has(c));
 	}
 
 	function presetApplyAll(surface: string) {
@@ -300,6 +331,21 @@
 
 	async function save() {
 		if (!ext || !draft || saving) return;
+		// Pre-save validation — the backend 400s on these, but failing fast
+		// keeps the sheet open with the error instead of a bare rejection.
+		if (!draft.name.trim()) {
+			saveError = t('extensions.name_required', 'Name is required.');
+			return;
+		}
+		const rollout = Math.floor(Number(draft.rollout));
+		if (!Number.isFinite(rollout) || rollout < 0 || rollout > 100) {
+			saveError = t('extensions.rollout_invalid', 'Rollout must be a whole number between 0 and 100.');
+			return;
+		}
+		if (!PHASES.includes(draft.phase as (typeof PHASES)[number])) {
+			saveError = t('extensions.phase_invalid', 'Invalid phase.');
+			return;
+		}
 		saving = true;
 		saveError = '';
 
@@ -323,14 +369,20 @@
 			surfaces: surfaces as Extension['surfaces']
 		};
 
-		const prev: Partial<Extension> = {
-			name: ext.name,
-			description: ext.description,
-			phase: ext.phase,
-			show_on_roadmap: ext.show_on_roadmap,
-			rollout_percentage: ext.rollout_percentage,
-			surfaces: ext.surfaces
-		};
+	// Deep-clone the revert snapshot: prev.surfaces is a live reference to
+	// the extension row, and a background poll can replace the extensions
+	// array between onOptimistic and onRevert — a shallow snapshot would
+	// revert to already-mutated state.
+		const prev: Partial<Extension> = JSON.parse(
+			JSON.stringify({
+				name: ext.name,
+				description: ext.description,
+				phase: ext.phase,
+				show_on_roadmap: ext.show_on_roadmap,
+				rollout_percentage: ext.rollout_percentage,
+				surfaces: ext.surfaces
+			})
+		);
 
 		onOptimistic?.(ext.key, patch);
 
@@ -340,17 +392,16 @@
 				{ method: 'PATCH', body: patch }
 			);
 			if (result.ok) {
-				saving = false;
 				handleOpenChange(false);
 				onSaved?.(ext.key, result.data?.warning);
 			} else {
 				onRevert?.(ext.key, prev);
 				saveError = result.error || t('extensions.save_error', 'Failed to save changes.');
-				saving = false;
 			}
 		} catch {
 			onRevert?.(ext.key, prev);
 			saveError = t('extensions.save_error', 'Failed to save changes.');
+		} finally {
 			saving = false;
 		}
 	}

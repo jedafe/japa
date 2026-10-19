@@ -24,8 +24,8 @@ RETURNING id, name, description, is_active, created_at, updated_at;
 -- name: ListMentorshipMatches :many
 SELECT m.id, m.program_id, m.mentor_id, m.mentee_id, m.status, m.created_at, m.updated_at,
  p.name AS program_name,
- mu.username AS mentor_username,
- eu.username AS mentee_username
+ COALESCE(mu.public_username, mu.username, '') AS mentor_username,
+ COALESCE(eu.public_username, eu.username, '') AS mentee_username
 FROM mentorship_matches m
 LEFT JOIN mentorship_programs p ON p.id = m.program_id
 LEFT JOIN users mu ON mu.id = m.mentor_id
@@ -80,7 +80,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- upsert in UpdateMentorProfile (000824 unification).
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, up.mentor_listing_content_id, u.username,
+ up.display_name, up.avatar_url, up.mentor_listing_content_id, COALESCE(u.public_username, u.username, '') AS username,
  up.profession, up.website_url,
  -- 000829 mentor card fields (§114 detail-page rebuild).
  up.location, up.mentor_title, up.mentor_response_time, up.mentor_availability,
@@ -130,11 +130,11 @@ RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
 -- listing_kind='mentorship' meta on a published, non-deleted contents row.
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username,
  up.profession, up.website_url
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE u.username = @username AND up.is_mentor = true
+WHERE (u.username = @username OR lower(u.public_username) = lower(@username)) AND up.is_mentor = true
  AND EXISTS (
    SELECT 1 FROM contents sc
    JOIN service_listing_meta sm ON sm.content_id = sc.id
@@ -157,7 +157,7 @@ WHERE u.username = @username AND up.is_mentor = true
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  COALESCE(
@@ -233,7 +233,7 @@ LIMIT @page_limit OFFSET @page_offset;
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  CASE WHEN up.mentor_embedding IS NOT NULL
@@ -310,7 +310,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- published mentorship listing is not comparable.
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
@@ -332,7 +332,7 @@ ORDER BY u.username;
 -- same 000824 live-shadow gate as the other discovery queries.
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, u.username, up.profession, up.website_url,
+ up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id

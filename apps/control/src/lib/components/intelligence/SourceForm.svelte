@@ -273,7 +273,8 @@
 		{ value: '1', label: t('intel.trust_official', '1 — Official') },
 		{ value: '2', label: t('intel.trust_trusted', '2 — Trusted') },
 		{ value: '3', label: t('intel.trust_aggregator', '3 — Aggregator') },
-		{ value: '4', label: t('intel.trust_community', '4 — Community') }
+		{ value: '4', label: t('intel.trust_community', '4 — Community') },
+		{ value: '5', label: t('intel.trust_unverified', '5 — Unverified') }
 	]);
 
 	const isEdit = $derived(!!source?.id);

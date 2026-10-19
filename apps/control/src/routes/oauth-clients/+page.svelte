@@ -6,6 +6,7 @@
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
+	import { escapeHtml } from '$lib/utils';
 	import { KeyRound, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Copy, Check } from 'lucide-svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
@@ -54,10 +55,14 @@
 	let pendingDeleteId = $state<string | null>(null);
 	let pendingBulkDeleteIds = $state<string[]>([]);
 	let confirmBulkDeleteOpen = $state(false);
+	let confirmRotateOpen = $state(false);
+	let pendingRotateId = $state<string | null>(null);
+	let rotating = $state<string | null>(null);
 	let toggling = $state<string | null>(null);
 	let showSecretReveal = $state(false);
 	let revealedSecret = $state('');
 	let secretCopied = $state(false);
+	let createLoading = $state(false);
 
 	async function load() {
 		const result = await api<OAuthClient[]>('/control/oauth-clients');
@@ -96,12 +101,12 @@
 				key: 'client_id',
 				label: t('oauth_clients.client_id', 'Client ID'),
 				sortable: true,
-				render: (val) => `<span class="font-mono text-xs text-muted-foreground truncate max-w-[120px] inline-block">${val}</span>`
+				render: (val) => `<span class="font-mono text-xs text-muted-foreground truncate max-w-[120px] inline-block">${escapeHtml(val) || '—'}</span>`
 			},
 			{
 				key: 'redirect_uri',
 				label: t('oauth_clients.redirect_uri', 'Redirect URI'),
-				render: (val) => `<span class="text-xs text-muted-foreground truncate max-w-[150px] inline-block">${val || '—'}</span>`
+				render: (val) => `<span class="text-xs text-muted-foreground truncate max-w-[150px] inline-block">${escapeHtml(val) || '—'}</span>`
 			},
 			{
 				key: 'enabled',
@@ -126,21 +131,11 @@
 			{
 				label: t('oauth_clients.rotate_secret', 'Rotate Secret'),
 				icon: RefreshCw,
-				onClick: async (row) => {
-					const id = (row as unknown as OAuthClient).id;
-					const result = await api<{ client_secret?: string }>(`/control/oauth-clients/${id}/rotate-secret`, { method: 'POST' });
-					if (result.ok) {
-						if (result.data?.client_secret) {
-							revealedSecret = result.data.client_secret;
-							showSecretReveal = true;
-							load();
-						} else {
-							errorMessage = t('oauth_clients.rotate_error', 'Failed to rotate secret');
-						}
-					} else {
-						errorMessage = result.error || t('oauth_clients.rotate_error', 'Failed to rotate secret');
-					}
-				}
+				onClick: (row) => {
+					pendingRotateId = (row as unknown as OAuthClient).id;
+					confirmRotateOpen = true;
+				},
+				disabled: () => rotating !== null
 			},
 			{
 				label: t('common.enable', 'Enable'),
@@ -210,27 +205,57 @@
 			errorMessage = t('oauth_clients.required_fields', 'Name, Client ID, and Client Secret are required');
 			return;
 		}
-		const result = await api<OAuthClient>('/control/oauth-clients', {
-			method: 'POST',
-			body: {
-				name: createName,
-				provider: createProvider,
-				client_id: createClientId,
-				client_secret: createClientSecret,
-				redirect_uri: createRedirectUri
+		if (createLoading) return;
+		createLoading = true;
+		try {
+			const result = await api<OAuthClient>('/control/oauth-clients', {
+				method: 'POST',
+				body: {
+					name: createName,
+					provider: createProvider,
+					client_id: createClientId,
+					client_secret: createClientSecret,
+					redirect_uri: createRedirectUri
+				}
+			});
+			if (result.ok) {
+				showCreateModal = false;
+				revealedSecret = result.data?.client_secret ?? createClientSecret;
+				createName = '';
+				createClientId = '';
+				createClientSecret = '';
+				createRedirectUri = '';
+				showSecretReveal = true;
+				load();
+			} else {
+				errorMessage = result.error || t('oauth_clients.create_error', 'Failed to create OAuth client');
 			}
-		});
-		if (result.ok) {
-			showCreateModal = false;
-			revealedSecret = result.data?.client_secret ?? createClientSecret;
-			createName = '';
-			createClientId = '';
-			createClientSecret = '';
-			createRedirectUri = '';
-			showSecretReveal = true;
-			load();
-		} else {
-			errorMessage = result.error || t('oauth_clients.create_error', 'Failed to create OAuth client');
+		} finally {
+			createLoading = false;
+		}
+	}
+
+	async function confirmRotate() {
+		if (!pendingRotateId || rotating) return;
+		const id = pendingRotateId;
+		rotating = id;
+		confirmRotateOpen = false;
+		try {
+			const result = await api<{ client_secret?: string }>(`/control/oauth-clients/${id}/rotate-secret`, { method: 'POST' });
+			if (result.ok) {
+				if (result.data?.client_secret) {
+					revealedSecret = result.data.client_secret;
+					showSecretReveal = true;
+					load();
+				} else {
+					errorMessage = t('oauth_clients.rotate_error', 'Failed to rotate secret');
+				}
+			} else {
+				errorMessage = result.error || t('oauth_clients.rotate_error', 'Failed to rotate secret');
+			}
+		} finally {
+			rotating = null;
+			pendingRotateId = null;
 		}
 	}
 
@@ -321,7 +346,7 @@
 />
 
 {#if showCreateModal}
-	<Modal bind:open={showCreateModal} title={t('oauth_clients.create_title', 'Create OAuth Client')}>
+	<Modal bind:open={showCreateModal} onOpenChange={(isOpen) => { if (!isOpen) { createName = ''; createClientId = ''; createClientSecret = ''; createRedirectUri = ''; } }} title={t('oauth_clients.create_title', 'Create OAuth Client')}>
 			<form onsubmit={(e) => { e.preventDefault(); createClient(); }} class="space-y-4">
 				<div>
 					<label for="oauth-name" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.name_label', 'Name')}</label>
@@ -345,7 +370,7 @@
 				</div>
 				<div>
 					<label for="oauth-client-secret" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_secret_label', 'Client Secret')}</label>
-					<input id="oauth-client-secret" type="text" bind:value={createClientSecret} required class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="GOCSPX-xxxxxxxxxxxxx" />
+					<input id="oauth-client-secret" type="password" bind:value={createClientSecret} required autocomplete="new-password" class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="GOCSPX-xxxxxxxxxxxxx" />
 					<p class="text-muted-foreground mt-1 text-xs">
 						{t('oauth_clients.client_secret_hint', 'Used to authenticate with the OAuth provider. Stored encrypted. Revealed once after creation.')}
 					</p>
@@ -358,12 +383,23 @@
 					<button type="button" class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-lg border px-4 py-2 text-sm font-medium transition-colors" onclick={() => (showCreateModal = false)}>
 						{t('common.cancel', 'Cancel')}
 					</button>
-					<button type="submit" class="bg-foreground text-background hover:bg-foreground/90 rounded-lg px-4 py-2 text-sm font-medium transition-colors">
-						{t('common.create', 'Create')}
+					<button type="submit" disabled={createLoading} class="bg-foreground text-background hover:bg-foreground/90 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50">
+						{createLoading ? t('common.creating', 'Creating...') : t('common.create', 'Create')}
 					</button>
 				</div>
 			</form>
 	</Modal>
+{/if}
+
+{#if pendingRotateId}
+	<ConfirmModal
+		bind:open={confirmRotateOpen}
+		title={t('oauth_clients.rotate_title', 'Rotate client secret')}
+		consequence={t('oauth_clients.rotate_confirm', 'Rotating invalidates the current secret immediately. Update the OAuth provider configuration before rotating.')}
+		confirmText={t('oauth_clients.rotate_secret', 'Rotate Secret')}
+		onConfirm={confirmRotate}
+		onCancel={() => (pendingRotateId = null)}
+	/>
 {/if}
 
 {#if pendingDeleteId}

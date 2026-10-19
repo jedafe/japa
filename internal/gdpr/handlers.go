@@ -57,6 +57,11 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrOwnerProtected) {
+		errpkg.WriteError(w, http.StatusForbidden, "owner_protected", "The owner account cannot be deleted")
+		return
+	}
+
 	errpkg.HandleServiceError(w, err)
 }
 

@@ -94,6 +94,7 @@ type Config struct {
 	StockCacheTTLSec         int    // JC_STOCK_CACHE_TTL_SECONDS — search result cache TTL (default 300)
 	StockCacheMaxEntries     int    // JC_STOCK_CACHE_MAX_ENTRIES — max cached search pages (default 1000)
 	StockHTTPTimeoutSec      int    // JC_STOCK_HTTP_TIMEOUT_SECONDS — provider HTTP client timeout (default 15)
+	OwnerEmail               string // JC_OWNER_EMAIL — email of the platform owner account; grants super_admin on registration and owner-only super_admin lifecycle control (§03 owner amendment)
 }
 
 // Load reads all JC_ environment variables and returns a populated Config.
@@ -189,6 +190,7 @@ func Load() (Config, error) {
 		StockCacheTTLSec:         getEnvInt("JC_STOCK_CACHE_TTL_SECONDS", 300),
 		StockCacheMaxEntries:     getEnvInt("JC_STOCK_CACHE_MAX_ENTRIES", 1000),
 		StockHTTPTimeoutSec:      getEnvInt("JC_STOCK_HTTP_TIMEOUT_SECONDS", 15),
+		OwnerEmail:               strings.ToLower(strings.TrimSpace(os.Getenv("JC_OWNER_EMAIL"))),
 	}
 
 	if err := applyDefaults(&cfg); err != nil {

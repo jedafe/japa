@@ -8,6 +8,19 @@ export function escapeHtml(str: unknown): string {
 		.replace(/'/g, '&#39;');
 }
 
+// isSafeUrl reports whether a URL is safe to render as a link href.
+// Only http/https, site-relative, fragment, and mailto targets are allowed;
+// everything else (javascript:, data:, vbscript:, protocol-relative, …)
+// must be rendered as plain text instead of a link.
+export function isSafeUrl(href: unknown): boolean {
+	if (href == null) return false;
+	const v = String(href).trim().toLowerCase();
+	if (v === '') return false;
+	if (v.startsWith('//')) return false;
+	if (v.startsWith('#') || v.startsWith('/') || v.startsWith('./') || v.startsWith('../')) return true;
+	return /^(https?|mailto):/i.test(v);
+}
+
 // Tags permitted in DataTable cell render output: lightweight inline
 // formatting plus the block anchors the cell renderers actually emit
 // (progress bars, truncated spans, links).

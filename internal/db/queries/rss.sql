@@ -4,7 +4,7 @@
 -- in the Go layer for items where published_at is NULL).
 
 -- name: ListRSSFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
@@ -14,7 +14,7 @@ ORDER BY c.published_at DESC NULLS LAST
 LIMIT @page_limit;
 
 -- name: ListRSSFeedItemsByContentType :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
@@ -25,7 +25,7 @@ ORDER BY c.published_at DESC NULLS LAST
 LIMIT @page_limit;
 
 -- name: ListRSSSpaceFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 JOIN spaces s ON c.space_id = s.id
@@ -37,7 +37,7 @@ ORDER BY c.published_at DESC NULLS LAST
 LIMIT @page_limit;
 
 -- name: ListRSSTagFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 JOIN content_tags ct ON ct.content_id = c.id
@@ -50,11 +50,11 @@ ORDER BY c.published_at DESC NULLS LAST
 LIMIT @page_limit;
 
 -- name: ListRSSUserFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
+SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
- AND u.username = @username
+ AND (u.username = @username OR lower(u.public_username) = lower(@username))
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false
 ORDER BY c.published_at DESC NULLS LAST

@@ -254,13 +254,13 @@ func (q *Queries) GetContentCampaignItemByStudioJob(ctx context.Context, studioJ
 
 const listContentCampaignActivePersonas = `-- name: ListContentCampaignActivePersonas :many
 
-SELECT ap.id, COALESCE(up.display_name, u.username) AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
+SELECT ap.id, COALESCE(up.display_name, u.public_username, u.username, '') AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 LEFT JOIN user_profiles up ON up.user_id = ap.user_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.status = 'active'
-ORDER BY COALESCE(up.display_name, u.username)
+ORDER BY COALESCE(up.display_name, u.username, '')
 `
 
 type ListContentCampaignActivePersonasRow struct {
@@ -293,14 +293,14 @@ func (q *Queries) ListContentCampaignActivePersonas(ctx context.Context) ([]List
 }
 
 const listContentCampaignActivePersonasByIDs = `-- name: ListContentCampaignActivePersonasByIDs :many
-SELECT ap.id, COALESCE(up.display_name, u.username) AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
+SELECT ap.id, COALESCE(up.display_name, u.public_username, u.username, '') AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 LEFT JOIN user_profiles up ON up.user_id = ap.user_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.status = 'active'
  AND ap.id = ANY($1::uuid[])
-ORDER BY COALESCE(up.display_name, u.username)
+ORDER BY COALESCE(up.display_name, u.username, '')
 `
 
 type ListContentCampaignActivePersonasByIDsRow struct {

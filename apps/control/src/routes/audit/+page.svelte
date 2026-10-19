@@ -19,6 +19,7 @@
 	let loading = $state(true);
 	let apiAvailable = $state(true);
 	let message = $state('');
+	let selectedIds = $state(new Set<string>());
 	let deleteModalOpen = $state(false);
 	let pendingDeleteId = $state<string | null>(null);
 	let clearAllModalOpen = $state(false);
@@ -220,6 +221,7 @@
 				.replace('{failed}', String(failed))
 				.replace('{count}', String(ids.length));
 		}
+		selectedIds = new Set();
 		load();
 	}
 
@@ -288,6 +290,7 @@
 
 	function applyFilters() {
 		page = 0;
+		selectedIds = new Set();
 		load();
 	}
 
@@ -370,14 +373,14 @@
 		class="border-border-input bg-background text-foreground rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterFrom}
 		onchange={applyFilters}
-		aria-label="Filter from date"
+		aria-label={t('audit.filter_from', 'Filter from date')}
 	/>
 	<input
 		type="date"
 		class="border-border-input bg-background text-foreground rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterTo}
 		onchange={applyFilters}
-		aria-label="Filter to date"
+		aria-label={t('audit.filter_to', 'Filter to date')}
 	/>
 </div>
 <div class="mb-4 flex items-center gap-3">
@@ -407,6 +410,7 @@
 	rowActions={rowActions}
 	bulkActions={bulkActions}
 	selectable={true}
+	bind:selectedIds
 	emptyMessage={t('audit.empty', 'No audit entries found')}
 />
 

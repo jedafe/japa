@@ -27,49 +27,38 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
-	let destinations: GeoSpaceOption[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		destinations = items.map((c) => ({ id: c.id, name: c.name, slug: c.slug, code: c.geo_code ?? null }));
-	} catch {
-		destinations = [];
-	}
+	// All six SSR fetches are independent — run them concurrently.
+	const destinationsPromise = apiList<GeoCountry>(ctx, '/geo/countries')
+		.then(({ items }) =>
+			items.map((c) => ({ id: c.id, name: c.name, slug: c.slug, code: c.geo_code ?? null }))
+		)
+		.catch(() => [] as GeoSpaceOption[]);
+	const templatesPromise = apiList<SopTemplate>(ctx, '/sop/templates')
+		.then((r) => r.items)
+		.catch(() => [] as SopTemplate[]);
+	const samplesPromise = apiList<SopSample>(ctx, '/sop/samples')
+		.then((r) => r.items)
+		.catch(() => [] as SopSample[]);
+	const fieldsPromise = apiList<SopField>(ctx, '/sop/fields')
+		.then((r) => r.items)
+		.catch(() => [] as SopField[]);
+	const quotaPromise = authed
+		? apiGet<SopQuota>(ctx, '/sop/quota').catch(() => null)
+		: Promise.resolve(null);
+	const draftsPromise = authed
+		? apiList<SopDraft>(ctx, '/sop/drafts')
+				.then((r) => r.items)
+				.catch(() => [] as SopDraft[])
+		: Promise.resolve([] as SopDraft[]);
 
-	let templates: SopTemplate[] = [];
-	try {
-		templates = (await apiList<SopTemplate>(ctx, '/sop/templates')).items;
-	} catch {
-		templates = [];
-	}
-
-	let samples: SopSample[] = [];
-	try {
-		samples = (await apiList<SopSample>(ctx, '/sop/samples')).items;
-	} catch {
-		samples = [];
-	}
-
-	let fields: SopField[] = [];
-	try {
-		fields = (await apiList<SopField>(ctx, '/sop/fields')).items;
-	} catch {
-		fields = [];
-	}
-
-	let quota: SopQuota | null = null;
-	let drafts: SopDraft[] = [];
-	if (authed) {
-		try {
-			quota = await apiGet<SopQuota>(ctx, '/sop/quota');
-		} catch {
-			quota = null;
-		}
-		try {
-			drafts = (await apiList<SopDraft>(ctx, '/sop/drafts')).items;
-		} catch {
-			drafts = [];
-		}
-	}
+	const [destinations, templates, samples, fields, quota, drafts] = await Promise.all([
+		destinationsPromise,
+		templatesPromise,
+		samplesPromise,
+		fieldsPromise,
+		quotaPromise,
+		draftsPromise
+	]);
 
 	return { destinations, templates, samples, fields, quota, drafts, authed };
 };

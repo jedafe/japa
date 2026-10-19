@@ -463,7 +463,7 @@ const leaderboardAllTime = `-- name: LeaderboardAllTime :many
 SELECT
  wl.user_id,
  COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS lifetime_points,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,
  u.profile_type
@@ -539,7 +539,7 @@ const leaderboardByPeriod = `-- name: LeaderboardByPeriod :many
 SELECT
  wl.user_id,
  COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS period_points,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,
  u.profile_type
@@ -855,7 +855,7 @@ SELECT
 FROM user_badges ub
 JOIN badge_definitions bd ON bd.id = ub.badge_id
 JOIN users u ON u.id = ub.user_id
-WHERE u.username = $1
+WHERE (u.username = $1 OR lower(u.public_username) = lower($1))
 ORDER BY ub.awarded_at DESC
 `
 

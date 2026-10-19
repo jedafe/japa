@@ -52,9 +52,9 @@ WHERE participant_1_id = LEAST(@participant_1_id, @participant_2_id)::uuid
 SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
  dc.last_message_at, dc.last_message_preview,
  dc.p1_unread_count, dc.p2_unread_count, dc.created_at, dc.updated_at,
- (CASE WHEN dc.participant_1_id = @user_id THEN u2.username ELSE u1.username END)::text AS other_username,
+ (CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END)::text AS other_username,
  COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END,
-          CASE WHEN dc.participant_1_id = @user_id THEN u2.username ELSE u1.username END)::text AS other_display_name,
+          CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END)::text AS other_display_name,
  COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
  (CASE WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count ELSE dc.p2_unread_count END)::int AS unread_count
 FROM dm_conversations dc
@@ -73,7 +73,7 @@ WHERE (dc.participant_1_id = @user_id OR dc.participant_2_id = @user_id)
  AND (@filter::text <> 'unread' OR
       (CASE WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count ELSE dc.p2_unread_count END) > 0)
  AND (@q::text = '' OR
-      (CASE WHEN dc.participant_1_id = @user_id THEN u2.username ELSE u1.username END) ILIKE '%' || @q || '%' OR
+      (CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END) ILIKE '%' || @q || '%' OR
       COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END, '') ILIKE '%' || @q || '%' OR
       COALESCE(dc.last_message_preview, '') ILIKE '%' || @q || '%')
  AND (NOT @has_cursor::bool OR
@@ -88,7 +88,7 @@ WHERE (dc.participant_1_id = @user_id OR dc.participant_2_id = @user_id)
         (@cursor_int::bigint, @cursor_id::uuid)) OR
       (@sort::text = 'name' AND
         (COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END,
-                  CASE WHEN dc.participant_1_id = @user_id THEN u2.username ELSE u1.username END), dc.id) >
+                  CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END), dc.id) >
         (@cursor_text::text, @cursor_id::uuid)))
 ORDER BY
  (CASE WHEN @sort::text = 'unread' THEN
@@ -96,7 +96,7 @@ ORDER BY
  (CASE WHEN @sort::text = 'unread' THEN dc.id END) DESC NULLS LAST,
  (CASE WHEN @sort::text = 'name' THEN
    COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END,
-            CASE WHEN dc.participant_1_id = @user_id THEN u2.username ELSE u1.username END) END) ASC NULLS LAST,
+            CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END) END) ASC NULLS LAST,
  (CASE WHEN @sort::text = 'name' THEN dc.id END) ASC NULLS LAST,
  (CASE WHEN @sort::text = 'oldest' THEN COALESCE(dc.last_message_at, dc.created_at) END) ASC NULLS LAST,
  (CASE WHEN @sort::text = 'oldest' THEN dc.id END) ASC NULLS LAST,
@@ -113,7 +113,7 @@ INSERT INTO dm_messages (conversation_id, sender_id, body) VALUES (@conversation
 -- paginated, keyset by created_at, newest first"). The cursor carries the
 -- (created_at, id) of the previous page's last row; @page_offset only
 -- applies to cursor-less (legacy) calls.
-SELECT dm.*, u.username AS sender_username, p.display_name AS sender_display_name
+SELECT dm.*, COALESCE(u.public_username, u.username, '') AS sender_username, p.display_name AS sender_display_name
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
@@ -167,12 +167,13 @@ WHERE id = @id;
 -- Lists pending DM requests for a recipient (BUG-003). Filters by
 -- recipient_id and status = 'pending' so the handler returns only
 -- actionable requests, not all conversations.
-SELECT dr.*, u.username AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
+SELECT dr.*, COALESCE(u.public_username, u.username, '') AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
 FROM dm_requests dr
 JOIN users u ON u.id = dr.requester_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
 WHERE dr.recipient_id = @recipient_id AND dr.status = 'pending'
  AND (@q::text = '' OR u.username ILIKE '%' || @q || '%' OR
+      u.public_username ILIKE '%' || @q || '%' OR
       COALESCE(p.display_name, '') ILIKE '%' || @q || '%' OR
       dr.preview_message ILIKE '%' || @q || '%')
  AND (NOT @has_cursor::bool OR
@@ -181,9 +182,9 @@ WHERE dr.recipient_id = @recipient_id AND dr.status = 'pending'
       (@sort::text = 'oldest' AND
         (dr.created_at, dr.id) > (@cursor_ts::timestamptz, @cursor_id::uuid)) OR
       (@sort::text = 'name' AND
-        (COALESCE(p.display_name, u.username), dr.id) > (@cursor_text::text, @cursor_id::uuid)))
+        (COALESCE(p.display_name, u.public_username, u.username, ''), dr.id) > (@cursor_text::text, @cursor_id::uuid)))
 ORDER BY
- (CASE WHEN @sort::text = 'name' THEN COALESCE(p.display_name, u.username) END) ASC NULLS LAST,
+ (CASE WHEN @sort::text = 'name' THEN COALESCE(p.display_name, u.public_username, u.username, '') END) ASC NULLS LAST,
  (CASE WHEN @sort::text = 'name' THEN dr.id END) ASC NULLS LAST,
  (CASE WHEN @sort::text = 'oldest' THEN dr.created_at END) ASC NULLS LAST,
  (CASE WHEN @sort::text = 'oldest' THEN dr.id END) ASC NULLS LAST,

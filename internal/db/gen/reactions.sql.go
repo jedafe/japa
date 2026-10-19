@@ -230,7 +230,7 @@ func (q *Queries) GetUserReactionsForContents(ctx context.Context, arg GetUserRe
 const listContentLikedByUser = `-- name: ListContentLikedByUser :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.created_at, c.view_count, c.comment_count,
- COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  LEFT(c.body, 200) AS excerpt,
  MAX(r.created_at)::timestamptz AS reacted_at

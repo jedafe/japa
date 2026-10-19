@@ -44,33 +44,35 @@ export const load: PageServerLoad = async (event) => {
 
 	// Providers are public data — SSR-load them so the page doesn't
 	// double-fetch on mount (and so the JCE compare picker renders on
-	// first paint).
-	let providers: RemittanceProvider[] = [];
-	if (!disabled) {
-		try {
-			providers = await apiGet<RemittanceProvider[]>(ctx, '/remittance/providers');
-		} catch (e) {
-			console.error('failed to load remittance providers:', e);
-		}
-	}
+	// first paint). Providers, user alerts, and the direction catalog are
+	// independent once the disabled flag is known — fetch concurrently.
+	const providersPromise = !disabled
+		? apiGet<RemittanceProvider[]>(ctx, '/remittance/providers').catch((e) => {
+				console.error('failed to load remittance providers:', e);
+				return [] as RemittanceProvider[];
+			})
+		: Promise.resolve([] as RemittanceProvider[]);
 
 	// Rate alerts are user-scoped — SSR-load them when signed in so the
 	// alerts panel renders on first paint, independent of corridor selection.
-	let alerts: RemittanceAlert[] = [];
-	if (authed && !disabled) {
-		try {
-			alerts = await apiGet<RemittanceAlert[]>(ctx, '/remittance/alerts');
-		} catch (e) {
-			console.error('failed to load remittance alerts:', e);
-		}
-	}
+	const alertsPromise = authed && !disabled
+		? apiGet<RemittanceAlert[]>(ctx, '/remittance/alerts').catch((e) => {
+				console.error('failed to load remittance alerts:', e);
+				return [] as RemittanceAlert[];
+			})
+		: Promise.resolve([] as RemittanceAlert[]);
 
-	let directionOptions: CatalogOption[] = [];
-	try {
-		directionOptions = await apiGet<CatalogOption[]>(ctx, '/catalogs/remittance.alert_direction');
-	} catch (e) {
-		console.error('failed to load remittance alert direction catalog:', e);
-	}
+	const directionOptionsPromise = apiGet<CatalogOption[]>(ctx, '/catalogs/remittance.alert_direction')
+		.catch((e) => {
+			console.error('failed to load remittance alert direction catalog:', e);
+			return [] as CatalogOption[];
+		});
+
+	const [providers, alerts, directionOptions] = await Promise.all([
+		providersPromise,
+		alertsPromise,
+		directionOptionsPromise
+	]);
 
 	// §74 settings — exposed via /site/settings/public (migration 000783).
 	const defaultSendCurrency =

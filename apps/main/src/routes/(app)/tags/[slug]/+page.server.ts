@@ -57,6 +57,15 @@ export const load: PageServerLoad = async (event) => {
 			: 'content';
 	const query = event.url.searchParams.get('q') ?? '';
 
+	// Tag moderators — only needs the slug, so it runs in parallel with the
+	// detail fetch rather than behind it. The list drives tab visibility:
+	// the Moderators tab renders only when the tag has at least one assigned
+	// moderator. GET /tags/{slug}/moderators is public — works for guests.
+	// Best-effort: a failure degrades to no tab.
+	const moderatorsPromise = apiGet<TagModerator[]>(ctx, `/tags/${slug}/moderators`)
+		.then((m) => m ?? [])
+		.catch(() => [] as TagModerator[]);
+
 	// Tag detail — 404 propagates as a SvelteKit error.
 	let tag: TagDetail;
 	try {
@@ -69,16 +78,7 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
-	// Tag moderators — fetched on every load because the list drives tab
-	// visibility: the Moderators tab renders only when the tag has at least
-	// one assigned moderator. GET /tags/{slug}/moderators is public, so this
-	// also works for guests. Best-effort: a failure degrades to no tab.
-	let moderators: TagModerator[] = [];
-	try {
-		moderators = (await apiGet<TagModerator[]>(ctx, `/tags/${slug}/moderators`)) ?? [];
-	} catch {
-		moderators = [];
-	}
+	const moderators = await moderatorsPromise;
 
 	// A manual ?tab=moderators on a tag with no moderators falls back to the
 	// content tab — the tab isn't rendered, so showing its pane would leave
@@ -160,35 +160,32 @@ export const load: PageServerLoad = async (event) => {
 	// Hydrate the follow button's initial state. Best-effort: a failure
 	// degrades to `false` (not following). Only fetch when the viewer is
 	// authenticated — guests can't follow.
-	const initiallyFollowing = event.locals.user
-		? apiGet<{ following: boolean }>(ctx, `/users/${tag.id}/follow-status?entity_type=tag`)
-				.then((r) => r.following)
-				.catch(() => false)
-		: Promise.resolve(false);
+	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
+		(g) => g === 'Super Admin' || g === 'super_admin'
+	);
+
+	// Follow state and the permission lookup are independent — run together.
+	const [isFollowing, perms] = await Promise.all([
+		event.locals.user
+			? apiGet<{ following: boolean }>(ctx, `/users/${tag.id}/follow-status?entity_type=tag`)
+					.then((r) => r.following)
+					.catch(() => false)
+			: Promise.resolve(false),
+		event.locals.user && !isSuperAdmin
+			? apiGet<{ permissions: string[] }>(ctx, '/me/permissions')
+					.then((r) => r?.permissions ?? [])
+					.catch(() => [] as string[])
+			: Promise.resolve([] as string[])
+	]);
 
 	// Check if the viewer can manage tags (tags.manage permission or super_admin
 	// group membership — super_admin bypasses all permission checks at the RBAC
 	// middleware level, but /me/permissions only returns explicitly resolved
 	// nodes, so the group check is needed to surface the edit button for them).
 	// Best-effort: degrades to false so a failing lookup never blocks the page.
-	let canManage = false;
-	if (event.locals.user) {
-		const isSuperAdmin = (event.locals.user.groups ?? []).some(
-			(g) => g === 'Super Admin' || g === 'super_admin'
-		);
-		if (isSuperAdmin) {
-			canManage = true;
-		} else {
-			try {
-				const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
-				canManage = (permRes?.permissions ?? []).includes('tags.manage');
-			} catch {
-				canManage = false;
-			}
-		}
-	}
-
-	const isFollowing = await initiallyFollowing;
+	const canManage = event.locals.user
+		? isSuperAdmin || perms.includes('tags.manage')
+		: false;
 
 	return {
 		tag,

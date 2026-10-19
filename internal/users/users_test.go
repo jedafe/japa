@@ -114,6 +114,7 @@ func TestPublicProfileResponseJSONTags(t *testing.T) {
 		"location":         nil,
 		"banner_url":       nil,
 		"website_url":      nil,
+		"role":             nil,
 	}
 
 	for k, want := range wantKeys {

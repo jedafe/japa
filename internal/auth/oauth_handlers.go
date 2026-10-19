@@ -39,6 +39,8 @@ type OAuthHandlers struct {
 	DefaultFolderSetter DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 	TierManager         TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 	SourceManager       SourceManager         // Optional — wired by server for v2 source directory auto-creation
+	OwnerEmail          string                // JC_OWNER_EMAIL — designates the platform owner account (§03 owner amendment)
+	OwnerPromoter       SuperAdminPromoter    // Optional — promotes the owner account into the super_admin group at registration
 }
 
 // SetTierManager injects the tier manager used to assign the regular tier on
@@ -326,6 +328,14 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo
 			candidate = attempt + "_" + suffix
 		}
 
+		// §03 alias amendment: skip candidates that collide with an existing
+		// public_username alias — the DB unique index only covers username.
+		if taken, terr := h.Queries.PublicHandleTaken(ctx, gen.PublicHandleTakenParams{
+			Handle: candidate,
+		}); terr == nil && taken > 0 {
+			continue
+		}
+
 		userID, err := h.Queries.CreateUser(ctx, gen.CreateUserParams{
 			Email:        strings.ToLower(strings.TrimSpace(info.Email)),
 			Username:     candidate,
@@ -345,6 +355,10 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo
 				slog.Warn("oauth register: failed to set regular tier", "error", tierErr, "user_id", userID.String())
 			}
 		}
+
+		// §03 owner amendment: the JC_OWNER_EMAIL account is the platform
+		// owner — grant it super_admin membership on first registration.
+		PromoteOwnerIfMatch(ctx, h.OwnerPromoter, h.OwnerEmail, info.Email, userID)
 
 		if linkErr := h.Store.LinkOAuthAccount(ctx, userID, providerName, info.ProviderUserID); linkErr != nil {
 			return pgtype.UUID{}, fmt.Errorf("link OAuth account: %w", linkErr)

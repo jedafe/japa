@@ -844,6 +844,16 @@ func (h *Handlers) UpdateMyAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §03 alias amendment: public_username / public_group_id are reserved for
+	// super_admin members — everyone else gets 403 when either field is sent.
+	if req.PublicUsername != nil || req.PublicGroupID != nil {
+		if h.permResolver == nil || !h.permResolver.IsSuperAdmin(r.Context(), user.UserID) {
+			errpkg.WriteError(w, http.StatusForbidden, "super_admin_required",
+				"Only super admins can set a public alias or role")
+			return
+		}
+	}
+
 	result, err := h.Service.UpdateAccount(r.Context(), user.UserID, &req)
 	if err != nil {
 		switch {
@@ -855,6 +865,12 @@ func (h *Handlers) UpdateMyAccount(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "username_taken", "This username is already in use")
 		case errors.Is(err, ErrEmailTaken):
 			errpkg.WriteError(w, http.StatusConflict, "email_taken", "This email is already in use")
+		case errors.Is(err, ErrNotGroupMember):
+			errpkg.WriteError(w, http.StatusBadRequest, "not_group_member", "public_group_id must be one of your groups")
+		case errors.Is(err, ErrInvalidPublicGroupID):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_public_group_id", "public_group_id must be a valid UUID")
+		case errors.Is(err, ErrOwnerEmailImmutable):
+			errpkg.WriteError(w, http.StatusForbidden, "owner_protected", "The owner account email cannot be changed")
 		default:
 			handleServiceError(w, err)
 		}
@@ -922,6 +938,20 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 		// ownership via password. Reject to prevent deactivation by a
 		// stolen session token without credential verification.
 		errpkg.WriteError(w, http.StatusBadRequest, "no_password_set", "This account does not have a password set. Use password reset to set a password before deactivating.")
+		return
+	}
+
+	// §03 owner amendment: the owner account cannot be deleted, including
+	// self-deactivation. A lookup failure aborts — the owner check must
+	// never be skipped silently.
+	myEmail, emailErr := h.Service.GetUserEmail(r.Context(), user.UserID)
+	if emailErr != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify account")
+		return
+	}
+
+	if h.Service.IsOwnerEmail(myEmail) {
+		errpkg.WriteError(w, http.StatusForbidden, "owner_protected", "The owner account cannot be deactivated")
 		return
 	}
 

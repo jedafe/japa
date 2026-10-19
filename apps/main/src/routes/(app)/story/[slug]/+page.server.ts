@@ -54,27 +54,22 @@ export const load: PageServerLoad = async (event) => {
 	// affordance needs story.edit_any/content.edit_any for non-owners — the
 	// backend enforces the actual permission on PATCH /stories/{id} and
 	// DELETE /stories/{id}; these flags only gate the UI controls.
-	let hasCommentsPinPermission = false;
-	let canEditAny = false;
-	if (!isOwner && !isSuperAdmin && event.locals.user) {
-		try {
-			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
-			const perms = permRes?.permissions ?? [];
-			hasCommentsPinPermission = perms.includes('comments.pin');
-			canEditAny = perms.includes('story.edit_any') || perms.includes('content.edit_any');
-		} catch {
-			hasCommentsPinPermission = false;
-			canEditAny = false;
-		}
-	}
-	const canModerate = isOwner || isSuperAdmin || hasCommentsPinPermission;
-	const canEdit = isOwner || isSuperAdmin || canEditAny;
+	const isOwnStory = !!currentUserId && story.author_id === currentUserId;
+
+	// Everything downstream of the story fetch is independent — run the whole
+	// wave concurrently (permissions, follow state, comments, related,
+	// recommended, analytics, series posts).
+	const permPromise =
+		!isOwner && !isSuperAdmin && event.locals.user
+			? apiGet<{ permissions: string[] }>(ctx, '/me/permissions')
+					.then((r) => r?.permissions ?? [])
+					.catch(() => [] as string[])
+			: Promise.resolve([] as string[]);
 
 	// Hydrate the CreatorCard follow button's initial state. Best-effort:
 	// a failure degrades to `false` (not following). Skip when the viewer
 	// is the author (no self-follow) or the author is unknown.
-	const isOwnStory = !!currentUserId && story.author_id === currentUserId;
-	const initiallyFollowing =
+	const followingPromise =
 		authed && story.author_id && !isOwnStory
 			? apiGet<{ following: boolean }>(ctx, `/users/${story.author_id}/follow-status`)
 					.then((r) => r.following)
@@ -82,63 +77,70 @@ export const load: PageServerLoad = async (event) => {
 			: Promise.resolve(false);
 
 	// Unified comment engine (Section 49) — top-level comments are SSR-seeded.
-	let comments: Comment[] = [];
-	let commentsLoadError = false;
-	let commentDeletedUserIds: string[] | null = null;
-	try {
-		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${story.id}/comments?page_size=50`);
-		comments = envelope.data ?? [];
-		commentDeletedUserIds = envelope.deleted_user_ids ?? null;
-	} catch {
-		commentsLoadError = true;
-	}
+	const commentsPromise = apiGetEnvelope<Comment[]>(
+		ctx,
+		`/content/${story.id}/comments?page_size=50`
+	).then(
+		(envelope) => ({
+			comments: envelope.data ?? [],
+			deletedUserIds: envelope.deleted_user_ids ?? null,
+			loadError: false
+		}),
+		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, loadError: true })
+	);
 
 	// Related content (Section 14 — GET /content/{id}/related). Best-effort.
 	// NB: the endpoint reads `page_size`, not `limit`.
-	let relatedContent: ContentArticle[] = [];
-	try {
-		relatedContent = (await apiGet<ContentArticle[]>(ctx, `/content/${story.id}/related?page_size=4`)) ?? [];
-	} catch {
-		relatedContent = [];
-	}
+	const relatedPromise = apiGet<ContentArticle[]>(ctx, `/content/${story.id}/related?page_size=4`)
+		.then((r) => r ?? [])
+		.catch(() => [] as ContentArticle[]);
 
 	// "Recommended Stories" sidebar card — same-type items ranked by the
 	// related endpoint's content_type filter. Best-effort; the card hides
 	// itself when the list is empty.
-	let recommendedContent: ContentArticle[] = [];
-	try {
-		recommendedContent =
-			(await apiGet<ContentArticle[]>(
-				ctx,
-				`/content/${story.id}/related?content_type=story&page_size=5`
-			)) ?? [];
-	} catch {
-		recommendedContent = [];
-	}
+	const recommendedPromise = apiGet<ContentArticle[]>(
+		ctx,
+		`/content/${story.id}/related?content_type=story&page_size=5`
+	)
+		.then((r) => r ?? [])
+		.catch(() => [] as ContentArticle[]);
 
 	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
 	// analytics.admin only). Fetch only for the author to avoid guaranteed
 	// 403s for other viewers; a failure degrades to no stats card.
-	let analytics: ContentAnalytics | null = null;
-	if (isOwnStory) {
-		try {
-			analytics = await apiGet<ContentAnalytics>(ctx, `/content/${story.id}/analytics`);
-		} catch {
-			analytics = null;
-		}
-	}
+	const analyticsPromise = isOwnStory
+		? apiGet<ContentAnalytics>(ctx, `/content/${story.id}/analytics`).catch(() => null)
+		: Promise.resolve(null);
 
 	// Series parts (§14 — stories share the blog_series model and render the
 	// same series card as the blog single). Public endpoint.
-	let seriesPosts: SeriesPost[] = [];
-	if (story.series_id) {
-		try {
-			seriesPosts =
-				(await apiGet<SeriesPost[]>(ctx, `/series/${story.series_id}/posts`)) ?? [];
-		} catch {
-			seriesPosts = [];
-		}
-	}
+	const seriesPromise = story.series_id
+		? apiGet<SeriesPost[]>(ctx, `/series/${story.series_id}/posts`)
+				.then((r) => r ?? [])
+				.catch(() => [] as SeriesPost[])
+		: Promise.resolve([] as SeriesPost[]);
+
+	const [perms, initiallyFollowing, commentsResult, relatedContent, recommendedContent, analytics, seriesPosts] =
+		await Promise.all([
+			permPromise,
+			followingPromise,
+			commentsPromise,
+			relatedPromise,
+			recommendedPromise,
+			analyticsPromise,
+			seriesPromise
+		]);
+
+	// Moderation affordances: comment pinning needs comments.pin; the Edit
+	// affordance needs story.edit_any/content.edit_any for non-owners — the
+	// backend enforces the actual permission on PATCH /stories/{id} and
+	// DELETE /stories/{id}; these flags only gate the UI controls.
+	const hasCommentsPinPermission = perms.includes('comments.pin');
+	const canEditAny = perms.includes('story.edit_any') || perms.includes('content.edit_any');
+	const canModerate = isOwner || isSuperAdmin || hasCommentsPinPermission;
+	const canEdit = isOwner || isSuperAdmin || canEditAny;
+	const { comments, deletedUserIds: commentDeletedUserIds, loadError: commentsLoadError } =
+		commentsResult;
 
 	return {
 		story,
@@ -153,7 +155,7 @@ export const load: PageServerLoad = async (event) => {
 		analytics,
 		seriesPosts,
 		deletedUserIds: commentDeletedUserIds,
-		initiallyFollowing: await initiallyFollowing,
+		initiallyFollowing,
 		loadError: false
 	};
 };

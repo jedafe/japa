@@ -126,7 +126,7 @@ func (q *Queries) CreateOrUpdateVideoSource(ctx context.Context, arg CreateOrUpd
 }
 
 const getVideoChannelUsernameBySourceID = `-- name: GetVideoChannelUsernameBySourceID :one
-SELECT u.username
+SELECT COALESCE(u.public_username, u.username, '') AS username
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
 WHERE vs.source_id = $1 AND vs.source_type != 'upload'
@@ -299,7 +299,7 @@ func (q *Queries) LinkVideoSourcesToChannel(ctx context.Context, arg LinkVideoSo
 const listVideoSourceItemsBySourceID = `-- name: ListVideoSourceItemsBySourceID :many
 SELECT vs.id, vs.title, vs.description, vs.source_url, vs.thumbnail_url,
        vs.duration_secs, vs.created_at, vs.slug AS video_slug,
-       u.username AS author_username,
+       COALESCE(u.public_username, u.username, '') AS author_username,
        COALESCE(c.slug, '') AS content_slug,
        COALESCE(c.view_count, 0) AS view_count,
        COALESCE(c.comment_count, 0) AS comment_count,
@@ -402,7 +402,7 @@ const listVideoSourcesByAuthor = `-- name: ListVideoSourcesByAuthor :many
 SELECT vs.id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id, vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id, vs.duration_secs, vs.status, vs.field_values, vs.created_at, vs.updated_at, vs.source_id, vs.slug
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
-WHERE u.username = $1 AND vs.status = 'active'
+WHERE (u.username = $1 OR lower(u.public_username) = lower($1)) AND vs.status = 'active'
 ORDER BY vs.created_at DESC, vs.id DESC
 LIMIT $3 OFFSET $2
 `

@@ -30,25 +30,34 @@
 
 	let copied = $state(false);
 
-	// Decode the base64-encoded body. The backend sends body_b64 to preserve
-	// binary content (PDF bytes, etc.). Falls back to empty string when the
-	// field is absent or decoding fails.
+	// Decode the base64-encoded body as UTF-8. The backend sends body_b64 to
+	// preserve binary content (PDF bytes, etc.). atob() alone returns a
+	// Latin-1 string that mangles multi-byte UTF-8 — decode via TextDecoder
+	// instead. Binary bodies stay non-empty but are flagged via isBinary.
 	const body = $derived.by<string>(() => {
 		const b64 = doc?.body_b64;
 		if (!b64 || typeof b64 !== 'string') return '';
 		try {
-			return atob(b64);
+			const bin = atob(b64);
+			const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+			return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 		} catch {
 			return '';
 		}
 	});
 	const contentType = $derived<string>(doc?.content_type ?? '');
 
+	const isBinary = $derived(
+		/^(application\/(pdf|octet-stream|zip|msword|vnd\.))|image\/|audio\/|video\//i.test(contentType)
+	);
+
 	const isJson = $derived(
 		contentType.includes('json') ||
 			(body.trim().startsWith('{') || body.trim().startsWith('['))
 	);
-	const isHtml = $derived(contentType.includes('html') || body.trim().startsWith('<'));
+	const isHtml = $derived(
+		contentType.includes('html') || /^\s*<(html|!doctype)\b/i.test(body)
+	);
 
 	// Pretty-print JSON when the body parses; otherwise fall back to raw.
 	const rendered = $derived.by(() => {
@@ -125,7 +134,7 @@
 			<dl class="mb-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
 				<div>
 					<dt class="text-muted-foreground font-medium uppercase">{t('intel.field_url', 'URL')}</dt>
-					<dd class="text-foreground truncate font-mono">{doc.url ?? '—'}</dd>
+					<dd class="text-foreground truncate font-mono" title={doc.url ?? undefined}>{doc.url ?? '—'}</dd>
 				</div>
 				<div>
 					<dt class="text-muted-foreground font-medium uppercase">{t('intel.content_type', 'Content-Type')}</dt>
@@ -141,7 +150,13 @@
 				</div>
 			</dl>
 
-			{#if isHtml}
+			{#if isBinary}
+				<div class="border-border-card bg-background rounded-lg border p-3">
+					<p class="text-muted-foreground text-xs">
+						{t('intel.binary_content', 'Binary content ({type}) — {size} characters decoded. Open the source URL to view the original file.').replace('{type}', contentType || 'unknown').replace('{size}', String(body.length))}
+					</p>
+				</div>
+			{:else if isHtml}
 				<div class="border-border-card bg-background max-h-96 overflow-auto rounded-lg border p-3">
 					<pre class="text-foreground whitespace-pre-wrap break-words text-xs leading-relaxed">{rendered}</pre>
 				</div>

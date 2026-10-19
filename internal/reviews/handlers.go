@@ -344,9 +344,7 @@ func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
 
 	for _, row := range rows {
 		authorName := ""
-		if row.AuthorUsername != nil {
-			authorName = *row.AuthorUsername
-		}
+		authorName = row.AuthorUsername
 
 		if row.AuthorDisplayName != nil && *row.AuthorDisplayName != "" {
 			authorName = *row.AuthorDisplayName

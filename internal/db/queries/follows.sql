@@ -37,7 +37,7 @@ SELECT EXISTS (
 
 -- name: GetFollowersByEntity :many
 SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
- u.username,
+ COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url,
  u.profile_type

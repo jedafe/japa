@@ -56,7 +56,83 @@ export function apiContext(event: RequestEvent): ApiContext {
 	};
 }
 
+/**
+ * Short-TTL in-process cache for shared public GET catalogs. Endpoints like
+ * GET /geo/countries, GET /site/settings/public, and GET /catalogs/* return
+ * the same payload for every caller on a given host, yet are awaited
+ * serially inside dozens of SSR loads — each round-trip adds backend
+ * latency to TTFB. Caching them collapses those calls; the TTL bounds
+ * staleness (60s for admin-editable settings, 5m for slow-moving catalogs).
+ *
+ * Safety: keyed by host+path so tenant-scoped responses never cross hosts.
+ * Only GETs on the allowlist are cached — anything user-scoped (/me/*,
+ * personalized feeds) or mutating bypasses entirely. In-flight requests
+ * dedupe via singleflight so a burst of concurrent page loads issues one
+ * backend call, not N.
+ */
+const PUBLIC_GET_CACHE: Array<[RegExp, number]> = [
+	[/^\/geo\/countries(?:[/?]|$)/, 5 * 60_000],
+	[/^\/geo\/states\/[^/]+\/cities/, 5 * 60_000],
+	[/^\/site\/settings\/public/, 60_000],
+	[/^\/catalogs\//, 5 * 60_000],
+	[/^\/i18n\//, 5 * 60_000]
+];
+const PUBLIC_GET_CACHE_MAX = 500;
+const publicGetCache = new Map<string, { expires: number; payload: unknown }>();
+const publicGetInflight = new Map<string, Promise<ApiOk<unknown>>>();
+
+function publicGetTtl(path: string): number {
+	for (const [pattern, ttl] of PUBLIC_GET_CACHE) {
+		if (pattern.test(path)) return ttl;
+	}
+	return 0;
+}
+
+/** Drop cached public GETs matching a prefix (e.g. after a known mutation). */
+export function invalidatePublicGetCache(pathPrefix?: string): void {
+	if (!pathPrefix) {
+		publicGetCache.clear();
+		return;
+	}
+	for (const key of publicGetCache.keys()) {
+		if (key.includes(`|${pathPrefix}`)) publicGetCache.delete(key);
+	}
+}
+
 async function request<T>(
+	ctx: ApiContext,
+	method: string,
+	path: string,
+	body?: unknown
+): Promise<ApiOk<T>> {
+	if (method === 'GET') {
+		const ttl = publicGetTtl(path);
+		if (ttl > 0) {
+			const key = `${ctx.host}|${path}`;
+			const hit = publicGetCache.get(key);
+			if (hit && hit.expires > Date.now()) return hit.payload as ApiOk<T>;
+			const pending = publicGetInflight.get(key);
+			if (pending) return pending as Promise<ApiOk<T>>;
+			const p = requestUncached<T>(ctx, method, path, body).then((payload) => {
+				publicGetCache.set(key, { expires: Date.now() + ttl, payload });
+				if (publicGetCache.size > PUBLIC_GET_CACHE_MAX) {
+					const oldest = publicGetCache.keys().next().value;
+					if (oldest) publicGetCache.delete(oldest);
+				}
+				return payload;
+			});
+			publicGetInflight.set(key, p as Promise<ApiOk<unknown>>);
+			try {
+				return await p;
+			} finally {
+				publicGetInflight.delete(key);
+			}
+		}
+	}
+	return requestUncached<T>(ctx, method, path, body);
+}
+
+async function requestUncached<T>(
 	ctx: ApiContext,
 	method: string,
 	path: string,

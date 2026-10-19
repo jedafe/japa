@@ -176,7 +176,7 @@ SELECT r.id, r.entity_type, r.entity_id, r.reviewer_user_id,
  WHEN 'organization' THEN (SELECT o.name FROM organizations o WHERE o.id = r.entity_id)
  WHEN 'university' THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
  WHEN 'service' THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
- WHEN 'mentor' THEN (SELECT COALESCE(up.display_name, u.username) FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = r.entity_id)
+ WHEN 'mentor' THEN (SELECT COALESCE(up.display_name, u.username, '') FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = r.entity_id)
  END,
  r.entity_type
  )::text AS entity_name
@@ -247,7 +247,7 @@ SELECT r.id, r.entity_type, r.entity_id, r.reviewer_user_id,
  WHEN 'organization' THEN (SELECT o.name FROM organizations o WHERE o.id = r.entity_id)
  WHEN 'university' THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
  WHEN 'service' THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
- WHEN 'mentor' THEN (SELECT COALESCE(up.display_name, u.username) FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = r.entity_id)
+ WHEN 'mentor' THEN (SELECT COALESCE(up.display_name, u.username, '') FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = r.entity_id)
  END,
  r.entity_type
  )::text AS entity_name
@@ -534,7 +534,7 @@ func (q *Queries) ListReviewsByEntityLowestRating(ctx context.Context, arg ListR
 const listReviewsByEntityWithAuthor = `-- name: ListReviewsByEntityWithAuthor :many
 SELECT r.id, r.entity_type, r.entity_id, r.reviewer_user_id,
  r.rating, r.title, r.body, r.status, r.created_at, r.updated_at, r.removed_by,
- u.username AS author_username,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  up.display_name AS author_display_name,
  up.avatar_url AS author_avatar_url
 FROM reviews r
@@ -566,7 +566,7 @@ type ListReviewsByEntityWithAuthorRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	RemovedBy         pgtype.UUID        `json:"removed_by"`
-	AuthorUsername    *string            `json:"author_username"`
+	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	AuthorAvatarUrl   *string            `json:"author_avatar_url"`
 }

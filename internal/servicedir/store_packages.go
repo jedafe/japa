@@ -308,10 +308,10 @@ func bookingRowFromDetail(r gen.GetServiceBookingDetailRow) BookingRow {
 	row.OrgSlug = r.OrgSlug
 	row.DepartureStartsOn = r.DepartureStartsOn
 	row.DepartureEndsOn = r.DepartureEndsOn
-	row.BookerUsername = r.BookerUsername
+	row.BookerUsername = strPtr(r.BookerUsername)
 	row.BookerDisplayName = r.BookerDisplayName
 	row.BookerAvatar = r.BookerAvatar
-	row.ProviderUsername = r.ProviderUsername
+	row.ProviderUsername = strPtr(r.ProviderUsername)
 	row.ProviderDisplayName = r.ProviderDisplayName
 	row.ProviderAvatar = r.ProviderAvatar
 	row.DestinationSpaceName = r.DestinationSpaceName
@@ -350,7 +350,7 @@ func bookingRowFromUser(r gen.ListServiceBookingsByUserRow) BookingRow {
 	row.OrgSlug = r.OrgSlug
 	row.DepartureStartsOn = r.DepartureStartsOn
 	row.DepartureEndsOn = r.DepartureEndsOn
-	row.ProviderUsername = r.ProviderUsername
+	row.ProviderUsername = strPtr(r.ProviderUsername)
 	row.ProviderDisplayName = r.ProviderDisplayName
 	row.ProviderAvatar = r.ProviderAvatar
 	row.DestinationSpaceName = r.DestinationSpaceName
@@ -387,10 +387,10 @@ func bookingRowFromOrg(r gen.ListServiceBookingsByOrgRow) BookingRow {
 	row.OrgSlug = r.OrgSlug
 	row.DepartureStartsOn = r.DepartureStartsOn
 	row.DepartureEndsOn = r.DepartureEndsOn
-	row.BookerUsername = r.BookerUsername
+	row.BookerUsername = strPtr(r.BookerUsername)
 	row.BookerDisplayName = r.BookerDisplayName
 	row.BookerAvatar = r.BookerAvatar
-	row.ProviderUsername = r.ProviderUsername
+	row.ProviderUsername = strPtr(r.ProviderUsername)
 	row.ProviderDisplayName = r.ProviderDisplayName
 	row.ProviderAvatar = r.ProviderAvatar
 	row.DestinationSpaceName = r.DestinationSpaceName
@@ -432,10 +432,10 @@ func bookingRowFromProvider(r gen.ListServiceBookingsByProviderUserRow) BookingR
 	row.OrgSlug = r.OrgSlug
 	row.DepartureStartsOn = r.DepartureStartsOn
 	row.DepartureEndsOn = r.DepartureEndsOn
-	row.BookerUsername = r.BookerUsername
+	row.BookerUsername = strPtr(r.BookerUsername)
 	row.BookerDisplayName = r.BookerDisplayName
 	row.BookerAvatar = r.BookerAvatar
-	row.ProviderUsername = r.ProviderUsername
+	row.ProviderUsername = strPtr(r.ProviderUsername)
 	row.ProviderDisplayName = r.ProviderDisplayName
 	row.ProviderAvatar = r.ProviderAvatar
 	row.DestinationSpaceName = r.DestinationSpaceName

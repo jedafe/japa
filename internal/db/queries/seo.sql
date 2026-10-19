@@ -22,7 +22,7 @@ SELECT c.id, COALESCE(c.meta_title, c.title) AS title,
  COALESCE(c.meta_title, c.title) AS og_title,
  COALESCE(c.meta_description, '') AS og_description,
  c.seo_indexable,
- COALESCE(up.display_name, u.username, '') AS author,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author,
  COALESCE(c.published_at, c.created_at) AS published_at,
  c.updated_at
 FROM contents c

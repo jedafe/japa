@@ -607,6 +607,39 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §03 owner amendment: the owner account cannot be deleted at all, and a
+	// super_admin account can only be deleted by the owner. A target-email
+	// lookup failure aborts the delete — the owner check must never be
+	// skipped silently.
+	targetEmail, err := h.Service.GetUserEmail(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
+		} else {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify target account")
+		}
+
+		return
+	}
+
+	if h.Service.IsOwnerEmail(targetEmail) {
+		errpkg.WriteError(w, http.StatusForbidden, "owner_protected", "The owner account cannot be deleted")
+		return
+	}
+
+	if h.permResolver != nil && h.permResolver.IsSuperAdmin(r.Context(), userID) {
+		caller := auth.FromContext(r.Context())
+		callerEmail, cerr := "", error(nil)
+		if caller != nil {
+			callerEmail, cerr = h.Service.GetUserEmail(r.Context(), caller.UserID)
+		}
+
+		if caller == nil || cerr != nil || !h.Service.IsOwnerEmail(callerEmail) {
+			errpkg.WriteError(w, http.StatusForbidden, "owner_required", "Only the owner can delete a super_admin account")
+			return
+		}
+	}
+
 	if err := h.Service.SoftDeleteUser(r.Context(), userID); err != nil {
 		handleServiceError(w, err)
 		return

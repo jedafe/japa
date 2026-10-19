@@ -376,8 +376,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count,
  c.publish_at, c.published_at, c.created_at, c.updated_at,
- u.username AS author_name,
- u.username AS author_username,
+ COALESCE(u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  up.display_name AS author_display_name,
  up.avatar_url AS author_avatar_url,
  s.name AS space_name,
@@ -437,8 +437,8 @@ type GetComparisonBySlugOrIDRow struct {
 	PublishedAt           pgtype.Timestamptz `json:"published_at"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
-	AuthorName            *string            `json:"author_name"`
-	AuthorUsername        *string            `json:"author_username"`
+	AuthorName            string             `json:"author_name"`
+	AuthorUsername        string             `json:"author_username"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	AuthorAvatarUrl       *string            `json:"author_avatar_url"`
 	SpaceName             *string            `json:"space_name"`

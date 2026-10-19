@@ -21,6 +21,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/organizations"
+	"github.com/jedafe/japa/internal/rbac"
 )
 
 // ModerationItem represents a moderation queue item.
@@ -956,6 +957,11 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §03 owner amendment: owner immutable; banning a super_admin is owner-only.
+	if !h.guardSuperAdminTarget(w, r, uid) {
+		return
+	}
+
 	err = h.Queries.CreateUserBan(ctx, gen.CreateUserBanParams{
 		UserID:  uid,
 		Reason:  &input.Reason,
@@ -1220,6 +1226,12 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §03 owner amendment: owner immutable; status changes on a super_admin
+	// are owner-only.
+	if !h.guardSuperAdminTarget(w, r, uid) {
+		return
+	}
+
 	err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
 		Status: input.Status,
 		ID:     uid,
@@ -1263,12 +1275,19 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 
 	// The membership insert relies on the FK for a missing group — surface
 	// a proper 404 instead of a raw constraint-violation 500.
-	if _, err := h.Queries.GetUserGroupByID(r.Context(), gid); err != nil {
+	targetGroup, err := h.Queries.GetUserGroupByID(r.Context(), gid)
+	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
 
-	err := h.Queries.AddUserGroupMembership(r.Context(), gen.AddUserGroupMembershipParams{
+	// §03 owner amendment: granting super_admin membership is owner-only.
+	if targetGroup.Slug == rbac.SystemGroupSuperAdmin && !h.callerIsOwner(r) {
+		errpkg.WriteError(w, http.StatusForbidden, "owner_required", "Only the owner can grant super_admin membership")
+		return
+	}
+
+	err = h.Queries.AddUserGroupMembership(r.Context(), gen.AddUserGroupMembershipParams{
 		UserID:  uid,
 		GroupID: gid,
 	})

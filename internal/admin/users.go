@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -13,14 +14,18 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/rbac"
 )
 
 // CreateUserRequest is the input for creating a user from the admin panel.
+// MakeSuperAdmin grants the new account super_admin membership; only the
+// platform owner (JC_OWNER_EMAIL) may create super_admin accounts.
 type CreateUserRequest struct {
-	Email       string `json:"email"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	DisplayName string `json:"display_name,omitempty"`
+	Email          string `json:"email"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	DisplayName    string `json:"display_name,omitempty"`
+	MakeSuperAdmin bool   `json:"make_super_admin,omitempty"`
 }
 
 // CreateUser handles POST /admin/users — creates a new user account directly.
@@ -38,6 +43,12 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	input.Email = strings.TrimSpace(strings.ToLower(input.Email))
 	input.Username = strings.TrimSpace(input.Username)
 
+	// §03 owner amendment: creating a super_admin account is owner-only.
+	if input.MakeSuperAdmin && !h.callerIsOwner(r) {
+		errpkg.WriteError(w, http.StatusForbidden, "owner_required", "Only the owner can create super_admin accounts")
+		return
+	}
+
 	if input.Email == "" || input.Username == "" || input.Password == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation", "email, username, and password are required")
 		return
@@ -52,6 +63,16 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	if err := auth.ValidatePassword(input.Password, auth.DefaultPasswordPolicy()); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "password_policy", err.Error())
+		return
+	}
+
+	// §03 alias amendment: a canonical username must not shadow another
+	// user's public_username alias — the DB unique index only covers the
+	// username column itself.
+	if taken, terr := h.Queries.PublicHandleTaken(r.Context(), gen.PublicHandleTakenParams{
+		Handle: input.Username,
+	}); terr == nil && taken > 0 {
+		errpkg.WriteError(w, http.StatusConflict, "username_exists", "A user with this username already exists")
 		return
 	}
 
@@ -126,6 +147,15 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Owner-gated super_admin grant (§03 owner amendment).
+	if input.MakeSuperAdmin {
+		if err := h.promoteToSuperAdmin(r.Context(), userID); err != nil {
+			slog.Error("admin create user: failed to grant super_admin", "error", err, "user_id", userID.String())
+			errpkg.WriteError(w, http.StatusInternalServerError, "super_admin_grant_failed", "User created but super_admin grant failed")
+			return
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"id":       userID.String(),
@@ -133,6 +163,28 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 			"username": input.Username,
 		},
 	})
+}
+
+// promoteToSuperAdmin adds a user to the super_admin group and invalidates
+// their permission cache (§03 owner amendment).
+func (h *Handlers) promoteToSuperAdmin(ctx context.Context, userID pgtype.UUID) error {
+	group, err := h.Queries.GetUserGroupBySlug(ctx, rbac.SystemGroupSuperAdmin)
+	if err != nil {
+		return err
+	}
+
+	if err := h.Queries.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+		UserID:  userID,
+		GroupID: group.ID,
+	}); err != nil {
+		return err
+	}
+
+	if h.RBAC != nil {
+		h.RBAC.InvalidateUserCache(ctx, userID)
+	}
+
+	return nil
 }
 
 // HardDeleteUser handles DELETE /admin/users/{id}/hard — permanently erases
@@ -150,6 +202,11 @@ func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	// §03 owner amendment: owner immutable; super_admin targets are owner-only.
+	if !h.guardSuperAdminTarget(w, r, userID) {
 		return
 	}
 

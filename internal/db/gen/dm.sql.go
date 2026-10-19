@@ -153,7 +153,7 @@ func (q *Queries) GetConversationByParticipants(ctx context.Context, arg GetConv
 }
 
 const getConversationMessages = `-- name: GetConversationMessages :many
-SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, u.username AS sender_username, p.display_name AS sender_display_name
+SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, COALESCE(u.public_username, u.username, '') AS sender_username, p.display_name AS sender_display_name
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
@@ -310,12 +310,13 @@ func (q *Queries) GetOrCreateConversation(ctx context.Context, arg GetOrCreateCo
 }
 
 const getPendingMessageRequests = `-- name: GetPendingMessageRequests :many
-SELECT dr.id, dr.requester_id, dr.recipient_id, dr.conversation_id, dr.preview_message, dr.status, dr.created_at, dr.updated_at, dr.resolved_at, u.username AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
+SELECT dr.id, dr.requester_id, dr.recipient_id, dr.conversation_id, dr.preview_message, dr.status, dr.created_at, dr.updated_at, dr.resolved_at, COALESCE(u.public_username, u.username, '') AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
 FROM dm_requests dr
 JOIN users u ON u.id = dr.requester_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
 WHERE dr.recipient_id = $1 AND dr.status = 'pending'
  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR
+      u.public_username ILIKE '%' || $2 || '%' OR
       COALESCE(p.display_name, '') ILIKE '%' || $2 || '%' OR
       dr.preview_message ILIKE '%' || $2 || '%')
  AND (NOT $3::bool OR
@@ -324,9 +325,9 @@ WHERE dr.recipient_id = $1 AND dr.status = 'pending'
       ($4::text = 'oldest' AND
         (dr.created_at, dr.id) > ($5::timestamptz, $6::uuid)) OR
       ($4::text = 'name' AND
-        (COALESCE(p.display_name, u.username), dr.id) > ($7::text, $6::uuid)))
+        (COALESCE(p.display_name, u.public_username, u.username, ''), dr.id) > ($7::text, $6::uuid)))
 ORDER BY
- (CASE WHEN $4::text = 'name' THEN COALESCE(p.display_name, u.username) END) ASC NULLS LAST,
+ (CASE WHEN $4::text = 'name' THEN COALESCE(p.display_name, u.public_username, u.username, '') END) ASC NULLS LAST,
  (CASE WHEN $4::text = 'name' THEN dr.id END) ASC NULLS LAST,
  (CASE WHEN $4::text = 'oldest' THEN dr.created_at END) ASC NULLS LAST,
  (CASE WHEN $4::text = 'oldest' THEN dr.id END) ASC NULLS LAST,
@@ -412,9 +413,9 @@ const getUserConversations = `-- name: GetUserConversations :many
 SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
  dc.last_message_at, dc.last_message_preview,
  dc.p1_unread_count, dc.p2_unread_count, dc.created_at, dc.updated_at,
- (CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END)::text AS other_username,
+ (CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END)::text AS other_username,
  COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
-          CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END)::text AS other_display_name,
+          CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END)::text AS other_display_name,
  COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
  (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END)::int AS unread_count
 FROM dm_conversations dc
@@ -433,7 +434,7 @@ WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1)
  AND ($2::text <> 'unread' OR
       (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END) > 0)
  AND ($3::text = '' OR
-      (CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END) ILIKE '%' || $3 || '%' OR
+      (CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END) ILIKE '%' || $3 || '%' OR
       COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END, '') ILIKE '%' || $3 || '%' OR
       COALESCE(dc.last_message_preview, '') ILIKE '%' || $3 || '%')
  AND (NOT $4::bool OR
@@ -448,7 +449,7 @@ WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1)
         ($8::bigint, $7::uuid)) OR
       ($5::text = 'name' AND
         (COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
-                  CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END), dc.id) >
+                  CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END), dc.id) >
         ($9::text, $7::uuid)))
 ORDER BY
  (CASE WHEN $5::text = 'unread' THEN
@@ -456,7 +457,7 @@ ORDER BY
  (CASE WHEN $5::text = 'unread' THEN dc.id END) DESC NULLS LAST,
  (CASE WHEN $5::text = 'name' THEN
    COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
-            CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END) END) ASC NULLS LAST,
+            CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END) END) ASC NULLS LAST,
  (CASE WHEN $5::text = 'name' THEN dc.id END) ASC NULLS LAST,
  (CASE WHEN $5::text = 'oldest' THEN COALESCE(dc.last_message_at, dc.created_at) END) ASC NULLS LAST,
  (CASE WHEN $5::text = 'oldest' THEN dc.id END) ASC NULLS LAST,

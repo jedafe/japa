@@ -2168,7 +2168,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -2265,7 +2265,7 @@ type GetMentorshipListingByAuthorRow struct {
 	Highlights            []byte             `json:"highlights"`
 	Included              []byte             `json:"included"`
 	Audience              []byte             `json:"audience"`
-	AuthorName            *string            `json:"author_name"`
+	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`
@@ -2545,9 +2545,9 @@ SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id,
        o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username, up.display_name AS booker_display_name,
+       COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
        up.avatar_url AS booker_avatar,
-       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
        pup.avatar_url AS provider_avatar,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
@@ -2614,10 +2614,10 @@ type GetServiceBookingDetailRow struct {
 	PaymentProvider      *string            `json:"payment_provider"`
 	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
 	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
-	BookerUsername       *string            `json:"booker_username"`
+	BookerUsername       string             `json:"booker_username"`
 	BookerDisplayName    *string            `json:"booker_display_name"`
 	BookerAvatar         *string            `json:"booker_avatar"`
-	ProviderUsername     *string            `json:"provider_username"`
+	ProviderUsername     string             `json:"provider_username"`
 	ProviderDisplayName  *string            `json:"provider_display_name"`
 	ProviderAvatar       *string            `json:"provider_avatar"`
 	DestinationSpaceName *string            `json:"destination_space_name"`
@@ -2736,7 +2736,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -2827,7 +2827,7 @@ type GetServiceListingByContentIDRow struct {
 	Highlights            []byte             `json:"highlights"`
 	Included              []byte             `json:"included"`
 	Audience              []byte             `json:"audience"`
-	AuthorName            *string            `json:"author_name"`
+	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`
@@ -2960,7 +2960,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -3051,7 +3051,7 @@ type GetServiceListingBySlugRow struct {
 	Highlights            []byte             `json:"highlights"`
 	Included              []byte             `json:"included"`
 	Audience              []byte             `json:"audience"`
-	AuthorName            *string            `json:"author_name"`
+	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`
@@ -3835,9 +3835,9 @@ const listServiceBookingsByOrg = `-- name: ListServiceBookingsByOrg :many
 SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, sb.tier_id, sb.coupon_id, sb.coupon_code, sb.discount_amount, sb.tier_name, sb.tier_price_amount, sb.provider_user_id, sb.destination_space_id, sb.meta, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username, up.display_name AS booker_display_name,
+       COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
        up.avatar_url AS booker_avatar,
-       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
        pup.avatar_url AS provider_avatar,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
@@ -3917,10 +3917,10 @@ type ListServiceBookingsByOrgRow struct {
 	OrgSlug              *string            `json:"org_slug"`
 	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
 	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
-	BookerUsername       *string            `json:"booker_username"`
+	BookerUsername       string             `json:"booker_username"`
 	BookerDisplayName    *string            `json:"booker_display_name"`
 	BookerAvatar         *string            `json:"booker_avatar"`
-	ProviderUsername     *string            `json:"provider_username"`
+	ProviderUsername     string             `json:"provider_username"`
 	ProviderDisplayName  *string            `json:"provider_display_name"`
 	ProviderAvatar       *string            `json:"provider_avatar"`
 	DestinationSpaceName *string            `json:"destination_space_name"`
@@ -4020,9 +4020,9 @@ SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username, up.display_name AS booker_display_name,
+       COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
        up.avatar_url AS booker_avatar,
-       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
        pup.avatar_url AS provider_avatar,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
@@ -4103,10 +4103,10 @@ type ListServiceBookingsByProviderUserRow struct {
 	PaymentProvider      *string            `json:"payment_provider"`
 	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
 	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
-	BookerUsername       *string            `json:"booker_username"`
+	BookerUsername       string             `json:"booker_username"`
 	BookerDisplayName    *string            `json:"booker_display_name"`
 	BookerAvatar         *string            `json:"booker_avatar"`
-	ProviderUsername     *string            `json:"provider_username"`
+	ProviderUsername     string             `json:"provider_username"`
 	ProviderDisplayName  *string            `json:"provider_display_name"`
 	ProviderAvatar       *string            `json:"provider_avatar"`
 	DestinationSpaceName *string            `json:"destination_space_name"`
@@ -4206,7 +4206,7 @@ SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
        pup.avatar_url AS provider_avatar,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
@@ -4284,7 +4284,7 @@ type ListServiceBookingsByUserRow struct {
 	PaymentProvider      *string            `json:"payment_provider"`
 	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
 	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
-	ProviderUsername     *string            `json:"provider_username"`
+	ProviderUsername     string             `json:"provider_username"`
 	ProviderDisplayName  *string            `json:"provider_display_name"`
 	ProviderAvatar       *string            `json:"provider_avatar"`
 	DestinationSpaceName *string            `json:"destination_space_name"`
@@ -4511,7 +4511,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -4633,7 +4633,7 @@ type ListServiceListingsRow struct {
 	AvailableUntil        pgtype.Date        `json:"available_until"`
 	Faqs                  []byte             `json:"faqs"`
 	Steps                 []byte             `json:"steps"`
-	AuthorName            *string            `json:"author_name"`
+	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`
@@ -4768,7 +4768,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -4866,7 +4866,7 @@ type ListServiceListingsByOrgRow struct {
 	AvailableUntil        pgtype.Date        `json:"available_until"`
 	Faqs                  []byte             `json:"faqs"`
 	Steps                 []byte             `json:"steps"`
-	AuthorName            *string            `json:"author_name"`
+	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`

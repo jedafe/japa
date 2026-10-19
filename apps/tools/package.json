@@ -39,6 +39,7 @@
 		"@japaconnect/ui": "workspace:*",
 		"bits-ui": "^2.18.1",
 		"layerchart": "2.0.1",
+		"memoize": "^10.2.0",
 		"leaflet": "^1.9.4",
 		"lucide-svelte": "^1.0.1"
 	}

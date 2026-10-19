@@ -47,13 +47,24 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
+	// Independent fetches kick off immediately — settings + space-types are
+	// shared public catalogs, mute status only needs the slug. None depend
+	// on the space detail fetch below, so they shouldn't wait for it.
+	const siteSettingsPromise = apiGet<Record<string, unknown>>(ctx, '/site/settings/public')
+		.then((s) => s ?? {})
+		.catch(() => ({}));
+	const spaceTypesPromise = apiGet<SpaceType[]>(ctx, '/space-types').catch(
+		() => [] as SpaceType[]
+	);
+	const muteStatusPromise = event.locals.user
+		? apiGet<{ muted: boolean }>(ctx, `/spaces/${slug}/mute-status`)
+				.then((r) => r.muted)
+				.catch(() => false)
+		: Promise.resolve(false);
+	const parentPromise = event.parent();
+
 	// Rule 3 / Rule 16: configurable page sizes from system_settings.
-	let siteSettings: Record<string, unknown> = {};
-	try {
-		siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
-	} catch {
-		siteSettings = {};
-	}
+	const siteSettings = await siteSettingsPromise;
 	const pageSize =
 		typeof siteSettings['spaces.hub_page_size'] === 'number'
 			? Math.max(1, Math.round(siteSettings['spaces.hub_page_size'] as number))
@@ -65,7 +76,7 @@ export const load: PageServerLoad = async (event) => {
 
 	// Feature flags from the root layout cache; used to decide whether the
 	// digest widget should make an SSR fetch (§84, ADR-092).
-	const parent = await event.parent();
+	const parent = await parentPromise;
 	const features = (parent?.features as Record<string, boolean> | undefined) ?? {};
 
 	// Space detail bundle: { space, rules, keywords, logo_url, header_url }.
@@ -95,14 +106,9 @@ export const load: PageServerLoad = async (event) => {
 	// only shown for spaces that can have reviews. Section 39: universities
 	// are identified by the space type slug 'university' — the /space-types
 	// response has no is_university flag, so match on the canonical slug.
-	let isUniversity = false;
-	try {
-		const spaceTypes = await apiGet<SpaceType[]>(ctx, '/space-types');
-		isUniversity =
-			spaceTypes?.find((st) => st.id === space.space_type_id)?.slug === 'university';
-	} catch {
-		isUniversity = false;
-	}
+	const spaceTypes = await spaceTypesPromise;
+	const isUniversity =
+		spaceTypes?.find((st) => st.id === space.space_type_id)?.slug === 'university';
 
 	// Fetch reviews for university spaces; the route is public and returns an
 	// empty list for non-university spaces, but the tab is only rendered when
@@ -124,11 +130,7 @@ export const load: PageServerLoad = async (event) => {
 	const initiallyFollowing = Promise.resolve(detail.is_following ?? false);
 
 	// Mute status — only fetched for authed viewers (guests always get false).
-	const muteStatus = event.locals.user
-		? apiGet<{ muted: boolean }>(ctx, `/spaces/${slug}/mute-status`)
-				.then((r) => r.muted)
-				.catch(() => false)
-		: Promise.resolve(false);
+	const muteStatus = muteStatusPromise;
 
 	// Tab data — each degrades to an empty list on failure so a missing tab
 	// never blanks the whole space view.

@@ -50,6 +50,9 @@
 	let selectedIds = $state(new Set<string>());
 	let confirmBulkDeleteOpen = $state(false);
 	let pendingBulkIds = $state<string[]>([]);
+	// Per-job in-flight guard for trigger/pause/unpause: double-clicks must
+	// not double-enqueue or double-toggle.
+	let busyJobs = $state(new Set<string>());
 
 	const statusItems = $derived.by(() => {
 		translations();
@@ -106,7 +109,9 @@
 		}
 	}
 
-	const columns: DataTableColumn[] = [
+	const columns = $derived.by<DataTableColumn[]>(() => {
+		translations();
+		return [
 		{
 			key: 'type',
 			label: t('cron.type', 'Type'),
@@ -143,15 +148,18 @@
 			render: (val) =>
 				`<span class="text-muted-foreground text-xs">${val ? escapeHtml(new Date(val as string).toLocaleString()) : '—'}</span>`
 		}
-	];
+		];
+	});
 
 	function triggerJob(job: CronJob) {
+		if (busyJobs.has(job.id)) return;
+		busyJobs.add(job.id);
 		void (async () => {
 			message = '';
 			try {
-				const result = await api(`/control/cron/jobs/${job.id}/trigger`, { method: 'POST' });
+				const result = await api(`/control/cron/jobs/${encodeURIComponent(job.id)}/trigger`, { method: 'POST' });
 				if (result.ok) {
-					await load();
+					await load(true);
 					message = t('cron.trigger_success', 'Job triggered successfully.');
 					messageType = 'success';
 				} else {
@@ -161,17 +169,21 @@
 			} catch {
 				message = t('cron.trigger_error', 'Failed to trigger job.');
 				messageType = 'error';
+			} finally {
+				busyJobs.delete(job.id);
 			}
 		})();
 	}
 
 	function pauseJob(job: CronJob) {
+		if (busyJobs.has(job.id)) return;
+		busyJobs.add(job.id);
 		void (async () => {
 			message = '';
 			try {
-				const result = await api(`/control/cron/jobs/${job.id}/pause`, { method: 'POST' });
+				const result = await api(`/control/cron/jobs/${encodeURIComponent(job.id)}/pause`, { method: 'POST' });
 				if (result.ok) {
-					await load();
+					await load(true);
 					message = t('cron.pause_success', 'Job paused successfully.');
 					messageType = 'success';
 				} else {
@@ -181,17 +193,21 @@
 			} catch {
 				message = t('cron.pause_error', 'Failed to pause job.');
 				messageType = 'error';
+			} finally {
+				busyJobs.delete(job.id);
 			}
 		})();
 	}
 
 	function unpauseJob(job: CronJob) {
+		if (busyJobs.has(job.id)) return;
+		busyJobs.add(job.id);
 		void (async () => {
 			message = '';
 			try {
-				const result = await api(`/control/cron/jobs/${job.id}/unpause`, { method: 'POST' });
+				const result = await api(`/control/cron/jobs/${encodeURIComponent(job.id)}/unpause`, { method: 'POST' });
 				if (result.ok) {
-					await load();
+					await load(true);
 					message = t('cron.unpause_success', 'Job resumed successfully.');
 					messageType = 'success';
 				} else {
@@ -201,6 +217,8 @@
 			} catch {
 				message = t('cron.unpause_error', 'Failed to resume job.');
 				messageType = 'error';
+			} finally {
+				busyJobs.delete(job.id);
 			}
 		})();
 	}
@@ -333,8 +351,8 @@
 		}
 	}
 
-	async function load() {
-		loading = true;
+	async function load(quiet = false) {
+		if (!quiet) loading = true;
 		try {
 			const result = await api<CronJob[]>('/control/cron/jobs');
 			if (result.ok) {
@@ -355,6 +373,12 @@
 		load();
 		loadTaskTypes();
 		loadSchedulePresets();
+		const interval = setInterval(() => {
+			if (document.visibilityState === 'visible') {
+				load(true);
+			}
+		}, 15_000);
+		return () => clearInterval(interval);
 	});
 
 	let filteredJobs = $derived(
@@ -387,16 +411,15 @@
 
 	let totalRows = $derived(sortedJobs.length);
 
-	let paginatedJobs = $derived.by(() => {
-		const start = page * pageSize;
-		return sortedJobs.slice(start, start + pageSize);
-	});
+	// DataTable owns pagination — it receives the full sorted list below.
+	// (Parent-side slicing would paginate twice and misorder rows.)
 
 	const rowActions: DataTableRowAction[] = [
 		{
 			label: t('cron.run_now', 'Run now'),
 			icon: Play,
-			onClick: (row) => triggerJob(row as unknown as CronJob)
+			onClick: (row) => triggerJob(row as unknown as CronJob),
+			disabled: (row) => busyJobs.has((row as unknown as CronJob).id)
 		},
 		{
 			label: t('cron.edit', 'Edit'),
@@ -408,13 +431,13 @@
 			label: t('cron.pause', 'Pause'),
 			icon: Pause,
 			onClick: (row) => pauseJob(row as unknown as CronJob),
-			disabled: (row) => (row as unknown as CronJob).paused
+			disabled: (row) => (row as unknown as CronJob).paused || busyJobs.has((row as unknown as CronJob).id)
 		},
 		{
 			label: t('cron.resume', 'Resume'),
 			icon: PlayCircle,
 			onClick: (row) => unpauseJob(row as unknown as CronJob),
-			disabled: (row) => !(row as unknown as CronJob).paused
+			disabled: (row) => !(row as unknown as CronJob).paused || busyJobs.has((row as unknown as CronJob).id)
 		},
 		{
 			label: t('cron.delete', 'Delete'),
@@ -430,22 +453,42 @@
 			label: t('cron.pause_selected', 'Pause Selected'),
 			icon: Pause,
 			onClick: async (ids: string[]) => {
-				await Promise.allSettled(
-					ids.map((id) => api(`/control/cron/jobs/${id}/pause`, { method: 'POST' }))
+				const results = await Promise.allSettled(
+					ids.map((id) => api(`/control/cron/jobs/${encodeURIComponent(id)}/pause`, { method: 'POST' }))
 				);
+				const failed = results.filter(
+					(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
+				).length;
 				selectedIds = new Set();
-				await load();
+				await load(true);
+				if (failed > 0) {
+					message = t('cron.bulk_pause_partial', '{n} job(s) could not be paused.').replace('{n}', String(failed));
+					messageType = 'error';
+				} else {
+					message = t('cron.bulk_pause_success', 'Selected jobs paused.');
+					messageType = 'success';
+				}
 			}
 		},
 		{
 			label: t('cron.resume_selected', 'Resume Selected'),
 			icon: PlayCircle,
 			onClick: async (ids: string[]) => {
-				await Promise.allSettled(
-					ids.map((id) => api(`/control/cron/jobs/${id}/unpause`, { method: 'POST' }))
+				const results = await Promise.allSettled(
+					ids.map((id) => api(`/control/cron/jobs/${encodeURIComponent(id)}/unpause`, { method: 'POST' }))
 				);
+				const failed = results.filter(
+					(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
+				).length;
 				selectedIds = new Set();
-				await load();
+				await load(true);
+				if (failed > 0) {
+					message = t('cron.bulk_resume_partial', '{n} job(s) could not be resumed.').replace('{n}', String(failed));
+					messageType = 'error';
+				} else {
+					message = t('cron.bulk_resume_success', 'Selected jobs resumed.');
+					messageType = 'success';
+				}
 			}
 		},
 		{
@@ -461,13 +504,23 @@
 
 	async function confirmBulkDelete() {
 		const ids = pendingBulkIds;
-		await Promise.allSettled(
-			ids.map((id) => api(`/control/cron/jobs/${id}`, { method: 'DELETE' }))
+		const results = await Promise.allSettled(
+			ids.map((id) => api(`/control/cron/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' }))
 		);
+		const failed = results.filter(
+			(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
+		).length;
 		selectedIds = new Set();
 		pendingBulkIds = [];
 		confirmBulkDeleteOpen = false;
-		await load();
+		await load(true);
+		if (failed > 0) {
+			message = t('cron.bulk_delete_partial', '{n} job(s) could not be deleted.').replace('{n}', String(failed));
+			messageType = 'error';
+		} else {
+			message = t('cron.bulk_delete_success', 'Selected jobs deleted.');
+			messageType = 'success';
+		}
 	}
 
 	// --- Autocomplete fetchers (client-side filter of loaded options) ---
@@ -546,7 +599,7 @@
 
 <DataTable
 	{columns}
-	rows={paginatedJobs}
+	rows={sortedJobs}
 	{totalRows}
 	bind:page
 	bind:pageSize

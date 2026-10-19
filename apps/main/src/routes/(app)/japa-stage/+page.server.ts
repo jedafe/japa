@@ -27,42 +27,32 @@ export const load: PageServerLoad = async (event) => {
 	let members: MemberStage[] = [];
 	let totalPages = 1;
 	let loadError = false;
-	try {
-		const params = new URLSearchParams({ page_size: String(PAGE_SIZE), page: String(page) });
-		if (stage) params.set('stage', stage);
-		if (intent) params.set('intent', intent);
-		if (dest) params.set('dest', dest);
-		const { items, meta } = await apiList<MemberStage>(ctx, `/members/by-stage?${params.toString()}`);
-		members = items;
-		totalPages = meta?.total_pages ?? 1;
-	} catch {
-		loadError = true;
-	}
+	const params = new URLSearchParams({ page_size: String(PAGE_SIZE), page: String(page) });
+	if (stage) params.set('stage', stage);
+	if (intent) params.set('intent', intent);
+	if (dest) params.set('dest', dest);
 
-	// Load country-level spaces for the destination filter dropdown.
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
+	// Members list, country filter options, and stage/intent option lists are
+	// independent — fetch concurrently.
+	const [membersResult, countries, stages, intents] = await Promise.all([
+		apiList<MemberStage>(ctx, `/members/by-stage?${params.toString()}`).then(
+			({ items, meta }) => ({ items, totalPages: meta?.total_pages ?? 1, loadError: false }),
+			() => ({ items: [] as MemberStage[], totalPages: 0, loadError: true })
+		),
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		apiGet<{ value: string; label: string; intents?: JapaIntent[] }[]>(ctx, '/japa-stage/stages')
+			.then((list) => (list ?? []).map((o) => ({ value: o.value, intents: o.intents }) as JapaStageOption))
+			.catch(() => [] as JapaStageOption[]),
+		apiGet<{ value: string; label: string }[]>(ctx, '/japa-stage/intents')
+			.then((list) => (list ?? []).map((o) => o.value as JapaIntent))
+			.catch(() => [] as JapaIntent[])
+	]);
 
-	let stages: JapaStageOption[] = [];
-	try {
-		const list = await apiGet<{ value: string; label: string; intents?: JapaIntent[] }[]>(ctx, '/japa-stage/stages');
-		stages = (list ?? []).map((o) => ({ value: o.value, intents: o.intents }) as JapaStageOption);
-	} catch {
-		stages = [];
-	}
-
-	let intents: JapaIntent[] = [];
-	try {
-		const list = await apiGet<{ value: string; label: string }[]>(ctx, '/japa-stage/intents');
-		intents = (list ?? []).map((o) => o.value as JapaIntent);
-	} catch {
-		intents = [];
-	}
+	members = membersResult.items;
+	totalPages = membersResult.totalPages;
+	loadError = membersResult.loadError;
 
 	return {
 		members,

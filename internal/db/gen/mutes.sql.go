@@ -200,7 +200,7 @@ func (q *Queries) ListMutedSpaces(ctx context.Context, arg ListMutedSpacesParams
 }
 
 const listMutedUsers = `-- name: ListMutedUsers :many
-SELECT um.id, um.muted_user_id, u.username,
+SELECT um.id, um.muted_user_id, COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url,
  um.created_at

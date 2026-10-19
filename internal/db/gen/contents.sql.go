@@ -1033,8 +1033,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
  c.intel_source_id, c.intel_record_id,
  src.id AS source_id, src.name AS source_name, src.slug AS source_slug, src.logo_url AS source_logo_url, src.source_url AS source_source_url, src.trust_level AS source_trust_level,
- COALESCE(up.display_name, u.username, '') AS author_name,
- COALESCE(u.username, '') AS author_username,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -1269,8 +1269,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
- COALESCE(up.display_name, u.username, '') AS author_name,
- COALESCE(u.username, '') AS author_username,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -2196,7 +2196,7 @@ SELECT c.id, c.title, c.slug, c.body, c.content_type,
  c.status, c.visibility, c.published_at, c.created_at, c.updated_at,
  c.view_count, c.comment_count, c.share_count,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS vote_score,
- u.username AS author_username
+ COALESCE(u.public_username, u.username, '') AS author_username
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 WHERE c.intel_source_id = $1
@@ -2237,7 +2237,7 @@ type ListComparisonContentsBySourceIDRow struct {
 	CommentCount   int32              `json:"comment_count"`
 	ShareCount     int32              `json:"share_count"`
 	VoteScore      int32              `json:"vote_score"`
-	AuthorUsername *string            `json:"author_username"`
+	AuthorUsername string             `json:"author_username"`
 }
 
 // Source item feed: comparison contents linked to a canonical source.
@@ -2291,7 +2291,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.created_at, c.updated_at,
  m.storage_bucket AS cover_storage_bucket,
  m.storage_path AS cover_storage_path,
- COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -2588,7 +2588,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.field_values->>'purpose' AS purpose,
  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
- u.username AS author_username, up.display_name AS author_display_name,
+ COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -2663,7 +2663,7 @@ type ListContentsRow struct {
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
 	IsFeatured        bool               `json:"is_featured"`
-	AuthorUsername    *string            `json:"author_username"`
+	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
 }
@@ -2746,7 +2746,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
- u.username AS author_username, up.display_name AS author_display_name,
+ COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -2818,7 +2818,7 @@ type ListContentsByIDsRow struct {
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
-	AuthorUsername    *string            `json:"author_username"`
+	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
 }
@@ -2904,7 +2904,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
- u.username AS author_username,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  s.name AS space_name,
@@ -2992,7 +2992,7 @@ type ListContentsBySlugsRow struct {
 	SourceCountry      *string            `json:"source_country"`
 	TargetCountry      *string            `json:"target_country"`
 	Purpose            interface{}        `json:"purpose"`
-	AuthorUsername     *string            `json:"author_username"`
+	AuthorUsername     string             `json:"author_username"`
 	AuthorDisplayName  *string            `json:"author_display_name"`
 	AuthorAvatarUrl    string             `json:"author_avatar_url"`
 	SpaceName          *string            `json:"space_name"`
@@ -3097,7 +3097,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.field_values->>'purpose' AS purpose,
  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
- u.username AS author_username, up.display_name AS author_display_name,
+ COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  s.name AS space_name,
  EXISTS(SELECT 1 FROM space_pinned_posts spp
@@ -3174,7 +3174,7 @@ type ListContentsBySpaceRow struct {
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
 	IsFeatured        bool               `json:"is_featured"`
-	AuthorUsername    *string            `json:"author_username"`
+	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	AuthorAvatarUrl   string             `json:"author_avatar_url"`
 	SpaceName         *string            `json:"space_name"`
@@ -3265,7 +3265,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.field_values->>'purpose' AS purpose,
  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
- u.username AS author_username, up.display_name AS author_display_name,
+ COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -3369,7 +3369,7 @@ type ListContentsByTypeRow struct {
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
 	IsFeatured        bool               `json:"is_featured"`
-	AuthorUsername    *string            `json:"author_username"`
+	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
 }
@@ -3471,7 +3471,7 @@ SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
  COALESCE(ft.vote_score, cs.vote_score, 0) AS vote_score,
- u.username AS author_username, up.display_name AS author_display_name,
+ COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  s.name AS space_name
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
@@ -3552,7 +3552,7 @@ type ListFeaturedContentsByTypeRow struct {
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
 	VoteScore         int32              `json:"vote_score"`
-	AuthorUsername    *string            `json:"author_username"`
+	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
 }
@@ -3710,7 +3710,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
- u.username AS author_username, up.display_name AS author_display_name,
+ COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  s.name AS space_name,
  true AS is_pinned
@@ -3782,7 +3782,7 @@ type ListPinnedContentBySpaceRow struct {
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
 	Purpose           interface{}        `json:"purpose"`
-	AuthorUsername    *string            `json:"author_username"`
+	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	AuthorAvatarUrl   string             `json:"author_avatar_url"`
 	SpaceName         *string            `json:"space_name"`
@@ -3871,8 +3871,8 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.video_source_id,
  c.publish_at, c.published_at, c.created_at, c.updated_at,
  c.journey_stage, c.visa_route, c.source_country, c.target_country, c.guide_category,
- COALESCE(up.display_name, u.username, '') AS author_name,
- COALESCE(u.username, '') AS author_username,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -4080,8 +4080,8 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.video_source_id,
  c.publish_at, c.published_at, c.created_at, c.updated_at,
  c.journey_stage, c.visa_route, c.source_country, c.target_country, c.guide_category,
- COALESCE(up.display_name, u.username, '') AS author_name,
- COALESCE(u.username, '') AS author_username,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,

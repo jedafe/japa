@@ -5,9 +5,11 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
+	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
+	import { onMount } from 'svelte';
 
 	type Currency = {
 		code: string;
@@ -40,9 +42,17 @@
 	let deleteReason = $state('');
 	let deleteResultMessage = $state('');
 
+	// All wallet currency endpoints require wallet.currency.manage
+	// (server.go), including the list read.
+	const canManage = $derived(hasAnyPermission(['wallet.currency.manage']));
+
 	async function load() {
 		loading = true;
 		errorMessage = '';
+		if (!canManage) {
+			loading = false;
+			return;
+		}
 		const res = await api<Currency[]>('/control/wallet/currencies');
 		if (res.ok) {
 			currencies = res.data ?? [];
@@ -184,13 +194,14 @@
 			onClick: (row) => {
 				const c = currencies.find((x) => x.code === (row as Record<string, unknown>).code);
 				if (c) openEdit(c);
-			}
+			},
+			hidden: () => !canManage
 		},
 		{
 			label: t('currencies.deactivate', 'Deactivate Currency'),
 			icon: Trash2,
 			variant: 'destructive',
-			hidden: (row) => !(row as Record<string, unknown>).is_active,
+			hidden: (row) => !canManage || !(row as Record<string, unknown>).is_active,
 			onClick: (row) => {
 				const c = currencies.find((x) => x.code === (row as Record<string, unknown>).code);
 				if (c) requestDelete(c);
@@ -198,13 +209,18 @@
 		}
 	];
 
-	load();
+	onMount(load);
 </script>
 
 <svelte:head>
 	<title>{t('currencies.title', 'Currencies')} — Control Panel</title>
 </svelte:head>
 
+{#if !canManage}
+	<div class="p-8 text-center text-sm text-[var(--color-muted)]">
+		{t('common.access_denied', 'Access denied')}
+	</div>
+{:else}
 <PageHeader title={t('currencies.title', 'Currencies')} description={t('currencies.description', 'Manage fiat currency exchange rates for credit conversion')} />
 
 <div class="space-y-4">
@@ -225,10 +241,12 @@
 			<RefreshCw class="size-4" />
 			{t('common.refresh', 'Refresh')}
 		</button>
-		<button class="bg-foreground text-background hover:bg-foreground/90 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors" onclick={openCreate}>
-			<Plus class="size-4" />
-			{t('currencies.add', 'Add Currency')}
-		</button>
+		{#if canManage}
+			<button class="bg-foreground text-background hover:bg-foreground/90 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors" onclick={openCreate}>
+				<Plus class="size-4" />
+				{t('currencies.add', 'Add Currency')}
+			</button>
+		{/if}
 	</div>
 
 	{#if loading}
@@ -252,6 +270,7 @@
 		/>
 	{/if}
 </div>
+{/if}
 
 <!-- Create/Edit Modal -->
 <Modal
