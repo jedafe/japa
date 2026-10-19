@@ -503,7 +503,7 @@
 							aria-label={pt('ai.panel.stop', 'Stop')}
 							onclick={stop}
 						>
-							<Square size={14} />
+							<Square size={16} />
 						</button>
 					{:else if composer.trim()}
 						<button
@@ -512,7 +512,7 @@
 							aria-label={pt('ai.panel.send', 'Send')}
 							onclick={() => void send()}
 						>
-							<ArrowUp size={15} />
+							<ArrowUp size={17} />
 						</button>
 					{/if}
 				</div>
@@ -775,12 +775,12 @@
 		border-radius: var(--radius);
 		background: var(--color-bg);
 		color: var(--color-text);
-		font-size: 0.8125rem;
-		line-height: 1.4;
-		padding: 0.5rem 0.625rem;
-		/* Room for the in-field send/stop button (bottom-right). */
-		padding-right: 2.25rem;
-		max-height: 7rem;
+		font-size: 0.9375rem;
+		line-height: 1.45;
+		padding: 0.625rem 0.75rem;
+		/* Room for the in-field send/stop button. */
+		padding-right: 2.75rem;
+		max-height: 8rem;
 	}
 	.ai-panel-composer textarea:focus {
 		outline: none;
@@ -788,12 +788,12 @@
 	}
 	.ai-panel-send {
 		position: absolute;
-		right: 0.375rem;
-		top: 0.4375rem;
+		right: 0.5rem;
+		top: 0.5625rem;
 		display: grid;
 		place-items: center;
-		width: 1.625rem;
-		height: 1.625rem;
+		width: 2rem;
+		height: 2rem;
 		border-radius: 999px;
 		background: var(--color-primary);
 		color: var(--color-primary-contrast);
