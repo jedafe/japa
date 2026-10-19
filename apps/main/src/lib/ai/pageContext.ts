@@ -13,7 +13,7 @@ function str(v: unknown): string {
 function pathAnchor(pathname: string, data: Data): AiPageContext {
 	const title = str(data.title);
 	return {
-		anchor: `path:${pathname}`.toLowerCase(),
+		anchor: `path:main:${pathname}`.toLowerCase(),
 		label: title || 'Page',
 		context: title ? { title } : {}
 	};

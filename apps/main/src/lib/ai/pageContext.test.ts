@@ -31,10 +31,10 @@ describe('resolveAiPageContext', () => {
 	});
 	it('unknown path → path anchor with title only', () => {
 		const ctx = resolveAiPageContext('/forum', { title: 'Forum' });
-		expect(ctx?.anchor).toBe('path:/forum');
+		expect(ctx?.anchor).toBe('path:main:/forum');
 	});
 	it('entity path with missing data → path anchor', () => {
 		const ctx = resolveAiPageContext('/blog/moving-to-canada', {});
-		expect(ctx?.anchor).toBe('path:/blog/moving-to-canada');
+		expect(ctx?.anchor).toBe('path:main:/blog/moving-to-canada');
 	});
 });

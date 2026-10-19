@@ -17,7 +17,8 @@
 		Loader2,
 		CheckCircle2,
 		XCircle,
-		AlertCircle
+		AlertCircle,
+		Clock
 	} from 'lucide-svelte';
 	import { apiGet, apiPost, getAiPanelDeps, pt } from './deps';
 	import { createStreamChat } from './stream';
@@ -65,6 +66,7 @@
 	let turnSeq = 0;
 	let activeAbort: AbortController | null = null;
 	let transcriptEl = $state<HTMLElement | null>(null);
+	let composerEl = $state<HTMLTextAreaElement | null>(null);
 
 	const ctxNow = $derived(aiPageContext.current);
 	const anchor = $derived(ctxNow?.anchor ?? 'panel:general');
@@ -162,7 +164,13 @@
 		const list = await apiGet<{ conversation_id: string }[]>(
 			`/ai/conversations?anchor=${encodeURIComponent(a)}`
 		);
-		const conv = list?.[0];
+		if (list === null) {
+			// Fetch failed — keep whatever is already displayed rather than
+			// blanking the transcript on a transient error.
+			if (loadedAnchor === a) loadingThread = false;
+			return;
+		}
+		const conv = list[0];
 		if (!conv) {
 			if (loadedAnchor === a) {
 				conversationId = '';
@@ -202,6 +210,11 @@
 	});
 	$effect(() => {
 		if (open && user && agentCapable === null) void probeCapabilities();
+	});
+	// Move focus into the composer when the panel opens (a11y: the dialog
+	// is modal, focus should land inside it).
+	$effect(() => {
+		if (open && user) void tick().then(() => composerEl?.focus());
 	});
 
 	function scrollToBottom() {
@@ -342,6 +355,7 @@
 	<div
 		class="ai-panel"
 		role="dialog"
+		aria-modal="true"
 		aria-label={pt('ai.panel.title', 'Japa AI')}
 	>
 		<header class="ai-panel-head">
@@ -402,6 +416,8 @@
 											<Loader2 size={11} class="ai-spin" />
 										{:else if tc.status === 'success' || tc.status === 'done'}
 											<CheckCircle2 size={11} />
+										{:else if tc.status === 'hitl_queued' || tc.status === 'pending'}
+											<Clock size={11} />
 										{:else}
 											<XCircle size={11} />
 										{/if}
@@ -472,6 +488,7 @@
 					</div>
 				{/if}
 				<textarea
+					bind:this={composerEl}
 					bind:value={composer}
 					onkeydown={onKeydown}
 					rows="2"

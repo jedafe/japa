@@ -18,7 +18,7 @@ export function resolveAiPageContext(
 	}
 	const title = typeof data.title === 'string' ? data.title : '';
 	return {
-		anchor: `path:${pathname}`.toLowerCase(),
+		anchor: `path:tools:${pathname}`.toLowerCase(),
 		label: title || 'Page',
 		context: title ? { title } : {}
 	};

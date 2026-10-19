@@ -38,7 +38,7 @@ export function resolveAiPageContext(pathname: string, data: Data): AiPageContex
 	}
 	const title = str(data.title);
 	return {
-		anchor: `path:${pathname}`.toLowerCase(),
+		anchor: `path:docs:${pathname}`.toLowerCase(),
 		label: title || 'Page',
 		context: title ? { title } : {}
 	};
