@@ -178,7 +178,9 @@ WHERE id = @id
   AND deleted_at IS NULL;
 
 -- name: GetCommentForAppeal :one
-SELECT id, author_user_id, status, left(body, 80) AS excerpt
+-- comments.body is TipTap JSONB — extract the text nodes for the excerpt.
+SELECT id, author_user_id, status,
+ left(COALESCE((SELECT string_agg(n #>> '{}', ' ') FROM jsonb_path_query(body, '$.**.text') AS n), ''), 80) AS excerpt
 FROM comments
 WHERE id = @id AND deleted_at IS NULL;
 
@@ -266,7 +268,8 @@ WHERE author_id = @user_id AND auto_hidden = true
 ORDER BY COALESCE(deleted_at, auto_hidden_at) DESC;
 
 -- name: ListAppealableRemovedComments :many
-SELECT id, content_id, left(body, 120) AS excerpt
+SELECT id, content_id,
+ left(COALESCE((SELECT string_agg(n #>> '{}', ' ') FROM jsonb_path_query(body, '$.**.text') AS n), ''), 120) AS excerpt
 FROM comments
 WHERE author_user_id = @user_id AND status = 'removed' AND deleted_at IS NULL
 ORDER BY updated_at DESC;

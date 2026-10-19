@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { goto, invalidate } from '$app/navigation';
+	import { goto, invalidate, replaceState } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Radar, Pin, Loader2, Lock, Globe } from 'lucide-svelte';
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
@@ -74,6 +74,22 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (t) p.set('item_type', t);
 		const qs = p.toString();
 		return qs ? `?${qs}` : '/radar';
+	}
+
+	// Tab switching. In the geo-filtered view a tab pick exits the country
+	// filter into that tab's view (the tab chrome stays identical so the
+	// layout never jumps); otherwise it's an instant client-side switch
+	// synced to ?tab=.
+	function handleTabChange(v: string) {
+		activeTab = v;
+		if (hasGeoFilter) {
+			goto(v === 'opportunities' ? '/radar' : `/radar?tab=${v}`, { keepFocus: true });
+			return;
+		}
+		const url = new URL(page.url);
+		if (v === 'opportunities') url.searchParams.delete('tab');
+		else url.searchParams.set('tab', v);
+		replaceState(`${url.pathname}${url.search}`, {});
 	}
 
 	// The resolved space for the geo filter — enables the follow button in
@@ -365,56 +381,80 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	</div>
 
 	{#if !intelUnavailable}
-		<!-- Geo-aware country selector — the first input. Selecting a country
-		     filters the radar feed to that country via ?space_id=. This matches
-		     the geo-aware pattern used by other surfaces (§31 spaces, §32 feed).
-		     BUG-012 fix. -->
-		<div class="border-b border-[var(--color-border)] px-4 py-3">
-			<div class="flex flex-wrap items-center gap-2">
-				<Autocomplete
-					placeholder={t('radar.browse_countries', 'Browse countries')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={fetchCountries}
-					initialFetcher={fetchCountriesInitial}
-					selectedId={selectedSpaceId || null}
-					selectedLabel={selectedCountryName || null}
-					onSelect={(item) => {
-						if (item.id) goto(radarUrl(item.id), { keepFocus: true });
-						else goto(radarUrl(), { keepFocus: true });
-					}}
-					onClear={() => goto(radarUrl(), { keepFocus: true })}
-				/>
-				{#if hasGeoFilter}
-					<button
-						type="button"
-						onclick={() => goto(radarUrl(), { keepFocus: true })}
-						class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						{t('common.clear', 'Clear')}
-					</button>
-				{/if}
-			</div>
-
-			<!-- Domain filter — ?item_type= per catalog. Only shown when there
-			     is a feed to filter: the followed feed (authed) or the
-			     geo-filtered feed (anyone). -->
-			{#if authed || hasGeoFilter}
-				<div class="mt-2.5 flex flex-wrap items-center gap-1.5" role="group" aria-label={t('radar.filter_type', 'Filter by type')}>
-					{#each radarTypeOptions as opt (opt)}
+		{#if authed}
+			<!-- Authed tab row — geo-aware country selector pinned to the
+			     right (BUG-012). Identical in the geo-filtered view so nothing
+			     jumps when a country is picked; the Clear button restores
+			     the default feed. -->
+			<div class="relative z-20 flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur">
+				<div class="min-w-0 flex-1">
+					<UrlTabs tabs={radarTabs} value={activeTab} onValueChange={handleTabChange} urlParam="tab" class="!border-b-0 !bg-transparent" />
+				</div>
+				<div class="flex shrink-0 items-center gap-2 px-3" style="min-height: var(--nav-height)">
+					<div class="w-40 sm:w-52">
+						<Autocomplete
+							placeholder={t('radar.browse_countries', 'Browse countries')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchCountries}
+							initialFetcher={fetchCountriesInitial}
+							selectedId={selectedSpaceId || null}
+							selectedLabel={selectedCountryName || null}
+							onSelect={(item) => {
+								if (item.id) goto(radarUrl(item.id), { keepFocus: true });
+								else goto(radarUrl(), { keepFocus: true });
+							}}
+							onClear={() => goto(radarUrl(), { keepFocus: true })}
+						/>
+					</div>
+					{#if hasGeoFilter}
 						<button
 							type="button"
-							onclick={() => goto(typeUrl(opt), { keepFocus: true })}
-							aria-pressed={selectedItemType === opt}
-							class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors {selectedItemType === opt
-								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-								: 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+							onclick={() => goto(radarUrl(), { keepFocus: true })}
+							class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
-							{opt === '' ? t('radar.type.all', 'All') : t(`radar.type.${opt}`, opt.replaceAll('_', ' '))}
+							{t('common.clear', 'Clear')}
 						</button>
-					{/each}
+					{/if}
 				</div>
-			{/if}
-		</div>
+			</div>
+		{:else}
+			<!-- Guest / geo-filtered — country selector row (first input,
+			     §31 spaces / §32 feed geo-aware pattern). -->
+			<div class="border-b border-[var(--color-border)] px-4 py-3">
+				<div class="flex flex-wrap items-center gap-2">
+					<Autocomplete
+						placeholder={t('radar.browse_countries', 'Browse countries')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchCountries}
+						initialFetcher={fetchCountriesInitial}
+						selectedId={selectedSpaceId || null}
+						selectedLabel={selectedCountryName || null}
+						onSelect={(item) => {
+							if (item.id) goto(radarUrl(item.id), { keepFocus: true });
+							else goto(radarUrl(), { keepFocus: true });
+						}}
+						onClear={() => goto(radarUrl(), { keepFocus: true })}
+					/>
+					{#if hasGeoFilter}
+						<button
+							type="button"
+							onclick={() => goto(radarUrl(), { keepFocus: true })}
+							class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							{t('common.clear', 'Clear')}
+						</button>
+					{/if}
+				</div>
+
+				<!-- Domain filter — ?item_type= per catalog. Guest/geo view
+				     renders it here; the authed feed renders it in the panel. -->
+				{#if hasGeoFilter}
+					<div class="mt-2.5">
+						{@render typeChips()}
+					</div>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 
 	{#if intelUnavailable}
@@ -430,6 +470,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		     (via ?space_id= or ?dest=). This is public so guests can browse a
 		     specific country's opportunities. BUG-012 fix. -->
 		<div class="border-b border-[var(--color-border)] px-4 py-4">
+			{#if authed}
+				<!-- Domain filter chips — same position as the Opportunities tab
+				     so the panel doesn't jump between views. -->
+				<div class="mb-3">
+					{@render typeChips()}
+				</div>
+			{/if}
 			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 				<Globe size={16} class="text-[var(--color-primary)]" />
 				{selectedCountryName}
@@ -492,10 +539,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{/if}
 		</div>
 	{:else}
-		{#if authed}
-			<!-- Authed layout — "Following" and "Browse countries" as tabs -->
-			<UrlTabs tabs={radarTabs} bind:value={activeTab} urlParam="tab" />
-		{:else}
+		{#if !authed}
 			<div class="border-b border-[var(--color-border)] px-4 py-3">
 				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-text-subtle)]">
 					{t('radar.signin_prompt', 'Sign in to follow countries and get a personalized radar feed.')}
@@ -528,21 +572,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			</div>
 		{:else}
 			<div class="border-b border-[var(--color-border)] px-4 py-4">
-				<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-					<Radar size={16} class="text-[var(--color-primary)]" />
-					{t('radar.opportunities', 'Opportunities')}
-					{#if data.followedTotal > 0}
-						<span class="text-xs font-normal text-[var(--color-muted)]">
-							({data.followedTotal} {t('radar.countries', 'countries')})
-						</span>
-					{/if}
-					{#if typeBreakdown(data.followedCountsByType)}
-						<span class="ml-auto text-xs font-normal normal-case text-[var(--color-muted)]">
-							{typeBreakdown(data.followedCountsByType)}
-						</span>
-					{/if}
-				</h2>
-
+				<!-- Domain filter chips — ?item_type=, scoped to the
+				     opportunities feed. -->
+				<div class="mb-3">
+					{@render typeChips()}
+				</div>
 				{#if allFollowedItems.length === 0}
 					<EmptyState
 						icon={Radar}
@@ -620,6 +654,23 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{:else}
 			{@render countryGallery(items)}
 		{/if}
+	</div>
+{/snippet}
+
+{#snippet typeChips()}
+	<div class="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('radar.filter_type', 'Filter by type')}>
+		{#each radarTypeOptions as opt (opt)}
+			<button
+				type="button"
+				onclick={() => goto(typeUrl(opt), { keepFocus: true })}
+				aria-pressed={selectedItemType === opt}
+				class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors {selectedItemType === opt
+					? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+					: 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+			>
+				{opt === '' ? t('radar.type.all', 'All') : t(`radar.type.${opt}`, opt.replaceAll('_', ' '))}
+			</button>
+		{/each}
 	</div>
 {/snippet}
 

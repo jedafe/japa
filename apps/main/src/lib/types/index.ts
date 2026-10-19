@@ -4278,6 +4278,7 @@ export interface OrgCoupon {
 	id: string;
 	title: string;
 	slug: string;
+	description?: string | null;
 	code?: string | null;
 	discount_type?: 'percent' | 'fixed' | string | null;
 	discount_value?: number | null; // percent 0-100 or minor units per discount_type

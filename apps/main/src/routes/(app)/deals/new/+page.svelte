@@ -62,7 +62,8 @@
 				: res.data;
 			submissionsPage = pageNum;
 			submissionsHasMore = res.data.length === SUBMISSIONS_PAGE_SIZE;
-		} finally {
+			if (selectedOrgId === orgId) submissionsLoading = false;
+		} catch {
 			if (selectedOrgId === orgId) submissionsLoading = false;
 		}
 	}

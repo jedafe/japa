@@ -34,10 +34,14 @@ WHERE c.is_active = true
 ORDER BY c.position ASC, c.code ASC;
 
 -- name: PruneFxRates :execrows
+-- Keep the most recently fetched rate per (pair, day); uuid has no ordering
+-- so MIN(id) is invalid — DISTINCT ON picks the latest row per group.
 DELETE FROM fx_rates
 WHERE fx_rates.fetched_at < @cutoff_date
   AND fx_rates.id NOT IN (
-      SELECT MIN(fx_rates.id) FROM fx_rates
+      SELECT DISTINCT ON (base_currency, quote_currency, date_trunc('day', fetched_at))
+             fx_rates.id
+      FROM fx_rates
       WHERE fx_rates.fetched_at < @cutoff_date
-      GROUP BY base_currency, quote_currency, date_trunc('day', fetched_at)
+      ORDER BY base_currency, quote_currency, date_trunc('day', fetched_at), fetched_at DESC
   );

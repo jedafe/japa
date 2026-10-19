@@ -1574,8 +1574,21 @@ WHERE ($1::text IS NULL OR c.status = $1)
  AND ($2::text IS NULL OR c.coupon_type = $2)
  AND ($3::uuid IS NULL OR c.provider_id = $3)
  AND ($4::text IS NULL OR c.title ILIKE '%' || $4 || '%' OR c.code ILIKE '%' || $4 || '%')
-ORDER BY c.created_at DESC
-LIMIT $6 OFFSET $5
+ORDER BY
+ CASE WHEN $5::text = 'title' AND $6::text = 'desc' THEN c.title END DESC,
+ CASE WHEN $5::text = 'title' AND $6::text <> 'desc' THEN c.title END ASC,
+ CASE WHEN $5::text = 'code' AND $6::text = 'desc' THEN c.code END DESC,
+ CASE WHEN $5::text = 'code' AND $6::text <> 'desc' THEN c.code END ASC,
+ CASE WHEN $5::text = 'status' AND $6::text = 'desc' THEN c.status END DESC,
+ CASE WHEN $5::text = 'status' AND $6::text <> 'desc' THEN c.status END ASC,
+ CASE WHEN $5::text = 'discount_value' AND $6::text = 'asc' THEN c.discount_value END ASC,
+ CASE WHEN $5::text = 'discount_value' AND $6::text <> 'asc' THEN c.discount_value END DESC,
+ CASE WHEN $5::text = 'total_clicks' AND $6::text = 'asc' THEN c.total_clicks END ASC,
+ CASE WHEN $5::text = 'total_clicks' AND $6::text <> 'asc' THEN c.total_clicks END DESC,
+ CASE WHEN $5::text = 'expires_at' AND $6::text = 'asc' THEN c.expires_at END ASC NULLS LAST,
+ CASE WHEN $5::text = 'expires_at' AND $6::text <> 'asc' THEN c.expires_at END DESC NULLS LAST,
+ CASE WHEN $5::text NOT IN ('title', 'code', 'status', 'discount_value', 'total_clicks', 'expires_at') THEN c.created_at END DESC
+LIMIT $8 OFFSET $7
 `
 
 type ListCouponsParams struct {
@@ -1583,6 +1596,8 @@ type ListCouponsParams struct {
 	CouponType *string     `json:"coupon_type"`
 	ProviderID pgtype.UUID `json:"provider_id"`
 	Search     *string     `json:"search"`
+	Sort       string      `json:"sort"`
+	SortDir    string      `json:"sort_dir"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -1616,12 +1631,21 @@ type ListCouponsRow struct {
 	ProviderCategory    *string            `json:"provider_category"`
 }
 
+// Admin deals list (§55): sortable by the EntityPage column keys the admin
+// deals table marks sortable (title, code, discount_value, total_clicks,
+// expires_at, status). Each sortable column gets its own CASE branch so the
+// branches never mix Postgres types (text vs numeric vs timestamptz).
+// Unknown/empty sort falls back to newest-first. sort_dir is 'asc'/'desc'
+// (validated in the handler); text columns default to ASC, metrics and
+// dates to DESC when the direction is absent.
 func (q *Queries) ListCoupons(ctx context.Context, arg ListCouponsParams) ([]ListCouponsRow, error) {
 	rows, err := q.db.Query(ctx, listCoupons,
 		arg.Status,
 		arg.CouponType,
 		arg.ProviderID,
 		arg.Search,
+		arg.Sort,
+		arg.SortDir,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -1841,7 +1865,7 @@ func (q *Queries) ListEnabledCouponFeedSources(ctx context.Context) ([]CouponFee
 }
 
 const listOrgCoupons = `-- name: ListOrgCoupons :many
-SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
+SELECT c.id, c.title, c.slug, c.description, c.code, c.discount_type, c.discount_value,
        c.currency, c.status, c.valid_from, c.expires_at, c.applies_to,
        c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
        c.terms_url, c.referral_url, c.created_at,
@@ -1863,6 +1887,7 @@ type ListOrgCouponsRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	Title           string             `json:"title"`
 	Slug            string             `json:"slug"`
+	Description     *string            `json:"description"`
 	Code            *string            `json:"code"`
 	DiscountType    *string            `json:"discount_type"`
 	DiscountValue   pgtype.Numeric     `json:"discount_value"`
@@ -1895,6 +1920,7 @@ func (q *Queries) ListOrgCoupons(ctx context.Context, arg ListOrgCouponsParams) 
 			&i.ID,
 			&i.Title,
 			&i.Slug,
+			&i.Description,
 			&i.Code,
 			&i.DiscountType,
 			&i.DiscountValue,

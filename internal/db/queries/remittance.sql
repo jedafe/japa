@@ -90,12 +90,16 @@ FROM remittance_rates
 ORDER BY send_currency, receive_currency;
 
 -- name: PruneOldRates :exec
+-- Keep the most recently fetched rate per (provider, corridor, day); uuid
+-- has no ordering so MIN(id) is invalid — DISTINCT ON picks the latest row.
 DELETE FROM remittance_rates
 WHERE remittance_rates.fetched_at < @cutoff_date
  AND remittance_rates.id NOT IN (
- SELECT MIN(remittance_rates.id) FROM remittance_rates
+ SELECT DISTINCT ON (provider_id, send_currency, receive_currency, date_trunc('day', fetched_at))
+        remittance_rates.id
+ FROM remittance_rates
  WHERE remittance_rates.fetched_at < @cutoff_date
- GROUP BY provider_id, send_currency, receive_currency, date_trunc('day', fetched_at)
+ ORDER BY provider_id, send_currency, receive_currency, date_trunc('day', fetched_at), fetched_at DESC
  );
 
 -- =====================================================================

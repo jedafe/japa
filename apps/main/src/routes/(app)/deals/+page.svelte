@@ -155,12 +155,15 @@
 			const res = await api.get<Coupon[]>(`/coupons?${couponsQuery(loadPage + 1)}`);
 			if (!res.data) {
 				loadMoreError = true;
+				loadingMore = false;
 				return;
 			}
 			coupons = [...coupons, ...res.data.filter((c) => !coupons.some((x) => x.id === c.id))];
 			loadPage += 1;
 			hasMore = res.data.length === data.pageSize;
-		} finally {
+			loadingMore = false;
+		} catch {
+			loadMoreError = true;
 			loadingMore = false;
 		}
 	}
@@ -300,7 +303,14 @@
 	}
 
 	function onEditSaved(updated: Coupon) {
-		coupons = coupons.map((c) => (c.id === updated.id ? updated : c));
+		// An edit can move the row out of the public feed (suspended,
+		// expired, or pending re-review) — drop it instead of showing a
+		// row the feed would no longer return.
+		if (updated.status !== 'active') {
+			coupons = coupons.filter((c) => c.id !== updated.id);
+		} else {
+			coupons = coupons.map((c) => (c.id === updated.id ? updated : c));
+		}
 		closeEdit();
 	}
 

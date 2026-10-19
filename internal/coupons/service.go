@@ -487,15 +487,23 @@ func (s *Service) GetCouponAdmin(ctx context.Context, id pgtype.UUID) (gen.GetCo
 }
 
 // ListCoupons is an exported method.
-func (s *Service) ListCoupons(ctx context.Context, status, couponType, search *string, page, pageSize int32) ([]gen.ListCouponsRow, error) {
+func (s *Service) ListCoupons(ctx context.Context, status, couponType, search *string, providerID *pgtype.UUID, sort, sortDir string, page, pageSize int32) ([]gen.ListCouponsRow, error) {
 	limit, offset := paginate(page, pageSize)
-	return s.store.listCoupons(ctx, status, couponType, search, pgtype.UUID{}, limit, offset)
+	var pid pgtype.UUID
+	if providerID != nil {
+		pid = *providerID
+	}
+	return s.store.listCoupons(ctx, status, couponType, search, pid, normalizeAdminCouponSort(sort), normalizeSortDir(sortDir), limit, offset)
 }
 
 // CountCoupons mirrors ListCoupons's filters for the admin list's pagination
 // total (§55).
-func (s *Service) CountCoupons(ctx context.Context, status, couponType, search *string) (int64, error) {
-	return s.store.countCouponsFiltered(ctx, status, couponType, search, pgtype.UUID{})
+func (s *Service) CountCoupons(ctx context.Context, status, couponType, search *string, providerID *pgtype.UUID) (int64, error) {
+	var pid pgtype.UUID
+	if providerID != nil {
+		pid = *providerID
+	}
+	return s.store.countCouponsFiltered(ctx, status, couponType, search, pid)
 }
 
 // normalizeCouponSort whitelists the public ?sort= values (§55); anything else
@@ -506,6 +514,29 @@ func normalizeCouponSort(sort string) string {
 		return sort
 	default:
 		return "newest"
+	}
+}
+
+// normalizeAdminCouponSort whitelists the admin ?sort= column keys (the admin
+// deals EntityPage's sortable columns); anything else falls back to
+// newest-first ordering via the query's default branch.
+func normalizeAdminCouponSort(sort string) string {
+	switch sort {
+	case "title", "code", "status", "discount_value", "total_clicks", "expires_at":
+		return sort
+	default:
+		return ""
+	}
+}
+
+// normalizeSortDir whitelists the ?dir= direction; anything else falls back
+// to the query's per-column default (text ASC, metrics/dates DESC).
+func normalizeSortDir(dir string) string {
+	switch dir {
+	case "asc", "desc":
+		return dir
+	default:
+		return ""
 	}
 }
 

@@ -84,7 +84,7 @@
 		draft = {
 			title: c.title ?? '',
 			code: c.code ?? '',
-			description: '',
+			description: c.description ?? '',
 			discountType: isPercent ? 'percent' : 'fixed',
 			// percent stores the whole number; fixed stores minor units → /100.
 			discountValue:
@@ -166,35 +166,48 @@
 		if (String(draft.minSpend ?? '').trim()) body.min_spend = Math.round(Number(draft.minSpend) * 100);
 
 		saving = true;
-		const res = editing
-			? await api.patch<OrgCoupon>(`/organizations/${org.id}/coupons/${editing.id}`, body)
-			: await api.post<OrgCoupon>(`/organizations/${org.id}/coupons`, body);
-		saving = false;
+		try {
+			const res = editing
+				? await api.patch<OrgCoupon>(`/organizations/${org.id}/coupons/${editing.id}`, body)
+				: await api.post<OrgCoupon>(`/organizations/${org.id}/coupons`, body);
+			saving = false;
 
-		if (res.error) {
-			formError =
-				res.error.code === 'coupon_code_taken'
-					? t('coupons.err_code_taken', 'That code is already in use')
-					: (res.error.message ?? t('coupons.err_save', 'Failed to save coupon'));
-			return;
+			if (res.error) {
+				formError =
+					res.error.code === 'coupon_code_taken'
+						? t('coupons.err_code_taken', 'That code is already in use')
+						: (res.error.message ?? t('coupons.err_save', 'Failed to save coupon'));
+				return;
+			}
+			formOpen = false;
+			await invalidateAll();
+		} catch {
+			saving = false;
+			formError = t('coupons.err_save', 'Failed to save coupon');
 		}
-		formOpen = false;
-		await invalidateAll();
 	}
 
 	async function setStatus(c: OrgCoupon, status: 'active' | 'suspended') {
 		busyId = c.id;
-		await api.patch(`/organizations/${org.id}/coupons/${c.id}`, { status });
-		busyId = '';
-		await invalidateAll();
+		try {
+			await api.patch(`/organizations/${org.id}/coupons/${c.id}`, { status });
+			busyId = '';
+			await invalidateAll();
+		} catch {
+			busyId = '';
+		}
 	}
 
 	async function remove(c: OrgCoupon) {
 		if (!confirm(t('coupons.confirm_delete', 'Delete {code}? Coupons with redemptions are suspended instead.', { code: c.code ?? c.title }))) return;
 		busyId = c.id;
-		await api.delete(`/organizations/${org.id}/coupons/${c.id}`);
-		busyId = '';
-		await invalidateAll();
+		try {
+			await api.delete(`/organizations/${org.id}/coupons/${c.id}`);
+			busyId = '';
+			await invalidateAll();
+		} catch {
+			busyId = '';
+		}
 	}
 
 	function statusChip(status: string): string {

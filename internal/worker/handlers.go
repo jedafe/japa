@@ -495,7 +495,10 @@ func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, m
 		return "", nil
 	}
 
-	if _, err := q.CreateUnsubscribeToken(ctx, gen.CreateUnsubscribeTokenParams{
+	// Token insert must go to the Writer pool — dbPool.Reader points at the
+	// read replica when JC_DATABASE_READER_URL is set, and the INSERT fails
+	// with SQLSTATE 25006 (read-only transaction).
+	if _, err := gen.New(dbPool.Writer).CreateUnsubscribeToken(ctx, gen.CreateUnsubscribeTokenParams{
 		Token:        token,
 		SubscriberID: sub.ID,
 	}); err != nil {

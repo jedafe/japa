@@ -2044,7 +2044,9 @@ FROM (
  FROM contents c
  WHERE c.author_id = $1 AND c.deleted_at IS NULL
  UNION ALL
- SELECT 'comment'::text AS type, left(cm.body, 240) AS content, cm.created_at
+ SELECT 'comment'::text AS type,
+  left(COALESCE((SELECT string_agg(n #>> '{}', ' ') FROM jsonb_path_query(cm.body, '$.**.text') AS n), ''), 240) AS content,
+  cm.created_at
  FROM comments cm
  WHERE cm.author_user_id = $1 AND cm.deleted_at IS NULL
 ) activity

@@ -143,12 +143,14 @@ func (s *Store) couponSlugExists(ctx context.Context, slug string) (pgtype.UUID,
 	return s.write.GetCouponSlugExists(ctx, slug)
 }
 
-func (s *Store) listCoupons(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsRow, error) {
+func (s *Store) listCoupons(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID, sort, sortDir string, limit, offset int32) ([]gen.ListCouponsRow, error) {
 	return s.read.ListCoupons(ctx, gen.ListCouponsParams{
 		Status:     status,
 		CouponType: couponType,
 		ProviderID: providerID,
 		Search:     search,
+		Sort:       sort,
+		SortDir:    sortDir,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

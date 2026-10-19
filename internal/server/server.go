@@ -4174,9 +4174,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Media serving endpoint (no auth required for serving files)
 			r.Get("/media/serve/{bucket}/*", mediaHandlers.ServeMedia)
-			// Remote image proxy — authenticated + tight rate limit so the
-			// endpoint cannot be used as an anonymous fetch oracle.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight")).Get("/media/proxy", mediaHandlers.ProxyRemoteMedia)
+			// Remote image proxy — public per api-routes-catalog (external
+			// favicons/logos that block cross-origin embeds); SSRF-guarded and
+			// Valkey-cached. Per-IP "loose" rate limit still prevents the
+			// endpoint being used as an anonymous fetch oracle while allowing
+			// the burst of favicon requests a directory page load requires.
+			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/media/proxy", mediaHandlers.ProxyRemoteMedia)
 
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.upload")).Post("/media/upload", mediaHandlers.InitiateUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/confirm/{id}", mediaHandlers.ConfirmUpload)

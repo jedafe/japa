@@ -303,7 +303,8 @@ func (q *Queries) GetAppealByID(ctx context.Context, id pgtype.UUID) (GetAppealB
 }
 
 const getCommentForAppeal = `-- name: GetCommentForAppeal :one
-SELECT id, author_user_id, status, left(body, 80) AS excerpt
+SELECT id, author_user_id, status,
+ left(COALESCE((SELECT string_agg(n #>> '{}', ' ') FROM jsonb_path_query(body, '$.**.text') AS n), ''), 80) AS excerpt
 FROM comments
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -315,6 +316,7 @@ type GetCommentForAppealRow struct {
 	Excerpt      string      `json:"excerpt"`
 }
 
+// comments.body is TipTap JSONB — extract the text nodes for the excerpt.
 func (q *Queries) GetCommentForAppeal(ctx context.Context, id pgtype.UUID) (GetCommentForAppealRow, error) {
 	row := q.db.QueryRow(ctx, getCommentForAppeal, id)
 	var i GetCommentForAppealRow
@@ -1503,7 +1505,8 @@ func (q *Queries) ListAppealableReferrals(ctx context.Context, userID pgtype.UUI
 }
 
 const listAppealableRemovedComments = `-- name: ListAppealableRemovedComments :many
-SELECT id, content_id, left(body, 120) AS excerpt
+SELECT id, content_id,
+ left(COALESCE((SELECT string_agg(n #>> '{}', ' ') FROM jsonb_path_query(body, '$.**.text') AS n), ''), 120) AS excerpt
 FROM comments
 WHERE author_user_id = $1 AND status = 'removed' AND deleted_at IS NULL
 ORDER BY updated_at DESC

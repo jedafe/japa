@@ -123,6 +123,13 @@ WHERE c.slug = @slug AND c.status <> 'pending'
  AND (ap.id IS NULL OR ap.is_active = true);
 
 -- name: ListCoupons :many
+-- Admin deals list (§55): sortable by the EntityPage column keys the admin
+-- deals table marks sortable (title, code, discount_value, total_clicks,
+-- expires_at, status). Each sortable column gets its own CASE branch so the
+-- branches never mix Postgres types (text vs numeric vs timestamptz).
+-- Unknown/empty sort falls back to newest-first. sort_dir is 'asc'/'desc'
+-- (validated in the handler); text columns default to ASC, metrics and
+-- dates to DESC when the direction is absent.
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
@@ -136,7 +143,20 @@ WHERE (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
  AND (sqlc.narg(coupon_type)::text IS NULL OR c.coupon_type = sqlc.narg(coupon_type))
  AND (sqlc.narg(provider_id)::uuid IS NULL OR c.provider_id = sqlc.narg(provider_id))
  AND (sqlc.narg(search)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(search) || '%' OR c.code ILIKE '%' || sqlc.narg(search) || '%')
-ORDER BY c.created_at DESC
+ORDER BY
+ CASE WHEN sqlc.arg(sort)::text = 'title' AND sqlc.arg(sort_dir)::text = 'desc' THEN c.title END DESC,
+ CASE WHEN sqlc.arg(sort)::text = 'title' AND sqlc.arg(sort_dir)::text <> 'desc' THEN c.title END ASC,
+ CASE WHEN sqlc.arg(sort)::text = 'code' AND sqlc.arg(sort_dir)::text = 'desc' THEN c.code END DESC,
+ CASE WHEN sqlc.arg(sort)::text = 'code' AND sqlc.arg(sort_dir)::text <> 'desc' THEN c.code END ASC,
+ CASE WHEN sqlc.arg(sort)::text = 'status' AND sqlc.arg(sort_dir)::text = 'desc' THEN c.status END DESC,
+ CASE WHEN sqlc.arg(sort)::text = 'status' AND sqlc.arg(sort_dir)::text <> 'desc' THEN c.status END ASC,
+ CASE WHEN sqlc.arg(sort)::text = 'discount_value' AND sqlc.arg(sort_dir)::text = 'asc' THEN c.discount_value END ASC,
+ CASE WHEN sqlc.arg(sort)::text = 'discount_value' AND sqlc.arg(sort_dir)::text <> 'asc' THEN c.discount_value END DESC,
+ CASE WHEN sqlc.arg(sort)::text = 'total_clicks' AND sqlc.arg(sort_dir)::text = 'asc' THEN c.total_clicks END ASC,
+ CASE WHEN sqlc.arg(sort)::text = 'total_clicks' AND sqlc.arg(sort_dir)::text <> 'asc' THEN c.total_clicks END DESC,
+ CASE WHEN sqlc.arg(sort)::text = 'expires_at' AND sqlc.arg(sort_dir)::text = 'asc' THEN c.expires_at END ASC NULLS LAST,
+ CASE WHEN sqlc.arg(sort)::text = 'expires_at' AND sqlc.arg(sort_dir)::text <> 'asc' THEN c.expires_at END DESC NULLS LAST,
+ CASE WHEN sqlc.arg(sort)::text NOT IN ('title', 'code', 'status', 'discount_value', 'total_clicks', 'expires_at') THEN c.created_at END DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListCouponsCount :one
@@ -457,7 +477,7 @@ SELECT c.* FROM coupons c WHERE c.id = @id AND c.organization_id = @organization
 SELECT COUNT(*) FROM coupon_redemptions r WHERE r.coupon_id = @coupon_id;
 
 -- name: ListOrgCoupons :many
-SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
+SELECT c.id, c.title, c.slug, c.description, c.code, c.discount_type, c.discount_value,
        c.currency, c.status, c.valid_from, c.expires_at, c.applies_to,
        c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
        c.terms_url, c.referral_url, c.created_at,

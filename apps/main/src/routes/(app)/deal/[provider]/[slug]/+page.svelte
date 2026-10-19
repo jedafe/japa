@@ -70,9 +70,9 @@
 		JSON.stringify({
 			'@context': 'https://schema.org',
 			'@type': 'Offer',
-			name: coupon.title,
+			name: title,
 			description,
-			url: page.url.href,
+			url: page.url.href
 		})
 	);
 
@@ -116,8 +116,13 @@
 	const discountLabel = $derived(discountLabelFor(coupon));
 
 	// Click-through goes through the backend /go redirect so the click is
-	// recorded server-side even without JS (Section 55 Deal Pages).
-	const goUrl = $derived(`${apiBaseUrl}/deals/${encodeURIComponent(coupon.slug ?? '')}/go`);
+	// recorded server-side even without JS (Section 55 Deal Pages). Null
+	// when the slug is empty so the CTA can't link to /deals//go.
+	const goUrl = $derived(
+		coupon.slug
+			? `${apiBaseUrl}/deals/${encodeURIComponent(coupon.slug)}/go`
+			: null
+	);
 
 	let copied = $state(false);
 	let copyError = $state('');
@@ -190,7 +195,7 @@
 				{#if coupon.provider_slug}
 					<span class="text-[var(--color-text-subtle)]">/</span>
 					<a
-						href="/deal/{coupon.provider_slug}"
+						href={`/deal/${coupon.provider_slug}`}
 						class="inline-flex items-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 					>
 						{coupon.provider_name}
@@ -304,7 +309,7 @@
 					{/if}
 				</div>
 
-				{#if (coupon.referral_url || coupon.provider_base_url) && isClaimable}
+				{#if goUrl && (coupon.referral_url || coupon.provider_base_url) && isClaimable}
 					<a
 						href={goUrl}
 						target="_blank"

@@ -118,12 +118,12 @@
 				is_active: res.data.is_active
 			};
 			editing = true;
+			providerLoading = false;
 		} catch (err) {
 			providerError =
 				err instanceof Error
 					? err.message
 					: t('deal.form.errors.provider_load_failed', 'Failed to load provider');
-		} finally {
 			providerLoading = false;
 		}
 	}
@@ -163,22 +163,24 @@
 				// A deactivated provider 404s on GET /deals/partners/{slug} — leave
 				// the page instead of invalidating into a not-found reload.
 				if (!pf.is_active) {
+					providerSaving = false;
 					await goto('/deals');
 					return;
 				}
 				await invalidateAll();
 				editing = false;
+				providerSaving = false;
 			} else {
 				providerError =
 					res.error?.message ??
 					t('deal.form.errors.provider_save_failed', 'Failed to save provider');
+				providerSaving = false;
 			}
 		} catch (err) {
 			providerError =
 				err instanceof Error
 					? err.message
 					: t('deal.form.errors.provider_save_failed', 'Failed to save provider');
-		} finally {
 			providerSaving = false;
 		}
 	}

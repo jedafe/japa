@@ -80,7 +80,7 @@ WHERE c.status = 'published'
  -- COALESCE keeps rows whose author join produced no users row.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, up.display_name, up.avatar_url,
+ u.username, u.public_username, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -145,7 +145,7 @@ WHERE f.user_id = @user_id
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
  c.id, c.title, c.slug, c.author_id, c.created_at,
  c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, up.display_name, up.avatar_url,
+ u.username, u.public_username, up.display_name, up.avatar_url,
  s.name, s.slug,
  c.read_time_minutes, m.storage_bucket, m.storage_path,
  c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -215,7 +215,7 @@ WHERE c.space_id = @space_id
  )
  )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, up.display_name, up.avatar_url,
+ u.username, u.public_username, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -286,7 +286,7 @@ WHERE c.author_id = @author_id
  )
  )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, up.display_name, up.avatar_url,
+ u.username, u.public_username, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -370,7 +370,7 @@ WHERE c.status = 'published'
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, up.display_name, up.avatar_url,
+ u.username, u.public_username, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -450,7 +450,7 @@ WHERE c.status = 'published'
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, up.display_name, up.avatar_url,
+ u.username, u.public_username, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -644,7 +644,7 @@ LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, up.display_name, up.avatar_url,
+ u.username, u.public_username, up.display_name, up.avatar_url,
  s.name, s.slug, s.geo_code,
  c.journey_stage, c.visa_route, c.source_country, c.target_country,
  m.storage_bucket, m.storage_path,

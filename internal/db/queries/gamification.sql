@@ -231,7 +231,7 @@ WHERE wl.ledger_type = 'points'
  SELECT 1 FROM space_members sm
  WHERE sm.space_id = sqlc.narg(space_id)::uuid
  AND sm.user_id = wl.user_id))
-GROUP BY wl.user_id, u.username, up.display_name, up.avatar_url, u.profile_type
+GROUP BY wl.user_id, u.username, u.public_username, up.display_name, up.avatar_url, u.profile_type
 ORDER BY lifetime_points DESC
 LIMIT @top_n;
 
@@ -255,7 +255,7 @@ WHERE wl.ledger_type = 'points'
  SELECT 1 FROM space_members sm
  WHERE sm.space_id = sqlc.narg(space_id)::uuid
  AND sm.user_id = wl.user_id))
-GROUP BY wl.user_id, u.username, up.display_name, up.avatar_url, u.profile_type
+GROUP BY wl.user_id, u.username, u.public_username, up.display_name, up.avatar_url, u.profile_type
 ORDER BY period_points DESC
 LIMIT @top_n;
 

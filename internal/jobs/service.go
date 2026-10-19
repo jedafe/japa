@@ -368,8 +368,11 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 				JOIN custom_fields cf ON cf.id = cfv.field_id
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				  AND cf.key = 'application_deadline'
-				  AND cfv.value_text <> ''
-				  AND cfv.value_text::date < CURRENT_DATE
+				  AND (
+					cfv.value_date < now()
+					OR CASE WHEN cfv.value_text ~ '^\d{4}-\d{2}-\d{2}'
+					        THEN cfv.value_text::timestamptz END < now()
+				  )
 			)`)
 	}
 

@@ -640,12 +640,16 @@ const pruneOldRates = `-- name: PruneOldRates :exec
 DELETE FROM remittance_rates
 WHERE remittance_rates.fetched_at < $1
  AND remittance_rates.id NOT IN (
- SELECT MIN(remittance_rates.id) FROM remittance_rates
+ SELECT DISTINCT ON (provider_id, send_currency, receive_currency, date_trunc('day', fetched_at))
+        remittance_rates.id
+ FROM remittance_rates
  WHERE remittance_rates.fetched_at < $1
- GROUP BY provider_id, send_currency, receive_currency, date_trunc('day', fetched_at)
+ ORDER BY provider_id, send_currency, receive_currency, date_trunc('day', fetched_at), fetched_at DESC
  )
 `
 
+// Keep the most recently fetched rate per (provider, corridor, day); uuid
+// has no ordering so MIN(id) is invalid — DISTINCT ON picks the latest row.
 func (q *Queries) PruneOldRates(ctx context.Context, cutoffDate pgtype.Timestamptz) error {
 	_, err := q.db.Exec(ctx, pruneOldRates, cutoffDate)
 	return err

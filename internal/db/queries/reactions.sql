@@ -83,6 +83,6 @@ WHERE r.user_id = @user_id
  AND c.visibility = 'public'
 GROUP BY c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.created_at, c.view_count, c.comment_count,
- up.display_name, u.username, up.avatar_url, c.body
+ up.display_name, u.username, u.public_username, up.avatar_url, c.body
 ORDER BY reacted_at DESC
 LIMIT @page_limit OFFSET @page_offset;

@@ -140,12 +140,16 @@ const pruneFxRates = `-- name: PruneFxRates :execrows
 DELETE FROM fx_rates
 WHERE fx_rates.fetched_at < $1
   AND fx_rates.id NOT IN (
-      SELECT MIN(fx_rates.id) FROM fx_rates
+      SELECT DISTINCT ON (base_currency, quote_currency, date_trunc('day', fetched_at))
+             fx_rates.id
+      FROM fx_rates
       WHERE fx_rates.fetched_at < $1
-      GROUP BY base_currency, quote_currency, date_trunc('day', fetched_at)
+      ORDER BY base_currency, quote_currency, date_trunc('day', fetched_at), fetched_at DESC
   )
 `
 
+// Keep the most recently fetched rate per (pair, day); uuid has no ordering
+// so MIN(id) is invalid — DISTINCT ON picks the latest row per group.
 func (q *Queries) PruneFxRates(ctx context.Context, cutoffDate pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, pruneFxRates, cutoffDate)
 	if err != nil {

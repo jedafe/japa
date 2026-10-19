@@ -179,7 +179,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListPublicCoupons handles GET /api/v1/coupons.
 func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
-	providerID := parseQueryUUID(r, "provider_id")
+	providerID, ok := parseQueryUUIDStrict(w, r, "provider_id")
+	if !ok {
+		return
+	}
 
 	couponType := parseQueryString(r, "coupon_type")
 	if couponType == nil {
@@ -503,11 +506,20 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 	if search == nil {
 		search = parseQueryString(r, "search")
 	}
+	providerID, ok := parseQueryUUIDStrict(w, r, "provider_id")
+	if !ok {
+		return
+	}
+	// Column sort (?sort=key&dir=asc|desc) — the admin deals EntityPage sends
+	// the clicked column; validated against the sortable-column allow-list in
+	// the service (unknown keys fall back to newest-first).
+	sort := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("dir")
 
 	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
 	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 
-	coupons, err := h.Service.ListCoupons(r.Context(), status, couponType, search, page, pageSize)
+	coupons, err := h.Service.ListCoupons(r.Context(), status, couponType, search, providerID, sort, sortDir, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -519,7 +531,7 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 
 	// Same filters, no pagination — the admin deals table needs total for
 	// server-side pagination (§55).
-	total, err := h.Service.CountCoupons(r.Context(), status, couponType, search)
+	total, err := h.Service.CountCoupons(r.Context(), status, couponType, search, providerID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -529,6 +541,7 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": coupons, "total": total, "page": page, "page_size": pageSize,
+		"sort": sort, "dir": sortDir,
 	})
 }
 
@@ -697,6 +710,26 @@ func parseQueryUUID(r *http.Request, key string) *pgtype.UUID {
 	}
 
 	return &id
+}
+
+// parseQueryUUIDStrict parses an optional UUID query parameter, writing a
+// 400 invalid_filter when the value is present but malformed. Unlike
+// parseQueryUUID (which silently drops bad values and returns unfiltered
+// results), this keeps a typo'd provider_id from masquerading as "all
+// providers" on the public /coupons feed (§55).
+func parseQueryUUIDStrict(w http.ResponseWriter, r *http.Request, key string) (*pgtype.UUID, bool) {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return nil, true
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(v); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", key+" must be a valid UUID")
+		return nil, false
+	}
+
+	return &id, true
 }
 
 // ─── Affiliate Enhancement Handlers ─────────────────────────────────

@@ -408,7 +408,7 @@ WHERE c.slug = $1
  OR c.author_id = $2::uuid
  OR COALESCE($3::boolean, false) = true
  )
-GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
+GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username, s.name, s.slug,
  m.storage_bucket, m.storage_path,
  bs.id, bs.title, bs.slug, bsp.position,
  prev_c.slug, next_c.slug

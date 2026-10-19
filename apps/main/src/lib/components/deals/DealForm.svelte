@@ -188,6 +188,7 @@
 					errorMsg =
 						pres.error?.message ??
 						t('deal.form.errors.provider_failed', 'Failed to create provider');
+					submitting = false;
 					return;
 				}
 				providerId = pres.data.id;
@@ -218,12 +219,12 @@
 				errorMsg =
 					res.error?.message ?? t('deal.form.errors.save_failed', 'Failed to save deal');
 			}
+			submitting = false;
 		} catch (err) {
 			errorMsg =
 				err instanceof Error
 					? err.message
 					: t('deal.form.errors.save_failed', 'Failed to save deal');
-		} finally {
 			submitting = false;
 		}
 	}

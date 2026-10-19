@@ -131,7 +131,22 @@
 		is_featured: false
 	});
 	let saving = $state(false);
+	// The admin affiliate backends expose no ?q= search — the DataTable
+	// search boxes filter the loaded rows client-side per tab instead of
+	// re-fetching (a re-fetch would silently ignore the query).
 	let searchQuery = $state('');
+
+	function matchesQuery(row: Record<string, unknown>, q: string): boolean {
+		const needle = q.trim().toLowerCase();
+		if (!needle) return true;
+		return Object.values(row).some((v) => v != null && String(v).toLowerCase().includes(needle));
+	}
+
+	const filteredProviders = $derived(providers.filter((r) => matchesQuery(r as unknown as Record<string, unknown>, searchQuery)));
+	const filteredMembers = $derived(members.filter((r) => matchesQuery(r as unknown as Record<string, unknown>, searchQuery)));
+	const filteredLinks = $derived(links.filter((r) => matchesQuery(r as unknown as Record<string, unknown>, searchQuery)));
+	const filteredScanResults = $derived(scanResults.filter((r) => matchesQuery(r as unknown as Record<string, unknown>, searchQuery)));
+	const filteredCommissions = $derived(commissions.filter((r) => matchesQuery(r as unknown as Record<string, unknown>, searchQuery)));
 
 	let selectedProviderIds = $state<Set<string>>(new Set());
 	let selectedMemberIds = $state<Set<string>>(new Set());
@@ -295,9 +310,9 @@
 
 	// ── Row actions via ActionMenu ──────────────────────────────────────────
 	const providerTypeOptions = [
-		{ value: 'affiliate', label: 'Affiliate' },
-		{ value: 'coupon', label: 'Coupon' },
-		{ value: 'both', label: 'Both' }
+		{ value: 'affiliate', label: t('affiliate.type_affiliate', 'Affiliate') },
+		{ value: 'coupon', label: t('affiliate.type_coupon', 'Coupon') },
+		{ value: 'both', label: t('affiliate.type_both', 'Both') }
 	];
 
 	const providerActions: ActionItem[] = [
@@ -702,11 +717,11 @@
 			<CardContent class="p-0">
 				<DataTable
 					columns={providerColumns}
-					data={providers}
+					data={filteredProviders}
 					pageSize={20}
 					emptyMessage={t('affiliate.no_providers')}
 					searchable
-					onsearch={(q) => { searchQuery = q; load(); }}
+					onsearch={(q) => { searchQuery = q; }}
 					selectable
 					bind:selectedIds={selectedProviderIds}
 					actions={providerActions}
@@ -719,11 +734,11 @@
 			<CardContent class="p-0">
 				<DataTable
 					columns={memberColumns}
-					data={members}
+					data={filteredMembers}
 					pageSize={20}
 					emptyMessage={t('affiliate.no_members')}
 					searchable
-					onsearch={(q) => { searchQuery = q; load(); }}
+					onsearch={(q) => { searchQuery = q; }}
 					selectable
 					bind:selectedIds={selectedMemberIds}
 					actions={memberActions}
@@ -738,11 +753,11 @@
 			<CardContent class="p-0">
 				<DataTable
 					columns={linkColumns}
-					data={links}
+					data={filteredLinks}
 					pageSize={20}
 					emptyMessage={t('affiliate.no_links')}
 					searchable
-					onsearch={(q) => { searchQuery = q; load(); }}
+					onsearch={(q) => { searchQuery = q; }}
 					selectable
 					bind:selectedIds={selectedLinkIds}
 					bulkActionsList={linkBulkActions}
@@ -786,7 +801,7 @@
 			<CardContent class="p-0">
 				<DataTable
 					columns={scanColumns}
-					data={scanResults}
+					data={filteredScanResults}
 					pageSize={20}
 					emptyMessage={t('affiliate.no_scan_results', 'No unregistered affiliate links detected')}
 					searchable
@@ -809,7 +824,7 @@
 				{/if}
 				<DataTable
 					columns={commissionColumns}
-					data={commissions}
+					data={filteredCommissions}
 					pageSize={20}
 					emptyMessage={t('affiliate.no_commissions', 'No author commissions recorded yet')}
 					searchable

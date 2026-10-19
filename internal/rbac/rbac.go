@@ -269,6 +269,15 @@ var adminCapabilityNodes = []string{
 	"admin.analytics.search",
 	"admin.brand",
 	"admin.footer",
+	// Deals/coupons + affiliate + discount-code manage nodes (§§55–56,
+	// payments discount codes) — holders can reach the admin panel and
+	// perform privileged writes, so they count as admin-capable for the
+	// impersonation guard.
+	"coupons.manage",
+	"affiliate.providers.manage",
+	"affiliate.admin.manage",
+	"affiliate.manage",
+	"payments.discount_codes.manage",
 	// Wallet + impersonation
 	"wallet.admin",
 	"admin.impersonate",

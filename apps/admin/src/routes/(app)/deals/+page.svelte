@@ -299,10 +299,12 @@
 			if (pageSize) params.set('page_size', String(pageSize));
 			if (filter.status) params.set('status', filter.status);
 			if (filter.coupon_type) params.set('coupon_type', filter.coupon_type);
-			// EntityPage emits sort as "key:dir"; the backend ignores sort for now
-			// (fixed ORDER BY created_at DESC), but we pass it for forward-compat.
-			const sortKey = sort ? sort.split(':')[0] : '';
+			// EntityPage emits sort as "key:dir"; the backend honors the
+			// sortable column keys (?sort=key&dir=asc|desc, §55) and falls
+			// back to newest-first for anything else.
+			const [sortKey = '', sortDir = ''] = (sort ?? '').split(':');
 			if (sortKey) params.set('sort', sortKey);
+			if (sortDir === 'asc' || sortDir === 'desc') params.set('dir', sortDir);
 			const result = await couponsAdminApiExtended.list(params.toString() || undefined);
 			if (result.ok) {
 				// apiRaw — the body is { data: [...], total } (§55).

@@ -290,7 +290,7 @@ WHERE u.id != $1
  SELECT 1 FROM follows f
  WHERE f.follower_id = $1 AND f.entity_type = 'user' AND f.entity_id = u.id
  )
-GROUP BY u.id, u.username, up.display_name, up.avatar_url, up.bio
+GROUP BY u.id, u.username, u.public_username, up.display_name, up.avatar_url, up.bio
 ORDER BY geo_shared_spaces DESC, shared_spaces DESC
 LIMIT $2
 `

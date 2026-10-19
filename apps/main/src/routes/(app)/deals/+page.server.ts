@@ -41,25 +41,24 @@ export const load: PageServerLoad = async (event) => {
 	const needsOrgCheck =
 		!hasPerm(event.locals.user?.permissions, 'coupons.manage') && !!event.locals.user;
 	const canManage = hasPerm(event.locals.user?.permissions, 'coupons.manage');
-	const [couponsRes, partners, orgs, providers] = await Promise.all([
+	// Providers serve both the filter dropdown and the staff edit modal —
+	// one fetch with an explicit page_size (the unpaged default truncates
+	// the list, dropping filter options on large partner sets).
+	const [couponsRes, providers, orgs] = await Promise.all([
 		apiList<Coupon>(ctx, `/coupons?${qs}`)
 			.then((r) => ({ ok: true as const, items: r.items }))
 			.catch(() => ({ ok: false as const, items: [] as Coupon[] })),
-		apiList<DealPartnerRef>(ctx, '/deals/partners')
+		apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')
 			.then((r) => r.items)
 			.catch(() => [] as DealPartnerRef[]),
 		needsOrgCheck
 			? apiList<MyOrganization>(ctx, '/me/organizations?page_size=50').catch(() => null)
-			: Promise.resolve(null),
-		canManage
-			? apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')
-					.then((r) => r.items)
-					.catch(() => [] as DealPartnerRef[])
-			: Promise.resolve([] as DealPartnerRef[])
+			: Promise.resolve(null)
 	]);
 
 	const coupons = couponsRes.items;
 	const loadError = !couponsRes.ok;
+	const partners = providers;
 
 	// "New deal" CTA (§55 org submissions): staff holding the coupons.manage
 	// RBAC node, or any member with an owner/admin/editor role in at least
