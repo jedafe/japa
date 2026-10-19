@@ -147,6 +147,8 @@ export interface StreamChatOptions {
 	/** §115 page anchor — find-or-create the page's thread server-side. */
 	anchor?: string;
 	model?: string;
+	/** BYOK — routes the turn through the caller's own provider key. */
+	byokKeyId?: string;
 	voiceId?: string;
 	context?: Record<string, unknown>;
 	humanize?: boolean;

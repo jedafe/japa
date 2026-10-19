@@ -48,6 +48,7 @@
 		<JapaAIChat
 			conversations={data.conversations.map((c) => ({ ...c, legacy: c.legacy ?? false }))}
 			models={data.models}
+			byokProviders={data.byokProviders}
 			voices={data.voices}
 			projects={data.projects}
 			capabilities={data.capabilities}

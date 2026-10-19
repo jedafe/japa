@@ -37,6 +37,7 @@ export function createStreamChat() {
 			project_id: opts.projectId ?? undefined,
 			anchor: opts.anchor || undefined,
 			model: opts.model || undefined,
+			byok_key_id: opts.byokKeyId || undefined,
 			voice_id: opts.voiceId || undefined,
 			context: opts.context,
 			humanize: opts.humanize,

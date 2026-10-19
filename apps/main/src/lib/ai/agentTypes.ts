@@ -137,3 +137,26 @@ export interface AIPrivacyUpdateResult {
 	entity_id: string;
 	ai_exempt: boolean;
 }
+
+/** BYOK provider storefront row from GET /ai/byok/providers. */
+export interface ByokProviderOption {
+	id: string;
+	provider_type: string;
+	display_name: string;
+	models: { id: string; label: string }[];
+	signup_url: string;
+	has_key: boolean;
+	keys: { id: string; label: string; api_key_masked: string; status: string }[];
+}
+
+/** Caller-owned BYOK credential from /me/ai-keys (masked only). */
+export interface UserAIKeyView {
+	id: string;
+	byok_provider_id: string;
+	label: string;
+	api_key_masked: string;
+	status: string;
+	last_error?: string;
+	created_at: string;
+	provider: ByokProviderOption;
+}

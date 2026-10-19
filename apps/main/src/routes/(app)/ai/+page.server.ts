@@ -2,7 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { isMainToolEnabled, MAIN_TOOLS } from '$lib/tools/registry';
-import type { AgentCapabilities, AIPrefs, AiProject } from '$lib/ai/agentTypes';
+import type { AgentCapabilities, AIPrefs, AiProject, ByokProviderOption } from '$lib/ai/agentTypes';
 import type { MeSpace, BlogSeries, AssessmentForm, ContentTypeMeta } from '$lib/types';
 
 /**
@@ -79,6 +79,7 @@ export const load: PageServerLoad = async (event) => {
 		capsRes,
 		convsRes,
 		modelsRes,
+		byokRes,
 		voicesRes,
 		projectsRes,
 		prefsRes,
@@ -98,6 +99,9 @@ export const load: PageServerLoad = async (event) => {
 		// threads).
 		apiList<ConversationSummary>(ctx, '/ai/conversations'),
 		apiList<ChatModelOption>(ctx, '/ai/models?category=chat'),
+		// BYOK storefront — enabled provider types + the caller's keys.
+		// 404/403 (flag off, missing ai.byok) degrades to an empty list.
+		apiGet<ByokProviderOption[]>(ctx, '/ai/byok/providers'),
 		// ?slim=1 — the {id, name} picker projection; full rows carry
 		// voice_prompt (~1.7KB each → ~2.6MB).
 		apiList<ChatVoiceOption>(ctx, '/ai/voices?slim=1&page_size=5000'),
@@ -138,6 +142,8 @@ export const load: PageServerLoad = async (event) => {
 		convsRes.status === 'fulfilled' ? convsRes.value.items : [];
 	const models: ChatModelOption[] =
 		modelsRes.status === 'fulfilled' ? modelsRes.value.items : [];
+	const byokProviders: ByokProviderOption[] =
+		byokRes.status === 'fulfilled' && byokRes.value ? byokRes.value : [];
 	// page_size=5000 = the handler's max (parsePaginationWithMax) — the full
 	// catalog is needed so client-side tone filtering sees every voice, not
 	// just the first alphabetical page. The map stays as a cheap guard so
@@ -155,6 +161,7 @@ export const load: PageServerLoad = async (event) => {
 		capabilities,
 		conversations,
 		models,
+		byokProviders,
 		voices,
 		projects,
 		prefs,

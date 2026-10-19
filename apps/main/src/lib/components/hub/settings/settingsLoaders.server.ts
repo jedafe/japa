@@ -70,6 +70,12 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	// §120 connected apps — the caller's OAuth agent grants. Best-effort:
 	// degrades to an empty list when the endpoint is unavailable.
 	'connected-apps': async (ctx) => (await apiList<unknown>(ctx, '/me/oauth/grants').catch(() => ({ items: [] }))).items,
+
+	// BYOK — provider storefront + the caller's keys, both best-effort.
+	'ai-keys': async (ctx) => ({
+		providers: await apiGet<unknown>(ctx, '/ai/byok/providers').catch(() => []),
+		keys: await apiGet<unknown>(ctx, '/me/ai-keys').catch(() => [])
+	}),
 	// Section 77 / ADR-074 — registered mobile push devices (Devices settings section).
 	// Best-effort: degrades to an empty list when the route is unavailable.
 	devices: async (ctx) => ({

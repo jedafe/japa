@@ -21,6 +21,7 @@ import DataPrivacySection from './sections/DataPrivacySection.svelte';
 import LocationSection from './sections/LocationSection.svelte';
 import MentorSection from './sections/MentorSection.svelte';
 import AIPrivacySection from './sections/AIPrivacySection.svelte';
+import AIKeysSection from './sections/AIKeysSection.svelte';
 
 /**
  * Client meta for one settings section. `component` is null for sections
@@ -65,7 +66,8 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'subscription', labelKey: 'settings.nav.subscription', icon: 'credit-card', group: 'billing', backendReady: true, component: SubscriptionSection },
 	{ slug: 'payments', labelKey: 'settings.nav.payments', icon: 'receipt', group: 'billing', backendReady: true, component: PaymentsSection },
 	{ slug: 'danger', labelKey: 'settings.nav.danger', icon: 'alert-triangle', group: 'danger', backendReady: true, component: DangerSection },
-	{ slug: 'ai-privacy', labelKey: 'settings.nav.ai_privacy', icon: 'brain', group: 'account', backendReady: true, component: AIPrivacySection }
+	{ slug: 'ai-privacy', labelKey: 'settings.nav.ai_privacy', icon: 'brain', group: 'account', backendReady: true, component: AIPrivacySection },
+	{ slug: 'ai-keys', labelKey: 'settings.nav.ai_provider_keys', icon: 'key-round', group: 'account', backendReady: true, component: AIKeysSection, featureFlag: 'feature.ai_byok' }
 ];
 
 export function resolveSection(slug: string): SectionMeta | null {

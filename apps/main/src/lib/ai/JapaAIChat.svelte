@@ -92,6 +92,7 @@
 	interface Props {
 		conversations: UnifiedConversationSummary[];
 		models: { id: string; label: string }[];
+		byokProviders?: import('$lib/ai/agentTypes').ByokProviderOption[];
 		voices: { id: string; name: string }[];
 		projects: AiProject[];
 		capabilities: AgentCapabilities | null;
@@ -119,6 +120,7 @@
 	let {
 		conversations,
 		models,
+		byokProviders = [],
 		voices,
 		projects,
 		capabilities,
@@ -889,11 +891,22 @@
 	// The backend already emits an empty-id "Default" entry for models
 	// (/ai/models), so only prepend our own when none exists — two value:''
 	// options would collide on the picker's __none__ key.
+	// BYOK models encode as "byok|<keyId>|<modelId>" so a single flat option
+	// value carries the key reference — the send path splits on '|'. The
+	// "🔑" prefix visually separates user-key models from platform ones.
 	const modelOptions = $derived([
 		...(models.some((m) => m.id === '')
 			? []
 			: [{ value: '', label: t('ai.chat.model_default', 'Default model') }]),
-		...models.map((m) => ({ value: m.id, label: m.label }))
+		...models.map((m) => ({ value: m.id, label: m.label })),
+		...byokProviders.flatMap((bp) =>
+			bp.keys.flatMap((k) =>
+				bp.models.map((m) => ({
+					value: `byok|${k.id}|${m.id}`,
+					label: `🔑 ${k.label || bp.display_name} · ${m.label || m.id}`
+				}))
+			)
+		)
 	]);
 	// Voice option sets populate from the selected tone — the persona catalog
 	// prefixes each voice label with its tone ("Witty ...", "Academic ...").
@@ -1155,14 +1168,24 @@
 		// shows now — it could flip while the stream is live.
 		const sentWithTools = toolsOn;
 
+		// BYOK selection: composite "byok|<keyId>|<modelId>" → real fields.
+		let byokKeyId: string | undefined;
+		let outgoingModel = selectedModel || undefined;
+		if (selectedModel.startsWith('byok|')) {
+			const parts = selectedModel.split('|');
+			byokKeyId = parts[1] || undefined;
+			outgoingModel = parts[2] || undefined;
+		}
+
 		try {
 			for await (const ev of streamChat({
 				message: outgoing,
+				byokKeyId,
 				conversationId: conversationId || undefined,
 				// §103 AI Projects: a pending project stamps the NEW thread —
 				// existing conversations keep their own membership.
 				projectId: conversationId ? undefined : (pendingProjectId ?? undefined),
-				model: selectedModel || undefined,
+				model: outgoingModel,
 				// Template voice fills in when the composer picker is unset —
 				// same precedence as the tone merge above.
 				voiceId: selectedVoice || (spec ? tplValues.voice_id : '') || undefined,

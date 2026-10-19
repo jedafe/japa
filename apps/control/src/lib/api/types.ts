@@ -250,3 +250,15 @@ export interface DataTableBulkAction {
 	onClick: (ids: string[]) => void;
 	variant?: 'default' | 'destructive';
 }
+
+export interface AiByokProvider {
+	id: string;
+	provider_type: string;
+	display_name: string;
+	models: { id: string; label: string }[];
+	signup_url: string;
+	enabled: boolean;
+	referral_clicks: number;
+	created_at: string;
+	updated_at: string;
+}
