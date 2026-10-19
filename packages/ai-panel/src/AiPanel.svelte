@@ -487,34 +487,36 @@
 						</button>
 					</div>
 				{/if}
-				<textarea
-					bind:this={composerEl}
-					bind:value={composer}
-					onkeydown={onKeydown}
-					rows="2"
-					placeholder={pt('ai.panel.placeholder', 'Ask about this page…')}
-					aria-label={pt('ai.panel.placeholder', 'Ask about this page…')}
-				></textarea>
-				{#if sending}
-					<button
-						type="button"
-						class="ai-panel-send"
-						aria-label={pt('ai.panel.stop', 'Stop')}
-						onclick={stop}
-					>
-						<Square size={15} />
-					</button>
-				{:else}
-					<button
-						type="button"
-						class="ai-panel-send"
-						aria-label={pt('ai.panel.send', 'Send')}
-						disabled={!composer.trim()}
-						onclick={() => void send()}
-					>
-						<ArrowUp size={16} />
-					</button>
-				{/if}
+				<div class="ai-panel-inputrow">
+					<textarea
+						bind:this={composerEl}
+						bind:value={composer}
+						onkeydown={onKeydown}
+						rows="2"
+						placeholder={pt('ai.panel.placeholder', 'Ask about this page…')}
+						aria-label={pt('ai.panel.placeholder', 'Ask about this page…')}
+					></textarea>
+					{#if sending}
+						<button
+							type="button"
+							class="ai-panel-send"
+							aria-label={pt('ai.panel.stop', 'Stop')}
+							onclick={stop}
+						>
+							<Square size={15} />
+						</button>
+					{:else}
+						<button
+							type="button"
+							class="ai-panel-send"
+							aria-label={pt('ai.panel.send', 'Send')}
+							disabled={!composer.trim()}
+							onclick={() => void send()}
+						>
+							<ArrowUp size={16} />
+						</button>
+					{/if}
+				</div>
 			</footer>
 		{/if}
 	</div>
@@ -616,6 +618,7 @@
 	.ai-mode-switch {
 		display: inline-flex;
 		align-items: center;
+		align-self: flex-start;
 		gap: 2px;
 		padding: 2px;
 		border: 1px solid var(--color-border);
@@ -757,10 +760,15 @@
 	}
 	.ai-panel-composer {
 		display: flex;
-		align-items: flex-end;
+		flex-direction: column;
 		gap: 0.5rem;
 		padding: 0.625rem 0.75rem;
 		border-top: 1px solid var(--color-border);
+	}
+	.ai-panel-inputrow {
+		display: flex;
+		align-items: flex-end;
+		gap: 0.5rem;
 	}
 	.ai-panel-composer textarea {
 		flex: 1;
