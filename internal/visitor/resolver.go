@@ -371,6 +371,44 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	return vc
 }
 
+// ResolveForUser builds a VisitorContext for an authenticated user without an
+// HTTP request — used by request-less consumers like the §122 sweep job.
+// It runs the same member path as resolve(): geo killswitch, the user's
+// content_country_preference override, then profile/geo-space/assessment
+// enrichment via enrichArchetype. Request-scoped signals that don't exist
+// outside HTTP (GeoIP, ?geo= override, journey cookie, language) resolve to
+// their neutral defaults — profile fields are the source of truth here.
+func (res *Resolver) ResolveForUser(ctx context.Context, userID pgtype.UUID) VisitorContext {
+	vc := VisitorContext{
+		IsAuthenticated:   true,
+		UserID:            userID.String(),
+		RoadmapSlugs:      []string{},
+		WeakestDimensions: []string{},
+	}
+	if res == nil || !userID.Valid {
+		return vc
+	}
+
+	if !res.geoPersonalizationEnabled(ctx) {
+		vc.Source = "default"
+		return vc
+	}
+
+	user := &auth.AuthenticatedUser{UserID: userID}
+
+	// User's explicit content-country preference wins when set (mirrors
+	// resolve() step 2).
+	if pref, err := res.read.GetUserContentCountryPreference(ctx, userID); err == nil && pref != nil && *pref != "" {
+		vc.ContentCountry = strings.ToUpper(*pref)
+		vc.Source = "preference"
+		res.enrichArchetype(ctx, &vc, user, "")
+		return vc
+	}
+
+	res.enrichArchetype(ctx, &vc, user, "")
+	return vc
+}
+
 // enrichArchetype loads the user's geo profile fields (when authenticated),
 // resolves the archetype, and sets ContentCountry from the archetype when no
 // explicit override is present. When cacheKey is non-empty the resolved

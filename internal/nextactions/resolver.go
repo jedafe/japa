@@ -33,17 +33,29 @@ type UserState struct {
 	Surface        string
 }
 
+// SweepVisitorResolver is the visitor.Resolver slice the sweep path needs —
+// request-less member VisitorContext resolution (profile + geo space +
+// assessment enrichment, no GeoIP/journey cookie).
+type SweepVisitorResolver interface {
+	ResolveForUser(ctx context.Context, userID pgtype.UUID) visitor.VisitorContext
+}
+
 // StateResolver builds UserState once per request — one batched user-row
 // read plus tier/onboarding lookups, not per-predicate queries.
 type StateResolver struct {
-	read  *gen.Queries
-	tiers TierResolver // nil → all users resolve as regular
+	read    *gen.Queries
+	tiers   TierResolver         // nil → all users resolve as regular
+	visitor SweepVisitorResolver // nil → sweep VCtx stays empty
 }
 
 // NewStateResolver creates a resolver backed by the read pool.
 func NewStateResolver(read *gen.Queries, tiers TierResolver) *StateResolver {
 	return &StateResolver{read: read, tiers: tiers}
 }
+
+// SetVisitorResolver wires the request-less member-context resolver used by
+// the sweep path (wired late to break the visitor→featureChecker init order).
+func (r *StateResolver) SetVisitorResolver(v SweepVisitorResolver) { r.visitor = v }
 
 // Resolve builds the state for the request. Never fails hard — a degraded
 // signal (missing profile row, tier lookup error) resolves to safe defaults
@@ -84,6 +96,43 @@ func (r *StateResolver) Resolve(ctx context.Context, req *http.Request, surface 
 		if tier, err := r.tiers.ResolveUserTier(ctx, u.UserID); err == nil && tier != "" {
 			s.UserClass = tier
 		}
+	}
+
+	return s
+}
+
+// ResolveSweep builds the member state for the request-less sweep path —
+// same DB signals as Resolve() plus the member VisitorContext via
+// ResolveForUser. GeoIP/journey-cookie signals stay empty; SessionKey is the
+// user ID (user-scoped event queries key on user_id anyway).
+func (r *StateResolver) ResolveSweep(ctx context.Context, userID pgtype.UUID) *UserState {
+	s := &UserState{
+		UserID:     userID,
+		UserClass:  ClassRegular,
+		SessionKey: userID.String(),
+	}
+
+	if r.read != nil {
+		if row, err := r.read.GetUserForNextActionState(ctx, userID); err == nil {
+			if row.CreatedAt.Valid {
+				s.AccountAgeDays = int(time.Since(row.CreatedAt.Time).Hours() / 24)
+			}
+			s.EmailVerified = row.EmailVerifiedAt.Valid
+			s.ProfilePct = profilePct(row)
+		}
+		if ob, err := r.read.GetOnboardingState(ctx, userID); err == nil {
+			s.OnboardingDone = ob.Completed
+		}
+	}
+
+	if r.tiers != nil {
+		if tier, err := r.tiers.ResolveUserTier(ctx, userID); err == nil && tier != "" {
+			s.UserClass = tier
+		}
+	}
+
+	if r.visitor != nil {
+		s.VCtx = r.visitor.ResolveForUser(ctx, userID)
 	}
 
 	return s

@@ -1224,6 +1224,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// serves /api/v1/next-actions (OptionalAuth — guests + members); the
 	// notifier for the sweep path is wired after notificationsService below.
 	nextActionsResolver := nextactions.NewStateResolver(gen.New(database.Reader), tierService)
+	// §122 sweep path: request-less member VisitorContext (japa stage,
+	// archetype, countries) so all predicates evaluate off-request too.
+	nextActionsVisitor := visitor.NewResolver(gen.New(database.Reader), vkClient.Redis(), settingsService)
+	nextActionsVisitor.SetFeatureChecker(featureChecker)
+	nextActionsResolver.SetVisitorResolver(nextActionsVisitor)
 	nextActionsSvc := nextactions.New(nextactions.Deps{
 		Read:     gen.New(database.Reader),
 		Write:    gen.New(database.Writer),
@@ -1645,13 +1650,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	crsCalculatorService := crscalculator.NewService(crsCalculatorStore, settingsService)
 	crsCalculatorService.SetEnqueuer(taskEnqueuer)
 	crsCalculatorHandlers := crscalculator.NewHandlers(crsCalculatorService, settingsService)
-	// §122: emit tool.used platform_events so tool_used predicates fire.
-	crsCalculatorHandlers.SetToolEventTracker(func(ctx context.Context, userID pgtype.UUID, sessionID, tool string) {
-		_, _ = analyticsService.TrackEvent(ctx, analytics.TrackEventInput{
-			EventType: analytics.EventToolUsed, UserID: userID, SessionID: sessionID,
-			EntityType: "tool", Meta: map[string]any{"tool": tool},
-		})
-	})
 	// §122: emit feature.gate_hit on publicapi tier-gate denies.
 	publicapi.SetGateTracker(func(ctx context.Context, userID pgtype.UUID, feature, requiredTier string) {
 		_, _ = analyticsService.TrackEvent(ctx, analytics.TrackEventInput{
@@ -3299,6 +3297,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// admin can still manage impersonation sessions with their real identity
 			// (Section 46: "wraps all non-admin routes").
 			r.Use(impersonation.ImpersonationMiddleware(impersonationStore))
+
+			// §122 tool.used feed — emits a platform_event for successful
+			// requests to tool action/engagement endpoints (see
+			// nextactions.ToolUsageRoutes). Must run AFTER OptionalAuth so
+			// member events carry user_id; guests key on client IP.
+			r.Use(nextactions.TrackToolUsage(analyticsService))
 
 			// Identity-dependent enforcement middleware — MUST run after
 			// OptionalAuth + impersonation so auth.FromContext is populated.

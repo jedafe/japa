@@ -295,6 +295,29 @@ func (s *Service) audienceMatch(rule Rule, state *UserState) bool {
 	return true
 }
 
+// audienceMatchSweep applies the same audience filters minus surfaces — the
+// sweep has no surface; a surface restriction only constrains where a rule
+// renders, not whether it may push.
+func (s *Service) audienceMatchSweep(rule Rule, state *UserState) bool {
+	a := rule.Audience
+	if len(a.UserClass) > 0 && !slices.Contains(a.UserClass, state.UserClass) {
+		return false
+	}
+	if len(a.Archetype) > 0 && !slices.Contains(a.Archetype, state.VCtx.Archetype) {
+		return false
+	}
+	if len(a.JapaStage) > 0 && !slices.Contains(a.JapaStage, state.VCtx.JapaStage) {
+		return false
+	}
+	if len(a.DestinationCountry) > 0 && !slices.Contains(a.DestinationCountry, state.VCtx.DestinationCountry) {
+		return false
+	}
+	if len(a.OriginCountry) > 0 && !slices.Contains(a.OriginCountry, state.VCtx.OriginCountry) {
+		return false
+	}
+	return true
+}
+
 // isUpsell reports whether a rule is a tier-upsell nudge — its completion
 // signal keys on account_tier/user_class (§122 upsell-cap convention).
 func isUpsell(rule Rule) bool {
@@ -662,22 +685,20 @@ func (s *Service) sweepUser(ctx context.Context, userID pgtype.UUID, rules []Rul
 		}
 	}
 
+	// Full sweep state — tier, account signals, profile, and the member
+	// VisitorContext (japa stage, archetype, countries) resolved off-request
+	// via ResolveForUser, so all predicates evaluate on the sweep path.
+	sweepState := s.resolver.ResolveSweep(ctx, userID)
+
 	for i := range rules {
 		rule := rules[i]
-		if !slices.Contains(rule.Audience.UserClass, ClassRegular) &&
-			!slices.Contains(rule.Audience.UserClass, ClassPro) &&
-			!slices.Contains(rule.Audience.UserClass, ClassBusiness) &&
-			len(rule.Audience.UserClass) > 0 {
-			continue // guest-only rule can't push
+		if !s.audienceMatchSweep(rule, sweepState) {
+			continue
 		}
 		st := states[rule.ID.Bytes]
 		if s.stateFiltered(rule, st) {
 			continue
 		}
-		// Minimal sweep state — full UserState needs a request; predicates that
-		// require request context degrade to false here.
-		// TODO: enrich with tier/account signals via a sweep-scoped resolver.
-		sweepState := &UserState{UserID: userID, UserClass: ClassRegular, SessionKey: userID.String()}
 		if !EvalConditions(ctx, rule.Conditions, sweepState, s.deps) {
 			continue
 		}
