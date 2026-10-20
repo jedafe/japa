@@ -38,8 +38,8 @@ export const load: PageServerLoad = async (event) => {
 	// Settings + space types are shared catalogs; fetch them concurrently.
 	const [siteSettingsRes, spaceTypesRes] = await Promise.all([
 		apiGet<Record<string, unknown>>(ctx, '/site/settings/public')
-			.then((s) => s ?? {})
-			.catch(() => ({})),
+			.then((s): Record<string, unknown> => s ?? {})
+			.catch((): Record<string, unknown> => ({})),
 		apiGet<SpaceType[]>(ctx, '/space-types')
 			.then((t) => (Array.isArray(t) ? t : []))
 			.catch(() => [] as SpaceType[])

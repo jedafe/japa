@@ -216,6 +216,10 @@ func (s *Store) listOrgCoupons(ctx context.Context, orgID pgtype.UUID, limit, of
 	})
 }
 
+func (s *Store) countOrgCoupons(ctx context.Context, orgID pgtype.UUID) (int64, error) {
+	return s.read.CountOrgCoupons(ctx, orgID)
+}
+
 func (s *Store) updateOrgCoupon(ctx context.Context, p gen.UpdateOrgCouponParams) (gen.Coupon, error) {
 	return s.write.UpdateOrgCoupon(ctx, p)
 }

@@ -2,26 +2,30 @@
 	// Ref: 2026-08-21-journey-aware-recommendations-design.md §6.3
 	// Rule 16: country names are resolved from /geo/countries.
 	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { getFeedContext } from '$lib/api/journey';
+	import { getFeedContextCached, getGeoCountriesCached, getJourneyOptionsCached, type JourneyOptions } from '$lib/api/journey';
 	import { journeyModal } from '$lib/stores/journey.svelte';
 	import type { GeoCountry, VisitorContextSummary } from '$lib/types';
 	import { Pencil } from 'lucide-svelte';
 
 	let loaded = $state(false);
 	let countryList = $state<GeoCountry[]>([]);
+	let journeyOptions = $state<JourneyOptions | null>(null);
 	let ctx = $state<VisitorContextSummary | null>(null);
 
 	$effect(() => {
 		if (loaded) return;
 		loaded = true;
 		void (async () => {
-			const [countriesRes, ctxRes] = await Promise.all([
-				api.get<GeoCountry[]>('/geo/countries'),
-				getFeedContext()
+			const [countriesRes, ctxRes, optsRes] = await Promise.all([
+				getGeoCountriesCached(),
+				getFeedContextCached(),
+				getJourneyOptionsCached()
 			]);
 			if (countriesRes.data) {
 				countryList = countriesRes.data;
+			}
+			if (optsRes.data) {
+				journeyOptions = optsRes.data;
 			}
 			if (ctxRes.data) {
 				ctx = ctxRes.data;
@@ -33,6 +37,13 @@
 		if (!code) return '';
 		const c = countryList.find((x) => x.geo_code === code);
 		return c?.name ?? code;
+	}
+
+	// Resolve a stored machine value (e.g. "study", "skilled_worker") to its
+	// display label via /feed/journey-options; fall back to the raw value.
+	function optionLabel(list: { value: string; label: string }[] | undefined, value: string): string {
+		const o = list?.find((x) => x.value === value);
+		return o?.label ?? value;
 	}
 
 	function hasContext(c: VisitorContextSummary | null): boolean {
@@ -50,9 +61,9 @@
 		} else if (c.origin_country) {
 			parts.push(countryName(c.origin_country));
 		}
-		if (c.purpose) parts.push(c.purpose);
-		if (c.visa_route) parts.push(c.visa_route);
-		if (c.journey_stage) parts.push(c.journey_stage);
+		if (c.purpose) parts.push(optionLabel(journeyOptions?.purposes, c.purpose));
+		if (c.visa_route) parts.push(optionLabel(journeyOptions?.visa_routes, c.visa_route));
+		if (c.journey_stage) parts.push(optionLabel(journeyOptions?.stages, c.journey_stage));
 		if (c.travel_date) parts.push(c.travel_date);
 		return parts.join(' · ');
 	}

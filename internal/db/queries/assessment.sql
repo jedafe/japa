@@ -158,6 +158,7 @@ SELECT cf.*
 FROM custom_field_group_assignments a
 JOIN custom_fields cf ON cf.group_id = a.group_id
 WHERE a.entity_class = 'form' AND a.entity_id = @form_id
+  AND cf.show_in_frontend = TRUE
 ORDER BY cf.position;
 
 -- =====================================================================
@@ -179,6 +180,22 @@ DELETE FROM assessment_results WHERE user_id = @user_id;
 -- name: CleanupAnonymousAssessmentResults :execrows
 DELETE FROM assessment_results
 WHERE user_id IS NULL AND created_at < now() - ($1::int || ' hours')::interval;
+
+-- Delete anonymous assessment form_submissions past the retention window
+-- once their result row is gone (either cleaned above or never written).
+-- Their field_values carry journey context (origin/destination/visa route)
+-- so they must not outlive the anonymous result retention window.
+
+-- name: CleanupAnonymousAssessmentSubmissions :execrows
+DELETE FROM form_submissions fs
+USING forms f
+WHERE fs.form_id = f.id
+  AND f.form_type = 'assessment'
+  AND fs.user_id IS NULL
+  AND fs.created_at < now() - ($1::int || ' hours')::interval
+  AND NOT EXISTS (
+      SELECT 1 FROM assessment_results ar WHERE ar.submission_id = fs.id
+  );
 
 -- =====================================================================
 -- Get the latest assessment result for a user, including the original

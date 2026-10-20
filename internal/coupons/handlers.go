@@ -1247,7 +1247,7 @@ func (h *Handlers) ListOrgCoupons(w http.ResponseWriter, r *http.Request) {
 	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
 	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 
-	coupons, err := h.Service.ListOrgCoupons(r.Context(), org.ID, page, pageSize)
+	coupons, total, err := h.Service.ListOrgCoupons(r.Context(), org.ID, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1257,8 +1257,16 @@ func (h *Handlers) ListOrgCoupons(w http.ResponseWriter, r *http.Request) {
 		coupons = []gen.ListOrgCouponsRow{}
 	}
 
+	totalPages := int64(0)
+	if pageSize > 0 {
+		totalPages = (total + int64(pageSize) - 1) / int64(pageSize)
+	}
+
 	h.resolveLiterals(r, &coupons)
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons, "page": page, "page_size": pageSize})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": coupons, "page": page, "page_size": pageSize,
+		"meta": map[string]any{"total": total, "page": page, "page_size": pageSize, "total_pages": totalPages},
+	})
 }
 
 // CreateOrgCoupon handles POST /api/v1/organizations/{id}/coupons — creates

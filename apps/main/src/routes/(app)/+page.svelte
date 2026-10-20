@@ -126,7 +126,7 @@
 				</div>
 			{/if}
 		</div>
-		<FeedSortBar tab={data.tab} sort={data.sort} />
+		<FeedSortBar tab={data.tab} sort={data.sort} stickyTop="var(--nav-height)" />
 		<!-- Phase 23 — live feed update pill (driven by WS feed_update events) -->
 		<FeedUpdatePill />
 		<div class="mx-auto w-full max-w-3xl p-4">

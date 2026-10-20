@@ -51,8 +51,8 @@ export const load: PageServerLoad = async (event) => {
 	// shared public catalogs, mute status only needs the slug. None depend
 	// on the space detail fetch below, so they shouldn't wait for it.
 	const siteSettingsPromise = apiGet<Record<string, unknown>>(ctx, '/site/settings/public')
-		.then((s) => s ?? {})
-		.catch(() => ({}));
+		.then((s): Record<string, unknown> => s ?? {})
+		.catch((): Record<string, unknown> => ({}));
 	const spaceTypesPromise = apiGet<SpaceType[]>(ctx, '/space-types').catch(
 		() => [] as SpaceType[]
 	);

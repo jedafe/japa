@@ -6,10 +6,10 @@
 	// Audit finding H1.
 	// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md (Geo)
 	// Ref: Rule 16 — country list fetched from /geo/countries (ADR-005), not hardcoded.
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { DropdownMenu } from 'bits-ui';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { setContentCountry } from '$lib/api/geo';
 	import { pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
@@ -27,6 +27,26 @@
 
 	const user = $derived(page.data.user);
 	const currentCountry = $derived(user?.content_country_preference ?? '');
+
+	// Resolve the stored ISO code to a display name for the "Showing:" label —
+	// users should see "Nigeria", not "NG". Intl.DisplayNames avoids a second
+	// /geo/countries fetch just for the label.
+	const regionNames = $derived(
+		(() => {
+			try {
+				return new Intl.DisplayNames([i18n.locale], { type: 'region' });
+			} catch {
+				return null;
+			}
+		})()
+	);
+	const currentCountryLabel = $derived(
+		currentCountry
+			? (countrySpaces.find((c) => c.code === currentCountry)?.label ??
+				regionNames?.of(currentCountry.toUpperCase()) ??
+				currentCountry)
+			: ''
+	);
 
 	// Quick countries = "Auto" + the first 5 country spaces from the API,
 	// reordered so the configured origin/destination markets (ADR-064)
@@ -88,7 +108,7 @@
 			class="inline-flex items-center gap-0.5 font-medium text-[var(--color-text-subtle)] hover:text-[var(--color-text)] disabled:opacity-50"
 			disabled={saving}
 		>
-			{currentCountry || t('feed.geo_auto', 'Auto')}
+			{currentCountryLabel || t('feed.geo_auto', 'Auto')}
 			<ChevronDown size={12} />
 		</DropdownMenu.Trigger>
 		{#if saveError}<span class="text-[var(--color-danger,var(--color-muted))]">{saveError}</span>{/if}
@@ -107,7 +127,7 @@
 				</DropdownMenu.Item>
 			{/each}
 			<DropdownMenu.Item
-				onclick={() => { window.location.href = '/settings/language'; }}
+				onclick={() => { void goto('/settings/language'); }}
 				class="mt-1 block w-full cursor-pointer border-t border-[var(--color-border)] px-3 py-1.5 text-left text-xs text-[var(--color-primary)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
 			>
 				{t('feed.geo_more', 'More options…')}

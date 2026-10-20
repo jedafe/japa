@@ -303,11 +303,38 @@ func (s *Service) GetActiveAssessment(ctx context.Context) (*AssessmentFormDTO, 
 	return formToDTO(form, fields), nil
 }
 
+// MissingRequiredFieldsError is returned when a submission omits one or more
+// required form fields. Handlers map it to a 422 error envelope; Keys lists
+// the unanswered required field keys.
+type MissingRequiredFieldsError struct {
+	Keys []string
+}
+
+func (e *MissingRequiredFieldsError) Error() string {
+	return "missing required fields: " + strings.Join(e.Keys, ", ")
+}
+
+// ErrMissingRequiredFields matches MissingRequiredFieldsError via errors.As.
+var ErrMissingRequiredFields = &MissingRequiredFieldsError{}
+
 // SubmitAssessment creates a form_submission for the assessment and enqueues
 // the assessment:score_submission task fire-and-forget (Rule 8). For anonymous
 // users (userID is nil), the submission is created without a user_id.
 // Returns the submission ID.
 func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, formID pgtype.UUID, fieldValues json.RawMessage) (pgtype.UUID, error) {
+	// Server-side required-field validation: the multi-step UI enforces
+	// is_required client-side, but the endpoint is public — a crafted payload
+	// could skip weak answers to inflate the score. Reject incomplete
+	// submissions before they ever reach the scoring queue.
+	fields, err := s.store.GetAssessmentFormFields(ctx, formID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("assessment: submit: get fields: %w", err)
+	}
+
+	if missing := missingRequiredFields(fields, fieldValues); len(missing) > 0 {
+		return pgtype.UUID{}, &MissingRequiredFieldsError{Keys: missing}
+	}
+
 	var userIDVal pgtype.UUID
 	if userID != nil {
 		userIDVal = pgtype.UUID{Bytes: *userID, Valid: true}
@@ -335,6 +362,46 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, formI
 	return sub.ID, nil
 }
 
+// missingRequiredFields returns the keys of required fields that have no
+// answer in the submitted field_values. An answer counts as present when it
+// is a non-empty string, a non-empty array, a number, or a boolean —
+// mirroring the client-side isFieldAnswered check.
+func missingRequiredFields(fields []gen.CustomField, fieldValues json.RawMessage) []string {
+	var answers map[string]any
+	if err := json.Unmarshal(fieldValues, &answers); err != nil || answers == nil {
+		answers = map[string]any{}
+	}
+
+	var missing []string
+
+	for _, f := range fields {
+		if !f.IsRequired {
+			continue
+		}
+
+		v, ok := answers[f.Key]
+		if !ok || v == nil {
+			missing = append(missing, f.Key)
+			continue
+		}
+
+		switch val := v.(type) {
+		case string:
+			if strings.TrimSpace(val) == "" {
+				missing = append(missing, f.Key)
+			}
+		case []any:
+			if len(val) == 0 {
+				missing = append(missing, f.Key)
+			}
+		default:
+			// numbers and booleans (incl. 0/false) count as answered
+		}
+	}
+
+	return missing
+}
+
 // ScoreSubmissionInput is the input to the scoring engine when the caller
 // has already fetched the submission's field_values. The worker handler
 // uses this to avoid a second query for the submission row.
@@ -353,16 +420,24 @@ type ScoreSubmissionInput struct {
 // ScoreSubmissionInput. The worker handler fetches the submission row from
 // the shared form_submissions store and passes its field_values here.
 func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInput) (pgtype.UUID, error) {
-	form, err := s.store.GetActiveAssessmentForm(ctx)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("assessment: score: get form: %w", err)
-	}
-
-	// Load the submitted form ID so we can scope the completion-point award
-	// to one per user per form (Section 28).
+	// Load the submitted form ID so the submission is scored against the form
+	// it was actually answered on — not whichever assessment happens to be
+	// active when the async worker runs — and so the completion-point award
+	// stays scoped to one per user per form (Section 28).
 	submission, err := s.store.GetSubmissionByID(ctx, input.SubmissionID)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: get submission: %w", err)
+	}
+
+	form, err := s.store.GetAssessmentFormByID(ctx, submission.FormID)
+	if err != nil {
+		// Fall back to the active assessment when the submitted form can no
+		// longer be resolved (e.g. hard-deleted) — a result is better than a
+		// dropped submission.
+		form, err = s.store.GetActiveAssessmentForm(ctx)
+		if err != nil {
+			return pgtype.UUID{}, fmt.Errorf("assessment: score: get form: %w", err)
+		}
 	}
 
 	fields, err := s.store.GetAssessmentFormFields(ctx, form.ID)
@@ -634,7 +709,7 @@ func (s *Service) UpdateAssessment(ctx context.Context, id pgtype.UUID, input Up
 		return nil, fmt.Errorf("assessment: update assessment: %w", err)
 	}
 
-	fields, err := s.store.GetAssessmentFormFields(ctx, pgtype.UUID{})
+	fields, err := s.store.GetAssessmentFormFields(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("assessment: get form fields after update: %w", err)
 	}

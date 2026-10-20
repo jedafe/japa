@@ -54,14 +54,16 @@
 	// Local history so we can prepend new results after a submit without
 	// waiting for a full page reload.
 	let history = $state<AssessmentHistoryEntry[]>(untrack(() => data.history ?? []));
-	let answers = $state<Record<string, string | string[] | number>>({});
+	let answers = $state<Record<string, string | string[] | number | boolean>>({});
 	let currentStep = $state(0);
 	let submitting = $state(false);
+	let scoring = $state(false);
 	let submitError = $state<string | null>(null);
-	let result = $state<AssessmentResult | null>(null);
+	let result = $state<AssessmentResult | null>(untrack(() => data.result ?? null));
 	let loadingResult = $state(false);
 	let showRegisterPrompt = $state(false);
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
+	let destroyed = $state(false);
 
 	// Track which result id has already been requested so a failed load (401,
 	// 404, network) does not trigger an infinite retry loop (§71 bug fix).
@@ -113,10 +115,12 @@
 	/**
 	 * Group the flat field list by dimension for the multi-step UX. Dimensions
 	 * are ordered by the position of their first field. Fields without a
-	 * dimension fall into a final "general" step.
+	 * dimension fall into a final "general" step. When the form isn't flagged
+	 * is_multi_step, all fields render in a single step per the §06 contract.
 	 */
 	const steps = $derived.by(() => {
 		if (!form) return [] as { name: string; fields: AssessmentField[] }[];
+		if (!form.is_multi_step) return [{ name: 'assessment', fields: form.fields }];
 		const order: string[] = [];
 		const map = new Map<string, AssessmentField[]>();
 		for (const f of form.fields) {
@@ -130,6 +134,13 @@
 		return order.map((name) => ({ name, fields: map.get(name)! }));
 	});
 
+	/** Friendly display name for a step's raw dimension key. */
+	function stepLabel(name: string): string {
+		if (name === 'general') return t('assessment.journey_step', 'Your journey');
+		const pretty = name.replace(/_/g, ' ');
+		return pretty.charAt(0).toUpperCase() + pretty.slice(1);
+	}
+
 	const totalSteps = $derived(steps.length);
 	const currentStepData = $derived(steps[currentStep] ?? null);
 
@@ -139,6 +150,20 @@
 		if (Array.isArray(a)) return a.length > 0;
 		if (typeof a === 'string') return a.trim().length > 0;
 		return true;
+	}
+
+	/**
+	 * Fields rendered as a group of inputs (radio/checkbox lists) have no
+	 * single labeled control — the question renders as a heading span rather
+	 * than a <label for> pointing at a non-existent id (a11y).
+	 */
+	function isGroupField(f: AssessmentField): boolean {
+		if (isCountryField(f) && data.countryOptions.length > 0) return false;
+		if (f.field_type === 'multiselect' || f.field_type === 'boolean') return true;
+		return (
+			(f.field_type === 'select' || f.field_type === 'radio' || f.field_type === 'suggest') &&
+			fieldOptions(f).length > 0
+		);
 	}
 
 	function stepComplete(): boolean {
@@ -155,7 +180,7 @@
 			: 0
 	);
 
-	function setAnswer(key: string, value: string | string[] | number) {
+	function setAnswer(key: string, value: string | string[] | number | boolean) {
 		answers = { ...answers, [key]: value };
 	}
 
@@ -204,6 +229,7 @@
 		roadmap = null;
 		roadmapError = null;
 		roadmapAttemptedId = null;
+		submitError = null;
 		answers = {};
 		currentStep = 0;
 		showRegisterPrompt = false;
@@ -216,7 +242,7 @@
 	}
 
 	async function submit() {
-		if (!form) return;
+		if (!form || submitting || scoring) return;
 		submitting = true;
 		submitError = null;
 		result = null;
@@ -237,6 +263,7 @@
 			return;
 		}
 		submitting = false;
+		scoring = true;
 		try {
 			result = await pollForResult(submissionId);
 		} catch (e) {
@@ -244,6 +271,8 @@
 				e instanceof Error
 					? e.message
 					: t('assessment.scoring_timeout', 'Scoring is taking too long. Please try again.');
+		} finally {
+			scoring = false;
 		}
 	}
 
@@ -254,6 +283,9 @@
 			await new Promise<void>((resolve) => {
 				pollTimer = setTimeout(resolve, delayMs);
 			});
+			// Stop polling after unmount — clearing the pending timer alone
+			// does not break the loop (§4.3).
+			if (destroyed) throw new Error('cancelled');
 			const res = await api.get<AssessmentResult | { status: string }>(
 				`/assessment/result/by-submission/${submissionId}`
 			);
@@ -270,6 +302,7 @@
 	// fire a pending setTimeout on an unmounted component (§4.3).
 	$effect(() => {
 		return () => {
+			destroyed = true;
 			if (pollTimer) {
 				clearTimeout(pollTimer);
 				pollTimer = null;
@@ -286,7 +319,10 @@
 		url.searchParams.set('result', result.id);
 		replaceState(url, {});
 
-		if (authed) {
+		// Only the signed-in user's own results belong in their history —
+		// anonymous (shared) results have an empty user_id and must not be
+		// prepended.
+		if (authed && result.user_id) {
 			const exists = history.some((h) => h.id === result!.id);
 			if (!exists) {
 				const newItem: AssessmentHistoryEntry = {
@@ -316,7 +352,6 @@
 		roadmapAttemptedId = id;
 		roadmapError = null;
 
-		untrack(() => {});
 		api.get<RoadmapResponse>(`/assessment/result/${id}/roadmap`).then((res) => {
 			roadmapLoading = false;
 			if (!res.error && res.data) {
@@ -432,6 +467,15 @@
 				</button>
 			</div>
 
+			{#if resultLoadError}
+				<div
+					class="mb-4 rounded-[var(--radius)] border border-[var(--color-danger)]/20 bg-[var(--color-danger)]/10 p-3 text-sm"
+					style="color: var(--color-danger)"
+				>
+					{resultLoadError.message}
+				</div>
+			{/if}
+
 			<!-- Score gauge -->
 			<div class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<div class="flex items-center gap-4">
@@ -468,13 +512,13 @@
 			</div>
 
 			<!-- Dimension breakdown -->
-			{#if Object.keys(result.dimension_scores).length > 0}
+			{#if Object.keys(result.dimension_scores ?? {}).length > 0}
 				<div class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<h3 class="mb-3 text-sm font-medium text-[var(--color-text)]">
 						{t('assessment.dimensions', 'Dimension breakdown')}
 					</h3>
 					<div class="space-y-2">
-						{#each Object.entries(result.dimension_scores) as [dim, score] (dim)}
+						{#each Object.entries(result.dimension_scores ?? {}) as [dim, score] (dim)}
 							<div>
 								<div class="flex items-center justify-between text-xs text-[var(--color-muted)]">
 									<span class="capitalize">{dim.replace(/_/g, ' ')}</span>
@@ -589,7 +633,7 @@
 						{/each}
 					</ol>
 				</div>
-			{:else if result.roadmap.length > 0}
+			{:else if result.roadmap?.length > 0}
 				<div class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<h3 class="mb-3 text-sm font-medium text-[var(--color-text)]">
 						{t('assessment.roadmap', 'Recommended next steps')}
@@ -655,6 +699,11 @@
 				</div>
 			{/if}
 		</div>
+	{:else if loadingResult}
+		<!-- Shared/history result loading -->
+		<div class="p-4">
+			<LoadingSkeleton variant="lines" />
+		</div>
 	{:else}
 		<!-- Form view -->
 		<div class="p-4">
@@ -706,8 +755,8 @@
 					{/each}
 				</div>
 				<p class="mb-4 text-xs text-[var(--color-muted)]">
-					{t('assessment.section_progress', 'Section {current} of {total}').replace('{current}', String(currentStep + 1)).replace('{total}', String(totalSteps))}
-					<span class="ml-2 capitalize">{currentStepData?.name}</span>
+					{t('assessment.section_progress', 'Section {current} of {total}', { current: currentStep + 1, total: totalSteps })}
+					<span class="ml-2 capitalize">{stepLabel(currentStepData?.name ?? '')}</span>
 				</p>
 			{/if}
 
@@ -715,10 +764,17 @@
 				<div class="space-y-4">
 					{#each currentStepData.fields as field (field.key)}
 						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-							<label class="block text-sm font-medium text-[var(--color-text)]" for={field.key}>
-								{field.label}
-								{#if field.is_required}<span class="text-[var(--color-primary)]">*</span>{/if}
-							</label>
+							{#if isGroupField(field)}
+								<span class="block text-sm font-medium text-[var(--color-text)]">
+									{field.label}
+									{#if field.is_required}<span class="text-[var(--color-primary)]">*</span>{/if}
+								</span>
+							{:else}
+								<label class="block text-sm font-medium text-[var(--color-text)]" for={field.key}>
+									{field.label}
+									{#if field.is_required}<span class="text-[var(--color-primary)]">*</span>{/if}
+								</label>
+							{/if}
 							{#if isCountryField(field) && data.countryOptions.length > 0}
 								<AutocompleteSelect
 									id={field.key}
@@ -729,7 +785,7 @@
 									]}
 									onValueChange={(v) => setAnswer(field.key, v)}
 								/>
-							{:else if (field.field_type === 'select' || field.field_type === 'radio') && fieldOptions(field).length > 0}
+							{:else if (field.field_type === 'select' || field.field_type === 'radio' || field.field_type === 'suggest') && fieldOptions(field).length > 0}
 								<div class="mt-2 space-y-1">
 									{#each fieldOptions(field) as opt (opt.value)}
 										<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
@@ -766,6 +822,16 @@
 										</label>
 									{/each}
 								</div>
+							{:else if field.field_type === 'boolean'}
+								<label class="mt-2 flex items-center gap-2 text-sm text-[var(--color-text)]">
+									<input
+										type="checkbox"
+										checked={answers[field.key] === true}
+										onchange={(e) => setAnswer(field.key, e.currentTarget.checked)}
+										class="accent-[var(--color-primary)]"
+									/>
+									{t('assessment.yes', 'Yes')}
+								</label>
 							{:else if field.field_type === 'number' || field.field_type === 'rating'}
 								<div class="mt-2 flex items-center gap-3">
 									<input
@@ -780,14 +846,35 @@
 										{(answers[field.key] as number) ?? 0}
 									</span>
 								</div>
-							{:else if field.field_type === 'date'}
+							{:else if field.field_type === 'currency' || field.field_type === 'percentage' || field.field_type === 'price_range'}
 								<input
 									id={field.key}
-									type="date"
+									type="number"
+									placeholder={field.placeholder || ''}
+									value={(answers[field.key] as number) ?? ''}
+									oninput={(e) => {
+										const raw = (e.currentTarget as HTMLInputElement).value;
+										setAnswer(field.key, raw === '' ? '' : parseFloat(raw));
+									}}
+									class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+								/>
+							{:else if field.field_type === 'date' || field.field_type === 'datetime' || field.field_type === 'time'}
+								<input
+									id={field.key}
+									type={field.field_type === 'datetime' ? 'datetime-local' : field.field_type}
 									value={(answers[field.key] as string) ?? ''}
 									oninput={(e) => setAnswer(field.key, (e.currentTarget as HTMLInputElement).value)}
 									class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 								/>
+							{:else if field.field_type === 'textarea' || field.field_type === 'rich_text'}
+								<textarea
+									id={field.key}
+									rows="3"
+									placeholder={field.placeholder || ''}
+									value={(answers[field.key] as string) ?? ''}
+									oninput={(e) => setAnswer(field.key, (e.currentTarget as HTMLTextAreaElement).value)}
+									class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+								></textarea>
 							{:else}
 								<input
 									id={field.key}
@@ -831,10 +918,12 @@
 					<button
 						type="button"
 						onclick={submit}
-						disabled={submitting || !stepComplete()}
+						disabled={submitting || scoring || !stepComplete()}
 						class="flex items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
 					>
-						{#if submitting}
+						{#if scoring}
+							{t('assessment.scoring', 'Scoring…')}
+						{:else if submitting}
 							{t('common.submitting', 'Submitting…')}
 						{:else}
 							<CheckCircle2 size={16} /> {form.submit_label || t('assessment.submit', 'Submit')}

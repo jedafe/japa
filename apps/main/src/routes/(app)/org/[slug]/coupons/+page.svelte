@@ -19,7 +19,8 @@
 	const coupons = $derived(data.coupons ?? []);
 	const currencies = $derived((page.data.currencies ?? []) as CurrencyInfo[]);
 	const org = $derived(data.org);
-	const hasMore = $derived(coupons.length >= data.pageSize);
+	// Real total from meta.total — no spurious Next on an exact-full last page.
+	const hasMore = $derived(data.currentPage * data.pageSize < data.total);
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
@@ -460,8 +461,7 @@
 				</div>
 			{/each}
 
-			<!-- The route returns page/page_size without a total — next is
-				enabled while a full page came back. -->
+			<!-- Prev/Next driven by meta.total from the coupons list. -->
 			{#if data.currentPage > 1 || hasMore}
 				<div class="flex items-center justify-center gap-2 pt-2">
 					{#if data.currentPage > 1}

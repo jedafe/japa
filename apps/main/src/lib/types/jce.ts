@@ -9,6 +9,12 @@ export interface ComparisonTypeConfig {
 	allowed_nested_types?: string[];
 	scope_chain?: string[];
 	content_type?: string;
+	/** Selector grouping (JCE ↔ wiki mapping): family card the type belongs to. */
+	family?: string;
+	/** Host wiki-type level within the family (country | state | city | …). */
+	level?: string;
+	/** Wiki subpage subtype within a family (e.g. COL → transportation). */
+	subtype?: string;
 	[k: string]: unknown;
 }
 

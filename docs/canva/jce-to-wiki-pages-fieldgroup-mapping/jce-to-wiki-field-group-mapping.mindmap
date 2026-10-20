@@ -1,0 +1,3061 @@
+---
+type: mindmap
+---
+
+```json
+{
+  "root": {
+    "id": "root",
+    "text": "japa.to",
+    "children": [
+      {
+        "id": "1792461587056",
+        "text": "[[compare]]  (JCE Compare - localhost:3000/compare)",
+        "children": [
+          {
+            "id": "1792461586907",
+            "text": "location  (wiki-type family: country | state | city | neighborhood)",
+            "children": [
+              {
+                "id": "1792461586900",
+                "text": "country vs country   e.g. Nigeria vs Ghana",
+                "children": [
+                  {
+                    "id": "1792461586899",
+                    "text": "fields: country overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586900",
+                    "y": 0,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586907",
+                "y": 0,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586902",
+                "text": "state vs state   e.g. Delta vs Edo - Delta vs Greater Accra",
+                "children": [
+                  {
+                    "id": "1792461586901",
+                    "text": "fields: state overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586902",
+                    "y": 70,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586907",
+                "y": 70,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586904",
+                "text": "city vs city   e.g. Warri vs Abraka - Warri vs Accra",
+                "children": [
+                  {
+                    "id": "1792461586903",
+                    "text": "fields: city overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586904",
+                    "y": 140,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586907",
+                "y": 140,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586906",
+                "text": "neighborhood vs neighborhood   e.g. Lekki vs Maitama",
+                "children": [
+                  {
+                    "id": "1792461586905",
+                    "text": "fields: neighborhood overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586906",
+                    "y": 210,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586907",
+                "y": 210,
+                "collapsed": false
+              }
+            ],
+            "x": 580,
+            "parent": "1792461587056",
+            "y": 105,
+            "collapsed": false
+          },
+          {
+            "id": "1792461586914",
+            "text": "education  (wiki-type family: university | course | scholarship)",
+            "children": [
+              {
+                "id": "1792461586909",
+                "text": "university vs university   e.g. UNILAG vs UNIBEN - UNILAG vs U. Western Ontario",
+                "children": [
+                  {
+                    "id": "1792461586908",
+                    "text": "fields: university overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586909",
+                    "y": 280,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586914",
+                "y": 280,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586911",
+                "text": "course vs course   e.g. BSc Comp Engr (UNILAG) vs BSc Agric (UNIBEN)",
+                "children": [
+                  {
+                    "id": "1792461586910",
+                    "text": "fields: course overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586911",
+                    "y": 350,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586914",
+                "y": 350,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586913",
+                "text": "scholarship vs scholarship   e.g. Chevening vs Commonwealth",
+                "children": [
+                  {
+                    "id": "1792461586912",
+                    "text": "fields: scholarship overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586913",
+                    "y": 420,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586914",
+                "y": 420,
+                "collapsed": false
+              }
+            ],
+            "x": 580,
+            "parent": "1792461587056",
+            "y": 350,
+            "collapsed": false
+          },
+          {
+            "id": "1792461586929",
+            "text": "visa routes  (wiki-type family: visa route + kinds)",
+            "children": [
+              {
+                "id": "1792461586916",
+                "text": "visa route vs visa route   e.g. Nigeria Visa Route vs Ghana Visa Route",
+                "children": [
+                  {
+                    "id": "1792461586915",
+                    "text": "fields: visa route overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586916",
+                    "y": 490,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586929",
+                "y": 490,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586918",
+                "text": "student visa vs student visa   e.g. Nigeria Student Visa vs Ghana Student Visa",
+                "children": [
+                  {
+                    "id": "1792461586917",
+                    "text": "fields: student visa overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586918",
+                    "y": 560,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586929",
+                "y": 560,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586920",
+                "text": "work visa vs work visa   e.g. Nigeria Work Visa vs Ghana Work Visa",
+                "children": [
+                  {
+                    "id": "1792461586919",
+                    "text": "fields: work visa overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586920",
+                    "y": 630,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586929",
+                "y": 630,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586922",
+                "text": "family visa vs family visa   e.g. Nigeria Family Visa vs Canada Family Visa",
+                "children": [
+                  {
+                    "id": "1792461586921",
+                    "text": "fields: family visa overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586922",
+                    "y": 700,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586929",
+                "y": 700,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586924",
+                "text": "tourist visa vs tourist visa   e.g. Nigeria Tourist Visa vs Ghana Tourist Visa",
+                "children": [
+                  {
+                    "id": "1792461586923",
+                    "text": "fields: tourist visa overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586924",
+                    "y": 770,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586929",
+                "y": 770,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586926",
+                "text": "business visa vs business visa",
+                "children": [
+                  {
+                    "id": "1792461586925",
+                    "text": "fields: business visa overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586926",
+                    "y": 840,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586929",
+                "y": 840,
+                "collapsed": false
+              },
+              {
+                "id": "1792461586928",
+                "text": "pr pathway vs pr pathway   e.g. Canada Express Entry vs Australia PR",
+                "children": [
+                  {
+                    "id": "1792461586927",
+                    "text": "fields: pr pathway overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586928",
+                    "y": 910,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586929",
+                "y": 910,
+                "collapsed": false
+              }
+            ],
+            "x": 580,
+            "parent": "1792461587056",
+            "y": 700,
+            "collapsed": false
+          },
+          {
+            "id": "1792461586932",
+            "text": "banking  (wiki-type family: bank)",
+            "children": [
+              {
+                "id": "1792461586931",
+                "text": "bank vs bank   e.g. GTBank vs Zenith - GTBank vs Chase",
+                "children": [
+                  {
+                    "id": "1792461586930",
+                    "text": "fields: bank overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586931",
+                    "y": 980,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586932",
+                "y": 980,
+                "collapsed": false
+              }
+            ],
+            "x": 580,
+            "parent": "1792461587056",
+            "y": 980,
+            "collapsed": false
+          },
+          {
+            "id": "1792461586935",
+            "text": "embassies  (wiki-type family: embassy)",
+            "children": [
+              {
+                "id": "1792461586934",
+                "text": "embassy vs embassy   e.g. UK Embassy in Abuja vs US Embassy in Lagos",
+                "children": [
+                  {
+                    "id": "1792461586933",
+                    "text": "fields: embassy overview",
+                    "children": [],
+                    "x": 1060,
+                    "parent": "1792461586934",
+                    "y": 1050,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461586935",
+                "y": 1050,
+                "collapsed": false
+              }
+            ],
+            "x": 580,
+            "parent": "1792461587056",
+            "y": 1050,
+            "collapsed": false
+          },
+          {
+            "id": "1792461587055",
+            "text": "[[entity]]  (wiki categories as compare types)",
+            "children": [
+              {
+                "id": "1792461586996",
+                "text": "on geo types (country | state | city | neighborhood)",
+                "children": [
+                  {
+                    "id": "1792461586959",
+                    "text": "cost of living  (hosts: country | state | city)",
+                    "children": [
+                      {
+                        "id": "1792461586937",
+                        "text": "country vs country   e.g. Nigeria COL vs Ghana COL",
+                        "children": [
+                          {
+                            "id": "1792461586936",
+                            "text": "fields: country COL rollup",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586937",
+                            "y": 1120,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586959",
+                        "y": 1120,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461586939",
+                        "text": "state vs state   e.g. Delta COL vs Greater Accra COL",
+                        "children": [
+                          {
+                            "id": "1792461586938",
+                            "text": "fields: state COL rollup",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586939",
+                            "y": 1190,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586959",
+                        "y": 1190,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461586941",
+                        "text": "city vs city   e.g. Warri vs Accra COL",
+                        "children": [
+                          {
+                            "id": "1792461586940",
+                            "text": "fields: city COL rollup",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586941",
+                            "y": 1260,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586959",
+                        "y": 1260,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461586958",
+                        "text": "subtypes = city COL subpages",
+                        "children": [
+                          {
+                            "id": "1792461586943",
+                            "text": "transportation   e.g. transport prices Warri vs Accra",
+                            "children": [
+                              {
+                                "id": "1792461586942",
+                                "text": "fields: city COL transportation",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461586943",
+                                "y": 1330,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461586958",
+                            "y": 1330,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461586945",
+                            "text": "food & restaurants   e.g. food prices Benin vs Lagos",
+                            "children": [
+                              {
+                                "id": "1792461586944",
+                                "text": "fields: city COL food",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461586945",
+                                "y": 1400,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461586958",
+                            "y": 1400,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461586947",
+                            "text": "groceries",
+                            "children": [
+                              {
+                                "id": "1792461586946",
+                                "text": "fields: city COL groceries",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461586947",
+                                "y": 1470,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461586958",
+                            "y": 1470,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461586949",
+                            "text": "rent & housing",
+                            "children": [
+                              {
+                                "id": "1792461586948",
+                                "text": "fields: city COL rent",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461586949",
+                                "y": 1540,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461586958",
+                            "y": 1540,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461586951",
+                            "text": "utilities",
+                            "children": [
+                              {
+                                "id": "1792461586950",
+                                "text": "fields: city COL utilities",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461586951",
+                                "y": 1610,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461586958",
+                            "y": 1610,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461586953",
+                            "text": "healthcare",
+                            "children": [
+                              {
+                                "id": "1792461586952",
+                                "text": "fields: city COL healthcare",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461586953",
+                                "y": 1680,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461586958",
+                            "y": 1680,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461586955",
+                            "text": "childcare & school fees",
+                            "children": [
+                              {
+                                "id": "1792461586954",
+                                "text": "fields: city COL childcare",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461586955",
+                                "y": 1750,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461586958",
+                            "y": 1750,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461586957",
+                            "text": "leisure & lifestyle",
+                            "children": [
+                              {
+                                "id": "1792461586956",
+                                "text": "fields: city COL leisure",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461586957",
+                                "y": 1820,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461586958",
+                            "y": 1820,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586959",
+                        "y": 1575,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 1286,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586962",
+                    "text": "housing & neighborhoods  (hosts: state | city)",
+                    "children": [
+                      {
+                        "id": "1792461586961",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586960",
+                            "text": "fields: per-level housing groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586961",
+                            "y": 1890,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586962",
+                        "y": 1890,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 1890,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586965",
+                    "text": "safety & crime  (hosts: country | state | city | neighborhood)",
+                    "children": [
+                      {
+                        "id": "1792461586964",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586963",
+                            "text": "fields: per-level safety groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586964",
+                            "y": 1960,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586965",
+                        "y": 1960,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 1960,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586968",
+                    "text": "jobs & salaries  (hosts: country | state | city)",
+                    "children": [
+                      {
+                        "id": "1792461586967",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586966",
+                            "text": "fields: per-level jobs groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586967",
+                            "y": 2030,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586968",
+                        "y": 2030,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2030,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586971",
+                    "text": "healthcare  (hosts: country | state | city)",
+                    "children": [
+                      {
+                        "id": "1792461586970",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586969",
+                            "text": "fields: per-level healthcare groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586970",
+                            "y": 2100,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586971",
+                        "y": 2100,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2100,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586974",
+                    "text": "schools & education  (hosts: state | city)",
+                    "children": [
+                      {
+                        "id": "1792461586973",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586972",
+                            "text": "fields: per-level schools groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586973",
+                            "y": 2170,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586974",
+                        "y": 2170,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2170,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586977",
+                    "text": "transportation & commute  (host: city)",
+                    "children": [
+                      {
+                        "id": "1792461586976",
+                        "text": "city vs city",
+                        "children": [
+                          {
+                            "id": "1792461586975",
+                            "text": "fields: city transport",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586976",
+                            "y": 2240,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586977",
+                        "y": 2240,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2240,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586980",
+                    "text": "utilities & internet  (host: city)",
+                    "children": [
+                      {
+                        "id": "1792461586979",
+                        "text": "city vs city",
+                        "children": [
+                          {
+                            "id": "1792461586978",
+                            "text": "fields: city utilities",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586979",
+                            "y": 2310,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586980",
+                        "y": 2310,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2310,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586983",
+                    "text": "attractions & things to do  (hosts: country | state | city)",
+                    "children": [
+                      {
+                        "id": "1792461586982",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586981",
+                            "text": "fields: per-level attractions groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586982",
+                            "y": 2380,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586983",
+                        "y": 2380,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2380,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586986",
+                    "text": "weather & climate  (hosts: state | city)",
+                    "children": [
+                      {
+                        "id": "1792461586985",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586984",
+                            "text": "fields: per-level weather groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586985",
+                            "y": 2450,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586986",
+                        "y": 2450,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2450,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586989",
+                    "text": "taxes  (hosts: country | state)",
+                    "children": [
+                      {
+                        "id": "1792461586988",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586987",
+                            "text": "fields: per-level taxes groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586988",
+                            "y": 2520,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586989",
+                        "y": 2520,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2520,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586992",
+                    "text": "banking system  (hosts: country | state | city)",
+                    "children": [
+                      {
+                        "id": "1792461586991",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586990",
+                            "text": "fields: per-level banking groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586991",
+                            "y": 2590,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586992",
+                        "y": 2590,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2590,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461586995",
+                    "text": "community & diaspora  (hosts: country | state | city)",
+                    "children": [
+                      {
+                        "id": "1792461586994",
+                        "text": "host vs host",
+                        "children": [
+                          {
+                            "id": "1792461586993",
+                            "text": "fields: per-level community groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586994",
+                            "y": 2660,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586995",
+                        "y": 2660,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461586996",
+                    "y": 2660,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461587055",
+                "y": 2198,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587024",
+                "text": "on education types (university | course)",
+                "children": [
+                  {
+                    "id": "1792461586999",
+                    "text": "admission process  (host: university)",
+                    "children": [
+                      {
+                        "id": "1792461586998",
+                        "text": "university vs university",
+                        "children": [
+                          {
+                            "id": "1792461586997",
+                            "text": "fields: university admission process",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461586998",
+                            "y": 2730,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461586999",
+                        "y": 2730,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587024",
+                    "y": 2730,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587007",
+                    "text": "tuition & fees  (host: university)",
+                    "children": [
+                      {
+                        "id": "1792461587001",
+                        "text": "university vs university",
+                        "children": [
+                          {
+                            "id": "1792461587000",
+                            "text": "fields: university tuition",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587001",
+                            "y": 2800,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587007",
+                        "y": 2800,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587006",
+                        "text": "subtypes = tuition subpages",
+                        "children": [
+                          {
+                            "id": "1792461587003",
+                            "text": "undergraduate tuition",
+                            "children": [
+                              {
+                                "id": "1792461587002",
+                                "text": "fields: university undergrad tuition",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587003",
+                                "y": 2870,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587006",
+                            "y": 2870,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587005",
+                            "text": "postgraduate tuition",
+                            "children": [
+                              {
+                                "id": "1792461587004",
+                                "text": "fields: university postgrad tuition",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587005",
+                                "y": 2940,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587006",
+                            "y": 2940,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587007",
+                        "y": 2905,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587024",
+                    "y": 2852,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587010",
+                    "text": "rankings  (host: university)",
+                    "children": [
+                      {
+                        "id": "1792461587009",
+                        "text": "university vs university",
+                        "children": [
+                          {
+                            "id": "1792461587008",
+                            "text": "fields: university rankings",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587009",
+                            "y": 3010,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587010",
+                        "y": 3010,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587024",
+                    "y": 3010,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587013",
+                    "text": "student life  (host: university)",
+                    "children": [
+                      {
+                        "id": "1792461587012",
+                        "text": "university vs university",
+                        "children": [
+                          {
+                            "id": "1792461587011",
+                            "text": "fields: university student life",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587012",
+                            "y": 3080,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587013",
+                        "y": 3080,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587024",
+                    "y": 3080,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587016",
+                    "text": "accommodation  (host: university)",
+                    "children": [
+                      {
+                        "id": "1792461587015",
+                        "text": "university vs university",
+                        "children": [
+                          {
+                            "id": "1792461587014",
+                            "text": "fields: university accommodation",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587015",
+                            "y": 3150,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587016",
+                        "y": 3150,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587024",
+                    "y": 3150,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587023",
+                    "text": "course facets  (host: course)",
+                    "children": [
+                      {
+                        "id": "1792461587018",
+                        "text": "course vs course",
+                        "children": [
+                          {
+                            "id": "1792461587017",
+                            "text": "fields: course requirements",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587018",
+                            "y": 3220,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587023",
+                        "y": 3220,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587020",
+                        "text": "course vs course",
+                        "children": [
+                          {
+                            "id": "1792461587019",
+                            "text": "fields: course tuition",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587020",
+                            "y": 3290,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587023",
+                        "y": 3290,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587022",
+                        "text": "course vs course",
+                        "children": [
+                          {
+                            "id": "1792461587021",
+                            "text": "fields: course outcomes",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587022",
+                            "y": 3360,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587023",
+                        "y": 3360,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587024",
+                    "y": 3290,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461587055",
+                "y": 3018,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587037",
+                "text": "on visa route types (visa route + all kinds)",
+                "children": [
+                  {
+                    "id": "1792461587027",
+                    "text": "requirements & eligibility",
+                    "children": [
+                      {
+                        "id": "1792461587026",
+                        "text": "route vs route   e.g. student visa requirements NG vs GH",
+                        "children": [
+                          {
+                            "id": "1792461587025",
+                            "text": "fields: per-kind requirements groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587026",
+                            "y": 3430,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587027",
+                        "y": 3430,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587037",
+                    "y": 3430,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587030",
+                    "text": "fees & costs",
+                    "children": [
+                      {
+                        "id": "1792461587029",
+                        "text": "route vs route",
+                        "children": [
+                          {
+                            "id": "1792461587028",
+                            "text": "fields: per-kind fees groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587029",
+                            "y": 3500,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587030",
+                        "y": 3500,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587037",
+                    "y": 3500,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587033",
+                    "text": "processing time",
+                    "children": [
+                      {
+                        "id": "1792461587032",
+                        "text": "route vs route",
+                        "children": [
+                          {
+                            "id": "1792461587031",
+                            "text": "fields: per-kind processing groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587032",
+                            "y": 3570,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587033",
+                        "y": 3570,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587037",
+                    "y": 3570,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587036",
+                    "text": "application process",
+                    "children": [
+                      {
+                        "id": "1792461587035",
+                        "text": "route vs route",
+                        "children": [
+                          {
+                            "id": "1792461587034",
+                            "text": "fields: per-kind application groups",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587035",
+                            "y": 3640,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587036",
+                        "y": 3640,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587037",
+                    "y": 3640,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461587055",
+                "y": 3535,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587047",
+                "text": "on banks (bank)",
+                "children": [
+                  {
+                    "id": "1792461587040",
+                    "text": "accounts & fees",
+                    "children": [
+                      {
+                        "id": "1792461587039",
+                        "text": "bank vs bank",
+                        "children": [
+                          {
+                            "id": "1792461587038",
+                            "text": "fields: bank accounts",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587039",
+                            "y": 3710,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587040",
+                        "y": 3710,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587047",
+                    "y": 3710,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587043",
+                    "text": "requirements (non-resident)",
+                    "children": [
+                      {
+                        "id": "1792461587042",
+                        "text": "bank vs bank",
+                        "children": [
+                          {
+                            "id": "1792461587041",
+                            "text": "fields: bank requirements",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587042",
+                            "y": 3780,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587043",
+                        "y": 3780,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587047",
+                    "y": 3780,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587046",
+                    "text": "remittance & fx",
+                    "children": [
+                      {
+                        "id": "1792461587045",
+                        "text": "bank vs bank",
+                        "children": [
+                          {
+                            "id": "1792461587044",
+                            "text": "fields: bank remittance",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587045",
+                            "y": 3850,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587046",
+                        "y": 3850,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587047",
+                    "y": 3850,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461587055",
+                "y": 3780,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587054",
+                "text": "on embassies (embassy)",
+                "children": [
+                  {
+                    "id": "1792461587050",
+                    "text": "consular services",
+                    "children": [
+                      {
+                        "id": "1792461587049",
+                        "text": "embassy vs embassy",
+                        "children": [
+                          {
+                            "id": "1792461587048",
+                            "text": "fields: embassy services",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587049",
+                            "y": 3920,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587050",
+                        "y": 3920,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587054",
+                    "y": 3920,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587053",
+                    "text": "appointment wait times",
+                    "children": [
+                      {
+                        "id": "1792461587052",
+                        "text": "embassy vs embassy",
+                        "children": [
+                          {
+                            "id": "1792461587051",
+                            "text": "fields: embassy appointments",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587052",
+                            "y": 3990,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587053",
+                        "y": 3990,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587054",
+                    "y": 3990,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461587055",
+                "y": 3955,
+                "collapsed": false
+              }
+            ],
+            "x": 580,
+            "parent": "1792461587056",
+            "y": 3297,
+            "collapsed": false
+          }
+        ],
+        "x": 340,
+        "parent": "root",
+        "y": 1080,
+        "collapsed": false
+      },
+      {
+        "id": "1792461587212",
+        "text": "/wiki",
+        "children": [
+          {
+            "id": "1792461587204",
+            "text": "wiki-type pages (one per entity)",
+            "children": [
+              {
+                "id": "1792461587127",
+                "text": "country  (top of geo chain)",
+                "children": [
+                  {
+                    "id": "1792461587058",
+                    "text": "overview",
+                    "children": [
+                      {
+                        "id": "1792461587057",
+                        "text": "fields: country overview   (PRIMARY)",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587058",
+                        "y": 4060,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587127",
+                    "y": 4060,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587069",
+                    "text": "categories",
+                    "children": [
+                      {
+                        "id": "1792461587059",
+                        "text": "cost of living  --  fields: country COL rollup",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4130,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587060",
+                        "text": "banking system  --  fields: country banking",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4200,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587061",
+                        "text": "healthcare  --  fields: country healthcare",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4270,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587062",
+                        "text": "safety & crime  --  fields: country safety",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4340,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587063",
+                        "text": "jobs & economy  --  fields: country jobs",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4410,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587064",
+                        "text": "housing & property  --  fields: country housing",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4480,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587065",
+                        "text": "taxes  --  fields: country taxes",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4550,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587066",
+                        "text": "weather & climate  --  fields: country weather",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4620,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587067",
+                        "text": "attractions & tourism  --  fields: country attractions",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4690,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587068",
+                        "text": "community & diaspora  --  fields: country community",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587069",
+                        "y": 4760,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587127",
+                    "y": 4445,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587126",
+                    "text": "child wiki types",
+                    "children": [
+                      {
+                        "id": "1792461587071",
+                        "text": "state",
+                        "children": [
+                          {
+                            "id": "1792461587070",
+                            "text": "see state node below",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587071",
+                            "y": 4830,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587126",
+                        "y": 4830,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587110",
+                        "text": "visa route",
+                        "children": [
+                          {
+                            "id": "1792461587073",
+                            "text": "overview",
+                            "children": [
+                              {
+                                "id": "1792461587072",
+                                "text": "fields: visa route overview   (PRIMARY)",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587073",
+                                "y": 4900,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587110",
+                            "y": 4900,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587078",
+                            "text": "categories",
+                            "children": [
+                              {
+                                "id": "1792461587074",
+                                "text": "requirements & eligibility  --  fields: visa route requirements",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587078",
+                                "y": 4970,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587075",
+                                "text": "fees & costs  --  fields: visa route fees",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587078",
+                                "y": 5040,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587076",
+                                "text": "processing time  --  fields: visa route processing",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587078",
+                                "y": 5110,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587077",
+                                "text": "application process  --  fields: visa route application",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587078",
+                                "y": 5180,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587110",
+                            "y": 5075,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587109",
+                            "text": "kinds = child wiki types (inherit visa route categories, own groups)",
+                            "children": [
+                              {
+                                "id": "1792461587085",
+                                "text": "student visa",
+                                "children": [
+                                  {
+                                    "id": "1792461587080",
+                                    "text": "overview",
+                                    "children": [
+                                      {
+                                        "id": "1792461587079",
+                                        "text": "fields: student visa overview   (PRIMARY)",
+                                        "children": [],
+                                        "x": 2260,
+                                        "parent": "1792461587080",
+                                        "y": 5250,
+                                        "collapsed": false
+                                      }
+                                    ],
+                                    "x": 2020,
+                                    "parent": "1792461587085",
+                                    "y": 5250,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587081",
+                                    "text": "requirements & eligibility  --  fields: student visa requirements",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587085",
+                                    "y": 5320,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587082",
+                                    "text": "fees & costs  --  fields: student visa fees",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587085",
+                                    "y": 5390,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587083",
+                                    "text": "processing time  --  fields: student visa processing",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587085",
+                                    "y": 5460,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587084",
+                                    "text": "application process  --  fields: student visa application",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587085",
+                                    "y": 5530,
+                                    "collapsed": false
+                                  }
+                                ],
+                                "x": 1780,
+                                "parent": "1792461587109",
+                                "y": 5390,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587092",
+                                "text": "work visa",
+                                "children": [
+                                  {
+                                    "id": "1792461587087",
+                                    "text": "overview",
+                                    "children": [
+                                      {
+                                        "id": "1792461587086",
+                                        "text": "fields: work visa overview   (PRIMARY)",
+                                        "children": [],
+                                        "x": 2260,
+                                        "parent": "1792461587087",
+                                        "y": 5600,
+                                        "collapsed": false
+                                      }
+                                    ],
+                                    "x": 2020,
+                                    "parent": "1792461587092",
+                                    "y": 5600,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587088",
+                                    "text": "requirements & eligibility  --  fields: work visa requirements",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587092",
+                                    "y": 5670,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587089",
+                                    "text": "fees & costs  --  fields: work visa fees",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587092",
+                                    "y": 5740,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587090",
+                                    "text": "processing time  --  fields: work visa processing",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587092",
+                                    "y": 5810,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587091",
+                                    "text": "application process  --  fields: work visa application",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587092",
+                                    "y": 5880,
+                                    "collapsed": false
+                                  }
+                                ],
+                                "x": 1780,
+                                "parent": "1792461587109",
+                                "y": 5740,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587096",
+                                "text": "family visa",
+                                "children": [
+                                  {
+                                    "id": "1792461587094",
+                                    "text": "overview",
+                                    "children": [
+                                      {
+                                        "id": "1792461587093",
+                                        "text": "fields: family visa overview   (PRIMARY)",
+                                        "children": [],
+                                        "x": 2260,
+                                        "parent": "1792461587094",
+                                        "y": 5950,
+                                        "collapsed": false
+                                      }
+                                    ],
+                                    "x": 2020,
+                                    "parent": "1792461587096",
+                                    "y": 5950,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587095",
+                                    "text": "same categories as visa route  --  fields: per-kind groups",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587096",
+                                    "y": 6020,
+                                    "collapsed": false
+                                  }
+                                ],
+                                "x": 1780,
+                                "parent": "1792461587109",
+                                "y": 5985,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587100",
+                                "text": "tourist visa",
+                                "children": [
+                                  {
+                                    "id": "1792461587098",
+                                    "text": "overview",
+                                    "children": [
+                                      {
+                                        "id": "1792461587097",
+                                        "text": "fields: tourist visa overview   (PRIMARY)",
+                                        "children": [],
+                                        "x": 2260,
+                                        "parent": "1792461587098",
+                                        "y": 6090,
+                                        "collapsed": false
+                                      }
+                                    ],
+                                    "x": 2020,
+                                    "parent": "1792461587100",
+                                    "y": 6090,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587099",
+                                    "text": "same categories as visa route  --  fields: per-kind groups",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587100",
+                                    "y": 6160,
+                                    "collapsed": false
+                                  }
+                                ],
+                                "x": 1780,
+                                "parent": "1792461587109",
+                                "y": 6125,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587104",
+                                "text": "business visa",
+                                "children": [
+                                  {
+                                    "id": "1792461587102",
+                                    "text": "overview",
+                                    "children": [
+                                      {
+                                        "id": "1792461587101",
+                                        "text": "fields: business visa overview   (PRIMARY)",
+                                        "children": [],
+                                        "x": 2260,
+                                        "parent": "1792461587102",
+                                        "y": 6230,
+                                        "collapsed": false
+                                      }
+                                    ],
+                                    "x": 2020,
+                                    "parent": "1792461587104",
+                                    "y": 6230,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587103",
+                                    "text": "same categories as visa route  --  fields: per-kind groups",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587104",
+                                    "y": 6300,
+                                    "collapsed": false
+                                  }
+                                ],
+                                "x": 1780,
+                                "parent": "1792461587109",
+                                "y": 6265,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587108",
+                                "text": "pr pathway",
+                                "children": [
+                                  {
+                                    "id": "1792461587106",
+                                    "text": "overview",
+                                    "children": [
+                                      {
+                                        "id": "1792461587105",
+                                        "text": "fields: pr pathway overview   (PRIMARY)",
+                                        "children": [],
+                                        "x": 2260,
+                                        "parent": "1792461587106",
+                                        "y": 6370,
+                                        "collapsed": false
+                                      }
+                                    ],
+                                    "x": 2020,
+                                    "parent": "1792461587108",
+                                    "y": 6370,
+                                    "collapsed": false
+                                  },
+                                  {
+                                    "id": "1792461587107",
+                                    "text": "same categories as visa route  --  fields: per-kind groups",
+                                    "children": [],
+                                    "x": 2020,
+                                    "parent": "1792461587108",
+                                    "y": 6440,
+                                    "collapsed": false
+                                  }
+                                ],
+                                "x": 1780,
+                                "parent": "1792461587109",
+                                "y": 6405,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587110",
+                            "y": 5985,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587126",
+                        "y": 5320,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587118",
+                        "text": "bank",
+                        "children": [
+                          {
+                            "id": "1792461587112",
+                            "text": "overview",
+                            "children": [
+                              {
+                                "id": "1792461587111",
+                                "text": "fields: bank overview   (PRIMARY)",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587112",
+                                "y": 6510,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587118",
+                            "y": 6510,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587117",
+                            "text": "categories",
+                            "children": [
+                              {
+                                "id": "1792461587113",
+                                "text": "account types & fees  --  fields: bank accounts",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587117",
+                                "y": 6580,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587114",
+                                "text": "requirements (non-resident)  --  fields: bank requirements",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587117",
+                                "y": 6650,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587115",
+                                "text": "remittance & fx  --  fields: bank remittance",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587117",
+                                "y": 6720,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587116",
+                                "text": "branch & ATM coverage  --  fields: bank coverage",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587117",
+                                "y": 6790,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587118",
+                            "y": 6685,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587126",
+                        "y": 6597,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587125",
+                        "text": "embassy",
+                        "children": [
+                          {
+                            "id": "1792461587120",
+                            "text": "overview",
+                            "children": [
+                              {
+                                "id": "1792461587119",
+                                "text": "fields: embassy overview   (PRIMARY)",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587120",
+                                "y": 6860,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587125",
+                            "y": 6860,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587124",
+                            "text": "categories",
+                            "children": [
+                              {
+                                "id": "1792461587121",
+                                "text": "consular services  --  fields: embassy services",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587124",
+                                "y": 6930,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587122",
+                                "text": "appointment booking  --  fields: embassy appointments",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587124",
+                                "y": 7000,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587123",
+                                "text": "contact & location  --  fields: embassy contact",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587124",
+                                "y": 7070,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587125",
+                            "y": 7000,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587126",
+                        "y": 6930,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587127",
+                    "y": 5919,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461587204",
+                "y": 4808,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587143",
+                "text": "state  (child of country)",
+                "children": [
+                  {
+                    "id": "1792461587129",
+                    "text": "overview",
+                    "children": [
+                      {
+                        "id": "1792461587128",
+                        "text": "fields: state overview   (PRIMARY)",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587129",
+                        "y": 7140,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587143",
+                    "y": 7140,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587140",
+                    "text": "categories",
+                    "children": [
+                      {
+                        "id": "1792461587130",
+                        "text": "cost of living  --  fields: state COL rollup",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7210,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587131",
+                        "text": "safety & crime  --  fields: state safety",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7280,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587132",
+                        "text": "jobs & economy  --  fields: state jobs",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7350,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587133",
+                        "text": "housing & property  --  fields: state housing",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7420,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587134",
+                        "text": "healthcare  --  fields: state healthcare",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7490,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587135",
+                        "text": "schools & education  --  fields: state schools",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7560,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587136",
+                        "text": "taxes  --  fields: state taxes",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7630,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587137",
+                        "text": "weather & climate  --  fields: state weather",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7700,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587138",
+                        "text": "attractions  --  fields: state attractions",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7770,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587139",
+                        "text": "community & diaspora  --  fields: state community",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587140",
+                        "y": 7840,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587143",
+                    "y": 7525,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587142",
+                    "text": "child wiki types",
+                    "children": [
+                      {
+                        "id": "1792461587141",
+                        "text": "city",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587142",
+                        "y": 7910,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587143",
+                    "y": 7910,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461587204",
+                "y": 7525,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587177",
+                "text": "city  (child of state | country)",
+                "children": [
+                  {
+                    "id": "1792461587145",
+                    "text": "overview",
+                    "children": [
+                      {
+                        "id": "1792461587144",
+                        "text": "fields: city overview   (PRIMARY)",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587145",
+                        "y": 7980,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587177",
+                    "y": 7980,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587166",
+                    "text": "categories",
+                    "children": [
+                      {
+                        "id": "1792461587154",
+                        "text": "cost of living  --  fields: city COL rollup",
+                        "children": [
+                          {
+                            "id": "1792461587146",
+                            "text": "transportation prices (subpage)  --  fields: city COL transportation",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587154",
+                            "y": 8050,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587147",
+                            "text": "food & restaurants (subpage)  --  fields: city COL food",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587154",
+                            "y": 8120,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587148",
+                            "text": "groceries (subpage)  --  fields: city COL groceries",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587154",
+                            "y": 8190,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587149",
+                            "text": "rent & housing (subpage)  --  fields: city COL rent",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587154",
+                            "y": 8260,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587150",
+                            "text": "utilities (subpage)  --  fields: city COL utilities",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587154",
+                            "y": 8330,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587151",
+                            "text": "healthcare (subpage)  --  fields: city COL healthcare",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587154",
+                            "y": 8400,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587152",
+                            "text": "childcare & school fees (subpage)  --  fields: city COL childcare",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587154",
+                            "y": 8470,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587153",
+                            "text": "leisure & lifestyle (subpage)  --  fields: city COL leisure",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587154",
+                            "y": 8540,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 8295,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587155",
+                        "text": "housing & neighborhoods  --  fields: city housing",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 8610,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587156",
+                        "text": "safety & crime  --  fields: city safety",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 8680,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587157",
+                        "text": "jobs & salaries  --  fields: city jobs",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 8750,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587158",
+                        "text": "healthcare  --  fields: city healthcare",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 8820,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587159",
+                        "text": "schools & education  --  fields: city schools",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 8890,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587160",
+                        "text": "transportation & commute  --  fields: city transport",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 8960,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587161",
+                        "text": "utilities & internet  --  fields: city utilities",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 9030,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587162",
+                        "text": "attractions & nightlife  --  fields: city attractions",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 9100,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587163",
+                        "text": "weather & climate  --  fields: city weather",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 9170,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587164",
+                        "text": "banking system  --  fields: city banking",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 9240,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587165",
+                        "text": "community & diaspora  --  fields: city community",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587166",
+                        "y": 9310,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587177",
+                    "y": 8904,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587176",
+                    "text": "child wiki types",
+                    "children": [
+                      {
+                        "id": "1792461587173",
+                        "text": "neighborhood",
+                        "children": [
+                          {
+                            "id": "1792461587168",
+                            "text": "overview",
+                            "children": [
+                              {
+                                "id": "1792461587167",
+                                "text": "fields: neighborhood overview   (PRIMARY)",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587168",
+                                "y": 9380,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587173",
+                            "y": 9380,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587172",
+                            "text": "categories",
+                            "children": [
+                              {
+                                "id": "1792461587169",
+                                "text": "safety  --  fields: neighborhood safety",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587172",
+                                "y": 9450,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587170",
+                                "text": "rent prices  --  fields: neighborhood rent",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587172",
+                                "y": 9520,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587171",
+                                "text": "amenities  --  fields: neighborhood amenities",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587172",
+                                "y": 9590,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587173",
+                            "y": 9520,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587176",
+                        "y": 9450,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587175",
+                        "text": "university",
+                        "children": [
+                          {
+                            "id": "1792461587174",
+                            "text": "also under state | country",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587175",
+                            "y": 9660,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587176",
+                        "y": 9660,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587177",
+                    "y": 9555,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461587204",
+                "y": 8813,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587203",
+                "text": "university  (child of country | state | city)",
+                "children": [
+                  {
+                    "id": "1792461587179",
+                    "text": "overview",
+                    "children": [
+                      {
+                        "id": "1792461587178",
+                        "text": "fields: university overview   (PRIMARY)",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587179",
+                        "y": 9730,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587203",
+                    "y": 9730,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587187",
+                    "text": "categories",
+                    "children": [
+                      {
+                        "id": "1792461587180",
+                        "text": "admission process  --  fields: university admission process",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587187",
+                        "y": 9800,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587183",
+                        "text": "tuition & fees  --  fields: university tuition",
+                        "children": [
+                          {
+                            "id": "1792461587181",
+                            "text": "undergraduate tuition (subpage)  --  fields: university undergrad tuition",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587183",
+                            "y": 9870,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587182",
+                            "text": "postgraduate tuition (subpage)  --  fields: university postgrad tuition",
+                            "children": [],
+                            "x": 1540,
+                            "parent": "1792461587183",
+                            "y": 9940,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587187",
+                        "y": 9905,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587184",
+                        "text": "rankings & reputation  --  fields: university rankings",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587187",
+                        "y": 10010,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587185",
+                        "text": "student life  --  fields: university student life",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587187",
+                        "y": 10080,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587186",
+                        "text": "accommodation  --  fields: university accommodation",
+                        "children": [],
+                        "x": 1300,
+                        "parent": "1792461587187",
+                        "y": 10150,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587203",
+                    "y": 9989,
+                    "collapsed": false
+                  },
+                  {
+                    "id": "1792461587202",
+                    "text": "child wiki types",
+                    "children": [
+                      {
+                        "id": "1792461587194",
+                        "text": "course",
+                        "children": [
+                          {
+                            "id": "1792461587189",
+                            "text": "overview",
+                            "children": [
+                              {
+                                "id": "1792461587188",
+                                "text": "fields: course overview   (PRIMARY)",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587189",
+                                "y": 10220,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587194",
+                            "y": 10220,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587193",
+                            "text": "categories",
+                            "children": [
+                              {
+                                "id": "1792461587190",
+                                "text": "entry requirements  --  fields: course requirements",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587193",
+                                "y": 10290,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587191",
+                                "text": "tuition & fees  --  fields: course tuition",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587193",
+                                "y": 10360,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587192",
+                                "text": "career outcomes  --  fields: course outcomes",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587193",
+                                "y": 10430,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587194",
+                            "y": 10360,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587202",
+                        "y": 10290,
+                        "collapsed": false
+                      },
+                      {
+                        "id": "1792461587201",
+                        "text": "scholarship  (also under country)",
+                        "children": [
+                          {
+                            "id": "1792461587196",
+                            "text": "overview",
+                            "children": [
+                              {
+                                "id": "1792461587195",
+                                "text": "fields: scholarship overview   (PRIMARY)",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587196",
+                                "y": 10500,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587201",
+                            "y": 10500,
+                            "collapsed": false
+                          },
+                          {
+                            "id": "1792461587200",
+                            "text": "categories",
+                            "children": [
+                              {
+                                "id": "1792461587197",
+                                "text": "eligibility  --  fields: scholarship eligibility",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587200",
+                                "y": 10570,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587198",
+                                "text": "coverage & benefits  --  fields: scholarship coverage",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587200",
+                                "y": 10640,
+                                "collapsed": false
+                              },
+                              {
+                                "id": "1792461587199",
+                                "text": "application & deadlines  --  fields: scholarship application",
+                                "children": [],
+                                "x": 1780,
+                                "parent": "1792461587200",
+                                "y": 10710,
+                                "collapsed": false
+                              }
+                            ],
+                            "x": 1540,
+                            "parent": "1792461587201",
+                            "y": 10640,
+                            "collapsed": false
+                          }
+                        ],
+                        "x": 1300,
+                        "parent": "1792461587202",
+                        "y": 10570,
+                        "collapsed": false
+                      }
+                    ],
+                    "x": 1060,
+                    "parent": "1792461587203",
+                    "y": 10430,
+                    "collapsed": false
+                  }
+                ],
+                "x": 820,
+                "parent": "1792461587204",
+                "y": 10049,
+                "collapsed": false
+              }
+            ],
+            "x": 580,
+            "parent": "1792461587212",
+            "y": 7798,
+            "collapsed": false
+          },
+          {
+            "id": "1792461587211",
+            "text": "wiki categories  (registry)",
+            "children": [
+              {
+                "id": "1792461587205",
+                "text": "overview = PRIMARY field group on every wiki type",
+                "children": [],
+                "x": 820,
+                "parent": "1792461587211",
+                "y": 10780,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587206",
+                "text": "category = page template bound to a field group, declared per wiki type",
+                "children": [],
+                "x": 820,
+                "parent": "1792461587211",
+                "y": 10850,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587207",
+                "text": "subpage = subtype with its own field group (COL subpages, tuition subpages)",
+                "children": [],
+                "x": 820,
+                "parent": "1792461587211",
+                "y": 10920,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587208",
+                "text": "child types inherit parent category template with per-type groups",
+                "children": [],
+                "x": 820,
+                "parent": "1792461587211",
+                "y": 10990,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587209",
+                "text": "facet vs entity: category = 1:1 facet page; wiki type = N instances with own pages",
+                "children": [],
+                "x": 820,
+                "parent": "1792461587211",
+                "y": 11060,
+                "collapsed": false
+              },
+              {
+                "id": "1792461587210",
+                "text": "rule: one field group per (wiki type, category/subpage)",
+                "children": [],
+                "x": 820,
+                "parent": "1792461587211",
+                "y": 11130,
+                "collapsed": false
+              }
+            ],
+            "x": 580,
+            "parent": "1792461587212",
+            "y": 10955,
+            "collapsed": false
+          }
+        ],
+        "x": 340,
+        "parent": "root",
+        "y": 9376,
+        "collapsed": false
+      },
+      {
+        "id": "1792461587219",
+        "text": "how to read",
+        "children": [
+          {
+            "id": "1792461587213",
+            "text": "'fields:' leaf / '-- fields:' inline = names the field group",
+            "children": [],
+            "x": 580,
+            "parent": "1792461587219",
+            "y": 11200,
+            "collapsed": false
+          },
+          {
+            "id": "1792461587214",
+            "text": "same field-group name under [[compare]] and /wiki = the link",
+            "children": [],
+            "x": 580,
+            "parent": "1792461587219",
+            "y": 11270,
+            "collapsed": false
+          },
+          {
+            "id": "1792461587215",
+            "text": "wiki type = entity kind with own pages; nests under a parent type (any depth)",
+            "children": [],
+            "x": 580,
+            "parent": "1792461587219",
+            "y": 11340,
+            "collapsed": false
+          },
+          {
+            "id": "1792461587216",
+            "text": "wiki-type compare -> overview group only (PRIMARY)",
+            "children": [],
+            "x": 580,
+            "parent": "1792461587219",
+            "y": 11410,
+            "collapsed": false
+          },
+          {
+            "id": "1792461587217",
+            "text": "entity compare -> category primary group OR subpage group",
+            "children": [],
+            "x": 580,
+            "parent": "1792461587219",
+            "y": 11480,
+            "collapsed": false
+          },
+          {
+            "id": "1792461587218",
+            "text": "a facet and an entity may coexist: 'banking' page on a city + 'bank' entities",
+            "children": [],
+            "x": 580,
+            "parent": "1792461587219",
+            "y": 11550,
+            "collapsed": false
+          }
+        ],
+        "x": 340,
+        "parent": "root",
+        "y": 11375,
+        "collapsed": false
+      }
+    ],
+    "x": 100,
+    "y": 7277,
+    "collapsed": false
+  }
+}
+```

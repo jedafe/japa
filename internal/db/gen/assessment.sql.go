@@ -192,6 +192,31 @@ func (q *Queries) CleanupAnonymousAssessmentResults(ctx context.Context, dollar_
 	return result.RowsAffected(), nil
 }
 
+const cleanupAnonymousAssessmentSubmissions = `-- name: CleanupAnonymousAssessmentSubmissions :execrows
+
+DELETE FROM form_submissions fs
+USING forms f
+WHERE fs.form_id = f.id
+  AND f.form_type = 'assessment'
+  AND fs.user_id IS NULL
+  AND fs.created_at < now() - ($1::int || ' hours')::interval
+  AND NOT EXISTS (
+      SELECT 1 FROM assessment_results ar WHERE ar.submission_id = fs.id
+  )
+`
+
+// Delete anonymous assessment form_submissions past the retention window
+// once their result row is gone (either cleaned above or never written).
+// Their field_values carry journey context (origin/destination/visa route)
+// so they must not outlive the anonymous result retention window.
+func (q *Queries) CleanupAnonymousAssessmentSubmissions(ctx context.Context, dollar_1 int32) (int64, error) {
+	result, err := q.db.Exec(ctx, cleanupAnonymousAssessmentSubmissions, dollar_1)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countAssessmentResultsByUserAndForm = `-- name: CountAssessmentResultsByUserAndForm :one
 
 SELECT COUNT(*) AS count
@@ -398,6 +423,7 @@ SELECT cf.id, cf.group_id, cf.label, cf.key, cf.field_type, cf.options, cf.embed
 FROM custom_field_group_assignments a
 JOIN custom_fields cf ON cf.group_id = a.group_id
 WHERE a.entity_class = 'form' AND a.entity_id = $1
+  AND cf.show_in_frontend = TRUE
 ORDER BY cf.position
 `
 

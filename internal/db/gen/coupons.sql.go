@@ -85,6 +85,17 @@ func (q *Queries) CountOrgCouponRedemptions(ctx context.Context, couponID pgtype
 	return count, err
 }
 
+const countOrgCoupons = `-- name: CountOrgCoupons :one
+SELECT COUNT(*) FROM coupons c WHERE c.organization_id = $1
+`
+
+func (q *Queries) CountOrgCoupons(ctx context.Context, organizationID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrgCoupons, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAffiliateProvider = `-- name: CreateAffiliateProvider :one
 INSERT INTO affiliate_providers (name, slug, description, provider_type, logo_media_id, base_url, tracking_param, tracking_value, commission_rate, is_active, is_featured, category, organization_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id, name, slug, description, provider_type, logo_media_id,

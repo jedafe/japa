@@ -6,8 +6,11 @@
 	interface Props {
 		tab: FeedTab;
 		sort: SortValue;
+		/** Sticky top offset — use var(--nav-height) when a sticky tab bar
+		    sits directly above this bar (authed home), else 0. */
+		stickyTop?: string;
 	}
-	let { tab, sort }: Props = $props();
+	let { tab, sort, stickyTop = '0' }: Props = $props();
 
 	// Note the label→value mapping: "Popular" → top.
 	const chips: { value: SortValue; label: string }[] = [
@@ -31,7 +34,7 @@
 
 <div
 	class="sticky z-10 flex items-center gap-2 bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-4 py-2 backdrop-blur"
-	style="top: 0; margin-inline: max(1rem, calc((100% - 48rem)/2))"
+	style="top: {stickyTop}; margin-inline: max(1rem, calc((100% - 48rem)/2))"
 >
 	{#each chips as chip (chip.value)}
 		<a

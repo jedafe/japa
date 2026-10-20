@@ -67,6 +67,12 @@
 	}
 
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
+	// Keep the bound tab in sync with ?tab= on back/forward navigation —
+	// UrlTabs only writes the URL on click, it doesn't re-read it.
+	$effect(() => {
+		const tabParam = page.url.searchParams.get('tab');
+		untrack(() => { activeTab = tabParam ?? 'about'; });
+	});
 
 	// Section 39 — university-type orgs get a "Compare" tab that links to
 	// the Comparison System (Section 30) with this org pre-selected as
@@ -225,11 +231,11 @@
 										<img src={member.user.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
 									{:else}
 										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
-											{member.user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+											{(member.user.display_name ?? member.user.username).charAt(0).toUpperCase()}
 										</span>
 									{/if}
 									<span class="min-w-0 flex-1">
-										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.user.display_name}</span>
+										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.user.display_name ?? member.user.username}</span>
 										<span class="block text-xs text-[var(--color-muted)]">@{member.user.username}</span>
 									</span>
 									<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs capitalize text-[var(--color-text-subtle)]">{member.role}</span>

@@ -18,6 +18,17 @@
 
 	let { data } = $props();
 	const org = $derived(data.org);
+	// The caller's role on this org. Mirrors the backend checks:
+	// PATCH org + member add/remove/invite = owner|admin; member role
+	// changes + DELETE org = owner only; self-removal = any non-owner.
+	const memberRole = $derived(data.memberRole ?? '');
+	const isOwner = $derived(memberRole === 'owner');
+	const canManage = $derived(memberRole === 'owner' || memberRole === 'admin');
+	// 'owner' is never assignable — the backend rejects it (single-owner
+	// invariant), so it is filtered out of every role selector.
+	const assignableRoles = $derived(
+		(data.orgMeta?.member_roles ?? []).filter((r) => r.value !== 'owner')
+	);
 	const invitations = $derived(data.invitations as OrgInvitation[]);
 	const content = $derived(data.content as ProfilePost[]);
 	const media = $derived(data.media as OrgMedia[]);
@@ -124,12 +135,15 @@
 		errorKey = '';
 		saving = true;
 		try {
+			// Empty strings are sent as '' — the backend clears the column
+			// to NULL (present-empty semantics), while absent keys keep the
+			// stored value.
 			const res = await api.patch(`/organizations/${org.id}`, {
 				name,
-				tagline: tagline || null,
-				description: description || null,
-				website_url: websiteUrl || null,
-				country_code: countryCode || null,
+				tagline,
+				description,
+				website_url: websiteUrl,
+				country_code: countryCode,
 				org_type: orgType
 			});
 			if (res.error) {
@@ -159,18 +173,30 @@
 		}
 	}
 
+	// Self-removal: any non-owner member may leave the org (backend allows
+	// DELETE /members/{self} for non-owners). The owner sees Delete instead.
+	let leaving = $state(false);
+	async function leaveOrg() {
+		if (!org || !page.data.user?.id) return;
+		if (!confirm(t('org_admin.leave_confirm', 'Leave this organization?'))) return;
+		leaving = true;
+		try {
+			const res = await api.delete(`/organizations/${org.id}/members/${page.data.user.id}`);
+			if (!res.error) {
+				await goto('/dashboard/organizations');
+			}
+		} catch {
+			// best-effort
+		} finally {
+			leaving = false;
+		}
+	}
+
 	async function changeRole(memberUserId: string, role: string) {
 		if (!org) return;
 		const target = members.find((m) => m.user.id === memberUserId);
 		if (!target) return;
-
-		// Guard owner role changes and transfers.
-		if (target.role === 'owner' || role === 'owner') {
-			const action = role === 'owner'
-				? t('org_admin.role_transfer_confirm', 'Transfer ownership to this member?')
-				: t('org_admin.role_owner_change_confirm', 'Change the owner role? This may break ownership.');
-			if (!confirm(action)) return;
-		}
+		if (target.role === 'owner') return; // owner role is immutable
 
 		try {
 			const res = await api.patch(`/organizations/${org.id}/members/${memberUserId}`, { role });
@@ -420,7 +446,9 @@
 			<EmptyState icon={BarChart3} title={t('org_admin.analytics_unavailable', 'Analytics unavailable')} />
 		{/if}
 	{:else}
-	<!-- Edit org fields -->
+	<!-- Edit org fields — owner|admin only (PATCH /organizations/{id}
+	     enforces the same role gate server-side). -->
+	{#if canManage}
 	<form onsubmit={saveOrg} class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
 		<h2 class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.edit_section')}</h2>
 
@@ -476,15 +504,26 @@
 		</div>
 
 		<div class="flex items-center justify-between">
-			<button
-				type="button"
-				onclick={deleteOrg}
-				disabled={deleting}
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-danger)]/30 px-4 py-2 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
-			>
-				<Trash2 class="h-4 w-4" />
-				{deleting ? t('common.loading') : t('org_admin.delete', 'Delete organization')}
-			</button>
+			{#if isOwner}
+				<button
+					type="button"
+					onclick={deleteOrg}
+					disabled={deleting}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-danger)]/30 px-4 py-2 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
+				>
+					<Trash2 class="h-4 w-4" />
+					{deleting ? t('common.loading') : t('org_admin.delete', 'Delete organization')}
+				</button>
+			{:else}
+				<button
+					type="button"
+					onclick={leaveOrg}
+					disabled={leaving}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+				>
+					{leaving ? t('common.loading') : t('org_admin.leave', 'Leave organization')}
+				</button>
+			{/if}
 			<button
 				type="submit"
 				disabled={saving}
@@ -495,7 +534,9 @@
 			</button>
 		</div>
 	</form>
+	{/if}
 
+	{#if canManage}
 	<!-- Invite member -->
 	<form onsubmit={inviteMember} class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
 		<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
@@ -566,8 +607,10 @@
 			</button>
 		</div>
 	</form>
+	{/if}
 
-	<!-- Members management -->
+	<!-- Members management — list is visible to every member; role changes
+	     are owner-only, removals are owner|admin (same gates as the API). -->
 	<div class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
 		<h2 class="text-sm font-medium text-[var(--color-text)]">
 			{t('org_admin.members_section')} ({members.length})
@@ -584,32 +627,38 @@
 								<img src={m.user.avatar_url} alt="" class="h-8 w-8 rounded-full object-cover" />
 							{:else}
 								<div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-medium text-[var(--color-primary)]">
-									{m.user.display_name.slice(0, 1).toUpperCase()}
+									{(m.user.display_name ?? m.user.username).slice(0, 1).toUpperCase()}
 								</div>
 							{/if}
 							<div class="min-w-0">
-								<p class="truncate text-sm font-medium text-[var(--color-text)]">{m.user.display_name}</p>
+								<p class="truncate text-sm font-medium text-[var(--color-text)]">{m.user.display_name ?? m.user.username}</p>
 								<p class="truncate text-xs text-[var(--color-muted)]">@{m.user.username}</p>
 							</div>
 						</div>
 						<div class="flex shrink-0 items-center gap-2">
-							<AutocompleteSelect
-								class="w-40"
-								value={m.role}
-								options={data.orgMeta?.member_roles ?? []}
-								onValueChange={(v) => changeRole(m.user.id, v)}
-								ariaLabel={t('org_admin.role_label')}
-								disabled={!data.orgMeta?.member_roles?.length}
-								inputClass="text-xs"
-							/>
-							<button
-								type="button"
-								onclick={() => removeMember(m.user.id)}
-								class="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)]"
-								aria-label={t('org_admin.remove_member')}
-							>
-								<Trash2 class="h-4 w-4" />
-							</button>
+							{#if isOwner && m.role !== 'owner'}
+								<AutocompleteSelect
+									class="w-40"
+									value={m.role}
+									options={assignableRoles}
+									onValueChange={(v) => changeRole(m.user.id, v)}
+									ariaLabel={t('org_admin.role_label')}
+									disabled={assignableRoles.length === 0}
+									inputClass="text-xs"
+								/>
+							{:else}
+								<span class="rounded-full bg-[var(--color-surface)] px-2 py-0.5 text-xs capitalize text-[var(--color-text-subtle)]">{m.role}</span>
+							{/if}
+							{#if canManage && m.role !== 'owner'}
+								<button
+									type="button"
+									onclick={() => removeMember(m.user.id)}
+									class="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)]"
+									aria-label={t('org_admin.remove_member')}
+								>
+									<Trash2 class="h-4 w-4" />
+								</button>
+							{/if}
 						</div>
 					</li>
 				{/each}
@@ -617,8 +666,8 @@
 		{/if}
 	</div>
 
-	<!-- Invitations -->
-	{#if invitations.length > 0}
+	<!-- Invitations — owner|admin only (the API gates them identically). -->
+	{#if canManage && invitations.length > 0}
 		<div class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
 			<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 				<Mail class="h-4 w-4" />
@@ -654,6 +703,24 @@
 					</li>
 				{/each}
 			</ul>
+		</div>
+	{/if}
+
+	<!-- Leave organization — non-owner members (member|editor) get
+	     self-removal here; owner/admin use the gated controls above. -->
+	{#if memberRole && !isOwner}
+		<div class="flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+			<p class="text-sm text-[var(--color-muted)]">
+				{t('org_admin.leave_hint', 'You are a {role} of this organization.').replace('{role}', memberRole)}
+			</p>
+			<button
+				type="button"
+				onclick={leaveOrg}
+				disabled={leaving}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-danger)]/30 px-4 py-2 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
+			>
+				{leaving ? t('common.loading') : t('org_admin.leave', 'Leave organization')}
+			</button>
 		</div>
 	{/if}
 	{/if}

@@ -1503,10 +1503,10 @@ func (q *Queries) TransferOrganizationOwnership(ctx context.Context, arg Transfe
 const updateOrganization = `-- name: UpdateOrganization :exec
 UPDATE organizations
 SET name = COALESCE(NULLIF($1::text, ''), name),
- tagline = COALESCE($2, tagline),
- description = COALESCE($3, description),
- website_url = COALESCE($4, website_url),
- country_code = COALESCE($5, country_code),
+ tagline = NULLIF(COALESCE($2, tagline), ''),
+ description = NULLIF(COALESCE($3, description), ''),
+ website_url = NULLIF(COALESCE($4, website_url), ''),
+ country_code = NULLIF(COALESCE($5, country_code), ''),
  geo_space_id = COALESCE($6, geo_space_id),
  org_type = COALESCE(NULLIF($7::text, ''), org_type),
  updated_at = now()
@@ -1524,10 +1524,11 @@ type UpdateOrganizationParams struct {
 	ID          pgtype.UUID `json:"id"`
 }
 
-// Partial update: COALESCE preserves the existing column value when the
-// caller omits a field (nullable *string → NULL, empty string for NOT NULL
-// text columns, NULL pgtype.UUID for geo_space_id). This prevents a PATCH
-// that only updates one field from blanking out the rest (BUG-004/005).
+// Partial update: a NULL param keeps the stored value; a non-NULL param
+// writes it — including an explicit empty string, which the outer NULLIF
+// turns back into NULL so callers can clear optional fields (BUG-004/005
+// plus PATCH clear semantics for tagline/description/website_url/
+// country_code).
 func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) error {
 	_, err := q.db.Exec(ctx, updateOrganization,
 		arg.Name,

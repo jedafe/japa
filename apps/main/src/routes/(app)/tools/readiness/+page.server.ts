@@ -2,7 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { ApiError } from '$lib/server/api';
-import type { AssessmentForm } from '$lib/types';
+import type { AssessmentForm, AssessmentResult } from '$lib/types';
 
 export interface CountryOption {
 	value: string;
@@ -49,6 +49,12 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
+	// Shared result links carry ?result=<id> — SSR-load it so the results view
+	// renders on first paint instead of flashing the form while a client-side
+	// fetch resolves. 401/403/404 degrade to null; the client effect then
+	// handles the sign-in prompt / error path.
+	const resultId = event.url.searchParams.get('result');
+
 	let disabled = false;
 	const loadCountries = async (): Promise<CountryOption[]> => {
 		const allSpaces: SpaceOption[] = [];
@@ -69,7 +75,7 @@ export const load: PageServerLoad = async (event) => {
 			.sort((a, b) => a.label.localeCompare(b.label));
 	};
 
-	const [form, history, journeyOptions, countryOptions] = await Promise.all([
+	const [form, history, journeyOptions, countryOptions, sharedResult] = await Promise.all([
 		apiGet<AssessmentForm>(ctx, '/assessment').catch((e) => {
 			if (e instanceof ApiError && (e.code === 'assessment_disabled' || e.code === 'no_active_assessment' || e.status === 404)) {
 				disabled = true;
@@ -91,8 +97,11 @@ export const load: PageServerLoad = async (event) => {
 		apiGet<JourneyOptions>(ctx, '/feed/journey-options').catch(
 			() => ({ purposes: [], stages: [], visa_routes: [] }) as JourneyOptions
 		),
-		loadCountries().catch(() => [] as CountryOption[])
+		loadCountries().catch(() => [] as CountryOption[]),
+		resultId
+			? apiGet<AssessmentResult>(ctx, `/assessment/result/${encodeURIComponent(resultId)}`).catch(() => null)
+			: Promise.resolve(null)
 	]);
 
-	return { form, disabled, authed, history, journeyOptions, countryOptions };
+	return { form, disabled, authed, history, journeyOptions, countryOptions, result: sharedResult };
 };

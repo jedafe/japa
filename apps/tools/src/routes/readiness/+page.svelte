@@ -67,7 +67,7 @@
 	let user = $state(untrack(() => data.user));
 
 	// Form state — answers keyed by field.key (matches field_values contract).
-	let answers = $state<Record<string, string | string[] | number>>({});
+	let answers = $state<Record<string, string | string[] | number | boolean>>({});
 	let currentStep = $state(0);
 	let submitting = $state(false);
 	let polling = $state(false);
@@ -82,6 +82,7 @@
 
 	// Polling handle — cleared on destroy to avoid a leak (§4.3).
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
+	let destroyed = $state(false);
 
 	/**
 	 * Group the flat field list by dimension for the multi-step UX. Dimensions
@@ -90,6 +91,7 @@
 	 */
 	const steps = $derived.by(() => {
 		if (!form) return [] as { name: string; fields: AssessmentField[] }[];
+		if (!form.is_multi_step) return [{ name: 'assessment', fields: form.fields }];
 		const order: string[] = [];
 		const map = new Map<string, AssessmentField[]>();
 		for (const f of form.fields) {
@@ -105,6 +107,13 @@
 
 	const totalSteps = $derived(steps.length);
 	const currentStepData = $derived(steps[currentStep] ?? null);
+
+	/** Friendly display name for a step's raw dimension key. */
+	function stepLabel(name: string): string {
+		if (name === 'general') return t('readiness.journey_step', 'Your journey');
+		const pretty = name.replace(/_/g, ' ');
+		return pretty.charAt(0).toUpperCase() + pretty.slice(1);
+	}
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -126,7 +135,7 @@
 		})
 	);
 
-	function setAnswer(key: string, value: string | string[] | number) {
+	function setAnswer(key: string, value: string | string[] | number | boolean) {
 		answers = { ...answers, [key]: value };
 	}
 
@@ -266,6 +275,9 @@
 			await new Promise<void>((resolve) => {
 				pollTimer = setTimeout(resolve, interval);
 			});
+			// Stop polling after unmount — clearing the pending timer alone
+			// does not break the loop (§4.3).
+			if (destroyed) return;
 		}
 		polling = false;
 		error = t(
@@ -307,6 +319,7 @@
 	$effect(() => {
 		// Cleanup polling timer on destroy (§4.3 — no polling leaks).
 		return () => {
+			destroyed = true;
 			if (pollTimer) {
 				clearTimeout(pollTimer);
 				pollTimer = null;
@@ -428,13 +441,13 @@
 				</h2>
 			</div>
 
-			{#if Object.keys(result.dimension_scores).length > 0}
+			{#if Object.keys(result.dimension_scores ?? {}).length > 0}
 				<div>
 					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
 						{t('readiness.dimension_breakdown', 'Dimension breakdown')}
 					</h3>
 					<div class="space-y-3">
-						{#each Object.entries(result.dimension_scores) as [dim, score] (dim)}
+						{#each Object.entries(result.dimension_scores ?? {}) as [dim, score] (dim)}
 							<div>
 								<div class="flex items-center justify-between text-sm mb-1">
 									<span class="font-medium text-text capitalize">{dim}</span>
@@ -554,7 +567,7 @@
 						{/each}
 					</div>
 				</div>
-			{:else if result.roadmap.length > 0}
+			{:else if result.roadmap?.length > 0}
 				<div>
 					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
 						{t('readiness.roadmap', 'Your personalized roadmap')}
@@ -648,13 +661,13 @@
 					{/each}
 				</div>
 				<p class="text-sm text-muted capitalize">
-					{t('readiness.section_progress', 'Section {current} of {total}').replace('{current}', String(currentStep + 1)).replace('{total}', String(totalSteps))} — {currentStepData?.name}
+					{t('readiness.section_progress', 'Section {current} of {total}', { current: currentStep + 1, total: totalSteps })} — {stepLabel(currentStepData?.name ?? '')}
 				</p>
 			{/if}
 
 			{#if currentStepData}
 				<div>
-					<h2 class="text-xl font-semibold text-text mb-1 capitalize">{currentStepData.name}</h2>
+					<h2 class="text-xl font-semibold text-text mb-1 capitalize">{stepLabel(currentStepData.name)}</h2>
 
 					<div class="space-y-6">
 						{#each currentStepData.fields as f (f.key)}
@@ -675,7 +688,7 @@
 										]}
 										class="w-full"
 									/>
-								{:else if (f.field_type === 'select' || f.field_type === 'radio') && fieldOptions(f).length > 0}
+								{:else if (f.field_type === 'select' || f.field_type === 'radio' || f.field_type === 'suggest') && fieldOptions(f).length > 0}
 									<div class="space-y-2">
 										{#each fieldOptions(f) as opt (opt.value)}
 											<label
@@ -716,14 +729,33 @@
 											</label>
 										{/each}
 									</div>
-								{:else if f.field_type === 'date'}
+								{:else if f.field_type === 'boolean'}
+									<label class="flex items-center gap-3 p-3 border border-border rounded-lg cursor-pointer hover:border-[var(--tool-accent)] transition-colors">
+										<input
+											type="checkbox"
+											checked={answers[f.key] === true}
+											onchange={(e) => setAnswer(f.key, e.currentTarget.checked)}
+											class="accent-[var(--tool-accent)]"
+										/>
+										<span class="text-sm text-text">{t('readiness.yes', 'Yes')}</span>
+									</label>
+								{:else if f.field_type === 'date' || f.field_type === 'datetime' || f.field_type === 'time'}
 									<input
 										id={f.key}
-										type="date"
+										type={f.field_type === 'datetime' ? 'datetime-local' : f.field_type}
 										value={(answers[f.key] as string) ?? ''}
 										oninput={(e) => setAnswer(f.key, (e.currentTarget as HTMLInputElement).value)}
 										class="w-full px-4 py-2.5 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
 									/>
+								{:else if f.field_type === 'textarea' || f.field_type === 'rich_text'}
+									<textarea
+										id={f.key}
+										rows="3"
+										value={(answers[f.key] as string) ?? ''}
+										placeholder={f.placeholder || ''}
+										oninput={(e) => setAnswer(f.key, (e.currentTarget as HTMLTextAreaElement).value)}
+										class="w-full px-4 py-2.5 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
+									></textarea>
 								{:else if f.field_type === 'number' || f.field_type === 'rating'}
 									<div class="flex items-center gap-3">
 										<input

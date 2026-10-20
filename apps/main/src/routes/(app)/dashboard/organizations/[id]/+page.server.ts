@@ -6,7 +6,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { GeoCountry, OrganizationAdmin, OrgInvitation, OrgMedia, OrgMember, OrgMeta, ProfilePost } from '$lib/types';
+import type { GeoCountry, OrganizationAdmin, OrgInvitation, OrgMedia, OrgMember, OrgMeta, MyOrganization, ProfilePost } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -30,7 +30,7 @@ export const load: PageServerLoad = async (event) => {
 	// Members + invitations + content + analytics + media + meta load best-effort.
 	// page_size=100 on members/invitations: the endpoints default to 20 and
 	// return no meta, so without it larger orgs would silently lose rows.
-	const [membersRes, invitationsRes, contentRes, analyticsRes, mediaRes, orgMetaRes, countriesRes] = await Promise.all([
+	const [membersRes, invitationsRes, contentRes, analyticsRes, mediaRes, orgMetaRes, countriesRes, myOrgsRes] = await Promise.all([
 		apiList<OrgMember>(ctx, `/organizations/${id}/members?page_size=100`).catch(() => ({ items: [] as OrgMember[] })),
 		apiList<OrgInvitation>(ctx, `/organizations/${id}/invitations?page_size=100`).catch(() => ({ items: [] as OrgInvitation[] })),
 		apiList<ProfilePost>(ctx, `/organizations/${id}/content?page_size=20`).catch(() => ({ items: [] as ProfilePost[] })),
@@ -39,11 +39,23 @@ export const load: PageServerLoad = async (event) => {
 		// BUG-022/023: Fetch org type + member role options from the API (Rule 16).
 		apiGet<OrgMeta>(ctx, '/organizations/meta').catch(() => null),
 		// Country list from the spaces country table (Rule 16).
-		apiList<GeoCountry>(ctx, '/geo/countries').catch(() => ({ items: [] as GeoCountry[] }))
+		apiList<GeoCountry>(ctx, '/geo/countries').catch(() => ({ items: [] as GeoCountry[] })),
+		// The caller's role on this org drives which management controls the
+		// UI shows (edit/invite/remove = owner|admin; role changes + delete =
+		// owner only). Mirrors the backend's per-call role checks.
+		apiList<MyOrganization>(ctx, '/me/organizations?page_size=100')
+			.then((r) => r.items)
+			.catch(() => [] as MyOrganization[])
 	]);
+
+	// The org row loaded by UUID returns the full admin row; find the
+	// caller's membership to derive their role ('' = non-member, shouldn't
+	// happen — the backend 403s first).
+	const memberRole = myOrgsRes.find((o) => o.id === org.id)?.member_role ?? '';
 
 	return {
 		org,
+		memberRole,
 		members: membersRes.items,
 		invitations: invitationsRes.items,
 		content: contentRes.items,

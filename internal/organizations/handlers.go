@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -352,6 +353,42 @@ func (h *Handlers) ListMyOrganizations(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orgs})
 }
 
+// decodeUpdateOrganization parses a PATCH body into UpdateOrganizationInput,
+// marking each supplied field in input.Set. Absent keys keep the stored
+// value; a key present with "" clears the column (null counts as absent).
+func decodeUpdateOrganization(body []byte) (UpdateOrganizationInput, error) {
+	var req updateOrganizationRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return UpdateOrganizationInput{}, err
+	}
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(body, &raw)
+
+	input := UpdateOrganizationInput{Set: map[string]bool{}}
+	for _, f := range []string{"tagline", "description", "website_url", "country_code"} {
+		input.Set[f] = raw[f] != nil && string(raw[f]) != "null"
+	}
+	if req.Name != nil {
+		input.Name = *req.Name
+	}
+	if req.Tagline != nil {
+		input.Tagline = *req.Tagline
+	}
+	if req.Description != nil {
+		input.Description = *req.Description
+	}
+	if req.WebsiteURL != nil {
+		input.WebsiteURL = *req.WebsiteURL
+	}
+	if req.CountryCode != nil {
+		input.CountryCode = *req.CountryCode
+	}
+	if req.OrgType != nil {
+		input.OrgType = *req.OrgType
+	}
+	return input, nil
+}
+
 // UpdateOrganization handles PATCH /organizations/{id}.
 func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
@@ -365,35 +402,15 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req updateOrganizationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
-
-	input := UpdateOrganizationInput{}
-	if req.Name != nil {
-		input.Name = *req.Name
-	}
-
-	if req.Tagline != nil {
-		input.Tagline = *req.Tagline
-	}
-
-	if req.Description != nil {
-		input.Description = *req.Description
-	}
-
-	if req.WebsiteURL != nil {
-		input.WebsiteURL = *req.WebsiteURL
-	}
-
-	if req.CountryCode != nil {
-		input.CountryCode = *req.CountryCode
-	}
-
-	if req.OrgType != nil {
-		input.OrgType = *req.OrgType
+	input, err := decodeUpdateOrganization(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		return
 	}
 
 	if err := h.service.UpdateOrganization(r.Context(), id, user.UserID, input); err != nil {
@@ -1008,35 +1025,15 @@ func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var req updateOrganizationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
-
-	input := UpdateOrganizationInput{}
-	if req.Name != nil {
-		input.Name = *req.Name
-	}
-
-	if req.Tagline != nil {
-		input.Tagline = *req.Tagline
-	}
-
-	if req.Description != nil {
-		input.Description = *req.Description
-	}
-
-	if req.WebsiteURL != nil {
-		input.WebsiteURL = *req.WebsiteURL
-	}
-
-	if req.CountryCode != nil {
-		input.CountryCode = *req.CountryCode
-	}
-
-	if req.OrgType != nil {
-		input.OrgType = *req.OrgType
+	input, err := decodeUpdateOrganization(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		return
 	}
 
 	if err := h.service.AdminUpdateOrganization(r.Context(), id, input); err != nil {

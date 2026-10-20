@@ -54,16 +54,17 @@ WHERE ($1::text = '' OR org_type = $1)
      END;
 
 -- name: UpdateOrganization :exec
--- Partial update: COALESCE preserves the existing column value when the
--- caller omits a field (nullable *string → NULL, empty string for NOT NULL
--- text columns, NULL pgtype.UUID for geo_space_id). This prevents a PATCH
--- that only updates one field from blanking out the rest (BUG-004/005).
+-- Partial update: a NULL param keeps the stored value; a non-NULL param
+-- writes it — including an explicit empty string, which the outer NULLIF
+-- turns back into NULL so callers can clear optional fields (BUG-004/005
+-- plus PATCH clear semantics for tagline/description/website_url/
+-- country_code).
 UPDATE organizations
 SET name = COALESCE(NULLIF(@name::text, ''), name),
- tagline = COALESCE(@tagline, tagline),
- description = COALESCE(@description, description),
- website_url = COALESCE(@website_url, website_url),
- country_code = COALESCE(@country_code, country_code),
+ tagline = NULLIF(COALESCE(@tagline, tagline), ''),
+ description = NULLIF(COALESCE(@description, description), ''),
+ website_url = NULLIF(COALESCE(@website_url, website_url), ''),
+ country_code = NULLIF(COALESCE(@country_code, country_code), ''),
  geo_space_id = COALESCE(@geo_space_id, geo_space_id),
  org_type = COALESCE(NULLIF(@org_type::text, ''), org_type),
  updated_at = now()

@@ -420,6 +420,14 @@ func (s *Store) CleanupAnonymousResults(ctx context.Context, retentionHours int3
 		return 0, fmt.Errorf("assessment: cleanup anonymous results: %w", err)
 	}
 
+	// Also purge the now-orphaned anonymous submissions — their field_values
+	// carry journey context and must not outlive the anonymous retention
+	// window. Only submissions whose result row no longer exists are deleted
+	// so a still-referenced submission is never pulled from under a result.
+	if _, err := s.writeQueries.CleanupAnonymousAssessmentSubmissions(ctx, retentionHours); err != nil {
+		return n, fmt.Errorf("assessment: cleanup anonymous submissions: %w", err)
+	}
+
 	return n, nil
 }
 

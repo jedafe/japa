@@ -109,7 +109,12 @@
 			return;
 		}
 		const batch = res.data ?? [];
-		items = [...items, ...batch];
+		// Ranking can drift between page fetches — an item may shift into the
+		// next page's window. Drop ids already rendered so the keyed each
+		// never sees a duplicate (§6.3 each_key_duplicate).
+		const seen = new Set(items.map((i) => i.id));
+		const fresh = batch.filter((i) => !seen.has(i.id));
+		items = [...items, ...fresh];
 		atEnd = batch.length < pageSize;
 		hasMore = !atEnd;
 		loading = false;

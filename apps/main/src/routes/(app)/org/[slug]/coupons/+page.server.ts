@@ -58,12 +58,17 @@ export const load: PageServerLoad = async (event) => {
 	const page = Math.max(1, Number(event.url.searchParams.get('page') ?? '1') || 1);
 
 	let coupons: OrgCoupon[] = [];
+	// The backend emits meta.total — with it the pager renders exactly the
+	// pages that exist (the old items-length heuristic showed a spurious
+	// Next on an exact-full last page).
+	let total = 0;
 	try {
 		const res = await apiList<OrgCoupon>(
 			ctx,
 			`/organizations/${org.id}/coupons?page=${page}&page_size=${PAGE_SIZE}`
 		);
 		coupons = res.items;
+		total = res.meta?.total ?? res.items.length;
 	} catch (err) {
 		if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
 			throw error(403, {
@@ -74,5 +79,5 @@ export const load: PageServerLoad = async (event) => {
 		coupons = [];
 	}
 
-	return { org, coupons, currentPage: page, pageSize: PAGE_SIZE, memberRole };
+	return { org, coupons, currentPage: page, pageSize: PAGE_SIZE, total, memberRole };
 };

@@ -1034,8 +1034,15 @@ func normalizeJourneyStage(s string) string {
 		return "approved"
 	case "relocated", "traveling", "travelling", "settling_in":
 		return "relocated"
-	case "settled", "returned":
+	case "settled":
 		return "settled"
+	// Trip-class terminal stages (ADR-122): both are canonical values and
+	// must pass through — dropping them silently discards the stage signal,
+	// and mapping "returned" to "settled" mislabels a returned visitor.
+	case "traveled":
+		return "traveled"
+	case "returned":
+		return "returned"
 	}
 
 	return ""

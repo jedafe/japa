@@ -1,15 +1,14 @@
 <script lang="ts">
 	// Ref: 2026-08-21-journey-aware-recommendations-design.md §6.1
-	// Guest journey onboarding modal. Appears automatically after 5 minutes
+	// Guest journey onboarding modal. Appears automatically after 1 minute
 	// when a guest has not set their destination, and can be opened manually
 	// via the JourneyContextBar.
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
 	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
-	import { getFeedContext, getJourneyOptions, setFeedContext } from '$lib/api/journey';
+	import { getFeedContextCached, getGeoCountriesCached, getJourneyOptionsCached, setFeedContext } from '$lib/api/journey';
 	import { journeyModal, JOURNEY_MODAL_DELAY_MS } from '$lib/stores/journey.svelte';
 	import type { GeoCountry, VisitorContextSummary } from '$lib/types';
 	import type { JourneyOptions, JourneyOption } from '$lib/api/journey';
@@ -63,9 +62,9 @@
 		loaded = true;
 		void (async () => {
 			const [countriesRes, ctxRes, optsRes] = await Promise.all([
-				api.get<GeoCountry[]>('/geo/countries'),
-				getFeedContext(),
-				getJourneyOptions()
+				getGeoCountriesCached(),
+				getFeedContextCached(),
+				getJourneyOptionsCached()
 			]);
 			if (countriesRes.data) {
 				countryList = countriesRes.data;
@@ -140,7 +139,8 @@
 	}
 
 	function optionItems(list: JourneyOption[]): AutocompleteItem[] {
-		return list.map((o) => ({ id: o.value, label: o.label, sublabel: o.value }));
+		// No sublabel — echoing the raw value would render as "Study study".
+		return list.map((o) => ({ id: o.value, label: o.label }));
 	}
 
 	function optionFetcher(list: JourneyOption[]): (q: string) => Promise<AutocompleteItem[]> {

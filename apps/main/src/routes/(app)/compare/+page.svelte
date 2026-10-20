@@ -786,7 +786,7 @@
 			<h2 class="text-sm font-semibold text-[var(--color-text)]">
 				{t('jce.compare.choose_type')}
 			</h2>
-			<TypeCardGrid {types} iconFor={(t2) => typeIcon(t2)} onSelect={selectType} />
+			<TypeCardGrid {types} iconFor={(t2: ComparisonType) => typeIcon(t2)} onSelect={selectType} />
 		</section>
 
 		{#if popularComparisons.length > 0}

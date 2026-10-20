@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -320,6 +321,13 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	submissionID, err := h.service.SubmitAssessment(r.Context(), userID, formID, body.FieldValues)
 	if err != nil {
+		var missingErr *MissingRequiredFieldsError
+		if errors.As(err, &missingErr) {
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "missing_required_fields",
+				"Some required answers are missing: "+strings.Join(missingErr.Keys, ", "))
+			return
+		}
+
 		slog.Error("assessment: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submission_failed", "Failed to create submission")
 

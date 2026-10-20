@@ -56,6 +56,8 @@ type CreateOrganizationInput struct {
 }
 
 // UpdateOrganizationInput is the input for updating an organization.
+// Set marks which fields the caller actually supplied — a field absent from
+// the request keeps its stored value, a field supplied as "" clears to NULL.
 type UpdateOrganizationInput struct {
 	Name        string `json:"name,omitempty"`
 	Tagline     string `json:"tagline,omitempty"`
@@ -63,6 +65,7 @@ type UpdateOrganizationInput struct {
 	WebsiteURL  string `json:"website_url,omitempty"`
 	CountryCode string `json:"country_code,omitempty"`
 	OrgType     string `json:"org_type,omitempty"`
+	Set         map[string]bool `json:"-"`
 }
 
 // InviteMemberInput is the input for inviting a member.
@@ -339,14 +342,24 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, userID pgtype.UUID
 		return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
+	// Presence-aware partial update: fields absent from the request keep
+	// their stored value (nil param); fields supplied — including an
+	// explicit empty string — are written, and the query's NULLIF turns ""
+	// back into NULL so optional fields can be cleared.
+	setPtr := func(field, value string) *string {
+		if !input.Set[field] {
+			return nil
+		}
+		return &value
+	}
 	if err := s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
 		ID: id,
 
 		Name:        input.Name,
-		Tagline:     strPtr(input.Tagline),
-		Description: strPtr(input.Description),
-		WebsiteUrl:  strPtr(input.WebsiteURL),
-		CountryCode: strPtr(input.CountryCode),
+		Tagline:     setPtr("tagline", input.Tagline),
+		Description: setPtr("description", input.Description),
+		WebsiteUrl:  setPtr("website_url", input.WebsiteURL),
+		CountryCode: setPtr("country_code", input.CountryCode),
 		OrgType:     input.OrgType,
 	}); err != nil {
 		return err
@@ -589,9 +602,11 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 		return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
-	// Cannot add a member with the owner role — only the creator is owner.
-	if role == MemberRoleOwner {
-		return fmt.Errorf("%w: cannot add a member with the owner role", errpkg.ErrForbidden)
+	// The assignable role set is fixed (admin|editor|member) — anything else
+	// (incl. 'owner', which is never assignable) is a bad request, not a
+	// CHECK-constraint 500.
+	if !validAssignableRoles[role] {
+		return fmt.Errorf("%w: role must be one of admin, editor, member", errpkg.ErrInvalid)
 	}
 
 	// Reject adding someone who is already a member. AddOrganizationMember
@@ -660,7 +675,15 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
-	if role != MemberRoleOwner && role != MemberRoleAdmin {
+	// Self-removal (leaving the org) is allowed for any non-owner member;
+	// removing someone else requires owner|admin. The owner cannot leave —
+	// ownership is tied to the org itself.
+	selfLeave := removedBy == targetUserID
+	if selfLeave {
+		if role == MemberRoleOwner {
+			return fmt.Errorf("%w: the owner cannot leave their own organization", errpkg.ErrForbidden)
+		}
+	} else if role != MemberRoleOwner && role != MemberRoleAdmin {
 		return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
@@ -722,7 +745,20 @@ func (s *Service) ListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.Lis
 }
 
 // UpdateMemberRole changes a member's role. Only owner can change roles.
+// validAssignableRoles are the org member roles that may be assigned through
+// member management. 'owner' is excluded: ownership is created with the org
+// and is never assignable — setting it here would create a second owner.
+var validAssignableRoles = map[string]bool{
+	MemberRoleAdmin:  true,
+	MemberRoleEditor: true,
+	MemberRoleMember: true,
+}
+
 func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, targetUserID pgtype.UUID, newRole string) error {
+	if !validAssignableRoles[newRole] {
+		return fmt.Errorf("%w: role must be one of admin, editor, member", errpkg.ErrInvalid)
+	}
+
 	role, err := s.store.GetMemberRole(ctx, orgID, updatedBy)
 	if err != nil {
 		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
@@ -1092,14 +1128,22 @@ func (s *Service) AdminUpdateOrganization(ctx context.Context, id pgtype.UUID, i
 		return err
 	}
 
+	// Same presence-aware semantics as UpdateOrganization: absent fields
+	// keep their value; a supplied empty string clears to NULL.
+	setPtr := func(field, value string) *string {
+		if !input.Set[field] {
+			return nil
+		}
+		return &value
+	}
 	if err := s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
 		ID: id,
 
 		Name:        input.Name,
-		Tagline:     strPtr(input.Tagline),
-		Description: strPtr(input.Description),
-		WebsiteUrl:  strPtr(input.WebsiteURL),
-		CountryCode: strPtr(input.CountryCode),
+		Tagline:     setPtr("tagline", input.Tagline),
+		Description: setPtr("description", input.Description),
+		WebsiteUrl:  setPtr("website_url", input.WebsiteURL),
+		CountryCode: setPtr("country_code", input.CountryCode),
 		OrgType:     input.OrgType,
 	}); err != nil {
 		return err

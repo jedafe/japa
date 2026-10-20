@@ -3,5 +3,5 @@
 
 export const journeyModal = $state({ open: false });
 
-/** Five minutes in milliseconds. */
+/** One minute in milliseconds. */
 export const JOURNEY_MODAL_DELAY_MS = 1 * 60 * 1000;

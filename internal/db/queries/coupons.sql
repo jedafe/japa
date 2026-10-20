@@ -488,6 +488,9 @@ WHERE c.organization_id = @organization_id
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: CountOrgCoupons :one
+SELECT COUNT(*) FROM coupons c WHERE c.organization_id = @organization_id;
+
 -- name: UpdateOrgCoupon :one
 UPDATE coupons SET
     title = @title, description = sqlc.narg(description),

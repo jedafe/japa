@@ -378,9 +378,17 @@ func (s *Service) CreateOrgCoupon(ctx context.Context, orgID, userID pgtype.UUID
 
 // ListOrgCoupons lists an org's service coupons in all statuses with
 // per-coupon redemption_count and listing_count rollups.
-func (s *Service) ListOrgCoupons(ctx context.Context, orgID pgtype.UUID, page, pageSize int32) ([]gen.ListOrgCouponsRow, error) {
+func (s *Service) ListOrgCoupons(ctx context.Context, orgID pgtype.UUID, page, pageSize int32) ([]gen.ListOrgCouponsRow, int64, error) {
 	limit, offset := paginate(page, pageSize)
-	return s.store.listOrgCoupons(ctx, orgID, limit, offset)
+	rows, err := s.store.listOrgCoupons(ctx, orgID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.countOrgCoupons(ctx, orgID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
 }
 
 // UpdateOrgCoupon PATCHes an org coupon — GetCouponByIDForOrg enforces org

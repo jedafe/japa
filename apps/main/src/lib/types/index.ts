@@ -2723,6 +2723,9 @@ export interface AssessmentForm {
 	is_multi_step: boolean;
 	submit_label: string;
 	status: string;
+	/** Top-level echoes emitted by GET /assessment alongside scoring_config. */
+	max_score?: number;
+	thresholds?: AssessmentThreshold[];
 	scoring_config: AssessmentScoringConfig;
 	fields: AssessmentField[];
 	/** Derived union of field scoring dimensions and curated roadmap library keys (§71). */

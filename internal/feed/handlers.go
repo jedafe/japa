@@ -23,11 +23,12 @@ import (
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go"
+	"golang.org/x/net/html"
 )
 
 const defaultPageSize int32 = 20
 
-// exploreCacheTTL is the TTL for jc:explore:{platform}:{geo}:{page} (Section 53).
+// exploreCacheTTL is the TTL for jc:explore:{geo}:{region}:{sort}:{page}:{page_size} (Section 53).
 const exploreCacheTTL = 15 * time.Minute
 
 // toInt32 converts an int to int32 without overflow. It clamps to
@@ -102,7 +103,16 @@ func (h *Handlers) SetContentResolver(r contentFieldResolver) {
 // own source/target country fields scope {{Source_*}}/{{Destination_*}}.
 // Best-effort: failures are logged, never fatal. Called after the explore
 // cache read so request-scoped literals ({{Current_Year}}, geo) stay fresh.
+//
+// Source-imported titles/excerpts can carry raw HTML entities (&ndash;,
+// &amp;, ...) — cards render plain text so entities surface literally.
+// Decode them here, post-cache, so every feed path gets clean text.
 func (h *Handlers) resolveFeedLiterals(r *http.Request, items []FeedItem) {
+	for i := range items {
+		items[i].Title = html.UnescapeString(items[i].Title)
+		items[i].Excerpt = html.UnescapeString(items[i].Excerpt)
+	}
+
 	if h.contentResolver == nil || len(items) == 0 || literals.IsRawRequest(r) {
 		return
 	}
@@ -207,7 +217,10 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page := int(offset) / int(limit)
-	cacheKey := vkcache.MustKey("explore:%s:%s:%s:%s:%d", "", geoCode, geoRegion, sort, page)
+	// The page size must be part of the key: "page 0" means different item
+	// sets at limit=2 vs limit=21, so a size-agnostic key serves stale
+	// wrong-size pages until the 15-minute TTL expires.
+	cacheKey := vkcache.MustKey("explore:%s:%s:%s:%s:%d:%d", "", geoCode, geoRegion, sort, page, limit)
 
 	vc := visitor.FromContext(r.Context())
 
@@ -581,6 +594,9 @@ var journeyStageOptions = []journeyOption{
 	{Value: "approved", Label: "Approved"},
 	{Value: "relocated", Label: "Relocated"},
 	{Value: "settled", Label: "Settled"},
+	// Trip-class terminals (ADR-122) for visit/business journeys.
+	{Value: "traveled", Label: "Traveled"},
+	{Value: "returned", Label: "Returned"},
 }
 
 // GetJourneyOptions handles GET /api/v1/feed/journey-options — public endpoint.
