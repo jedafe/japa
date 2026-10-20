@@ -45,6 +45,18 @@ func PredicateNames() []string {
 	return out
 }
 
+// userClassSet and surfaceSet bound the audience vocab — a typo'd class or
+// surface makes a rule silently never-match, so validate at write time.
+var userClassSet = map[string]bool{
+	ClassGuest: true, ClassRegular: true, ClassPro: true, ClassBusiness: true,
+}
+
+var surfaceSet = map[string]bool{
+	"main": true, "tools": true, "academy": true, "docs": true, "mobile": true,
+}
+
+var frequencyModeSet = map[string]bool{"once": true, "recurring": true}
+
 var channelSet = map[string]bool{
 	ChannelPopup: true, ChannelAnnouncementBar: true, ChannelSidebar: true,
 	ChannelInArticle: true, ChannelNotification: true, ChannelPush: true, ChannelEmail: true,
@@ -74,6 +86,19 @@ func ValidateRule(r Rule, allowedOrigins []string) error {
 	for _, ch := range r.Channels {
 		if !channelSet[ch] {
 			return fmt.Errorf("unknown channel %q", ch)
+		}
+	}
+	if !frequencyModeSet[r.Frequency.Mode] {
+		return fmt.Errorf("frequency.mode must be once or recurring")
+	}
+	for _, uc := range r.Audience.UserClass {
+		if !userClassSet[uc] {
+			return fmt.Errorf("unknown audience user_class %q", uc)
+		}
+	}
+	for _, sf := range r.Audience.Surfaces {
+		if !surfaceSet[sf] {
+			return fmt.Errorf("unknown audience surface %q", sf)
 		}
 	}
 	if slices.Contains(r.Audience.UserClass, ClassGuest) {

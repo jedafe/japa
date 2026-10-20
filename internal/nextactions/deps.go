@@ -33,16 +33,16 @@ func (d *queryDeps) CountEvents(ctx context.Context, s *UserState, eventType str
 	})
 }
 
-func (d *queryDeps) ToolUsed(ctx context.Context, s *UserState, slug string) (bool, error) {
+func (d *queryDeps) ToolUsed(ctx context.Context, s *UserState, slug string, days int) (bool, error) {
 	var n int64
 	var err error
 	if s.UserID.Valid {
 		n, err = d.read.CountUserToolEvents(ctx, gen.CountUserToolEventsParams{
-			UserID: s.UserID, ToolSlug: slug, Days: 30,
+			UserID: s.UserID, ToolSlug: slug, Days: int32(days), // #nosec G115 — bounded
 		})
 	} else {
 		n, err = d.read.CountSessionToolEvents(ctx, gen.CountSessionToolEventsParams{
-			SessionID: &s.SessionKey, ToolSlug: slug, Days: 30,
+			SessionID: &s.SessionKey, ToolSlug: slug, Days: int32(days), // #nosec G115 — bounded
 		})
 	}
 	return err == nil && n > 0, err

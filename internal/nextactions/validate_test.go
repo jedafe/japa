@@ -9,8 +9,9 @@ func validRule() Rule {
 		Conditions: ConditionGroup{All: []Predicate{
 			{Predicate: "account_age_days", Lt: intPtr(30)},
 		}},
-		Payload:  Payload{Title: "T", CTAURL: "/pricing"},
-		Channels: []string{"popup"},
+		Payload:   Payload{Title: "T", CTAURL: "/pricing"},
+		Channels:  []string{"popup"},
+		Frequency: Frequency{Mode: "recurring", MaxImpressions: 5},
 	}
 }
 

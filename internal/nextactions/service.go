@@ -583,7 +583,20 @@ func (s *Service) guestStates(ctx context.Context, key string) map[[16]byte]user
 }
 
 // guestMarkShown bumps impressions + status for a guest-served rule.
+// Mirrors MarkNextActionShown's SQL guard — terminal states (dismissed,
+// completed, expired) are never flipped back to shown.
 func (s *Service) guestMarkShown(ctx context.Context, key string, ruleID pgtype.UUID) {
+	if s.cache != nil && key != "" && ruleID.Valid {
+		if raw, err := s.cache.HGet(ctx, valkey.MustKey("nextactions:guest:%s", key), ruleID.String()).Result(); err == nil {
+			var cur struct {
+				Status string `json:"status"`
+			}
+			if json.Unmarshal([]byte(raw), &cur) == nil &&
+				(cur.Status == StatusDismissed || cur.Status == StatusCompleted || cur.Status == StatusExpired) {
+				return
+			}
+		}
+	}
 	s.guestSetStatus(ctx, key, ruleID, map[string]any{
 		"status":        StatusShown,
 		"impressions+":  1,

@@ -44,7 +44,6 @@ import (
 	"github.com/jedafe/japa/internal/campaign"
 	"github.com/jedafe/japa/internal/catalog"
 	"github.com/jedafe/japa/internal/checklist"
-	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/comments"
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/comparison"
@@ -1669,7 +1668,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			uid = u.UserID
 			session = u.SessionID
 		} else {
-			session = clientip.FromRequest(r)
+			session = nextactions.GuestSessionKey(r)
 		}
 		_, _ = analyticsService.TrackEvent(ctx, analytics.TrackEventInput{
 			EventType:  analytics.EventType("feature." + strings.TrimSuffix(flag, ".enabled")),

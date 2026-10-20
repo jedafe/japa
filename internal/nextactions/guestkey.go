@@ -17,14 +17,19 @@ const GuestCookieName = "jc_guest"
 
 const guestCookieMaxAge = 365 * 24 * time.Hour // 1 year
 
-// guestSessionKey returns the stable guest identity: the jc_guest cookie
+// GuestSessionKey returns the stable guest identity: the jc_guest cookie
 // when present, else the client IP (cookie-less clients, crawlers).
-func guestSessionKey(r *http.Request) string {
+// Exported for other event feeds (features.SetUsageTracker) that must key
+// guest session_id identically.
+func GuestSessionKey(r *http.Request) string {
 	if c, err := r.Cookie(GuestCookieName); err == nil && c.Value != "" {
 		return c.Value
 	}
 	return clientip.FromRequest(r)
 }
+
+// guestSessionKey is the package-internal alias.
+func guestSessionKey(r *http.Request) string { return GuestSessionKey(r) }
 
 // GuestSessionMiddleware issues the jc_guest cookie to anonymous requests
 // that lack one, so the first /api/v1 touch establishes identity before any
@@ -43,7 +48,7 @@ func GuestSessionMiddleware(next http.Handler) http.Handler {
 						MaxAge:   int(guestCookieMaxAge.Seconds()),
 						HttpOnly: true,
 						SameSite: http.SameSiteLaxMode,
-						Secure:   r.TLS != nil,
+						Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 					})
 				}
 			}

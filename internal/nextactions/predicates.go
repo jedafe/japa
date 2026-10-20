@@ -17,8 +17,8 @@ type EvalDeps interface {
 	// (guests still fall back to session_id — they have no user rows).
 	CountEvents(ctx context.Context, s *UserState, eventType string, days int, session bool) (int64, error)
 	// ToolUsed reports whether the state used tool `slug` ("*" = any tool)
-	// within the trailing 30 days — platform_events `tool.used` meta.tool.
-	ToolUsed(ctx context.Context, s *UserState, slug string) (bool, error)
+	// within `days` — platform_events `tool.used` meta.tool.
+	ToolUsed(ctx context.Context, s *UserState, slug string, days int) (bool, error)
 	// FeatureUsed reports a `feature.<slug>` style event within `days`.
 	FeatureUsed(ctx context.Context, s *UserState, slug string, days int) (bool, error)
 	// GateHit reports a `feature.gate_hit` event within `days` (feature
@@ -78,9 +78,9 @@ func evalPredicate(ctx context.Context, p Predicate, s *UserState, deps EvalDeps
 	case "assessment_completed", "assessment_score":
 		return evalAssessment(ctx, p, s, deps)
 	case "tool_used":
-		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.ToolUsed(ctx, s, p.Slug) })
+		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.ToolUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
 	case "tool_not_used":
-		return !evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.ToolUsed(ctx, s, p.Slug) })
+		return !evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.ToolUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
 	case "feature_used":
 		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.FeatureUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
 	case "feature_not_used":
