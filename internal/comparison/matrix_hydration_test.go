@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -67,7 +68,9 @@ type matrixFakeDB struct {
 	itemRows [][]any
 	dimRows  [][]any
 	valRows  [][]any
-	queries  []string
+
+	mu      sync.Mutex
+	queries []string
 }
 
 func (f *matrixFakeDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
@@ -75,7 +78,11 @@ func (f *matrixFakeDB) Exec(context.Context, string, ...any) (pgconn.CommandTag,
 }
 
 func (f *matrixFakeDB) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+	// GetComparisonMatrix fans the three matrix queries out on errgroup
+	// goroutines — pgx pools are goroutine-safe, the fake must be too.
+	f.mu.Lock()
 	f.queries = append(f.queries, sql)
+	f.mu.Unlock()
 
 	switch {
 	case strings.Contains(sql, "FROM comparison_items"):
