@@ -29,7 +29,7 @@ linters:
     # style
     - gocritic
     - revive
-    - wsl
+    - wsl_v5
     - whitespace
     - godot
     - misspell
@@ -132,7 +132,7 @@ linters:
     nolintlint:
       require-explanation: true
       require-specific: true
-    wsl:
+    wsl_v5:
       allow-first-in-block: true
       allow-whole-block: false
       branch-max-lines: 2
@@ -141,10 +141,6 @@ formatters:
   enable:
     - gofmt
     - gofumpt
-  disable:
-    - gci
-    - goimports
-    - golines
   settings:
     gofumpt:
       extra-rules: true

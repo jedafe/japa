@@ -402,10 +402,12 @@ func (res *Resolver) ResolveForUser(ctx context.Context, userID pgtype.UUID) Vis
 		vc.ContentCountry = strings.ToUpper(*pref)
 		vc.Source = "preference"
 		res.enrichArchetype(ctx, &vc, user, "")
+
 		return vc
 	}
 
 	res.enrichArchetype(ctx, &vc, user, "")
+
 	return vc
 }
 

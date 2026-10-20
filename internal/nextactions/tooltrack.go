@@ -27,35 +27,35 @@ type ToolRoute struct {
 // ToolUsageRoutes is the canonical endpoint→tool map. Keep slugs aligned
 // with the /tools/<slug> frontend routes and the §122 seed predicates.
 var ToolUsageRoutes = []ToolRoute{
-	{Method: "POST", Prefix: "/crs/calculate", Slug: "crs-calculator"},
-	{Method: "POST", Prefix: "/assessment/submit", Slug: "readiness-assessment"},
-	{Method: "POST", Prefix: "/cv-formatter/format", Slug: "cv-formatter"},
-	{Method: "POST", Prefix: "/sop/generate", Slug: "sop-generator"},
-	{Method: "POST", Prefix: "/credentials/", Slug: "credential-checker"},
-	{Method: "POST", Prefix: "/jce/comparisons", Slug: "comparison-tool"},
-	{Method: "POST", Prefix: "/jce/selections", Slug: "comparison-tool"},
-	{Method: "POST", Prefix: "/community-locator", Slug: "community-locator"},
-	{Method: "POST", Prefix: "/me/appointment-alerts", Slug: "embassy-alerter"},
-	{Method: "POST", Prefix: "/me/visa-timelines", Slug: "processing-tracker"},
-	{Method: "PATCH", Prefix: "/checklist/", Slug: "visa-checklist"},
-	{Method: "GET", Prefix: "/calculator/cost-of-living/compare", Slug: "cost-of-living"},
-	{Method: "GET", Prefix: "/pof/calculate", Slug: "pof-calculator"},
-	{Method: "GET", Prefix: "/fx/convert", Slug: "currency-converter"},
-	{Method: "GET", Prefix: "/remittance/calculate", Slug: "remittance"},
-	{Method: "GET", Prefix: "/eca/guides/", Slug: "eca-guide"},
-	{Method: "GET", Prefix: "/eca/compare", Slug: "eca-guide"},
-	{Method: "GET", Prefix: "/attestation/", Slug: "attestation-guide"},
-	{Method: "GET", Prefix: "/housing-guide/", Slug: "housing-guide"},
-	{Method: "GET", Prefix: "/language-tests/", Slug: "language-test"},
-	{Method: "GET", Prefix: "/credentials/", Slug: "credential-checker"},
-	{Method: "GET", Prefix: "/checklist/", Slug: "visa-checklist"},
-	{Method: "GET", Prefix: "/arrival-checklist/", Slug: "arrival-checklist"},
-	{Method: "GET", Prefix: "/community-locator/", Slug: "community-locator"},
-	{Method: "GET", Prefix: "/jce/comparisons/", Slug: "comparison-tool"},
-	{Method: "GET", Prefix: "/scholarships/", Slug: "scholarships"},
-	{Method: "GET", Prefix: "/processing-times", Slug: "processing-tracker"},
-	{Method: "GET", Prefix: "/visa-routes/", Slug: "visa-routes"},
-	{Method: "GET", Prefix: "/tax-calculator/", Slug: "tax-calculator"},
+	{Method: http.MethodPost, Prefix: "/crs/calculate", Slug: "crs-calculator"},
+	{Method: http.MethodPost, Prefix: "/assessment/submit", Slug: "readiness-assessment"},
+	{Method: http.MethodPost, Prefix: "/cv-formatter/format", Slug: "cv-formatter"},
+	{Method: http.MethodPost, Prefix: "/sop/generate", Slug: "sop-generator"},
+	{Method: http.MethodPost, Prefix: "/credentials/", Slug: "credential-checker"},
+	{Method: http.MethodPost, Prefix: "/jce/comparisons", Slug: "comparison-tool"},
+	{Method: http.MethodPost, Prefix: "/jce/selections", Slug: "comparison-tool"},
+	{Method: http.MethodPost, Prefix: "/community-locator", Slug: "community-locator"},
+	{Method: http.MethodPost, Prefix: "/me/appointment-alerts", Slug: "embassy-alerter"},
+	{Method: http.MethodPost, Prefix: "/me/visa-timelines", Slug: "processing-tracker"},
+	{Method: http.MethodPatch, Prefix: "/checklist/", Slug: "visa-checklist"},
+	{Method: http.MethodGet, Prefix: "/calculator/cost-of-living/compare", Slug: "cost-of-living"},
+	{Method: http.MethodGet, Prefix: "/pof/calculate", Slug: "pof-calculator"},
+	{Method: http.MethodGet, Prefix: "/fx/convert", Slug: "currency-converter"},
+	{Method: http.MethodGet, Prefix: "/remittance/calculate", Slug: "remittance"},
+	{Method: http.MethodGet, Prefix: "/eca/guides/", Slug: "eca-guide"},
+	{Method: http.MethodGet, Prefix: "/eca/compare", Slug: "eca-guide"},
+	{Method: http.MethodGet, Prefix: "/attestation/", Slug: "attestation-guide"},
+	{Method: http.MethodGet, Prefix: "/housing-guide/", Slug: "housing-guide"},
+	{Method: http.MethodGet, Prefix: "/language-tests/", Slug: "language-test"},
+	{Method: http.MethodGet, Prefix: "/credentials/", Slug: "credential-checker"},
+	{Method: http.MethodGet, Prefix: "/checklist/", Slug: "visa-checklist"},
+	{Method: http.MethodGet, Prefix: "/arrival-checklist/", Slug: "arrival-checklist"},
+	{Method: http.MethodGet, Prefix: "/community-locator/", Slug: "community-locator"},
+	{Method: http.MethodGet, Prefix: "/jce/comparisons/", Slug: "comparison-tool"},
+	{Method: http.MethodGet, Prefix: "/scholarships/", Slug: "scholarships"},
+	{Method: http.MethodGet, Prefix: "/processing-times", Slug: "processing-tracker"},
+	{Method: http.MethodGet, Prefix: "/visa-routes/", Slug: "visa-routes"},
+	{Method: http.MethodGet, Prefix: "/tax-calculator/", Slug: "tax-calculator"},
 }
 
 // apiPrefix is the mount point the middleware strips before matching.
@@ -85,18 +85,23 @@ func TrackToolUsage(tracker EventTracker) func(http.Handler) http.Handler {
 			if tracker == nil || rec.status >= 400 {
 				return
 			}
+
 			path := r.URL.Path
 			if rest, ok := strings.CutPrefix(path, apiPrefix); ok {
 				path = rest
 			}
+
 			for _, rt := range ToolUsageRoutes {
 				if rt.Method != "" && r.Method != rt.Method {
 					continue
 				}
+
 				if !strings.HasPrefix(path, rt.Prefix) {
 					continue
 				}
+
 				emitToolUsed(r, tracker, rt.Slug)
+
 				return // first match wins
 			}
 		})
@@ -105,6 +110,7 @@ func TrackToolUsage(tracker EventTracker) func(http.Handler) http.Handler {
 
 func emitToolUsed(r *http.Request, tracker EventTracker, slug string) {
 	var userID pgtype.UUID
+
 	session := clientip.FromRequest(r)
 	if u := auth.FromContext(r.Context()); u != nil {
 		userID = u.UserID
@@ -112,6 +118,7 @@ func emitToolUsed(r *http.Request, tracker EventTracker, slug string) {
 			session = u.SessionID
 		}
 	}
+
 	_, _ = tracker.TrackEvent(r.Context(), analytics.TrackEventInput{
 		EventType:  analytics.EventToolUsed,
 		UserID:     userID,

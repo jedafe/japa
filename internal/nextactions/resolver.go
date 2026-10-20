@@ -117,9 +117,11 @@ func (r *StateResolver) ResolveSweep(ctx context.Context, userID pgtype.UUID) *U
 			if row.CreatedAt.Valid {
 				s.AccountAgeDays = int(time.Since(row.CreatedAt.Time).Hours() / 24)
 			}
+
 			s.EmailVerified = row.EmailVerifiedAt.Valid
 			s.ProfilePct = profilePct(row)
 		}
+
 		if ob, err := r.read.GetOnboardingState(ctx, userID); err == nil {
 			s.OnboardingDone = ob.Completed
 		}

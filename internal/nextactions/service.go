@@ -303,18 +303,23 @@ func (s *Service) audienceMatchSweep(rule Rule, state *UserState) bool {
 	if len(a.UserClass) > 0 && !slices.Contains(a.UserClass, state.UserClass) {
 		return false
 	}
+
 	if len(a.Archetype) > 0 && !slices.Contains(a.Archetype, state.VCtx.Archetype) {
 		return false
 	}
+
 	if len(a.JapaStage) > 0 && !slices.Contains(a.JapaStage, state.VCtx.JapaStage) {
 		return false
 	}
+
 	if len(a.DestinationCountry) > 0 && !slices.Contains(a.DestinationCountry, state.VCtx.DestinationCountry) {
 		return false
 	}
+
 	if len(a.OriginCountry) > 0 && !slices.Contains(a.OriginCountry, state.VCtx.OriginCountry) {
 		return false
 	}
+
 	return true
 }
 
