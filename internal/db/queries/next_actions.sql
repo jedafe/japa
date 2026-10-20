@@ -134,7 +134,11 @@ WHERE user_id = @user_id
 ORDER BY created_at DESC LIMIT 1;
 
 -- name: GetUserForNextActionState :one
-SELECT id, created_at, email_verified_at FROM users WHERE id = @user_id;
+SELECT u.id, u.created_at, u.email_verified_at,
+       p.display_name, p.avatar_url, p.bio
+FROM users u
+LEFT JOIN user_profiles p ON p.user_id = u.id
+WHERE u.id = @user_id;
 
 -- name: ListActiveUsersForSweep :many
 SELECT DISTINCT user_id FROM platform_events

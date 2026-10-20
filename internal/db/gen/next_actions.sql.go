@@ -311,19 +311,33 @@ func (q *Queries) GetNextActionRuleBySlug(ctx context.Context, slug string) (Nex
 }
 
 const getUserForNextActionState = `-- name: GetUserForNextActionState :one
-SELECT id, created_at, email_verified_at FROM users WHERE id = $1
+SELECT u.id, u.created_at, u.email_verified_at,
+       p.display_name, p.avatar_url, p.bio
+FROM users u
+LEFT JOIN user_profiles p ON p.user_id = u.id
+WHERE u.id = $1
 `
 
 type GetUserForNextActionStateRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	EmailVerifiedAt pgtype.Timestamptz `json:"email_verified_at"`
+	DisplayName     *string            `json:"display_name"`
+	AvatarUrl       *string            `json:"avatar_url"`
+	Bio             *string            `json:"bio"`
 }
 
 func (q *Queries) GetUserForNextActionState(ctx context.Context, userID pgtype.UUID) (GetUserForNextActionStateRow, error) {
 	row := q.db.QueryRow(ctx, getUserForNextActionState, userID)
 	var i GetUserForNextActionStateRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.EmailVerifiedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Bio,
+	)
 	return i, err
 }
 

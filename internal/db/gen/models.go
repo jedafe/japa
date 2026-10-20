@@ -2712,6 +2712,26 @@ type NewsletterUnsubscribeToken struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
+type NextActionRule struct {
+	ID               pgtype.UUID        `json:"id"`
+	Slug             string             `json:"slug"`
+	Name             string             `json:"name"`
+	Description      string             `json:"description"`
+	Enabled          bool               `json:"enabled"`
+	Priority         int32              `json:"priority"`
+	Audience         []byte             `json:"audience"`
+	Conditions       []byte             `json:"conditions"`
+	Payload          []byte             `json:"payload"`
+	Channels         []byte             `json:"channels"`
+	CompletionSignal []byte             `json:"completion_signal"`
+	Frequency        []byte             `json:"frequency"`
+	ValidFrom        pgtype.Timestamptz `json:"valid_from"`
+	ValidUntil       pgtype.Timestamptz `json:"valid_until"`
+	CreatedBy        pgtype.UUID        `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Notification struct {
 	ID               pgtype.UUID        `json:"id"`
 	RecipientID      pgtype.UUID        `json:"recipient_id"`
@@ -4540,6 +4560,21 @@ type UserMute struct {
 	UserID      pgtype.UUID        `json:"user_id"`
 	MutedUserID pgtype.UUID        `json:"muted_user_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type UserNextAction struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	RuleID       pgtype.UUID        `json:"rule_id"`
+	Status       string             `json:"status"`
+	Impressions  int32              `json:"impressions"`
+	FirstShownAt pgtype.Timestamptz `json:"first_shown_at"`
+	LastShownAt  pgtype.Timestamptz `json:"last_shown_at"`
+	SnoozedUntil pgtype.Timestamptz `json:"snoozed_until"`
+	DismissedAt  pgtype.Timestamptz `json:"dismissed_at"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type UserOperationBan struct {
