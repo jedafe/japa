@@ -12,7 +12,7 @@ permissions:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,7 +31,7 @@ jobs:
 
   build:
     name: Build & Vet
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,7 +50,7 @@ jobs:
 
   frontend:
     name: Frontend (${{ matrix.app }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
     env:
       # svelte-check on apps/main exceeds the default ~2GB node heap.
       NODE_OPTIONS: --max-old-space-size=6144
@@ -95,7 +95,7 @@ jobs:
         run: python3 scripts/check_runtime_imports.py apps/${{ matrix.app }}
   extension:
     name: Extension
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
     defaults:
       run:
         working-directory: apps/extension
@@ -123,7 +123,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
 

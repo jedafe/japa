@@ -11,7 +11,7 @@ permissions:
 jobs:
   lint-pr:
     name: PR Title & Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +21,7 @@ jobs:
           cache: true
 
       - name: golangci-lint (changed files only)
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.1.6
+          version: v2.14.0
           args: --new-from-rev=HEAD~1 --timeout=5m
