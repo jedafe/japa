@@ -248,6 +248,22 @@ var widgetRegistry = []WidgetType{
 		PropSchema: []PropField{limitProp(), titleProp()},
 	},
 	{
+		// §122 Next-Action Suggestion (ADR-132) — personalised next-step card
+		// fetched from /next-actions?surface=main (channels contains sidebar).
+		Type:        "next_action",
+		Name:        "Next Step",
+		Description: "Personalised next-step suggestion — data fetched from /next-actions?surface=main. Guests and members alike; hidden while empty",
+		Icon:        "compass",
+		Slot:        WidgetSlotContent,
+		Category:    WidgetCategoryMarketing,
+		Apps:        appMainOnly,
+		DefaultProps: map[string]any{
+			"limit": 1,
+			"title": "Your next step",
+		},
+		PropSchema: []PropField{limitProp(), titleProp()},
+	},
+	{
 		Type:        "ad_slot",
 		Name:        "Ad Slot",
 		Description: "Advertisement slot — data fetched from /ads/serve?slot= (requires the feature.ads flag; renders nothing when no campaign is served). Guests: same ad serving as signed-in users. The only widget type the left rail renders",

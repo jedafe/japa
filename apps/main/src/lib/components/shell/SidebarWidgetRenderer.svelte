@@ -26,6 +26,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { trackNextAction, completeNextAction, dismissNextAction } from '$lib/api/nextActions';
 	import { page } from '$app/state';
 	import { Menu, MenuItem } from '$lib/components/ui';
 	import { untrack } from 'svelte';
@@ -218,6 +219,7 @@
 	let spaces = $state<SpaceItem[]>([]);
 	let recentContent = $state<RecentContentItem[]>([]);
 	let suggestedContent = $state<RecentContentItem[]>([]);
+	let nextActions = $state<import('$lib/types').NextAction[]>([]);
 	let bookmarkFolders = $state<BookmarkFolderItem[]>([]);
 	// Match the dashboard bookmarks page: empty folders stay hidden — a
 	// folder only surfaces here once it holds at least one bookmark.
@@ -655,6 +657,13 @@
 			suggestedContent = res.data ?? [];
 			dataLoaded = { ...dataLoaded, suggested_content: true };
 		}
+		async function fetchNextActions() {
+			// §122 — guests get sidebar-channel suggestions too (no user gate).
+			const res = await dedupedGet<import('$lib/types').NextAction[]>('/next-actions?surface=main');
+			nextActions = (res.data ?? []).filter((a) => a.channels.includes('sidebar'));
+			if (nextActions[0]) trackNextAction(nextActions[0].id, 'shown');
+			dataLoaded = { ...dataLoaded, next_action: true };
+		}
 		async function fetchBookmarks() {
 			if (!user) { dataLoaded = { ...dataLoaded, bookmark_folders: true }; return; }
 			const res = await dedupedGet<BookmarkFolderItem[]>('/me/bookmark-folders');
@@ -950,6 +959,7 @@
 		else if (wt === 'space_list') void fetchSpaces().finally(settled);
 		else if (wt === 'recent_content') void fetchRecent().finally(settled);
 		else if (wt === 'suggested_content') void fetchSuggestedContent().finally(settled);
+		else if (wt === 'next_action') void fetchNextActions().finally(settled);
 		else if (wt === 'bookmark_folders') void fetchBookmarks().finally(settled);
 		else if (wt === 'academy_enrollments' || wt === 'continue_learning' || wt === 'progress_ring') void fetchEnrollments().finally(settled);
 		else if (wt === 'track_card') void fetchFeaturedTrack().finally(settled);
@@ -1136,6 +1146,35 @@
 			</ul>
 		{/if}
 	</section>
+{:else if widget.widget_type === 'next_action'}
+	<!-- §122 — render only when a sidebar-channel suggestion exists;
+	     guests and members alike, hidden while empty. -->
+	{#if !dataLoaded['next_action']}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<div class="space-y-2">
+				<div class="jc-skeleton h-4 w-full rounded"></div>
+				<div class="jc-skeleton h-4 w-2/3 rounded"></div>
+			</div>
+		</section>
+	{:else if nextActions.length > 0}
+		{@const na = nextActions[0]}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.next_action', 'Your next step')}</h2>
+			<p class="text-sm font-medium text-[var(--color-text)]">{na.title}</p>
+			{#if na.body}<p class="mt-1 text-xs text-[var(--color-muted)]">{na.body}</p>{/if}
+			<div class="mt-3 flex items-center gap-2">
+				<a
+					href={na.cta_url}
+					onclick={() => { trackNextAction(na.id, 'clicked'); void completeNextAction(na.id); }}
+					class="rounded-full bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white hover:opacity-90"
+				>{na.cta_label}</a>
+				<button
+					onclick={() => { void dismissNextAction(na.id); nextActions = nextActions.slice(1); }}
+					class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+				>{t('common.dismiss', 'Dismiss')}</button>
+			</div>
+		</section>
+	{/if}
 {:else if widget.widget_type === 'space_list'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.spaces', 'Spaces')}</h2>
