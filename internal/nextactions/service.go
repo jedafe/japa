@@ -859,6 +859,9 @@ func (s *Service) sweepUser(ctx context.Context, userID pgtype.UUID, rules []Rul
 			}
 		}
 		_ = s.write.MarkNextActionShown(ctx, gen.MarkNextActionShownParams{UserID: userID, RuleID: rule.ID})
+		// A push/notification delivery IS a shown impression — emit so the
+		// §40 funnel covers sweep-delivered suggestions, not just pull-rendered.
+		s.trackSlug(ctx, sweepState, rule.ID, rule.Slug, analytics.EventNextActionShown)
 	}
 }
 

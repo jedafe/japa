@@ -124,6 +124,35 @@ func validateGroup(g ConditionGroup) error {
 		if !predicateRegistry[p.Predicate] {
 			return fmt.Errorf("unknown predicate %q", p.Predicate)
 		}
+		if err := validatePredicateArgs(p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validatePredicateArgs rejects predicates that can never match — required
+// args missing, empty `in` lists, or comparators with no bound.
+func validatePredicateArgs(p Predicate) error {
+	switch p.Predicate {
+	case "user_class", "account_tier", "japa_stage", "archetype",
+		"destination_country", "origin_country", "current_country", "surface":
+		if len(p.In) == 0 {
+			return fmt.Errorf("%s requires a non-empty in list", p.Predicate)
+		}
+	case "tool_used", "tool_not_used", "feature_used", "feature_not_used":
+		if p.Slug == "" {
+			return fmt.Errorf("%s requires slug", p.Predicate)
+		}
+	case "event_count":
+		if p.Type == "" || p.Gte == nil {
+			return fmt.Errorf("event_count requires type and gte")
+		}
+	case "account_age_days", "profile_completeness", "assessment_score",
+		"session_page_views", "dwell_seconds":
+		if p.Lt == nil && p.Gt == nil && p.Gte == nil {
+			return fmt.Errorf("%s requires lt, gt, or gte", p.Predicate)
+		}
 	}
 	return nil
 }

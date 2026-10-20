@@ -99,18 +99,43 @@ func TestValidateRuleAcceptsSeedShapes(t *testing.T) {
 
 func TestValidateRuleAllPredicatesKnown(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{
-		"user_class", "account_tier", "account_age_days", "onboarding_completed",
-		"email_verified", "profile_completeness", "japa_stage", "archetype",
-		"destination_country", "origin_country", "current_country",
-		"assessment_completed", "assessment_score", "tool_used", "tool_not_used",
-		"feature_used", "feature_not_used", "event_count", "feature_gate_hit",
-		"session_page_views", "dwell_seconds", "has_push_subscription", "surface",
-	} {
+	// Each registered predicate with minimally valid args — the test proves
+	// both the name registry and the arg contract stay consistent.
+	preds := map[string]Predicate{
+		"user_class":            {Predicate: "user_class", In: []string{"regular"}},
+		"account_tier":          {Predicate: "account_tier", In: []string{"regular"}},
+		"account_age_days":      {Predicate: "account_age_days", Lt: intPtr(30)},
+		"onboarding_completed":  {Predicate: "onboarding_completed"},
+		"email_verified":        {Predicate: "email_verified"},
+		"profile_completeness":  {Predicate: "profile_completeness", Gte: intPtr(50)},
+		"japa_stage":            {Predicate: "japa_stage", In: []string{"planning"}},
+		"archetype":             {Predicate: "archetype", In: []string{"student"}},
+		"destination_country":   {Predicate: "destination_country", In: []string{"CA"}},
+		"origin_country":        {Predicate: "origin_country", In: []string{"NG"}},
+		"current_country":       {Predicate: "current_country", In: []string{"NG"}},
+		"assessment_completed":  {Predicate: "assessment_completed"},
+		"assessment_score":      {Predicate: "assessment_score", Gte: intPtr(60)},
+		"tool_used":             {Predicate: "tool_used", Slug: "crs-calculator"},
+		"tool_not_used":         {Predicate: "tool_not_used", Slug: "crs-calculator"},
+		"feature_used":          {Predicate: "feature_used", Slug: "checklist"},
+		"feature_not_used":      {Predicate: "feature_not_used", Slug: "checklist"},
+		"event_count":           {Predicate: "event_count", Type: "content.viewed", Gte: intPtr(3)},
+		"feature_gate_hit":      {Predicate: "feature_gate_hit"},
+		"session_page_views":    {Predicate: "session_page_views", Gte: intPtr(3)},
+		"dwell_seconds":         {Predicate: "dwell_seconds", Gte: intPtr(60)},
+		"has_push_subscription": {Predicate: "has_push_subscription"},
+		"surface":               {Predicate: "surface", In: []string{"main"}},
+	}
+	for name, pred := range preds {
 		r := validRule()
-		r.Conditions = ConditionGroup{All: []Predicate{{Predicate: name}}}
+		r.Conditions = ConditionGroup{All: []Predicate{pred}}
 		if err := ValidateRule(r, nil); err != nil {
 			t.Errorf("predicate %q should validate, got %v", name, err)
+		}
+	}
+	for name := range predicateRegistry {
+		if _, ok := preds[name]; !ok {
+			t.Errorf("registered predicate %q missing from test matrix", name)
 		}
 	}
 }
