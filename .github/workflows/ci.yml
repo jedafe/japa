@@ -24,9 +24,9 @@ jobs:
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.1.6
+          version: v2.14.0
           args: --timeout=5m
 
   build:
@@ -51,6 +51,9 @@ jobs:
   frontend:
     name: Frontend (${{ matrix.app }})
     runs-on: ubuntu-latest
+    env:
+      # svelte-check on apps/main exceeds the default ~2GB node heap.
+      NODE_OPTIONS: --max-old-space-size=6144
     strategy:
       fail-fast: false
       matrix:
