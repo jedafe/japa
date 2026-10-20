@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-20
 **Status:** Draft for review
-**JEOS refs:** §04 (multi-tenancy), §09 (onboarding), §10 (realtime/WS), §11 (job queue), §35 (notifications), §40 (platform analytics), §42 (feature flags), ADR-064a (geo-aware recommendations), ADR-128 (intent personalization), unified user tiers design (2026-09-03)
+**JEOS refs:** §09 (onboarding), §10 (realtime/WS), §11 (job queue), §35 (notifications), §40 (platform analytics), §42 (feature flags), §59 (sidebars), §71 (readiness assessment), ADR-064a (geo-aware recommendations), ADR-128 (intent personalization), unified user tiers design (2026-09-03)
 
 ## Goal
 
@@ -48,8 +48,7 @@ snoozed/completed) and proactive delivery.
 ```sql
 CREATE TABLE public.next_action_rules (
     id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    platform_id      uuid NOT NULL REFERENCES platforms(id),
-    slug             text NOT NULL,
+    slug             text NOT NULL UNIQUE,
     name             text NOT NULL,
     description      text NOT NULL DEFAULT '',
     enabled          boolean NOT NULL DEFAULT false,
@@ -64,11 +63,10 @@ CREATE TABLE public.next_action_rules (
     valid_until      timestamptz,
     created_by       uuid REFERENCES users(id),
     created_at       timestamptz NOT NULL DEFAULT now(),
-    updated_at       timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (platform_id, slug)
+    updated_at       timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_next_action_rules_enabled
-    ON public.next_action_rules (platform_id, enabled, priority);
+    ON public.next_action_rules (enabled, priority);
 ```
 
 `audience` shape:
@@ -101,7 +99,6 @@ CREATE INDEX idx_next_action_rules_enabled
 ```sql
 CREATE TABLE public.user_next_actions (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    platform_id   uuid NOT NULL REFERENCES platforms(id),
     user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     rule_id       uuid NOT NULL REFERENCES next_action_rules(id) ON DELETE CASCADE,
     status        text NOT NULL DEFAULT 'pending'
@@ -192,7 +189,7 @@ Response item shape:
 **Pull path** (`GET /api/v1/next-actions`):
 
 1. Resolve VisitorContext + identity (user_id or guest session key).
-2. Load enabled, in-window rules for the platform (Valkey-cached rule list).
+2. Load enabled, in-window rules (Valkey-cached rule list).
 3. Filter by `audience` (user_class, surface, geo/stage/archetype).
 4. Evaluate `conditions` via `UserStateResolver` (gathers account age, tier,
    onboarding/assessment status, event counts — one batched resolver, not
@@ -269,7 +266,7 @@ all register rules carry `completion_signal: {"user_class": {"in": ["regular","p
   `nextactions.popup_max_per_session` (1),
   `nextactions.guest_state_ttl_seconds` (2592000).
 - **Valkey keys** (catalog additions): `jc:nextactions:user:{user_id}`,
-  `jc:nextactions:guest:{session_key}`, `jc:nextactions:rules:{platform_id}`,
+  `jc:nextactions:guest:{session_key}`, `jc:nextactions:rules`,
   `jc:nextactions:sweep:lock`.
 - **Asynq task:** `nextactions:sweep` — added to the §11 catalog before code.
 - **RBAC nodes:** `nextactions.manage` (rule CRUD), `nextactions.view`
@@ -279,8 +276,8 @@ all register rules carry `completion_signal: {"user_class": {"in": ["regular","p
   in-app, push/email default-off).
 - **JEOS first:** new section file + ADR, plus §11 task, Valkey catalog, and
   api-routes catalog entries land before implementation code.
-- **Multi-tenancy:** all tables `platform_id`-scoped; guest session keys are
-  per-platform.
+- **Tenancy:** single-tenant — no `platform_id` anywhere (multi-tenancy was
+  removed 2026-09-14 per JEOS.md).
 
 ## Error handling & edge cases
 
