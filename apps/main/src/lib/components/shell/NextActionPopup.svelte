@@ -22,7 +22,7 @@
 		action = list.find((a) => a.channels.includes('popup')) ?? null;
 		if (action) {
 			sessionStorage.setItem(SESSION_KEY, '1');
-			trackNextAction(action.id, 'shown');
+			/* server records the impression */
 			open = true;
 		}
 	});

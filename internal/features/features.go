@@ -996,6 +996,16 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percenta
 // This MUST be used inside the platform middleware group so platform
 // context is available.
 // Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §5.4.
+// UsageTracker receives feature-use signals on Gate-allowed requests —
+// wired to emit `feature.<slug>` platform_events (§122 feature_used feed).
+// Fire-and-forget by contract: it must never block or alter the response.
+type UsageTracker func(ctx context.Context, r *http.Request, feature string)
+
+var usageTracker UsageTracker
+
+// SetUsageTracker wires the §122 feature-used feed for Gate/GateAny.
+func SetUsageTracker(fn UsageTracker) { usageTracker = fn }
+
 func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1005,6 +1015,9 @@ func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 				return
 			}
 
+			if usageTracker != nil {
+				usageTracker(r.Context(), r, key)
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -1028,6 +1041,9 @@ func GateAny(checker *Checker, keys ...string) func(http.Handler) http.Handler {
 			sc := checker.BuildScope(r, SurfaceFrom(r))
 			for _, key := range keys {
 				if checker.EvalFlag(r.Context(), key, sc).Enabled {
+					if usageTracker != nil {
+						usageTracker(r.Context(), r, key)
+					}
 					next.ServeHTTP(w, r)
 					return
 				}

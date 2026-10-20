@@ -8,7 +8,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/visitor"
 )
@@ -63,7 +62,7 @@ func (r *StateResolver) SetVisitorResolver(v SweepVisitorResolver) { r.visitor =
 func (r *StateResolver) Resolve(ctx context.Context, req *http.Request, surface string) *UserState {
 	s := &UserState{
 		UserClass:  ClassGuest,
-		SessionKey: clientip.FromRequest(req),
+		SessionKey: guestSessionKey(req), // jc_guest cookie, IP fallback
 		VCtx:       visitor.FromContext(ctx),
 		Surface:    surface,
 	}

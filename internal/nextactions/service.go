@@ -13,7 +13,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/analytics"
-	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
@@ -97,13 +96,13 @@ func (s *Service) settingInt(ctx context.Context, key string, fallback int) int 
 func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface string, limit int) ([]Suggestion, error) {
 	state := s.resolver.Resolve(ctx, r, surface)
 
-	// One-shot guest→user state merge: the first authed request from an IP
-	// carries any guest dismissals/completions into user_next_actions so
-	// pre-auth nudge fatigue doesn't resurface (§122).
+	// One-shot guest→user state merge: the first authed request carrying the
+	// jc_guest cookie (or IP fallback) copies guest dismissals/completions
+	// into user_next_actions so pre-auth nudge fatigue doesn't resurface (§122).
 	if state.UserID.Valid && s.cache != nil {
 		mergedKey := valkey.MustKey("nextactions:merged:%s", state.UserID.String())
 		if ok, err := s.cache.SetNX(ctx, mergedKey, "1", 90*24*time.Hour).Result(); err == nil && ok {
-			s.MergeGuestState(ctx, state.UserID, clientip.FromRequest(r))
+			s.MergeGuestState(ctx, state.UserID, guestSessionKey(r))
 		}
 	}
 
@@ -401,6 +400,10 @@ func (s *Service) recordImpression(ctx context.Context, state *UserState, sug Su
 			s.guestUpsellBump(ctx, state.SessionKey)
 		}
 	}
+	// Server-authoritative shown event — the §40 funnel no longer depends on
+	// clients calling track('shown'). Shipped renderers don't emit their own
+	// shown events; the /track endpoint still accepts 'shown' for compat.
+	s.trackSlug(ctx, state, ruleID, sug.RuleSlug, analytics.EventNextActionShown)
 }
 
 // Dismiss marks a suggestion dismissed (optional snooze_hours — a snooze is
@@ -483,14 +486,19 @@ func (s *Service) markCompleted(ctx context.Context, state *UserState, ruleID pg
 	}
 }
 
-// track writes a lifecycle platform_event; rule_slug joins to NextActionStats,
-// upsell meta powers the per-day upsell cap.
+// track writes a lifecycle platform_event; rule_slug joins to NextActionStats.
 func (s *Service) track(ctx context.Context, state *UserState, ruleID pgtype.UUID, et analytics.EventType) {
+	s.trackSlug(ctx, state, ruleID, s.ruleSlug(ctx, ruleID), et)
+}
+
+// trackSlug is track with the slug already in hand — used by recordImpression
+// to emit the server-authoritative shown event without a rule lookup.
+func (s *Service) trackSlug(ctx context.Context, state *UserState, ruleID pgtype.UUID, slug string, et analytics.EventType) {
 	if s.tracker == nil {
 		return
 	}
 	meta := map[string]any{}
-	if slug := s.ruleSlug(ctx, ruleID); slug != "" {
+	if slug != "" {
 		meta["rule_slug"] = slug
 	}
 	_, _ = s.tracker.TrackEvent(ctx, analytics.TrackEventInput{

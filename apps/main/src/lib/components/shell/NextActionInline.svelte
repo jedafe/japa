@@ -12,7 +12,7 @@
 	onMount(async () => {
 		const list = await getNextActions('main');
 		action = list.find((a) => a.channels.includes('in_article')) ?? null;
-		if (action) trackNextAction(action.id, 'shown');
+		if (action) { /* server records the impression */ }
 	});
 
 	function click() {

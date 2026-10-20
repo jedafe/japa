@@ -18,7 +18,7 @@
 	onMount(async () => {
 		const list = await getNextActions('main');
 		action = list.find((a) => a.channels.includes('announcement_bar')) ?? null;
-		if (action) trackNextAction(action.id, 'shown');
+		if (action) { /* server records the impression */ }
 	});
 
 	function cta() {

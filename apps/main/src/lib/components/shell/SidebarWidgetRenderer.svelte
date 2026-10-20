@@ -661,7 +661,7 @@
 			// §122 — guests get sidebar-channel suggestions too (no user gate).
 			const res = await dedupedGet<import('$lib/types').NextAction[]>('/next-actions?surface=main');
 			nextActions = (res.data ?? []).filter((a) => a.channels.includes('sidebar'));
-			if (nextActions[0]) trackNextAction(nextActions[0].id, 'shown');
+			/* server records the impression */
 			dataLoaded = { ...dataLoaded, next_action: true };
 		}
 		async function fetchBookmarks() {

@@ -44,6 +44,7 @@ import (
 	"github.com/jedafe/japa/internal/campaign"
 	"github.com/jedafe/japa/internal/catalog"
 	"github.com/jedafe/japa/internal/checklist"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/comments"
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/comparison"
@@ -1655,6 +1656,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		_, _ = analyticsService.TrackEvent(ctx, analytics.TrackEventInput{
 			EventType: analytics.EventFeatureGateHit, UserID: userID,
 			EntityType: "feature", Meta: map[string]any{"feature": feature, "required_tier": requiredTier},
+		})
+	})
+	// §122: emit feature.<slug> events on feature-gate-allowed requests —
+	// powers the feature_used/feature_not_used predicates. Flag names carry
+	// ".enabled" suffixes; the event slug strips it (checklist.enabled →
+	// feature.checklist).
+	features.SetUsageTracker(func(ctx context.Context, r *http.Request, flag string) {
+		var uid pgtype.UUID
+		session := ""
+		if u := auth.FromContext(ctx); u != nil {
+			uid = u.UserID
+			session = u.SessionID
+		} else {
+			session = clientip.FromRequest(r)
+		}
+		_, _ = analyticsService.TrackEvent(ctx, analytics.TrackEventInput{
+			EventType:  analytics.EventType("feature." + strings.TrimSuffix(flag, ".enabled")),
+			UserID:     uid,
+			SessionID:  session,
+			EntityType: "feature",
 		})
 	})
 
@@ -3298,10 +3319,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// (Section 46: "wraps all non-admin routes").
 			r.Use(impersonation.ImpersonationMiddleware(impersonationStore))
 
+			// §122 guest identity — issues the jc_guest cookie on the first
+			// anonymous request so guest state + event feeds key on a stable
+			// identity (survives IP rotation) rather than raw IP. Must run
+			// AFTER OptionalAuth so members are skipped.
+			r.Use(nextactions.GuestSessionMiddleware)
+
 			// §122 tool.used feed — emits a platform_event for successful
 			// requests to tool action/engagement endpoints (see
 			// nextactions.ToolUsageRoutes). Must run AFTER OptionalAuth so
-			// member events carry user_id; guests key on client IP.
+			// member events carry user_id; guests key on the jc_guest cookie.
 			r.Use(nextactions.TrackToolUsage(analyticsService))
 
 			// Identity-dependent enforcement middleware — MUST run after

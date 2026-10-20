@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/clientip"
 )
 
 // ToolRoute maps an API endpoint (method + path prefix, relative to /api/v1)
@@ -104,7 +103,7 @@ func TrackToolUsage(tracker EventTracker) func(http.Handler) http.Handler {
 func emitToolUsed(r *http.Request, tracker EventTracker, slug string) {
 	var userID pgtype.UUID
 
-	session := clientip.FromRequest(r)
+	session := guestSessionKey(r)
 	if u := auth.FromContext(r.Context()); u != nil {
 		userID = u.UserID
 		if u.SessionID != "" {
