@@ -49,9 +49,16 @@ class I18nStore {
 		(page.data?.siteSettings?.['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME
 	);
 
-	t = (key: string, fallback?: string): string => {
+	t = (key: string, fallback?: string, params?: Record<string, string | number>): string => {
 		const dict = dictionaries[this.locale] ?? dictionaries.en;
-		return substituteSiteName(dict[key] ?? fallback ?? key, this.siteName);
+		let value = dict[key] ?? fallback ?? key;
+		if (params) {
+			value = value.replace(/\{(\w+)\}/g, (match, p) => {
+				const v = params[p];
+				return v !== undefined ? String(v) : match;
+			});
+		}
+		return substituteSiteName(value, this.siteName);
 	};
 }
 
