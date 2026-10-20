@@ -5455,3 +5455,18 @@ export interface RoadmapChangelogItem {
 	shipped_at: string | null;
 	created_at: string;
 }
+
+// §122 Next-Action Suggestion (ADR-132) — render-ready item from
+// GET /api/v1/next-actions.
+export interface NextAction {
+	id: string;
+	action_id: string;
+	rule_slug: string;
+	title: string;
+	body: string;
+	cta_label: string;
+	cta_url: string;
+	icon: string;
+	channels: string[];
+	priority: number;
+}

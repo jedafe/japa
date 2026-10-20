@@ -12,6 +12,8 @@
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
 	import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
 	import StickyAnchorAd from '$lib/components/ads/StickyAnchorAd.svelte';
+	import NextActionBar from '$lib/components/shell/NextActionBar.svelte';
+	import NextActionPopup from '$lib/components/shell/NextActionPopup.svelte';
 	import AdConversionTracker from '$lib/components/ads/AdConversionTracker.svelte';
 	import { lightbox } from '$lib/lightbox.svelte';
 	import { chatTemplateRail } from '$lib/ai/chatTemplateRail.svelte';
@@ -296,8 +298,10 @@
 		composeEnabled={!exception && !!data.user}
 		features={data.features}
 	>
+		<NextActionBar />
 		{@render children()}
 	</AppShell>
+	<NextActionPopup />
 	{#if !exception}
 		<!-- §25: dismissible sticky anchor ad — suppressed on exception
 		     surfaces (create/studio/settings/dashboard) like the sidebars. -->
