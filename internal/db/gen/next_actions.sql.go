@@ -104,12 +104,17 @@ func (q *Queries) CountSessionToolEvents(ctx context.Context, arg CountSessionTo
 }
 
 const countUpsellShownToday = `-- name: CountUpsellShownToday :one
-SELECT count(*) FROM platform_events
-WHERE user_id = $1 AND event_type = 'next_action.shown'
-  AND meta->>'upsell' = 'true'
-  AND created_at > now() - interval '1 day'
+SELECT count(*) FROM user_next_actions una
+JOIN next_action_rules nar ON nar.id = una.rule_id
+WHERE una.user_id = $1
+  AND una.last_shown_at > now() - interval '1 day'
+  AND nar.completion_signal::text ~ '"predicate"\s*:\s*"(account_tier|user_class)"'
 `
 
+// Upsell rules are identified by a completion_signal containing an
+// account_tier or user_class predicate (the §122 upsell convention). Counts
+// actual impressions from user_next_actions — server-authoritative, no
+// dependency on client track calls.
 func (q *Queries) CountUpsellShownToday(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countUpsellShownToday, userID)
 	var count int64

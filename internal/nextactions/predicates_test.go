@@ -19,7 +19,7 @@ type stubDeps struct {
 	pushSub     bool
 }
 
-func (s stubDeps) CountEvents(_ context.Context, _ *UserState, _ string, _ int) (int64, error) {
+func (s stubDeps) CountEvents(_ context.Context, _ *UserState, _ string, _ int, _ bool) (int64, error) {
 	return s.events, nil
 }
 func (s stubDeps) ToolUsed(_ context.Context, _ *UserState, _ string) (bool, error) {

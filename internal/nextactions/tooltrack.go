@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/auth"
@@ -61,16 +62,6 @@ var ToolUsageRoutes = []ToolRoute{
 // apiPrefix is the mount point the middleware strips before matching.
 const apiPrefix = "/api/v1"
 
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-}
-
-func (w *statusRecorder) WriteHeader(code int) {
-	w.status = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
 // TrackToolUsage is the §122 tool.used feed — emits one platform_event per
 // successful request that maps to a tool action/engagement endpoint. Works
 // for guests (session_id = client IP) and members (JTI + user_id) alike,
@@ -79,10 +70,12 @@ func (w *statusRecorder) WriteHeader(code int) {
 func TrackToolUsage(tracker EventTracker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rec := &statusRecorder{ResponseWriter: w}
+			// WrapResponseWriter preserves optional interfaces (Flusher,
+			// Hijacker, ReaderFrom) so streaming endpoints are unaffected.
+			rec := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(rec, r)
 
-			if tracker == nil || rec.status >= 400 {
+			if tracker == nil || rec.Status() >= 400 {
 				return
 			}
 

@@ -164,10 +164,15 @@ WHERE user_id IS NOT NULL
 LIMIT @batch_size OFFSET @batch_offset;
 
 -- name: CountUpsellShownToday :one
-SELECT count(*) FROM platform_events
-WHERE user_id = @user_id AND event_type = 'next_action.shown'
-  AND meta->>'upsell' = 'true'
-  AND created_at > now() - interval '1 day';
+-- Upsell rules are identified by a completion_signal containing an
+-- account_tier or user_class predicate (the §122 upsell convention). Counts
+-- actual impressions from user_next_actions — server-authoritative, no
+-- dependency on client track calls.
+SELECT count(*) FROM user_next_actions una
+JOIN next_action_rules nar ON nar.id = una.rule_id
+WHERE una.user_id = @user_id
+  AND una.last_shown_at > now() - interval '1 day'
+  AND nar.completion_signal::text ~ '"predicate"\s*:\s*"(account_tier|user_class)"';
 
 -- name: NextActionStats :many
 SELECT nar.slug,

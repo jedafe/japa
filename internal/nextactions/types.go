@@ -103,6 +103,11 @@ type Suggestion struct {
 	Icon     string   `json:"icon"`
 	Channels []string `json:"channels"`
 	Priority int32    `json:"priority"`
+
+	// upsell is internal bookkeeping (not serialized): set when the rule's
+	// completion_signal keys on account_tier/user_class so guest impression
+	// writes can feed the per-day upsell cap.
+	upsell bool
 }
 
 // user_next_actions lifecycle states.

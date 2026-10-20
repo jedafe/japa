@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -32,6 +33,12 @@ func (h *Handlers) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	limit := 0
 	if v := r.URL.Query().Get("limit"); v != "" {
 		limit, _ = strconv.Atoi(v) //nolint:errcheck // invalid → default
+	}
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > 50 {
+		limit = 50
 	}
 	sugs, err := h.svc.Suggestions(r.Context(), r, surface, limit)
 	if err != nil {
@@ -301,38 +308,13 @@ func (h *Handlers) origins(r *http.Request) []string {
 		return nil
 	}
 	raw := h.settings.GetStringOr(r.Context(), "nextactions.allowed_cta_origins", "")
-	if raw == "" {
-		return nil
-	}
 	var out []string
-	for _, o := range splitCSV(raw) {
-		out = append(out, o)
-	}
-	return out
-}
-
-func splitCSV(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i <= len(s); i++ {
-		if i == len(s) || s[i] == ',' {
-			if p := trimSpace(s[start:i]); p != "" {
-				out = append(out, p)
-			}
-			start = i + 1
+	for _, o := range strings.Split(raw, ",") {
+		if p := strings.TrimSpace(o); p != "" {
+			out = append(out, p)
 		}
 	}
 	return out
-}
-
-func trimSpace(s string) string {
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t') {
-		s = s[1:]
-	}
-	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t') {
-		s = s[:len(s)-1]
-	}
-	return s
 }
 
 func mustJSON(v any) []byte {

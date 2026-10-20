@@ -109,11 +109,15 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 
 	cacheKey := s.cacheKey(state)
 	if s.cache != nil {
-		if b, err := s.cache.Get(ctx, cacheKey).Bytes(); err == nil {
-			var cached []Suggestion
-			if json.Unmarshal(b, &cached) == nil {
-				return sliceSuggestions(cached, limit), nil
+		if state.UserID.Valid {
+			if b, err := s.cache.Get(ctx, cacheKey).Bytes(); err == nil {
+				var cached []Suggestion
+				if json.Unmarshal(b, &cached) == nil {
+					return sliceSuggestions(cached, limit), nil
+				}
 			}
+		} else if cached, ok := s.guestCacheRead(ctx, state.SessionKey); ok {
+			return sliceSuggestions(cached, limit), nil
 		}
 	}
 
@@ -166,7 +170,12 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 
 	if s.cache != nil {
 		if b, err := json.Marshal(out); err == nil {
-			_ = s.cache.Set(ctx, cacheKey, b, time.Duration(s.settingInt(ctx, "nextactions.cache_ttl_seconds", defaultCacheTTLSeconds))*time.Second).Err()
+			ttl := time.Duration(s.settingInt(ctx, "nextactions.cache_ttl_seconds", defaultCacheTTLSeconds)) * time.Second
+			if state.UserID.Valid {
+				_ = s.cache.Set(ctx, cacheKey, b, ttl).Err()
+			} else {
+				s.guestCacheWrite(ctx, state.SessionKey, b, ttl)
+			}
 		}
 	}
 
@@ -339,7 +348,8 @@ func isUpsell(rule Rule) bool {
 
 func (s *Service) toSuggestion(rule Rule, st userActionState) Suggestion {
 	sug := Suggestion{
-		ID: rule.ID.String(), RuleSlug: rule.Slug,
+		upsell: isUpsell(rule),
+		ID:     rule.ID.String(), RuleSlug: rule.Slug,
 		Title: rule.Payload.Title, Body: rule.Payload.Body,
 		CTALabel: rule.Payload.CTALabel, CTAURL: rule.Payload.CTAURL,
 		Icon: rule.Payload.Icon, Channels: rule.Channels, Priority: rule.Priority,
@@ -387,6 +397,9 @@ func (s *Service) recordImpression(ctx context.Context, state *UserState, sug Su
 		}
 	} else {
 		s.guestMarkShown(ctx, state.SessionKey, ruleID)
+		if sug.upsell {
+			s.guestUpsellBump(ctx, state.SessionKey)
+		}
 	}
 }
 
@@ -398,6 +411,10 @@ func (s *Service) Dismiss(ctx context.Context, r *http.Request, ruleID pgtype.UU
 		if s.write == nil {
 			return errors.New("nextactions: no write pool")
 		}
+		// Upsert first — the row may not exist yet (e.g. served from the shared
+		// rules cache without a recorded impression), and a silent 0-row UPDATE
+		// would drop the dismissal.
+		_ = s.write.UpsertUserNextAction(ctx, gen.UpsertUserNextActionParams{UserID: state.UserID, RuleID: ruleID})
 		var err error
 		if snoozeHours > 0 {
 			err = s.write.SnoozeNextAction(ctx, gen.SnoozeNextActionParams{
@@ -424,6 +441,7 @@ func (s *Service) Complete(ctx context.Context, r *http.Request, ruleID pgtype.U
 		if s.write == nil {
 			return errors.New("nextactions: no write pool")
 		}
+		_ = s.write.UpsertUserNextAction(ctx, gen.UpsertUserNextActionParams{UserID: state.UserID, RuleID: ruleID})
 		if err := s.write.CompleteNextAction(ctx, gen.CompleteNextActionParams{UserID: state.UserID, RuleID: ruleID}); err != nil {
 			return fmt.Errorf("nextactions: complete: %w", err)
 		}
@@ -455,6 +473,10 @@ func (s *Service) Track(ctx context.Context, r *http.Request, ruleID pgtype.UUID
 // request dependency (used inside evaluation loops).
 func (s *Service) markCompleted(ctx context.Context, state *UserState, ruleID pgtype.UUID) {
 	if state.UserID.Valid && s.write != nil {
+		// Upsert first so the terminal row persists even when the suggestion
+		// was never materialized — otherwise the completion_signal re-evaluates
+		// on every pass forever.
+		_ = s.write.UpsertUserNextAction(ctx, gen.UpsertUserNextActionParams{UserID: state.UserID, RuleID: ruleID})
 		_ = s.write.CompleteNextAction(ctx, gen.CompleteNextActionParams{UserID: state.UserID, RuleID: ruleID})
 	} else if !state.UserID.Valid {
 		s.guestSetStatus(ctx, state.SessionKey, ruleID, map[string]any{"status": StatusCompleted})
@@ -496,10 +518,14 @@ func (s *Service) bustCache(ctx context.Context, state *UserState) {
 	if s.cache == nil {
 		return
 	}
-	_ = s.cache.Del(ctx, s.cacheKey(state)).Err()
-	if !state.UserID.Valid {
-		_ = s.cache.HDel(ctx, valkey.MustKey("nextactions:guest:%s", state.SessionKey), "_cache").Err()
+	if state.UserID.Valid {
+		// User key holds only the cached result list — safe to delete.
+		_ = s.cache.Del(ctx, s.cacheKey(state)).Err()
+		return
 	}
+	// The guest key is the STATE hash — deleting it would wipe the dismissal/
+	// completion/snooze just written. Only the _cache field is dropped.
+	_ = s.cache.HDel(ctx, valkey.MustKey("nextactions:guest:%s", state.SessionKey), guestCacheField).Err()
 }
 
 // ---------------------------------------------------------------------------
@@ -586,21 +612,80 @@ func (s *Service) guestSetStatus(ctx context.Context, key string, ruleID pgtype.
 
 // guestUpsellToday reads the guest hash's daily upsell counter.
 func (s *Service) guestUpsellToday(ctx context.Context, key string) int {
+	return s.guestUpsellRead(ctx, key).Count
+}
+
+type guestUpsellDay struct {
+	Date  string `json:"d"`
+	Count int    `json:"c"`
+}
+
+func (s *Service) guestUpsellRead(ctx context.Context, key string) guestUpsellDay {
 	if s.cache == nil || key == "" {
-		return 0
+		return guestUpsellDay{}
 	}
 	raw, err := s.cache.HGet(ctx, valkey.MustKey("nextactions:guest:%s", key), "upsell_day").Result()
 	if err != nil {
-		return 0
+		return guestUpsellDay{}
+	}
+	var v guestUpsellDay
+	if json.Unmarshal([]byte(raw), &v) != nil || v.Date != time.Now().UTC().Format("2006-01-02") {
+		return guestUpsellDay{}
+	}
+	return v
+}
+
+// guestUpsellBump increments the guest's daily upsell counter — the guest-side
+// enforcement of nextactions.max_upsell_per_day.
+func (s *Service) guestUpsellBump(ctx context.Context, key string) {
+	if s.cache == nil || key == "" {
+		return
+	}
+	v := s.guestUpsellRead(ctx, key)
+	v.Date = time.Now().UTC().Format("2006-01-02")
+	v.Count++
+	if b, err := json.Marshal(v); err == nil {
+		hk := valkey.MustKey("nextactions:guest:%s", key)
+		_ = s.cache.HSet(ctx, hk, "upsell_day", string(b)).Err()
+		_ = s.cache.Expire(ctx, hk, time.Duration(s.settingInt(ctx, "nextactions.guest_state_ttl_seconds", defaultGuestStateTTL))*time.Second).Err()
+	}
+}
+
+// guestCacheRead returns the cached suggestion list from the guest hash's
+// _cache field ({exp, data}) — the hash key can't hold a GET-able string
+// value, so the list lives in a field with its own embedded expiry.
+func (s *Service) guestCacheRead(ctx context.Context, key string) ([]Suggestion, bool) {
+	if s.cache == nil || key == "" {
+		return nil, false
+	}
+	raw, err := s.cache.HGet(ctx, valkey.MustKey("nextactions:guest:%s", key), guestCacheField).Result()
+	if err != nil {
+		return nil, false
 	}
 	var v struct {
-		Date  string `json:"d"`
-		Count int    `json:"c"`
+		Exp  int64        `json:"exp"`
+		Data []Suggestion `json:"data"`
 	}
-	if json.Unmarshal([]byte(raw), &v) != nil || v.Date != time.Now().UTC().Format("2006-01-02") {
-		return 0
+	if json.Unmarshal([]byte(raw), &v) != nil || v.Exp <= time.Now().Unix() {
+		return nil, false
 	}
-	return v.Count
+	return v.Data, true
+}
+
+func (s *Service) guestCacheWrite(ctx context.Context, key string, data []byte, ttl time.Duration) {
+	if key == "" {
+		return
+	}
+	payload, err := json.Marshal(struct {
+		Exp  int64           `json:"exp"`
+		Data json.RawMessage `json:"data"`
+	}{Exp: time.Now().Add(ttl).Unix(), Data: data})
+	if err != nil {
+		return
+	}
+	hk := valkey.MustKey("nextactions:guest:%s", key)
+	_ = s.cache.HSet(ctx, hk, guestCacheField, string(payload)).Err()
+	_ = s.cache.Expire(ctx, hk, time.Duration(s.settingInt(ctx, "nextactions.guest_state_ttl_seconds", defaultGuestStateTTL))*time.Second).Err()
 }
 
 // MergeGuestState copies terminal guest states (dismissed/completed) into
@@ -709,6 +794,12 @@ func (s *Service) sweepUser(ctx context.Context, userID pgtype.UUID, rules []Rul
 		}
 		if rule.CompletionSignal != nil && EvalConditions(ctx, *rule.CompletionSignal, sweepState, s.deps) {
 			s.markCompleted(ctx, sweepState, rule.ID)
+			continue
+		}
+		// Materialize + dispatch only for push-channel rules. Rules with a
+		// completion signal but pull-only channels reach this point solely for
+		// the auto-complete re-eval above — they must not notify.
+		if !slices.ContainsFunc(rule.Channels, func(c string) bool { return slices.Contains(PushChannels, c) }) {
 			continue
 		}
 		_ = s.write.UpsertUserNextAction(ctx, gen.UpsertUserNextActionParams{UserID: userID, RuleID: rule.ID})

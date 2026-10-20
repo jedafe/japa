@@ -18,8 +18,8 @@ func newQueryDeps(read *gen.Queries) *queryDeps {
 	return &queryDeps{read: read}
 }
 
-func (d *queryDeps) CountEvents(ctx context.Context, s *UserState, eventType string, days int) (int64, error) {
-	if s.UserID.Valid {
+func (d *queryDeps) CountEvents(ctx context.Context, s *UserState, eventType string, days int, session bool) (int64, error) {
+	if s.UserID.Valid && !session {
 		return d.read.CountUserEvents(ctx, gen.CountUserEventsParams{
 			UserID:    s.UserID,
 			EventType: eventType,
@@ -49,7 +49,7 @@ func (d *queryDeps) ToolUsed(ctx context.Context, s *UserState, slug string) (bo
 }
 
 func (d *queryDeps) FeatureUsed(ctx context.Context, s *UserState, slug string, days int) (bool, error) {
-	n, err := d.CountEvents(ctx, s, "feature."+slug, days)
+	n, err := d.CountEvents(ctx, s, "feature."+slug, days, false)
 	return err == nil && n > 0, err
 }
 
@@ -70,7 +70,7 @@ func (d *queryDeps) GateHit(ctx context.Context, s *UserState, feature string, d
 		}
 		return err == nil && n > 0, err
 	}
-	n, err := d.CountEvents(ctx, s, "feature.gate_hit", days)
+	n, err := d.CountEvents(ctx, s, "feature.gate_hit", days, false)
 	return err == nil && n > 0, err
 }
 

@@ -12,9 +12,10 @@ import (
 // EvalDeps abstracts the signal sources predicates read — one implementation
 // backed by sqlc queries + Valkey lives in the service; tests stub it.
 type EvalDeps interface {
-	// CountEvents returns platform_events count for the state's identity
-	// (user_id when authed, session_id for guests) within `days`.
-	CountEvents(ctx context.Context, s *UserState, eventType string, days int) (int64, error)
+	// CountEvents returns platform_events count within `days`. session=true
+	// keys on session_id (guest IP / member JTI); session=false on user_id
+	// (guests still fall back to session_id — they have no user rows).
+	CountEvents(ctx context.Context, s *UserState, eventType string, days int, session bool) (int64, error)
 	// ToolUsed reports whether the state used tool `slug` ("*" = any tool)
 	// within the trailing 30 days — platform_events `tool.used` meta.tool.
 	ToolUsed(ctx context.Context, s *UserState, slug string) (bool, error)
@@ -127,7 +128,7 @@ func evalEventCount(ctx context.Context, p Predicate, s *UserState, deps EvalDep
 	if deps == nil || p.Gte == nil || p.Type == "" {
 		return false
 	}
-	n, err := deps.CountEvents(ctx, s, p.Type, windowDays(p.Window))
+	n, err := deps.CountEvents(ctx, s, p.Type, windowDays(p.Window), p.Window == "session")
 	if err != nil {
 		return false
 	}
