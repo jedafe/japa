@@ -123,6 +123,18 @@ WHERE session_id = @session_id AND event_type = 'tool.used'
   AND (@tool_slug::text = '*' OR meta->>'tool' = @tool_slug)
   AND created_at > now() - make_interval(days => @days);
 
+-- name: CountUserGateHitEvents :one
+SELECT count(*) FROM platform_events
+WHERE user_id = @user_id AND event_type = 'feature.gate_hit'
+  AND (@feature::text = '' OR meta->>'feature' = @feature)
+  AND created_at > now() - make_interval(days => @days);
+
+-- name: CountSessionGateHitEvents :one
+SELECT count(*) FROM platform_events
+WHERE session_id = @session_id AND event_type = 'feature.gate_hit'
+  AND (@feature::text = '' OR meta->>'feature' = @feature)
+  AND created_at > now() - make_interval(days => @days);
+
 -- name: UserHasAssessmentResult :one
 SELECT EXISTS(
     SELECT 1 FROM assessment_results WHERE user_id = @user_id
@@ -139,6 +151,11 @@ SELECT u.id, u.created_at, u.email_verified_at,
 FROM users u
 LEFT JOIN user_profiles p ON p.user_id = u.id
 WHERE u.id = @user_id;
+
+-- name: UserHasPushSubscription :one
+SELECT EXISTS(
+    SELECT 1 FROM push_subscriptions WHERE user_id = @user_id
+) AS has_sub;
 
 -- name: ListActiveUsersForSweep :many
 SELECT DISTINCT user_id FROM platform_events

@@ -63,6 +63,26 @@ func (q *Queries) CountSessionEvents(ctx context.Context, arg CountSessionEvents
 	return count, err
 }
 
+const countSessionGateHitEvents = `-- name: CountSessionGateHitEvents :one
+SELECT count(*) FROM platform_events
+WHERE session_id = $1 AND event_type = 'feature.gate_hit'
+  AND ($2::text = '' OR meta->>'feature' = $2)
+  AND created_at > now() - make_interval(days => $3)
+`
+
+type CountSessionGateHitEventsParams struct {
+	SessionID *string `json:"session_id"`
+	Feature   string  `json:"feature"`
+	Days      int32   `json:"days"`
+}
+
+func (q *Queries) CountSessionGateHitEvents(ctx context.Context, arg CountSessionGateHitEventsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSessionGateHitEvents, arg.SessionID, arg.Feature, arg.Days)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countSessionToolEvents = `-- name: CountSessionToolEvents :one
 SELECT count(*) FROM platform_events
 WHERE session_id = $1 AND event_type = 'tool.used'
@@ -111,6 +131,26 @@ type CountUserEventsParams struct {
 
 func (q *Queries) CountUserEvents(ctx context.Context, arg CountUserEventsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countUserEvents, arg.UserID, arg.EventType, arg.Days)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUserGateHitEvents = `-- name: CountUserGateHitEvents :one
+SELECT count(*) FROM platform_events
+WHERE user_id = $1 AND event_type = 'feature.gate_hit'
+  AND ($2::text = '' OR meta->>'feature' = $2)
+  AND created_at > now() - make_interval(days => $3)
+`
+
+type CountUserGateHitEventsParams struct {
+	UserID  pgtype.UUID `json:"user_id"`
+	Feature string      `json:"feature"`
+	Days    int32       `json:"days"`
+}
+
+func (q *Queries) CountUserGateHitEvents(ctx context.Context, arg CountUserGateHitEventsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserGateHitEvents, arg.UserID, arg.Feature, arg.Days)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -704,4 +744,17 @@ func (q *Queries) UserHasAssessmentResult(ctx context.Context, userID pgtype.UUI
 	var has_result bool
 	err := row.Scan(&has_result)
 	return has_result, err
+}
+
+const userHasPushSubscription = `-- name: UserHasPushSubscription :one
+SELECT EXISTS(
+    SELECT 1 FROM push_subscriptions WHERE user_id = $1
+) AS has_sub
+`
+
+func (q *Queries) UserHasPushSubscription(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, userHasPushSubscription, userID)
+	var has_sub bool
+	err := row.Scan(&has_sub)
+	return has_sub, err
 }

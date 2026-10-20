@@ -55,6 +55,18 @@ const (
 	EventPersonaActionQueued EventType = "persona.action_queued"
 	// EventPersonaActionDispatched is the event persona action dispatched (§76, ADR-077 §5).
 	EventPersonaActionDispatched EventType = "persona.action_dispatched"
+	// EventNextActionShown is the event a next-action suggestion was shown (§122).
+	EventNextActionShown EventType = "next_action.shown"
+	// EventNextActionClicked is the event a next-action suggestion CTA was clicked (§122).
+	EventNextActionClicked EventType = "next_action.clicked"
+	// EventNextActionDismissed is the event a next-action suggestion was dismissed (§122).
+	EventNextActionDismissed EventType = "next_action.dismissed"
+	// EventNextActionCompleted is the event a next-action suggestion was completed (§122).
+	EventNextActionCompleted EventType = "next_action.completed"
+	// EventToolUsed is the event a functional tool was used (§122; meta.tool carries the slug).
+	EventToolUsed EventType = "tool.used"
+	// EventFeatureGateHit is the event a user hit a tier-gated feature (§122; meta.feature + meta.required_tier).
+	EventFeatureGateHit EventType = "feature.gate_hit"
 )
 
 // ValidEventTypes returns all recognised event types.
@@ -83,6 +95,12 @@ func ValidEventTypes() []EventType {
 		EventMentorshipCompleted,
 		EventPersonaActionQueued,
 		EventPersonaActionDispatched,
+		EventNextActionShown,
+		EventNextActionClicked,
+		EventNextActionDismissed,
+		EventNextActionCompleted,
+		EventToolUsed,
+		EventFeatureGateHit,
 	}
 }
 

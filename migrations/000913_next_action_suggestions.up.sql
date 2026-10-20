@@ -75,7 +75,7 @@ VALUES
      '{"title":"How ready are you to japa?","body":"Take the readiness assessment to get a personalised roadmap.","cta_label":"Take assessment","cta_url":"/tools/readiness-assessment","icon":"clipboard-check"}',
      '["popup","notification"]',
      '{"all":[{"predicate":"assessment_completed","eq":true}]}',
-     '{"mode":"once","max_impressions":5,"cooldown_hours":24,"snooze_default_hours":168}'),
+     '{"mode":"recurring","max_impressions":5,"cooldown_hours":24,"snooze_default_hours":168}'),
 
     ('canada-crs-calculator', 'Calculate your CRS score',
      'Canada-bound users who have not used the CRS calculator',
@@ -85,7 +85,7 @@ VALUES
      '{"title":"Estimate your Express Entry score","body":"Use the CRS calculator to see where you stand.","cta_label":"Calculate score","cta_url":"/tools/crs-calculator","icon":"calculator"}',
      '["announcement_bar","sidebar","in_article"]',
      '{"all":[{"predicate":"tool_used","slug":"crs-calculator"}]}',
-     '{"mode":"once","max_impressions":8,"cooldown_hours":72,"snooze_default_hours":168}'),
+     '{"mode":"recurring","max_impressions":8,"cooldown_hours":72,"snooze_default_hours":168}'),
 
     ('guest-register-after-views', 'Create a free account',
      'Guests who have viewed several pieces of content',
@@ -95,7 +95,7 @@ VALUES
      '{"title":"Join JapaConnect","body":"Create a free account to save your progress and get personalised guidance.","cta_label":"Sign up free","cta_url":"/register","icon":"user-plus"}',
      '["popup"]',
      NULL,
-     '{"mode":"once","max_impressions":5,"cooldown_hours":48,"snooze_default_hours":168}'),
+     '{"mode":"recurring","max_impressions":5,"cooldown_hours":48,"snooze_default_hours":168}'),
 
     ('guest-register-save-results', 'Save your results',
      'Guests who just used a tool',
@@ -105,7 +105,7 @@ VALUES
      '{"title":"Keep your results","body":"Register to save your tool results and pick up where you left off.","cta_label":"Create account","cta_url":"/register","icon":"bookmark"}',
      '["announcement_bar","in_article"]',
      NULL,
-     '{"mode":"once","max_impressions":4,"cooldown_hours":72,"snooze_default_hours":168}'),
+     '{"mode":"recurring","max_impressions":4,"cooldown_hours":72,"snooze_default_hours":168}'),
 
     ('free-upgrade-gate-hit', 'Unlock with Pro',
      'Free users who hit a tier-gated feature in the last 7 days',
