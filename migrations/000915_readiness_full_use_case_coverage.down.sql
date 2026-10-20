@@ -1,4 +1,4 @@
--- 000902_readiness_full_use_case_coverage.down.sql
+-- 000915_readiness_full_use_case_coverage.down.sql
 -- Removes the full-use-case questions added in the up migration.
 
 BEGIN;

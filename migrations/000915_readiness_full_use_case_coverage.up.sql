@@ -1,4 +1,4 @@
--- 000902_readiness_full_use_case_coverage.up.sql
+-- 000915_readiness_full_use_case_coverage.up.sql
 -- Final expansion of the default Japa Readiness Assessment (§71, ADR-071,
 -- follow-up to 000896/000897) so the scored questionnaire covers the
 -- remaining relocation use cases that still had no scored question:

@@ -1,5 +1,5 @@
--- 000910_drop_orphaned_wallet_nodes.down.sql
--- Restores the wallet.view / wallet.convert permission rows removed by 000910.
+-- 000918_drop_orphaned_wallet_nodes.down.sql
+-- Restores the wallet.view / wallet.convert permission rows removed by 000918.
 -- The role grants they held are not recoverable here (they cascaded on delete);
 -- re-grant via the RBAC admin UI if ever needed.
 

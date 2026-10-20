@@ -1,5 +1,5 @@
--- 000906_wallet_member_rbac_grants.down.sql
--- Revokes the member-tier wallet grants added by 000906.
+-- 000917_wallet_member_rbac_grants.down.sql
+-- Revokes the member-tier wallet grants added by 000917.
 
 BEGIN;
 

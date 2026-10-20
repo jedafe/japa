@@ -1,4 +1,4 @@
--- 000906_wallet_member_rbac_grants.up.sql
+-- 000917_wallet_member_rbac_grants.up.sql
 -- Grants the enforced member-facing wallet permission nodes to the
 -- member-tier roles. The §28 routes enforce `wallet.points.balance`
 -- (GET /me/wallet, /me/wallet/points, /me/wallet/credits, /me/wallet/ledger,
