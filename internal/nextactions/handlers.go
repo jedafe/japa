@@ -116,19 +116,19 @@ func (h *Handlers) Track(w http.ResponseWriter, r *http.Request) {
 // ruleRequest is the admin create/update payload — jsonb columns arrive as
 // raw JSON and are validated through the typed structs.
 type ruleRequest struct {
-	Slug             string           `json:"slug"`
-	Name             string           `json:"name"`
-	Description      string           `json:"description"`
-	Enabled          bool             `json:"enabled"`
-	Priority         int32            `json:"priority"`
-	Audience         Audience         `json:"audience"`
-	Conditions       ConditionGroup   `json:"conditions"`
-	Payload          Payload          `json:"payload"`
-	Channels         []string         `json:"channels"`
-	CompletionSignal *ConditionGroup  `json:"completion_signal"`
-	Frequency        Frequency        `json:"frequency"`
-	ValidFrom        *string          `json:"valid_from"`
-	ValidUntil       *string          `json:"valid_until"`
+	Slug             string          `json:"slug"`
+	Name             string          `json:"name"`
+	Description      string          `json:"description"`
+	Enabled          bool            `json:"enabled"`
+	Priority         int32           `json:"priority"`
+	Audience         Audience        `json:"audience"`
+	Conditions       ConditionGroup  `json:"conditions"`
+	Payload          Payload         `json:"payload"`
+	Channels         []string        `json:"channels"`
+	CompletionSignal *ConditionGroup `json:"completion_signal"`
+	Frequency        Frequency       `json:"frequency"`
+	ValidFrom        *string         `json:"valid_from"`
+	ValidUntil       *string         `json:"valid_until"`
 }
 
 func (rr *ruleRequest) toRule(id pgtype.UUID) (Rule, error) {
