@@ -72,11 +72,12 @@
 		// The API only accepts space UUIDs — the URL may carry slug-form
 		// geo params (the city picker writes slugs for readable URLs), so
 		// swap in the server-resolved ids before fetching the next page.
+		// Always drop the raw params first: an unresolvable slug left in
+		// the query string makes the API 400 on every page-2+ fetch.
+		params.delete('dest');
+		params.delete('city');
 		if (data.filters.dest) params.set('dest', data.filters.dest);
-		if (data.filters.city) {
-			if (data.filters.cityId) params.set('city', data.filters.cityId);
-			else params.delete('city');
-		}
+		if (data.filters.cityId) params.set('city', data.filters.cityId);
 		const res = await api.get<ServiceListing[]>(`/services?${params.toString()}`);
 		if (res.data) {
 			appended = [...appended, ...res.data];

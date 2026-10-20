@@ -293,8 +293,9 @@ func (h *Handlers) HandleMyBookings(w http.ResponseWriter, r *http.Request) {
 		bookings, total, err = h.service.ListMyBookings(r.Context(), user.UserID,
 			r.URL.Query().Get("status"), r.URL.Query().Get("intent"), kind, page, limit)
 	case "provider":
-		// Provider-side inbox is mentorship-gated (000824).
-		if !mentorship {
+		// Provider-side inbox serves mentorship providers and org-less
+		// listing authors (000824 + author-provider inquiries).
+		if !mentorship && !packages {
 			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 			return
 		}
@@ -331,13 +332,24 @@ func (h *Handlers) HandleMyBookingRespond(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if h.service == nil || !h.service.MentorshipEnabled(r.Context()) {
+	if h.service == nil || (!h.service.MentorshipEnabled(r.Context()) && !h.service.PackagesEnabled(r.Context())) {
 		errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 		return
 	}
 
 	bookingID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
+		return
+	}
+
+	// The route-level node is service.booking.create; mentorship-kind rows
+	// additionally require mentorship.respond (the mentor opt-in node).
+	// Resolve the row's kind first — the same GetBooking the provider arm
+	// uses — then enforce the extra grant only on that kind.
+	kindRow, kindErr := h.service.GetBooking(r.Context(), bookingID, user.UserID, false)
+	if kindErr == nil && kindRow.ListingKind == ListingKindMentorship &&
+		(h.rbac == nil || !h.rbac.HasPermission(r.Context(), user.UserID, "mentorship.respond")) {
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to respond to mentorship requests")
 		return
 	}
 

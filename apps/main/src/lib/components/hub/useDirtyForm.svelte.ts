@@ -32,7 +32,10 @@ export class DirtyForm<T extends Record<string, unknown>> {
 	saving = $state(false);
 	error = $state<{ cls: SaveErrorClass; message: string } | null>(null);
 
-	#snapshot: T;
+	// $state on the snapshot: save() rebases it without touching values, and
+	// only reactive writes invalidate the `dirty` derived in templates — a
+	// plain field would leave the Save bar rendered forever after a save.
+	#snapshot = $state<T>({} as T);
 	#save: (v: T) => Promise<Res>;
 	#classify: (s: number) => SaveErrorClass;
 
@@ -52,13 +55,15 @@ export class DirtyForm<T extends Record<string, unknown>> {
 	}
 
 	/**
-	 * Set values AND advance the snapshot so the form is clean.
+	 * Set values AND advance the snapshot so those keys are clean.
 	 * Use this after an *already-persisted* direct API call (e.g. avatar/cover
-	 * upload) to avoid a false dirty state.
+	 * upload) to avoid a false dirty state. Only the patched keys advance —
+	 * other in-flight edits must stay dirty, otherwise picking an avatar
+	 * mid-edit would silently swallow the unsaved fields.
 	 */
 	setSaved(patch: Partial<T>): void {
 		this.values = { ...this.values, ...patch };
-		this.#snapshot = clone(this.values);
+		this.#snapshot = { ...this.#snapshot, ...clone(patch) };
 	}
 
 	async save(): Promise<boolean> {

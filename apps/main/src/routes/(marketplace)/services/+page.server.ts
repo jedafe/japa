@@ -18,7 +18,6 @@ import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space } from '$li
 const DEFAULT_PAGE_SIZE = 8;
 const MAX_PAGE_SIZE = 100; // backend caps ?limit= at 100
 const VALID_SORTS = new Set(['latest', 'top']);
-const VALID_KINDS = new Set(['service', 'mentorship', 'all']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parsePositiveInt(raw: string | null, fallback: number, max: number): number {
@@ -76,16 +75,24 @@ export const load: PageServerLoad = async (event) => {
 	// filters.verified === 'true', so echoing a raw '1' would leave the
 	// box unchecked while the results are filtered.
 	const verifiedRaw = get('verified');
-	const verified = verifiedRaw === '1' ? 'true' : verifiedRaw;
+	const verified = ['1', 'true', 'yes', 'on'].includes(verifiedRaw.toLowerCase()) ? 'true' : '';
 	const sortRaw = get('sort');
 	const sort = VALID_SORTS.has(sortRaw) ? sortRaw : 'latest';
-	// §111/000824: kind tabs are flag-gated — kind=mentorship
+	// §111/000824: kind tabs are flag-gated — only kind=mentorship
 	// needs mentorship.enabled; a dark-launched kind is a
-	// backend 404, so it is dropped here. The 'package' kind
-	// was removed from the feature (2026-10): only service
-	// and mentorship listings exist.
-	const kindEnabled = (k: string): boolean => VALID_KINDS.has(k) && mentorshipEnabled;
-	const kind = kindEnabled(kindRaw) ? kindRaw : '';
+	// backend 404, so it is dropped here. kind=service/'all' are
+	// directory-gated and always honoured (the backend applies the
+	// same per-kind gate in List()). The 'package' kind was removed
+	// from the feature (2026-10): only service and mentorship
+	// listings exist.
+	const kind =
+		kindRaw === 'mentorship'
+			? mentorshipEnabled
+				? 'mentorship'
+				: ''
+			: kindRaw === 'service'
+				? 'service'
+				: '';
 	const page = parsePositiveInt(event.url.searchParams.get('page'), 1, Number.MAX_SAFE_INTEGER);
 	const limit = parsePositiveInt(event.url.searchParams.get('limit'), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
 

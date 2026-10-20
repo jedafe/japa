@@ -11,7 +11,7 @@
 	// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
 	import { t } from '$lib/i18n';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
 	import {
@@ -48,6 +48,8 @@
 	import CouponCard from '$lib/components/marketplace/CouponCard.svelte';
 	import ServiceFaq from '$lib/components/marketplace/ServiceFaq.svelte';
 	import ServiceReviews from '$lib/components/marketplace/ServiceReviews.svelte';
+	import ReviewForm from '$lib/components/reviews/ReviewForm.svelte';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import ProviderCard from '$lib/components/marketplace/ProviderCard.svelte';
 	import MentorSidebar from '$lib/components/marketplace/MentorSidebar.svelte';
 	import CtaBanner from '$lib/components/marketplace/CtaBanner.svelte';
@@ -237,20 +239,20 @@
 				? t('services.pkg_per_group', 'per group')
 				: t('services.pkg_per_package', 'per package')
 	);
-	// Bookings: any published org-owned listing with purchase_mode inquiry
-	// accepts inquiries; 'paid' opens the fee checkout; 'external' points at
-	// booking_url. Owners/org members manage via the inbox instead.
+	// Bookings: any published listing with purchase_mode inquiry accepts
+	// inquiries (org inbox for org-owned rows, the author's provider inbox
+	// for org-less ones); 'paid' opens the fee checkout; 'external' points
+	// at booking_url. Owners/org members manage via the inbox instead.
 	const canBook = $derived(
 		packagesEnabled &&
 			!!data.authed &&
 			!!service &&
-			!!service.org_id &&
 			!canEdit &&
 			// POST /services/:id/bookings is gated on service.booking.create —
 			// hide the CTA rather than letting the submit 403.
 			(data.user?.permissions ?? []).includes('service.booking.create')
 	);
-	const guestBooking = $derived(packagesEnabled && !data.authed && !!service && !!service.org_id);
+	const guestBooking = $derived(packagesEnabled && !data.authed && !!service);
 	// Mentorship tier CTAs need no booking surface — they open the request
 	// dialog, which renders a login prompt for guests.
 	const tierCtaEnabled = $derived(canBook || guestBooking || isMentorship);
@@ -719,6 +721,35 @@
 		</section>
 	{/snippet}
 
+	<!-- §29 inline write path — lets a signed-in traveller review without
+	     leaving the detail page; invalidateAll re-pulls the listing's
+	     reviews slice + aggregate. Guests get the login prompt (same
+	     contract as /services/[slug]/reviews). -->
+	{#snippet reviewWrite()}
+		<div class="mt-6">
+			<!-- Editors (author / org members / service.edit_any) manage the
+			     listing rather than review it — hidden; the backend's
+			     self_review guard is the backstop. -->
+			{#if data.authed && !canEdit}
+				<ReviewForm
+					entityType="service_listing"
+					entityId={service.id}
+					onCreated={() => invalidateAll()}
+				/>
+			{:else}
+				<p
+					class="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] p-4 text-center text-sm text-[var(--color-muted)]"
+				>
+					<a
+						href="/login?redirect={encodeURIComponent(page.url.pathname + page.url.search)}"
+						class="font-medium text-[var(--color-primary)] hover:underline"
+						>{t('services.reviews_login', 'Log in to write a review')}</a
+					>
+				</p>
+			{/if}
+		</div>
+	{/snippet}
+
 	<div class="mx-auto w-full max-w-6xl {stickyCta ? 'pb-24' : 'pb-14'} lg:pb-14">
 		<!-- Breadcrumb: Home / Services|Packages|?kind=mentorship / Category / Title -->
 		<nav
@@ -732,7 +763,10 @@
 			<a href={breadcrumbMid.href} class="transition-colors hover:text-[var(--color-text)]"
 				>{breadcrumbMid.label}</a
 			>
-			{#if catLabel}
+			<!-- Mentorship shadow listings sit under the seeded 'mentorship'
+			     category — its crumb would repeat the kind crumb
+			     (Home / Mentorship / Mentorship / Title), so it is suppressed. -->
+			{#if catLabel && !(isMentorship && service.service_category === 'mentorship')}
 				<ChevronRight size={12} aria-hidden="true" />
 				<a
 					href="/services?category={service.service_category}"
@@ -929,35 +963,82 @@
 						{/if}
 					</div>
 					{#if mentor}
-						<!-- Overlay profile card — mockup's floating mentor card -->
+						<!-- Overlay profile card — mockup's floating mentor card.
+						     Avatar + name link to /u/{username} via UserHoverCard's
+						     trigger (click navigates, hover shows the user card). -->
 						<div
 							class="absolute bottom-4 left-4 right-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-4 shadow-lg backdrop-blur sm:right-auto sm:min-w-64"
 						>
 							<div class="flex items-center gap-3">
-								{#if mentor.avatar_url}
-									<img
-										src={mentor.avatar_url}
-										alt={mentorName}
-										class="h-12 w-12 shrink-0 rounded-full object-cover"
-									/>
-								{:else}
-									<div
-										class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+								{#if mentor.username}
+									<UserHoverCard
+										id={service.author_id ?? ''}
+										slug={mentor.username}
+										name={mentorName}
+										avatar={mentor.avatar_url ?? null}
+										variant="row"
+										secondary={mentor.title ?? undefined}
+										class="flex items-center gap-3"
 									>
-										<GraduationCap size={20} aria-hidden="true" />
+										{#snippet trigger()}
+											{#if mentor.avatar_url}
+												<img
+													src={mentor.avatar_url}
+													alt={mentorName}
+													class="h-12 w-12 shrink-0 rounded-full object-cover"
+												/>
+											{:else}
+												<div
+													class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+												>
+													<GraduationCap size={20} aria-hidden="true" />
+												</div>
+											{/if}
+											<span class="block min-w-0 text-left">
+												<span
+													class="flex items-center gap-1 truncate text-sm font-bold text-[var(--color-text)]"
+												>
+													{mentorName}
+													{#if service.is_verified}
+														<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" />
+													{/if}
+												</span>
+												{#if mentor.title}
+													<span class="block truncate text-xs text-[var(--color-muted)]"
+														>{mentor.title}</span
+													>
+												{/if}
+											</span>
+										{/snippet}
+									</UserHoverCard>
+								{:else}
+									{#if mentor.avatar_url}
+										<img
+											src={mentor.avatar_url}
+											alt={mentorName}
+											class="h-12 w-12 shrink-0 rounded-full object-cover"
+										/>
+									{:else}
+										<div
+											class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+										>
+											<GraduationCap size={20} aria-hidden="true" />
+										</div>
+									{/if}
+									<div class="min-w-0">
+										<p
+											class="flex items-center gap-1 truncate text-sm font-bold text-[var(--color-text)]"
+										>
+											{mentorName}
+											{#if service.is_verified}
+												<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" />
+											{/if}
+										</p>
+										{#if mentor.title}
+											<p class="truncate text-xs text-[var(--color-muted)]">{mentor.title}</p>
+										{/if}
 									</div>
 								{/if}
-								<div class="min-w-0">
-									<p class="flex items-center gap-1 truncate text-sm font-bold text-[var(--color-text)]">
-										{mentorName}
-										{#if service.is_verified}
-											<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" />
-										{/if}
-									</p>
-									{#if mentor.title}
-										<p class="truncate text-xs text-[var(--color-muted)]">{mentor.title}</p>
-									{/if}
-								</div>
 							</div>
 							<ul class="mt-3 space-y-1.5 text-xs text-[var(--color-text-subtle)]">
 								{#if mentor.location}
@@ -1072,6 +1153,12 @@
 						lines={service.audience ?? []}
 					/>
 
+					<!-- How it works — the mentor mockup orders it ahead of the
+					     packages so the process lands before the ask. -->
+					{#if service.steps && service.steps.length > 0}
+						<HowItWorks steps={service.steps} />
+					{/if}
+
 					<!-- Mentorship Packages — tiers + secure-payments footer -->
 					{#if tiersVisible}
 						<TierGrid
@@ -1145,7 +1232,8 @@
 				</div>
 			</div>
 
-			<!-- Bottom 2-col: What Mentees Say | How It Works -->
+			<!-- Bottom 2-col: What Mentees Say | Frequently asked questions
+			     (FAQs take the cell How it works vacated). -->
 			<div class="mt-12 grid gap-12 lg:grid-cols-2">
 				<div id="reviews" class="scroll-mt-20">
 					{#if hasReviews}
@@ -1158,18 +1246,12 @@
 					{:else}
 						{@render reviewsCta()}
 					{/if}
+					{@render reviewWrite()}
 				</div>
-				{#if service.steps && service.steps.length > 0}
-					<HowItWorks steps={service.steps} />
+				{#if service.faqs && service.faqs.length > 0}
+					<ServiceFaq faqs={service.faqs} />
 				{/if}
 			</div>
-
-			<!-- FAQs — the mentor mockup omits them but authored faqs still render -->
-			{#if service.faqs && service.faqs.length > 0}
-				<div class="mt-12">
-					<ServiceFaq faqs={service.faqs} />
-				</div>
-			{/if}
 		{:else}
 			<!-- ================================================
 			     SERVICE / PACKAGE LAYOUT (mockups 01 + 03)
@@ -1568,6 +1650,7 @@
 						{:else}
 							{@render reviewsCta()}
 						{/if}
+						{@render reviewWrite()}
 					</div>
 					{#if service.faqs && service.faqs.length > 0}
 						<ServiceFaq faqs={service.faqs} />

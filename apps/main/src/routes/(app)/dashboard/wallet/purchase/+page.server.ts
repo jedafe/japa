@@ -6,5 +6,5 @@ import type { PageServerLoad } from './$types';
  * Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
  */
 export const load: PageServerLoad = async () => {
-	throw redirect(308, '/settings/wallet');
+	throw redirect(308, '/settings/wallet?tab=purchase');
 };

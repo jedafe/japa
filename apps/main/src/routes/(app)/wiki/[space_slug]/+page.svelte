@@ -42,6 +42,11 @@
 
 	let { data }: { data: PageData } = $props();
 
+	// Entity-bound wiki children grouped by type slug (JCE ↔ wiki mapping).
+	const entityChildGroups = $derived(
+		Object.entries(data.entityChildren ?? {}).filter(([, items]) => items.length > 0)
+	);
+
 	// The canonical category list is scoped to the space type server-side:
 	// university spaces get the university set (§80 amendment). These must
 	// stay reactive — SvelteKit reuses this component instance across
@@ -642,5 +647,24 @@
 				groupSlug={indexGroup?.field_group_slug}
 			/>
 		{/if}
-	</div>
+	
+		{#if entityChildGroups.length > 0}
+			<section class="entity-children space-y-3">
+				<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">Related entities</h2>
+				{#each entityChildGroups as [typeSlug, items] (typeSlug)}
+					<div>
+						<h3 class="text-xs font-medium capitalize text-[var(--color-muted)]">{typeSlug.replaceAll('_', ' ')}</h3>
+						<ul class="mt-1 space-y-1">
+							{#each items as child (child.id)}
+								<li>
+									<a class="text-sm text-[var(--color-primary)] hover:underline"
+									   href="/wiki/e/{typeSlug}/{child.slug}/overview">{child.name}</a>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/each}
+			</section>
+		{/if}
+</div>
 </div>

@@ -279,7 +279,7 @@
 							{ value: '', label: t('wallet.withdraw.select_method_placeholder', 'Select a payout method') },
 							...methods.map((m) => ({
 								value: m.id,
-								label: `${m.label || m.provider} - ${m.account} (${m.currency_code})${m.is_default ? t('wallet.withdraw.default', ' (default)') : ''}`
+								label: `${m.label || m.provider} - ${m.account}${m.currency_code ? ` (${m.currency_code})` : ''}${m.is_default ? ` (${t('wallet.withdraw.default', 'Default')})` : ''}`
 							}))
 						]}
 					/>
@@ -356,7 +356,7 @@
 					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] p-3 text-sm">
 						<div>
 							<p class="font-medium text-[var(--color-text)]">{m.label || m.provider}</p>
-							<p class="text-[var(--color-muted)]">{m.account} ({m.currency_code})</p>
+							<p class="text-[var(--color-muted)]">{m.account}{m.currency_code ? ` (${m.currency_code})` : ''}</p>
 						</div>
 						{#if m.is_default}
 							<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">{t('wallet.withdraw.default', 'Default')}</span>

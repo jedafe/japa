@@ -44,6 +44,11 @@ var (
 	ErrByokProviderDisabled = errors.New("ai: byok provider is disabled")
 	ErrAIKeyNotFound        = errors.New("ai: user ai key not found")
 	ErrByokModelNotAllowed  = errors.New("ai: model is not in the byok provider catalog")
+	// ErrByokKeyAlreadyAdded is the same-account duplicate: the caller already
+	// has a row for this exact credential. Distinct from ErrByokKeyInUse so the
+	// client gets an accurate "you already added it" message rather than the
+	// stolen-key laundering warning.
+	ErrByokKeyAlreadyAdded = errors.New("ai: byok key already added to this account")
 )
 
 // SupportedByokProviderTypes returns the provider_type values users may
@@ -466,15 +471,24 @@ func (s *UserAIKeyStore) Create(ctx context.Context, userID, providerID pgtype.U
 		return UserAIKey{}, fmt.Errorf("encrypting api key: %w", err)
 	}
 
-	// Cross-account dedup: the same credential on another user's row means
-	// the key is shared or stolen — refuse to attach it.
+	// Dedup: the same credential on another user's row means the key is
+	// shared or stolen — refuse to attach it. A duplicate on the caller's
+	// own rows is reported distinctly so the client can say "you already
+	// added this key" instead of the laundering warning (the global
+	// ux_user_ai_keys_key_hash index rejects both paths at the constraint
+	// layer, so without this branch same-account dupes surfaced the wrong
+	// message).
 	keyHash := byokKeyHash(apiKey)
 
-	var other bool
+	var owner pgtype.UUID
 
 	if err := s.read.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM user_ai_keys WHERE api_key_hash = $1 AND user_id <> $2)`,
-		keyHash, userID).Scan(&other); err == nil && other {
+		`SELECT user_id FROM user_ai_keys WHERE api_key_hash = $1 LIMIT 1`,
+		keyHash).Scan(&owner); err == nil {
+		if owner == userID {
+			return UserAIKey{}, ErrByokKeyAlreadyAdded
+		}
+
 		return UserAIKey{}, ErrByokKeyInUse
 	}
 
@@ -517,11 +531,15 @@ func (s *UserAIKeyStore) Update(ctx context.Context, userID, keyID pgtype.UUID, 
 	if apiKey != nil && *apiKey != "" {
 		keyHash := byokKeyHash(*apiKey)
 
-		var other bool
+		var ownerID pgtype.UUID
 
 		if err := s.read.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM user_ai_keys WHERE api_key_hash = $1 AND user_id <> $2 AND id <> $3)`,
-			keyHash, userID, keyID).Scan(&other); err == nil && other {
+			`SELECT user_id FROM user_ai_keys WHERE api_key_hash = $1 AND id <> $2 LIMIT 1`,
+			keyHash, keyID).Scan(&ownerID); err == nil {
+			if ownerID == userID {
+				return UserAIKey{}, ErrByokKeyAlreadyAdded
+			}
+
 			return UserAIKey{}, ErrByokKeyInUse
 		}
 
@@ -556,6 +574,12 @@ func (s *UserAIKeyStore) Update(ctx context.Context, userID, keyID pgtype.UUID, 
 	if tag.RowsAffected() == 0 {
 		return UserAIKey{}, ErrAIKeyNotFound
 	}
+
+	// Rotating replaces credential material — audit it like create/delete
+	// so the trail covers every api_key_encrypted write.
+	rotated := apiKey != nil && *apiKey != ""
+	s.auditByok(ctx, "ai.byok.key_updated", userID, keyID,
+		fmt.Sprintf(`{"rotated":%t}`, rotated))
 
 	return s.GetForUser(ctx, userID, keyID)
 }

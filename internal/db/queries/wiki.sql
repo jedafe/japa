@@ -647,3 +647,138 @@ SELECT
     COUNT(*) FILTER (WHERE f.vote = 'down') AS down_count
 FROM wiki_page_feedback f
 WHERE f.wiki_page_id = @wiki_page_id;
+
+-- =====================
+-- Entity-bound pages (JCE ↔ Wiki mapping, 000899+)
+-- =====================
+
+-- name: GetWikiEntityKind :one
+SELECT entity_kind, source_table, id_column, slug_column, label
+FROM wiki_entity_kinds
+WHERE entity_kind = @entity_kind;
+
+-- name: GetWikiTypeConfigForKind :one
+-- Resolve the wiki type config backing an entity-bound type key slug
+-- (e.g. 'student_visa') — returns the entity kind + discriminator.
+SELECT wtc.space_type_id, wtc.enabled, wtc.label, wtc.entity_kind,
+       wtc.entity_discriminator, st.slug AS type_slug, st.name AS type_name
+FROM wiki_type_configs wtc
+JOIN space_types st ON st.id = wtc.space_type_id
+WHERE st.slug = @type_slug AND wtc.enabled = true;
+
+-- name: GetEntityWikiPage :one
+SELECT wp.id, wp.space_id, wp.entity_type, wp.entity_id, wp.slug, wp.title, wp.category,
+       wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
+       wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type, wp.page_template_id, wp.field_group_id, wp.position
+FROM wiki_pages wp
+WHERE wp.entity_type = @entity_type AND wp.entity_id = @entity_id
+  AND wp.slug = @page_slug
+  AND wp.is_active = true AND wp.deleted_at IS NULL
+LIMIT 1;
+
+-- name: ListEntityWikiPages :many
+SELECT wp.id, wp.entity_type, wp.entity_id, wp.slug, wp.title, wp.category,
+       wp.is_active, wp.is_featured, wp.position
+FROM wiki_pages wp
+WHERE wp.entity_type = @entity_type AND wp.entity_id = @entity_id
+  AND wp.is_active = true AND wp.deleted_at IS NULL
+ORDER BY wp.category, wp.title;
+
+-- name: EntityWikiPageRowExists :one
+SELECT EXISTS (
+    SELECT 1 FROM wiki_pages wp
+    WHERE wp.entity_type = @entity_type AND wp.entity_id = @entity_id
+      AND wp.slug = @page_slug
+) AS exists;
+
+-- name: CreateEntityWikiPage :one
+INSERT INTO wiki_pages (space_id, entity_type, entity_id, slug, title, category,
+                        is_active, created_by, page_template_id, field_group_id)
+VALUES (NULL, @entity_type, @entity_id, @slug, @title, @category,
+        true, @created_by, @page_template_id, @field_group_id)
+RETURNING id, entity_type, entity_id, slug, title, category;
+
+-- ---------------------------------------------------------------------------
+-- Per-kind entity lookups — slug → row for page resolution, and children of
+-- a host space for the destinations tree. One block per source table.
+-- ---------------------------------------------------------------------------
+
+-- name: GetVisaRouteForWiki :one
+SELECT id, slug, name, destination_space_id, visa_category
+FROM visa_routes
+WHERE slug = @slug AND is_active = true
+LIMIT 1;
+
+-- name: ListVisaRoutesForWiki :many
+-- Visa routes hosted by a destination space (country).
+SELECT id, slug, name, visa_category
+FROM visa_routes
+WHERE destination_space_id = @space_id AND is_active = true
+  AND (@visa_category::text = '' OR visa_category = @visa_category)
+ORDER BY name;
+
+-- name: GetOrganizationForWiki :one
+SELECT id, slug, name, geo_space_id, org_type
+FROM organizations
+WHERE slug = @slug AND deleted_at IS NULL AND status = 'active'
+LIMIT 1;
+
+-- name: ListOrganizationsForWiki :many
+-- Organizations (e.g. banks) hosted by a geo space, filtered by org_type.
+SELECT id, slug, name, org_type
+FROM organizations
+WHERE geo_space_id = @space_id AND deleted_at IS NULL AND status = 'active'
+  AND (@org_type::text = '' OR org_type = @org_type)
+ORDER BY name;
+
+-- name: GetEmbassyForWiki :one
+SELECT id, slug, name, host_space_id
+FROM embassies
+WHERE slug = @slug AND is_active = true
+LIMIT 1;
+
+-- name: ListEmbassiesForWiki :many
+SELECT id, slug, name
+FROM embassies
+WHERE host_space_id = @space_id AND is_active = true
+ORDER BY name;
+
+-- name: GetCourseOfferingForWiki :one
+SELECT o.id, o.slug, o.university_id, c.title AS name
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+WHERE o.slug = @slug AND o.deleted_at IS NULL AND o.is_published = true
+LIMIT 1;
+
+-- name: ListCourseOfferingsForWiki :many
+SELECT o.id, o.slug, c.title AS name
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+WHERE o.university_id = @space_id AND o.deleted_at IS NULL AND o.is_published = true
+ORDER BY c.title;
+
+-- name: GetScholarshipForWiki :one
+SELECT id, slug, title, country_space_id
+FROM scholarships
+WHERE slug = @slug;
+
+-- name: ListScholarshipsForWiki :many
+SELECT id, slug, title
+FROM scholarships
+WHERE country_space_id = @space_id
+ORDER BY title
+LIMIT 500;
+
+-- name: GetWikiTypePageTemplateBySlug :one
+-- Type-scoped template lookup for entity-bound lazy pages (the space-bound
+-- variant joins through spaces; entity types have no space row).
+SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
+       t.is_system, t.created_at,
+       c.category AS category_token
+FROM wiki_type_page_templates t
+JOIN wiki_type_categories c ON c.id = t.category_id
+WHERE c.space_type_id = @space_type_id AND t.slug = @slug
+ORDER BY c.position, t.position
+LIMIT 1;

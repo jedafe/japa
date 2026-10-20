@@ -542,11 +542,23 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID, listingContentID 
 		return BookingResult{}, ErrBookingUnavailable
 	}
 
-	// service_bookings.org_id is NOT NULL — the booking lands in the org
-	// inbox, so a user-authored listing with no owning org has nowhere to
-	// deliver a lead. Reject cleanly rather than failing on the insert.
+	// Org-less listings (personal listings created without an org) have no
+	// org inbox — deliver the lead to the listing author through the same
+	// user-provider arm mentorship requests use (000824): provider_user_id
+	// = author, inquiry intent only. The DB provider check requires
+	// exactly one of org_id/provider_user_id, so the author-provider row
+	// inserts legally.
+	providerUserID := pgtype.UUID{}
 	if !listing.OrgID.Valid {
-		return BookingResult{}, ErrBookingUnavailable
+		if !listing.AuthorID.Valid {
+			return BookingResult{}, ErrBookingUnavailable
+		}
+
+		if listing.AuthorID == bookerID {
+			return BookingResult{}, ErrSelfBooking
+		}
+
+		providerUserID = listing.AuthorID
 	}
 
 	// Resolve intent: explicit input wins; otherwise derive from the
@@ -576,6 +588,12 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID, listingContentID 
 		if intent != BookingIntentInquiry {
 			return BookingResult{}, ErrInvalidIntent
 		}
+	}
+
+	// The author-provider arm is inquiry-only: paid bookings are org-bound
+	// (fee settlement, org inbox, refund policy are all org concepts).
+	if providerUserID.Valid && intent != BookingIntentInquiry {
+		return BookingResult{}, ErrBookingUnavailable
 	}
 
 	// Coupons and tiers only apply to paid bookings — an inquiry naming
@@ -715,6 +733,13 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID, listingContentID 
 		ExpiresAt:      s.bookingExpiresAt(ctx),
 	}
 
+	if providerUserID.Valid {
+		// Author-provider rows carry no SLA expiry (same posture as
+		// mentorship rows — a personal inbox is not SLA-bound).
+		params.ProviderUserID = providerUserID
+		params.ExpiresAt = pgtype.Timestamptz{}
+	}
+
 	if input.Note != "" {
 		params.Note = &input.Note
 	}
@@ -775,6 +800,13 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID, listingContentID 
 
 	booking, err := s.store.createBookingWithRedemption(ctx, params, redemption, guard)
 	if err != nil {
+		// The dedupe index covers every org_id IS NULL row — the
+		// author-provider arm included — so a second open inquiry to the
+		// same listing author surfaces here rather than as a raw 500.
+		if isDuplicateMentorshipBookingErr(err) {
+			return BookingResult{}, ErrDuplicateInquiry
+		}
+
 		return BookingResult{}, err
 	}
 

@@ -7,13 +7,20 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // errCreditPurchaseDisabled is returned when the wallet.credit_purchase_enabled
 // killswitch is false.
 var errCreditPurchaseDisabled = errors.New("credit purchasing is disabled")
+
+// errPaymentInitiation wraps provider-checkout failures from CreatePayment so
+// handlers can map them to 502 provider_error (same convention as
+// internal/payments/handlers.go) instead of the generic 500 internal_error.
+var errPaymentInitiation = errors.New("payment initiation failed")
 
 // PurchaseCreditsInput holds parameters for initiating a credit purchase.
 type PurchaseCreditsInput struct {
@@ -211,11 +218,14 @@ func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input
 
 	currency, err := s.store.getCurrencyByCode(ctx, currencyCode)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PurchaseCreditsResult{}, fmt.Errorf("%w: currency %s", errpkg.ErrNotFound, currencyCode)
+		}
 		return PurchaseCreditsResult{}, fmt.Errorf("resolving currency: %w", err)
 	}
 
 	if !currency.IsActive {
-		return PurchaseCreditsResult{}, errors.New("currency is not active")
+		return PurchaseCreditsResult{}, fmt.Errorf("%w: currency %s is not active", errpkg.ErrInvalid, currencyCode)
 	}
 
 	// Determine the credit amount and bonus.
@@ -225,16 +235,19 @@ func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input
 	if input.PackID != "" {
 		var packID pgtype.UUID
 		if err := packID.Scan(input.PackID); err != nil {
-			return PurchaseCreditsResult{}, fmt.Errorf("invalid pack_id: %w", err)
+			return PurchaseCreditsResult{}, fmt.Errorf("%w: pack_id is not a valid UUID", errpkg.ErrInvalid)
 		}
 
 		pack, err := s.store.getCreditPackByID(ctx, packID)
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return PurchaseCreditsResult{}, fmt.Errorf("%w: credit pack not found", errpkg.ErrNotFound)
+			}
 			return PurchaseCreditsResult{}, fmt.Errorf("resolving credit pack: %w", err)
 		}
 
 		if !pack.IsActive {
-			return PurchaseCreditsResult{}, errors.New("credit pack is not active")
+			return PurchaseCreditsResult{}, fmt.Errorf("%w: credit pack is not active", errpkg.ErrInvalid)
 		}
 
 		creditsToGrant = int(pack.CreditAmount + pack.BonusCredits)
@@ -242,7 +255,7 @@ func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input
 	}
 
 	if creditsToGrant <= 0 {
-		return PurchaseCreditsResult{}, errors.New("credits_to_grant must be positive")
+		return PurchaseCreditsResult{}, fmt.Errorf("%w: credit amount must be positive", errpkg.ErrInvalid)
 	}
 
 	// BUG-W-002: enforce the server-side minimum for custom-amount purchases.
@@ -252,7 +265,7 @@ func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input
 	if input.PackID == "" && s.settings != nil {
 		minPurchase := s.settings.GetIntOr(ctx, "wallet.min_purchase_credits", 100)
 		if creditsToGrant < minPurchase {
-			return PurchaseCreditsResult{}, fmt.Errorf("minimum %d credits required for purchase", minPurchase)
+			return PurchaseCreditsResult{}, fmt.Errorf("%w: minimum %d credits required for purchase", errpkg.ErrInvalid, minPurchase)
 		}
 	}
 
@@ -289,7 +302,7 @@ func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input
 			Metadata:    metadata,
 		})
 		if err != nil {
-			return PurchaseCreditsResult{}, fmt.Errorf("creating payment: %w", err)
+			return PurchaseCreditsResult{}, fmt.Errorf("%w: %w", errPaymentInitiation, err)
 		}
 
 		return PurchaseCreditsResult{

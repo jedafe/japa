@@ -199,7 +199,11 @@ first.
 
 Standard error envelope. New codes: `byok_provider_not_found`,
 `byok_provider_disabled`, `ai_key_not_found`, `model_not_allowed`
-(BYOK model outside catalog), `key_invalid` (provider rejected the key).
+(BYOK model outside catalog), `key_invalid` (provider rejected the key),
+`key_in_use` (credential attached to another account),
+`key_already_added` (same credential already on the caller's account),
+`key_limit_reached`, `too_many_rejected_keys`, `verification_failed`
+(provider unreachable — transient, key not flagged).
 Validation of `provider_type`, `models` shape, and `signup_url` (https
 only) happens in control-panel handlers.
 

@@ -97,6 +97,9 @@
 				bind:value={providerId}
 				options={providerOptions}
 			/>
+			{#if providers.length === 0}
+				<p class="mt-1.5 text-sm text-[var(--color-muted)]">{t('ai.byok.no_providers', 'No AI providers are available right now.')}</p>
+			{/if}
 			{#if selectedProvider?.signup_url}
 				<a
 					href={selectedProvider.signup_url}
@@ -120,6 +123,7 @@
 				type="password"
 				bind:value={apiKey}
 				autocomplete="off"
+				maxlength="4096"
 				placeholder="sk-…"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			/>

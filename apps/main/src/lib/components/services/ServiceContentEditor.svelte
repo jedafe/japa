@@ -51,6 +51,10 @@
 		inputClass: string;
 		/** Open the section by default (edit form: when content exists). */
 		open?: boolean;
+		/** Render the fields without the collapsible "Content details (optional)"
+		 *  wrapper — for hosts that already provide the section title (e.g. the
+		 *  mentorship settings "Content details" tab). */
+		bare?: boolean;
 		faqs: FaqEntry[];
 		steps: StepEntry[];
 		sellingPoints: IconEntry[];
@@ -62,6 +66,7 @@
 	let {
 		inputClass,
 		open = $bindable(false),
+		bare = false,
 		faqs = $bindable([]),
 		steps = $bindable([]),
 		sellingPoints = $bindable([]),
@@ -97,20 +102,7 @@
 
 <!-- §114 structured content — all listing kinds; collapsed by default
 	so the form stays lean. -->
-<details
-	class="group rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]/40"
-	bind:open
->
-	<summary
-		class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-[var(--color-text)] [&::-webkit-details-marker]:hidden"
-	>
-		{t('services.content_details_section', 'Content details (optional)')}
-		<ChevronDown
-			size={16}
-			class="ml-auto shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-180"
-		/>
-	</summary>
-	<div class="space-y-5 border-t border-[var(--color-border)] px-4 py-4">
+{#snippet fields()}
 		<!-- Selling points — hero trust chips -->
 		<div>
 			<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -482,5 +474,30 @@
 				</button>
 			{/if}
 		</div>
+{/snippet}
+
+{#if bare}
+	<!-- No <details> here: a summary-less <details> still renders the
+	     browser's default "Details" disclosure triangle. -->
+	<div class="space-y-5">
+		{@render fields()}
 	</div>
-</details>
+{:else}
+	<details
+		class="group rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]/40"
+		bind:open
+	>
+		<summary
+			class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-[var(--color-text)] [&::-webkit-details-marker]:hidden"
+		>
+			{t('services.content_details_section', 'Content details (optional)')}
+			<ChevronDown
+				size={16}
+				class="ml-auto shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-180"
+			/>
+		</summary>
+		<div class="space-y-5 border-t border-[var(--color-border)] px-4 py-4">
+			{@render fields()}
+		</div>
+	</details>
+{/if}

@@ -125,6 +125,13 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 
+	// Self-review — the reviewer authored the content behind the entity.
+	if errors.Is(err, ErrSelfReview) {
+		errpkg.WriteError(w, http.StatusConflict, "self_review",
+			"You cannot review your own content")
+		return
+	}
+
 	errpkg.HandleServiceError(w, err)
 }
 

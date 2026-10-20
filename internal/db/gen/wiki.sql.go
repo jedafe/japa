@@ -631,6 +631,57 @@ func (q *Queries) CountWikiRevisionsByTarget(ctx context.Context, arg CountWikiR
 	return count, err
 }
 
+const createEntityWikiPage = `-- name: CreateEntityWikiPage :one
+INSERT INTO wiki_pages (space_id, entity_type, entity_id, slug, title, category,
+                        is_active, created_by, page_template_id, field_group_id)
+VALUES (NULL, $1, $2, $3, $4, $5,
+        true, $6, $7, $8)
+RETURNING id, entity_type, entity_id, slug, title, category
+`
+
+type CreateEntityWikiPageParams struct {
+	EntityType     *string     `json:"entity_type"`
+	EntityID       pgtype.UUID `json:"entity_id"`
+	Slug           string      `json:"slug"`
+	Title          string      `json:"title"`
+	Category       string      `json:"category"`
+	CreatedBy      pgtype.UUID `json:"created_by"`
+	PageTemplateID pgtype.UUID `json:"page_template_id"`
+	FieldGroupID   pgtype.UUID `json:"field_group_id"`
+}
+
+type CreateEntityWikiPageRow struct {
+	ID         pgtype.UUID `json:"id"`
+	EntityType *string     `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	Slug       string      `json:"slug"`
+	Title      string      `json:"title"`
+	Category   string      `json:"category"`
+}
+
+func (q *Queries) CreateEntityWikiPage(ctx context.Context, arg CreateEntityWikiPageParams) (CreateEntityWikiPageRow, error) {
+	row := q.db.QueryRow(ctx, createEntityWikiPage,
+		arg.EntityType,
+		arg.EntityID,
+		arg.Slug,
+		arg.Title,
+		arg.Category,
+		arg.CreatedBy,
+		arg.PageTemplateID,
+		arg.FieldGroupID,
+	)
+	var i CreateEntityWikiPageRow
+	err := row.Scan(
+		&i.ID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.Slug,
+		&i.Title,
+		&i.Category,
+	)
+	return i, err
+}
+
 const createWikiPage = `-- name: CreateWikiPage :one
 INSERT INTO wiki_pages (space_id, slug, title, category, created_by,
     page_template_id, field_group_id, position)
@@ -684,6 +735,27 @@ type DeleteWikiPageFeedbackParams struct {
 func (q *Queries) DeleteWikiPageFeedback(ctx context.Context, arg DeleteWikiPageFeedbackParams) error {
 	_, err := q.db.Exec(ctx, deleteWikiPageFeedback, arg.WikiPageID, arg.UserID)
 	return err
+}
+
+const entityWikiPageRowExists = `-- name: EntityWikiPageRowExists :one
+SELECT EXISTS (
+    SELECT 1 FROM wiki_pages wp
+    WHERE wp.entity_type = $1 AND wp.entity_id = $2
+      AND wp.slug = $3
+) AS exists
+`
+
+type EntityWikiPageRowExistsParams struct {
+	EntityType *string     `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	PageSlug   string      `json:"page_slug"`
+}
+
+func (q *Queries) EntityWikiPageRowExists(ctx context.Context, arg EntityWikiPageRowExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, entityWikiPageRowExists, arg.EntityType, arg.EntityID, arg.PageSlug)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const findWikiHostPage = `-- name: FindWikiHostPage :one
@@ -791,6 +863,177 @@ func (q *Queries) GetApprovedWikiRevision(ctx context.Context, pageID pgtype.UUI
 	return i, err
 }
 
+const getCourseOfferingForWiki = `-- name: GetCourseOfferingForWiki :one
+SELECT o.id, o.slug, o.university_id, c.title AS name
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+WHERE o.slug = $1 AND o.deleted_at IS NULL AND o.is_published = true
+LIMIT 1
+`
+
+type GetCourseOfferingForWikiRow struct {
+	ID           pgtype.UUID `json:"id"`
+	Slug         string      `json:"slug"`
+	UniversityID pgtype.UUID `json:"university_id"`
+	Name         string      `json:"name"`
+}
+
+func (q *Queries) GetCourseOfferingForWiki(ctx context.Context, slug string) (GetCourseOfferingForWikiRow, error) {
+	row := q.db.QueryRow(ctx, getCourseOfferingForWiki, slug)
+	var i GetCourseOfferingForWikiRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.UniversityID,
+		&i.Name,
+	)
+	return i, err
+}
+
+const getEmbassyForWiki = `-- name: GetEmbassyForWiki :one
+SELECT id, slug, name, host_space_id
+FROM embassies
+WHERE slug = $1 AND is_active = true
+LIMIT 1
+`
+
+type GetEmbassyForWikiRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Slug        string      `json:"slug"`
+	Name        string      `json:"name"`
+	HostSpaceID pgtype.UUID `json:"host_space_id"`
+}
+
+func (q *Queries) GetEmbassyForWiki(ctx context.Context, slug string) (GetEmbassyForWikiRow, error) {
+	row := q.db.QueryRow(ctx, getEmbassyForWiki, slug)
+	var i GetEmbassyForWikiRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.HostSpaceID,
+	)
+	return i, err
+}
+
+const getEntityWikiPage = `-- name: GetEntityWikiPage :one
+SELECT wp.id, wp.space_id, wp.entity_type, wp.entity_id, wp.slug, wp.title, wp.category,
+       wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
+       wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       wp.data_entity_type, wp.page_template_id, wp.field_group_id, wp.position
+FROM wiki_pages wp
+WHERE wp.entity_type = $1 AND wp.entity_id = $2
+  AND wp.slug = $3
+  AND wp.is_active = true AND wp.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetEntityWikiPageParams struct {
+	EntityType *string     `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	PageSlug   string      `json:"page_slug"`
+}
+
+type GetEntityWikiPageRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	SpaceID          pgtype.UUID        `json:"space_id"`
+	EntityType       *string            `json:"entity_type"`
+	EntityID         pgtype.UUID        `json:"entity_id"`
+	Slug             string             `json:"slug"`
+	Title            string             `json:"title"`
+	Category         string             `json:"category"`
+	IsActive         bool               `json:"is_active"`
+	IsFeatured       bool               `json:"is_featured"`
+	IsLocked         bool               `json:"is_locked"`
+	CreatedBy        pgtype.UUID        `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed *bool              `json:"is_japabot_indexed"`
+	DataEntityType   *string            `json:"data_entity_type"`
+	PageTemplateID   pgtype.UUID        `json:"page_template_id"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
+}
+
+func (q *Queries) GetEntityWikiPage(ctx context.Context, arg GetEntityWikiPageParams) (GetEntityWikiPageRow, error) {
+	row := q.db.QueryRow(ctx, getEntityWikiPage, arg.EntityType, arg.EntityID, arg.PageSlug)
+	var i GetEntityWikiPageRow
+	err := row.Scan(
+		&i.ID,
+		&i.SpaceID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.Slug,
+		&i.Title,
+		&i.Category,
+		&i.IsActive,
+		&i.IsFeatured,
+		&i.IsLocked,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.DataEntityType,
+		&i.PageTemplateID,
+		&i.FieldGroupID,
+		&i.Position,
+	)
+	return i, err
+}
+
+const getOrganizationForWiki = `-- name: GetOrganizationForWiki :one
+SELECT id, slug, name, geo_space_id, org_type
+FROM organizations
+WHERE slug = $1 AND deleted_at IS NULL AND status = 'active'
+LIMIT 1
+`
+
+type GetOrganizationForWikiRow struct {
+	ID         pgtype.UUID `json:"id"`
+	Slug       string      `json:"slug"`
+	Name       string      `json:"name"`
+	GeoSpaceID pgtype.UUID `json:"geo_space_id"`
+	OrgType    string      `json:"org_type"`
+}
+
+func (q *Queries) GetOrganizationForWiki(ctx context.Context, slug string) (GetOrganizationForWikiRow, error) {
+	row := q.db.QueryRow(ctx, getOrganizationForWiki, slug)
+	var i GetOrganizationForWikiRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.GeoSpaceID,
+		&i.OrgType,
+	)
+	return i, err
+}
+
+const getScholarshipForWiki = `-- name: GetScholarshipForWiki :one
+SELECT id, slug, title, country_space_id
+FROM scholarships
+WHERE slug = $1
+`
+
+type GetScholarshipForWikiRow struct {
+	ID             pgtype.UUID `json:"id"`
+	Slug           string      `json:"slug"`
+	Title          string      `json:"title"`
+	CountrySpaceID pgtype.UUID `json:"country_space_id"`
+}
+
+func (q *Queries) GetScholarshipForWiki(ctx context.Context, slug string) (GetScholarshipForWikiRow, error) {
+	row := q.db.QueryRow(ctx, getScholarshipForWiki, slug)
+	var i GetScholarshipForWikiRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.CountrySpaceID,
+	)
+	return i, err
+}
+
 const getSpaceTypeRef = `-- name: GetSpaceTypeRef :one
 SELECT sp.space_type_id, COALESCE(st.slug, '') AS space_type_slug
 FROM spaces sp
@@ -807,6 +1050,70 @@ func (q *Queries) GetSpaceTypeRef(ctx context.Context, spaceID pgtype.UUID) (Get
 	row := q.db.QueryRow(ctx, getSpaceTypeRef, spaceID)
 	var i GetSpaceTypeRefRow
 	err := row.Scan(&i.SpaceTypeID, &i.SpaceTypeSlug)
+	return i, err
+}
+
+const getVisaRouteForWiki = `-- name: GetVisaRouteForWiki :one
+
+SELECT id, slug, name, destination_space_id, visa_category
+FROM visa_routes
+WHERE slug = $1 AND is_active = true
+LIMIT 1
+`
+
+type GetVisaRouteForWikiRow struct {
+	ID                 pgtype.UUID `json:"id"`
+	Slug               string      `json:"slug"`
+	Name               string      `json:"name"`
+	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
+	VisaCategory       string      `json:"visa_category"`
+}
+
+// ---------------------------------------------------------------------------
+// Per-kind entity lookups — slug → row for page resolution, and children of
+// a host space for the destinations tree. One block per source table.
+// ---------------------------------------------------------------------------
+func (q *Queries) GetVisaRouteForWiki(ctx context.Context, slug string) (GetVisaRouteForWikiRow, error) {
+	row := q.db.QueryRow(ctx, getVisaRouteForWiki, slug)
+	var i GetVisaRouteForWikiRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.DestinationSpaceID,
+		&i.VisaCategory,
+	)
+	return i, err
+}
+
+const getWikiEntityKind = `-- name: GetWikiEntityKind :one
+
+SELECT entity_kind, source_table, id_column, slug_column, label
+FROM wiki_entity_kinds
+WHERE entity_kind = $1
+`
+
+type GetWikiEntityKindRow struct {
+	EntityKind  string  `json:"entity_kind"`
+	SourceTable string  `json:"source_table"`
+	IDColumn    string  `json:"id_column"`
+	SlugColumn  *string `json:"slug_column"`
+	Label       string  `json:"label"`
+}
+
+// =====================
+// Entity-bound pages (JCE ↔ Wiki mapping, 000899+)
+// =====================
+func (q *Queries) GetWikiEntityKind(ctx context.Context, entityKind string) (GetWikiEntityKindRow, error) {
+	row := q.db.QueryRow(ctx, getWikiEntityKind, entityKind)
+	var i GetWikiEntityKindRow
+	err := row.Scan(
+		&i.EntityKind,
+		&i.SourceTable,
+		&i.IDColumn,
+		&i.SlugColumn,
+		&i.Label,
+	)
 	return i, err
 }
 
@@ -1060,6 +1367,95 @@ func (q *Queries) GetWikiSpaceBySlug(ctx context.Context, slug string) (GetWikiS
 	return i, err
 }
 
+const getWikiTypeConfigForKind = `-- name: GetWikiTypeConfigForKind :one
+SELECT wtc.space_type_id, wtc.enabled, wtc.label, wtc.entity_kind,
+       wtc.entity_discriminator, st.slug AS type_slug, st.name AS type_name
+FROM wiki_type_configs wtc
+JOIN space_types st ON st.id = wtc.space_type_id
+WHERE st.slug = $1 AND wtc.enabled = true
+`
+
+type GetWikiTypeConfigForKindRow struct {
+	SpaceTypeID         pgtype.UUID `json:"space_type_id"`
+	Enabled             bool        `json:"enabled"`
+	Label               *string     `json:"label"`
+	EntityKind          *string     `json:"entity_kind"`
+	EntityDiscriminator []byte      `json:"entity_discriminator"`
+	TypeSlug            string      `json:"type_slug"`
+	TypeName            string      `json:"type_name"`
+}
+
+// Resolve the wiki type config backing an entity-bound type key slug
+// (e.g. 'student_visa') — returns the entity kind + discriminator.
+func (q *Queries) GetWikiTypeConfigForKind(ctx context.Context, typeSlug string) (GetWikiTypeConfigForKindRow, error) {
+	row := q.db.QueryRow(ctx, getWikiTypeConfigForKind, typeSlug)
+	var i GetWikiTypeConfigForKindRow
+	err := row.Scan(
+		&i.SpaceTypeID,
+		&i.Enabled,
+		&i.Label,
+		&i.EntityKind,
+		&i.EntityDiscriminator,
+		&i.TypeSlug,
+		&i.TypeName,
+	)
+	return i, err
+}
+
+const getWikiTypePageTemplateBySlug = `-- name: GetWikiTypePageTemplateBySlug :one
+SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
+       t.is_system, t.created_at,
+       c.category AS category_token
+FROM wiki_type_page_templates t
+JOIN wiki_type_categories c ON c.id = t.category_id
+WHERE c.space_type_id = $1 AND t.slug = $2
+ORDER BY c.position, t.position
+LIMIT 1
+`
+
+type GetWikiTypePageTemplateBySlugParams struct {
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	Slug        string      `json:"slug"`
+}
+
+type GetWikiTypePageTemplateBySlugRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	CategoryID       pgtype.UUID        `json:"category_id"`
+	Slug             string             `json:"slug"`
+	Label            string             `json:"label"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
+	ParentTemplateID pgtype.UUID        `json:"parent_template_id"`
+	SectionLabel     *string            `json:"section_label"`
+	PreviewLimit     int32              `json:"preview_limit"`
+	IsSystem         bool               `json:"is_system"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	CategoryToken    string             `json:"category_token"`
+}
+
+// Type-scoped template lookup for entity-bound lazy pages (the space-bound
+// variant joins through spaces; entity types have no space row).
+func (q *Queries) GetWikiTypePageTemplateBySlug(ctx context.Context, arg GetWikiTypePageTemplateBySlugParams) (GetWikiTypePageTemplateBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getWikiTypePageTemplateBySlug, arg.SpaceTypeID, arg.Slug)
+	var i GetWikiTypePageTemplateBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.CategoryID,
+		&i.Slug,
+		&i.Label,
+		&i.FieldGroupID,
+		&i.Position,
+		&i.ParentTemplateID,
+		&i.SectionLabel,
+		&i.PreviewLimit,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.CategoryToken,
+	)
+	return i, err
+}
+
 const hardDeleteWikiPage = `-- name: HardDeleteWikiPage :execrows
 DELETE FROM wiki_pages WHERE id = $1 AND deleted_at IS NOT NULL
 `
@@ -1180,6 +1576,255 @@ func (q *Queries) IsUniversitySpaceBySlug(ctx context.Context, slug string) (*bo
 	var is_university *bool
 	err := row.Scan(&is_university)
 	return is_university, err
+}
+
+const listCourseOfferingsForWiki = `-- name: ListCourseOfferingsForWiki :many
+SELECT o.id, o.slug, c.title AS name
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+WHERE o.university_id = $1 AND o.deleted_at IS NULL AND o.is_published = true
+ORDER BY c.title
+`
+
+type ListCourseOfferingsForWikiRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+	Name string      `json:"name"`
+}
+
+func (q *Queries) ListCourseOfferingsForWiki(ctx context.Context, spaceID pgtype.UUID) ([]ListCourseOfferingsForWikiRow, error) {
+	rows, err := q.db.Query(ctx, listCourseOfferingsForWiki, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCourseOfferingsForWikiRow
+	for rows.Next() {
+		var i ListCourseOfferingsForWikiRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEmbassiesForWiki = `-- name: ListEmbassiesForWiki :many
+SELECT id, slug, name
+FROM embassies
+WHERE host_space_id = $1 AND is_active = true
+ORDER BY name
+`
+
+type ListEmbassiesForWikiRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+	Name string      `json:"name"`
+}
+
+func (q *Queries) ListEmbassiesForWiki(ctx context.Context, spaceID pgtype.UUID) ([]ListEmbassiesForWikiRow, error) {
+	rows, err := q.db.Query(ctx, listEmbassiesForWiki, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEmbassiesForWikiRow
+	for rows.Next() {
+		var i ListEmbassiesForWikiRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntityWikiPages = `-- name: ListEntityWikiPages :many
+SELECT wp.id, wp.entity_type, wp.entity_id, wp.slug, wp.title, wp.category,
+       wp.is_active, wp.is_featured, wp.position
+FROM wiki_pages wp
+WHERE wp.entity_type = $1 AND wp.entity_id = $2
+  AND wp.is_active = true AND wp.deleted_at IS NULL
+ORDER BY wp.category, wp.title
+`
+
+type ListEntityWikiPagesParams struct {
+	EntityType *string     `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+type ListEntityWikiPagesRow struct {
+	ID         pgtype.UUID `json:"id"`
+	EntityType *string     `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	Slug       string      `json:"slug"`
+	Title      string      `json:"title"`
+	Category   string      `json:"category"`
+	IsActive   bool        `json:"is_active"`
+	IsFeatured bool        `json:"is_featured"`
+	Position   int32       `json:"position"`
+}
+
+func (q *Queries) ListEntityWikiPages(ctx context.Context, arg ListEntityWikiPagesParams) ([]ListEntityWikiPagesRow, error) {
+	rows, err := q.db.Query(ctx, listEntityWikiPages, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityWikiPagesRow
+	for rows.Next() {
+		var i ListEntityWikiPagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.Slug,
+			&i.Title,
+			&i.Category,
+			&i.IsActive,
+			&i.IsFeatured,
+			&i.Position,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationsForWiki = `-- name: ListOrganizationsForWiki :many
+SELECT id, slug, name, org_type
+FROM organizations
+WHERE geo_space_id = $1 AND deleted_at IS NULL AND status = 'active'
+  AND ($2::text = '' OR org_type = $2)
+ORDER BY name
+`
+
+type ListOrganizationsForWikiParams struct {
+	SpaceID pgtype.UUID `json:"space_id"`
+	OrgType string      `json:"org_type"`
+}
+
+type ListOrganizationsForWikiRow struct {
+	ID      pgtype.UUID `json:"id"`
+	Slug    string      `json:"slug"`
+	Name    string      `json:"name"`
+	OrgType string      `json:"org_type"`
+}
+
+// Organizations (e.g. banks) hosted by a geo space, filtered by org_type.
+func (q *Queries) ListOrganizationsForWiki(ctx context.Context, arg ListOrganizationsForWikiParams) ([]ListOrganizationsForWikiRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationsForWiki, arg.SpaceID, arg.OrgType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrganizationsForWikiRow
+	for rows.Next() {
+		var i ListOrganizationsForWikiRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.OrgType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScholarshipsForWiki = `-- name: ListScholarshipsForWiki :many
+SELECT id, slug, title
+FROM scholarships
+WHERE country_space_id = $1
+ORDER BY title
+LIMIT 500
+`
+
+type ListScholarshipsForWikiRow struct {
+	ID    pgtype.UUID `json:"id"`
+	Slug  string      `json:"slug"`
+	Title string      `json:"title"`
+}
+
+func (q *Queries) ListScholarshipsForWiki(ctx context.Context, spaceID pgtype.UUID) ([]ListScholarshipsForWikiRow, error) {
+	rows, err := q.db.Query(ctx, listScholarshipsForWiki, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScholarshipsForWikiRow
+	for rows.Next() {
+		var i ListScholarshipsForWikiRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVisaRoutesForWiki = `-- name: ListVisaRoutesForWiki :many
+SELECT id, slug, name, visa_category
+FROM visa_routes
+WHERE destination_space_id = $1 AND is_active = true
+  AND ($2::text = '' OR visa_category = $2)
+ORDER BY name
+`
+
+type ListVisaRoutesForWikiParams struct {
+	SpaceID      pgtype.UUID `json:"space_id"`
+	VisaCategory string      `json:"visa_category"`
+}
+
+type ListVisaRoutesForWikiRow struct {
+	ID           pgtype.UUID `json:"id"`
+	Slug         string      `json:"slug"`
+	Name         string      `json:"name"`
+	VisaCategory string      `json:"visa_category"`
+}
+
+// Visa routes hosted by a destination space (country).
+func (q *Queries) ListVisaRoutesForWiki(ctx context.Context, arg ListVisaRoutesForWikiParams) ([]ListVisaRoutesForWikiRow, error) {
+	rows, err := q.db.Query(ctx, listVisaRoutesForWiki, arg.SpaceID, arg.VisaCategory)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVisaRoutesForWikiRow
+	for rows.Next() {
+		var i ListVisaRoutesForWikiRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.VisaCategory,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listWikiDestinations = `-- name: ListWikiDestinations :many

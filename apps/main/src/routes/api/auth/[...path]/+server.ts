@@ -21,6 +21,7 @@ import {
 	refreshSession,
 	setSessionCookie,
 	setRefreshCookie,
+	clearSessionCookie,
 	sanitizePostLoginTarget
 } from '$lib/server/auth';
 
@@ -161,7 +162,23 @@ export async function POST(event: RequestEvent) {
 			}
 
 			case 'refresh': {
-				const result = await refreshSession(ctx);
+				let result;
+				try {
+					result = await refreshSession(ctx);
+				} catch (err) {
+					// A terminally-invalid refresh token (revoked/expired/absent)
+					// leaves dead jc_token + jc_refresh cookies that make every
+					// later request retry a refresh that can never succeed.
+					// Clear them — same degradation as tryRefreshSession in
+					// hooks.server.ts — so the client treats the user as a guest.
+					if (
+						err instanceof ApiError &&
+						(err.code === 'no_refresh_token' || err.code === 'invalid_refresh_token')
+					) {
+						clearSessionCookie(event);
+					}
+					throw err;
+				}
 				setSessionCookie(event, result.access_token);
 				if (result.refresh_token) setRefreshCookie(event, result.refresh_token);
 				return json({ ok: true });

@@ -21,7 +21,7 @@
 	import { Shield, ShieldCheck } from 'lucide-svelte';
 	import type { AIPrivacyStatus, AIPrivacyUpdateResult } from '$lib/ai/agentTypes';
 
-	let { data }: { data: unknown } = $props();
+	let { data, embedded = false }: { data: unknown; embedded?: boolean } = $props();
 
 	// The loader returns { privacy: { profile_ai_exempt }, profile: { id } }.
 	// Degrade to safe defaults when either fetch failed.
@@ -59,7 +59,7 @@
 	}
 </script>
 
-<SettingsSection titleKey="settings.nav.ai_privacy" descKey="settings.ai_privacy.desc" {form}>
+<SettingsSection titleKey="settings.nav.ai_privacy" descKey="settings.ai_privacy.desc" {form} hideHeader={embedded}>
 	<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 		<div class="flex items-start justify-between gap-4">
 			<div class="flex items-start gap-3">

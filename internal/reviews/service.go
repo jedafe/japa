@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content"
@@ -26,6 +27,11 @@ type CreateReviewInput struct {
 // to 409 already_reviewed; the DB unique guard (entity_type, entity_id,
 // reviewer_user_id) is the authoritative backstop for concurrent submits.
 var ErrAlreadyReviewed = errors.New("user has already reviewed this entity")
+
+// ErrSelfReview — the reviewer authored the content being reviewed
+// (content-backed entity types resolve entity_id to contents.id).
+// Handlers map it to 409 self_review.
+var ErrSelfReview = errors.New("cannot review your own content")
 
 // CreateReview creates a new review, enforcing one-per-user-per-entity.
 func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, input CreateReviewInput) (gen.Review, error) {
@@ -53,6 +59,19 @@ func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, 
 	// text, bodies go through the whitelist HTML sanitizer.
 	input.Title = content.SanitizeText(input.Title)
 	input.Body = content.SanitizeHTML(input.Body)
+
+	// Self-review guard — for content-backed entities (service_listing,
+	// …) entity_id is a contents id, and an author rating their own work
+	// inflates the aggregate. Non-content entities (no contents row) skip
+	// the guard; a lookup error is non-fatal so a flaky read never blocks
+	// a legitimate review.
+	authorID, err := s.store.contentAuthorID(ctx, input.EntityID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.Warn("reviews: content-author lookup failed", "entity_id", input.EntityID, "error", err)
+	}
+	if err == nil && authorID == reviewerUserID {
+		return gen.Review{}, ErrSelfReview
+	}
 
 	// One-per-user enforcement.
 	exists, err := s.store.hasUserReviewedEntity(ctx, input.EntityType, input.EntityID, reviewerUserID)

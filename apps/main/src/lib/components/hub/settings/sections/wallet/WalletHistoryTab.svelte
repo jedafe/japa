@@ -22,6 +22,7 @@
 
 	interface RawLedgerEntry {
 		id: string;
+		operation?: string;
 		amount?: number;
 		reference?: unknown;
 		reason?: unknown;
@@ -33,8 +34,19 @@
 		return (entries ?? []).map((raw) => {
 			const ref = raw?.reference?.toString().trim();
 			const reason = raw?.reason?.toString().trim();
-			return { id: raw.id, type, amount: raw.amount, description: ref || reason || null, created_at: raw.created_at };
+			return { id: raw.id, type, operation: raw.operation, amount: raw.amount, description: ref || reason || null, created_at: raw.created_at };
 		});
+	}
+
+	// Localized headline for known ledger operations — the backend stores
+	// English `reference`/`reason` strings, so the operation discriminator
+	// (earn/spend/purchase/convert/refund/clawback/admin_adjust/withdraw)
+	// drives the primary label and the server text drops to a detail line.
+	const WALLET_OPS = new Set(['earn', 'spend', 'purchase', 'convert', 'refund', 'clawback', 'admin_adjust', 'withdraw']);
+	function opLabel(entry: LedgerEntry): string | null {
+		return entry.operation && WALLET_OPS.has(entry.operation)
+			? t(`wallet.op.${entry.operation}`, entry.operation)
+			: null;
 	}
 
 	let extra = $state<LedgerEntry[]>([]);
@@ -144,8 +156,11 @@
 				<li class="flex items-center justify-between rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm">
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-[var(--color-text)]">
-							{entry.description?.trim() || (entry.amount !== undefined && entry.amount >= 0 ? t('wallet.earned', 'Earned') : t('wallet.spent', 'Spent'))}
+							{opLabel(entry) ?? entry.description?.trim() ?? (entry.amount !== undefined && entry.amount >= 0 ? t('wallet.earned', 'Earned') : t('wallet.spent', 'Spent'))}
 						</p>
+						{#if opLabel(entry) && entry.description?.trim()}
+							<p class="truncate text-xs text-[var(--color-muted)]">{entry.description}</p>
+						{/if}
 						<p class="text-xs text-[var(--color-muted)]">{formatDate(entry.created_at)}</p>
 					</div>
 					<span class="font-medium {entry.amount !== undefined && entry.amount >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'} [font-variant-numeric:tabular-nums]">

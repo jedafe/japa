@@ -715,12 +715,21 @@ var (
 	// (409 duplicate_request). Replaces the dropped mentorship_connections
 	// dedupe (000824).
 	ErrDuplicateRequest = errors.New("duplicate_request")
+	// ErrDuplicateInquiry — the booker already holds an open inquiry to the
+	// same listing author (idx_svc_bookings_mentorship_open_uniq covers
+	// every org_id IS NULL row — the author-provider arm included).
+	ErrDuplicateInquiry = errors.New("duplicate_inquiry")
 	// ErrMentorAtCapacity — the provider's active_mentee_count has reached
 	// mentor_capacity (409 mentor_at_capacity).
 	ErrMentorAtCapacity = errors.New("mentor_at_capacity")
 	// ErrSelfMentorship — the booker is the listing's own author/provider
 	// (400 cannot_self_mentor).
 	ErrSelfMentorship = errors.New("cannot request mentorship from yourself")
+
+	// ErrSelfBooking — the booker is the listing's own author; a personal
+	// listing's inquiry arm delivers to the author, so a self-inquiry has
+	// no recipient (409 self_booking).
+	ErrSelfBooking = errors.New("cannot send an inquiry to your own listing")
 	// ErrMentorshipListingManaged — a write tried to mint or mutate a
 	// listing_kind='mentorship' row through the public create/edit paths.
 	// Shadow listings are managed exclusively by the mentor-profile
@@ -1097,6 +1106,21 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 			if !v.Verified || (vtype != "business" && vtype != VerificationTypeProfessionalBody) {
 				return ServiceDTO{}, ErrOrgNotVerified
 			}
+		}
+	}
+
+	// §98: an org-linked plain listing lands in that org's inbox and is
+	// editable by its members (service.edit_own), so the author must
+	// belong to the named org — without this check any service.create
+	// holder could attribute listings to an arbitrary org.
+	if !isPackage && orgID.Valid {
+		isMember, err := s.store.IsOrgMember(ctx, orgID, authorID)
+		if err != nil {
+			return ServiceDTO{}, fmt.Errorf("servicedir: check org membership: %w", err)
+		}
+
+		if !isMember {
+			return ServiceDTO{}, ErrNotOrgMember
 		}
 	}
 
@@ -2489,6 +2513,21 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 
 		if err := params.OrgID.Scan(*input.OrgID); err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: invalid org_id: %w", err)
+		}
+
+		// §98 re-attribution keeps the §98 behaviour but must not let an
+		// editor park the listing under an org they do not belong to — the
+		// claim flow exists precisely to gate ownership, so target-org
+		// membership is required whenever the org actually changes.
+		if !isPackage && params.OrgID != meta.OrgID {
+			isMember, err := s.store.IsOrgMember(ctx, params.OrgID, userID)
+			if err != nil {
+				return ServiceDTO{}, fmt.Errorf("servicedir: edit: check org membership: %w", err)
+			}
+
+			if !isMember {
+				return ServiceDTO{}, ErrNotOrgMember
+			}
 		}
 	}
 

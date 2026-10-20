@@ -150,6 +150,17 @@ export interface ByokProviderOption {
 	keys: { id: string; label: string; api_key_masked: string; status: string }[];
 }
 
+/** Provider shape embedded in /me/ai-keys rows — byokProviderPublic on the
+ * wire has no has_key/keys (those live only on GET /ai/byok/providers). */
+export type ByokProviderRef = Omit<ByokProviderOption, 'has_key' | 'keys'>;
+
+/** Result of POST /me/ai-keys/{id}/verify — last_error carries the
+ * provider's rejection reason when status is 'invalid'. */
+export interface AIKeyVerifyResult {
+	status: string;
+	last_error?: string;
+}
+
 /** Caller-owned BYOK credential from /me/ai-keys (masked only). */
 export interface UserAIKeyView {
 	id: string;
@@ -159,5 +170,6 @@ export interface UserAIKeyView {
 	status: string;
 	last_error?: string;
 	created_at: string;
-	provider: ByokProviderOption;
+	updated_at?: string;
+	provider: ByokProviderRef;
 }

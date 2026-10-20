@@ -234,7 +234,7 @@ ${frontmatterLine('journey_stage', values.journey_stage)}
 ${frontmatterLine('visa_route', values.visa_route)}
 ${frontmatterLine('space_id', values.space_id)}
 ${frontmatterLine('series_id', values.series_id)}
-${isMember ? '' : frontmatterLine('persona_id', values.persona_id)}${isMember ? '' : frontmatterLine('voice_id', values.voice_id)}${frontmatterLine('status', status)}
+${isMember ? '' : frontmatterLine('persona_id', values.persona_id) + (values.persona_id ? '\n' : '')}${isMember ? '' : frontmatterLine('voice_id', values.voice_id) + (values.voice_id ? '\n' : '')}${frontmatterLine('status', status)}
 ${frontmatterLine('visibility', values.visibility)}
 ${publishAt}${tagsYaml}
 ${categoryFieldValuesYaml(categoryFields, values.field_values)}${frontmatterLine('header_image_id', values.header_image_id)}

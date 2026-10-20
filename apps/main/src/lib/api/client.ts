@@ -1,4 +1,5 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { page } from '$app/state';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
 import { buildApiUrl } from '@japaconnect/api-url';
 import type { ListMeta } from '$lib/types';
@@ -135,6 +136,16 @@ async function clientFetchRaw<T>(
 				const refreshed = await refreshSession();
 				if (refreshed) {
 					res = await doFetch();
+				} else if (page.data?.isAuthed === true) {
+					// The session is unrecoverable — the refresh token was
+					// revoked or expired (password change, logout on a sibling
+					// surface, or family revocation per §02). Reloading lets
+					// hooks.server.ts clear the dead cookies and render the
+					// guest view; authed-only loads (e.g. /settings/*) redirect
+					// to /login server-side. Guests never reach this branch —
+					// without the isAuthed gate a guest hitting an authed
+					// endpoint would reload-loop.
+					window.location.reload();
 				}
 			}
 		}

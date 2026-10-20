@@ -37,7 +37,7 @@
 		data.role === 'received'
 			? t(
 					'bookings.empty_received_body',
-					'Mentorship requests sent to you land here.'
+					'Inquiries and requests sent to you land here.'
 				)
 			: t(
 					'bookings.empty_body',

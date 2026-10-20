@@ -71,10 +71,19 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	// degrades to an empty list when the endpoint is unavailable.
 	'connected-apps': async (ctx) => (await apiList<unknown>(ctx, '/me/oauth/grants').catch(() => ({ items: [] }))).items,
 
-	// BYOK — provider storefront + the caller's keys, both best-effort.
-	'ai-keys': async (ctx) => ({
-		providers: await apiGet<unknown>(ctx, '/ai/byok/providers').catch(() => []),
-		keys: await apiGet<unknown>(ctx, '/me/ai-keys').catch(() => [])
+	// AI section — merged loader feeding the privacy + BYOK key tabs.
+	// BYOK half: provider storefront + caller's keys, both best-effort.
+	// Privacy half: /me/ai-privacy + /me (the tab resolves the user id for
+	// PUT /me/ai-privacy).
+	ai: async (ctx) => ({
+		privacy: {
+			privacy: await apiGet<AIPrivacyStatus>(ctx, '/me/ai-privacy').catch(() => ({ profile_ai_exempt: false })),
+			profile: await apiGet<MeProfile>(ctx, '/me').catch(() => ({ id: '' }))
+		},
+		keys: {
+			providers: await apiGet<unknown>(ctx, '/ai/byok/providers').catch(() => []),
+			keys: await apiGet<unknown>(ctx, '/me/ai-keys').catch(() => [])
+		}
 	}),
 	// Section 77 / ADR-074 — registered mobile push devices (Devices settings section).
 	// Best-effort: degrades to an empty list when the route is unavailable.
@@ -144,6 +153,7 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			return (entries ?? []).map((raw: any) => ({
 				id: raw.id,
 				type,
+				operation: raw.operation,
 				amount: raw.amount,
 				description: describe(raw),
 				created_at: raw.created_at
@@ -219,12 +229,9 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	// the user lacks the mentorship.become_mentor permission or the feature
 	// is disabled (the section renders a permission/disabled notice).
 	mentorship: async (ctx) => ({
-		profile: await apiGet<MentorProfile>(ctx, '/me/mentor-profile').catch(() => null)
+		profile: await apiGet<MentorProfile>(ctx, '/me/mentor-profile').catch(() => null),
+		// Geo country list for the mentor-card "Countries" autocomplete
+		// repeater (same source as the Location section's country picker).
+		countries: (await apiList<GeoCountry>(ctx, '/geo/countries').then((r) => r.items).catch(() => []))
 	}),
-	// §103 AI agent privacy: GET /me/ai-privacy + /me so the section can
-	// resolve the current user ID for PUT /me/ai-privacy.
-	'ai-privacy': async (ctx) => ({
-		privacy: await apiGet<AIPrivacyStatus>(ctx, '/me/ai-privacy').catch(() => ({ profile_ai_exempt: false })),
-		profile: await apiGet<MeProfile>(ctx, '/me').catch(() => ({ id: '' }))
-	})
 };

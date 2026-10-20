@@ -1,6 +1,6 @@
 # Connecting AI Agents to JapaConnect
 
-JapaConnect exposes a remote MCP server (`/api/v1/mcp`, Streamable HTTP + SSE
+Japa.to exposes a remote MCP server (`/api/v1/mcp`, Streamable HTTP + SSE
 fallback) and a scoped public REST API. This page covers every supported agent
 surface. See `.jeos/sections/119-mcp-server.md` (bridge internals) and
 `.jeos/sections/120-mcp-agent-distribution.md` (OAuth AS, aliases, GPT Actions)

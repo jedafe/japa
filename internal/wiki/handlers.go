@@ -343,7 +343,7 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 
 		h.resolveLiterals(r, &index.Pages)
 
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt, "kind": index.Kind})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt, "kind": index.Kind, "entity_children": index.EntityChildren})
 
 		return
 	}
@@ -369,7 +369,7 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &index.Pages)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt, "kind": index.Kind})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt, "kind": index.Kind, "entity_children": index.EntityChildren})
 }
 
 // wikiPageTemplateItem is the public shape for one page template under a

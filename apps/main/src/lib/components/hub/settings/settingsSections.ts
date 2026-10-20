@@ -20,8 +20,7 @@ import LanguageSection from './sections/LanguageSection.svelte';
 import DataPrivacySection from './sections/DataPrivacySection.svelte';
 import LocationSection from './sections/LocationSection.svelte';
 import MentorSection from './sections/MentorSection.svelte';
-import AIPrivacySection from './sections/AIPrivacySection.svelte';
-import AIKeysSection from './sections/AIKeysSection.svelte';
+import AiSection from './sections/AiSection.svelte';
 
 /**
  * Client meta for one settings section. `component` is null for sections
@@ -51,7 +50,8 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'privacy', labelKey: 'settings.nav.privacy', icon: 'lock', group: 'account', backendReady: true, component: PrivacySection },
 	{ slug: 'language', labelKey: 'settings.nav.language', icon: 'globe', group: 'account', backendReady: true, component: LanguageSection },
 	{ slug: 'location', labelKey: 'settings.nav.location', icon: 'map-pin', group: 'account', backendReady: true, component: LocationSection },
-	{ slug: 'mentorship', labelKey: 'settings.nav.mentorship', icon: 'graduation-cap', group: 'account', backendReady: true, component: MentorSection, featureFlag: 'mentorship.enabled' },
+	{ slug: 'mentorship', labelKey: 'settings.nav.mentorship', icon: 'graduation-cap', group: 'mentorship', backendReady: true, component: MentorSection, featureFlag: 'mentorship.enabled' },
+	{ slug: 'ai', labelKey: 'settings.nav.ai', icon: 'brain', group: 'ai', backendReady: true, component: AiSection },
 	{ slug: 'data-privacy', labelKey: 'settings.nav.data_privacy', icon: 'shield-check', group: 'account', backendReady: true, component: DataPrivacySection },
 	{ slug: 'security', labelKey: 'settings.nav.security', icon: 'shield', group: 'security', backendReady: true, component: SecuritySection },
 	{ slug: 'sessions', labelKey: 'settings.nav.sessions', icon: 'monitor', group: 'security', backendReady: true, component: SessionsSection },
@@ -65,16 +65,14 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'wallet', backendReady: true, component: WalletSection, featureFlag: 'feature.wallet' },
 	{ slug: 'subscription', labelKey: 'settings.nav.subscription', icon: 'credit-card', group: 'billing', backendReady: true, component: SubscriptionSection },
 	{ slug: 'payments', labelKey: 'settings.nav.payments', icon: 'receipt', group: 'billing', backendReady: true, component: PaymentsSection },
-	{ slug: 'danger', labelKey: 'settings.nav.danger', icon: 'alert-triangle', group: 'danger', backendReady: true, component: DangerSection },
-	{ slug: 'ai-privacy', labelKey: 'settings.nav.ai_privacy', icon: 'brain', group: 'account', backendReady: true, component: AIPrivacySection },
-	{ slug: 'ai-keys', labelKey: 'settings.nav.ai_provider_keys', icon: 'key-round', group: 'account', backendReady: true, component: AIKeysSection, featureFlag: 'feature.ai_byok' }
+	{ slug: 'danger', labelKey: 'settings.nav.danger', icon: 'alert-triangle', group: 'danger', backendReady: true, component: DangerSection }
 ];
 
 export function resolveSection(slug: string): SectionMeta | null {
 	return SETTINGS_SECTIONS.find((s) => s.slug === slug) ?? null;
 }
 
-const GROUP_ORDER: HubGroup[] = ['account', 'security', 'notifications', 'billing', 'wallet', 'developer', 'danger'];
+const GROUP_ORDER: HubGroup[] = ['account', 'mentorship', 'security', 'notifications', 'billing', 'wallet', 'ai', 'developer', 'danger'];
 
 /** Returns true when the section's feature flag is enabled (or it has no flag). */
 function sectionFeatureEnabled(s: SectionMeta, features?: Record<string, boolean>): boolean {

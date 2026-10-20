@@ -895,7 +895,7 @@ func (q *Queries) CreateVisaRouteIntel(ctx context.Context, arg CreateVisaRouteI
 
 const createWikiPageIntel = `-- name: CreateWikiPageIntel :one
 
-INSERT INTO wiki_pages (space_id, slug, title, category, is_active, is_featured, is_locked, created_by, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, data_entity_type, deleted_at, page_template_id, field_group_id, position
+INSERT INTO wiki_pages (space_id, slug, title, category, is_active, is_featured, is_locked, created_by, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, data_entity_type, deleted_at, page_template_id, field_group_id, position, entity_type, entity_id
 `
 
 type CreateWikiPageIntelParams struct {
@@ -963,6 +963,8 @@ func (q *Queries) CreateWikiPageIntel(ctx context.Context, arg CreateWikiPageInt
 		&i.PageTemplateID,
 		&i.FieldGroupID,
 		&i.Position,
+		&i.EntityType,
+		&i.EntityID,
 	)
 	return i, err
 }
@@ -1609,7 +1611,7 @@ func (q *Queries) GetVisaRouteByIntelRecord(ctx context.Context, intelRecordID p
 }
 
 const getWikiPageByIntelRecord = `-- name: GetWikiPageByIntelRecord :one
-SELECT id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, data_entity_type, deleted_at, page_template_id, field_group_id, position FROM wiki_pages WHERE intel_record_id = $1
+SELECT id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, data_entity_type, deleted_at, page_template_id, field_group_id, position, entity_type, entity_id FROM wiki_pages WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetWikiPageByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (WikiPage, error) {
@@ -1640,12 +1642,14 @@ func (q *Queries) GetWikiPageByIntelRecord(ctx context.Context, intelRecordID pg
 		&i.PageTemplateID,
 		&i.FieldGroupID,
 		&i.Position,
+		&i.EntityType,
+		&i.EntityID,
 	)
 	return i, err
 }
 
 const getWikiPageByIntelRecordWithSpace = `-- name: GetWikiPageByIntelRecordWithSpace :one
-SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category, wp.is_active, wp.is_featured, wp.is_locked, wp.created_by, wp.created_at, wp.updated_at, wp.is_japabot_indexed, wp.intel_record_id, wp.guide_id, wp.confidence_overall, wp.verification_status, wp.freshness_score, wp.override_source, wp.editorial_overrides, wp.data_entity_type, wp.deleted_at, wp.page_template_id, wp.field_group_id, wp.position, s.slug AS space_slug
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category, wp.is_active, wp.is_featured, wp.is_locked, wp.created_by, wp.created_at, wp.updated_at, wp.is_japabot_indexed, wp.intel_record_id, wp.guide_id, wp.confidence_overall, wp.verification_status, wp.freshness_score, wp.override_source, wp.editorial_overrides, wp.data_entity_type, wp.deleted_at, wp.page_template_id, wp.field_group_id, wp.position, wp.entity_type, wp.entity_id, s.slug AS space_slug
 FROM wiki_pages wp
 JOIN spaces s ON s.id = wp.space_id
 WHERE wp.intel_record_id = $1
@@ -1676,6 +1680,8 @@ type GetWikiPageByIntelRecordWithSpaceRow struct {
 	PageTemplateID     pgtype.UUID        `json:"page_template_id"`
 	FieldGroupID       pgtype.UUID        `json:"field_group_id"`
 	Position           int32              `json:"position"`
+	EntityType         *string            `json:"entity_type"`
+	EntityID           pgtype.UUID        `json:"entity_id"`
 	SpaceSlug          string             `json:"space_slug"`
 }
 
@@ -1707,6 +1713,8 @@ func (q *Queries) GetWikiPageByIntelRecordWithSpace(ctx context.Context, intelRe
 		&i.PageTemplateID,
 		&i.FieldGroupID,
 		&i.Position,
+		&i.EntityType,
+		&i.EntityID,
 		&i.SpaceSlug,
 	)
 	return i, err
@@ -2662,7 +2670,7 @@ func (q *Queries) ListVisaRoutesIntelKeyset(ctx context.Context, arg ListVisaRou
 }
 
 const listWikiPagesIntelKeyset = `-- name: ListWikiPagesIntelKeyset :many
-SELECT id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, data_entity_type, deleted_at, page_template_id, field_group_id, position FROM wiki_pages
+SELECT id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, data_entity_type, deleted_at, page_template_id, field_group_id, position, entity_type, entity_id FROM wiki_pages
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -2711,6 +2719,8 @@ func (q *Queries) ListWikiPagesIntelKeyset(ctx context.Context, arg ListWikiPage
 			&i.PageTemplateID,
 			&i.FieldGroupID,
 			&i.Position,
+			&i.EntityType,
+			&i.EntityID,
 		); err != nil {
 			return nil, err
 		}

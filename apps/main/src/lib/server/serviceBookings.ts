@@ -83,6 +83,8 @@ export async function loadBookingsSurface(
 	let meta: ListMeta | undefined;
 	let loadError = false;
 
+	// role=provider serves mentorship providers AND org-less listing
+	// authors — either flag keeps the arm live server-side.
 	const providerAvailable = apiRole !== 'provider' || opts.mentorshipEnabled;
 	if (providerAvailable) {
 		try {

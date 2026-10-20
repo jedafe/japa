@@ -48,6 +48,18 @@
 	let countries = $state<GeoCountry[] | null>(null);
 	let countriesBusy = $state(false);
 
+	// The destination picker is scoped to the mentor's "Countries Covered"
+	// (settings/mentorship → mentor_countries on the listing's mentor
+	// block). A mentor who hasn't filled it falls back to the full list so
+	// the field never dead-ends.
+	const mentorCountries = $derived.by(() => {
+		const covered = (mentor?.countries ?? []).map((c) => c.toLowerCase());
+		const all = countries ?? [];
+		return covered.length > 0
+			? all.filter((c) => covered.includes(c.name.toLowerCase()))
+			: all;
+	});
+
 	let prevOpen = false;
 	$effect(() => {
 		if (open && !prevOpen) {
@@ -76,7 +88,7 @@
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const query = q.toLowerCase().trim();
-		const items = (countries ?? [])
+		const items = mentorCountries
 			.filter(
 				(c) =>
 					c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
@@ -215,7 +227,12 @@
 				</div>
 			{/if}
 			<div class="min-w-0">
-				<p class="truncate text-sm font-semibold text-[var(--color-text)]">{mentorName}</p>
+				<a
+					href="/u/{mentor?.username ?? service.author_name}"
+					class="block truncate text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)] hover:underline"
+				>
+					{mentorName}
+				</a>
 				<p class="text-xs text-[var(--color-muted)]">
 					{t('mentors.request_body', 'Share your goals so your mentor can help you plan.')}
 				</p>
@@ -238,7 +255,7 @@
 
 			<div class="flex flex-col gap-1.5">
 				<label for="mreq-dest" class="text-sm font-medium text-[var(--color-text)]">
-					{t('mentors.field_destination', 'Destination country')}
+					{t('services.mentor_countries_covered', 'Countries covered')}
 				</label>
 				<Autocomplete
 					id="mreq-dest"

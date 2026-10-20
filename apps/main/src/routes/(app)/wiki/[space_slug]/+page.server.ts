@@ -33,6 +33,9 @@ type WikiIndexEnvelope = {
 	data: WikiPageIndex[] | null;
 	ancestors?: WikiSpaceRef[];
 	ancestors_alt?: WikiSpaceRef[];
+	/** Entity-bound wiki children keyed by type slug (JCE ↔ wiki mapping) —
+	 *  a country's visa routes/banks/embassies, a university's courses. */
+	entity_children?: Record<string, { id: string; slug: string; name: string; discriminator?: string }[]>;
 	/** §80 attractions — the space's `kind` select value for the hero
 	 *  chip (e.g. "waterfall", "museum"). */
 	kind?: string;
@@ -109,6 +112,7 @@ export const load: PageServerLoad = async (event) => {
 			index: items,
 			ancestors: indexEnvelope.ancestors ?? [],
 			ancestorsAlt: indexEnvelope.ancestors_alt ?? [],
+			entityChildren: indexEnvelope.entity_children ?? {},
 			spaceKind: indexEnvelope.kind ?? '',
 			authed,
 			userPermissions,
@@ -132,6 +136,7 @@ export const load: PageServerLoad = async (event) => {
 			index: [] as WikiPageIndex[],
 			ancestors: [] as WikiSpaceRef[],
 			ancestorsAlt: [] as WikiSpaceRef[],
+			entityChildren: {},
 			spaceKind: '',
 			authed,
 			userPermissions,

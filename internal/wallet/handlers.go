@@ -37,6 +37,15 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
+// orEmpty normalizes a nil slice to an empty one so list endpoints emit
+// `[]` rather than `null` — the API envelope contract (Rule 5, §3.1).
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -177,7 +186,7 @@ func (h *Handlers) GetPointsBalance(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"balance": points,
-			"entries": entries,
+			"entries": orEmpty(entries),
 		},
 	})
 }
@@ -211,7 +220,7 @@ func (h *Handlers) GetCreditsBalance(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"balance": credits,
-			"entries": entries,
+			"entries": orEmpty(entries),
 		},
 	})
 }
@@ -238,7 +247,7 @@ func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": entries})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(entries)})
 }
 
 // ConvertPoints handles POST /api/v1/wallet/convert.
@@ -325,6 +334,16 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Member-facing shape: only the effective values, resolved with defaults —
+	// internal row internals (id/timestamps) are meaningless here and
+	// serialized as null when the settings row is synthesized from
+	// system_settings fallbacks.
+	memberSettings := map[string]any{
+		"points_to_credits_rate": settings.PointsToCreditsRate,
+		"daily_earning_cap":      settings.DailyEarningCap,
+		"enable_earning":         settings.EnableEarning,
+	}
+
 	// min_purchase_credits from system_settings (default 100, Section 58).
 	// Exposed here so the frontend purchase page can use it instead of
 	// hardcoding the minimum (BUG-011, Rule 16).
@@ -343,7 +362,7 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"settings":               settings,
+			"settings":               memberSettings,
 			"min_convert_points":     minConvert,
 			"min_purchase_credits":   minPurchaseCredits,
 			"min_withdrawal_credits": minWithdrawalCredits,
@@ -403,7 +422,7 @@ func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rules})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(rules)})
 }
 
 // CreateOrUpdateRule handles POST /api/v1/wallet/rules.
@@ -766,7 +785,7 @@ func (h *Handlers) ListWithdrawalMethods(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": methods})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(methods)})
 }
 
 // AdminListWithdrawals handles GET /api/v1/admin/wallet/withdrawals.
@@ -788,7 +807,7 @@ func (h *Handlers) AdminListWithdrawals(w http.ResponseWriter, r *http.Request) 
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data":  withdrawals,
+		"data":  orEmpty(withdrawals),
 		"count": count,
 	})
 }
@@ -846,5 +865,5 @@ func (h *Handlers) ListWithdrawals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": withdrawals})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(withdrawals)})
 }

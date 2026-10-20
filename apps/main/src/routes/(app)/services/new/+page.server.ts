@@ -24,7 +24,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	const [countries, serviceCategories] = await Promise.all([
+	const [countries, serviceCategories, myOrgs] = await Promise.all([
 		apiList<GeoCountry>(ctx, '/geo/countries')
 			.then((r) => r.items)
 			.catch(() => [] as GeoCountry[]),
@@ -32,7 +32,13 @@ export const load: PageServerLoad = async (event) => {
 		// API label (dynamic slugs have no i18n cat_* key to re-derive it).
 		apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories')
 			.then((cat) => cat ?? [])
-			.catch(() => [] as ServiceCategoryInfo[])
+			.catch(() => [] as ServiceCategoryInfo[]),
+		// §98: listings are org-linked — the optional org picker needs the
+		// caller's orgs (an org-owned listing can take inquiries; an
+		// org-less one can only be claimed later).
+		apiList<{ id: string; name: string; slug: string }>(ctx, '/me/organizations')
+			.then((r) => r.items)
+			.catch(() => [] as { id: string; name: string; slug: string }[])
 	]);
 
 	// §114: the booking/pricing section is gated on the
@@ -40,5 +46,5 @@ export const load: PageServerLoad = async (event) => {
 	// inquiry/external modes and tiers for every kind).
 	const packagesEnabled = !!features['service_packages.enabled'];
 
-	return { authed: true, countries, serviceCategories, packagesEnabled };
+	return { authed: true, countries, serviceCategories, packagesEnabled, myOrgs };
 };

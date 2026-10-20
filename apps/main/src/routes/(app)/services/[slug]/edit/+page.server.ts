@@ -47,10 +47,15 @@ export const load: PageServerLoad = async (event) => {
 	// unpublished existence never leaks). A stricter local check 403'd
 	// org members the detail page's Edit link legitimately targets.
 
-	const [countriesRes, categoriesRes] = await Promise.allSettled([
+	const [countriesRes, categoriesRes, orgsRes] = await Promise.allSettled([
 		apiList<GeoCountry>(ctx, '/geo/countries'),
-		apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories')
+		apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories'),
+		// Org-less listings can be assigned to a member org on save —
+		// the PATCH org membership check (not_org_member) is the backstop.
+		apiList<{ id: string; name: string; slug: string }>(ctx, '/me/organizations')
 	]);
+
+	const myOrgs = orgsRes.status === 'fulfilled' ? orgsRes.value.items : [];
 
 	const countries = countriesRes.status === 'fulfilled' ? countriesRes.value.items : [];
 	// §114: keep the taxonomy label — the category dropdown renders the
@@ -62,6 +67,7 @@ export const load: PageServerLoad = async (event) => {
 		service,
 		countries,
 		serviceCategories,
+		myOrgs,
 		user: event.locals.user,
 		features
 	};

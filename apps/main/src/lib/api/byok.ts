@@ -1,5 +1,5 @@
 import { api } from '$lib/api/client';
-import type { ByokProviderOption, UserAIKeyView } from '$lib/ai/agentTypes';
+import type { AIKeyVerifyResult, ByokProviderOption, UserAIKeyView } from '$lib/ai/agentTypes';
 
 /**
  * BYOK client wrappers — user-owned AI provider keys (spec:
@@ -13,7 +13,7 @@ export const createAIKey = (v: { byok_provider_id: string; api_key: string; labe
 export const updateAIKey = (id: string, v: { label?: string; api_key?: string }) =>
 	api.patch<UserAIKeyView>(`/me/ai-keys/${id}`, v);
 export const deleteAIKey = (id: string) => api.delete(`/me/ai-keys/${id}`);
-export const verifyAIKey = (id: string) => api.post<{ status: string }>(`/me/ai-keys/${id}/verify`);
+export const verifyAIKey = (id: string) => api.post<AIKeyVerifyResult>(`/me/ai-keys/${id}/verify`);
 
 /** Fire-and-forget affiliate click counter — never blocks the link. */
 export const trackByokReferral = (providerId: string) => {

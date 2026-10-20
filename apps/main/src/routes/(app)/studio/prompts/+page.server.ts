@@ -179,9 +179,15 @@ export const actions: Actions = {
 
 		// Server-side enforcement of the same rules the client validated:
 		// high-stakes categories can never go straight to published/scheduled.
+		// Actors holding agent.skip_hitl bypass the hold (§103) — the right
+		// panel already offers them published/scheduled, so the action must
+		// honour the same permission instead of silently downgrading.
+		const perms = event.locals.user?.permissions ?? [];
+		const canSkipHitl = perms.includes('*') || perms.includes('agent.skip_hitl');
 		let status = getStr(fm, 'status') || 'draft';
 		const guideCategory = getStr(fm, 'guide_category');
 		if (
+			!canSkipHitl &&
 			guideCategory &&
 			isHighStakesCategory(guideCategory) &&
 			(status === 'published' || status === 'scheduled')

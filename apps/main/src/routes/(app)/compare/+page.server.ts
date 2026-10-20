@@ -79,7 +79,7 @@ export const load: PageServerLoad = async (event) => {
 	let loadError = '';
 	let loadErrorParams: Record<string, string> = {};
 	try {
-		const res = await apiGet<ComparisonType[]>(ctx, '/jce/comparison-types');
+		const res = await apiGet<ComparisonType[]>(ctx, '/jce/comparison-types?page_size=100');
 		allTypes = enrichTypes(res ?? []);
 		types = allTypes.filter((t) => t.can_create !== false);
 	} catch (err) {
@@ -245,8 +245,29 @@ export const load: PageServerLoad = async (event) => {
 			if (contentType) {
 				params.set('content_type', contentType);
 			}
+			// Kind filtering (JCE ↔ wiki mapping): push the type's subtype
+			// into the resolver's native filter when it names a known
+			// discriminator param — e.g. subtype 'student' on a visa_route
+			// source passes ?visa_category=student server-side.
+			const subtypeParam = selectedType?.config?.subtype;
+			if (typeof subtypeParam === 'string' && subtypeParam) {
+				if (source === 'visa_route') params.set('visa_category', subtypeParam);
+				if (source === 'organization' || source === 'bank') params.set('org_type', subtypeParam);
+			}
 			const res = await apiList<ResolvedItem>(ctx, `/jce/entities/${source}?${params.toString()}`);
-			return { items: res.items ?? [], itemsTotal: res.meta?.total ?? null as number | null, error: null as Record<string, string> | null };
+			let items = res.items ?? [];
+			// Kind filtering (JCE ↔ wiki mapping): a type config.subtype
+			// narrows items to the matching discriminator value — e.g.
+			// subtype 'student' keeps visa routes with visa_category=student.
+			const subtype = selectedType?.config?.subtype;
+			if (typeof subtype === 'string' && subtype) {
+				const DISC_KEYS = ['visa_category', 'org_type', 'route_kind', 'kind', 'category'];
+				const keyed = items.filter((it) =>
+					DISC_KEYS.some((k) => it.metadata?.[k] === subtype)
+				);
+				if (keyed.length > 0) items = keyed;
+			}
+			return { items, itemsTotal: res.meta?.total ?? null as number | null, error: null as Record<string, string> | null };
 		} catch (err) {
 			if (err instanceof ApiError && err.status !== 404) {
 				return {

@@ -8,9 +8,12 @@
 		titleKey: string;
 		descKey?: string;
 		form?: DirtyForm<T>;
+		/** Hide the section's own h1/desc header — used when the section is
+		 *  embedded as a tab inside a parent section (e.g. /settings/ai). */
+		hideHeader?: boolean;
 		children?: Snippet;
 	}
-	let { titleKey, descKey, form, children }: Props = $props();
+	let { titleKey, descKey, form, hideHeader = false, children }: Props = $props();
 
 	let saved = $state(false);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -31,10 +34,12 @@
 </script>
 
 <section class="max-w-2xl">
-	<header class="mb-4">
-		<h1 class="text-lg font-medium text-[var(--color-text)]">{t(titleKey)}</h1>
-		{#if descKey}<p class="text-sm text-[var(--color-muted)]">{t(descKey)}</p>{/if}
-	</header>
+	{#if !hideHeader}
+		<header class="mb-4">
+			<h1 class="text-lg font-medium text-[var(--color-text)]">{t(titleKey)}</h1>
+			{#if descKey}<p class="text-sm text-[var(--color-muted)]">{t(descKey)}</p>{/if}
+		</header>
+	{/if}
 	{@render children?.()}
 	{#if form && (form.dirty || saved)}
 		<div

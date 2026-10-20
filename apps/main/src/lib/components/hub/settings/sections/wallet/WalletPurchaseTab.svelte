@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { invalidateAll } from '$app/navigation';
-	import { purchaseCredits } from '$lib/api/hub';
+	import { purchaseCredits, setCurrencyPreference } from '$lib/api/hub';
 	import { Wallet, Sparkles } from 'lucide-svelte';
 	import type { WalletData } from './types';
 
@@ -12,12 +12,16 @@
 	let { data }: Props = $props();
 
 	const preferredCode = $derived(data.preferredCurrency?.preferred_currency ?? '');
-	const currentCurrency = $derived(data.currencies.find((c) => c.code === preferredCode) ?? null);
+	const sortedCurrencies = $derived([...data.currencies].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)));
+	// Display currency for price computation: the user's preference, else the
+	// first active currency — without it every fiat price renders "—".
+	const currentCurrency = $derived(
+		data.currencies.find((c) => c.code === preferredCode) ?? sortedCurrencies[0] ?? null
+	);
 	// 0 = settings endpoint unavailable → no client-side minimum; the
 	// backend validates the real configured minimum on purchase.
 	const minPurchase = $derived(data.minPurchaseCredits ?? 0);
 
-	const sortedCurrencies = $derived([...data.currencies].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)));
 	const sortedPacks = $derived([...data.creditPacks].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)));
 
 	let selectedPackId = $state<string>('');
@@ -25,6 +29,23 @@
 	let purchasing = $state(false);
 	let error = $state<string | null>(null);
 	let success = $state(false);
+	let currencySaving = $state(false);
+
+	// Clicking a currency chip persists it as the preferred currency (same
+	// PATCH /me/preferences/currency call the Details tab uses), so prices
+	// re-render immediately after invalidateAll.
+	async function pickCurrency(code: string) {
+		if (currencySaving || code === preferredCode) return;
+		currencySaving = true;
+		error = null;
+		const res = await setCurrencyPreference(code);
+		currencySaving = false;
+		if (res.error) {
+			error = res.error.message;
+			return;
+		}
+		await invalidateAll();
+	}
 
 	function fiatPrice(credits: number): string {
 		if (!currentCurrency || !currentCurrency.credits_per_unit || currentCurrency.credits_per_unit <= 0) return '—';
@@ -83,14 +104,17 @@
 			<p class="text-sm font-medium text-[var(--color-text)]">{t('wallet.purchase.your_currency', 'Your Currency')}</p>
 			<div class="mt-2 flex flex-wrap gap-2">
 				{#each sortedCurrencies as c (c.code)}
-					<span
-						class="rounded-[var(--radius)] border px-3 py-2 text-sm {c.code === preferredCode
+					<button
+						type="button"
+						disabled={currencySaving}
+						onclick={() => pickCurrency(c.code)}
+						class="rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors disabled:cursor-wait {c.code === currentCurrency?.code
 							? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-							: 'border-[var(--color-border)] text-[var(--color-muted)]'}"
+							: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40 hover:text-[var(--color-text)]'}"
 					>
 						<span class="mr-1 text-base">{c.symbol}</span>
 						{c.code}
-					</span>
+					</button>
 				{/each}
 			</div>
 			{#if currentCurrency}

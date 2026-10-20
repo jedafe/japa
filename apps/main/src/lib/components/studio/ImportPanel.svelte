@@ -7,7 +7,7 @@
 	import { invalidate } from '$app/navigation';
 	import type { ContentTypeMeta, MeSpace, ContentRecord } from '$lib/types';
 	import { parseFrontmatter, buildMarkdown } from '$lib/studio/frontmatter';
-	import { localDateTimeToIso } from '$lib/utils/datetime';
+	import { localDateTimeToIso, isoToLocalDateTime } from '$lib/utils/datetime';
 	import { validateFrontmatter, validateBody, isHighStakesCategory } from '$lib/studio/validation';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -298,7 +298,7 @@
 				{#if str('status') === 'scheduled'}
 					<label class={labelCls}>
 						{t('studio.prompts.publish_at', 'Publish at')}
-						<input type="datetime-local" value={str('publish_at')} oninput={(e) => { setStr('publish_at', e.currentTarget.value); revalidate(); }} class={inputCls} />
+						<input type="datetime-local" value={isoToLocalDateTime(str('publish_at')) ?? ''} oninput={(e) => { setStr('publish_at', e.currentTarget.value); revalidate(); }} class={inputCls} />
 						{#if errors.publish_at}<p class={errCls}>{errors.publish_at}</p>{/if}
 					</label>
 				{/if}

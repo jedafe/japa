@@ -1,6 +1,6 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
 // Ref: japaconnect-engineering/sections/114-services-marketplace.md
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
 import type {
@@ -31,6 +31,18 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 	const currentUserId = event.locals.user?.id ?? null;
 
+	// ?raw=1 previews non-published listings — the backend serves them to
+	// editors only (author / owning-org member / service.edit_any) and
+	// answers anonymous callers 401, so guests are pushed to login rather
+	// than silently served the published page.
+	const raw = event.url.searchParams.get('raw') === '1';
+	if (raw && !authed) {
+		throw redirect(
+			307,
+			`/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`
+		);
+	}
+
 	// Independent of the service fetch — start it now so both run in
 	// parallel. Best-effort and authed-only: failures resolve to [] so
 	// the promise never rejects into the Promise.all below.
@@ -44,7 +56,10 @@ export const load: PageServerLoad = async (event) => {
 		// Use apiGetEnvelope to access the sidecar `reviews` and
 		// `review_aggregate` fields emitted by GET /services/:slug (BUG-014).
 		const [envelope, myOrgs] = await Promise.all([
-			apiGetEnvelope<ServiceListing>(ctx, `/services/${encodeURIComponent(slug)}`),
+			apiGetEnvelope<ServiceListing>(
+				ctx,
+				`/services/${encodeURIComponent(slug)}${raw ? '?raw=1' : ''}`
+			),
 			myOrgsPromise
 		]);
 		const service = envelope.data;

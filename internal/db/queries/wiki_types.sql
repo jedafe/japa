@@ -526,3 +526,16 @@ SELECT EXISTS (
     WHERE s.id <> @space_id AND s.deleted_at IS NULL AND s.status = 'active'
       AND (cardinality(@type_ids::uuid[]) = 0 OR s.space_type_id = ANY(@type_ids::uuid[]))
 );
+
+-- name: ListEntityWikiTypesForParent :many
+-- Entity-bound wiki types parented to a host space type (JCE ↔ wiki
+-- mapping): drives the index's entity-children section — a country's visa
+-- routes/banks/embassies, a university's courses/scholarships.
+SELECT st.slug AS type_slug, st.name AS type_name, wtc.icon,
+       wtc.entity_kind, wtc.entity_discriminator, wtc.position
+FROM wiki_type_parents p
+JOIN wiki_type_configs wtc ON wtc.space_type_id = p.space_type_id AND wtc.enabled = true
+JOIN space_types st ON st.id = wtc.space_type_id
+WHERE p.parent_space_type_id = @parent_space_type_id
+  AND wtc.entity_kind IS NOT NULL
+ORDER BY wtc.position;

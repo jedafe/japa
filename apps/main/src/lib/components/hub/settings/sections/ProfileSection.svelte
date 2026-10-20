@@ -71,8 +71,18 @@
 			avatar_url: profile?.avatar_url ?? '',
 			cover_url: profile?.cover_url ?? ''
 		})),
-		(v) => patchProfile(v)
+		// avatar_url/cover_url are persisted immediately by the media-picker
+		// PATCH below — strip them here so a stale in-form URL can't clobber a
+		// newer server-side value on a plain text save.
+		(v) => {
+			const { avatar_url: _a, cover_url: _c, ...fields } = v;
+			return patchProfile(fields);
+		}
 	);
+
+	// Constrain DOB client-side to the range the backend accepts
+	// (1900 → today) so invalid picks never reach the API.
+	const dobMax = new Date().toISOString().slice(0, 10);
 
 	let avatarPickerOpen = $state(false);
 	let coverPickerOpen = $state(false);
@@ -83,7 +93,7 @@
 		avatarPickerOpen = false;
 		profileSaving = true;
 		profileError = null;
-		const res = await api.patch<MeProfile>('/me/profile', { avatar_media_id: asset.id });
+		const res = await api.patch<{ status: string }>('/me/profile', { avatar_media_id: asset.id });
 		profileSaving = false;
 		if (res.error) {
 			profileError = res.error.message;
@@ -97,7 +107,7 @@
 		coverPickerOpen = false;
 		profileSaving = true;
 		profileError = null;
-		const res = await api.patch<MeProfile>('/me/profile', { header_media_id: asset.id });
+		const res = await api.patch<{ status: string }>('/me/profile', { header_media_id: asset.id });
 		profileSaving = false;
 		if (res.error) {
 			profileError = res.error.message;
@@ -108,6 +118,27 @@
 	}
 </script>
 
+{#if !profile}
+	<!-- The /me loader degraded (network/backend failure). Rendering an empty
+		 editable form would PATCH empty strings over the user's real profile —
+		 show a recoverable error instead. -->
+	<section class="max-w-2xl">
+		<header class="mb-4">
+			<h1 class="text-lg font-medium text-[var(--color-text)]">{t('settings.nav.profile')}</h1>
+			<p class="text-sm text-[var(--color-muted)]">{t('settings.profile.desc')}</p>
+		</header>
+		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<p class="text-sm text-[var(--color-text)]">{t('settings.profile.load_error', 'Your profile could not be loaded.')}</p>
+			<button
+				type="button"
+				class="mt-3 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)]"
+				onclick={() => location.reload()}
+			>
+				{t('settings.profile.reload', 'Reload')}
+			</button>
+		</div>
+	</section>
+{:else}
 <SettingsSection titleKey="settings.nav.profile" descKey="settings.profile.desc" {form}>
 	<!-- Avatar + cover upload (Phase 18.04) -->
 	<div class="mb-4 space-y-3">
@@ -125,7 +156,7 @@
 						<Loader2 size={16} class="animate-spin text-[var(--color-primary)]" />
 					</div>
 				{/if}
-				<button type="button" disabled={profileSaving} class="absolute -bottom-1 -right-1 grid h-6 w-6 cursor-pointer place-items-center rounded-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50" onclick={() => (avatarPickerOpen = true)}>
+				<button type="button" disabled={profileSaving} aria-label={t('settings.profile.change_avatar', 'Change avatar')} class="absolute -bottom-1 -right-1 grid h-6 w-6 cursor-pointer place-items-center rounded-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50" onclick={() => (avatarPickerOpen = true)}>
 					<Camera size={12} />
 				</button>
 			</div>
@@ -155,10 +186,10 @@
 					{t('settings.profile.upload', 'Upload')}
 				</button>
 			</div>
-			{#if profileError}
-				<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{profileError}</p>
-			{/if}
 		</div>
+		{#if profileError}
+			<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{profileError}</p>
+		{/if}
 
 	</div>
 
@@ -213,6 +244,8 @@
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.date_of_birth', 'Date of birth')}</span>
 			<input
 				type="date"
+				min="1900-01-01"
+				max={dobMax}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)]"
 				value={form.values.date_of_birth}
 				oninput={(e) => form.set({ date_of_birth: e.currentTarget.value })}
@@ -238,6 +271,7 @@
 		</label>
 	</div>
 </SettingsSection>
+{/if}
 
 {#if avatarPickerOpen}
 	<MediaLibraryModal onSelect={handleAvatarSelect} onClose={() => (avatarPickerOpen = false)} allowedType="image" uploadContext="avatar" />

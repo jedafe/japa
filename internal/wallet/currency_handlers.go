@@ -31,7 +31,7 @@ func (h *Handlers) ListPublicCurrencies(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": currencies})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(currencies)})
 }
 
 // ListCurrencies handles GET /api/v1/wallet/currencies.
@@ -47,7 +47,7 @@ func (h *Handlers) ListCurrencies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": currencies})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(currencies)})
 }
 
 // ListCreditPacks handles GET /api/v1/wallet/credit-packs.
@@ -59,7 +59,7 @@ func (h *Handlers) ListCreditPacks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": packs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(packs)})
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +133,7 @@ func (h *Handlers) ControlListCurrencies(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": currencies})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(currencies)})
 }
 
 // ControlCreateCurrency handles POST /control/wallet/currencies.
@@ -303,7 +303,7 @@ func (h *Handlers) AdminListCreditPacks(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": packs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(packs)})
 }
 
 // AdminCreateCreditPack handles POST /api/v1/admin/wallet/credit-packs.
@@ -484,7 +484,7 @@ func (h *Handlers) AdminListCreditPurchases(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": purchases})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(purchases)})
 }
 
 // ---------------------------------------------------------------------------
@@ -537,6 +537,10 @@ func (h *Handlers) PurchaseCredits(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, errCreditPurchaseDisabled) {
 			errpkg.WriteError(w, http.StatusForbidden, "credit_purchase_disabled", "Credit purchasing is currently disabled")
+			return
+		}
+		if errors.Is(err, errPaymentInitiation) {
+			errpkg.WriteError(w, http.StatusBadGateway, "provider_error", "The payment provider could not start checkout")
 			return
 		}
 

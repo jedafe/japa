@@ -48,6 +48,8 @@
 				rating = 0;
 				title = '';
 				body = '';
+			} else if (res.error?.code === 'self_review') {
+				errorKey = 'reviews.errors.self_review';
 			} else {
 				errorKey = 'reviews.errors.submit_failed';
 			}

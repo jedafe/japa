@@ -51,6 +51,10 @@
 	// endpoint exists for spaces), replaced on each picker selection.
 	let cityLabel = $state(untrack(() => svc.city_space_name ?? ''));
 	let originCommunities = $state(untrack(() => svc.origin_communities?.join(', ') ?? ''));
+	// §98 org assignment — org-less listings can be attached to a member
+	// org on save (PATCH org_id). Org-linked listings keep the claim-flow
+	// transfer path, so the picker only renders when the row has no org.
+	let orgId = $state('');
 	let isRemote = $state(untrack(() => svc.is_remote));
 	let websiteUrl = $state(untrack(() => svc.website_url ?? ''));
 	let bookingUrl = $state(untrack(() => svc.booking_url ?? ''));
@@ -190,6 +194,14 @@
 	const categoryItems = $derived<AutocompleteItem[]>(
 		categoryOptions.map((o) => ({ id: o.value, label: o.label }))
 	);
+	const orgItems = $derived<AutocompleteItem[]>(
+		(data.myOrgs ?? []).map((o) => ({ id: o.id, label: o.name }))
+	);
+	const orgFetcher = $derived(staticAutocompleteFetcher(orgItems));
+	const selectedOrgLabel = $derived(
+		orgId ? (orgItems.find((o) => o.id === orgId)?.label ?? null) : null
+	);
+
 	const categoryFetcher = $derived(staticAutocompleteFetcher(categoryItems));
 	const selectedCategoryLabel = $derived(
 		serviceCategory ? (categoryItems.find((o) => o.id === serviceCategory)?.label ?? null) : null
@@ -301,6 +313,9 @@
 			service_category: serviceCategory,
 			destination_space_id: destinationSpaceId,
 			city_space_id: citySpaceId,
+			// Org assignment is only offered on org-less listings — org-linked
+			// rows keep their claim-flow ownership. Empty = unchanged.
+			...(orgId ? { org_id: orgId } : {}),
 			origin_communities: origins,
 			is_remote: isRemote,
 			website_url: websiteUrl.trim(),
@@ -527,6 +542,33 @@
 					{t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.')}
 				</p>
 			</div>
+
+			<!-- §98 org assignment — org-less listings only; once linked the
+			     claim flow owns any transfer. PATCH rejects a non-member org. -->
+			{#if !svc.org_id && orgItems.length > 0}
+				<div>
+					<label for="org" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('services.field_org', 'List under an organization')}
+					</label>
+					<Autocomplete
+						id="org"
+						placeholder={t('services.org_placeholder', 'Personal listing (no organization)')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={orgFetcher}
+						initialFetcher={orgFetcher}
+						selectedId={orgId || null}
+						selectedLabel={selectedOrgLabel}
+						onSelect={(item) => (orgId = item.id)}
+						onClear={() => (orgId = '')}
+					/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">
+						{t(
+							'services.org_hint',
+							'Pick an organization you belong to so inquiries land in its inbox — leave blank for a personal listing.'
+						)}
+					</p>
+				</div>
+			{/if}
 
 			<!-- Remote -->
 			<div>

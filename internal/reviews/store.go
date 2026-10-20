@@ -24,6 +24,13 @@ func NewStore(read, write *gen.Queries) *Store {
 // Reviews CRUD
 // ---------------------------------------------------------------------------
 
+// contentAuthorID resolves a content-backed entity id to its contents
+// author — the self-review guard's lookup. Returns pgx.ErrNoRows when
+// entity_id is not a contents row (non-content entity types).
+func (s *Store) contentAuthorID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	return s.read.GetContentAuthorID(ctx, id)
+}
+
 func (s *Store) createReview(ctx context.Context, p gen.CreateReviewParams) (gen.Review, error) {
 	row, err := s.write.CreateReview(ctx, p)
 	if err != nil {

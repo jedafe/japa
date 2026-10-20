@@ -38,6 +38,13 @@ type DBConfig struct {
 	CountryColumn     string // ISO country code or country name
 	TagsColumn        string // text[] of tag-like labels (e.g. skills)
 	FieldValuesColumn string // jsonb column containing score_inputs data (e.g. field_values)
+
+	// Optional generic discriminator filter (JCE ↔ wiki mapping): when both
+	// are set, filters[FilterParam] appends `t.FilterColumn = $N` — e.g.
+	// FilterParam "org_type" on organizations lets a 'bank' comparison type
+	// narrow to bank orgs server-side.
+	FilterParam  string
+	FilterColumn string
 }
 
 var identRe = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -356,6 +363,20 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 
 		where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
 		args = append(args, countryCode)
+	}
+
+	if r.cfg.FilterParam != "" && r.cfg.FilterColumn != "" {
+		if fv := parseStringFilter(filters, r.cfg.FilterParam); fv != "" {
+			c, err := quoteIdent(r.cfg.FilterColumn)
+			if err != nil {
+				return nil, err
+			}
+			if where != "" {
+				where += " AND "
+			}
+			where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
+			args = append(args, fv)
+		}
 	}
 
 	if where != "" {

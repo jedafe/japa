@@ -1878,6 +1878,22 @@ type EmailVerification struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type Embassy struct {
+	ID            pgtype.UUID        `json:"id"`
+	Slug          string             `json:"slug"`
+	Name          string             `json:"name"`
+	HostSpaceID   pgtype.UUID        `json:"host_space_id"`
+	OriginSpaceID pgtype.UUID        `json:"origin_space_id"`
+	Address       *string            `json:"address"`
+	Phone         *string            `json:"phone"`
+	Email         *string            `json:"email"`
+	Website       *string            `json:"website"`
+	BookingUrl    *string            `json:"booking_url"`
+	IsActive      bool               `json:"is_active"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ExternalDataSource struct {
 	ID            pgtype.UUID        `json:"id"`
 	Name          string             `json:"name"`
@@ -2067,6 +2083,14 @@ type FxRate struct {
 	Rate          pgtype.Numeric     `json:"rate"`
 	Source        string             `json:"source"`
 	FetchedAt     pgtype.Timestamptz `json:"fetched_at"`
+}
+
+type GeoCatSeed struct {
+	TypeSlug *string `json:"type_slug"`
+	Slug     *string `json:"slug"`
+	Category *string `json:"category"`
+	Label    *string `json:"label"`
+	Position *int32  `json:"position"`
 }
 
 type GroupRole struct {
@@ -2617,6 +2641,14 @@ type MvUserEngagementStat struct {
 	ReactionsGiven int64       `json:"reactions_given"`
 	CommentsMade   int64       `json:"comments_made"`
 	Views          int64       `json:"views"`
+}
+
+type NewTypeCatSeed struct {
+	TypeSlug *string `json:"type_slug"`
+	Slug     *string `json:"slug"`
+	Category *string `json:"category"`
+	Label    *string `json:"label"`
+	Position *int32  `json:"position"`
 }
 
 type NewsletterCampaign struct {
@@ -3502,6 +3534,7 @@ type Scholarship struct {
 	LastVerifiedAt       pgtype.Timestamptz `json:"last_verified_at"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	Slug                 string             `json:"slug"`
 }
 
 type SearchAnalytic struct {
@@ -4853,6 +4886,15 @@ type WidgetConfiguration struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
+type WikiEntityKind struct {
+	EntityKind  string             `json:"entity_kind"`
+	SourceTable string             `json:"source_table"`
+	IDColumn    string             `json:"id_column"`
+	SlugColumn  *string            `json:"slug_column"`
+	Label       string             `json:"label"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type WikiPage struct {
 	ID                 pgtype.UUID        `json:"id"`
 	SpaceID            pgtype.UUID        `json:"space_id"`
@@ -4878,6 +4920,8 @@ type WikiPage struct {
 	PageTemplateID     pgtype.UUID        `json:"page_template_id"`
 	FieldGroupID       pgtype.UUID        `json:"field_group_id"`
 	Position           int32              `json:"position"`
+	EntityType         *string            `json:"entity_type"`
+	EntityID           pgtype.UUID        `json:"entity_id"`
 }
 
 type WikiPageFeedback struct {
@@ -4936,6 +4980,10 @@ type WikiTypeConfig struct {
 	SeedStubs   bool               `json:"seed_stubs"`
 	Position    int32              `json:"position"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	// NULL = space-bound wiki type. Set = pages bind entity rows of this kind
+	EntityKind *string `json:"entity_kind"`
+	// {column: value} equality filter selecting the source-table slice for this type (e.g. {"visa_category":"student"})
+	EntityDiscriminator []byte `json:"entity_discriminator"`
 }
 
 type WikiTypePageTemplate struct {

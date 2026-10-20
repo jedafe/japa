@@ -795,6 +795,14 @@ func (s *Service) visibleFieldIDs(ctx context.Context, userID pgtype.UUID, canMa
 // (can_view/can_edit per user, fail-closed lookups, wiki.fields.manage
 // bypass). Returns nil when the custom-fields service is not configured.
 func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pgtype.UUID) (*EntityFieldGroupDTO, error) {
+	return s.getFieldsForEntity(ctx, userID, "space", spaceID, groupID, spaceID)
+}
+
+// getFieldsForEntity is the entity-generic core of GetPageFields (JCE ↔
+// wiki mapping): entity-bound wiki pages fetch cfv keyed on their entity
+// (kind + entity_id) rather than a host space; currencySpaceID still
+// carries the hosting space so §58 currency defaults resolve.
+func (s *Service) getFieldsForEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID, groupID, currencySpaceID pgtype.UUID) (*EntityFieldGroupDTO, error) {
 	if s.fields == nil || !groupID.Valid {
 		return nil, nil
 	}
@@ -826,7 +834,7 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 		return nil, fmt.Errorf("wiki: page fields: list fields: %w", err)
 	}
 
-	values, err := s.fields.ListFieldValuesWithDefsByEntity(ctx, customfields.ValueEntityType("space"), spaceID)
+	values, err := s.fields.ListFieldValuesWithDefsByEntity(ctx, customfields.ValueEntityType(entityType), entityID)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: page fields: list values: %w", err)
 	}
@@ -878,7 +886,7 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 
 	// §58 default_source substitution — the page's host space resolves
 	// directly (no entity indirection needed).
-	if spaceCurrency, cerr := s.store.ResolveSpaceCurrencyCode(ctx, spaceID); cerr == nil {
+	if spaceCurrency, cerr := s.store.ResolveSpaceCurrencyCode(ctx, currencySpaceID); cerr == nil {
 		s.applySpaceCurrencyDefaults(ctx, dtos, spaceCurrency)
 	}
 

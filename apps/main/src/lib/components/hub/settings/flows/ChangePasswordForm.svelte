@@ -29,6 +29,13 @@
 		current = '';
 		next = '';
 		confirm = '';
+		// §02: the backend revokes all of the user's refresh tokens and the
+		// caller's access-token JTI on password change — this session is
+		// already dead, so staying on the page leaves every subsequent API
+		// call 401ing. Send the user through login and back here.
+		setTimeout(() => {
+			window.location.assign(`/login?redirect=${encodeURIComponent('/settings/security')}`);
+		}, 1500);
 	}
 </script>
 

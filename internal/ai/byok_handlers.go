@@ -61,6 +61,8 @@ func byokErrorStatus(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "model_not_allowed", "Model is not in the provider's catalog")
 	case errors.Is(err, ErrByokKeyInUse):
 		errpkg.WriteError(w, http.StatusConflict, "key_in_use", "This API key is already attached to another account")
+	case errors.Is(err, ErrByokKeyAlreadyAdded):
+		errpkg.WriteError(w, http.StatusConflict, "key_already_added", "You already added this API key")
 	default:
 		slog.Error("ai: byok handler error", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Request failed")
@@ -550,13 +552,28 @@ func (h *Handlers) HandleVerifyMyAIKey(w http.ResponseWriter, r *http.Request) {
 
 	_, verr := p.FetchModels(vctx)
 
+	// The reported status is the persisted one — if MarkStatus fails we
+	// must not claim a status the row doesn't carry.
+	persist := func(status, lastError string) bool {
+		if err := h.userKeys.MarkStatus(r.Context(), keyID, status, lastError); err != nil {
+			slog.Error("ai: key status persist failed", "key_id", keyID, "status", status, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Could not record the verification result")
+			return false
+		}
+		return true
+	}
+
 	switch {
 	case verr == nil:
-		_ = h.userKeys.MarkStatus(r.Context(), keyID, "active", "")
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "active"}})
+		if persist("active", "") {
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "active"}})
+		}
 	case IsProviderKeyRejected(verr):
-		_ = h.userKeys.MarkStatus(r.Context(), keyID, "invalid", verr.Error())
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "invalid"}})
+		// last_error travels in the response so the client can show the
+		// provider's reason without a refetch.
+		if persist("invalid", verr.Error()) {
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "invalid", "last_error": verr.Error()}})
+		}
 	default:
 		// Transient failure (network, 5xx, rate limit) — don't flag the key.
 		slog.Warn("ai: key verification unreachable", "key_id", keyID, "error", verr)

@@ -30,15 +30,19 @@
 		type StepEntry
 	} from '$lib/components/services/ServiceContentEditor.svelte';
 	import { api } from '$lib/api/client';
-	import { GraduationCap, Loader2, Check } from 'lucide-svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import type { GeoCountry } from '$lib/types';
+	import { GraduationCap, Loader2, Check, X, Plus } from 'lucide-svelte';
 	import ServiceTierEditor from '$lib/components/services/ServiceTierEditor.svelte';
 	import { tiersToPayload, type EditableTier } from '$lib/components/services/serviceForm';
 	import type { CurrencyInfo } from '$lib/utils/currency';
 	import type { MentorProfile } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
-	const payload = $derived(data as { profile: MentorProfile | null } | null);
+	const payload = $derived(data as { profile: MentorProfile | null; countries?: GeoCountry[] } | null);
 	const profile = $derived(payload?.profile ?? null);
+	const geoCountries = $derived(payload?.countries ?? []);
 
 	// §102: mentor settings are gated by the mentorship.become_mentor permission.
 	// The backend returns 403 when the user lacks it; the loader catches that
@@ -64,10 +68,61 @@
 	let sessionType = $state(untrack(() => profile?.mentor_session_type ?? ''));
 	let languages = $state(untrack(() => (profile?.mentor_languages ?? []).join(', ')));
 	let sessionFormats = $state(untrack(() => (profile?.mentor_session_formats ?? []).join(', ')));
-	let countries = $state(untrack(() => (profile?.mentor_countries ?? []).join(', ')));
+	// Countries is a repeater of geo-backed autocompletes — each row stores a
+	// country NAME (the saved mentor_countries contract is string[] of names).
+	let countries = $state<string[]>(untrack(() => [...(profile?.mentor_countries ?? [])]));
+	function addCountry() {
+		countries = [...countries, ''];
+	}
+	function removeCountry(i: number) {
+		countries = countries.filter((_, idx) => idx !== i);
+	}
+	// Already-picked names are hidden so the same country can't be added twice.
+	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.toLowerCase().trim();
+		return Promise.resolve(
+			geoCountries
+				.filter((c) => !countries.includes(c.name))
+				.filter(
+					(c) =>
+						!needle ||
+						c.name.toLowerCase().includes(needle) ||
+						c.geo_code.toLowerCase().includes(needle)
+				)
+				.slice(0, 50)
+				.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+	function countryInitialFetcher(): Promise<AutocompleteItem[]> {
+		return Promise.resolve(
+			geoCountries
+				.filter((c) => !countries.includes(c.name))
+				.slice(0, 8)
+				.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
 	let credentials = $state(untrack(() => (profile?.mentor_credentials ?? []).join(', ')));
 	let yearsExperience = $state(untrack(() => profile?.mentor_years_experience ?? 0));
 	let successLabel = $state(untrack(() => profile?.mentor_success_label ?? ''));
+
+	// Tabbed layout — one form, one save; switching tabs never submits.
+	// The pricing-tiers tab only renders when service_packages.tiers_enabled
+	// is on (same gate as the editor block below).
+	type MentorTab = 'profile' | 'card' | 'content' | 'tiers';
+	let activeTab = $state<MentorTab>('profile');
+	const mentorTabs = $derived(
+		([
+			{ key: 'profile', labelKey: 'mentors.settings_tab_profile', default: 'Profile' },
+			{ key: 'card', labelKey: 'mentors.settings_tab_card', default: 'Mentor card' },
+			{ key: 'content', labelKey: 'mentors.settings_tab_content', default: 'Content details' },
+			{ key: 'tiers', labelKey: 'mentors.settings_tab_tiers', default: 'Pricing tiers' }
+		] as const).filter((tab) => tab.key !== 'tiers' || tiersEnabled)
+	);
+	$effect(() => {
+		if (mentorTabs.length > 0 && !mentorTabs.some((tab) => tab.key === activeTab)) {
+			activeTab = mentorTabs[0].key;
+		}
+	});
 
 	// §114/000829 shadow-listing page content — replace-on-save like the
 	// listing editor. Empty profile.shadow_content seeds empty arrays.
@@ -155,7 +210,7 @@
 		sessionType = profile?.mentor_session_type ?? '';
 		languages = (profile?.mentor_languages ?? []).join(', ');
 		sessionFormats = (profile?.mentor_session_formats ?? []).join(', ');
-		countries = (profile?.mentor_countries ?? []).join(', ');
+		countries = [...(profile?.mentor_countries ?? [])];
 		credentials = (profile?.mentor_credentials ?? []).join(', ');
 		yearsExperience = profile?.mentor_years_experience ?? 0;
 		successLabel = profile?.mentor_success_label ?? '';
@@ -245,7 +300,7 @@
 			mentor_session_type: sessionType.trim(),
 			mentor_languages: csvToArray(languages),
 			mentor_session_formats: csvToArray(sessionFormats),
-			mentor_countries: csvToArray(countries),
+			mentor_countries: [...new Set(countries.map((c) => c.trim()).filter(Boolean))],
 			mentor_credentials: csvToArray(credentials),
 			mentor_years_experience: Math.max(0, Math.floor(Number(yearsExperience) || 0)),
 			mentor_success_label: successLabel.trim(),
@@ -301,6 +356,23 @@
 		</div>
 	{:else}
 		<form onsubmit={(e) => { e.preventDefault(); save(); }} class="space-y-5">
+			<div class="mb-1 flex flex-wrap gap-1 border-b border-[var(--color-border)]" role="tablist" aria-label={t('mentors.settings_tabs_label', 'Mentorship settings')}>
+				{#each mentorTabs as tab (tab.key)}
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeTab === tab.key}
+						onclick={() => (activeTab = tab.key)}
+						class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === tab.key
+							? 'border-[var(--color-primary)] text-[var(--color-primary)]'
+							: 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					>
+						{t(tab.labelKey, tab.default)}
+					</button>
+				{/each}
+			</div>
+
+			{#if activeTab === 'profile'}
 			<!-- is_mentor toggle -->
 			<div class="flex items-start gap-3">
 				<input
@@ -383,6 +455,9 @@
 				</p>
 			</div>
 
+			{/if}
+
+			{#if activeTab === 'card'}
 			<!-- §114/000829 mentor card — the headline/stats block on the
 				public mentorship listing page. -->
 			<fieldset class="space-y-4 rounded-[var(--radius)] border border-[var(--color-border)] p-4">
@@ -498,16 +573,41 @@
 						/>
 					</div>
 					<div class="flex flex-col gap-1">
-						<label for="mentor-countries" class="text-sm font-medium text-[var(--color-text)]">
+						<span class="text-sm font-medium text-[var(--color-text)]">
 							{t('mentors.settings_countries', 'Countries')}
-						</label>
-						<input
-							id="mentor-countries"
-							type="text"
-							bind:value={countries}
-							placeholder={t('mentors.settings_countries_ph', 'e.g. Canada, UK')}
-							class={inputClass}
-						/>
+						</span>
+						{#each countries as country, i (i)}
+							<div class="flex items-center gap-2">
+								<div class="min-w-0 flex-1">
+									<Autocomplete
+										placeholder={t('mentors.settings_countries_ph', 'Search country…')}
+										emptyMessage={t('settings.location.no_countries', 'No countries found')}
+										fetcher={countryFetcher}
+										initialFetcher={countryInitialFetcher}
+										selectedId={country || null}
+										selectedLabel={country || null}
+										onSelect={(item) => (countries[i] = item.label)}
+										onClear={() => removeCountry(i)}
+									/>
+								</div>
+								<button
+									type="button"
+									onclick={() => removeCountry(i)}
+									aria-label={t('mentors.settings_remove_country', 'Remove country')}
+									title={t('mentors.settings_remove_country', 'Remove country')}
+									class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+								>
+									<X size={14} />
+								</button>
+							</div>
+						{/each}
+						<button
+							type="button"
+							onclick={addCountry}
+							class="mt-1 inline-flex w-fit items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<Plus size={14} /> {t('mentors.settings_add_country', 'Add country')}
+						</button>
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="mentor-credentials" class="text-sm font-medium text-[var(--color-text)]">
@@ -526,10 +626,13 @@
 					{t('mentors.settings_csv_help', 'Comma-separated values.')}
 				</p>
 			</fieldset>
+			{/if}
 
+			{#if activeTab === 'content'}
 			<!-- §114/000829 shadow-listing page content — same editor as the
 				listing create/edit forms, shared via ServiceContentEditor. -->
 			<ServiceContentEditor
+				bare
 				{inputClass}
 				bind:faqs
 				bind:steps
@@ -540,12 +643,16 @@
 				bind:audience
 			/>
 
+			{/if}
+
+			{#if activeTab === 'tiers'}
 			<!-- §114 2026-10-10 amendment — mentorship pricing tiers render as
 				the "Mentorship Packages" cards on the shadow listing. -->
 			{#if tiersEnabled}
 				<div class="rounded-[var(--radius)] border border-[var(--color-border)] p-4">
 					<ServiceTierEditor bind:tiers {inputClass} currencies={currenciesList} />
 				</div>
+			{/if}
 			{/if}
 
 			{#if error}

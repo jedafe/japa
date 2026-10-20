@@ -524,6 +524,8 @@ export type SaveErrorClass = 'validation' | 'server' | 'network' | 'conflict';
 /** Rail grouping for the settings/dashboard registries. */
 export type HubGroup =
 	| 'account'
+	| 'ai'
+	| 'mentorship'
 	| 'security'
 	| 'notifications'
 	| 'billing'

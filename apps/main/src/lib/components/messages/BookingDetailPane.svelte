@@ -82,11 +82,13 @@
 	const counterpart = $derived(bookingCounterpart(b, viewRole));
 	const goals = $derived(b.goals || b.note || '');
 	const canCancel = $derived(isBooker && (b.status === 'pending' || b.status === 'confirmed'));
-	// The dispute route is packages-gated server-side — mentorship-kind rows
-	// (the only kind that can exist while packages is off) hide the action.
+	// The dispute route is packages-gated server-side and org-bound —
+	// DisputeServiceBooking requires org_id, so user-provider rows
+	// (mentorship + org-less listing inquiries) never show the action.
 	const canDispute = $derived(
 		isBooker &&
 			(b.status === 'confirmed' || b.status === 'fulfilled') &&
+			!!b.org_id &&
 			(b.listing_kind !== 'mentorship' || packagesEnabled)
 	);
 
@@ -116,18 +118,15 @@
 	// complete|cancel. Only applies to user-provider (mentorship) rows.
 	const canAcceptDecline = $derived(isProvider && b.status === 'pending');
 	const canComplete = $derived(isProvider && b.status === 'confirmed');
-	// Mentor cancel on a confirmed booking — the provider arm of "either
+	// Provider cancel on a confirmed booking — the provider arm of "either
 	// party cancels" via respond {action:'cancel'} (a pending row is
-	// declined instead). The optional note maps to cancel_reason.
-	const canProviderCancel = $derived(
-		isProvider && b.status === 'confirmed' && b.listing_kind === 'mentorship'
-	);
-	// Mentee complete (000824) — POST /me/service-bookings/:id/complete,
-	// confirmed → fulfilled. Mentorship-kind only: org-owned bookings leave
-	// the fulfill decision to the org inbox.
-	const canBookerComplete = $derived(
-		isBooker && b.status === 'confirmed' && b.listing_kind === 'mentorship'
-	);
+	// declined instead). Applies to every user-provider row (mentorship +
+	// org-less listing inquiries). The optional note maps to cancel_reason.
+	const canProviderCancel = $derived(isProvider && b.status === 'confirmed');
+	// Booker complete (000824) — POST /me/service-bookings/:id/complete,
+	// confirmed → fulfilled. User-provider rows only (org-owned bookings
+	// leave the fulfill decision to the org inbox); the route enforces it.
+	const canBookerComplete = $derived(isBooker && b.status === 'confirmed' && !!b.provider_user_id);
 
 	let busy = $state(false);
 	let actionError = $state('');

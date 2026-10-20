@@ -694,6 +694,9 @@ type WikiIndexDTO struct {
 	// §80 attractions — the space's `kind` select value (e.g. "waterfall")
 	// for the index hero chip; empty for spaces without the field.
 	Kind string `json:"kind,omitempty"`
+	// Entity-bound wiki children grouped by type slug (JCE ↔ wiki mapping):
+	// a country's visa routes/banks/embassies, a university's courses.
+	EntityChildren map[string][]EntityChild `json:"entity_children,omitempty"`
 }
 
 func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiIndexDTO, error) {
@@ -728,6 +731,7 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiInde
 	out := &WikiIndexDTO{Pages: dtos}
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
+		out.EntityChildren = s.entityChildren(ctx, spaceID, spaceTypeID)
 	}
 
 	out.Kind = s.spaceKindValue(ctx, spaceID)
@@ -801,6 +805,7 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 	out := &WikiIndexDTO{Pages: dtos}
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
+		out.EntityChildren = s.entityChildren(ctx, spaceID, spaceTypeID)
 	}
 
 	out.Kind = s.spaceKindValue(ctx, spaceID)
@@ -914,7 +919,17 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 
 	if cerr == nil {
 		catPtr = &cat
-		dto.CategoryLabel = cat.Label
+		dto.CategoryLabel = bareNameTokenLabel(cat.Label)
+
+		// {name} tokens: a stub page stores the raw or bare label as its
+		// title — display the host-scoped expansion, matching lazy pages.
+		expanded := substituteTemplateLabel(cat.Label, spaceName)
+		bare := strings.TrimSpace(strings.ReplaceAll(cat.Label, "{name}", ""))
+		if dto.Title == cat.Label || dto.Title == bare {
+			dto.Title = expanded
+		} else {
+			dto.Title = substituteTemplateLabel(dto.Title, spaceName)
+		}
 
 		// §80 lazy template pages: the category's declared template pages —
 		// the discovery links for pages that render without a wiki_pages row.
@@ -1022,6 +1037,13 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 // substituteTemplateLabel expands the `{name}` token in a page-template
 // label ("Prices in {name}") with the space's display name. Labels
 // without the token pass through unchanged.
+// bareNameTokenLabel strips a "{name}" token out of a label — how a
+// tokened category reads when it displays as a label rather than a title
+// (chip, tab strip): "{name} Visa Routes" → "Visa Routes".
+func bareNameTokenLabel(label string) string {
+	return strings.Join(strings.Fields(strings.ReplaceAll(label, "{name}", "")), " ")
+}
+
 func substituteTemplateLabel(label, spaceName string) string {
 	return strings.ReplaceAll(label, "{name}", spaceName)
 }
@@ -1075,7 +1097,7 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 	if cat, cerr := s.store.GetWikiTypeCategory(ctx, tmpl.CategoryID); cerr == nil {
 		cat := cat
 		catPtr = &cat
-		dto.CategoryLabel = cat.Label
+		dto.CategoryLabel = bareNameTokenLabel(cat.Label)
 	}
 
 	// The category's sibling template pages — discovery links, same as a
@@ -1167,7 +1189,7 @@ func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.U
 		SpaceName: spaceName,
 		Lazy:      true,
 	}
-	dto.CategoryLabel = cat.Label
+	dto.CategoryLabel = bareNameTokenLabel(cat.Label)
 
 	if cat.FieldGroupID.Valid {
 		dto.FieldGroupID = cat.FieldGroupID.String()

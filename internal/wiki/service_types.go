@@ -384,6 +384,12 @@ func (s *Service) ListCategoriesForSpace(ctx context.Context, spaceSlug string) 
 		return nil, "", err
 	}
 
+	// {name} tokens display as bare labels on the tab strip — the token
+	// only expands where the label renders as a page title.
+	for i := range cats {
+		cats[i].Label = bareNameTokenLabel(cats[i].Label)
+	}
+
 	// §80 directories: a directory-mode category only earns a tab/card
 	// when the space actually has matching descendants — a "Universities"
 	// stub on a state with no linked universities is a dead end. Fail

@@ -38,13 +38,24 @@
 	// Form state.
 	let title = $state('');
 	let body = $state('');
+	// Default to the first service-applicable category — the taxonomy mixes
+	// in applies_to='mentorship' rows that are invalid for this form.
 	let serviceCategory = $state<ServiceCategory>(
-		untrack(() => (data.serviceCategories[0]?.value as ServiceCategory | undefined) ?? 'immigration_legal')
+		untrack(
+			() =>
+				(data.serviceCategories.find(
+					(c) => !c.applies_to || c.applies_to === 'service' || c.applies_to === 'both'
+				)?.value as ServiceCategory | undefined) ?? 'other'
+		)
 	);
 	let destinationSpaceId = $state('');
 	let citySpaceId = $state('');
 	let cityLabel = $state('');
 	let originCommunities = $state('');
+	// §98 optional org link — an org-owned listing can take inquiries via
+	// the org inbox; an org-less one is a personal listing an org can
+	// claim later (backend requires the caller to be an org member).
+	let orgId = $state('');
 	let isRemote = $state(false);
 	let websiteUrl = $state('');
 	let bookingUrl = $state('');
@@ -89,6 +100,14 @@
 	const categoryFetcher = $derived(staticAutocompleteFetcher(categoryItems));
 	const selectedCategoryLabel = $derived(
 		serviceCategory ? (categoryItems.find((o) => o.id === serviceCategory)?.label ?? null) : null
+	);
+
+	const orgItems = $derived<AutocompleteItem[]>(
+		(data.myOrgs ?? []).map((o) => ({ id: o.id, label: o.name }))
+	);
+	const orgFetcher = $derived(staticAutocompleteFetcher(orgItems));
+	const selectedOrgLabel = $derived(
+		orgId ? (orgItems.find((o) => o.id === orgId)?.label ?? null) : null
 	);
 
 	// §114 2026-10-10 amendment: 'paid' mode was package-bound
@@ -224,6 +243,7 @@
 		};
 		if (citySpaceId) payload.city_space_id = citySpaceId;
 		if (origins.length > 0) payload.origin_communities = origins;
+		if (orgId) payload.org_id = orgId;
 		if (websiteUrl.trim()) payload.website_url = websiteUrl.trim();
 		if (bookingUrl.trim()) payload.booking_url = bookingUrl.trim();
 		if (priceRange.trim()) payload.price_range = priceRange.trim();
@@ -465,6 +485,33 @@
 					{t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.')}
 				</p>
 			</div>
+
+			<!-- §98 org link — optional; org-owned listings take inquiries
+				via the org inbox, personal listings can be claimed later. -->
+			{#if orgItems.length > 0}
+				<div>
+					<label for="org" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('services.field_org', 'List under an organization')}
+					</label>
+					<Autocomplete
+						id="org"
+						placeholder={t('services.org_placeholder', 'Personal listing (no organization)')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={orgFetcher}
+						initialFetcher={orgFetcher}
+						selectedId={orgId || null}
+						selectedLabel={selectedOrgLabel}
+						onSelect={(item) => (orgId = item.id)}
+						onClear={() => (orgId = '')}
+					/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">
+						{t(
+							'services.org_hint',
+							'Pick an organization you belong to so inquiries land in its inbox — leave blank for a personal listing.'
+						)}
+					</p>
+				</div>
+			{/if}
 
 			<!-- Remote -->
 			<div>

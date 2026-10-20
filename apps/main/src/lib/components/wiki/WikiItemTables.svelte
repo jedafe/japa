@@ -127,16 +127,6 @@
 	}
 </script>
 
-{#snippet computedBadge()}
-	<!-- §80 page rollup — derived from options.computed sources; the
-	     field is read-only by contract. -->
-	<span
-		class="ml-1.5 rounded-full border border-[var(--color-border)] px-1.5 py-px align-middle text-[10px] font-medium uppercase tracking-wide text-[var(--color-muted)]"
-		title={t('wiki.field_computed_hint', 'Computed from this page’s sub-pages')}
-	>
-		{t('wiki.field_computed', 'computed')}
-	</span>
-{/snippet}
 
 {#if activeSection && allHref}
 	<div class="mb-3">
@@ -184,7 +174,7 @@
 							{#each section.fields as f (f.id)}
 								<tr>
 									<td class="px-4 py-2 text-[var(--color-text)]">
-										{f.label}{#if f.computed}{@render computedBadge()}{/if}
+										{f.label}
 									</td>
 									<td class="px-4 py-2 text-[var(--color-text)]">{avgOf(f)}</td>
 									<td class="px-4 py-2 text-[var(--color-muted)]">{rangeOf(f)}</td>
@@ -208,7 +198,7 @@
 							{#each section.fields as f (f.id)}
 								<tr class={isEmphasized(f) ? 'bg-[var(--color-surface-subtle)] font-semibold' : ''}>
 									<td class="px-4 py-2 text-[var(--color-text)]">
-										{f.label}{#if f.computed}{@render computedBadge()}{/if}
+										{f.label}
 									</td>
 									{#each partsColumns(section.fields) as col (col.key)}
 										<td class="px-4 py-2 text-[var(--color-text)]">{partCell(f, col.key, col.kind)}</td>
@@ -227,7 +217,7 @@
 								{#if media.length > 0}
 									<div class="px-4 py-2 text-sm">
 										<dt class="text-[var(--color-muted)]">
-											{f.label}{#if f.computed}{@render computedBadge()}{/if}
+											{f.label}
 										</dt>
 										<dd class="mt-1.5 flex flex-wrap gap-2">
 											{#each media as m (m.id || m.url)}
@@ -251,7 +241,7 @@
 							{:else}
 							<div class="flex items-baseline justify-between gap-3 px-4 py-2 text-sm">
 								<dt class="shrink-0 text-[var(--color-muted)]">
-									{f.label}{#if f.computed}{@render computedBadge()}{/if}
+									{f.label}
 								</dt>
 								<dd class="min-w-0 truncate text-right text-[var(--color-text)]">
 									{formatWikiFieldValue(f, currencies, contextCurrency, contextFx)}

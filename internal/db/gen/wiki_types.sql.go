@@ -740,6 +740,56 @@ func (q *Queries) ListEnabledWikiTypes(ctx context.Context) ([]ListEnabledWikiTy
 	return items, nil
 }
 
+const listEntityWikiTypesForParent = `-- name: ListEntityWikiTypesForParent :many
+SELECT st.slug AS type_slug, st.name AS type_name, wtc.icon,
+       wtc.entity_kind, wtc.entity_discriminator, wtc.position
+FROM wiki_type_parents p
+JOIN wiki_type_configs wtc ON wtc.space_type_id = p.space_type_id AND wtc.enabled = true
+JOIN space_types st ON st.id = wtc.space_type_id
+WHERE p.parent_space_type_id = $1
+  AND wtc.entity_kind IS NOT NULL
+ORDER BY wtc.position
+`
+
+type ListEntityWikiTypesForParentRow struct {
+	TypeSlug            string  `json:"type_slug"`
+	TypeName            string  `json:"type_name"`
+	Icon                *string `json:"icon"`
+	EntityKind          *string `json:"entity_kind"`
+	EntityDiscriminator []byte  `json:"entity_discriminator"`
+	Position            int32   `json:"position"`
+}
+
+// Entity-bound wiki types parented to a host space type (JCE ↔ wiki
+// mapping): drives the index's entity-children section — a country's visa
+// routes/banks/embassies, a university's courses/scholarships.
+func (q *Queries) ListEntityWikiTypesForParent(ctx context.Context, parentSpaceTypeID pgtype.UUID) ([]ListEntityWikiTypesForParentRow, error) {
+	rows, err := q.db.Query(ctx, listEntityWikiTypesForParent, parentSpaceTypeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityWikiTypesForParentRow
+	for rows.Next() {
+		var i ListEntityWikiTypesForParentRow
+		if err := rows.Scan(
+			&i.TypeSlug,
+			&i.TypeName,
+			&i.Icon,
+			&i.EntityKind,
+			&i.EntityDiscriminator,
+			&i.Position,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSeedCategoriesBySpaceType = `-- name: ListSeedCategoriesBySpaceType :many
 SELECT wtc.slug, wtc.category, wtc.label
 FROM wiki_type_categories wtc
@@ -1603,8 +1653,18 @@ type UpsertWikiTypeConfigParams struct {
 	Position    int32       `json:"position"`
 }
 
+type UpsertWikiTypeConfigRow struct {
+	SpaceTypeID pgtype.UUID        `json:"space_type_id"`
+	Enabled     bool               `json:"enabled"`
+	Label       *string            `json:"label"`
+	Icon        *string            `json:"icon"`
+	SeedStubs   bool               `json:"seed_stubs"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 // Create or re-enable a wiki type for a space type (admin).
-func (q *Queries) UpsertWikiTypeConfig(ctx context.Context, arg UpsertWikiTypeConfigParams) (WikiTypeConfig, error) {
+func (q *Queries) UpsertWikiTypeConfig(ctx context.Context, arg UpsertWikiTypeConfigParams) (UpsertWikiTypeConfigRow, error) {
 	row := q.db.QueryRow(ctx, upsertWikiTypeConfig,
 		arg.SpaceTypeID,
 		arg.Enabled,
@@ -1613,7 +1673,7 @@ func (q *Queries) UpsertWikiTypeConfig(ctx context.Context, arg UpsertWikiTypeCo
 		arg.SeedStubs,
 		arg.Position,
 	)
-	var i WikiTypeConfig
+	var i UpsertWikiTypeConfigRow
 	err := row.Scan(
 		&i.SpaceTypeID,
 		&i.Enabled,

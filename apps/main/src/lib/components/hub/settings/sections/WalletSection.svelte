@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import type { WalletData } from './wallet/types';
 	import WalletDetailsTab from './wallet/WalletDetailsTab.svelte';
 	import WalletConvertTab from './wallet/WalletConvertTab.svelte';
@@ -15,7 +18,15 @@
 	const walletData = $derived(data as WalletData | null);
 
 	type Tab = 'details' | 'conversion' | 'purchase' | 'history' | 'withdraw';
-	let activeTab = $state<Tab>('details');
+	// Seed from ?tab= so deep links (e.g. /dashboard/wallet/purchase →
+	// /settings/wallet?tab=purchase) land on the right tab.
+	const VALID_TABS: Tab[] = ['details', 'conversion', 'purchase', 'withdraw', 'history'];
+	let activeTab = $state<Tab>(
+		untrack(() => {
+			const q = page.url.searchParams.get('tab') as Tab | null;
+			return q && VALID_TABS.includes(q) ? q : 'details';
+		})
+	);
 
 	const allTabs: { key: Tab; labelKey: string; default: string; requiresWithdraw: boolean }[] = [
 		{ key: 'details', labelKey: 'settings.wallet.tab_details', default: 'Details', requiresWithdraw: false },
@@ -34,6 +45,11 @@
 			activeTab = tabs[0].key;
 		}
 	});
+
+	function selectTab(tab: Tab) {
+		activeTab = tab;
+		void goto(`?tab=${tab}`, { replaceState: true, keepFocus: true, noScroll: true });
+	}
 </script>
 
 <section class="max-w-4xl">
@@ -48,7 +64,7 @@
 				type="button"
 				role="tab"
 				aria-selected={activeTab === tab.key}
-				onclick={() => (activeTab = tab.key)}
+				onclick={() => selectTab(tab.key)}
 				class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === tab.key
 					? 'border-[var(--color-primary)] text-[var(--color-primary)]'
 					: 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'}"

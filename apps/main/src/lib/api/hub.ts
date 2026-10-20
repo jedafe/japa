@@ -15,7 +15,10 @@ export { classifyError };
 /* ---- profile / account / privacy (Plan 1) ---- */
 export const patchProfile = (v: Partial<MeProfile>) => {
 	// All keys are already snake_case (matching backend json tags).
-	return api.patch<MeProfile>('/me/profile', v);
+	// PATCH /me/profile returns { data: { status: "updated" } }, not the
+	// profile — the MeProfile generic was a contract lie that callers
+	// (correctly) never read.
+	return api.patch<{ status: string }>('/me/profile', v);
 };
 export const patchAccount = (v: Record<string, unknown>) => api.patch<MeProfile>('/me/account', v);
 export const patchPrivacy = (v: PrivacySettings) => api.patch<PrivacySettings>('/me/privacy', v);

@@ -24,6 +24,7 @@ export interface CreditPack {
 export interface LedgerEntry {
 	id: string;
 	type: string;
+	operation?: string;
 	amount?: number;
 	description?: string | null;
 	created_at?: string;
@@ -51,7 +52,7 @@ export interface WithdrawalMethod {
 	provider: string;
 	label?: string | null;
 	account: string;
-	currency_code: string;
+	currency_code?: string | null;
 	is_verified: boolean;
 	is_default: boolean;
 	is_active: boolean;

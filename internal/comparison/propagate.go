@@ -69,7 +69,7 @@ func (s *Service) BustCachesForItemRef(ctx context.Context, entityType, entityID
 // the spaces table — the same set customfields.ValueEntityType collapses for
 // value storage, expanded here for propagation because item_ref keeps the
 // specific type.
-var spaceBackedItemRefTypes = []string{"space", "university", "country", "state", "city"}
+var spaceBackedItemRefTypes = []string{"space", "university", "country", "state", "city", "neighborhood"}
 
 // itemRefTypes returns the item_ref types a propagation lookup must cover:
 // the submitted type plus, for space-backed entities, every space alias.

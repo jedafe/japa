@@ -1875,11 +1875,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Entity: "organization", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.verified = true",
 		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
+		FilterParam: "org_type", FilterColumn: "org_type",
 	}, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("bank", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "bank", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.verified = true",
 		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
+		FilterParam: "org_type", FilterColumn: "org_type",
 	}, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("job", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "job", Table: "intel_jobs", IDColumn: "id", TitleColumn: "title", SlugColumn: "",
@@ -1890,6 +1892,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceResolver.Register("travel", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "travel", Table: "travel_providers", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "", PlatformColumn: "", ActiveWhere: "t.is_active = true",
+	}, resolver.WithQueries(jceReadQueries)))
+	// JCE ↔ wiki mapping: entity-bound wiki kinds get resolvers so comparisons
+	// and wiki field ops can target them. neighborhood is space-backed;
+	// embassy binds monitored_embassies until a dedicated embassies table lands.
+	jceResolver.Register("neighborhood", resolver.NewSpaceTypeResolver(
+		spaceService, "neighborhood", "neighborhood",
+		resolver.WithCOLStore(costOfLivingStore),
+		resolver.WithQueries(jceReadQueries),
+	))
+	jceResolver.Register("embassy", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
+		Entity: "embassy", Table: "embassies", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
+		DescColumn: "address", ActiveWhere: "t.is_active = true",
+		GeoSpaceIDColumn: "host_space_id",
 	}, resolver.WithQueries(jceReadQueries)))
 	comparisonService.SetResolver(jceResolver)
 	// §80 Community Field Ops: the wiki service resolves suggest/target
@@ -7124,6 +7139,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/wiki/destinations", wikiHandlers.HandleGetDestinations)
 				// §80 Wiki Types: enabled wiki types for navigation/filters.
 				r.Get("/wiki/types", wikiHandlers.HandleListWikiTypes)
+				// Entity-bound pages (JCE ↔ wiki mapping): /wiki/e/{type}/{entity}/{page}
+				// — registered before {space_slug} so the static 'e' segment wins.
+				r.Get("/wiki/e/{type_slug}/{entity}/{page_slug}", wikiHandlers.HandleGetEntityPage)
+				// Authenticated: create a page on an entity + submit revision
+				// on an entity-bound page (wiki.edit).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.edit")).
+					Post("/wiki/e/{type_slug}/{entity}", wikiHandlers.HandleCreateEntityPage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.edit")).
+					Post("/wiki/e/{type_slug}/{entity}/{page_slug}/revisions", wikiHandlers.HandleSubmitEntityRevision)
 				r.Get("/wiki/{space_slug}", wikiHandlers.HandleGetIndex)
 				r.Get("/wiki/{space_slug}/{page_slug}", wikiHandlers.HandleGetPage)
 				r.Get("/wiki/{space_slug}/{page_slug}/history", wikiHandlers.HandleGetHistory)
@@ -7483,9 +7507,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.create"), mw.RateLimit(vkClient.Redis(), "moderate"),
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/service-bookings/{id}/complete", serviceDirHandlers.HandleMyBookingComplete)
-				// 000824 — provider responds to a user-owned (mentorship)
-				// booking: accept|decline|complete|cancel.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond"), mw.RateLimit(vkClient.Redis(), "moderate"),
+				// 000824 — provider responds to a user-owned booking:
+				// accept|decline|complete|cancel. Route node is
+				// service.booking.create — mentorship-kind rows
+				// additionally require mentorship.respond, enforced
+				// in-handler once the listing kind is known.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.create"), mw.RateLimit(vkClient.Redis(), "moderate"),
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/service-bookings/{id}/respond", serviceDirHandlers.HandleMyBookingRespond)
 			})

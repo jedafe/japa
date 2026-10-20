@@ -18,6 +18,17 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
+	// Legacy slugs folded into the tabbed /settings/ai section — redirect so
+	// bookmarks and cross-links keep landing on the right tab.
+	const LEGACY_REDIRECTS: Record<string, string> = {
+		'ai-privacy': '/settings/ai?tab=privacy',
+		'ai-keys': '/settings/ai?tab=keys'
+	};
+	const legacyTarget = LEGACY_REDIRECTS[event.params.section];
+	if (legacyTarget) {
+		throw redirect(307, legacyTarget);
+	}
+
 	const meta = resolveSection(event.params.section);
 	if (!meta || !meta.backendReady || !meta.component) {
 		throw error(404, { code: 'not_found', message: 'Unknown settings section' });

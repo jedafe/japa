@@ -52,6 +52,7 @@
 		Pencil,
 		ChevronDown,
 		ChevronRight,
+		History,
 		PanelRight
 	} from 'lucide-svelte';
 	import { api } from '$lib/api/client';
@@ -75,7 +76,9 @@
 		type ChatTemplateValues
 	} from './chatTemplate';
 	import { chatTemplateRail } from './chatTemplateRail.svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { AutocompleteSelect, Modal } from '$lib/components/ui';
+	import AddAiKeyDialog from './AddAiKeyDialog.svelte';
 	import AiSourceCitations from './AiSourceCitations.svelte';
 	import type { AiCitationSource } from './types';
 	import type { MeSpace, BlogSeries, ContentTypeMeta } from '$lib/types';
@@ -908,6 +911,23 @@
 			)
 		)
 	]);
+	// Composer-only: the "Add API key" sentinel opens the BYOK dialog instead
+	// of selecting a model. Kept off `modelOptions` because the project
+	// default pickers share it and must not offer key management.
+	const ADD_BYOK_OPTION = '__byok_add_key';
+	let addKeyOpen = $state(false);
+	const composerModelOptions = $derived([
+		...modelOptions,
+		...(byokProviders.length > 0
+			? [{ value: ADD_BYOK_OPTION, label: `+ ${t('ai.byok.add_key', 'Add API key')}` }]
+			: [])
+	]);
+	$effect(() => {
+		if (selectedModel === ADD_BYOK_OPTION) {
+			selectedModel = '';
+			addKeyOpen = true;
+		}
+	});
 	// Voice option sets populate from the selected tone — the persona catalog
 	// prefixes each voice label with its tone ("Witty ...", "Academic ...").
 	// Same mapping as AiDraftPanel: unlabelled voices count as 'natural';
@@ -1843,6 +1863,20 @@
 						<span class="max-w-32 truncate">{activeProject.name}</span>
 					</span>
 				{/if}
+				{#if toolsAvailable}
+					<!-- §103: every tool-enabled turn writes an ai_agent_sessions
+					     audit row — the history list lives at /ai/sessions. Hidden for
+					     plain-chat users (the sessions API shares the agent gate). -->
+					<a
+						href="/ai/sessions"
+						class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors"
+						style="border-color: var(--color-border); color: var(--color-muted)"
+						title={t('ai.agent.session_history', 'Session history')}
+					>
+						<History size={13} />
+						<span class="hidden sm:inline">{t('ai.agent.session_history', 'Session history')}</span>
+					</a>
+				{/if}
 				{#if toolsOn}
 					<button
 						type="button"
@@ -2261,7 +2295,7 @@
 					bind:model={selectedModel}
 					bind:voice={selectedVoice}
 					bind:tone={selectedTone}
-					{modelOptions}
+					modelOptions={composerModelOptions}
 					{voiceOptions}
 					{toneOptions}
 					idPrefix="japaai"
@@ -2614,3 +2648,7 @@
 		</div>
 	{/snippet}
 </Modal>
+
+<!-- BYOK add-key flow from the composer picker (spec §7): saving refetches
+     the page so the new key's models appear under "Your keys". -->
+<AddAiKeyDialog bind:open={addKeyOpen} providers={byokProviders} onsaved={() => invalidateAll()} />

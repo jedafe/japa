@@ -170,10 +170,14 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 	case errors.Is(err, ErrSelfMentorship):
 		errpkg.WriteError(w, http.StatusBadRequest, "self_mentorship", "You cannot request mentorship from yourself")
+	case errors.Is(err, ErrSelfBooking):
+		errpkg.WriteError(w, http.StatusConflict, "self_booking", "You cannot send an inquiry to your own listing")
 	case errors.Is(err, ErrMentorshipListingManaged):
 		errpkg.WriteError(w, http.StatusBadRequest, "mentorship_listing_managed", "Mentorship listings are managed through the mentor profile")
 	case errors.Is(err, ErrDuplicateRequest):
 		errpkg.WriteError(w, http.StatusConflict, "duplicate_mentorship_request", "You already have an open mentorship request with this provider")
+	case errors.Is(err, ErrDuplicateInquiry):
+		errpkg.WriteError(w, http.StatusConflict, "duplicate_inquiry", "You already have an open inquiry with this provider")
 	case errors.Is(err, ErrMentorAtCapacity):
 		errpkg.WriteError(w, http.StatusConflict, "mentor_at_capacity", "This mentor is not accepting new mentees right now")
 	case errors.Is(err, ErrCouponsDisabled):

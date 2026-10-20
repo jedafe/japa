@@ -34,6 +34,8 @@ export const load: PageServerLoad = async (event) => {
 
 	return loadBookingsSurface(event, {
 		allowKindFilter: true,
-		mentorshipEnabled: !!features['mentorship.enabled']
+		// role=provider covers mentorship providers and org-less listing
+		// authors — either flag keeps the provider arm reachable.
+		mentorshipEnabled: !!features['mentorship.enabled'] || !!features['service_packages.enabled']
 	});
 };
