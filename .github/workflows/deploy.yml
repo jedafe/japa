@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy Staging
 
 on:
   workflow_run:
@@ -11,31 +11,21 @@ on:
 # Coolify pulls the repo, rebuilds the Dockerfile, and rolls the service.
 #
 # Flow: every green CI run on `main` auto-deploys the STAGING environment
-# (staging Coolify apps track `main` — same commit, staging config). The
-# production job then waits on GitHub's `production` environment approval
-# (Settings → Environments → required reviewers), so prod ships the exact
-# commit that was exercised on staging.
+# (staging Coolify apps track `main` — same commit, staging config).
+# Production deploys are a separate workflow (deploy-production.yml) gated
+# by a manual workflow_dispatch — see that file for details.
 #
-# Required repo secrets (Settings → Secrets → Actions), production:
-#   COOLIFY_WEBHOOK_API        — api service    (Dockerfile at repo root)
-#   COOLIFY_WEBHOOK_MAIN       — apps/main
-#   COOLIFY_WEBHOOK_ADMIN      — apps/admin
-#   COOLIFY_WEBHOOK_CONTROL    — apps/control
-#   COOLIFY_WEBHOOK_ACADEMY    — apps/academy
-#   COOLIFY_WEBHOOK_DOCS       — apps/docs
-#   COOLIFY_WEBHOOK_TOOLS      — apps/tools
-#
-# Staging secrets use the same names with a _STAGING suffix:
-#   COOLIFY_WEBHOOK_API_STAGING, COOLIFY_WEBHOOK_MAIN_STAGING,
-#   COOLIFY_WEBHOOK_ADMIN_STAGING, COOLIFY_WEBHOOK_CONTROL_STAGING,
-#   COOLIFY_WEBHOOK_ACADEMY_STAGING, COOLIFY_WEBHOOK_DOCS_STAGING,
-#   COOLIFY_WEBHOOK_TOOLS_STAGING
+# Required repo secrets (Settings → Secrets → Actions), staging:
+#   COOLIFY_WEBHOOK_API_STAGING        — api service    (Dockerfile at repo root)
+#   COOLIFY_WEBHOOK_MAIN_STAGING       — apps/main
+#   COOLIFY_WEBHOOK_ADMIN_STAGING      — apps/admin
+#   COOLIFY_WEBHOOK_CONTROL_STAGING    — apps/control
+#   COOLIFY_WEBHOOK_ACADEMY_STAGING    — apps/academy
+#   COOLIFY_WEBHOOK_DOCS_STAGING       — apps/docs
+#   COOLIFY_WEBHOOK_TOOLS_STAGING      — apps/tools
 #
 # Each secret holds the full webhook URL, e.g.
 #   https://coolify.example.com/api/v1/deploy?uuid=<app-uuid>&token=<token>&force=false
-#
-# Required GitHub environment: create `production` (Settings → Environments)
-# with at least one required reviewer — that approval is the prod gate.
 
 jobs:
   deploy-staging:
@@ -65,29 +55,3 @@ jobs:
 
       - name: Deploy tools (staging)
         run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS_STAGING }}"
-
-  deploy-production:
-    runs-on: [self-hosted]
-    needs: deploy-staging
-    environment: production
-    steps:
-      - name: Deploy api
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API }}"
-
-      - name: Deploy main
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_MAIN }}"
-
-      - name: Deploy admin
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ADMIN }}"
-
-      - name: Deploy control
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_CONTROL }}"
-
-      - name: Deploy academy
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ACADEMY }}"
-
-      - name: Deploy docs
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_DOCS }}"
-
-      - name: Deploy tools
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS }}"

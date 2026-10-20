@@ -1,0 +1,52 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+
+# Production deployment is manual by design: GitHub's required-reviewers
+# environment gate needs a paid plan for private repos, so the promotion
+# gate is this workflow_dispatch trigger instead — a maintainer clicks
+# "Run workflow" on a commit that has already been exercised on staging.
+#
+# Coolify deployment: each application in Coolify exposes a deploy webhook
+# (Applications → <app> → Webhooks → "Deploy Webhook"). This job calls the
+# webhooks; Coolify pulls the repo, rebuilds the Dockerfile, and rolls the
+# service. The `production` GitHub environment scopes the secrets below.
+#
+# Required repo secrets (Settings → Secrets → Actions), production:
+#   COOLIFY_WEBHOOK_API        — api service    (Dockerfile at repo root)
+#   COOLIFY_WEBHOOK_MAIN       — apps/main
+#   COOLIFY_WEBHOOK_ADMIN      — apps/admin
+#   COOLIFY_WEBHOOK_CONTROL    — apps/control
+#   COOLIFY_WEBHOOK_ACADEMY    — apps/academy
+#   COOLIFY_WEBHOOK_DOCS       — apps/docs
+#   COOLIFY_WEBHOOK_TOOLS      — apps/tools
+#
+# Each secret holds the full webhook URL, e.g.
+#   https://coolify.example.com/api/v1/deploy?uuid=<app-uuid>&token=<token>&force=false
+
+jobs:
+  deploy-production:
+    runs-on: [self-hosted]
+    environment: production
+    steps:
+      - name: Deploy api
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API }}"
+
+      - name: Deploy main
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_MAIN }}"
+
+      - name: Deploy admin
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ADMIN }}"
+
+      - name: Deploy control
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_CONTROL }}"
+
+      - name: Deploy academy
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ACADEMY }}"
+
+      - name: Deploy docs
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_DOCS }}"
+
+      - name: Deploy tools
+        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS }}"

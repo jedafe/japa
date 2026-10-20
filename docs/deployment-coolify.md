@@ -77,15 +77,19 @@ secrets: `COOLIFY_WEBHOOK_API`, `_MAIN`, `_ADMIN`, `_CONTROL`, `_ACADEMY`,
 `_DOCS`, `_TOOLS` (+ `_STAGING` variants for the staging environment).
 
 **Update flow (gated promotion):** every green CI run on `main`
-auto-deploys staging, then the `deploy-production` job pauses on the
-GitHub `production` environment — a reviewer clicks **Approve** in the
-Actions run and prod ships the exact commit that was exercised on staging.
-There is no `staging` branch; staging Coolify apps track `main` so the
-deployed SHA is identical in both environments.
+auto-deploys staging. Production ships only when a maintainer runs the
+`Deploy Production` workflow (`deploy-production.yml`) by hand —
+**Actions → Deploy Production → Run workflow** on a commit that has
+already been exercised on staging. The manual dispatch is the promotion
+gate: GitHub's required-reviewers environment rule needs a paid plan
+for private repos, so environment approval isn't used. There is no
+`staging` branch; staging Coolify apps track `main` so the deployed
+SHA is identical in both environments.
 
-One-time GitHub setup: **Settings → Environments** → create `staging` and
-`production`, add yourself as a **required reviewer** on `production`
-(optionally a `staging` environment too — ungated).
+One-time GitHub setup: **Settings → Environments** → create `staging`
+and `production` (no protection rules needed — the workflow gate is
+the dispatch trigger). If the plan is upgraded later, a required
+reviewer on `production` can replace the manual gate.
 
 ## Staging environment
 
@@ -93,8 +97,8 @@ Coolify projects have built-in **environments** — create a `staging` environme
 in the same project and clone each application service into it (same Dockerfiles;
 same server, or a second VPS if the box is tight on memory). Both staging and
 production apps track the `main` branch — the environments differ only by
-Coolify env vars/build args, and the GitHub environments gate decides which
-fires (see "Update flow" above).
+Coolify env vars/build args, and the workflow split decides which fires
+(see "Update flow" above).
 
 ### Domains
 
@@ -191,9 +195,9 @@ Manual equivalent any time: `docker exec <api-container> /app/japa-migrate`.
 ### Staging deploys
 
 Automatic — `deploy-staging` in `deploy.yml` POSTs the staging apps' deploy
-webhooks after every green CI on `main`, then `deploy-production` waits for
-environment approval. Staging repo secrets are the prod names with a
-`_STAGING` suffix: `COOLIFY_WEBHOOK_API_STAGING`, `COOLIFY_WEBHOOK_MAIN_STAGING`,
+webhooks after every green CI on `main`. Production is separate:
+`deploy-production.yml` only runs on manual `workflow_dispatch`.
+Staging repo secrets are the prod names with a `_STAGING` suffix: `COOLIFY_WEBHOOK_API_STAGING`, `COOLIFY_WEBHOOK_MAIN_STAGING`,
 `COOLIFY_WEBHOOK_ADMIN_STAGING`, `COOLIFY_WEBHOOK_CONTROL_STAGING`,
 `COOLIFY_WEBHOOK_ACADEMY_STAGING`, `COOLIFY_WEBHOOK_DOCS_STAGING`,
 `COOLIFY_WEBHOOK_TOOLS_STAGING`.
