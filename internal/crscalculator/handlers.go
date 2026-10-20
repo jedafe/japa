@@ -22,6 +22,7 @@
 package crscalculator
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -33,20 +34,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Handlers exposes the CRS calculator endpoints.
+// ToolEventTracker records tool.used platform_events (§122) — nil disables.
+type ToolEventTracker func(ctx context.Context, userID pgtype.UUID, sessionID, tool string)
+
 type Handlers struct {
-	service  *Service
-	settings *config.Settings
+	service     *Service
+	settings    *config.Settings
+	toolTracker ToolEventTracker
 }
 
 // NewHandlers creates CRS calculator handlers bound to the service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
 }
+
+// SetToolEventTracker wires the tool.used emitter (fire-and-forget, §122).
+func (h *Handlers) SetToolEventTracker(fn ToolEventTracker) { h.toolTracker = fn }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
@@ -139,6 +148,19 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.service.Calculate(r.Context(), userID, input)
+	if err == nil && h.toolTracker != nil {
+		session := clientip.FromRequest(r)
+		if userID != nil {
+			if u := auth.FromContext(r.Context()); u != nil && u.SessionID != "" {
+				session = u.SessionID
+			}
+		}
+		var uid pgtype.UUID
+		if userID != nil {
+			uid = *userID
+		}
+		h.toolTracker(r.Context(), uid, session, "crs-calculator")
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "ruleset_not_found", "No active CRS ruleset")

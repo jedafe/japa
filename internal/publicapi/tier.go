@@ -1,10 +1,21 @@
 package publicapi
 
 import (
+	"context"
 	"net/http"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
+
+// GateHitTracker receives tier-gate denies (§122 feature.gate_hit feed).
+type GateHitTracker func(ctx context.Context, userID pgtype.UUID, feature, requiredTier string)
+
+var gateTracker GateHitTracker
+
+// SetGateTracker wires the deny-path tracker (fire-and-forget by contract —
+// it must never block or alter the 403).
+func SetGateTracker(fn GateHitTracker) { gateTracker = fn }
 
 // tierRanks orders unified user tiers lowest to highest. Unknown tiers
 // resolve to rank 0 — denied by any positive minimum (fail-closed).
@@ -36,6 +47,9 @@ func RequireTier(tr TierResolver, minTier string) func(http.Handler) http.Handle
 			}
 
 			if !TierAtLeast(tier, minTier) {
+				if gateTracker != nil {
+					gateTracker(r.Context(), keyCtx.UserID, r.URL.Path, minTier)
+				}
 				errpkg.WriteError(w, http.StatusForbidden, "tier_required",
 					"This endpoint requires a "+minTier+" subscription")
 				return

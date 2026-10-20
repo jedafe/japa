@@ -1642,6 +1642,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	crsCalculatorService := crscalculator.NewService(crsCalculatorStore, settingsService)
 	crsCalculatorService.SetEnqueuer(taskEnqueuer)
 	crsCalculatorHandlers := crscalculator.NewHandlers(crsCalculatorService, settingsService)
+	// §122: emit tool.used platform_events so tool_used predicates fire.
+	crsCalculatorHandlers.SetToolEventTracker(func(ctx context.Context, userID pgtype.UUID, sessionID, tool string) {
+		_, _ = analyticsService.TrackEvent(ctx, analytics.TrackEventInput{
+			EventType: analytics.EventToolUsed, UserID: userID, SessionID: sessionID,
+			EntityType: "tool", Meta: map[string]any{"tool": tool},
+		})
+	})
+	// §122: emit feature.gate_hit on publicapi tier-gate denies.
+	publicapi.SetGateTracker(func(ctx context.Context, userID pgtype.UUID, feature, requiredTier string) {
+		_, _ = analyticsService.TrackEvent(ctx, analytics.TrackEventInput{
+			EventType: analytics.EventFeatureGateHit, UserID: userID,
+			EntityType: "feature", Meta: map[string]any{"feature": feature, "required_tier": requiredTier},
+		})
+	})
 
 	// Ref: japaconnect-engineering/sections/71-readiness-assessment.md (ADR-071)
 	assessmentStore := assessment.NewStore(database)
