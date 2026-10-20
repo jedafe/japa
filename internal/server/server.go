@@ -111,6 +111,7 @@ import (
 	"github.com/jedafe/japa/internal/mutualaid"
 	"github.com/jedafe/japa/internal/newsletter"
 	"github.com/jedafe/japa/internal/notifications"
+	"github.com/jedafe/japa/internal/nextactions"
 	"github.com/jedafe/japa/internal/onboarding"
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/pagebuilder"
@@ -1218,6 +1219,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	analyticsService := analytics.NewServiceWithEnqueuer(database, taskEnqueuer)
 	analyticsService.SetSettings(settingsService) // BUG-003: security scan thresholds from system_settings
 	analyticsHandlers := analytics.NewHandlers(analyticsService)
+
+	// Next-Action Suggestion Engine (Section 122, ADR-132). The pull path
+	// serves /api/v1/next-actions (OptionalAuth — guests + members); the
+	// notifier for the sweep path is wired after notificationsService below.
+	nextActionsResolver := nextactions.NewStateResolver(gen.New(database.Reader), tierService)
+	nextActionsSvc := nextactions.New(nextactions.Deps{
+		Read:     gen.New(database.Reader),
+		Write:    gen.New(database.Writer),
+		Cache:    vkClient.Redis(),
+		Settings: settingsService,
+		Resolver: nextActionsResolver,
+		Tracker:  analyticsService,
+	})
+	nextActionsHandlers := nextactions.NewHandlers(nextActionsSvc, settingsService)
 
 	// Japa Academy subsystem (Section 36).
 	academyStore := academy.NewStore(database)
@@ -3998,6 +4013,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Recommendation engine (ADR-064a) — public, works for guests and
 			// authenticated users. Uses VisitorContext for geo-aware ranking.
 			r.Get("/recommendations", recommendationsHandlers.GetRecommendations)
+
+			// Next-Action Suggestions (§122, ADR-132) — public, guests + members.
+			r.With(features.Gate(featureChecker, "next_actions.enabled")).Group(func(r chi.Router) {
+				r.Get("/next-actions", nextActionsHandlers.GetSuggestions)
+				r.Post("/next-actions/{id}/dismiss", nextActionsHandlers.Dismiss)
+				r.Post("/next-actions/{id}/complete", nextActionsHandlers.Complete)
+				r.Post("/next-actions/{id}/track", nextActionsHandlers.Track)
+			})
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "next_actions.enabled")).
+				Get("/me/next-actions", nextActionsHandlers.GetSuggestions)
 
 			// Geo routes (Phase 30 — Geo IP; catalog: Sections 05, 37)
 			// Public: returns geo data for the current request IP (resolved by middleware)
@@ -7089,6 +7114,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/participation/queue", participationHandlers.HandleQueue)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.view")).
 				Get("/admin/participation/stats", participationHandlers.HandleStats)
+
+			// Section 122 — Next-Action Suggestions rule management (ADR-132).
+			// Read routes accept view OR manage (view is the read subset).
+			r.With(features.Gate(featureChecker, "next_actions.enabled")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "nextactions.manage")).
+					Route("/admin/next-actions/rules", func(r chi.Router) {
+						r.Get("/", nextActionsHandlers.ListRules)
+						r.Post("/", nextActionsHandlers.CreateRule)
+						r.Get("/{id}", nextActionsHandlers.GetRule)
+						r.Patch("/{id}", nextActionsHandlers.UpdateRule)
+						r.Delete("/{id}", nextActionsHandlers.DeleteRule)
+					})
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "nextactions.view")).
+					Get("/admin/next-actions/stats", nextActionsHandlers.Stats)
+			})
 
 			// Section 70 — Visa Document Checklist Generator (ADR-070)
 			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).

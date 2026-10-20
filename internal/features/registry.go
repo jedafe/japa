@@ -98,6 +98,8 @@ var Registry = []Feature{
 	{Key: "japa_stage.enabled", Label: "Japa Stage Progress Profiles", Description: "Stage-of-journey progress profiles on member accounts", Default: false, Category: "Social"},
 	{Key: "forum.ama.enabled", Label: "Ask an Expat AMA", Description: "Scheduled ask-me-anything sessions hosted by verified expats", Default: false, Category: "Social"},
 	{Key: "achievement.enabled", Label: "Community Achievement Feed", Description: "Milestone and achievement announcements in the community feed", Default: false, Category: "Engagement"},
+	// §122 Next-Action Suggestion Engine (ADR-132).
+	{Key: "next_actions.enabled", Label: "Next-Action Suggestions", Description: "Contextual next-step suggestions delivered via popups, bars, sidebar, in-article, and notifications", Default: true, Category: "Engagement"},
 	{Key: "service_directory.enabled", Label: "Service Directory", Description: "Verified immigrant-service listings with claim flow (§98)", Default: false, Category: "Commerce"},
 	{Key: "service_packages.enabled", Label: "Service Packages & Bookings", Description: "Packaged service offerings with booking requests (§111)", Default: false, Category: "Commerce"},
 	{Key: "service_coupons.enabled", Label: "Service Listing Coupons", Description: "Discount coupons attachable to service listings", Default: false, Category: "Commerce"},

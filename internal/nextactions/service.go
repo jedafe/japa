@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/analytics"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
@@ -95,6 +96,16 @@ func (s *Service) settingInt(ctx context.Context, key string, fallback int) int 
 // user_next_actions rows, guest impressions accumulate in the Valkey hash.
 func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface string, limit int) ([]Suggestion, error) {
 	state := s.resolver.Resolve(ctx, r, surface)
+
+	// One-shot guest→user state merge: the first authed request from an IP
+	// carries any guest dismissals/completions into user_next_actions so
+	// pre-auth nudge fatigue doesn't resurface (§122).
+	if state.UserID.Valid && s.cache != nil {
+		mergedKey := valkey.MustKey("nextactions:merged:%s", state.UserID.String())
+		if ok, err := s.cache.SetNX(ctx, mergedKey, "1", 90*24*time.Hour).Result(); err == nil && ok {
+			s.MergeGuestState(ctx, state.UserID, clientip.FromRequest(r))
+		}
+	}
 
 	cacheKey := s.cacheKey(state)
 	if s.cache != nil {
