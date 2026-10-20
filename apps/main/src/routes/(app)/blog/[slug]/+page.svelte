@@ -12,6 +12,7 @@
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
 	import InArticleAd from '$lib/components/ads/InArticleAd.svelte';
+	import NextActionInline from '$lib/components/shell/NextActionInline.svelte';
 	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { imgLightbox } from '$lib/lightbox.svelte';
@@ -280,6 +281,7 @@
 		     InArticleAd splits the sanitized body on block boundaries and
 		     injects the article_inline ad slot (§25 amendment). -->
 		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:imgLightbox>
+			<NextActionInline />
 			<InArticleAd html={sanitizedBody} />
 		</div>
 

@@ -16,6 +16,7 @@
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
 	import InArticleAd from '$lib/components/ads/InArticleAd.svelte';
+	import NextActionInline from '$lib/components/shell/NextActionInline.svelte';
 	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
@@ -309,7 +310,8 @@
 			     InArticleAd injects the article_inline slot between blocks (§25). -->
 			{#if sanitizedBody}
 				<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:imgLightbox>
-					<InArticleAd html={sanitizedBody} />
+					<NextActionInline />
+			<InArticleAd html={sanitizedBody} />
 				</div>
 			{/if}
 

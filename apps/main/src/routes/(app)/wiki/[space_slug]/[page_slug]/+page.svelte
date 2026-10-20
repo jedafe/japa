@@ -12,6 +12,7 @@
 	import WikiRollupPanel from '$lib/components/wiki/WikiRollupPanel.svelte';
 	import WikiDirectoryPanel from '$lib/components/wiki/WikiDirectoryPanel.svelte';
 	import InArticleAd from '$lib/components/ads/InArticleAd.svelte';
+	import NextActionInline from '$lib/components/shell/NextActionInline.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
@@ -642,6 +643,7 @@
 				{:else}
 					{#if htmlContent}
 						<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]" use:imgLightbox>
+							<NextActionInline />
 							<InArticleAd html={htmlContent} {spaceId} />
 						</div>
 					{:else if !data.page.directory}
