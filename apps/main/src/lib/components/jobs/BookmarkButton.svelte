@@ -4,6 +4,7 @@
 	import { t } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
 
 	interface Props {
 		entityType: string;
@@ -23,6 +24,15 @@
 	let currentCount = $state(untrack(() => count));
 	let loading = $state(false);
 
+	// Hydrate real bookmark state — callers pass the SSR guess (usually
+	// false); without this a saved job shows as unsaved and can't be
+	// un-bookmarked. getViewerState batches all cards into one request.
+	$effect(() => {
+		if (entityType === 'content' || entityType === 'blog_post') {
+			void getViewerState(entityId).then((s) => (isOn = s.bookmarked));
+		}
+	});
+
 	async function toggle() {
 		if (loading) return;
 		// Guests can't bookmark — redirect to login instead of hitting a 401.
@@ -41,11 +51,14 @@
 			// the bookmark row ID, so it is handled by the forum UI directly,
 			// not this generic button.
 			if (entityType === 'content' || entityType === 'blog_post') {
-				if (wasOn) {
-					await api.delete(`/content/${entityId}/bookmark`);
-				} else {
-					await api.post(`/content/${entityId}/bookmark`, {});
-				}
+				// The api client never throws — it returns { error } — so
+				// check the result and revert the optimistic toggle on any
+				// failure (previously failures silently stuck "on").
+				const res = wasOn
+					? await api.delete(`/content/${entityId}/bookmark`)
+					: await api.post(`/content/${entityId}/bookmark`, {});
+				if (res.error) throw new Error(res.error.message);
+				updateViewerState(entityId, { bookmarked: !wasOn });
 			} else {
 				throw new Error(`BookmarkButton does not support entity_type "${entityType}"`);
 			}

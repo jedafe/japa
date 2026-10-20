@@ -31,7 +31,10 @@ export const load: PageServerLoad = async (event) => {
 	const remote = event.url.searchParams.get('remote') ?? event.url.searchParams.get('location_type');
 	const visaSponsorship = event.url.searchParams.get('visa_sponsorship');
 	const sort = event.url.searchParams.get('sort');
-	const page = event.url.searchParams.get('page') ?? '1';
+	// Clamp garbage page params (?page=abc / ?page=-3) — a NaN here used to
+	// render "Showing NaN-NaN of N" while the backend silently served page 1.
+	const rawPage = parseInt(event.url.searchParams.get('page') ?? '', 10);
+	const page = String(Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1);
 	if (q) params.set('q', q);
 	if (country) params.set('country', country);
 	if (jobType) params.set('job_type', jobType);

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, siteName } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Briefcase, FileText } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
@@ -17,7 +17,7 @@
 		return i < 0 ? -1 : i;
 	};
 
-	const title = $derived(t('jobs.my_applications', 'My Applications — {site}'));
+	const title = $derived(`${t('jobs.my_applications', 'My Applications')} — ${siteName()}`);
 	const applications = $derived<JobApplication[]>(data.applications);
 	const meta = $derived(data.meta);
 

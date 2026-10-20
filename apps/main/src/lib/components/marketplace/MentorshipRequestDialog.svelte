@@ -255,7 +255,7 @@
 
 			<div class="flex flex-col gap-1.5">
 				<label for="mreq-dest" class="text-sm font-medium text-[var(--color-text)]">
-					{t('services.mentor_countries_covered', 'Countries covered')}
+					{t('services.mentor_destination', 'Your Destination')}
 				</label>
 				<Autocomplete
 					id="mreq-dest"

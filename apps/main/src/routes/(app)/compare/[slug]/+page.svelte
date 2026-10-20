@@ -187,7 +187,7 @@
 	{/if}
 </svelte:head>
 
-<div class="mx-auto max-w-5xl space-y-6 p-4">
+<div class="mx-auto w-full max-w-3xl space-y-6 p-4">
 	<div class="flex flex-wrap items-start justify-between gap-4">
 		<div class="space-y-1">
 			<a

@@ -9,11 +9,11 @@
 package mcp
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
 	"io"
 	"log/slog"
 	"math/big"
@@ -33,10 +33,10 @@ import (
 const (
 	protocolVersion = "2024-11-05"
 	serverName      = "japa-mcp"
-	
-	serverVersion   = "1.0.0"
-	maxBodyBytes    = 1 << 20 // 1 MiB
-	maxBatchSize    = 100     // bounds a single JSON-RPC batch POST
+
+	serverVersion = "1.0.0"
+	maxBodyBytes  = 1 << 20 // 1 MiB
+	maxBatchSize  = 100     // bounds a single JSON-RPC batch POST
 
 	// serverInstructions rides the initialize result. OpenAI's submission
 	// scan imports it and Anthropic reviewers read it — keep it accurate:
@@ -55,8 +55,9 @@ const (
 // session over our stateless subset.
 var supportedClientVersions = []string{protocolVersion, "2025-03-26", "2025-06-18", "2025-11-25"}
 
-// serverTitle resolves the configured brand name (general.site_name →
-// cfg.SiteName) for the MCP initialize result. Falls back to brand.Default.
+// serverTitle resolves the configured brand name — cfg.SiteName captured at
+// startup via brand.Set (the general.site_name system setting does not feed
+// this path). Falls back to brand.Default.
 func serverTitle() string { return brand.Get() }
 
 func serverInstructions() string { return serverTitle() + " " + serverInstructionsText }
@@ -308,7 +309,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	if err != nil {
 		s.writeError(w, nil, -32700, "Parse error", err.Error())
 		return
@@ -349,28 +350,36 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, user *auth.A
 // handleBatch processes a JSON-RPC array: each element is dispatched like a
 // single request and every response is collected. Per spec, a batch of only
 // notifications produces no response body (202); an empty batch is an
-// Invalid Request error.
+// Invalid Request error. Elements that are not valid Request objects get
+// their own -32600 entry rather than sinking the whole batch.
 func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser, body []byte) {
-	var reqs []jsonRPCRequest
-	if err := json.Unmarshal(body, &reqs); err != nil {
+	var raw []json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
 		s.writeError(w, nil, -32700, "Parse error", err.Error())
 		return
 	}
 
-	if len(reqs) == 0 {
+	if len(raw) == 0 {
 		s.writeError(w, nil, -32600, "Invalid Request", "empty batch")
 		return
 	}
 
-	if len(reqs) > maxBatchSize {
+	if len(raw) > maxBatchSize {
 		s.writeError(w, nil, -32600, "Invalid Request", "batch too large")
 		return
 	}
 
 	var out []*jsonRPCResponse
 
-	for i := range reqs {
-		req := &reqs[i]
+	for i := range raw {
+		var req jsonRPCRequest
+		if err := json.Unmarshal(raw[i], &req); err != nil {
+			// A malformed element (number, string, broken object) is an
+			// Invalid Request, not a notification — the id is unknowable.
+			out = append(out, s.errorResp(nil, -32600, "Invalid Request", "element is not a valid JSON-RPC request"))
+			continue
+		}
+
 		// Elements without an id are notifications — never answered, even
 		// when malformed.
 		if req.ID == nil {
@@ -382,7 +391,7 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request, user *auth.
 			continue
 		}
 
-		resp, isNotification := s.handle(r.Context(), user, req)
+		resp, isNotification := s.handle(r.Context(), user, &req)
 		if isNotification {
 			continue
 		}
@@ -697,9 +706,12 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 
 	// §120: search/fetch are synthetic aliases over content.search /
 	// content.read — dispatch before the catalog check (the alias name is
-	// not a catalog row).
-	if alias, ok := chatGPTAliasTools[callReq.Name]; ok {
-		return s.handleAliasCall(ctx, user, req, callReq, alias)
+	// not a catalog row). A real catalog tool holding the same name wins:
+	// the alias must not shadow a registered tool.
+	if alias, ok := chatGPTAliasDef(callReq.Name); ok {
+		if _, realTool := s.registry.Config(callReq.Name); !realTool {
+			return s.handleAliasCall(ctx, user, req, callReq, alias)
+		}
 	}
 
 	// ADR-130 Phase 3: japa.chat is JWT-only. toolDenied denies it for most
@@ -725,6 +737,10 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 		args = []byte("{}")
 	}
 
+	if s.sessions == nil {
+		return s.errorResp(req.ID, -32603, "Internal error", "audit store is not configured"), false
+	}
+
 	// Create an audit session for the tool call.
 	session, err := s.sessions.CreateAgentSession(ctx, gen.CreateAgentSessionParams{
 		UserID:         user.UserID,
@@ -748,6 +764,17 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 		SessionID: session.ID,
 		UserID:    user.UserID,
 	})
+
+	// §119 read-gate narrowing: read-only key/OAuth callers see the public
+	// contract (published + public) even though the §103 tools run with
+	// internal visibility for their principal.
+	if res != nil {
+		if filtered, denied := s.filterReadOnlyResult(ctx, callReq.Name, res.Content); denied {
+			res = &ai.ToolResult{Status: ai.ToolCallStatusError, Content: filtered}
+		} else {
+			res.Content = filtered
+		}
+	}
 
 	s.finalizeSession(ctx, session.ID, callReq.Name, res, execErr)
 
@@ -847,6 +874,10 @@ func withHITLReview(content, reviewID string) string {
 }
 
 func (s *Server) finalizeSession(ctx context.Context, sessionID pgtype.UUID, toolName string, res *ai.ToolResult, execErr error) {
+	if s.sessions == nil {
+		return
+	}
+
 	if execErr != nil {
 		msg := execErr.Error()
 		if _, err := s.sessions.FailAgentSession(ctx, gen.FailAgentSessionParams{

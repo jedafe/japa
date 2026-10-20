@@ -656,9 +656,12 @@ func (s *OAuthService) RevokeToken(ctx context.Context, token string) error {
 
 // revokeTokenFamily revokes a client/user token family and drops the famrev
 // tombstone so cached access tokens die within the cache window. Callers
-// write the audit row.
+// write the audit row. A store failure is logged — the security event still
+// proceeds to the audit row and error path.
 func (s *OAuthService) revokeTokenFamily(ctx context.Context, clientID string, userID pgtype.UUID) {
-	_ = s.store.RevokeTokenFamily(ctx, clientID, userID)
+	if err := s.store.RevokeTokenFamily(ctx, clientID, userID); err != nil {
+		slog.ErrorContext(ctx, "oauth: revoke token family", "error", err, "client_id", clientID)
+	}
 	if s.cache != nil {
 		// Tombstone outlives the access-token cache window.
 		_ = s.cache.Set(ctx, famrevCacheKey(clientID, userID), "1", s.tokenCacheTTL(ctx)).Err()
@@ -683,6 +686,43 @@ func (s *OAuthService) RevokeUserGrant(ctx context.Context, clientID string, use
 	}
 
 	return nil
+}
+
+// isValidCodeVerifier enforces RFC 7636 §4.1: 43–128 characters from the
+// unreserved set. A malformed verifier is an invalid grant, not a PKCE
+// mismatch.
+func isValidCodeVerifier(v string) bool {
+	if len(v) < 43 || len(v) > 128 {
+		return false
+	}
+
+	for _, c := range v {
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_' || c == '~' {
+			continue
+		}
+
+		return false
+	}
+
+	return true
+}
+
+// isS256Challenge enforces the S256 challenge shape: base64url (no padding)
+// of a 32-byte digest — exactly 43 chars from the base64url alphabet.
+func isS256Challenge(c string) bool {
+	if len(c) != 43 {
+		return false
+	}
+
+	for _, ch := range c {
+		if ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '-' || ch == '_' {
+			continue
+		}
+
+		return false
+	}
+
+	return true
 }
 
 // verifyPKCE checks a code_verifier against a stored S256 challenge.
@@ -771,7 +811,7 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context, code, clie
 		return nil, errors.New("invalid grant")
 	}
 
-	if !verifyPKCE(codeVerifier, grant.CodeChallenge) {
+	if !isValidCodeVerifier(codeVerifier) || !verifyPKCE(codeVerifier, grant.CodeChallenge) {
 		return nil, errors.New("invalid grant")
 	}
 

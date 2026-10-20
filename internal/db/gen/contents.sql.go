@@ -745,7 +745,7 @@ SELECT id, author_id, organization_id, space_id, content_type, title, slug, body
  created_at, updated_at, guide_category,
  ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
  journey_stage, visa_route, source_country, target_country, video_source_id,
- intel_source_id, intel_record_id
+ intel_source_id, intel_record_id, auto_hidden
 FROM contents
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -796,6 +796,7 @@ type GetContentByIDRow struct {
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
 	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
+	AutoHidden      bool               `json:"auto_hidden"`
 }
 
 func (q *Queries) GetContentByID(ctx context.Context, id pgtype.UUID) (GetContentByIDRow, error) {
@@ -847,6 +848,7 @@ func (q *Queries) GetContentByID(ctx context.Context, id pgtype.UUID) (GetConten
 		&i.VideoSourceID,
 		&i.IntelSourceID,
 		&i.IntelRecordID,
+		&i.AutoHidden,
 	)
 	return i, err
 }

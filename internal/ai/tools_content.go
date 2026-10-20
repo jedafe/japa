@@ -244,13 +244,16 @@ func filterExemptContentFromSpace(ctx context.Context, privacy PrivacyExemptionC
 }
 
 // contentSearchResult is the trimmed shape sent back to the LLM. Large fields
-// (body, field_values) are omitted to keep the tool result compact.
+// (body, field_values) are omitted to keep the tool result compact. Status and
+// visibility ride along so consumers of the result (e.g. the §119 MCP read
+// gate) can post-filter to a narrower visibility contract.
 type contentSearchResult struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	Slug        string `json:"slug"`
 	ContentType string `json:"content_type"`
 	Status      string `json:"status"`
+	Visibility  string `json:"visibility"`
 	GeoSpaceID  string `json:"geo_space_id,omitempty"`
 	SpaceName   string `json:"space_name,omitempty"`
 	AuthorName  string `json:"author_name,omitempty"`
@@ -267,6 +270,7 @@ func contentSearchResultsFromPlatform(rows []gen.ListContentsRow) []contentSearc
 			Slug:        r.Slug,
 			ContentType: r.ContentType,
 			Status:      r.Status,
+			Visibility:  r.Visibility,
 			GeoSpaceID:  uuidString(r.GeoSpaceID),
 			CreatedAt:   timestampString(r.CreatedAt),
 		}
@@ -295,6 +299,7 @@ func contentSearchResultsFromSpace(rows []gen.SearchContentsBySpaceRow) []conten
 			Slug:        r.Slug,
 			ContentType: r.ContentType,
 			Status:      r.Status,
+			Visibility:  r.Visibility,
 			GeoSpaceID:  uuidString(r.GeoSpaceID),
 			CreatedAt:   timestampString(r.CreatedAt),
 		})
@@ -358,6 +363,7 @@ func ContentReadHandler(deps *ToolDeps) ToolHandler {
 				"body":         content.Body,
 				"status":       content.Status,
 				"visibility":   content.Visibility,
+				"auto_hidden":  content.AutoHidden,
 				"author_id":    uuidString(content.AuthorID),
 				"geo_space_id": uuidString(content.GeoSpaceID),
 				"created_at":   timestampString(content.CreatedAt),

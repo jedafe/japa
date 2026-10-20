@@ -16,6 +16,7 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
+	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { navigating } from '$app/state';
 	import type { JobListing } from '$lib/types';
@@ -81,6 +82,9 @@
 		if (qTimer) clearTimeout(qTimer);
 		qTimer = setTimeout(applyFilters, 400);
 	}
+	onDestroy(() => {
+		if (qTimer) clearTimeout(qTimer);
+	});
 
 	function clearFilters() {
 		q = '';
@@ -228,7 +232,7 @@
 	{/if}
 {/snippet}
 
-<div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1rem">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<ListPageBar title={t('jobs.heading', 'Jobs')}>
 		{#snippet actions()}
 			{#if !disabled}
@@ -250,7 +254,7 @@
 	</ListPageBar>
 
 	{#if disabled}
-		<div class="p-4">
+		<div class="mx-auto w-full max-w-3xl p-4">
 			<EmptyState
 				icon={Lock}
 				title={t('tools.disabled_title', 'This tool is currently unavailable')}
@@ -335,7 +339,7 @@
 		{/if}
 
 		<!-- Results -->
-		<div class="p-4">
+		<div class="mx-auto w-full max-w-3xl p-4">
 			{#if navigating.to}
 				<LoadingSkeleton variant="card" />
 			{:else if jobs.length === 0}

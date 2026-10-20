@@ -226,6 +226,13 @@ func (h *OAuthHandlers) HandleRegister(w http.ResponseWriter, r *http.Request) {
 
 	scopes := filterGrantableScopes(strings.Fields(req.Scope))
 	if len(scopes) == 0 {
+		if strings.TrimSpace(req.Scope) != "" {
+			// The client asked for scopes and none are grantable — do not
+			// silently widen the registration to the full default set.
+			writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "scope contains no grantable values")
+			return
+		}
+
 		scopes = oauthDefaultScopeSet
 	}
 
@@ -234,8 +241,8 @@ func (h *OAuthHandlers) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		name = "MCP Client"
 	}
 
-	if len(name) > maxClientNameLen {
-		name = name[:maxClientNameLen]
+	if runes := []rune(name); len(runes) > maxClientNameLen {
+		name = string(runes[:maxClientNameLen])
 	}
 
 	// §120: hard cap on registered clients — DCR is public, so per-IP rate
@@ -470,11 +477,11 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 		return p, reqErr("invalid_request", "code_challenge_method must be S256")
 	}
 
-	if q.Get("code_challenge") == "" {
-		return p, reqErr("invalid_request", "code_challenge is required")
+	if !isS256Challenge(q.Get("code_challenge")) {
+		return p, reqErr("invalid_request", "code_challenge must be a base64url-encoded SHA-256 digest (43 chars)")
 	}
 
-	if len(q.Get("code_challenge")) > 512 || len(q.Get("scope")) > maxOAuthScopeField {
+	if len(q.Get("scope")) > maxOAuthScopeField {
 		return p, reqErr("invalid_request", "request field too long")
 	}
 

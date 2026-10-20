@@ -18,11 +18,11 @@
 package main
 
 import (
-	"errors"
 	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -140,11 +140,29 @@ func relay(client *http.Client, url, apiKey, token string, msg []byte, out *bufi
 		return
 	}
 
-	var probe struct {
-		JSONRPC string `json:"jsonrpc"`
+	// Accept both single-response objects and batch arrays — the streamable
+	// transport answers a batch POST with a JSON array, and mangling it into
+	// a synthesized error would hang hosts that batch notifications with
+	// their first request.
+	var probe any
+	if err := json.Unmarshal(body, &probe); err != nil {
+		slog.Error("mcpbridge: upstream body is not JSON-RPC")
+		writeSyntheticError(msg, out, "upstream returned a non-JSON-RPC response")
+
+		return
 	}
 
-	if json.Unmarshal(body, &probe) != nil || probe.JSONRPC != "2.0" {
+	switch v := probe.(type) {
+	case map[string]any:
+		if v["jsonrpc"] != "2.0" {
+			slog.Error("mcpbridge: upstream body is not JSON-RPC")
+			writeSyntheticError(msg, out, "upstream returned a non-JSON-RPC response")
+
+			return
+		}
+	case []any:
+		// Batch response — pass through verbatim.
+	default:
 		slog.Error("mcpbridge: upstream body is not JSON-RPC")
 		writeSyntheticError(msg, out, "upstream returned a non-JSON-RPC response")
 
@@ -164,33 +182,79 @@ func relay(client *http.Client, url, apiKey, token string, msg []byte, out *bufi
 }
 
 // writeSyntheticError emits a JSON-RPC error echoing the request's id so
-// the host can correlate the failure instead of timing out silently. A
-// message with no id member is a notification — the spec forbids answering
-// those, so nothing is written.
+// the host can correlate the failure instead of timing out silently. For a
+// batch request it emits a batch error array — one entry per element that
+// carries an id. Notification elements (no id member) are never answered.
 func writeSyntheticError(msg []byte, out *bufio.Writer, message string) {
-	var probe map[string]json.RawMessage
-	if json.Unmarshal(msg, &probe) != nil {
-		probe = nil
-	}
-
-	id, hasID := probe["id"]
-	if !hasID {
+	trimmed := bytes.TrimSpace(msg)
+	if len(trimmed) == 0 {
 		return
 	}
 
-	if len(id) == 0 {
-		id = json.RawMessage("null")
+	var payload []byte
+
+	if trimmed[0] == '[' {
+		var elems []json.RawMessage
+		if json.Unmarshal(trimmed, &elems) != nil {
+			return
+		}
+
+		var resps []json.RawMessage
+
+		for _, e := range elems {
+			if id := elementID(e); id != nil {
+				resps = append(resps, syntheticErrorResponse(id, message))
+			}
+		}
+
+		if len(resps) == 0 {
+			return
+		}
+
+		payload, _ = json.Marshal(resps)
+	} else {
+		id := elementID(trimmed)
+		if id == nil {
+			return
+		}
+
+		payload = syntheticErrorResponse(id, message)
 	}
 
-	resp, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
-		"id":      id,
-		"error":   map[string]any{"code": -32603, "message": message},
-	})
-	if _, err := out.Write(append(resp, '\n')); err != nil {
+	if _, err := out.Write(append(payload, '\n')); err != nil {
 		slog.Error("mcpbridge: write synthetic error", "error", err)
 		return
 	}
 
 	_ = out.Flush()
+}
+
+// elementID extracts the id member of a JSON-RPC message, or nil when the
+// element is not an object or carries no id (a notification).
+func elementID(msg []byte) json.RawMessage {
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(msg, &probe) != nil {
+		return nil
+	}
+
+	id, hasID := probe["id"]
+	if !hasID {
+		return nil
+	}
+
+	if len(id) == 0 {
+		return json.RawMessage("null")
+	}
+
+	return id
+}
+
+func syntheticErrorResponse(id json.RawMessage, message string) json.RawMessage {
+	resp, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error":   map[string]any{"code": -32603, "message": message},
+	})
+
+	return resp
 }

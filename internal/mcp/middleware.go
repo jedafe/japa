@@ -205,9 +205,20 @@ func validateAPIKey(ctx context.Context, r *http.Request, apiKey string, publicA
 		return nil, nil, err
 	}
 
-	// IP allowlist enforcement (same as public API middleware).
+	// IP allowlist enforcement (same as public API middleware, including its
+	// fail-closed posture: when the client IP cannot be resolved at all, a
+	// key with allowlist rows must not pass unchecked).
 	clientIP := clientip.FromRequest(r)
-	if clientIP != "" {
+	if clientIP == "" {
+		restricted, err := publicAPIService.HasIPRestrictions(ctx, keyCtx.KeyID)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if restricted {
+			return nil, nil, errors.New("IP not allowed")
+		}
+	} else {
 		allowed, err := publicAPIService.HasIPAccess(ctx, keyCtx.KeyID, clientIP)
 		if err != nil {
 			return nil, nil, err

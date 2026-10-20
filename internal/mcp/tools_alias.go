@@ -13,7 +13,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -29,29 +28,41 @@ type chatGPTAliasTool struct {
 	schema      map[string]any
 }
 
-var chatGPTAliasTools = map[string]chatGPTAliasTool{
-	"search": {
-		underlying:  "content.search",
-		description: "Search published " + serverTitle() + " content — posts, articles, guides, visa and relocation resources. Returns id, title, and url for each result; call fetch with an id to read the full text.",
-		schema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"query": map[string]any{"type": "string", "description": "Search query"},
+// chatGPTAliasNames is the sorted alias set — deterministic for tools/list.
+var chatGPTAliasNames = []string{"fetch", "search"}
+
+// chatGPTAliasDef returns the alias definition for name. Built lazily per
+// call so serverTitle() resolves the configured brand — a package-level map
+// literal would freeze brand.Default before NewServer calls brand.Set.
+func chatGPTAliasDef(name string) (chatGPTAliasTool, bool) {
+	switch name {
+	case "search":
+		return chatGPTAliasTool{
+			underlying:  "content.search",
+			description: "Search published " + serverTitle() + " content — posts, articles, guides, visa and relocation resources. Returns id, title, and url for each result; call fetch with an id to read the full text.",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string", "description": "Search query"},
+				},
+				"required": []any{"query"},
 			},
-			"required": []any{"query"},
-		},
-	},
-	"fetch": {
-		underlying:  "content.read",
-		description: "Fetch the full text of a " + serverTitle() + " content item by the id returned from search.",
-		schema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"id": map[string]any{"type": "string", "description": "Content id from a search result"},
+		}, true
+	case "fetch":
+		return chatGPTAliasTool{
+			underlying:  "content.read",
+			description: "Fetch the full text of a " + serverTitle() + " content item by the id returned from search.",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id": map[string]any{"type": "string", "description": "Content id from a search result"},
+				},
+				"required": []any{"id"},
 			},
-			"required": []any{"id"},
-		},
-	},
+		}, true
+	}
+
+	return chatGPTAliasTool{}, false
 }
 
 // aliasDescriptors returns the MCP tool descriptors for the search/fetch
@@ -59,17 +70,16 @@ var chatGPTAliasTools = map[string]chatGPTAliasTool{
 // only offered when the real tool is in the caller's catalog. Sorted for a
 // deterministic tools/list payload.
 func (s *Server) aliasDescriptors(ctx context.Context, user *auth.AuthenticatedUser, tier string) []mcpTool {
-	names := make([]string, 0, len(chatGPTAliasTools))
-	for name := range chatGPTAliasTools {
-		names = append(names, name)
-	}
-
-	sort.Strings(names)
-
 	var out []mcpTool
 
-	for _, name := range names {
-		alias := chatGPTAliasTools[name]
+	for _, name := range chatGPTAliasNames {
+		alias, _ := chatGPTAliasDef(name)
+
+		// A real catalog tool holding the alias name wins — the alias is
+		// skipped rather than shadowing it.
+		if _, collision := s.registry.Config(name); collision {
+			continue
+		}
 
 		if s.toolDeniedWithTier(ctx, user, name, tier) != "" {
 			continue
@@ -137,6 +147,10 @@ func (s *Server) handleAliasCall(ctx context.Context, user *auth.AuthenticatedUs
 		return s.errorResp(req.ID, -32602, "Invalid params", err.Error()), false
 	}
 
+	if s.sessions == nil {
+		return s.errorResp(req.ID, -32603, "Internal error", "audit store is not configured"), false
+	}
+
 	session, serr := s.sessions.CreateAgentSession(ctx, gen.CreateAgentSessionParams{
 		UserID:         user.UserID,
 		Prompt:         "mcp:" + callReq.Name,
@@ -165,7 +179,14 @@ func (s *Server) handleAliasCall(ctx context.Context, user *auth.AuthenticatedUs
 	}
 
 	if !isError {
-		text = s.reshapeAliasResult(callReq.Name, text)
+		// §119 read-gate narrowing for key/OAuth callers — the alias
+		// contract is published+public only (same as /api/v1/public).
+		if filtered, denied := s.filterReadOnlyResult(ctx, alias.underlying, text); denied {
+			text = filtered
+			isError = true
+		} else {
+			text = s.reshapeAliasResult(callReq.Name, filtered)
+		}
 	}
 
 	return &jsonRPCResponse{

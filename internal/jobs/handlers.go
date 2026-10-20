@@ -221,6 +221,25 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleFieldOptions handles GET /api/v1/jobs/field-options — public seeded
+// select options for job_listing_fields (job_type, location_type, …) so the
+// finder filter UI can offer the full canonical set.
+func (h *Handlers) HandleFieldOptions(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
+	opts, err := h.service.FieldOptions(r.Context())
+	if err != nil {
+		slog.Error("jobs: field options failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "field_options_failed", "Failed to load field options")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": opts})
+}
+
 // HandleJobDetail handles GET /api/v1/jobs/:slug — public job detail.
 func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
 	if h.service != nil && !h.service.IsEnabled(r.Context()) {
@@ -236,8 +255,13 @@ func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
 
 	detail, err := h.service.GetJobDetail(r.Context(), slug)
 	if err != nil {
+		if errors.Is(err, ErrJobNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "job_not_found", "Job not found")
+			return
+		}
+
 		slog.Error("jobs: detail failed", "error", err, "slug", slug)
-		errpkg.WriteError(w, http.StatusNotFound, "job_not_found", "Job not found")
+		errpkg.WriteError(w, http.StatusInternalServerError, "job_detail_failed", "Failed to load job")
 
 		return
 	}
@@ -290,6 +314,16 @@ func (h *Handlers) HandleApply(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrDuplicateApplication) {
 			errpkg.WriteError(w, http.StatusConflict, "already_applied", "You have already applied to this job")
+			return
+		}
+
+		if errors.Is(err, ErrJobNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "job_not_found", "Job not found")
+			return
+		}
+
+		if errors.Is(err, ErrJobNotOpen) {
+			errpkg.WriteError(w, http.StatusConflict, "job_not_open", "This job is not accepting applications")
 			return
 		}
 

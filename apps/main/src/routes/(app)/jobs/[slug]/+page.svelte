@@ -21,6 +21,7 @@
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { safeHttpUrl } from '$lib/utils/safeUrl';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { salaryPeriodLabel } from '$lib/utils/jobs';
 	import { currencySymbol } from '$lib/utils/currency';
 
@@ -72,6 +73,7 @@
 			auth_required: t('jobs.apply_auth_required', 'Sign in to apply for this job.'),
 			validation_failed: t('jobs.apply_failed', 'Could not submit your application.'),
 			cv_upload_failed: t('jobs.cv_upload_failed', 'Could not upload your CV — please try again or apply without it.'),
+			attachments_unavailable: t('jobs.attachments_unavailable', 'Could not attach your CV/cover letter — please try again.'),
 			apply_failed: t('jobs.apply_failed', 'Could not submit your application.')
 		};
 		return map[code] ?? t('jobs.apply_failed', 'Could not submit your application.');
@@ -133,20 +135,34 @@
 				}
 				await confirmMedia(init.data.media_id);
 				const media = await api.get<MediaAsset>(`/media/${init.data.media_id}`);
-				if (media.data?.url) {
-					fv.resume_url = media.data.url;
-					fv.resume_filename = cvFile.name;
+				if (media.error || !media.data?.url) {
+					applyResult = { error: 'cv_upload_failed' };
+					return;
 				}
+				fv.resume_url = media.data.url;
+				fv.resume_filename = cvFile.name;
 			}
 			if (coverLetter.trim()) fv.cover_letter = coverLetter.trim();
 
 			let submissionId = '';
-			if (Object.keys(fv).length > 0 && data.applicationFormId) {
+			if (Object.keys(fv).length > 0) {
+				// The CV was uploaded above — if we can't persist it to a
+				// form_submissions row the application must NOT silently
+				// proceed without it (silent data loss). Abort and let the
+				// applicant retry instead.
+				if (!data.applicationFormId) {
+					applyResult = { error: 'attachments_unavailable' };
+					return;
+				}
 				const sub = await api.post<{ id: string }>(
 					`/forms/${data.applicationFormId}/submissions`,
 					{ field_values: fv }
 				);
-				submissionId = sub.data?.id ?? '';
+				if (sub.error || !sub.data?.id) {
+					applyResult = { error: 'attachments_unavailable' };
+					return;
+				}
+				submissionId = sub.data.id;
 			}
 
 			const res = await api.post<{ id: string; status: string }>(
@@ -197,12 +213,26 @@
 	);
 
 	const companyName = $derived(field('company_name') || job?.poster?.name || '');
-	const companyLogo = $derived(field('company_logo') || job?.poster?.logo_url || '');
+	// Remote logos route through the backend media proxy (CORP/ORB-safe) —
+	// same-origin media paths pass through unchanged.
+	const companyLogo = $derived(
+		remoteImageUrl(field('company_logo') || job?.poster?.logo_url || '')
+	);
 	const companyVerified = $derived(data.org?.verified ?? job?.poster?.verified ?? false);
 	const orgHref = $derived(
 		job?.poster?.kind === 'organization' && job.poster.slug ? `/org/${job.poster.slug}` : ''
 	);
 	const externalApplyUrl = $derived(safeHttpUrl(field('application_url')));
+
+	// Past-deadline listings stay viewable (published until the
+	// jobs:expire_listings task archives them) but must not accept
+	// applications — the API now rejects them with 409 job_not_open.
+	const isExpired = $derived.by(() => {
+		const raw = field('application_deadline');
+		if (!raw) return false;
+		const d = new Date(raw);
+		return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
+	});
 	const postedAgo = $derived(job ? relativeTime(job.published_at, new Date(), i18n.locale) : '');
 	// job_type / location_type have seeded i18n labels (jobs.type_*, jobs.remote…)
 	// — fall back to the prettified token for unseeded values.
@@ -401,7 +431,7 @@
 	{/if}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-6xl px-4 py-4">
+<div class="mx-auto w-full max-w-3xl px-4 py-4">
 	{#if !job}
 		<EmptyState icon={Briefcase} title={t('jobs.not_found', 'Job not found')} />
 	{:else}
@@ -460,6 +490,11 @@
 						{#if jobTypeLabel}
 							<span class="rounded-full bg-[var(--color-success)]/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-success)]">
 								{jobTypeLabel}
+							</span>
+						{/if}
+						{#if isExpired}
+							<span class="rounded-full bg-[var(--color-danger)]/10 px-2.5 py-0.5 text-[11px] font-medium text-[var(--color-danger)]">
+								{t('jobs.expired', 'Expired')}
 							</span>
 						{/if}
 						{#if field('is_featured') === 'true'}
@@ -525,7 +560,11 @@
 					{/if}
 				</div>
 				<div class="flex w-full flex-col gap-2 sm:w-auto sm:min-w-44">
-					{#if myApplication}
+					{#if isExpired && !myApplication}
+						<div class="inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-4 py-2.5 text-sm font-medium text-[var(--color-muted)]">
+							<AlertCircle size={16} /> {t('jobs.expired_apply', 'Applications closed')}
+						</div>
+					{:else if myApplication}
 						<div class="inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-success)]/10 px-4 py-2.5 text-sm font-medium text-[var(--color-success)]">
 							<CheckCircle2 size={16} /> {t('jobs.status_applied', 'Applied')}
 						</div>
@@ -615,7 +654,12 @@
 						{t('jobs.apply', 'Apply for this job')}
 					</h2>
 
-					{#if externalApplyUrl}
+					{#if isExpired && !myApplication}
+						<p class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+							<AlertCircle size={16} class="shrink-0" />
+							{t('jobs.expired_apply_body', 'The application deadline for this job has passed.')}
+						</p>
+					{:else if externalApplyUrl}
 						<p class="mb-3 text-sm text-[var(--color-muted)]">
 							{t('jobs.apply_external_hint', 'This job is listed externally. Apply on the employer site.')}
 						</p>

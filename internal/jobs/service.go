@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -82,6 +83,16 @@ var ErrDuplicateContent = errors.New("jobs: duplicate content")
 // validation — e.g. a url-typed field carrying a non-http(s) value. Handlers
 // map it to 400 invalid_field_value (Rule 5).
 var ErrInvalidFieldValue = errors.New("jobs: invalid field value")
+
+// ErrJobNotFound is returned when a job_listing content row does not exist
+// (or is soft-deleted). Handlers map it to 404 job_not_found.
+var ErrJobNotFound = errors.New("jobs: job not found")
+
+// ErrJobNotOpen is returned when an application targets a listing that is no
+// longer accepting applications — unpublished/archived or past its
+// application_deadline. Handlers map it to 409 job_not_open (the code the
+// /jobs/[slug] apply form already understands).
+var ErrJobNotOpen = errors.New("jobs: job is not open for applications")
 
 // JobFilters holds the server-side filter parameters for the job finder.
 type JobFilters struct {
@@ -308,6 +319,46 @@ var (
 	OrgJobAdminRoles = []string{"owner", "admin"}
 )
 
+// JobFieldOption is one option of a select-typed job_listing_fields field.
+type JobFieldOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// FieldOptions returns the seeded select-field options for the
+// job_listing_fields group, keyed by field key. Public: the finder filter UI
+// needs the canonical option set (Rule 16 — no hardcoded option lists), and
+// /custom-field-groups is auth-gated so guests can't reach the definitions
+// through the admin surface.
+func (s *Service) FieldOptions(ctx context.Context) (map[string][]JobFieldOption, error) {
+	rows, err := s.store.pool.Reader.Query(ctx, `
+		SELECT cf.key, cf.options
+		FROM custom_fields cf
+		JOIN custom_field_groups g ON g.id = cf.group_id
+		WHERE g.slug = 'job_listing_fields' AND cf.field_type = 'select'`)
+	if err != nil {
+		return nil, fmt.Errorf("jobs: field options: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string][]JobFieldOption)
+	for rows.Next() {
+		var (
+			key     string
+			options []byte
+		)
+		if err := rows.Scan(&key, &options); err != nil {
+			return nil, fmt.Errorf("jobs: field options: scan: %w", err)
+		}
+		var opts []JobFieldOption
+		if err := json.Unmarshal(options, &opts); err == nil && len(opts) > 0 {
+			out[key] = opts
+		}
+	}
+
+	return out, rows.Err()
+}
+
 // JobBelongsToOrg returns true if the job (content) is a job_listing in the
 // platform owned by orgID. Used to authorize application routes so a caller
 // cannot reach a job's applications through a different org's ID (JOBS-012).
@@ -366,6 +417,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			NOT EXISTS (
 				SELECT 1 FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				  AND cf.key = 'application_deadline'
 				  AND (
@@ -392,6 +444,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			EXISTS (
 				SELECT 1 FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				  AND cf.key = 'country'
 				  AND cfv.value_text = $%d
@@ -406,6 +459,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			EXISTS (
 				SELECT 1 FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				  AND cf.key = 'job_type'
 				  AND cfv.value_text = $%d
@@ -420,6 +474,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			EXISTS (
 				SELECT 1 FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				  AND cf.key = 'location_type'
 				  AND cfv.value_text = $%d
@@ -434,6 +489,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			EXISTS (
 				SELECT 1 FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				  AND cf.key = 'visa_sponsorship'
 				  AND cfv.value_bool = $%d
@@ -468,6 +524,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 				SELECT cfv.value_text AS deadline_val
 				FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				  AND cf.key = 'application_deadline'
 				LIMIT 1
@@ -481,6 +538,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 				SELECT cfv.value_number AS salary_val
 				FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				  AND cf.key = 'salary_max'
 				LIMIT 1
@@ -512,6 +570,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 					END
 				) FROM custom_field_values cfv
 				  JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				),
 				'{}'::json
@@ -709,6 +768,7 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 					END
 				) FROM custom_field_values cfv
 				  JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				),
 				'{}'::json
@@ -759,7 +819,7 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return JobDetail{}, errors.New("jobs: job not found")
+			return JobDetail{}, ErrJobNotFound
 		}
 
 		return JobDetail{}, fmt.Errorf("jobs: get job detail: %w", err)
@@ -839,6 +899,7 @@ func (s *Service) ListOrgJobs(ctx context.Context, orgID pgtype.UUID, page, limi
 					END
 				) FROM custom_field_values cfv
 				  JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				),
 				'{}'::json
@@ -1003,6 +1064,7 @@ func (s *Service) GetJobByID(ctx context.Context, orgID, jobID pgtype.UUID) (Job
 					END
 				) FROM custom_field_values cfv
 				  JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				),
 				'{}'::json
@@ -1209,13 +1271,26 @@ func generateJobSlug(title string) string {
 	return result
 }
 
+// jobListingFieldScope scopes every custom_field_values read/write to the
+// job_listing_fields group. custom_fields.key is NOT globally unique — the
+// same key (e.g. application_deadline, country) exists in scholarship/grant/
+// wiki field groups — so a bare cf.key match would write one cfv row per
+// same-keyed field across all groups and read them all back.
+const jobListingFieldScope = `AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')`
+
+// htmlTagRe strips markup from bodies before summarizing — bodies may carry
+// HTML (imported listings), and raw tags must never leak into card/meta text.
+var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
+
 // deriveSummary returns a short plain-text summary from a body. The contents
 // table has no summary column (migration 000430 confirms this); the codebase
 // convention is to derive a description from LEFT(body, N). Ref: §63.
 func deriveSummary(body string) string {
 	const max = 200
 
-	r := []rune(strings.TrimSpace(body))
+	plain := strings.Join(strings.Fields(htmlTagRe.ReplaceAllString(body, " ")), " ")
+
+	r := []rune(plain)
 	if len(r) <= max {
 		return string(r)
 	}
@@ -1389,13 +1464,27 @@ func parseJobBool(v string) bool {
 // every write path; invalid values here fail closed with
 // ErrInvalidFieldValue so no caller can persist junk via a direct call.
 func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID, key, value string) error {
-	if value == "" {
-		return nil
-	}
-
 	ft, ok := jobFieldTypes[key]
 	if !ok {
 		slog.Warn("jobs: unknown field key, skipping", "field_key", key)
+		return nil
+	}
+
+	// An empty value clears the field — delete the row (scoped to the
+	// job_listing_fields group) so PATCH callers can unset e.g. salary_max.
+	// Without this, cleared values persist forever (JOBS clear-on-empty).
+	if value == "" {
+		_, err := s.store.pool.Writer.Exec(ctx, `
+			DELETE FROM custom_field_values cfv
+			USING custom_fields cf
+			WHERE cf.id = cfv.field_id
+			  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
+			  AND cf.key = $2
+			  AND cfv.entity_type = 'content' AND cfv.entity_id = $1`,
+			contentID, key)
+		if err != nil {
+			return fmt.Errorf("jobs: field value delete %s: %w", key, err)
+		}
 		return nil
 	}
 
@@ -1479,7 +1568,44 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID
 // ApplyToJob creates a job_applications record. Checks for duplicate — a user
 // can only apply once per job. submissionID is optional (nil if applying with
 // form data submitted separately).
+//
+// The listing must be an open job_listing: published, not soft-deleted, and
+// not past its application_deadline. Without this guard applications land on
+// expired/archived listings and bogus ids surface as a raw 500 FK violation.
 func (s *Service) ApplyToJob(ctx context.Context, jobID, applicantID pgtype.UUID, submissionID *uuid.UUID) (gen.JobApplication, error) {
+	var (
+		status      string
+		deadlineHit bool
+	)
+
+	err := s.store.pool.Reader.QueryRow(ctx, `
+		SELECT c.status,
+			EXISTS (
+				SELECT 1 FROM custom_field_values cfv
+				JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
+				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
+				  AND cf.key = 'application_deadline'
+				  AND (
+					cfv.value_date < now()
+					OR CASE WHEN cfv.value_text ~ '^\d{4}-\d{2}-\d{2}'
+					        THEN cfv.value_text::timestamptz END < now()
+				  )
+			)
+		FROM contents c
+		WHERE c.id = $1 AND c.content_type = 'job_listing' AND c.deleted_at IS NULL`,
+		jobID).Scan(&status, &deadlineHit)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.JobApplication{}, ErrJobNotFound
+		}
+		return gen.JobApplication{}, fmt.Errorf("jobs: apply: job lookup: %w", err)
+	}
+
+	if status != "published" || deadlineHit {
+		return gen.JobApplication{}, ErrJobNotOpen
+	}
+
 	var subID pgtype.UUID
 
 	if submissionID != nil {
@@ -1764,6 +1890,7 @@ func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, lim
 				(SELECT cfv.value_bool
 				 FROM custom_field_values cfv
 				 JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				 WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
 				   AND cf.key = 'is_featured'
 				 LIMIT 1),
@@ -1780,6 +1907,7 @@ func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, lim
 					END
 				) FROM custom_field_values cfv
 				  JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id),
 				'{}'::json
 			) AS field_values,
@@ -1932,6 +2060,7 @@ func (s *Service) ToggleFeature(ctx context.Context, jobID pgtype.UUID) (bool, e
 			(SELECT cfv.value_bool
 			 FROM custom_field_values cfv
 			 JOIN custom_fields cf ON cf.id = cfv.field_id
+				  AND cf.group_id = (SELECT g.id FROM custom_field_groups g WHERE g.slug = 'job_listing_fields')
 			 JOIN contents c ON c.id = cfv.entity_id
 			 WHERE cfv.entity_type = 'content' AND cfv.entity_id = $1
 			   
@@ -1951,8 +2080,9 @@ func (s *Service) ToggleFeature(ctx context.Context, jobID pgtype.UUID) (bool, e
 	var fieldID pgtype.UUID
 
 	err = s.store.pool.Writer.QueryRow(ctx, `
-		SELECT id FROM custom_fields
-		WHERE key = 'is_featured'
+		SELECT cf.id FROM custom_fields cf
+		JOIN custom_field_groups g ON g.id = cf.group_id
+		WHERE g.slug = 'job_listing_fields' AND cf.key = 'is_featured'
 		LIMIT 1`).Scan(&fieldID)
 	if err != nil {
 		return false, fmt.Errorf("jobs: toggle feature: resolve field id: %w", err)
