@@ -53,6 +53,7 @@
 		Cpu,
 		BrainCircuit,
 		BarChart3,
+		Compass,
 	} from 'lucide-svelte';
 	type LucideIcon = typeof LayoutDashboard;
 
@@ -221,6 +222,7 @@
 		{ href: '/webhooks', icon: Webhook },
 		{ href: '/backup-configs', icon: DatabaseBackup },
 		{ href: '/permission-nodes', icon: ShieldCheck },
+		{ href: '/next-actions', icon: Compass },
 		{ href: '/cache', icon: Trash2 },
 		{ href: '/settings', icon: Settings },
 		{ href: '/ai-budget', icon: DollarSign },
@@ -255,6 +257,7 @@
 		'/webhooks': { label: 'nav.webhooks', tooltip: 'nav.webhooks_tooltip', defaultLabel: 'Webhooks', defaultTooltip: 'Webhook endpoint management' },
 		'/backup-configs': { label: 'nav.backup_configs', tooltip: 'nav.backup_configs_tooltip', defaultLabel: 'Backup Configs', defaultTooltip: 'Database backup configuration' },
 		'/permission-nodes': { label: 'nav.permission_nodes', tooltip: 'nav.permission_nodes_tooltip', defaultLabel: 'Permission Nodes', defaultTooltip: 'RBAC permission key viewer' },
+		'/next-actions': { label: 'nav.next_actions', tooltip: 'nav.next_actions_tooltip', defaultLabel: 'Next Actions', defaultTooltip: 'Next-action suggestion rules (§122)' },
 		'/currencies': { label: 'nav.currencies', tooltip: 'nav.currencies_tooltip', defaultLabel: 'Currencies', defaultTooltip: 'Credit currency exchange rates' },
 		'/intelligence': { label: 'nav.intelligence', tooltip: 'nav.intelligence_tooltip', defaultLabel: 'Intelligence', defaultTooltip: 'Data intelligence pipeline & review' },
 	};
