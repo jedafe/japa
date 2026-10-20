@@ -176,7 +176,7 @@ VALUES
      'Guests who have viewed several pieces of content',
      true, 30,
      '{"user_class":["guest"],"surfaces":["main","tools"]}',
-     '{"all":[{"predicate":"event_count","type":"content.view","gte":3,"window":"7d"}]}',
+     '{"all":[{"predicate":"event_count","type":"content.viewed","gte":3,"window":"7d"}]}',
      '{"title":"Join JapaConnect","body":"Create a free account to save your progress and get personalised guidance.","cta_label":"Sign up free","cta_url":"/register","icon":"user-plus"}',
      '["popup"]',
      NULL,
@@ -373,6 +373,14 @@ SELECT EXISTS(
     SELECT 1 FROM assessment_results WHERE user_id = @user_id
 ) AS has_result;
 
+-- name: GetLatestAssessmentScore :one
+SELECT total_score FROM assessment_results
+WHERE user_id = @user_id
+ORDER BY created_at DESC LIMIT 1;
+
+-- name: GetUserForNextActionState :one
+SELECT id, created_at, email_verified_at FROM users WHERE id = @user_id;
+
 -- name: ListActiveUsersForSweep :many
 SELECT DISTINCT user_id FROM platform_events
 WHERE user_id IS NOT NULL
@@ -527,9 +535,9 @@ type UserState struct {
     SessionKey       string // session_id or ip key
     AccountAgeDays   int
     OnboardingDone   bool
-    EmailVerified    bool
+    EmailVerified    bool // users.email_verified_at IS NOT NULL
     ProfilePct       int
-    VCtx             visitor.Context // embedded: archetype, japa_stage, countries
+    VCtx             visitor.VisitorContext // FromContext return type: .Archetype .JapaStage .DestinationCountry .OriginCountry .CurrentCountry
     Surface          string
 }
 func (r *StateResolver) Resolve(ctx context.Context, req *http.Request) (*UserState, error)
@@ -546,14 +554,14 @@ type EvalDeps interface {
 
 - [ ] **Step 1: Failing test**
 
-`predicates_test.go` — table-driven `EvalConditions` cases over a fake `UserState` + stub `EvalDeps`: `account_age_days{lt:30}` true at 10; `destination_country{in:[CA]}` matches VCtx; `assessment_completed{eq:false}`; `event_count{type:content.view,gte:3,window:7d}` via stub counter; `all` AND-semantics vs `any` OR-semantics; empty group → true.
+`predicates_test.go` — table-driven `EvalConditions` cases over a fake `UserState` + stub `EvalDeps`: `account_age_days{lt:30}` true at 10; `destination_country{in:[CA]}` matches VCtx; `assessment_completed{eq:false}`; `event_count{type:content.viewed,gte:3,window:7d}` via stub counter; `all` AND-semantics vs `any` OR-semantics; empty group → true.
 
 - [ ] **Step 2: Run — FAIL** (files missing).
 
 - [ ] **Step 3: Implement**
 
 - `resolver.go`: `Resolve` reads `auth.FromContext` (nil → guest, class `guest`, session key = JWT JTI else `clientip.FromRequest`); for users: account age + email_verified + onboarding completion + `tiers.ResolveUserTier` → user_class; `visitor.FromContext` embedded.
-- `predicates.go`: dispatch on `p.Predicate`; each evaluator a small func `(ctx, p, s, deps) bool`. `event_count`/`tool_used`/`feature_used`/`feature_gate_hit` route to `EvalDeps` (session-scoped counts for guests — `CountSessionEvents` when `UserID` invalid, else `CountUserEvents`). `assessment_completed`/`assessment_score` → `UserHasAssessmentResult` + score query (add `GetLatestAssessmentScore` query to `next_actions.sql` if needed — `SELECT score FROM assessment_results WHERE user_id=@user_id ORDER BY created_at DESC LIMIT 1`). `profile_completeness` v1: compute from users row basics (avatar+bio+location set → pct) or skip predicate if no field exists — pick the simplest real signal, document in code ref comment.
+- `predicates.go`: dispatch on `p.Predicate`; each evaluator a small func `(ctx, p, s, deps) bool`. `event_count`/`tool_used`/`feature_used`/`feature_gate_hit` route to `EvalDeps` (session-scoped counts for guests — `CountSessionEvents` when `UserID` invalid, else `CountUserEvents`). `assessment_completed`/`assessment_score` → `UserHasAssessmentResult` + `GetLatestAssessmentScore` (returns `total_score`; `user_id` is nullable in `assessment_results` but the predicate is user-scoped anyway). `account_age_days`/`email_verified` → `GetUserForNextActionState` (`email_verified_at IS NOT NULL`). `profile_completeness` v1: compute from users row basics (avatar+bio+location set → pct) or skip predicate if no field exists — pick the simplest real signal, document in code ref comment.
 - `dwell_seconds`/`session_page_views`: read Valkey counters `jc:nextactions:guest:{key}:pv` incremented by the track endpoint (Task 7); absent → 0.
 
 - [ ] **Step 4: Run tests** → PASS. `make vet` clean.
@@ -595,7 +603,7 @@ func (s *Service) Sweep(ctx context.Context) error // Task 10 calls this
 - `service.go::Suggestions`: cache check `jc:nextactions:user:{uid}`/`guest:{key}` (TTL `nextactions.cache_ttl_seconds`) → load enabled rules (Valkey `jc:nextactions:rules`, invalidate on admin mutation — write `InvalidateRulesCache(ctx)`) → resolve state → filter audience (`user_class`, `surfaces`, geo/stage/archetype) → `EvalConditions` → load user state rows (or guest hash) → drop dismissed/snoozed/completed/expired/capped → eval `completion_signal` (true ⇒ `CompleteNextAction` write + drop) → apply `nextactions.max_active_per_user` + `max_upsell_per_day` (upsell = rules whose completion_signal mentions `account_tier`) → `UpsertUserNextAction` + `MarkNextActionShown` for members → sort by priority → slice `limit` → cache → return.
 - `guest.go`: `guestState(ctx, key)` HGETALL `jc:nextactions:guest:{key}` decode `{ruleID: {status, impressions, snoozed_until}}`; `dismissGuest`, `snoozeGuest`, `completeGuest` write back with TTL `nextactions.guest_state_ttl_seconds`. `MergeGuestState`: copy terminal states (dismissed/completed) into `user_next_actions` rows at login/register — wire the call in Task 8.
 - `Dismiss`/`Complete`: members → sqlc execs + cache bust; guests → guest.go. `Snooze`: hours = body or `frequency.snooze_default_hours` or 168.
-- `Track`: writes `platform_events` via analytics Track path — check `internal/analytics` for the insert (`RecordEvent`-style helper; if none exported, add a thin `trackEvent` using the analytics insert query) — events `next_action.shown|clicked|dismissed|completed` with `meta.rule_slug`.
+- `Track`: writes via `analytics.Service.TrackEvent(ctx, TrackEventInput{EventType, UserID, SessionID, Meta: {"rule_slug": slug}})` — event types `next_action.shown|clicked|dismissed|completed` (registered in Task 9's ValidEventTypes extension). Do NOT insert into `platform_events` directly — `TrackEvent` enforces the `ValidEventTypes` allowlist.
 
 - [ ] **Step 4: Tests pass** + `go build ./...` clean.
 
@@ -679,19 +687,53 @@ r.With(rbac.RequirePermission(rbacResolver, "nextactions.manage")).Route("/admin
 
 ---
 
-### Task 9: `feature.gate_hit` event emission
+### Task 9: Analytics event types + `feature.gate_hit` / `tool.used` emission
+
+`analytics.Service.TrackEvent` validates every `event_type` against the
+`ValidEventTypes()` allowlist (`internal/analytics/types.go`) — new event types
+must be registered there FIRST or every Track call fails.
 
 **Files:**
-- Modify: `internal/publicapi/tier.go` (or wherever tier gates deny — verify at implement time; also the AI/feature-limit middleware if separate)
-- Test: extend the gate's existing test file
+- Modify: `internal/analytics/types.go` (add EventType constants + register in `ValidEventTypes()`)
+- Modify: `internal/analytics/service_test.go` (extend `TestValidEventTypes` expectations)
+- Modify: `internal/publicapi/tier.go` (or the actual tier-gate deny funnel — verify at implement time)
+- Modify: tool completion points that should emit `tool.used` — minimum viable set: `internal/crscalculator` calculate handler. Other tools opt in later by firing `POST /api/v1/analytics/events {event_type:"tool.used", meta:{tool:"<slug>"}}` from their frontend primary action — the `tool_used` predicate lights up automatically as they adopt it; not required for v1.
 
-- [ ] **Step 1: Find the deny path** — `grep -rn "tier" internal/publicapi/tier.go` shows the 403/upgrade path. Confirm the single funnel.
+- [ ] **Step 1: Register event types**
 
-- [ ] **Step 2: Emit event** — on deny, insert `platform_events` row `event_type='feature.gate_hit'`, `entity_type='feature'`, `meta={"feature":"<slug>","required_tier":"<tier>"}` via the analytics insert (same helper Task 6 used for `Track`). Fire-and-forget — never block the 403.
+```go
+// internal/analytics/types.go — append to the const block:
+EventNextActionShown     EventType = "next_action.shown"
+EventNextActionClicked   EventType = "next_action.clicked"
+EventNextActionDismissed EventType = "next_action.dismissed"
+EventNextActionCompleted EventType = "next_action.completed"
+EventToolUsed            EventType = "tool.used"
+EventFeatureGateHit      EventType = "feature.gate_hit"
+```
 
-- [ ] **Step 3: Test** — deny a regular-tier request in test; assert event row written.
+Add all six to the `ValidEventTypes()` slice; extend `TestValidEventTypes` to assert them.
 
-- [ ] **Step 4: Commit** — `"feat(analytics): emit feature.gate_hit on tier-gate denies (§122)"`
+- [ ] **Step 2: Emit `feature.gate_hit`** — find the tier-gate deny funnel (`internal/publicapi/tier.go` and any feature-limit middleware). On deny, fire-and-forget `analytics.TrackEvent{EventType: EventFeatureGateHit, EntityType: "feature", Meta: {"feature": "<slug>", "required_tier": "<tier>"}}` — never block the 403 response.
+
+- [ ] **Step 3: Emit `tool.used` server-side where tools persist** — minimum: the CRS calculate endpoint in `internal/crscalculator` (fires on every calculation, `Meta: {"tool": "crs-calculator"}`, session_id from request for guests). Add `Meta["tool"]` convention note — `tool_used` predicates match `event_type='tool.used' AND meta->>'tool'=@slug` (`slug="*"` matches any). Update the `CountUserEvents`/`CountSessionEvents` queries to filter `meta->>'tool'` when a slug is given — or add dedicated `CountToolEvents`/`CountSessionToolEvents` queries:
+
+```sql
+-- name: CountToolEvents :one
+SELECT count(*) FROM platform_events
+WHERE user_id = @user_id AND event_type = 'tool.used'
+  AND (@tool_slug::text = '*' OR meta->>'tool' = @tool_slug)
+  AND created_at > now() - make_interval(days => @days);
+
+-- name: CountSessionToolEvents :one
+SELECT count(*) FROM platform_events
+WHERE session_id = @session_id AND event_type = 'tool.used'
+  AND (@tool_slug::text = '*' OR meta->>'tool' = @tool_slug)
+  AND created_at > now() - make_interval(days => @days);
+```
+
+- [ ] **Step 4: Test** — deny a regular-tier gated request → `feature.gate_hit` row written; calculate a CRS score → `tool.used` row with `meta.tool=crs-calculator`.
+
+- [ ] **Step 5: Commit** — `"feat(analytics): next-action/tool/gate event types + emissions (§122)"`
 
 ---
 
@@ -803,24 +845,26 @@ export interface NextAction {
 
 **Files:**
 - Modify: `internal/sidebars/widget_types.go` (add `next_action` widget type entry — copy the `suggested_content` entry shape)
+- Create: `migrations/000914_next_action_sidebar_widget.up.sql` + `.down.sql` (seed `next_action` widget rows into main right sidebars — copy migration `000802`'s insert pattern; `visibility='all'`, positioned after `suggested_content` where present)
 - Modify: `apps/main/src/lib/components/shell/SidebarWidgetRenderer.svelte` (data fetch + render branch)
-- Possibly: seed a `sidebar_widgets` row via migration `000914_next_action_sidebar_widget.up.sql` if default sidebars are DB-seeded (check how `suggested_content` was added — migration `000802` precedent)
 
-- [ ] **Step 1: Widget type entry**
+- [ ] **Step 1: Widget type entry** — valid categories: `WidgetCategoryNavigation|Dashboard|Content|Social|Monetization|Academy|Marketing|Custom`:
 
 ```go
 {
     Type: "next_action", Name: "Next Step", Icon: "compass",
     Description: "Personalised next-step suggestion — data fetched from /next-actions?surface=main. Guests and members alike; hidden while empty",
-    Slot: WidgetSlotContent, Category: WidgetCategoryEngagement /* check enum */, Apps: appMainOnly,
+    Slot: WidgetSlotContent, Category: WidgetCategoryMarketing, Apps: appMainOnly,
     DefaultProps: map[string]any{"limit": 1, "title": "Your next step"},
     PropSchema: []PropField{limitProp(), titleProp()},
 },
 ```
 
-- [ ] **Step 2: Renderer branch** — mirror the `suggested_content` fetch pattern: `fetchNextActions()` calling `getNextActions('main')`, filter `channels` contains `sidebar`, render compact card (title/body/CTA/dismiss) in the `{:else if widget.widget_type === 'next_action'}` branch.
+- [ ] **Step 2: Seed migration** — `000914`: `INSERT INTO sidebar_widgets (sidebar_id, widget_type, label, props, sort_order, visibility, status)` for each `sidebars s WHERE s.app='main' AND s.position='right'` lacking a `next_action` row — after `suggested_content` (or `suggested_spaces`) sort position. Down migration deletes `widget_type='next_action'` rows.
 
-- [ ] **Step 3: `bun run check` + build** → commit `"feat(sidebar): next_action widget type (§122)"`
+- [ ] **Step 3: Renderer branch** — mirror the `suggested_content` fetch pattern: `fetchNextActions()` calling `getNextActions('main')`, filter `channels` contains `sidebar`, render compact card (title/body/CTA/dismiss) in the `{:else if widget.widget_type === 'next_action'}` branch.
+
+- [ ] **Step 4: `bun run check` + build** → commit `"feat(sidebar): next_action widget type + seed (§122)"`
 
 ---
 
