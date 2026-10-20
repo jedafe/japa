@@ -9,12 +9,15 @@ export interface NextActionRule {
 	description: string;
 	enabled: boolean;
 	priority: number;
+	upsell: boolean;
 	audience: Record<string, unknown>;
 	conditions: Record<string, unknown>;
 	payload: { title: string; body: string; cta_label: string; cta_url: string; icon: string };
 	channels: string[];
 	completion_signal: Record<string, unknown> | null;
 	frequency: Record<string, unknown>;
+	valid_from: string | null;
+	valid_until: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -36,3 +39,9 @@ export const updateRule = (id: string, body: Partial<NextActionRule>) =>
 export const deleteRule = (id: string) =>
 	api<null>(`/admin/next-actions/rules/${id}`, { method: 'DELETE' });
 export const getStats = () => api<NextActionStat[]>('/admin/next-actions/stats');
+
+export interface PredicateSpec {
+	name: string;
+	args: { key: string; type: string; required?: boolean; options?: string }[];
+}
+export const getPredicateSpecs = () => api<PredicateSpec[]>('/admin/next-actions/predicates');

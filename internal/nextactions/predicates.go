@@ -80,24 +80,30 @@ func evalPredicate(ctx context.Context, p Predicate, s *UserState, deps EvalDeps
 	case "tool_used":
 		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.ToolUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
 	case "tool_not_used":
-		return !evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.ToolUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
+		// Negated probes still fail closed — a broken deps lookup must not
+		// turn "never used" into true for everyone.
+		return evalNegated(ctx, deps, func() (bool, error) { return deps.ToolUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
 	case "feature_used":
 		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.FeatureUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
 	case "feature_not_used":
-		return !evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.FeatureUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
+		return evalNegated(ctx, deps, func() (bool, error) { return deps.FeatureUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
 	case "feature_gate_hit":
 		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.GateHit(ctx, s, p.Feature, daysOr(p.WithinDays, 30)) })
 	case "event_count":
 		return evalEventCount(ctx, p, s, deps)
-	case "session_page_views":
-		return cmpInt(s.PageViews, p)
-	case "dwell_seconds":
-		return cmpInt(s.DwellSeconds, p)
 	case "has_push_subscription":
 		if !s.UserID.Valid {
+			// Guests have no user-scoped subscription; eq:false reads true.
 			return eqBool(false, p.Eq)
 		}
-		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.HasPushSub(ctx, s.UserID) }) == eqBool(true, p.Eq)
+		if deps == nil {
+			return false
+		}
+		has, err := deps.HasPushSub(ctx, s.UserID)
+		if err != nil {
+			return false // fail closed — a broken probe must not invert eq:false
+		}
+		return has == eqBool(true, p.Eq)
 	default:
 		return false
 	}
@@ -133,6 +139,17 @@ func evalEventCount(ctx context.Context, p Predicate, s *UserState, deps EvalDep
 		return false
 	}
 	return cmpInt(int(n), p)
+}
+
+// evalNegated is the fail-closed negation of a deps probe — true only when the
+// probe succeeded and reported false. An error returns false (suppress), not
+// "not used" for everyone.
+func evalNegated(ctx context.Context, deps EvalDeps, fn func() (bool, error)) bool {
+	if deps == nil {
+		return false
+	}
+	v, err := fn()
+	return err == nil && !v
 }
 
 // evalDepsBool calls a deps probe and folds errors to false.

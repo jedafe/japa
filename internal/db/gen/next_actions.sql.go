@@ -11,6 +11,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const backfillGuestSessionEvents = `-- name: BackfillGuestSessionEvents :execrows
+UPDATE platform_events
+SET user_id = $1
+WHERE session_id = $2 AND user_id IS NULL
+`
+
+type BackfillGuestSessionEventsParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	SessionID *string     `json:"session_id"`
+}
+
+// Guest-platform_events rows carry the jc_guest session key but no user_id.
+// At register/login we attribute them to the new user so user-scoped
+// predicates (tool_used, event_count, feature_gate_hit) see pre-auth history.
+func (q *Queries) BackfillGuestSessionEvents(ctx context.Context, arg BackfillGuestSessionEventsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, backfillGuestSessionEvents, arg.UserID, arg.SessionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const completeNextAction = `-- name: CompleteNextAction :exec
 UPDATE user_next_actions
 SET status = 'completed', completed_at = now(), updated_at = now()
@@ -108,11 +130,11 @@ SELECT count(*) FROM user_next_actions una
 JOIN next_action_rules nar ON nar.id = una.rule_id
 WHERE una.user_id = $1
   AND una.last_shown_at > now() - interval '1 day'
-  AND nar.completion_signal::text ~ '"predicate"\s*:\s*"(account_tier|user_class)"'
+  AND nar.upsell
 `
 
-// Upsell rules are identified by a completion_signal containing an
-// account_tier or user_class predicate (the §122 upsell convention). Counts
+// Upsell rules carry the explicit next_action_rules.upsell flag (migration
+// 000921 — replaces the completion_signal-predicate heuristic). Counts
 // actual impressions from user_next_actions — server-authoritative, no
 // dependency on client track calls.
 func (q *Queries) CountUpsellShownToday(ctx context.Context, userID pgtype.UUID) (int64, error) {
@@ -183,15 +205,15 @@ func (q *Queries) CountUserToolEvents(ctx context.Context, arg CountUserToolEven
 
 const createNextActionRule = `-- name: CreateNextActionRule :one
 INSERT INTO next_action_rules
-    (slug, name, description, enabled, priority, audience, conditions, payload,
+    (slug, name, description, enabled, priority, upsell, audience, conditions, payload,
      channels, completion_signal, frequency, valid_from, valid_until, created_by)
 VALUES
-    ($1, $2, $3, $4, $5, $6, $7,
-     $8, $9, $10, $11, $12,
-     $13, $14)
+    ($1, $2, $3, $4, $5, $6, $7, $8,
+     $9, $10, $11, $12, $13,
+     $14, $15)
 RETURNING id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 `
 
 type CreateNextActionRuleParams struct {
@@ -200,6 +222,7 @@ type CreateNextActionRuleParams struct {
 	Description      string             `json:"description"`
 	Enabled          bool               `json:"enabled"`
 	Priority         int32              `json:"priority"`
+	Upsell           bool               `json:"upsell"`
 	Audience         []byte             `json:"audience"`
 	Conditions       []byte             `json:"conditions"`
 	Payload          []byte             `json:"payload"`
@@ -218,6 +241,7 @@ func (q *Queries) CreateNextActionRule(ctx context.Context, arg CreateNextAction
 		arg.Description,
 		arg.Enabled,
 		arg.Priority,
+		arg.Upsell,
 		arg.Audience,
 		arg.Conditions,
 		arg.Payload,
@@ -247,6 +271,7 @@ func (q *Queries) CreateNextActionRule(ctx context.Context, arg CreateNextAction
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Upsell,
 	)
 	return i, err
 }
@@ -276,6 +301,29 @@ func (q *Queries) DismissNextAction(ctx context.Context, arg DismissNextActionPa
 	return err
 }
 
+const expireStaleUserNextActions = `-- name: ExpireStaleUserNextActions :execrows
+UPDATE user_next_actions
+SET status = 'expired', updated_at = now()
+WHERE status IN ('pending','shown','snoozed')
+  AND NOT EXISTS (
+      SELECT 1 FROM next_action_rules nar
+      WHERE nar.id = user_next_actions.rule_id
+        AND nar.enabled
+        AND (nar.valid_until IS NULL OR nar.valid_until > now())
+  )
+`
+
+// Writes the 'expired' lifecycle state (§122): active rows whose rule passed
+// its valid_until or was disabled/deleted are terminal — they stop counting
+// toward stats and can no longer resurface. Runs at the end of each sweep.
+func (q *Queries) ExpireStaleUserNextActions(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, expireStaleUserNextActions)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getLatestAssessmentScore = `-- name: GetLatestAssessmentScore :one
 SELECT total_score FROM assessment_results
 WHERE user_id = $1
@@ -292,7 +340,7 @@ func (q *Queries) GetLatestAssessmentScore(ctx context.Context, userID pgtype.UU
 const getNextActionRule = `-- name: GetNextActionRule :one
 SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 FROM next_action_rules
 WHERE id = $1
 `
@@ -318,6 +366,7 @@ func (q *Queries) GetNextActionRule(ctx context.Context, id pgtype.UUID) (NextAc
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Upsell,
 	)
 	return i, err
 }
@@ -325,7 +374,7 @@ func (q *Queries) GetNextActionRule(ctx context.Context, id pgtype.UUID) (NextAc
 const getNextActionRuleBySlug = `-- name: GetNextActionRuleBySlug :one
 SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 FROM next_action_rules
 WHERE slug = $1
 `
@@ -351,6 +400,7 @@ func (q *Queries) GetNextActionRuleBySlug(ctx context.Context, slug string) (Nex
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Upsell,
 	)
 	return i, err
 }
@@ -511,7 +561,7 @@ const listEnabledNextActionRules = `-- name: ListEnabledNextActionRules :many
 
 SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 FROM next_action_rules
 WHERE enabled = true
   AND (valid_from IS NULL OR valid_from <= now())
@@ -547,6 +597,7 @@ func (q *Queries) ListEnabledNextActionRules(ctx context.Context) ([]NextActionR
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Upsell,
 		); err != nil {
 			return nil, err
 		}
@@ -561,7 +612,7 @@ func (q *Queries) ListEnabledNextActionRules(ctx context.Context) ([]NextActionR
 const listNextActionRules = `-- name: ListNextActionRules :many
 SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 FROM next_action_rules
 ORDER BY priority ASC, created_at DESC
 `
@@ -593,6 +644,7 @@ func (q *Queries) ListNextActionRules(ctx context.Context) ([]NextActionRule, er
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Upsell,
 		); err != nil {
 			return nil, err
 		}
@@ -606,7 +658,7 @@ func (q *Queries) ListNextActionRules(ctx context.Context) ([]NextActionRule, er
 
 const markNextActionShown = `-- name: MarkNextActionShown :exec
 UPDATE user_next_actions
-SET status = CASE WHEN status = 'pending' THEN 'shown' ELSE status END,
+SET status = CASE WHEN status IN ('pending','snoozed') THEN 'shown' ELSE status END,
     impressions = impressions + 1,
     first_shown_at = COALESCE(first_shown_at, now()),
     last_shown_at = now(),
@@ -737,14 +789,14 @@ func (q *Queries) SnoozeNextAction(ctx context.Context, arg SnoozeNextActionPara
 const updateNextActionRule = `-- name: UpdateNextActionRule :one
 UPDATE next_action_rules SET
     name = $1, description = $2, enabled = $3,
-    priority = $4, audience = $5, conditions = $6,
-    payload = $7, channels = $8,
-    completion_signal = $9, frequency = $10,
-    valid_from = $11, valid_until = $12, updated_at = now()
-WHERE id = $13
+    priority = $4, upsell = $5, audience = $6, conditions = $7,
+    payload = $8, channels = $9,
+    completion_signal = $10, frequency = $11,
+    valid_from = $12, valid_until = $13, updated_at = now()
+WHERE id = $14
 RETURNING id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 `
 
 type UpdateNextActionRuleParams struct {
@@ -752,6 +804,7 @@ type UpdateNextActionRuleParams struct {
 	Description      string             `json:"description"`
 	Enabled          bool               `json:"enabled"`
 	Priority         int32              `json:"priority"`
+	Upsell           bool               `json:"upsell"`
 	Audience         []byte             `json:"audience"`
 	Conditions       []byte             `json:"conditions"`
 	Payload          []byte             `json:"payload"`
@@ -769,6 +822,7 @@ func (q *Queries) UpdateNextActionRule(ctx context.Context, arg UpdateNextAction
 		arg.Description,
 		arg.Enabled,
 		arg.Priority,
+		arg.Upsell,
 		arg.Audience,
 		arg.Conditions,
 		arg.Payload,
@@ -798,6 +852,7 @@ func (q *Queries) UpdateNextActionRule(ctx context.Context, arg UpdateNextAction
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Upsell,
 	)
 	return i, err
 }

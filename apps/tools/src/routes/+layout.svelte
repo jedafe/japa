@@ -7,6 +7,7 @@
 	import HubHeader from '$lib/components/shell/HubHeader.svelte';
 	import SingleToolHeader from '$lib/components/shell/SingleToolHeader.svelte';
 	import Footer from '$lib/components/shell/Footer.svelte';
+	import NextActions from '$lib/components/shell/NextActions.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import { getTool } from '$lib/tools/registry';
@@ -97,6 +98,7 @@
 		style="--tool-accent: {activeTool.accent}; --tool-accent-hover: {activeTool.accentHover};"
 	>
 		<SingleToolHeader tool={activeTool} />
+		<NextActions />
 		<main class="flex-1">
 			{@render children()}
 		</main>
@@ -105,6 +107,7 @@
 {:else}
 	<div class="flex flex-col min-h-screen">
 		<HubHeader user={data.user} logoUrl={data.logoUrl} logoDarkUrl={data.logoDarkUrl} />
+		<NextActions />
 		<main class="flex-1">
 			{@render children()}
 		</main>

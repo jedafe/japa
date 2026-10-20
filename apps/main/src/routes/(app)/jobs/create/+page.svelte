@@ -41,7 +41,7 @@
 		data.fieldGroup?.fields.filter((f) => f.key === 'company_name' || f.key === 'company_website') ?? []
 	);
 	const boolFields = $derived(
-		data.fieldGroup?.fields.filter((f) => f.field_type === 'boolean') ?? []
+		data.fieldGroup?.fields.filter((f) => f.field_type === 'boolean' && f.key !== 'is_featured') ?? []
 	);
 	const mainFields = $derived(
 		data.fieldGroup?.fields
@@ -126,7 +126,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="w-full p-4">
+<div class="mx-auto w-full max-w-3xl px-4 py-4">
 	<div class="mb-4 flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
 		<Briefcase size={20} />
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">{title}</h1>

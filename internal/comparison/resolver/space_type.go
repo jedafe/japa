@@ -147,7 +147,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 		region := parseStringFilter(filters, "region")
 		subregion := parseStringFilter(filters, "subregion")
 
-		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", region, subregion, "", "name", limit, offset)
+		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", region, subregion, "", spaceSortArg(filters), limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 		}
@@ -156,14 +156,14 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 	case "state":
 		countryID := parseUUIDFilter(filters, "country_id")
 		if !countryID.Valid {
-			rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", "name", limit, offset)
+			rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", spaceSortArg(filters), limit, offset)
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
 
 			items = rows
 		} else {
-			rows, err := r.svc.ListSpacesByAncestorAndType(ctx, typeID, countryID, search, "name", limit, offset)
+			rows, err := r.svc.ListSpacesByAncestorAndType(ctx, typeID, countryID, search, spaceSortArg(filters), limit, offset)
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
@@ -173,14 +173,14 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 	case "city":
 		stateID := parseUUIDFilter(filters, "state_id")
 		if !stateID.Valid {
-			rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", "name", limit, offset)
+			rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", spaceSortArg(filters), limit, offset)
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
 
 			items = rows
 		} else {
-			rows, err := r.svc.ListSpacesByAncestorAndType(ctx, typeID, stateID, search, "name", limit, offset)
+			rows, err := r.svc.ListSpacesByAncestorAndType(ctx, typeID, stateID, search, spaceSortArg(filters), limit, offset)
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
@@ -188,7 +188,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 			items = rows
 		}
 	default:
-		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", "name", limit, offset)
+		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", spaceSortArg(filters), limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 		}

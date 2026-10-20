@@ -79,10 +79,11 @@
 
 {#if stats.length > 0}
 	<h2 class="text-foreground mt-8 mb-2 text-sm font-medium">Funnel (lifetime)</h2>
+	<p class="text-muted-foreground mb-2 text-xs">Served = suggestions returned by the API (a suggestion may be served without rendering); Completed = real completions via completion_signal or an explicit complete call, not CTA clicks.</p>
 	<div class="border-border overflow-x-auto rounded-[var(--radius-card)] border">
 		<table class="w-full text-sm">
 			<thead><tr class="text-muted-foreground border-border border-b text-left">
-				<th class="px-3 py-2">Rule</th><th class="px-3 py-2">Shown</th><th class="px-3 py-2">Clicked</th><th class="px-3 py-2">Dismissed</th><th class="px-3 py-2">Completed</th>
+				<th class="px-3 py-2">Rule</th><th class="px-3 py-2">Served</th><th class="px-3 py-2">Clicked</th><th class="px-3 py-2">Dismissed</th><th class="px-3 py-2">Completed</th>
 			</tr></thead>
 			<tbody>
 				{#each stats as s (s.slug)}

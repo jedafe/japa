@@ -108,18 +108,16 @@ func TestAudienceMatch(t *testing.T) {
 	}
 }
 
-func TestIsUpsell(t *testing.T) {
+func TestUpsellFlagFlowsToSuggestion(t *testing.T) {
 	t.Parallel()
-	upsell := testRule("u", 1, []string{"regular"}, []string{"popup"})
-	upsell.CompletionSignal = &ConditionGroup{All: []Predicate{
-		{Predicate: "account_tier", In: []string{"pro"}},
-	}}
-	if !isUpsell(upsell) {
-		t.Error("expected upsell detection")
+	svc := &Service{}
+	rule := testRule("u", 1, []string{"regular"}, []string{"popup"})
+	rule.Upsell = true
+	if !svc.toSuggestion(rule).upsell {
+		t.Error("upsell flag should flow to the suggestion")
 	}
-	plain := testRule("p", 1, []string{"regular"}, []string{"popup"})
-	if isUpsell(plain) {
-		t.Error("non-tier-completion rule is not upsell")
+	if svc.toSuggestion(testRule("p", 1, nil, nil)).upsell {
+		t.Error("non-upsell rule should not flag the suggestion")
 	}
 }
 

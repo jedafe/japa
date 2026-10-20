@@ -123,7 +123,7 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 
 	viewer := pgtype.UUID{}
 
-	items, err := r.svc.ListSpacesPaginated(ctx, viewer, query, geoCode, level, region, subregion, "name", pgtype.UUID{}, false, limit, offset)
+	items, err := r.svc.ListSpacesPaginated(ctx, viewer, query, geoCode, level, region, subregion, spaceSortArg(filters), pgtype.UUID{}, false, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces: %w", err)
 	}

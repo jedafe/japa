@@ -72,12 +72,17 @@ type Frequency struct {
 
 // Rule is the fully-decoded next_action_rules row.
 type Rule struct {
-	ID               pgtype.UUID
-	Slug             string
-	Name             string
-	Description      string
-	Enabled          bool
-	Priority         int32
+	ID          pgtype.UUID
+	Slug        string
+	Name        string
+	Description string
+	Enabled     bool
+	Priority    int32
+	// Upsell flags a rule as a tier-upsell nudge (migration 000921) — the
+	// only input to nextactions.max_upsell_per_day enforcement. Replaces
+	// the completion_signal-predicate heuristic so upsell rules can carry
+	// any completion signal without escaping the cap.
+	Upsell           bool
 	Audience         Audience
 	Conditions       ConditionGroup
 	Payload          Payload

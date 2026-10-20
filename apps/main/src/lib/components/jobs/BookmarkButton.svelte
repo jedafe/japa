@@ -5,6 +5,7 @@
 	import { untrack } from 'svelte';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
+	import { page } from '$app/state';
 
 	interface Props {
 		entityType: string;
@@ -27,7 +28,9 @@
 	// Hydrate real bookmark state — callers pass the SSR guess (usually
 	// false); without this a saved job shows as unsaved and can't be
 	// un-bookmarked. getViewerState batches all cards into one request.
+	// Guests skip the call — /me/content-states is auth-gated (401 spam).
 	$effect(() => {
+		if (!page.data?.isAuthed) return;
 		if (entityType === 'content' || entityType === 'blog_post') {
 			void getViewerState(entityId).then((s) => (isOn = s.bookmarked));
 		}

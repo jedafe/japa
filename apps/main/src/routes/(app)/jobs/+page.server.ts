@@ -69,7 +69,22 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	return { jobs, total, disabled, authed, pageSize: PAGE_SIZE, currentPage: parseInt(page, 10), countries, includeExpired: includeExpired === 'true' || includeExpired === '1' };
+	// Seeded select options for the job_listing_fields group (job_type,
+	// location_type, …) — public /jobs/field-options; guests can't reach
+	// the auth-gated /custom-field-groups surface. Drives the filter
+	// dropdowns so unseeded page results aren't the only suggestions.
+	let fieldOptions: Record<string, { value: string; label: string }[]> = {};
+	try {
+		fieldOptions =
+			(await apiGet<Record<string, { value: string; label: string }[]>>(
+				ctx,
+				'/jobs/field-options'
+			)) ?? {};
+	} catch {
+		fieldOptions = {};
+	}
+
+	return { jobs, total, disabled, authed, pageSize: PAGE_SIZE, currentPage: parseInt(page, 10), countries, includeExpired: includeExpired === 'true' || includeExpired === '1', fieldOptions };
 };
 
 /**

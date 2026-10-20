@@ -85,6 +85,7 @@ func TestValidateRuleAcceptsSeedShapes(t *testing.T) {
 		func() Rule {
 			r := validRule()
 			r.Channels = []string{"popup", "notification", "push", "email"}
+			r.Frequency.CooldownHours = 24
 			r.CompletionSignal = &ConditionGroup{All: []Predicate{
 				{Predicate: "account_tier", In: []string{"pro", "business"}},
 			}}
@@ -121,8 +122,6 @@ func TestValidateRuleAllPredicatesKnown(t *testing.T) {
 		"feature_not_used":      {Predicate: "feature_not_used", Slug: "checklist"},
 		"event_count":           {Predicate: "event_count", Type: "content.viewed", Gte: intPtr(3)},
 		"feature_gate_hit":      {Predicate: "feature_gate_hit"},
-		"session_page_views":    {Predicate: "session_page_views", Gte: intPtr(3)},
-		"dwell_seconds":         {Predicate: "dwell_seconds", Gte: intPtr(60)},
 		"has_push_subscription": {Predicate: "has_push_subscription"},
 		"surface":               {Predicate: "surface", In: []string{"main"}},
 	}
@@ -137,5 +136,33 @@ func TestValidateRuleAllPredicatesKnown(t *testing.T) {
 		if _, ok := preds[name]; !ok {
 			t.Errorf("registered predicate %q missing from test matrix", name)
 		}
+	}
+}
+
+func TestValidateRuleRejectsRemovedPredicates(t *testing.T) {
+	t.Parallel()
+	// session_page_views / dwell_seconds were registered but never fed by a
+	// session counter — rules using them silently never matched. They are
+	// rejected until the feed exists (.jeos/audit/nextactions-audit.md B5).
+	for _, name := range []string{"session_page_views", "dwell_seconds"} {
+		r := validRule()
+		r.Conditions = ConditionGroup{All: []Predicate{{Predicate: name, Gte: intPtr(3)}}}
+		if err := ValidateRule(r, nil); err == nil {
+			t.Errorf("expected error for unimplemented predicate %q", name)
+		}
+	}
+}
+
+func TestValidateRuleRejectsRecurringPushWithoutCooldown(t *testing.T) {
+	t.Parallel()
+	r := validRule()
+	r.Channels = []string{"notification"}
+	r.Frequency = Frequency{Mode: "recurring", CooldownHours: 0}
+	if err := ValidateRule(r, nil); err == nil {
+		t.Fatal("expected error for recurring push rule without cooldown")
+	}
+	r.Frequency.CooldownHours = 24
+	if err := ValidateRule(r, nil); err != nil {
+		t.Fatalf("expected valid rule with cooldown, got %v", err)
 	}
 }

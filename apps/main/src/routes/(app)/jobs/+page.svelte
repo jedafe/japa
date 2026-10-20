@@ -140,10 +140,16 @@
 		!!q || !!country || !!jobType || !!remote || visaSponsorship || (sort !== 'newest' && !!sort)
 	);
 
-	// job_type is a free-text filter over listing field_values — suggest the
-	// values present in the loaded page, allow arbitrary input via allowFreeText.
+	// job_type suggestions come from the seeded job_listing_fields select
+	// options (public /jobs/field-options) merged with any unseeded values
+	// seen on the loaded page — arbitrary input stays allowed.
 	const jobTypeFetcher = $derived(
-		staticAutocompleteFetcher(autocompleteItems(data.jobs.map((j) => field(j, 'job_type'))))
+		staticAutocompleteFetcher(
+			autocompleteItems([
+				...(data.fieldOptions?.job_type ?? []).map((o) => o.value),
+				...data.jobs.map((j) => field(j, 'job_type'))
+			])
+		)
 	);
 
 	let showFilters = $state(false);
@@ -412,7 +418,7 @@
 							{@const salMax = field(job, 'salary_max')}
 							{@const salCur = field(job, 'salary_currency')}
 							{@const salPeriod = salaryPeriodLabel(field(job, 'salary_period'))}
-							{@const applicants = field(job, 'applicant_count')}
+							{@const applicants = job.applicant_count}
 							{@const posted = relativeTime(job.published_at, new Date(), i18n.locale)}
 							{@const secondary = [lt === 'remote' ? t('jobs.remote', 'Remote') : loc, posted]
 								.filter(Boolean)
@@ -560,7 +566,7 @@
 										{#if applicants}
 											<span class="flex items-center gap-1.5">
 												<Users size={14} class="shrink-0" />
-												{t('jobs.applicants', '{count} applicants', { count: applicants })}
+												{applicants === 1 ? t('jobs.applicant_one', '1 applicant') : t('jobs.applicants', '{count} applicants', { count: applicants })}
 											</span>
 										{/if}
 									</div>

@@ -7,6 +7,7 @@
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
 	import { ensureAiPanelDeps } from '$lib/ai/panel';
 	import { resolveAiPageContext } from '$lib/ai/pageContext';
+	import NextActions from '$lib/components/shell/NextActions.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t } from '$lib/i18n';
 	import { env } from '$env/dynamic/public';
@@ -102,6 +103,7 @@
 </svelte:head>
 
 <div id="main-content">
+	<NextActions inline />
 	{@render children()}
 </div>
 

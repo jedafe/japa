@@ -26,8 +26,6 @@ type UserState struct {
 	OnboardingDone bool
 	EmailVerified  bool
 	ProfilePct     int // 0-100 — display_name + avatar + bio completeness proxy
-	PageViews      int // session counter (Valkey); populated by the service
-	DwellSeconds   int // session counter (Valkey); populated by the service
 	VCtx           visitor.VisitorContext
 	Surface        string
 }

@@ -145,8 +145,11 @@ type JobResult struct {
 	Summary     string             `json:"summary"`
 	FieldValues map[string]string  `json:"field_values"`
 	PublishedAt string             `json:"published_at"`
-	Source      *SourceAttribution `json:"source"`
-	Poster      *JobPoster         `json:"poster"`
+	// ApplicantCount is the live application count (withdrawn excluded) —
+	// powers the "{count} applicants" card badge. Not a custom field.
+	ApplicantCount int64              `json:"applicant_count"`
+	Source         *SourceAttribution `json:"source"`
+	Poster         *JobPoster         `json:"poster"`
 
 	intelRecordID pgtype.UUID
 }
@@ -165,6 +168,8 @@ type JobDetail struct {
 	OrganizationID string             `json:"organization_id,omitempty"`
 	Source         *SourceAttribution `json:"source"`
 	Poster         *JobPoster         `json:"poster"`
+	// ApplicantCount is the live application count (withdrawn excluded).
+	ApplicantCount int64 `json:"applicant_count"`
 	// MyApplication is the authenticated viewer's own application to this
 	// listing, or null when the viewer is a guest or has not applied. Lets
 	// the detail page render an "Applied" state instead of the form.
@@ -422,7 +427,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 				  AND cf.key = 'application_deadline'
 				  AND (
 					cfv.value_date < now()
-					OR CASE WHEN cfv.value_text ~ '^\d{4}-\d{2}-\d{2}'
+					OR CASE WHEN cfv.value_text ~ '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'
 					        THEN cfv.value_text::timestamptz END < now()
 				  )
 			)`)
@@ -431,7 +436,9 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 	argIdx = 1
 
 	if filters.Q != "" {
-		clauses = append(clauses, fmt.Sprintf("c.title ILIKE $%d", argIdx))
+		// Match title and body — title-only search missed listings whose
+		// role terms live in the description.
+		clauses = append(clauses, fmt.Sprintf("(c.title ILIKE $%d OR c.body ILIKE $%d)", argIdx, argIdx))
 		args = append(args, "%"+filters.Q+"%")
 		argIdx++
 	}
@@ -559,7 +566,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 	// fallback for finder cards) in one round-trip.
 	dataSQL := fmt.Sprintf(`
 		SELECT
-			c.id, c.title, c.slug, c.intel_record_id, LEFT(c.body, 300),
+			c.id, c.title, c.slug, c.intel_record_id, substring(c.body from 1 for 300),
 			COALESCE(
 				(SELECT json_object_agg(cf.key,
 					CASE
@@ -576,6 +583,8 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 				'{}'::json
 			) AS field_values,
 			c.published_at,
+			(SELECT COUNT(*) FROM job_applications ja
+				WHERE ja.job_id = c.id AND ja.status <> 'withdrawn') AS applicant_count,
 			c.organization_id, o.slug, o.name, o.verified, o.website_url,
 			om.storage_bucket, om.storage_path,
 			c.author_id, u.username, up.display_name, up.avatar_url
@@ -623,6 +632,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			body          *string
 			fieldValues   []byte
 			publishedAt   pgtype.Timestamptz
+			appCount      int64
 			orgID         pgtype.UUID
 			orgSlug       *string
 			orgName       *string
@@ -638,6 +648,7 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 
 		if err := rows.Scan(
 			&id, &title, &slug, &intelRecordID, &body, &fieldValues, &publishedAt,
+			&appCount,
 			&orgID, &orgSlug, &orgName, &orgVerified, &orgWebsite,
 			&logoBucket, &logoPath,
 			&authorID, &username, &displayName, &avatarURL,
@@ -661,12 +672,13 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 		}
 
 		results = append(results, JobResult{
-			ID:            id.String(),
-			Title:         title,
-			Slug:          slug,
-			Summary:       deriveSummary(bodyStr),
-			FieldValues:   fvMap,
-			PublishedAt:   publishedStr,
+			ID:             id.String(),
+			Title:          title,
+			Slug:           slug,
+			Summary:        deriveSummary(bodyStr),
+			FieldValues:    fvMap,
+			PublishedAt:    publishedStr,
+			ApplicantCount: appCount,
 			Poster:        jobPosterFromRow(orgID, authorID, orgSlug, orgName, orgVerified, orgWebsite, logoBucket, logoPath, username, displayName, avatarURL),
 			intelRecordID: intelRecordID,
 		})
@@ -777,7 +789,9 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 			c.author_id,
 			o.slug, o.name, o.verified, o.website_url,
 			om.storage_bucket, om.storage_path,
-			u.username, up.display_name, up.avatar_url
+			u.username, up.display_name, up.avatar_url,
+			(SELECT COUNT(*) FROM job_applications ja
+				WHERE ja.job_id = c.id AND ja.status <> 'withdrawn') AS applicant_count
 		FROM contents c
 		LEFT JOIN organizations o ON o.id = c.organization_id
 		LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
@@ -808,6 +822,7 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 		username      *string
 		displayName   *string
 		avatarURL     *string
+		appCount      int64
 	)
 
 	err := s.store.pool.Reader.QueryRow(ctx, query, slug).Scan(
@@ -816,6 +831,7 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 		&orgSlug, &orgName, &orgVerified, &orgWebsite,
 		&logoBucket, &logoPath,
 		&username, &displayName, &avatarURL,
+		&appCount,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -841,13 +857,14 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 	}
 
 	detail := JobDetail{
-		ID:          id.String(),
-		Title:       title,
-		Slug:        slugOut,
-		Summary:     deriveSummary(bodyStr),
-		Body:        bodyStr,
-		FieldValues: fvMap,
-		PublishedAt: publishedStr,
+		ID:             id.String(),
+		Title:          title,
+		Slug:           slugOut,
+		Summary:        deriveSummary(bodyStr),
+		Body:           bodyStr,
+		FieldValues:    fvMap,
+		PublishedAt:    publishedStr,
+		ApplicantCount: appCount,
 	}
 	if orgID.Valid {
 		detail.OrganizationID = orgID.String()
@@ -976,6 +993,13 @@ func (s *Service) ListOrgJobs(ctx context.Context, orgID pgtype.UUID, page, limi
 // immediately (status='published'); publishedAt is an RFC3339 pass-through
 // for the published_at timestamp (nil/empty = now).
 func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.UUID, title, slug, summary, body string, fieldValues map[string]string, publishedAt *string) (JobDetail, error) {
+	// is_featured is an admin-paid placement (ToggleFeature / AdminUpdateJob
+	// only) — never accept it through the public writer or org editors
+	// could self-feature. Strip silently so the boolean still validates.
+	if fieldValues != nil {
+		delete(fieldValues, "is_featured")
+	}
+
 	if err := validateJobFieldValues(fieldValues); err != nil {
 		return JobDetail{}, err
 	}
@@ -1014,18 +1038,40 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 	// constraint, JOBS-006).
 	var contentID pgtype.UUID
 
-	err := s.store.pool.Writer.QueryRow(ctx, `
-		INSERT INTO contents (organization_id, author_id, content_type, title, slug, body, content_hash, status, published_at)
-		VALUES ($1, $2, 'job_listing', $3, $4, $5, $6, 'published', $7)
-		RETURNING id`,
-		orgID, authorID, title, slug, body, contentHash, publishedExpr).Scan(&contentID)
-	if err != nil {
+	// contents.slug is globally unique — same-titled listings collide and
+	// would surface a misleading 409 duplicate_content. Retry with a short
+	// random suffix so "Senior Engineer" can exist at two orgs.
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		trySlug := slug
+		if attempt > 0 {
+			trySlug = fmt.Sprintf("%s-%s", slug, uuid.NewString()[:8])
+		}
+
+		err = s.store.pool.Writer.QueryRow(ctx, `
+			INSERT INTO contents (organization_id, author_id, content_type, title, slug, body, content_hash, status, published_at)
+			VALUES ($1, $2, 'job_listing', $3, $4, $5, $6, 'published', $7)
+			RETURNING id`,
+			orgID, authorID, title, trySlug, body, contentHash, publishedExpr).Scan(&contentID)
+		if err == nil {
+			slug = trySlug
+			break
+		}
+
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return JobDetail{}, ErrDuplicateContent
+			// content_hash collision → true duplicate; slug collision → retry.
+			if pgErr.ConstraintName == "idx_contents_content_hash" {
+				return JobDetail{}, ErrDuplicateContent
+			}
+			continue
 		}
 
 		return JobDetail{}, fmt.Errorf("jobs: create listing: insert content: %w", err)
+	}
+
+	if err != nil {
+		return JobDetail{}, ErrDuplicateContent
 	}
 
 	// Insert custom field values via the typed upsert helper (EAV schema,
@@ -1149,6 +1195,11 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 	if input.Title == nil && input.Body == nil && input.Slug == nil && input.PublishedAt == nil && input.FieldValues == nil {
 		// Nothing to change; return the existing listing as-is.
 		return existing, nil
+	}
+
+	// is_featured is admin-only — strip it from public PATCH payloads too.
+	if input.FieldValues != nil {
+		delete(input.FieldValues, "is_featured")
 	}
 
 	if err := validateJobFieldValues(input.FieldValues); err != nil {
@@ -1430,6 +1481,15 @@ func validateJobFieldValues(fieldValues map[string]string) error {
 				return fmt.Errorf("%w: %s must be a boolean (true/false/1/0)", ErrInvalidFieldValue, key)
 			}
 		}
+
+		// application_deadline is stored as value_text but read back through
+		// a ::timestamptz cast — reject non-date input at write time so a
+		// malformed value can never 500 the finder's expiry clause.
+		if key == "application_deadline" {
+			if _, err := time.Parse("2006-01-02", strings.TrimSpace(value)); err != nil {
+				return fmt.Errorf("%w: %s must be a date (YYYY-MM-DD)", ErrInvalidFieldValue, key)
+			}
+		}
 	}
 
 	return nil
@@ -1588,7 +1648,7 @@ func (s *Service) ApplyToJob(ctx context.Context, jobID, applicantID pgtype.UUID
 				  AND cf.key = 'application_deadline'
 				  AND (
 					cfv.value_date < now()
-					OR CASE WHEN cfv.value_text ~ '^\d{4}-\d{2}-\d{2}'
+					OR CASE WHEN cfv.value_text ~ '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'
 					        THEN cfv.value_text::timestamptz END < now()
 				  )
 			)
@@ -1609,6 +1669,23 @@ func (s *Service) ApplyToJob(ctx context.Context, jobID, applicantID pgtype.UUID
 	var subID pgtype.UUID
 
 	if submissionID != nil {
+		// The submission must belong to the caller — otherwise an applicant
+		// could attach someone else's form submission (CV/cover letter PII)
+		// to their own application for the employer to read.
+		var owner pgtype.UUID
+		err := s.store.pool.Reader.QueryRow(ctx, `
+			SELECT user_id FROM form_submissions WHERE id = $1`,
+			*submissionID).Scan(&owner)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.JobApplication{}, fmt.Errorf("%w: submission does not exist", ErrInvalidFieldValue)
+			}
+			return gen.JobApplication{}, fmt.Errorf("jobs: apply: submission lookup: %w", err)
+		}
+		if !owner.Valid || owner != applicantID {
+			return gen.JobApplication{}, fmt.Errorf("%w: submission does not belong to the applicant", ErrInvalidFieldValue)
+		}
+
 		var b [16]byte = *submissionID
 		subID = pgtype.UUID{Bytes: b, Valid: true}
 	}

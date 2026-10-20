@@ -2,11 +2,14 @@ package nextactions
 
 import (
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
@@ -48,7 +51,21 @@ func (h *Handlers) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	if sugs == nil {
 		sugs = []Suggestion{}
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sugs})
+	// meta carries the render-time caps the server owns — renderers enforce
+	// popup_max_per_session client-side instead of hardcoding it (§122).
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": sugs,
+		"meta": map[string]any{
+			"popup_max_per_session": h.settingInt(r, "nextactions.popup_max_per_session", 1),
+		},
+	})
+}
+
+func (h *Handlers) settingInt(r *http.Request, key string, fallback int) int {
+	if h.settings == nil {
+		return fallback
+	}
+	return h.settings.GetIntOr(r.Context(), key, fallback)
 }
 
 func (h *Handlers) ruleID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
@@ -128,6 +145,7 @@ type ruleRequest struct {
 	Description      string          `json:"description"`
 	Enabled          bool            `json:"enabled"`
 	Priority         int32           `json:"priority"`
+	Upsell           bool            `json:"upsell"`
 	Audience         Audience        `json:"audience"`
 	Conditions       ConditionGroup  `json:"conditions"`
 	Payload          Payload         `json:"payload"`
@@ -141,7 +159,7 @@ type ruleRequest struct {
 func (rr *ruleRequest) toRule(id pgtype.UUID) (Rule, error) {
 	rule := Rule{
 		ID: id, Slug: rr.Slug, Name: rr.Name, Description: rr.Description,
-		Enabled: rr.Enabled, Priority: rr.Priority, Audience: rr.Audience,
+		Enabled: rr.Enabled, Priority: rr.Priority, Upsell: rr.Upsell, Audience: rr.Audience,
 		Conditions: rr.Conditions, Payload: rr.Payload, Channels: rr.Channels,
 		CompletionSignal: rr.CompletionSignal, Frequency: rr.Frequency,
 	}
@@ -178,9 +196,21 @@ func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]Rule, 0, len(rows))
 	for i := range rows {
-		if rule, err := decodeRule(rows[i]); err == nil {
-			out = append(out, rule)
+		rule, err := decodeRule(rows[i])
+		if err != nil {
+			// Surface corrupt rows as stubs rather than silently dropping
+			// them — an undecodable rule must stay visible for admin repair.
+			slog.Warn("nextactions: list rule decode failed", "slug", rows[i].Slug, "error", err)
+			out = append(out, Rule{
+				ID: rows[i].ID, Slug: rows[i].Slug, Name: rows[i].Name,
+				Description: rows[i].Description, Enabled: rows[i].Enabled,
+				Priority: rows[i].Priority, Upsell: rows[i].Upsell,
+				ValidFrom: rows[i].ValidFrom, ValidUntil: rows[i].ValidUntil,
+				CreatedAt: rows[i].CreatedAt, UpdatedAt: rows[i].UpdatedAt,
+			})
+			continue
 		}
+		out = append(out, rule)
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
@@ -226,13 +256,18 @@ func (h *Handlers) CreateRule(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := h.svc.write.CreateNextActionRule(r.Context(), gen.CreateNextActionRuleParams{
 		Slug: rule.Slug, Name: rule.Name, Description: rule.Description,
-		Enabled: rule.Enabled, Priority: rule.Priority,
+		Enabled: rule.Enabled, Priority: rule.Priority, Upsell: rule.Upsell,
 		Audience: mustJSON(rule.Audience), Conditions: mustJSON(rule.Conditions),
 		Payload: mustJSON(rule.Payload), Channels: mustJSON(rule.Channels),
 		CompletionSignal: maybeJSON(rule.CompletionSignal), Frequency: mustJSON(rule.Frequency),
 		ValidFrom: rule.ValidFrom, ValidUntil: rule.ValidUntil, CreatedBy: createdBy,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			errpkg.WriteError(w, http.StatusConflict, "rule_slug_conflict", "A rule with this slug already exists")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create rule")
 		return
 	}
@@ -257,13 +292,20 @@ func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_rule", err.Error())
 		return
 	}
+	if strings.TrimSpace(rule.Slug) == "" {
+		// Slug is immutable — UPDATE never writes it, so a PATCH omitting
+		// slug borrows the persisted one for validation.
+		if existing, err := h.svc.read.GetNextActionRule(r.Context(), id); err == nil {
+			rule.Slug = existing.Slug
+		}
+	}
 	if err := ValidateRule(rule, h.origins(r)); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_rule", err.Error())
 		return
 	}
 	row, err := h.svc.write.UpdateNextActionRule(r.Context(), gen.UpdateNextActionRuleParams{
 		ID: id, Name: rule.Name, Description: rule.Description,
-		Enabled: rule.Enabled, Priority: rule.Priority,
+		Enabled: rule.Enabled, Priority: rule.Priority, Upsell: rule.Upsell,
 		Audience: mustJSON(rule.Audience), Conditions: mustJSON(rule.Conditions),
 		Payload: mustJSON(rule.Payload), Channels: mustJSON(rule.Channels),
 		CompletionSignal: maybeJSON(rule.CompletionSignal), Frequency: mustJSON(rule.Frequency),
@@ -290,6 +332,13 @@ func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	}
 	h.svc.InvalidateRulesCache(r.Context())
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Predicates handles GET /api/v1/admin/next-actions/predicates — the
+// code-registered predicate vocabulary + arg schema for the Control
+// structured rule builder.
+func (h *Handlers) Predicates(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": PredicateSpecs()})
 }
 
 // Stats handles GET /api/v1/admin/next-actions/stats.

@@ -3,7 +3,7 @@
 -- name: ListEnabledNextActionRules :many
 SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 FROM next_action_rules
 WHERE enabled = true
   AND (valid_from IS NULL OR valid_from <= now())
@@ -13,47 +13,47 @@ ORDER BY priority ASC;
 -- name: ListNextActionRules :many
 SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 FROM next_action_rules
 ORDER BY priority ASC, created_at DESC;
 
 -- name: GetNextActionRule :one
 SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 FROM next_action_rules
 WHERE id = @id;
 
 -- name: GetNextActionRuleBySlug :one
 SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at
+       created_by, created_at, updated_at, upsell
 FROM next_action_rules
 WHERE slug = @slug;
 
 -- name: CreateNextActionRule :one
 INSERT INTO next_action_rules
-    (slug, name, description, enabled, priority, audience, conditions, payload,
+    (slug, name, description, enabled, priority, upsell, audience, conditions, payload,
      channels, completion_signal, frequency, valid_from, valid_until, created_by)
 VALUES
-    (@slug, @name, @description, @enabled, @priority, @audience, @conditions,
+    (@slug, @name, @description, @enabled, @priority, @upsell, @audience, @conditions,
      @payload, @channels, @completion_signal, @frequency, @valid_from,
      @valid_until, @created_by)
 RETURNING id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at;
+       created_by, created_at, updated_at, upsell;
 
 -- name: UpdateNextActionRule :one
 UPDATE next_action_rules SET
     name = @name, description = @description, enabled = @enabled,
-    priority = @priority, audience = @audience, conditions = @conditions,
+    priority = @priority, upsell = @upsell, audience = @audience, conditions = @conditions,
     payload = @payload, channels = @channels,
     completion_signal = @completion_signal, frequency = @frequency,
     valid_from = @valid_from, valid_until = @valid_until, updated_at = now()
 WHERE id = @id
 RETURNING id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
-       created_by, created_at, updated_at;
+       created_by, created_at, updated_at, upsell;
 
 -- name: DeleteNextActionRule :exec
 DELETE FROM next_action_rules WHERE id = @id;
@@ -72,7 +72,7 @@ ON CONFLICT (user_id, rule_id) DO NOTHING;
 
 -- name: MarkNextActionShown :exec
 UPDATE user_next_actions
-SET status = CASE WHEN status = 'pending' THEN 'shown' ELSE status END,
+SET status = CASE WHEN status IN ('pending','snoozed') THEN 'shown' ELSE status END,
     impressions = impressions + 1,
     first_shown_at = COALESCE(first_shown_at, now()),
     last_shown_at = now(),
@@ -202,15 +202,15 @@ SELECT EXISTS(
 ) AS has_recent;
 
 -- name: CountUpsellShownToday :one
--- Upsell rules are identified by a completion_signal containing an
--- account_tier or user_class predicate (the §122 upsell convention). Counts
+-- Upsell rules carry the explicit next_action_rules.upsell flag (migration
+-- 000921 — replaces the completion_signal-predicate heuristic). Counts
 -- actual impressions from user_next_actions — server-authoritative, no
 -- dependency on client track calls.
 SELECT count(*) FROM user_next_actions una
 JOIN next_action_rules nar ON nar.id = una.rule_id
 WHERE una.user_id = @user_id
   AND una.last_shown_at > now() - interval '1 day'
-  AND nar.completion_signal::text ~ '"predicate"\s*:\s*"(account_tier|user_class)"';
+  AND nar.upsell;
 
 -- name: NextActionStats :many
 SELECT nar.slug,
@@ -224,3 +224,25 @@ LEFT JOIN platform_events pe
       AND pe.event_type LIKE 'next_action.%'
 GROUP BY nar.slug
 ORDER BY nar.slug;
+
+-- name: ExpireStaleUserNextActions :execrows
+-- Writes the 'expired' lifecycle state (§122): active rows whose rule passed
+-- its valid_until or was disabled/deleted are terminal — they stop counting
+-- toward stats and can no longer resurface. Runs at the end of each sweep.
+UPDATE user_next_actions
+SET status = 'expired', updated_at = now()
+WHERE status IN ('pending','shown','snoozed')
+  AND NOT EXISTS (
+      SELECT 1 FROM next_action_rules nar
+      WHERE nar.id = user_next_actions.rule_id
+        AND nar.enabled
+        AND (nar.valid_until IS NULL OR nar.valid_until > now())
+  );
+
+-- name: BackfillGuestSessionEvents :execrows
+-- Guest-platform_events rows carry the jc_guest session key but no user_id.
+-- At register/login we attribute them to the new user so user-scoped
+-- predicates (tool_used, event_count, feature_gate_hit) see pre-auth history.
+UPDATE platform_events
+SET user_id = @user_id
+WHERE session_id = @session_id AND user_id IS NULL;

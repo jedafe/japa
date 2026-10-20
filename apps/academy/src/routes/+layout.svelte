@@ -8,6 +8,7 @@
 	import { ensureAiPanelDeps } from '$lib/ai/panel';
 	import { resolveAiPageContext } from '$lib/ai/pageContext';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
+	import NextActions from '$lib/components/shell/NextActions.svelte';
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
 	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
@@ -163,6 +164,7 @@
 	leftSidebarWidgets={isLessonPlayer ? [] : data.leftSidebarWidgets}
 	lessonPlayer={isLessonPlayer}
 >
+	<NextActions />
 	{@render children()}
 </AppShell>
 

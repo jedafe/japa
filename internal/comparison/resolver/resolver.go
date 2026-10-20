@@ -639,3 +639,20 @@ func flattenJSONMap(m map[string]any, sb *strings.Builder) {
 		}
 	}
 }
+
+// spaceSortArg maps the /compare picker sort vocabulary onto the spaces
+// directory sort tokens ('' = newest default, 'name' = A–Z, 'name_desc' =
+// Z–A, 'members').
+func spaceSortArg(filters map[string]any) string {
+	v, _ := filters["sort"].(string)
+	switch v {
+	case "members":
+		return "members"
+	case "newest":
+		return ""
+	case "title_desc":
+		return "name_desc"
+	default:
+		return "name"
+	}
+}

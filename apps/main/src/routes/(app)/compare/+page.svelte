@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import type { Component } from 'svelte';
 	import {
 		createQuickComparison,
@@ -60,6 +60,7 @@
 	let mainOrigin = $derived(data.mainOrigin);
 	let mine = $derived(data.mine ?? false);
 	let myComparisons = $derived(data.myComparisons ?? []);
+	let myMeta = $derived(data.myMeta ?? null);
 
 	// Snapshot the initial URL params; client-side filter state is updated manually.
 	const searchParams = page.url.searchParams;
@@ -69,7 +70,7 @@
 	let defaultPageSize = $derived(data.defaultPageSize);
 	let defaultPageSizeOptions = $derived(data.defaultPageSizeOptions);
 	let sortValues = $derived.by(() => {
-		const configured = selectedType?.config?.sort_options;
+		const configured = data.sortOptions;
 		return Array.isArray(configured) ? configured : [];
 	});
 
@@ -143,7 +144,7 @@
 	const maxItems = $derived((selectedType?.config?.max_item_count as number) ?? 4);
 
 	let sortOptions = $derived(
-		sortValues.map((value) => ({ value, label: t(`jce.compare.sort.${value}`) }))
+		sortValues.map((value) => ({ value, label: t(`jce.compare.sort.${value}`, value) }))
 	);
 
 	let lastPreselect = $state<ResolvedItem[] | null>(null);
@@ -357,17 +358,6 @@
 		goto(url, { replaceState: true });
 	}
 
-	// updateURL is for client-side-only state (sort) that does not need a server reload.
-	function updateURL(updates: Record<string, string | null>) {
-		// Use the live browser URL so rapid client-side updates don't race the SvelteKit page store.
-		const url = new URL(window.location.href);
-		for (const [k, v] of Object.entries(updates)) {
-			if (v === null || v === '') url.searchParams.delete(k);
-			else url.searchParams.set(k, v);
-		}
-		replaceState(url, {});
-	}
-
 	// navigateURL triggers a SvelteKit client-side navigation so the +page.server.ts load re-runs
 	// with the updated query (search, page, page-size, nested-type filters, etc.).
 	function navigateURL(updates: Record<string, string | null>) {
@@ -391,7 +381,7 @@
 	function setSort(sort: string) {
 		sortBy = sort;
 		currentPage = 1;
-		updateURL({ sort, page: null });
+		navigateURL({ sort, page: null });
 	}
 
 	function setPageSize(size: number) {
@@ -459,7 +449,7 @@
 		const meta = item.metadata as Record<string, unknown> | undefined;
 		if (!meta) return chips;
 		if (meta.geo_code) chips.push(String(meta.geo_code));
-		if (meta.level) chips.push(String(meta.level));
+		if (meta.level && meta.level !== 'custom') chips.push(String(meta.level));
 		if (meta.country_code) chips.push(String(meta.country_code));
 		if (typeof meta.member_count === 'number' && meta.member_count > 0) {
 			chips.push(t('jce.common.members_count', '{n} members', { n: meta.member_count }));
@@ -471,26 +461,32 @@
 		return chips;
 	}
 
-	// The server already applies pagination (limit/offset) and returns one extra item so we
-	// can infer hasNext without a total count. We only need to cap the visible list at pageSize.
+	// The server applies pagination (limit/offset) and returns one extra item so we
+	// can infer hasNext without a total count. When the whole matching set was
+	// loaded (≤ MaxSearchLimit), the client paginates the sorted superset.
 	function paginatedItems(items: ResolvedItem[]): ResolvedItem[] {
+		if (allLoaded) return items.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 		return items.slice(0, pageSize);
 	}
 
+	function sameItem(a: ResolvedItem, b: ResolvedItem) {
+		return a.id === b.id && a.type === b.type;
+	}
+
 	function isSelected(item: ResolvedItem) {
-		return selectedItems.some((s) => s.id === item.id && s.type === item.type);
+		return selectedItems.some((s) => sameItem(s, item));
 	}
 
 	function toggleItem(item: ResolvedItem) {
 		if (isSelected(item)) {
-			selectedItems = selectedItems.filter((s) => s.id !== item.id);
+			selectedItems = selectedItems.filter((s) => !sameItem(s, item));
 		} else if (selectedItems.length < maxItems) {
 			selectedItems = [...selectedItems, item];
 		}
 	}
 
 	function removeSelected(item: ResolvedItem) {
-		selectedItems = selectedItems.filter((s) => s.id !== item.id);
+		selectedItems = selectedItems.filter((s) => !sameItem(s, item));
 	}
 
 	function sourceIcon(value?: string) {
@@ -629,6 +625,9 @@
 			const returnUrl = encodeURIComponent(`/compare?type=${encodeURIComponent(type.slug)}&compare_token=${token}`);
 			// Ref: sections/02-authentication-sessions.md (redirect after anonymous selection token)
 			navigateToMain(`/login?redirect=${returnUrl}`);
+		} else {
+			error = 'jce.compare.errors.save_selection';
+			errorParams = {};
 		}
 	}
 
@@ -665,6 +664,7 @@
 		return new Date(iso).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' });
 	}
 
+	let allLoaded = $derived(data.allItemsLoaded === true);
 	let visibleItems = $derived(filteredItems(allItems));
 	let pageCount = $derived.by(() => {
 		if (itemsTotal !== null) return Math.max(1, Math.ceil(itemsTotal / pageSize));
@@ -673,12 +673,13 @@
 	let effectivePage = $derived(Math.min(currentPage, pageCount));
 	let pagedItems = $derived(paginatedItems(visibleItems));
 	let Icon = $derived(asComponent(sourceIcon(source)));
+	let typeNames = $derived((data.typeNames ?? {}) as Record<string, string>);
 	let nestedTypeOptions = $derived([
 		{ value: '', label: t('jce.compare.all_nested_types') },
-		...allowedNestedTypes.map((s) => {
-			const foundType = types.find((x) => x.slug === s);
-			return { value: s, label: foundType?.name ?? sourceLabel(s) };
-		})
+		...allowedNestedTypes.map((s) => ({
+			value: s,
+			label: typeNames[s] ?? sourceLabel(s)
+		}))
 	]);
 
 	let tabOptions = $derived<UrlTab[]>([
@@ -746,7 +747,7 @@
 									{#if item.type_name}
 										<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.type_name}</span>
 									{/if}
-									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.depth}</span>
+									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.depth.${item.depth}`, item.depth)}</span>
 								</div>
 								<p class="mt-1 text-xs text-[var(--color-muted)]">{formatDate(item.created_at)}</p>
 							</div>
@@ -778,6 +779,13 @@
 						</article>
 					{/each}
 				</div>
+				{#if myMeta && (myMeta.total ?? 0) > defaultPageSize}
+					<PaginationControls
+						page={currentPage}
+						totalPages={Math.max(1, Math.ceil((myMeta.total ?? 0) / defaultPageSize))}
+						onPageChange={setPage}
+					/>
+				{/if}
 			{/if}
 		</div>
 	{:else if !selectedType}

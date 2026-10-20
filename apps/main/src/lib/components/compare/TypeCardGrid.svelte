@@ -21,10 +21,11 @@
 	];
 
 	function familyLabel(family: string): string {
-		return family
+		const fallback = family
 			.split(/[-_]/)
 			.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
 			.join(' ');
+		return t(`jce.compare.family.${family}`, fallback);
 	}
 
 	let families = $derived.by(() => {

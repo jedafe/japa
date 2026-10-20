@@ -28,7 +28,7 @@
 	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
-	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
@@ -103,35 +103,9 @@
 	);
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.
+	// Section 26 deliberately assigns comparison pages no JSON-LD — there is
+	// no clean schema.org fit for this content shape.
 	const canonical = $derived(`${page.url.origin}/comparisons/${comparison.content.slug}`);
-	// ItemList + Table JSON-LD (Section 26 — comparison pages expose the
-	// ranked items and the dimension matrix as structured data).
-	const comparisonJsonLd = $derived(
-		JSON.stringify({
-			'@context': 'https://schema.org',
-			'@type': 'ItemList',
-				name: comparison.content.title,
-				description: headDescription,
-				url: canonical,
-				numberOfItems: resolvedItems.length,
-				itemListElement: resolvedItems.map((item, i) => ({
-					'@type': 'ListItem',
-					position: i + 1,
-					name: item.title,
-					...(item.description ? { description: item.description } : {})
-				}))
-			})
-	);
-	const comparisonTableJsonLd = $derived(
-		uniqueDims.length
-			? JSON.stringify({
-					'@context': 'https://schema.org',
-					'@type': 'Table',
-					about: comparison.content.title,
-					url: canonical
-				})
-			: ''
-	);
 	const sanitizedBody = $derived(
 		sanitizeContentHtml(comparison.content.body_html ?? comparison.content.body ?? '')
 	);
@@ -149,10 +123,6 @@
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={comparison.content.title} />
 	{#if headDescription}<meta name="twitter:description" content={headDescription} />{/if}
-	{@html safeJsonLdScript(comparisonJsonLd)}
-	{#if comparisonTableJsonLd}
-		{@html safeJsonLdScript(comparisonTableJsonLd)}
-	{/if}
 </svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout. Left nav auto-collapses;

@@ -7,6 +7,7 @@
 	import { LineChart } from 'layerchart';
 	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
+	import { completePendingNextAction } from '$lib/api/nextActions';
 	import type { AssessmentForm, AssessmentResult, AssessmentField, FeedItem } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -266,6 +267,8 @@
 		scoring = true;
 		try {
 			result = await pollForResult(submissionId);
+			// §122 — completing the assessment fulfills a pending suggestion.
+			completePendingNextAction();
 		} catch (e) {
 			submitError =
 				e instanceof Error

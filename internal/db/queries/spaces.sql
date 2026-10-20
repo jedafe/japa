@@ -104,7 +104,7 @@ ORDER BY s.created_at DESC, s.id DESC;
 -- level, region, subregion, space_type, joined-only, and sort support.
 -- Replaces the in-memory filter+paginate in the ListSpaces handler.
 -- Visibility filter matches ListSpaces.
--- sort accepts: '' (default → newest), 'name' (A–Z), 'members', 'followers',
+-- sort accepts: '' (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'members', 'followers',
 -- 'posts' (all numeric DESC), 'activity' (most recently updated). Unknown
 -- values fall back to newest. §05 line 319: sort=members|activity|newest.
 -- @joined_only restricts the list to spaces the viewer is an approved
@@ -150,6 +150,7 @@ WHERE s.deleted_at IS NULL
  )
 ORDER BY
  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN @sort::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
  WHEN @sort::text = 'members' THEN s.member_count
  WHEN @sort::text = 'followers' THEN s.follower_count
@@ -241,7 +242,7 @@ WHERE spaces.space_type_id = @space_type_id AND spaces.deleted_at IS NULL
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListSpacesByTypePaginated :many
--- sort accepts: '' (default → newest), 'name' (A–Z), 'members', 'followers',
+-- sort accepts: '' (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'members', 'followers',
 -- 'posts' (all numeric DESC). Unknown values fall back to newest.
 -- The initials column comes from the university_fields custom field group
 -- (key = 'initials', deterministic id 00000000-0000-0000-0000-000000000090)
@@ -285,6 +286,7 @@ WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
  ))
 ORDER BY
  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN @sort::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
  WHEN @sort::text = 'members' THEN s.member_count
  WHEN @sort::text = 'followers' THEN s.follower_count
@@ -372,6 +374,7 @@ WHERE s.deleted_at IS NULL
  )
 ORDER BY
  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN @sort::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
  WHEN @sort::text = 'members' THEN s.member_count
  WHEN @sort::text = 'followers' THEN s.follower_count
@@ -499,7 +502,7 @@ ORDER BY s.name ASC;
 -- space via the space_parent_spaces junction. Used by the JCE resolvers for
 -- state (ancestor=country), city (ancestor=state), and university
 -- (ancestor=city/state/country).
--- sort accepts: '' (newest), 'name', 'members', 'followers', 'posts'.
+-- sort accepts: '' (newest), 'name', 'name_desc', 'members', 'followers', 'posts'.
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
@@ -518,6 +521,7 @@ WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
  OR cfv.value_text ILIKE '%' || @search || '%')
 ORDER BY
  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN @sort::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
  WHEN @sort::text = 'members' THEN s.member_count
  WHEN @sort::text = 'followers' THEN s.follower_count

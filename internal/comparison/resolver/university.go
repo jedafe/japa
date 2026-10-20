@@ -129,7 +129,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
 			continue
 		}
 
-		rows, err := r.svc.ListSpacesByAncestorAndType(ctx, typeID, ancestorID, query, "name", limit, offset)
+		rows, err := r.svc.ListSpacesByAncestorAndType(ctx, typeID, ancestorID, query, spaceSortArg(filters), limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("searching universities: %w", err)
 		}
@@ -143,7 +143,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
 	}
 
 	if !found {
-		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, query, "", "", "", "", "name", limit, offset)
+		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, query, "", "", "", "", spaceSortArg(filters), limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("searching universities: %w", err)
 		}

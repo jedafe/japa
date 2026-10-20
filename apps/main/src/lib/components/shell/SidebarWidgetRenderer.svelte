@@ -26,7 +26,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { trackNextAction, completeNextAction, dismissNextAction } from '$lib/api/nextActions';
+	import { trackNextAction, dismissNextAction, getNextActions, claimNextAction, isNextActionClaimed, markNextActionPending } from '$lib/api/nextActions';
 	import { page } from '$app/state';
 	import { Menu, MenuItem } from '$lib/components/ui';
 	import { untrack } from 'svelte';
@@ -659,8 +659,12 @@
 		}
 		async function fetchNextActions() {
 			// §122 — guests get sidebar-channel suggestions too (no user gate).
-			const res = await dedupedGet<import('$lib/types').NextAction[]>('/next-actions?surface=main');
-			nextActions = (res.data ?? []).filter((a) => a.channels.includes('sidebar'));
+			// Shares the memoized fetch with the bar/popup/inline renderers so
+			// one page view issues one request; a suggestion already claimed by
+			// another channel is skipped.
+			const list = await getNextActions('main');
+			nextActions = list.filter((a) => a.channels.includes('sidebar') && !isNextActionClaimed(a.id));
+			if (nextActions[0]) claimNextAction(nextActions[0].id);
 			/* server records the impression */
 			dataLoaded = { ...dataLoaded, next_action: true };
 		}
@@ -1165,13 +1169,13 @@
 			<div class="mt-3 flex items-center gap-2">
 				<a
 					href={na.cta_url}
-					onclick={() => { trackNextAction(na.id, 'clicked'); void completeNextAction(na.id); }}
+					onclick={() => { trackNextAction(na.id, 'clicked'); markNextActionPending(na.id); }}
 					class="rounded-full bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white hover:opacity-90"
 				>{na.cta_label}</a>
 				<button
-					onclick={() => { void dismissNextAction(na.id); nextActions = nextActions.slice(1); }}
+					onclick={() => { void dismissNextAction(na.id); nextActions = nextActions.slice(1); if (nextActions[0]) claimNextAction(nextActions[0].id); }}
 					class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-				>{t('common.dismiss', 'Dismiss')}</button>
+				>{t('nextaction.dismiss', 'Dismiss')}</button>
 			</div>
 		</section>
 	{/if}

@@ -144,7 +144,7 @@ WHERE c.content_type = 'job_listing'
  AND cf.key = 'application_deadline'
  AND (
    cfv.value_date < now()
-   OR CASE WHEN cfv.value_text ~ '^\d{4}-\d{2}-\d{2}'
+   OR CASE WHEN cfv.value_text ~ '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'
            THEN cfv.value_text::timestamptz END < now()
  )
  );

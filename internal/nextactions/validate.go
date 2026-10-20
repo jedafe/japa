@@ -29,8 +29,6 @@ var predicateRegistry = map[string]bool{
 	"feature_not_used":      true,
 	"event_count":           true,
 	"feature_gate_hit":      true,
-	"session_page_views":    true,
-	"dwell_seconds":         true,
 	"has_push_subscription": true,
 	"surface":               true,
 }
@@ -43,6 +41,53 @@ func PredicateNames() []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// PredicateArg describes one argument slot of a predicate for the Control
+// rule builder — drives which input fields the editor renders.
+type PredicateArg struct {
+	Key      string `json:"key"`       // in|eq|lt|gt|gte|slug|type|feature|within_days|window
+	Type     string `json:"type"`      // string_list|bool|number|string|select
+	Required bool   `json:"required"`
+	Options  string `json:"options,omitempty"` // for select: hint shown in placeholder
+}
+
+// PredicateSpec is the builder-facing contract for one predicate.
+type PredicateSpec struct {
+	Name string         `json:"name"`
+	Args []PredicateArg `json:"args"`
+}
+
+var inArg = PredicateArg{Key: "in", Type: "string_list", Required: true}
+var numArgs = []PredicateArg{{Key: "lt", Type: "number"}, {Key: "gt", Type: "number"}, {Key: "gte", Type: "number"}}
+
+// PredicateSpecs returns the arg schema per registered predicate — served to
+// the Control rule editor so the structured builder stays in sync with the
+// code-registered vocabulary without hardcoding names client-side.
+func PredicateSpecs() []PredicateSpec {
+	return []PredicateSpec{
+		{Name: "user_class", Args: []PredicateArg{inArg}},
+		{Name: "account_tier", Args: []PredicateArg{inArg}},
+		{Name: "account_age_days", Args: numArgs},
+		{Name: "onboarding_completed", Args: []PredicateArg{{Key: "eq", Type: "bool"}}},
+		{Name: "email_verified", Args: []PredicateArg{{Key: "eq", Type: "bool"}}},
+		{Name: "profile_completeness", Args: numArgs},
+		{Name: "japa_stage", Args: []PredicateArg{inArg}},
+		{Name: "archetype", Args: []PredicateArg{inArg}},
+		{Name: "destination_country", Args: []PredicateArg{inArg}},
+		{Name: "origin_country", Args: []PredicateArg{inArg}},
+		{Name: "current_country", Args: []PredicateArg{inArg}},
+		{Name: "surface", Args: []PredicateArg{inArg}},
+		{Name: "assessment_completed", Args: []PredicateArg{{Key: "eq", Type: "bool"}}},
+		{Name: "assessment_score", Args: numArgs},
+		{Name: "tool_used", Args: []PredicateArg{{Key: "slug", Type: "string", Required: true}, {Key: "within_days", Type: "number"}}},
+		{Name: "tool_not_used", Args: []PredicateArg{{Key: "slug", Type: "string", Required: true}, {Key: "within_days", Type: "number"}}},
+		{Name: "feature_used", Args: []PredicateArg{{Key: "slug", Type: "string", Required: true}, {Key: "within_days", Type: "number"}}},
+		{Name: "feature_not_used", Args: []PredicateArg{{Key: "slug", Type: "string", Required: true}, {Key: "within_days", Type: "number"}}},
+		{Name: "feature_gate_hit", Args: []PredicateArg{{Key: "feature", Type: "string"}, {Key: "within_days", Type: "number"}}},
+		{Name: "event_count", Args: []PredicateArg{{Key: "type", Type: "string", Required: true}, {Key: "lt", Type: "number"}, {Key: "gt", Type: "number"}, {Key: "gte", Type: "number"}, {Key: "window", Type: "string", Options: "session or Nd (e.g. 7d)"}}},
+		{Name: "has_push_subscription", Args: []PredicateArg{{Key: "eq", Type: "bool"}}},
+	}
 }
 
 // userClassSet and surfaceSet bound the audience vocab — a typo'd class or
@@ -90,6 +135,15 @@ func ValidateRule(r Rule, allowedOrigins []string) error {
 	}
 	if !frequencyModeSet[r.Frequency.Mode] {
 		return fmt.Errorf("frequency.mode must be once or recurring")
+	}
+	// A recurring push rule with no cooldown would re-notify on every hourly
+	// sweep — require a cooldown so nudge fatigue stays bounded.
+	if r.Frequency.Mode == "recurring" && r.Frequency.CooldownHours <= 0 {
+		for _, ch := range r.Channels {
+			if slices.Contains(PushChannels, ch) {
+				return fmt.Errorf("recurring rules with push channel %q require frequency.cooldown_hours > 0", ch)
+			}
+		}
 	}
 	for _, uc := range r.Audience.UserClass {
 		if !userClassSet[uc] {
@@ -148,8 +202,7 @@ func validatePredicateArgs(p Predicate) error {
 		if p.Type == "" || (p.Lt == nil && p.Gt == nil && p.Gte == nil) {
 			return fmt.Errorf("event_count requires type and at least one of lt, gt, gte")
 		}
-	case "account_age_days", "profile_completeness", "assessment_score",
-		"session_page_views", "dwell_seconds":
+	case "account_age_days", "profile_completeness", "assessment_score":
 		if p.Lt == nil && p.Gt == nil && p.Gte == nil {
 			return fmt.Errorf("%s requires lt, gt, or gte", p.Predicate)
 		}

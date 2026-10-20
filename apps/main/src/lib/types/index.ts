@@ -3015,6 +3015,8 @@ export interface JobListing {
 	summary: string;
 	field_values: Record<string, string>;
 	published_at: string;
+	/** Live application count (withdrawn excluded). */
+	applicant_count?: number;
 	organization_id?: string;
 	source?: SourceAttribution | null;
 	poster?: JobPoster | null;
@@ -3033,6 +3035,8 @@ export interface JobDetail {
 	poster?: JobPoster | null;
 	/** Authenticated viewer's own application, or null. */
 	my_application?: { id: string; status: string; applied_at?: string } | null;
+	/** Live application count (withdrawn excluded). */
+	applicant_count?: number;
 }
 
 export interface JobApplication {

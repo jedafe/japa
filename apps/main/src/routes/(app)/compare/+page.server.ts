@@ -47,6 +47,20 @@ function parseDefaultPageSizeOptions(): number[] {
 	return [12, 24, 48];
 }
 
+function parseDefaultSortOptions(): string[] {
+	const raw = env.PUBLIC_JCE_DEFAULT_SORT_OPTIONS;
+	if (raw) {
+		try {
+			const parsed = JSON.parse(raw);
+			if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string') && parsed.length > 0)
+				return parsed;
+		} catch {
+			// fall through
+		}
+	}
+	return ['title', 'title_desc'];
+}
+
 function enrichTypes(types: ComparisonType[]): ComparisonType[] {
 	return types.map((t) => ({
 		...t,
@@ -110,6 +124,12 @@ export const load: PageServerLoad = async (event) => {
 	if (typeSlug) {
 		selectedType = types.find((t) => t.slug === typeSlug);
 	}
+	// An unknown type slug normalizes to the landing page rather than
+	// lingering in the URL — scope/preselect params are meaningless
+	// without a resolved type, so only `mine` is preserved.
+	if (typeSlug && !selectedType) {
+		throw redirect(307, searchParams.get('mine') === 'true' ? '/compare?mine=true' : '/compare');
+	}
 	// No ?type= (or an unknown slug) → landing mode: the page renders the
 	// type-card grid + popular comparisons instead of a picker workspace.
 
@@ -126,6 +146,8 @@ export const load: PageServerLoad = async (event) => {
 	const defaultPageSizeOptions = parseDefaultPageSizeOptions();
 	const configuredPageSizeOptions = (selectedType?.config?.page_size_options as number[]) ?? [];
 	const pageSizeOptions = configuredPageSizeOptions.length > 0 ? configuredPageSizeOptions : defaultPageSizeOptions;
+	const configuredSortOptions = (selectedType?.config?.sort_options as string[]) ?? [];
+	const sortOptions = configuredSortOptions.length > 0 ? configuredSortOptions : parseDefaultSortOptions();
 
 	let source = searchParams.get('source') ?? '';
 	if (!itemRefTypes.includes(source)) {
@@ -142,6 +164,7 @@ export const load: PageServerLoad = async (event) => {
 	const fetchLimit = pageSize + 1;
 	const fetchOffset = (page - 1) * pageSize;
 	const nestedType = searchParams.get('nested_type') ?? '';
+	const sort = searchParams.get('sort') ?? '';
 
 	let scopeChain = (selectedType?.config?.scope_chain as string[]) ?? [];
 	// Course search must be scoped to a university. Older type configs that do
@@ -187,6 +210,14 @@ export const load: PageServerLoad = async (event) => {
 	const compareToken = searchParams.get('compare_token') ?? '';
 	const mine = searchParams.get('mine') === 'true';
 	const preselect = searchParams.get('preselect') ?? '';
+
+	// A preselect token is `id` or `type:id` — the latter resolves through the
+	// named resolver so nested comparisons restore mixed item types.
+	function resolvePreselectRef(token: string): string {
+		const sep = token.indexOf(':');
+		if (sep <= 0) return `${source}/${token}`;
+		return `${token.slice(0, sep)}/${token.slice(sep + 1)}`;
+	}
 
 	// Guest selections that survive login are consumed server-side and the
 	// user is redirected to the new quick comparison. Runs before the read
@@ -254,8 +285,29 @@ export const load: PageServerLoad = async (event) => {
 				if (source === 'visa_route') params.set('visa_category', subtypeParam);
 				if (source === 'organization' || source === 'bank') params.set('org_type', subtypeParam);
 			}
+			if (sort) params.set('sort', sort);
 			const res = await apiList<ResolvedItem>(ctx, `/jce/entities/${source}?${params.toString()}`);
 			let items = res.items ?? [];
+			let total = res.meta?.total ?? null;
+			let allItemsLoaded = false;
+			// Resolver ORDER BY coverage is partial (space-backed types only);
+			// bounded result sets are fetched whole so the client sorts the
+			// complete set correctly for every resolver.
+			const FULL_LOAD_CAP = 1000;
+			if (total !== null && total <= FULL_LOAD_CAP) {
+				if (items.length >= total) {
+					allItemsLoaded = true;
+				} else {
+					params.set('limit', String(total));
+					params.set('offset', '0');
+					const full = await apiList<ResolvedItem>(ctx, `/jce/entities/${source}?${params.toString()}`);
+					if (full.items) {
+						items = full.items;
+						allItemsLoaded = items.length >= total;
+						total = full.meta?.total ?? total;
+					}
+				}
+			}
 			// Kind filtering (JCE ↔ wiki mapping): a type config.subtype
 			// narrows items to the matching discriminator value — e.g.
 			// subtype 'student' keeps visa routes with visa_category=student.
@@ -267,7 +319,12 @@ export const load: PageServerLoad = async (event) => {
 				);
 				if (keyed.length > 0) items = keyed;
 			}
-			return { items, itemsTotal: res.meta?.total ?? null as number | null, error: null as Record<string, string> | null };
+			return {
+				items,
+				itemsTotal: total as number | null,
+				error: null as Record<string, string> | null,
+				allItemsLoaded
+			};
 		} catch (err) {
 			if (err instanceof ApiError && err.status !== 404) {
 				return {
@@ -290,29 +347,31 @@ export const load: PageServerLoad = async (event) => {
 			typeof selectedType.config?.max_item_count === 'number' && selectedType.config.max_item_count > 0
 				? selectedType.config.max_item_count
 				: 4;
+		// Tokens may carry a `type:id` prefix (nested comparisons mix item_ref
+		// types); bare ids resolve against the active source.
 		const ids = preselect.split(',').filter(Boolean).slice(0, preselectCap);
 		const results = await Promise.all(
-			ids.map((id) =>
-				apiGet<ResolvedItem>(ctx, `/jce/entities/${source}/${id}`)
-					.then((item) => ({ id, item: item ?? null, failed: false }))
+			ids.map((token) =>
+				apiGet<ResolvedItem>(ctx, `/jce/entities/${resolvePreselectRef(token)}`)
+					.then((item) => ({ token, item: item ?? null, failed: false }))
 					.catch((err) => {
-						console.warn(`compare preselect: could not resolve ${source}/${id}`, err);
-						return { id, item: null, failed: true };
+						console.warn(`compare preselect: could not resolve ${resolvePreselectRef(token)}`, err);
+						return { token, item: null, failed: true };
 					})
 			)
 		);
 		return {
 			items: results.flatMap((r) => (r.item ? [r.item] : [])),
-			failures: results.flatMap((r) => (r.failed ? [r.id] : []))
+			failures: results.flatMap((r) => (r.failed ? [r.token] : []))
 		};
 	})();
 
 	const minePromise = (async () => {
-		if (!event.locals.user) {
+		if (!event.locals.user || !mine) {
 			return { comparisons: [] as JCEComparisonSummary[], meta: null as ListMeta | null, failed: false, message: '' };
 		}
 		try {
-			const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?mine=true&filter_depth=quick&page_size=${defaultPageSize}&sort=created_at`);
+			const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?mine=true&filter_depth=quick&page_size=${defaultPageSize}&page_offset=${(page - 1) * defaultPageSize}&sort=created_at`);
 			return { comparisons: res.items, meta: res.meta ?? null, failed: false, message: '' };
 		} catch (err) {
 			return {
@@ -401,8 +460,11 @@ export const load: PageServerLoad = async (event) => {
 		defaultPageSizeOptions,
 		scopeChain,
 		scopeParams,
+		sortOptions,
+		typeNames: Object.fromEntries(allTypes.map((t) => [t.slug, t.name])),
 		items,
 		itemsTotal,
+		allItemsLoaded: (itemsRes as { allItemsLoaded?: boolean }).allItemsLoaded === true,
 		preselectedItems,
 		loadError,
 		loadErrorParams,

@@ -115,7 +115,7 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 					return sliceSuggestions(cached, limit), nil
 				}
 			}
-		} else if cached, ok := s.guestCacheRead(ctx, state.SessionKey); ok {
+		} else if cached, ok := s.guestCacheRead(ctx, state.SessionKey, state.Surface); ok {
 			return sliceSuggestions(cached, limit), nil
 		}
 	}
@@ -136,23 +136,25 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 		if !s.audienceMatch(rule, state) {
 			continue
 		}
-		if !EvalConditions(ctx, rule.Conditions, state, s.deps) {
-			continue
-		}
+		// Saved state is checked before conditions: EvalConditions runs a
+		// platform_events COUNT per event predicate — skipping suppressed
+		// rules first avoids burning queries on rules that can never render.
 		st := states[rule.ID.Bytes]
 		if s.stateFiltered(rule, st) {
+			continue
+		}
+		if !EvalConditions(ctx, rule.Conditions, state, s.deps) {
 			continue
 		}
 		if rule.CompletionSignal != nil && EvalConditions(ctx, *rule.CompletionSignal, state, s.deps) {
 			s.markCompleted(ctx, state, rule.ID)
 			continue
 		}
-		upsell := isUpsell(rule)
-		if upsell && upsellShownToday >= int64(maxUpsell) {
+		if rule.Upsell && upsellShownToday >= int64(maxUpsell) {
 			continue
 		}
 		out = append(out, s.toSuggestion(rule))
-		if upsell {
+		if rule.Upsell {
 			upsellShownToday++
 		}
 		if len(out) >= maxActive {
@@ -161,9 +163,11 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 	}
 
 	// Rules are already priority-ordered (ListEnabledNextActionRules ORDER BY
-	// priority) — record impressions for what we're about to return.
+	// priority). Impressions are recorded for the whole evaluated set, not
+	// just the limit-truncated slice — everything in `out` is cacheable and
+	// may be returned on later requests, so it all counts as served.
 	shown := sliceSuggestions(out, limit)
-	for _, sug := range shown {
+	for _, sug := range out {
 		s.recordImpression(ctx, state, sug)
 	}
 
@@ -173,7 +177,7 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 			if state.UserID.Valid {
 				_ = s.cache.Set(ctx, cacheKey, b, ttl).Err()
 			} else {
-				s.guestCacheWrite(ctx, state.SessionKey, b, ttl)
+				s.guestCacheWrite(ctx, state.SessionKey, state.Surface, b, ttl)
 			}
 		}
 	}
@@ -181,14 +185,21 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 	return shown, nil
 }
 
-// cacheKey — user and guest keys per the §122 catalog. The guest result cache
-// shares the state hash key (a reserved `_cache` field) to keep one key.
+// cacheKey — user and guest keys per the §122 catalog. The surface is part of
+// the key because evaluation depends on it (audience.surfaces filter and the
+// surface predicate): without it a `?surface=tools` eval would poison the
+// `?surface=main` cache for the TTL. The guest result cache shares the state
+// hash key via per-surface `_cache:{surface}` fields to keep one key.
 func (s *Service) cacheKey(state *UserState) string {
 	if state.UserID.Valid {
-		return valkey.MustKey("nextactions:user:%s", state.UserID.String())
+		return valkey.MustKey("nextactions:user:%s:%s", state.UserID.String(), state.Surface)
 	}
 	return valkey.MustKey("nextactions:guest:%s", state.SessionKey)
 }
+
+// guestCacheFieldName is the per-surface result-cache field inside the guest
+// state hash.
+func guestCacheFieldName(surface string) string { return "_cache:" + surface }
 
 // loadRules returns enabled in-window rules, cached 5 min in Valkey.
 func (s *Service) loadRules(ctx context.Context) ([]Rule, error) {
@@ -331,23 +342,9 @@ func (s *Service) audienceMatchSweep(rule Rule, state *UserState) bool {
 	return true
 }
 
-// isUpsell reports whether a rule is a tier-upsell nudge — its completion
-// signal keys on account_tier/user_class (§122 upsell-cap convention).
-func isUpsell(rule Rule) bool {
-	if rule.CompletionSignal == nil {
-		return false
-	}
-	for _, p := range append(append([]Predicate{}, rule.CompletionSignal.All...), rule.CompletionSignal.Any...) {
-		if p.Predicate == "account_tier" || p.Predicate == "user_class" {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *Service) toSuggestion(rule Rule) Suggestion {
 	sug := Suggestion{
-		upsell: isUpsell(rule),
+		upsell: rule.Upsell,
 		ID:     rule.ID.String(), RuleSlug: rule.Slug,
 		Title: rule.Payload.Title, Body: rule.Payload.Body,
 		CTALabel: rule.Payload.CTALabel, CTAURL: rule.Payload.CTAURL,
@@ -548,20 +545,50 @@ func (s *Service) bustCache(ctx context.Context, state *UserState) {
 		return
 	}
 	if state.UserID.Valid {
-		// User key holds only the cached result list — safe to delete.
-		_ = s.cache.Del(ctx, s.cacheKey(state)).Err()
+		// User keys hold only the cached result lists — safe to delete. The
+		// keys are surface-scoped (cacheKey), so clear every variant via SCAN:
+		// the mutation must invalidate the suggestion on all surfaces.
+		pattern := valkey.MustKey("nextactions:user:%s:*", state.UserID.String())
+		var cursor uint64
+		for {
+			keys, next, err := s.cache.Scan(ctx, cursor, pattern, 50).Result()
+			if err != nil {
+				break
+			}
+			for _, k := range keys {
+				_ = s.cache.Del(ctx, k).Err()
+			}
+			if next == 0 {
+				break
+			}
+			cursor = next
+		}
 		return
 	}
 	// The guest key is the STATE hash — deleting it would wipe the dismissal/
-	// completion/snooze just written. Only the _cache field is dropped.
-	_ = s.cache.HDel(ctx, valkey.MustKey("nextactions:guest:%s", state.SessionKey), guestCacheField).Err()
+	// completion/snooze just written. Only the per-surface _cache:* fields
+	// are dropped.
+	hk := valkey.MustKey("nextactions:guest:%s", state.SessionKey)
+	if m, err := s.cache.HGetAll(ctx, hk).Result(); err == nil {
+		fields := make([]string, 0, len(m))
+		for f := range m {
+			if strings.HasPrefix(f, "_cache") {
+				fields = append(fields, f)
+			}
+		}
+		if len(fields) > 0 {
+			_ = s.cache.HDel(ctx, hk, fields...).Err()
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
 // Guest state (Valkey hash — no Postgres rows for anonymous visitors)
 // ---------------------------------------------------------------------------
 
-const guestCacheField = "_cache"
+// guestCacheFieldPrefix marks hash fields that hold per-surface result caches
+// ("_cache:{surface}") — guestStates must skip them when decoding rule state.
+const guestCacheFieldPrefix = "_cache"
 
 // guestStates decodes the per-rule state map from the guest hash.
 func (s *Service) guestStates(ctx context.Context, key string) map[[16]byte]userActionState {
@@ -574,7 +601,7 @@ func (s *Service) guestStates(ctx context.Context, key string) map[[16]byte]user
 		return out
 	}
 	for field, raw := range m {
-		if field == guestCacheField || strings.HasPrefix(field, sessionCounterFieldPrefix) {
+		if strings.HasPrefix(field, guestCacheFieldPrefix) || strings.HasPrefix(field, sessionCounterFieldPrefix) {
 			continue
 		}
 		var g struct {
@@ -694,13 +721,14 @@ func (s *Service) guestUpsellBump(ctx context.Context, key string) {
 }
 
 // guestCacheRead returns the cached suggestion list from the guest hash's
-// _cache field ({exp, data}) — the hash key can't hold a GET-able string
-// value, so the list lives in a field with its own embedded expiry.
-func (s *Service) guestCacheRead(ctx context.Context, key string) ([]Suggestion, bool) {
+// per-surface _cache:{surface} field ({exp, data}) — the hash key can't hold
+// a GET-able string value, so the list lives in a field with its own
+// embedded expiry.
+func (s *Service) guestCacheRead(ctx context.Context, key, surface string) ([]Suggestion, bool) {
 	if s.cache == nil || key == "" {
 		return nil, false
 	}
-	raw, err := s.cache.HGet(ctx, valkey.MustKey("nextactions:guest:%s", key), guestCacheField).Result()
+	raw, err := s.cache.HGet(ctx, valkey.MustKey("nextactions:guest:%s", key), guestCacheFieldName(surface)).Result()
 	if err != nil {
 		return nil, false
 	}
@@ -714,7 +742,7 @@ func (s *Service) guestCacheRead(ctx context.Context, key string) ([]Suggestion,
 	return v.Data, true
 }
 
-func (s *Service) guestCacheWrite(ctx context.Context, key string, data []byte, ttl time.Duration) {
+func (s *Service) guestCacheWrite(ctx context.Context, key, surface string, data []byte, ttl time.Duration) {
 	if key == "" {
 		return
 	}
@@ -726,7 +754,7 @@ func (s *Service) guestCacheWrite(ctx context.Context, key string, data []byte, 
 		return
 	}
 	hk := valkey.MustKey("nextactions:guest:%s", key)
-	_ = s.cache.HSet(ctx, hk, guestCacheField, string(payload)).Err()
+	_ = s.cache.HSet(ctx, hk, guestCacheFieldName(surface), string(payload)).Err()
 	_ = s.cache.Expire(ctx, hk, time.Duration(s.settingInt(ctx, "nextactions.guest_state_ttl_seconds", defaultGuestStateTTL))*time.Second).Err()
 }
 
@@ -751,6 +779,15 @@ func (s *Service) MergeGuestState(ctx context.Context, userID pgtype.UUID, guest
 			LastShownAt:  st.LastShownAt,
 			SnoozedUntil: st.SnoozedUntil,
 		})
+	}
+	// Attribute pre-auth platform_events to the new user — guest tool/usage
+	// history must count for member-scoped predicates (e.g. a guest who ran
+	// the CRS tool and registered must not be re-nudged to "try it").
+	if n, err := s.write.BackfillGuestSessionEvents(ctx, gen.BackfillGuestSessionEventsParams{
+		UserID:    userID,
+		SessionID: &guestKey,
+	}); err == nil && n > 0 {
+		slog.Info("nextactions: backfilled guest events", "user_id", userID, "events", n)
 	}
 }
 
@@ -801,10 +838,18 @@ func (s *Service) Sweep(ctx context.Context) error {
 			s.sweepUser(ctx, uid, pushRules)
 		}
 		if len(users) < batch {
-			return nil
+			break
 		}
 		after = users[len(users)-1]
 	}
+	// Terminal-state housekeeping — write 'expired' for rows whose rule is
+	// disabled or past valid_until so they stop counting as live.
+	if n, err := s.write.ExpireStaleUserNextActions(ctx); err != nil {
+		slog.Warn("nextactions: expire stale rows failed", "error", err)
+	} else if n > 0 {
+		slog.Info("nextactions: expired stale suggestion rows", "rows", n)
+	}
+	return nil
 }
 
 // sweepUser evaluates push rules for one user. The sweep lacks a request —
@@ -828,6 +873,14 @@ func (s *Service) sweepUser(ctx context.Context, userID pgtype.UUID, rules []Rul
 	// via ResolveForUser, so all predicates evaluate on the sweep path.
 	sweepState := s.resolver.ResolveSweep(ctx, userID)
 
+	// The global caps apply on the sweep path too — without them a user
+	// could receive every matching push rule each pass, and upsell pushes
+	// could outnumber nextactions.max_upsell_per_day.
+	maxActive := s.settingInt(ctx, "nextactions.max_active_per_user", defaultMaxActive)
+	maxUpsell := s.settingInt(ctx, "nextactions.max_upsell_per_day", defaultMaxUpsellPerDay)
+	upsellShownToday := s.upsellShownToday(ctx, sweepState)
+	notified := 0
+
 	for i := range rules {
 		rule := rules[i]
 		if !s.audienceMatchSweep(rule, sweepState) {
@@ -850,11 +903,22 @@ func (s *Service) sweepUser(ctx context.Context, userID pgtype.UUID, rules []Rul
 		if !slices.ContainsFunc(rule.Channels, func(c string) bool { return slices.Contains(PushChannels, c) }) {
 			continue
 		}
+		if notified >= maxActive {
+			break
+		}
+		if rule.Upsell && upsellShownToday >= int64(maxUpsell) {
+			continue
+		}
 		_ = s.write.UpsertUserNextAction(ctx, gen.UpsertUserNextActionParams{UserID: userID, RuleID: rule.ID})
 		if s.notifier != nil {
 			if err := s.notifier.NotifySuggestion(ctx, userID, rule); err != nil {
 				slog.Warn("nextactions: sweep notify failed", "rule", rule.Slug, "error", err)
+				continue // failed delivery must not consume impression budget
 			}
+		}
+		notified++
+		if rule.Upsell {
+			upsellShownToday++
 		}
 		_ = s.write.MarkNextActionShown(ctx, gen.MarkNextActionShownParams{UserID: userID, RuleID: rule.ID})
 		// A push/notification delivery IS a shown impression — emit so the
@@ -871,7 +935,7 @@ func (s *Service) sweepUser(ctx context.Context, userID pgtype.UUID, rules []Rul
 func decodeRule(row gen.NextActionRule) (Rule, error) {
 	r := Rule{
 		ID: row.ID, Slug: row.Slug, Name: row.Name, Description: row.Description,
-		Enabled: row.Enabled, Priority: row.Priority,
+		Enabled: row.Enabled, Priority: row.Priority, Upsell: row.Upsell,
 		ValidFrom: row.ValidFrom, ValidUntil: row.ValidUntil,
 		CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}

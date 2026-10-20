@@ -392,6 +392,43 @@
 		return () => observer.disconnect();
 	});
 
+	// schema.org enums — job_type select tokens map to the JobPosting
+	// employmentType vocabulary, salary_period to unitText.
+	const SCHEMA_EMPLOYMENT_TYPE: Record<string, string> = {
+		full_time: 'FULL_TIME',
+		part_time: 'PART_TIME',
+		contract: 'CONTRACTOR',
+		freelance: 'CONTRACTOR',
+		internship: 'INTERN'
+	};
+	const SCHEMA_PERIOD_UNIT: Record<string, string> = {
+		hourly: 'HOUR',
+		daily: 'DAY',
+		weekly: 'WEEK',
+		biweekly: 'WEEK',
+		monthly: 'MONTH',
+		yearly: 'YEAR'
+	};
+
+	// baseSalary MonetaryAmount — only emitted when a numeric min or max and
+	// a currency are present so Google can parse the range.
+	const baseSalary = $derived.by(() => {
+		const min = Number(field('salary_min'));
+		const max = Number(field('salary_max'));
+		const currency = field('salary_currency');
+		if ((!Number.isFinite(min) && !Number.isFinite(max)) || !currency) return undefined;
+		const value: Record<string, unknown> = { '@type': 'QuantitativeValue' };
+		if (Number.isFinite(min)) value.minValue = min;
+		if (Number.isFinite(max)) value.maxValue = max;
+		const unit = SCHEMA_PERIOD_UNIT[field('salary_period')];
+		if (unit) value.unitText = unit;
+		return {
+			'@type': 'MonetaryAmount',
+			currency: currency.trim().toUpperCase(),
+			value
+		};
+	});
+
 	// JSON-LD JobPosting for SEO (Ref: Section 63, ROADMAP-MAIN 36.03).
 	const jsonLd = $derived(
 		job
@@ -409,8 +446,12 @@
 					jobLocation: locationStr()
 						? { '@type': 'Place', address: locationStr() }
 						: undefined,
-					employmentType: field('job_type') || undefined,
-					estimatedSalary: salaryStr() || undefined
+					jobLocationType: field('location_type') === 'remote' ? 'TELECOMMUTE' : undefined,
+					employmentType:
+						SCHEMA_EMPLOYMENT_TYPE[field('job_type')] ??
+						(field('job_type') ? field('job_type').toUpperCase() : undefined),
+					baseSalary,
+					validThrough: field('application_deadline') || undefined
 				})
 			: ''
 	);

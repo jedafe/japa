@@ -34,11 +34,25 @@ class NextActionsNotifier extends AsyncNotifier<List<NextAction>> {
         .toList());
   }
 
+  /// "Not now" defers the suggestion — snooze for the rule's default
+  /// duration (falling back to a day) rather than permanently dismissing.
+  Future<void> snooze(NextAction action) async {
+    try {
+      await ref.read(nextActionsServiceProvider).dismiss(
+        action.id,
+        snoozeHours: action.snoozeDefaultHours > 0 ? action.snoozeDefaultHours : 24,
+      );
+    } catch (_) {}
+    state = AsyncData((state.value ?? [])
+        .where((a) => a.id != action.id)
+        .toList());
+  }
+
   Future<void> act(NextAction action) async {
     try {
-      final svc = ref.read(nextActionsServiceProvider);
-      await svc.track(action.id, 'clicked');
-      await svc.complete(action.id);
+      // CTA tap records 'clicked' only — completion belongs to the rule's
+      // completion_signal or a real completion hook, not a link tap.
+      await ref.read(nextActionsServiceProvider).track(action.id, 'clicked');
     } catch (_) {}
     state = AsyncData((state.value ?? [])
         .where((a) => a.id != action.id)

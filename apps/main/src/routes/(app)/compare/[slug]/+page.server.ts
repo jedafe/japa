@@ -41,7 +41,7 @@ export const load: PageServerLoad = async (event) => {
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			if (err.code === 'feature_disabled') {
-				throw error(503, { code: 'feature_disabled', message: 'jce.error.feature_disabled' });
+				throw error(404, { code: 'feature_disabled', message: 'jce.error.feature_disabled' });
 			}
 			error(404, { code: 'not_found', message: 'jce.error.not_found' });
 		}

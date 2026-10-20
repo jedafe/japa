@@ -24,7 +24,7 @@
 	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
 	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink } from 'lucide-svelte';
-	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -64,14 +64,13 @@
 		if (!isOwner) return;
 		deleting = true;
 		error = '';
-		try {
-			await deleteComparison(comparison.content.id);
-			goto('/compare');
-		} catch (e) {
-			error = e instanceof Error ? e.message : t('jce.compare.errors.delete_failed');
-		} finally {
-			deleting = false;
+		const res = await deleteComparison(comparison.content.id);
+		deleting = false;
+		if (res.error) {
+			error = 'jce.compare.errors.delete_failed';
+			return;
 		}
+		goto('/compare');
 	}
 
 	function navigateToMain(path: string) {
@@ -89,21 +88,26 @@
 		if (!isOwner) return;
 		promoting = true;
 		error = '';
-		try {
-			const promoted = await promoteComparison(comparison.content.id);
-			if (promoted.data?.id) {
-				// Ref: sections/30-generic-comparison-system.md (JCE promotion to detailed composer)
-				navigateToMain(`/create?type=comparison&draft=${promoted.data.id}`);
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t('jce.compare.errors.promote_failed');
-		} finally {
-			promoting = false;
+		const res = await promoteComparison(comparison.content.id);
+		promoting = false;
+		if (res.error) {
+			error = res.error.code === 'nested_not_allowed'
+				? 'jce.compare.errors.nested_not_allowed'
+				: 'jce.compare.errors.promote_failed';
+			return;
+		}
+		if (res.data?.id) {
+			// Ref: sections/30-generic-comparison-system.md (JCE promotion to detailed composer)
+			navigateToMain(`/create?type=comparison&draft=${res.data.id}`);
 		}
 	}
 
 	function edit() {
-		const ids = resolvedItems.map((i: ResolvedItem) => i.id).join(',');
+		// type:id tokens so nested comparisons restore mixed item_ref types;
+		// bare ids still resolve against the picker's active source.
+		const ids = resolvedItems
+			.map((i: ResolvedItem) => (i.type ? `${i.type}:${i.id}` : i.id))
+			.join(',');
 		const url = new URL('/compare', page.url);
 		if (typeSlug) url.searchParams.set('type', typeSlug);
 		url.searchParams.set('preselect', ids);
@@ -112,8 +116,9 @@
 
 	// Section 26 — full head tags for the quick-compare surface: title,
 	// description (body excerpt with title fallback so it is never empty),
-	// self-referencing canonical on the clean slug URL, OG/Twitter tags,
-	// and ItemList + Table JSON-LD for the ranked items/matrix.
+	// self-referencing canonical on the clean slug URL, OG/Twitter tags.
+	// Section 26 deliberately assigns comparison pages no JSON-LD — there is
+	// no clean schema.org fit for this content shape.
 	const headTitle = $derived(`${comparison.content.title} — ${t('jce.compare.title', 'Compare')}`);
 	const headDescription = $derived(
 		(comparison.content.body_html ?? comparison.content.body ?? '')
@@ -123,32 +128,6 @@
 			.slice(0, 160) || comparison.content.title
 	);
 	const canonical = $derived(`${page.url.origin}/compare/${comparison.content.slug}`);
-	const compareJsonLd = $derived(
-		JSON.stringify({
-			'@context': 'https://schema.org',
-			'@type': 'ItemList',
-				name: comparison.content.title,
-				description: headDescription,
-				url: canonical,
-				numberOfItems: resolvedItems.length,
-				itemListElement: resolvedItems.map((item, i) => ({
-					'@type': 'ListItem',
-					position: i + 1,
-					name: item.title,
-					...(item.description ? { description: item.description } : {})
-				}))
-			})
-	);
-	const compareTableJsonLd = $derived(
-		uniqueDims.length
-			? JSON.stringify({
-					'@context': 'https://schema.org',
-					'@type': 'Table',
-					about: comparison.content.title,
-					url: canonical
-				})
-			: ''
-	);
 
 	function cellFor(item: MatrixItem, dim: JCEDimension): MatrixDimension | undefined {
 		return item.dimensions.find((d: MatrixDimension) => d.dimension_id === dim.id);
@@ -181,24 +160,20 @@
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={comparison.content.title} />
 	<meta name="twitter:description" content={headDescription} />
-	{@html safeJsonLdScript(compareJsonLd)}
-	{#if compareTableJsonLd}
-		{@html safeJsonLdScript(compareTableJsonLd)}
-	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl space-y-6 p-4">
 	<div class="flex flex-wrap items-start justify-between gap-4">
 		<div class="space-y-1">
 			<a
-				href="/compare"
+				href={typeSlug ? `/compare?type=${typeSlug}` : '/compare'}
 				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			>
 				<ArrowLeft size={16} /> {t('jce.compare.back')}
 			</a>
 			<h1 class="text-2xl font-bold text-[var(--color-text)] sm:text-3xl">{comparison.content.title}</h1>
 			<p class="text-sm capitalize text-[var(--color-muted)]">
-				{comparison.metadata.depth} · {comparison.content.status} · {comparison.content.visibility}
+				{t(`jce.compare.depth.${comparison.metadata.depth}`, comparison.metadata.depth)} · {t(`jce.compare.status.${comparison.content.status}`, comparison.content.status)} · {t(`jce.compare.visibility.${comparison.content.visibility}`, comparison.content.visibility)}
 			</p>
 		</div>
 		{#if isOwner}

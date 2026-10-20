@@ -11,6 +11,7 @@
 	import OAuthButtons from './OAuthButtons.svelte';
 	import AuthFooter from './AuthFooter.svelte';
 	import HoneypotField from './HoneypotField.svelte';
+	import { completePendingNextAction } from '$lib/api/nextActions';
 
 	let {
 		redirectTarget = '/onboarding',
@@ -58,6 +59,9 @@
 				return;
 			}
 			await invalidateAll();
+			// §122 — a pending suggestion that drove the signup completes for
+			// real here (rules without completion_signal otherwise never do).
+			completePendingNextAction();
 			if (onSuccess) {
 				await onSuccess(data.redirect ?? '/onboarding');
 			} else {

@@ -6972,6 +6972,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Section 63 — Jobs Board (ADR-081)
 			// Public browse + auth apply + org admin CRUD + admin moderation.
 			r.Get("/jobs", jobsHandlers.HandleFindJobs)
+			// Public select-option source for the finder filters — the
+			// /custom-field-groups surface is auth-gated (Rule 16).
+			r.Get("/jobs/field-options", jobsHandlers.HandleFieldOptions)
 			r.Get("/jobs/{slug}", jobsHandlers.HandleJobDetail)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.apply")).
 				Post("/jobs/{id}/apply", jobsHandlers.HandleApply)
@@ -7165,14 +7168,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Section 122 — Next-Action Suggestions rule management (ADR-132).
 			// Read routes accept view OR manage (view is the read subset).
 			r.With(features.Gate(featureChecker, "next_actions.enabled")).Group(func(r chi.Router) {
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "nextactions.manage")).
-					Route("/admin/next-actions/rules", func(r chi.Router) {
-						r.Get("/", nextActionsHandlers.ListRules)
-						r.Post("/", nextActionsHandlers.CreateRule)
-						r.Get("/{id}", nextActionsHandlers.GetRule)
-						r.Patch("/{id}", nextActionsHandlers.UpdateRule)
-						r.Delete("/{id}", nextActionsHandlers.DeleteRule)
-					})
+				// A path may only be mounted once — apply the view/manage
+				// split per method inside a single Route instead.
+				r.Route("/admin/next-actions/rules", func(r chi.Router) {
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "nextactions.view", "nextactions.manage")).
+						Get("/", nextActionsHandlers.ListRules)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "nextactions.view", "nextactions.manage")).
+						Get("/{id}", nextActionsHandlers.GetRule)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "nextactions.manage")).
+						Post("/", nextActionsHandlers.CreateRule)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "nextactions.manage")).
+						Patch("/{id}", nextActionsHandlers.UpdateRule)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "nextactions.manage")).
+						Delete("/{id}", nextActionsHandlers.DeleteRule)
+				})
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "nextactions.view", "nextactions.manage")).
+					Get("/admin/next-actions/predicates", nextActionsHandlers.Predicates)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "nextactions.view")).
 					Get("/admin/next-actions/stats", nextActionsHandlers.Stats)
 			})

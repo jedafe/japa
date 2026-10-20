@@ -3138,6 +3138,7 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  OR cfv.value_text ILIKE '%' || $3 || '%')
 ORDER BY
  CASE WHEN $4::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $4::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
  WHEN $4::text = 'members' THEN s.member_count
  WHEN $4::text = 'followers' THEN s.follower_count
@@ -3189,7 +3190,7 @@ type ListSpacesByAncestorAndTypeRow struct {
 // space via the space_parent_spaces junction. Used by the JCE resolvers for
 // state (ancestor=country), city (ancestor=state), and university
 // (ancestor=city/state/country).
-// sort accepts: ” (newest), 'name', 'members', 'followers', 'posts'.
+// sort accepts: ” (newest), 'name', 'name_desc', 'members', 'followers', 'posts'.
 func (q *Queries) ListSpacesByAncestorAndType(ctx context.Context, arg ListSpacesByAncestorAndTypeParams) ([]ListSpacesByAncestorAndTypeRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByAncestorAndType,
 		arg.SpaceTypeID,
@@ -3679,6 +3680,7 @@ WHERE s.deleted_at IS NULL
  )
 ORDER BY
  CASE WHEN $9::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $9::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
  WHEN $9::text = 'members' THEN s.member_count
  WHEN $9::text = 'followers' THEN s.follower_count
@@ -3929,6 +3931,7 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  ))
 ORDER BY
  CASE WHEN $7::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $7::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
  WHEN $7::text = 'members' THEN s.member_count
  WHEN $7::text = 'followers' THEN s.follower_count
@@ -3979,7 +3982,7 @@ type ListSpacesByTypePaginatedRow struct {
 	Initials       *string            `json:"initials"`
 }
 
-// sort accepts: ” (default → newest), 'name' (A–Z), 'members', 'followers',
+// sort accepts: ” (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'members', 'followers',
 // 'posts' (all numeric DESC). Unknown values fall back to newest.
 // The initials column comes from the university_fields custom field group
 // (key = 'initials', deterministic id 00000000-0000-0000-0000-000000000090)
@@ -4082,6 +4085,7 @@ WHERE s.deleted_at IS NULL
  )
 ORDER BY
  CASE WHEN $9::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $9::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
  WHEN $9::text = 'members' THEN s.member_count
  WHEN $9::text = 'followers' THEN s.follower_count
@@ -4138,7 +4142,7 @@ type ListSpacesPaginatedRow struct {
 // level, region, subregion, space_type, joined-only, and sort support.
 // Replaces the in-memory filter+paginate in the ListSpaces handler.
 // Visibility filter matches ListSpaces.
-// sort accepts: ” (default → newest), 'name' (A–Z), 'members', 'followers',
+// sort accepts: ” (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'members', 'followers',
 // 'posts' (all numeric DESC), 'activity' (most recently updated). Unknown
 // values fall back to newest. §05 line 319: sort=members|activity|newest.
 // @joined_only restricts the list to spaces the viewer is an approved

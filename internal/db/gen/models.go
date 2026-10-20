@@ -2730,6 +2730,7 @@ type NextActionRule struct {
 	CreatedBy        pgtype.UUID        `json:"created_by"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Upsell           bool               `json:"upsell"`
 }
 
 type Notification struct {

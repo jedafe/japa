@@ -48,8 +48,9 @@ class NextActionsService {
 
   NextActionsService(this._client);
 
-  /// Pull the ranked suggestion list for a surface ('main' on mobile).
-  Future<List<NextAction>> getNextActions({String surface = 'main'}) async {
+  /// Pull the ranked suggestion list for a surface ('mobile' here — the
+  /// audience.surfaces filter distinguishes mobile from the web shell).
+  Future<List<NextAction>> getNextActions({String surface = 'mobile'}) async {
     return _client.get<List<NextAction>>(
       '/next-actions?surface=$surface',
       parse: (json) => (json as List<dynamic>)
