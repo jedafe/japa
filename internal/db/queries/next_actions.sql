@@ -158,10 +158,48 @@ SELECT EXISTS(
 ) AS has_sub;
 
 -- name: ListActiveUsersForSweep :many
+-- Keyset pagination on user_id — stable cursor, no skip/dup when events
+-- arrive mid-sweep (unlike OFFSET).
 SELECT DISTINCT user_id FROM platform_events
 WHERE user_id IS NOT NULL
+  AND user_id > @after_id
   AND created_at > now() - make_interval(days => @days)
-LIMIT @batch_size OFFSET @batch_offset;
+ORDER BY user_id ASC
+LIMIT @batch_size;
+
+-- name: MergeGuestNextAction :exec
+-- Guest→user state merge (§122): impressions sum; terminal statuses win over
+-- non-terminal on either side; snooze keeps the latest snoozed_until.
+INSERT INTO user_next_actions
+    (user_id, rule_id, status, impressions, first_shown_at, last_shown_at, snoozed_until)
+VALUES
+    (@user_id, @rule_id, @status, @impressions, @last_shown_at, @last_shown_at, @snoozed_until)
+ON CONFLICT (user_id, rule_id) DO UPDATE SET
+    status = CASE
+        WHEN user_next_actions.status IN ('dismissed','completed','expired') THEN user_next_actions.status
+        WHEN EXCLUDED.status IN ('dismissed','completed','expired') THEN EXCLUDED.status
+        WHEN user_next_actions.status = 'snoozed' AND user_next_actions.snoozed_until > now() THEN user_next_actions.status
+        ELSE EXCLUDED.status END,
+    impressions = user_next_actions.impressions + EXCLUDED.impressions,
+    snoozed_until = GREATEST(
+        COALESCE(user_next_actions.snoozed_until, '-infinity'::timestamptz),
+        COALESCE(EXCLUDED.snoozed_until, '-infinity'::timestamptz)),
+    last_shown_at = GREATEST(
+        COALESCE(user_next_actions.last_shown_at, '-infinity'::timestamptz),
+        COALESCE(EXCLUDED.last_shown_at, '-infinity'::timestamptz)),
+    updated_at = now();
+
+-- name: HasRecentNextActionShown :one
+-- Dedupes client track('shown') against the server-side impression emission
+-- (§122): true when a shown event for this identity+rule exists in @seconds.
+SELECT EXISTS(
+    SELECT 1 FROM platform_events
+    WHERE event_type = 'next_action.shown'
+      AND meta->>'rule_slug' = @rule_slug::text
+      AND ((@user_id::uuid IS NOT NULL AND user_id = @user_id)
+        OR (@session_id::text <> '' AND session_id = @session_id))
+      AND created_at > now() - make_interval(secs => @seconds)
+) AS has_recent;
 
 -- name: CountUpsellShownToday :one
 -- Upsell rules are identified by a completion_signal containing an

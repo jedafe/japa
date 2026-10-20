@@ -438,21 +438,57 @@ func (q *Queries) GetUserNextActions(ctx context.Context, userID pgtype.UUID) ([
 	return items, nil
 }
 
+const hasRecentNextActionShown = `-- name: HasRecentNextActionShown :one
+SELECT EXISTS(
+    SELECT 1 FROM platform_events
+    WHERE event_type = 'next_action.shown'
+      AND meta->>'rule_slug' = $1::text
+      AND (($2::uuid IS NOT NULL AND user_id = $2)
+        OR ($3::text <> '' AND session_id = $3))
+      AND created_at > now() - make_interval(secs => $4)
+) AS has_recent
+`
+
+type HasRecentNextActionShownParams struct {
+	RuleSlug  string      `json:"rule_slug"`
+	UserID    pgtype.UUID `json:"user_id"`
+	SessionID string      `json:"session_id"`
+	Seconds   float64     `json:"seconds"`
+}
+
+// Dedupes client track('shown') against the server-side impression emission
+// (§122): true when a shown event for this identity+rule exists in @seconds.
+func (q *Queries) HasRecentNextActionShown(ctx context.Context, arg HasRecentNextActionShownParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasRecentNextActionShown,
+		arg.RuleSlug,
+		arg.UserID,
+		arg.SessionID,
+		arg.Seconds,
+	)
+	var has_recent bool
+	err := row.Scan(&has_recent)
+	return has_recent, err
+}
+
 const listActiveUsersForSweep = `-- name: ListActiveUsersForSweep :many
 SELECT DISTINCT user_id FROM platform_events
 WHERE user_id IS NOT NULL
-  AND created_at > now() - make_interval(days => $1)
-LIMIT $3 OFFSET $2
+  AND user_id > $1
+  AND created_at > now() - make_interval(days => $2)
+ORDER BY user_id ASC
+LIMIT $3
 `
 
 type ListActiveUsersForSweepParams struct {
-	Days        int32 `json:"days"`
-	BatchOffset int32 `json:"batch_offset"`
-	BatchSize   int32 `json:"batch_size"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Days      int32       `json:"days"`
+	BatchSize int32       `json:"batch_size"`
 }
 
+// Keyset pagination on user_id — stable cursor, no skip/dup when events
+// arrive mid-sweep (unlike OFFSET).
 func (q *Queries) ListActiveUsersForSweep(ctx context.Context, arg ListActiveUsersForSweepParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listActiveUsersForSweep, arg.Days, arg.BatchOffset, arg.BatchSize)
+	rows, err := q.db.Query(ctx, listActiveUsersForSweep, arg.AfterID, arg.Days, arg.BatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -585,6 +621,50 @@ type MarkNextActionShownParams struct {
 
 func (q *Queries) MarkNextActionShown(ctx context.Context, arg MarkNextActionShownParams) error {
 	_, err := q.db.Exec(ctx, markNextActionShown, arg.UserID, arg.RuleID)
+	return err
+}
+
+const mergeGuestNextAction = `-- name: MergeGuestNextAction :exec
+INSERT INTO user_next_actions
+    (user_id, rule_id, status, impressions, first_shown_at, last_shown_at, snoozed_until)
+VALUES
+    ($1, $2, $3, $4, $5, $5, $6)
+ON CONFLICT (user_id, rule_id) DO UPDATE SET
+    status = CASE
+        WHEN user_next_actions.status IN ('dismissed','completed','expired') THEN user_next_actions.status
+        WHEN EXCLUDED.status IN ('dismissed','completed','expired') THEN EXCLUDED.status
+        WHEN user_next_actions.status = 'snoozed' AND user_next_actions.snoozed_until > now() THEN user_next_actions.status
+        ELSE EXCLUDED.status END,
+    impressions = user_next_actions.impressions + EXCLUDED.impressions,
+    snoozed_until = GREATEST(
+        COALESCE(user_next_actions.snoozed_until, '-infinity'::timestamptz),
+        COALESCE(EXCLUDED.snoozed_until, '-infinity'::timestamptz)),
+    last_shown_at = GREATEST(
+        COALESCE(user_next_actions.last_shown_at, '-infinity'::timestamptz),
+        COALESCE(EXCLUDED.last_shown_at, '-infinity'::timestamptz)),
+    updated_at = now()
+`
+
+type MergeGuestNextActionParams struct {
+	UserID       pgtype.UUID        `json:"user_id"`
+	RuleID       pgtype.UUID        `json:"rule_id"`
+	Status       string             `json:"status"`
+	Impressions  int32              `json:"impressions"`
+	LastShownAt  pgtype.Timestamptz `json:"last_shown_at"`
+	SnoozedUntil pgtype.Timestamptz `json:"snoozed_until"`
+}
+
+// Guest→user state merge (§122): impressions sum; terminal statuses win over
+// non-terminal on either side; snooze keeps the latest snoozed_until.
+func (q *Queries) MergeGuestNextAction(ctx context.Context, arg MergeGuestNextActionParams) error {
+	_, err := q.db.Exec(ctx, mergeGuestNextAction,
+		arg.UserID,
+		arg.RuleID,
+		arg.Status,
+		arg.Impressions,
+		arg.LastShownAt,
+		arg.SnoozedUntil,
+	)
 	return err
 }
 

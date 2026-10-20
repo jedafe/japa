@@ -60,6 +60,9 @@ func (r *StateResolver) SetVisitorResolver(v SweepVisitorResolver) { r.visitor =
 // signal (missing profile row, tier lookup error) resolves to safe defaults
 // rather than erroring, per §122 graceful-degradation.
 func (r *StateResolver) Resolve(ctx context.Context, req *http.Request, surface string) *UserState {
+	if r == nil {
+		return &UserState{UserClass: ClassGuest, SessionKey: guestSessionKey(req), Surface: surface}
+	}
 	s := &UserState{
 		UserClass:  ClassGuest,
 		SessionKey: guestSessionKey(req), // jc_guest cookie, IP fallback
@@ -105,6 +108,9 @@ func (r *StateResolver) Resolve(ctx context.Context, req *http.Request, surface 
 // ResolveForUser. GeoIP/journey-cookie signals stay empty; SessionKey is the
 // user ID (user-scoped event queries key on user_id anyway).
 func (r *StateResolver) ResolveSweep(ctx context.Context, userID pgtype.UUID) *UserState {
+	if r == nil {
+		return &UserState{UserID: userID, UserClass: ClassRegular, SessionKey: userID.String()}
+	}
 	s := &UserState{
 		UserID:     userID,
 		UserClass:  ClassRegular,

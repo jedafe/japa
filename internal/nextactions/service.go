@@ -468,8 +468,31 @@ func (s *Service) Track(ctx context.Context, r *http.Request, ruleID pgtype.UUID
 	default:
 		return fmt.Errorf("nextactions: unknown track event %q", event)
 	}
+	if et == analytics.EventNextActionShown && s.shownAlreadyEmitted(ctx, state, ruleID) {
+		return nil // server-side recordImpression already counted this impression
+	}
 	s.track(ctx, state, ruleID, et)
 	return nil
+}
+
+// shownAlreadyEmitted dedupes a client track('shown') against the server-side
+// emission in recordImpression — external renderers can keep tracking without
+// inflating the funnel.
+func (s *Service) shownAlreadyEmitted(ctx context.Context, state *UserState, ruleID pgtype.UUID) bool {
+	if s.read == nil {
+		return false
+	}
+	slug := s.ruleSlug(ctx, ruleID)
+	if slug == "" {
+		return false
+	}
+	has, err := s.read.HasRecentNextActionShown(ctx, gen.HasRecentNextActionShownParams{
+		UserID:    state.UserID,
+		SessionID: state.SessionKey,
+		RuleSlug:  slug,
+		Seconds:   float64(s.settingInt(ctx, "nextactions.cache_ttl_seconds", defaultCacheTTLSeconds)),
+	})
+	return err == nil && has
 }
 
 // markCompleted is the completion_signal path — same as Complete minus the
@@ -709,23 +732,27 @@ func (s *Service) guestCacheWrite(ctx context.Context, key string, data []byte, 
 	_ = s.cache.Expire(ctx, hk, time.Duration(s.settingInt(ctx, "nextactions.guest_state_ttl_seconds", defaultGuestStateTTL))*time.Second).Err()
 }
 
-// MergeGuestState copies terminal guest states (dismissed/completed) into
-// user_next_actions at register/login so nudges don't resurface post-auth.
+// MergeGuestState copies guest states into user_next_actions at register/
+// login — terminal statuses so nudges don't resurface, plus impressions,
+// last_shown_at, and snoozed_until so frequency caps carry pre-auth history
+// (MergeGuestNextAction handles the status precedence).
 func (s *Service) MergeGuestState(ctx context.Context, userID pgtype.UUID, guestKey string) {
 	if s.write == nil || !userID.Valid || guestKey == "" {
 		return
 	}
 	for rid, st := range s.guestStates(ctx, guestKey) {
-		if st.Status != StatusDismissed && st.Status != StatusCompleted {
-			continue
+		status := st.Status
+		if status == "" {
+			status = StatusPending
 		}
-		ruleID := pgtype.UUID{Bytes: rid, Valid: true}
-		_ = s.write.UpsertUserNextAction(ctx, gen.UpsertUserNextActionParams{UserID: userID, RuleID: ruleID})
-		if st.Status == StatusDismissed {
-			_ = s.write.DismissNextAction(ctx, gen.DismissNextActionParams{UserID: userID, RuleID: ruleID})
-		} else {
-			_ = s.write.CompleteNextAction(ctx, gen.CompleteNextActionParams{UserID: userID, RuleID: ruleID})
-		}
+		_ = s.write.MergeGuestNextAction(ctx, gen.MergeGuestNextActionParams{
+			UserID:       userID,
+			RuleID:       pgtype.UUID{Bytes: rid, Valid: true},
+			Status:       status,
+			Impressions:  st.Impressions,
+			LastShownAt:  st.LastShownAt,
+			SnoozedUntil: st.SnoozedUntil,
+		})
 	}
 }
 
@@ -764,9 +791,10 @@ func (s *Service) Sweep(ctx context.Context) error {
 
 	days := s.settingInt(ctx, "nextactions.sweep_activity_window_days", defaultSweepWindowDays)
 	batch := defaultSweepBatch
-	for offset := 0; ; offset += batch {
+	var after pgtype.UUID // keyset cursor — stable under concurrent writes
+	for {
 		users, err := s.read.ListActiveUsersForSweep(ctx, gen.ListActiveUsersForSweepParams{
-			Days: int32(days), BatchSize: int32(batch), BatchOffset: int32(offset), // #nosec G115 — bounded
+			AfterID: after, Days: int32(days), BatchSize: int32(batch), // #nosec G115 — bounded
 		})
 		if err != nil {
 			return fmt.Errorf("nextactions: sweep candidates: %w", err)
@@ -777,6 +805,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 		if len(users) < batch {
 			return nil
 		}
+		after = users[len(users)-1]
 	}
 }
 
