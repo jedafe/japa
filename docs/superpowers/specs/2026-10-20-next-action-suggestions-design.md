@@ -8,8 +8,9 @@
 
 A dedicated, admin-configured engine that suggests the **next action** a person should
 take, based on who they are and what they have (not) done — delivered proactively
-through popups, announcement bars, notifications, push, and email across all
-surfaces (main, tools, academy, docs, mobile).
+through popups, announcement bars, sidebar widgets, in-article cards,
+notifications, push, and email across all surfaces (main, tools, academy,
+docs, mobile).
 
 Examples it must serve out of the box:
 
@@ -56,7 +57,7 @@ CREATE TABLE public.next_action_rules (
     audience         jsonb NOT NULL DEFAULT '{}',           -- see shape below
     conditions       jsonb NOT NULL DEFAULT '{}',           -- predicate DSL
     payload          jsonb NOT NULL,                        -- title/body/cta/icon
-    channels         jsonb NOT NULL DEFAULT '[]',           -- popup|announcement_bar|notification|push|email
+    channels         jsonb NOT NULL DEFAULT '[]',           -- popup|announcement_bar|sidebar|in_article|notification|push|email
     completion_signal jsonb,                                -- auto-complete predicate (nullable)
     frequency        jsonb NOT NULL DEFAULT '{}',           -- mode, caps, cooldowns
     valid_from       timestamptz,
@@ -226,16 +227,20 @@ Response item shape:
 |---|---|---|---|
 | `popup` | ✓ | ✓ | `NextActionPopup.svelte` modal in each app shell; max `nextactions.popup_max_per_session` (default 1) per session |
 | `announcement_bar` | ✓ | ✓ | `NextActionBar.svelte` dismissible bar under top nav; one visible, highest priority first |
+| `sidebar` | ✓ | ✓ | New `next_action` type in the §59 sidebar widget registry, rendered by `SidebarWidgetRenderer.svelte` — admin-placeable per layout like `suggested_spaces`/`ad_slot` |
+| `in_article` | ✓ | ✓ | `NextActionInline.svelte` card injected into article/reader bodies, same injection pattern as `InArticleAd.svelte` (§25) |
 | `notification` | — | ✓ | §35 in-app notification entry with CTA link |
 | `push` | — | ✓ | §35 web/mobile push via sweep |
 | `email` | — | ✓ | §35 email via sweep |
 
 Rule validation rejects `notification|push|email` for rules whose
-`audience.user_class` includes `guest`.
+`audience.user_class` includes `guest`. `sidebar`/`in_article` are pull-side
+render channels — guests get them too.
 
-Main app gets both components mounted in the app shell; tools/academy/docs get
-the bar (and popup where the shell supports it); Flutter polls the endpoint on
-home load + receives push.
+Main app gets popup + bar components mounted in the app shell, the `next_action`
+sidebar widget available in widget layouts, and the inline card in article/
+guide reader views; tools/academy/docs get the bar (and popup where the shell
+supports it); Flutter polls the endpoint on home load + receives push.
 
 ## Seed rules (shipped enabled, tunable in Control)
 
