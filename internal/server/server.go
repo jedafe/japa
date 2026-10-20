@@ -1233,6 +1233,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Tracker:  analyticsService,
 	})
 	nextActionsHandlers := nextactions.NewHandlers(nextActionsSvc, settingsService)
+	// §122 sweep path: dispatch materialized suggestions via §35.
+	nextActionsSvc.SetNotifier(nextactions.NewNotifier(notificationService))
+	worker.RegisterNextActionsService(nextActionsSvc)
 
 	// Japa Academy subsystem (Section 36).
 	academyStore := academy.NewStore(database)
