@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/feed/providers/feed_provider.dart';
+import 'package:japaconnect_mobile/features/nextactions/widgets/next_action_card.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class FeedScreen extends ConsumerWidget {
@@ -18,8 +19,11 @@ class FeedScreen extends ConsumerWidget {
         onRefresh: () async => ref.invalidate(feedProvider),
         child: feed.when(
           data: (items) => ListView.builder(
-            itemCount: items.length,
-            itemBuilder: (_, i) => FeedCard(item: items[i]),
+            // §122: the top suggestion card sits above the feed items.
+            itemCount: items.length + 1,
+            itemBuilder: (_, i) => i == 0
+                ? const NextActionCard()
+                : FeedCard(item: items[i - 1]),
           ),
           loading: () => const LoadingShimmer(),
           error: (e, _) => JcErrorWidget(error: e, onRetry: () => ref.invalidate(feedProvider)),
