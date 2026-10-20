@@ -151,7 +151,7 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 		if upsell && upsellShownToday >= int64(maxUpsell) {
 			continue
 		}
-		out = append(out, s.toSuggestion(rule, st))
+		out = append(out, s.toSuggestion(rule))
 		if upsell {
 			upsellShownToday++
 		}
@@ -243,7 +243,7 @@ func (s *Service) loadStates(ctx context.Context, state *UserState) map[[16]byte
 		}
 		for _, r := range rows {
 			out[r.RuleID.Bytes] = userActionState{
-				ActionID: r.ID, RuleID: r.RuleID, Status: r.Status,
+				RuleID: r.RuleID, Status: r.Status,
 				Impressions: r.Impressions, LastShownAt: r.LastShownAt, SnoozedUntil: r.SnoozedUntil,
 			}
 		}
@@ -345,16 +345,14 @@ func isUpsell(rule Rule) bool {
 	return false
 }
 
-func (s *Service) toSuggestion(rule Rule, st userActionState) Suggestion {
+func (s *Service) toSuggestion(rule Rule) Suggestion {
 	sug := Suggestion{
 		upsell: isUpsell(rule),
 		ID:     rule.ID.String(), RuleSlug: rule.Slug,
 		Title: rule.Payload.Title, Body: rule.Payload.Body,
 		CTALabel: rule.Payload.CTALabel, CTAURL: rule.Payload.CTAURL,
 		Icon: rule.Payload.Icon, Channels: rule.Channels, Priority: rule.Priority,
-	}
-	if st.ActionID.Valid {
-		sug.ActionID = st.ActionID.String()
+		SnoozeDefaultHours: rule.Frequency.SnoozeDefaultHours,
 	}
 	return sug
 }
@@ -819,7 +817,7 @@ func (s *Service) sweepUser(ctx context.Context, userID pgtype.UUID, rules []Rul
 	if err == nil {
 		for _, r := range rows {
 			states[r.RuleID.Bytes] = userActionState{
-				ActionID: r.ID, Status: r.Status, Impressions: r.Impressions,
+				RuleID: r.RuleID, Status: r.Status, Impressions: r.Impressions,
 				LastShownAt: r.LastShownAt, SnoozedUntil: r.SnoozedUntil,
 			}
 		}

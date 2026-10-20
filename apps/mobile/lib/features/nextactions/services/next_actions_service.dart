@@ -4,7 +4,6 @@ import 'package:japaconnect_core/japaconnect_core.dart';
 /// GET /api/v1/next-actions.
 class NextAction {
   final String id;
-  final String actionId;
   final String ruleSlug;
   final String title;
   final String body;
@@ -13,10 +12,10 @@ class NextAction {
   final String icon;
   final List<String> channels;
   final int priority;
+  final int snoozeDefaultHours;
 
   const NextAction({
     required this.id,
-    required this.actionId,
     required this.ruleSlug,
     required this.title,
     required this.body,
@@ -25,11 +24,11 @@ class NextAction {
     required this.icon,
     required this.channels,
     required this.priority,
+    required this.snoozeDefaultHours,
   });
 
   factory NextAction.fromJson(Map<String, dynamic> json) => NextAction(
         id: json['id'] as String? ?? '',
-        actionId: json['action_id'] as String? ?? '',
         ruleSlug: json['rule_slug'] as String? ?? '',
         title: json['title'] as String? ?? '',
         body: json['body'] as String? ?? '',
@@ -40,6 +39,7 @@ class NextAction {
             .whereType<String>()
             .toList(),
         priority: json['priority'] as int? ?? 0,
+        snoozeDefaultHours: json['snooze_default_hours'] as int? ?? 0,
       );
 }
 

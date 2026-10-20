@@ -125,14 +125,14 @@ func evalAssessment(ctx context.Context, p Predicate, s *UserState, deps EvalDep
 }
 
 func evalEventCount(ctx context.Context, p Predicate, s *UserState, deps EvalDeps) bool {
-	if deps == nil || p.Gte == nil || p.Type == "" {
+	if deps == nil || p.Type == "" || (p.Lt == nil && p.Gt == nil && p.Gte == nil) {
 		return false
 	}
 	n, err := deps.CountEvents(ctx, s, p.Type, windowDays(p.Window), p.Window == "session")
 	if err != nil {
 		return false
 	}
-	return n >= int64(*p.Gte)
+	return cmpInt(int(n), p)
 }
 
 // evalDepsBool calls a deps probe and folds errors to false.

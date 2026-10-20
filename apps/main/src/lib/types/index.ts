@@ -5460,7 +5460,6 @@ export interface RoadmapChangelogItem {
 // GET /api/v1/next-actions.
 export interface NextAction {
 	id: string;
-	action_id: string;
 	rule_slug: string;
 	title: string;
 	body: string;
@@ -5469,4 +5468,5 @@ export interface NextAction {
 	icon: string;
 	channels: string[];
 	priority: number;
+	snooze_default_hours: number;
 }

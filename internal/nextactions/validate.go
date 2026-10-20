@@ -145,8 +145,8 @@ func validatePredicateArgs(p Predicate) error {
 			return fmt.Errorf("%s requires slug", p.Predicate)
 		}
 	case "event_count":
-		if p.Type == "" || p.Gte == nil {
-			return fmt.Errorf("event_count requires type and gte")
+		if p.Type == "" || (p.Lt == nil && p.Gt == nil && p.Gte == nil) {
+			return fmt.Errorf("event_count requires type and at least one of lt, gt, gte")
 		}
 	case "account_age_days", "profile_completeness", "assessment_score",
 		"session_page_views", "dwell_seconds":

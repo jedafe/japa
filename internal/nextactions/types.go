@@ -93,8 +93,7 @@ type Rule struct {
 
 // Suggestion is the API response item — a render-ready suggestion.
 type Suggestion struct {
-	ID       string   `json:"id"`        // rule id
-	ActionID string   `json:"action_id"` // user_next_actions id; "" for guests
+	ID       string   `json:"id"` // rule id
 	RuleSlug string   `json:"rule_slug"`
 	Title    string   `json:"title"`
 	Body     string   `json:"body"`
@@ -103,6 +102,9 @@ type Suggestion struct {
 	Icon     string   `json:"icon"`
 	Channels []string `json:"channels"`
 	Priority int32    `json:"priority"`
+	// SnoozeDefaultHours carries frequency.snooze_default_hours so renderers
+	// can offer "Remind me later" without hardcoding a duration.
+	SnoozeDefaultHours int `json:"snooze_default_hours"`
 
 	// upsell is internal bookkeeping (not serialized): set when the rule's
 	// completion_signal keys on account_tier/user_class so guest impression
@@ -147,7 +149,6 @@ const (
 
 // userActionState is a decoded user_next_actions row (or guest equivalent).
 type userActionState struct {
-	ActionID     pgtype.UUID
 	RuleID       pgtype.UUID
 	Status       string
 	Impressions  int32

@@ -40,6 +40,12 @@
 		void dismissNextAction(action.id);
 		open = false;
 	}
+
+	function snooze() {
+		if (!action) return;
+		void dismissNextAction(action.id, action.snooze_default_hours);
+		open = false;
+	}
 </script>
 
 {#if action && open}
@@ -66,11 +72,19 @@
 				>
 					{action.cta_label}
 				</button>
+				{#if action.snooze_default_hours > 0}
+					<button
+						onclick={snooze}
+						class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+					>
+						Later
+					</button>
+				{/if}
 				<button
 					onclick={dismiss}
 					class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
 				>
-					Not now
+					Dismiss
 				</button>
 			</div>
 		</div>
