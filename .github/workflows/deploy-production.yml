@@ -2,31 +2,94 @@ name: Deploy Production
 
 on:
   workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit SHA to promote (blank = last staging build)'
+        required: false
 
-# Production deployment is manual by design: GitHub's required-reviewers
-# environment gate needs a paid plan for private repos, so the promotion
-# gate is this workflow_dispatch trigger instead — a maintainer clicks
-# "Run workflow" on a commit that has already been exercised on staging.
+# Manual production deploy — the dispatch click is the promotion gate.
 #
-# Coolify deployment: each application in Coolify exposes a deploy webhook
-# (Applications → <app> → Webhooks → "Deploy Webhook"). This job calls the
-# webhooks; Coolify pulls the repo, rebuilds the Dockerfile, and rolls the
-# service. The `production` GitHub environment scopes the secrets below.
+# api: the image is env-agnostic (all config is runtime JC_* env), so prod
+# ships the exact digest staging ran — retagged registry-side via
+# `imagetools create`, no pull, no rebuild.
 #
-# Required repo secrets (Settings → Secrets → Actions), production:
-#   COOLIFY_WEBHOOK_API        — api service    (Dockerfile at repo root)
-#   COOLIFY_WEBHOOK_MAIN       — apps/main
-#   COOLIFY_WEBHOOK_ADMIN      — apps/admin
-#   COOLIFY_WEBHOOK_CONTROL    — apps/control
-#   COOLIFY_WEBHOOK_ACADEMY    — apps/academy
-#   COOLIFY_WEBHOOK_DOCS       — apps/docs
-#   COOLIFY_WEBHOOK_TOOLS      — apps/tools
+# frontends: PUBLIC_* values are inlined at vite build time and differ
+# between environments, so frontend images are built at dispatch with the
+# `production` environment's variables — same source commit, prod config,
+# warmed by the local buildx cache.
 #
-# Each secret holds the full webhook URL, e.g.
-#   https://coolify.example.com/api/v1/deploy?uuid=<app-uuid>&token=<token>&force=false
+# Prod deploy webhooks live on the `production` environment's secrets:
+#   COOLIFY_WEBHOOK_API, _MAIN, _ADMIN, _CONTROL, _ACADEMY, _DOCS, _TOOLS
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
+  promote-api:
+    runs-on: [self-hosted]
+    environment: production
+    steps:
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Retag api staging → production
+        run: |
+          docker buildx imagetools create \
+            --tag ghcr.io/${{ github.repository_owner }}/japa-api:production \
+            ghcr.io/${{ github.repository_owner }}/japa-api:${{ inputs.sha || 'staging' }}
+
+  build-frontends:
+    runs-on: [self-hosted]
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [main, admin, control, academy, docs, tools]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/japa-${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build + push ${{ matrix.app }}
+        run: |
+          ARGS=""
+          for V in PUBLIC_JC_API_URL PUBLIC_JC_WS_URL PUBLIC_JC_ENV \
+                   PUBLIC_JC_SITE_URL PUBLIC_JC_GLITCHTIP_DSN \
+                   PUBLIC_MAIN_ORIGIN PUBLIC_ADMIN_ORIGIN PUBLIC_DOCS_ORIGIN \
+                   PUBLIC_JC_ACADEMY_ORIGIN PUBLIC_JC_TOOLS_ORIGIN; do
+            ARGS="$ARGS --build-arg $V=${!V}"
+          done
+          docker buildx build \
+            --file "apps/${{ matrix.app }}/Dockerfile" \
+            --tag "$IMAGE:${{ inputs.sha || github.sha }}" \
+            --tag "$IMAGE:production" \
+            --cache-from "type=local,src=$HOME/docker-cache/${{ matrix.app }}" \
+            --cache-to "type=local,dest=$HOME/docker-cache/${{ matrix.app }},mode=max" \
+            --push $ARGS .
+        env:
+          PUBLIC_JC_API_URL: ${{ vars.PUBLIC_JC_API_URL }}
+          PUBLIC_JC_WS_URL: ${{ vars.PUBLIC_JC_WS_URL }}
+          PUBLIC_JC_ENV: ${{ vars.PUBLIC_JC_ENV }}
+          PUBLIC_JC_SITE_URL: ${{ vars.PUBLIC_JC_SITE_URL }}
+          PUBLIC_JC_GLITCHTIP_DSN: ${{ vars.PUBLIC_JC_GLITCHTIP_DSN }}
+          PUBLIC_MAIN_ORIGIN: ${{ vars.PUBLIC_MAIN_ORIGIN }}
+          PUBLIC_ADMIN_ORIGIN: ${{ vars.PUBLIC_ADMIN_ORIGIN }}
+          PUBLIC_DOCS_ORIGIN: ${{ vars.PUBLIC_DOCS_ORIGIN }}
+          PUBLIC_JC_ACADEMY_ORIGIN: ${{ vars.PUBLIC_JC_ACADEMY_ORIGIN }}
+          PUBLIC_JC_TOOLS_ORIGIN: ${{ vars.PUBLIC_JC_TOOLS_ORIGIN }}
+
   deploy-production:
+    needs: [promote-api, build-frontends]
     runs-on: [self-hosted]
     environment: production
     steps:

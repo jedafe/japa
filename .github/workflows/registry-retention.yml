@@ -1,0 +1,37 @@
+name: Registry Retention
+
+on:
+  schedule:
+    - cron: '17 3 * * 1' # weekly, Monday 03:17 UTC
+  workflow_dispatch:
+
+# Private GHCR storage is quota-billed — prune old tag versions while
+# keeping the mutable staging/production tags and the N newest sha tags
+# per package. Without this, per-push sha tags grow storage unboundedly.
+
+permissions:
+  packages: write
+
+jobs:
+  prune:
+    runs-on: [self-hosted]
+    steps:
+      - name: Prune old package versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          KEEP: "10"
+        run: |
+          set -e
+          for app in api main admin control academy docs tools; do
+            pkg="japa-$app"
+            # container package versions live under /user/packages
+            ids=$(gh api "users/$OWNER/packages/container/$pkg/versions?per_page=100" \
+              --jq '.[] | select((.metadata.container.tags | any(. == "staging" or . == "production")) | not) | .id' 2>/dev/null || true)
+            count=$(echo "$ids" | grep -c . || true)
+            if [ "$count" -le "$KEEP" ]; then continue; fi
+            echo "$ids" | tail -n +$((KEEP + 1)) | while read -r vid; do
+              [ -n "$vid" ] && gh api -X DELETE "users/$OWNER/packages/container/$pkg/versions/$vid" >/dev/null \
+                && echo "deleted $pkg version $vid"
+            done
+          done

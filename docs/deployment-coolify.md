@@ -69,12 +69,43 @@ JC_VAPID_PUBLIC_KEY / JC_VAPID_PRIVATE_KEY / JC_VAPID_SUBJECT
 JC_STRIPE_SECRET_KEY / webhook / price ids…
 ```
 
-## GitHub → Coolify webhook deploys
+## GitHub → GHCR → Coolify image deploys
 
-`.github/workflows/deploy.yml` POSTs each app's **Deploy Webhook**
-(App → Webhooks → Deploy Webhook URL) after green CI on `main`. Repo
-secrets: `COOLIFY_WEBHOOK_API`, `_MAIN`, `_ADMIN`, `_CONTROL`, `_ACADEMY`,
-`_DOCS`, `_TOOLS` (+ `_STAGING` variants for the staging environment).
+Images are built on the self-hosted CI runner and pushed to GHCR as
+`ghcr.io/<owner>/japa-<app>` — the Coolify host never builds from source.
+Each app's **Deployment Type** is **Docker Image**:
+
+- staging apps track `ghcr.io/<owner>/japa-<app>:staging`
+- production apps track `ghcr.io/<owner>/japa-<app>:production`
+
+Coolify needs registry credentials once (**Settings → Registries** →
+`ghcr.io` + a classic PAT with `read:packages`) since the packages are
+private. The deploy webhook then pulls the tag and rolls the container.
+
+Two flows:
+
+- **Staging** (`deploy.yml`, automatic on green CI): builds all 7 apps
+  with the `staging` environment's `PUBLIC_*` variables, tags
+  `:<sha>` + `:staging`, calls each app's deploy webhook.
+- **Production** (`deploy-production.yml`, manual dispatch): retags the
+  api image `:staging`→`:production` registry-side (it is env-agnostic —
+  all config is runtime `JC_*` env), builds the 6 frontends with the
+  `production` environment's `PUBLIC_*` variables (vite inlines them at
+  build time, so frontend images are per-environment builds from the
+  same commit), then calls the prod webhooks.
+
+The `PUBLIC_*` build args live as **environment variables** on the
+`staging`/`production` GitHub environments — same names as the
+Dockerfiles' `ARG`s (`PUBLIC_JC_API_URL`, `PUBLIC_JC_WS_URL`,
+`PUBLIC_JC_ENV`, `PUBLIC_JC_SITE_URL`, `PUBLIC_JC_GLITCHTIP_DSN`,
+`PUBLIC_MAIN_ORIGIN`, `PUBLIC_ADMIN_ORIGIN`, `PUBLIC_DOCS_ORIGIN`,
+`PUBLIC_JC_ACADEMY_ORIGIN`, `PUBLIC_JC_TOOLS_ORIGIN`). Deploy webhook
+URLs are **environment secrets** (`COOLIFY_WEBHOOK_*` on `production`,
+`*_STAGING` on `staging`).
+
+Private-package quota note: GHCR counts storage/bandwidth against the
+account (500 MB free on Free plan). `registry-retention.yml` prunes old
+`sha` tags weekly — keep it, or set a Packages budget/payment method.
 
 **Update flow (gated promotion):** every green CI run on `main`
 auto-deploys staging. Production ships only when a maintainer runs the

@@ -6,33 +6,94 @@ on:
     types: [completed]
     branches: [main]
 
-# Coolify deployment: each application in Coolify exposes a deploy webhook
-# (Applications → <app> → Webhooks → "Deploy Webhook"). CI calls the webhook;
-# Coolify pulls the repo, rebuilds the Dockerfile, and rolls the service.
+# Image-based Coolify deployment: this job builds each app's Dockerfile on
+# the self-hosted runner and pushes to ghcr.io; the deploy job then calls
+# each Coolify app's Deploy Webhook, which pulls the tagged image and rolls
+# the service. No image is ever rebuilt on the Coolify host.
 #
-# Flow: every green CI run on `main` auto-deploys the STAGING environment
-# (staging Coolify apps track `main` — same commit, staging config).
-# Production deploys are a separate workflow (deploy-production.yml) gated
-# by a manual workflow_dispatch — see that file for details.
+# Image naming: ghcr.io/<owner>/japa-<app> tagged with the commit SHA plus
+# the floating `staging` tag that staging apps track.
 #
-# Required repo secrets (Settings → Secrets → Actions), staging:
-#   COOLIFY_WEBHOOK_API_STAGING        — api service    (Dockerfile at repo root)
-#   COOLIFY_WEBHOOK_MAIN_STAGING       — apps/main
-#   COOLIFY_WEBHOOK_ADMIN_STAGING      — apps/admin
-#   COOLIFY_WEBHOOK_CONTROL_STAGING    — apps/control
-#   COOLIFY_WEBHOOK_ACADEMY_STAGING    — apps/academy
-#   COOLIFY_WEBHOOK_DOCS_STAGING       — apps/docs
-#   COOLIFY_WEBHOOK_TOOLS_STAGING      — apps/tools
+# PUBLIC_* values are vite build-time args — they come from the `staging`
+# GitHub environment's variables (Settings → Environments → staging →
+# Environment variables), named exactly as the Dockerfiles' ARGs:
+#   PUBLIC_JC_API_URL, PUBLIC_JC_WS_URL, PUBLIC_JC_ENV, PUBLIC_JC_SITE_URL,
+#   PUBLIC_JC_GLITCHTIP_DSN, PUBLIC_MAIN_ORIGIN, PUBLIC_ADMIN_ORIGIN,
+#   PUBLIC_DOCS_ORIGIN, PUBLIC_JC_ACADEMY_ORIGIN, PUBLIC_JC_TOOLS_ORIGIN
+# Extra --build-arg flags unused by a given Dockerfile only warn, so all
+# frontends share one arg set.
 #
-# Each secret holds the full webhook URL, e.g.
-#   https://coolify.example.com/api/v1/deploy?uuid=<app-uuid>&token=<token>&force=false
+# Staging deploy webhooks live on the `staging` environment's secrets:
+#   COOLIFY_WEBHOOK_API_STAGING, _MAIN_, _ADMIN_, _CONTROL_, _ACADEMY_,
+#   _DOCS_, _TOOLS_STAGING
+#
+# Production is a separate manual workflow (deploy-production.yml).
+
+permissions:
+  contents: read
+  packages: write # GITHUB_TOKEN pushes to ghcr.io
 
 jobs:
-  deploy-staging:
-    runs-on: [self-hosted]
+  build-images:
     if: >-
       ${{ github.event.workflow_run.conclusion == 'success'
           && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: [self-hosted]
+    environment: staging
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { app: api, dockerfile: Dockerfile }
+          - { app: main, dockerfile: apps/main/Dockerfile }
+          - { app: admin, dockerfile: apps/admin/Dockerfile }
+          - { app: control, dockerfile: apps/control/Dockerfile }
+          - { app: academy, dockerfile: apps/academy/Dockerfile }
+          - { app: docs, dockerfile: apps/docs/Dockerfile }
+          - { app: tools, dockerfile: apps/tools/Dockerfile }
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/japa-${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # api Dockerfile derives version from commit count
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build + push ${{ matrix.app }}
+        run: |
+          ARGS=""
+          for V in PUBLIC_JC_API_URL PUBLIC_JC_WS_URL PUBLIC_JC_ENV \
+                   PUBLIC_JC_SITE_URL PUBLIC_JC_GLITCHTIP_DSN \
+                   PUBLIC_MAIN_ORIGIN PUBLIC_ADMIN_ORIGIN PUBLIC_DOCS_ORIGIN \
+                   PUBLIC_JC_ACADEMY_ORIGIN PUBLIC_JC_TOOLS_ORIGIN; do
+            ARGS="$ARGS --build-arg $V=${!V}"
+          done
+          docker buildx build \
+            --file "${{ matrix.dockerfile }}" \
+            --tag "$IMAGE:${{ github.sha }}" \
+            --tag "$IMAGE:staging" \
+            --cache-from "type=local,src=$HOME/docker-cache/${{ matrix.app }}" \
+            --cache-to "type=local,dest=$HOME/docker-cache/${{ matrix.app }},mode=max" \
+            --push $ARGS .
+        env:
+          PUBLIC_JC_API_URL: ${{ vars.PUBLIC_JC_API_URL }}
+          PUBLIC_JC_WS_URL: ${{ vars.PUBLIC_JC_WS_URL }}
+          PUBLIC_JC_ENV: ${{ vars.PUBLIC_JC_ENV }}
+          PUBLIC_JC_SITE_URL: ${{ vars.PUBLIC_JC_SITE_URL }}
+          PUBLIC_JC_GLITCHTIP_DSN: ${{ vars.PUBLIC_JC_GLITCHTIP_DSN }}
+          PUBLIC_MAIN_ORIGIN: ${{ vars.PUBLIC_MAIN_ORIGIN }}
+          PUBLIC_ADMIN_ORIGIN: ${{ vars.PUBLIC_ADMIN_ORIGIN }}
+          PUBLIC_DOCS_ORIGIN: ${{ vars.PUBLIC_DOCS_ORIGIN }}
+          PUBLIC_JC_ACADEMY_ORIGIN: ${{ vars.PUBLIC_JC_ACADEMY_ORIGIN }}
+          PUBLIC_JC_TOOLS_ORIGIN: ${{ vars.PUBLIC_JC_TOOLS_ORIGIN }}
+
+  deploy-staging:
+    needs: build-images
+    runs-on: [self-hosted]
     environment: staging
     steps:
       - name: Deploy api (staging)
