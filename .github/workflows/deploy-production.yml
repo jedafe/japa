@@ -100,22 +100,22 @@ jobs:
     environment: production
     steps:
       - name: Deploy api
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_API }}"
 
       - name: Deploy main
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_MAIN }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_MAIN }}"
 
       - name: Deploy admin
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ADMIN }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_ADMIN }}"
 
       - name: Deploy control
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_CONTROL }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_CONTROL }}"
 
       - name: Deploy academy
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ACADEMY }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_ACADEMY }}"
 
       - name: Deploy docs
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_DOCS }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_DOCS }}"
 
       - name: Deploy tools
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_TOOLS }}"

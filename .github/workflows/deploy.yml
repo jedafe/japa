@@ -175,25 +175,25 @@ jobs:
     steps:
       - name: Deploy api
         if: contains(needs.filter.outputs.apps, 'api')
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_API_STAGING }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_API_STAGING }}"
       - name: Deploy main
         if: contains(needs.filter.outputs.apps, 'main')
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_MAIN_STAGING }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_MAIN_STAGING }}"
       - name: Deploy admin
         if: contains(needs.filter.outputs.apps, 'admin')
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ADMIN_STAGING }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_ADMIN_STAGING }}"
       - name: Deploy control
         if: contains(needs.filter.outputs.apps, 'control')
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_CONTROL_STAGING }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_CONTROL_STAGING }}"
       - name: Deploy academy
         if: contains(needs.filter.outputs.apps, 'academy')
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_ACADEMY_STAGING }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_ACADEMY_STAGING }}"
       - name: Deploy docs
         if: contains(needs.filter.outputs.apps, 'docs')
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_DOCS_STAGING }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_DOCS_STAGING }}"
       - name: Deploy tools
         if: contains(needs.filter.outputs.apps, 'tools')
-        run: curl -fsS -X POST "${{ secrets.COOLIFY_WEBHOOK_TOOLS_STAGING }}"
+        run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_TOOLS_STAGING }}"
       - name: Record deployed SHA
         run: gh variable set LAST_DEPLOYED_SHA --body "${{ github.sha }}"
         env:
