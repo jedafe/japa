@@ -80,8 +80,8 @@ jobs:
           docker buildx build \
             --file "apps/${{ matrix.app }}/Dockerfile" \
             --tag "$IMAGE:cache-probe" \
-            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
-            --output "type=cacheonly" $ARGS .
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=min" \
+            --output "type=cacheonly",compression=zstd,force-compression=true $ARGS .
         env:
           PUBLIC_JC_API_URL: ${{ vars.PUBLIC_JC_API_URL }}
           PUBLIC_JC_WS_URL: ${{ vars.PUBLIC_JC_WS_URL }}

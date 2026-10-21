@@ -165,8 +165,8 @@ jobs:
           docker buildx build \
             --file "$DOCKERFILE" \
             --tag "$IMAGE:cache-probe" \
-            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
-            --output "type=cacheonly" .
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=min" \
+            --output "type=cacheonly",compression=zstd,force-compression=true .
 
   deploy-staging:
     needs: [filter, build-images]
