@@ -6,10 +6,11 @@ import (
 )
 
 // IsOriginAllowed reports whether an Origin header value may talk to this API.
-// In development, localhost and 127.0.0.1 with any port are allowed. In
-// production only origins from JC_CORS_ORIGINS (comma-separated) are
-// permitted, falling back to the origins derived from JC_SITE_URL. The
-// wildcard "*" is never allowed in production.
+// In development (JC_ENV=development/dev/test/local), localhost and 127.0.0.1
+// with any port are allowed. In any deployed environment (staging, production)
+// only origins from JC_CORS_ORIGINS (comma-separated) are permitted, falling
+// back to the origins derived from JC_SITE_URL. The wildcard "*" is never
+// allowed outside development.
 //
 // It backs both the CORS middleware and the WebSocket upgrade origin check so
 // the two can never drift apart.
@@ -18,8 +19,8 @@ func IsOriginAllowed(origin string) bool {
 		return false
 	}
 
-	isProd := strings.EqualFold(strings.TrimSpace(os.Getenv("JC_ENV")), "production")
-	if !isProd {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("JC_ENV")))
+	if env == "development" || env == "dev" || env == "test" || env == "local" {
 		return IsLocalOrigin(origin)
 	}
 
