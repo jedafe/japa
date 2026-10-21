@@ -41,15 +41,15 @@ export const load: PageServerLoad = async (event) => {
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			if (err.code === 'feature_disabled') {
-				throw error(404, { code: 'feature_disabled', message: 'jce.error.feature_disabled' });
+				throw error(404, { code: 'feature_disabled', message: 'Comparisons are not available' });
 			}
-			error(404, { code: 'not_found', message: 'jce.error.not_found' });
+			error(404, { code: 'not_found', message: 'Comparison not found' });
 		}
 		throw err;
 	}
 
 	if (!comparison) {
-		error(404, { code: 'not_found', message: 'jce.error.not_found' });
+		error(404, { code: 'not_found', message: 'Comparison not found' });
 	}
 
 	return {

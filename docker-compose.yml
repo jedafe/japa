@@ -18,6 +18,15 @@ services:
   # Primary — all writes go here. Replication settings (wal_level, max_wal_senders)
   # enable the read replica below. POSTGRES_HOST_AUTH_METHOD=trust is dev-only;
   # production should use md5 + proper pg_hba.conf replication rules.
+  #
+  # Image note (docker-library/postgres#1259): the 18+ images store data in a
+  # versioned pg_ctlcluster-style dir — PGDATA defaults to
+  # /var/lib/postgresql/18/docker — and refuse to boot when a legacy flat
+  # /var/lib/postgresql/data cluster exists. The volume correctly mounts at
+  # /var/lib/postgresql; to migrate an older volume run once:
+  #   docker run --rm -v <project>_postgres-data:/var/lib/postgresql \
+  #     pgvector/pgvector:pg18 \
+  #     bash -c "mkdir -p /var/lib/postgresql/18 && mv /var/lib/postgresql/data /var/lib/postgresql/18/docker"
   postgres:
     image: pgvector/pgvector:pg18
     command: postgres -c wal_level=replica -c max_wal_senders=10 -c hot_standby=on

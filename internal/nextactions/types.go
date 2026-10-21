@@ -70,30 +70,32 @@ type Frequency struct {
 	SnoozeDefaultHours int    `json:"snooze_default_hours"`
 }
 
-// Rule is the fully-decoded next_action_rules row.
+// Rule is the fully-decoded next_action_rules row. The JSON contract is
+// snake_case — the Control rule UI (and any other admin client) consumes
+// these keys directly.
 type Rule struct {
-	ID          pgtype.UUID
-	Slug        string
-	Name        string
-	Description string
-	Enabled     bool
-	Priority    int32
+	ID          pgtype.UUID `json:"id"`
+	Slug        string      `json:"slug"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Enabled     bool        `json:"enabled"`
+	Priority    int32       `json:"priority"`
 	// Upsell flags a rule as a tier-upsell nudge (migration 000921) — the
 	// only input to nextactions.max_upsell_per_day enforcement. Replaces
 	// the completion_signal-predicate heuristic so upsell rules can carry
 	// any completion signal without escaping the cap.
-	Upsell           bool
-	Audience         Audience
-	Conditions       ConditionGroup
-	Payload          Payload
-	Channels         []string
-	CompletionSignal *ConditionGroup
-	Frequency        Frequency
-	ValidFrom        pgtype.Timestamptz
-	ValidUntil       pgtype.Timestamptz
-	CreatedBy        pgtype.UUID
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
+	Upsell           bool               `json:"upsell"`
+	Audience         Audience           `json:"audience"`
+	Conditions       ConditionGroup     `json:"conditions"`
+	Payload          Payload            `json:"payload"`
+	Channels         []string           `json:"channels"`
+	CompletionSignal *ConditionGroup    `json:"completion_signal"`
+	Frequency        Frequency          `json:"frequency"`
+	ValidFrom        pgtype.Timestamptz `json:"valid_from"`
+	ValidUntil       pgtype.Timestamptz `json:"valid_until"`
+	CreatedBy        pgtype.UUID        `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Suggestion is the API response item — a render-ready suggestion.

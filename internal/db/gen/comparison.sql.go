@@ -1334,7 +1334,10 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count,
  c.publish_at, c.published_at, c.created_at, c.updated_at, c.deleted_at,
- m.depth, m.promoted_from_id, m.promoted_at, m.config AS metadata_config
+ m.depth, m.promoted_from_id, m.promoted_at, m.config AS metadata_config,
+ (SELECT ci.type_id FROM comparison_items ci
+ WHERE ci.content_id = c.id AND ci.deleted_at IS NULL
+ ORDER BY ci.position LIMIT 1) AS type_id
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
 WHERE c.content_type = 'comparison'
@@ -1423,6 +1426,7 @@ type ListComparisonsWithFiltersRow struct {
 	PromotedFromID  pgtype.UUID        `json:"promoted_from_id"`
 	PromotedAt      pgtype.Timestamptz `json:"promoted_at"`
 	MetadataConfig  []byte             `json:"metadata_config"`
+	TypeID          pgtype.UUID        `json:"type_id"`
 }
 
 // =====================
@@ -1488,6 +1492,7 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 			&i.PromotedFromID,
 			&i.PromotedAt,
 			&i.MetadataConfig,
+			&i.TypeID,
 		); err != nil {
 			return nil, err
 		}

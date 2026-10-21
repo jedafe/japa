@@ -228,5 +228,7 @@
   "jce.compare.status.private": "Private",
   "jce.compare.visibility.public": "Public",
   "jce.compare.visibility.unlisted": "Unlisted",
-  "jce.compare.visibility.private": "Private"
+  "jce.compare.visibility.private": "Private",
+  "jce.comparisons.errors.load_types": "Could not load comparison types. {message}",
+  "jce.comparisons.errors.types_not_found": "Comparison types could not be found."
 }

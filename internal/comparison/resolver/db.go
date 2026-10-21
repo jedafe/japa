@@ -298,6 +298,118 @@ func mergeCFVIntoItem(item *ResolvedItem, cfv map[string]any) {
 	item.Metadata["field_values"] = merged
 }
 
+// searchWhere builds the WHERE clause + args shared by Search and Count:
+// geo scope and country filters, the configured filter column, the ILIKE
+// title/slug search, and the configured ActiveWhere tail.
+func (r *DBResolver) searchWhere(query string, filters map[string]any) (string, []any, error) {
+	titleCol, err := quoteIdent(r.cfg.TitleColumn)
+	if err != nil {
+		return "", nil, err
+	}
+
+	where, args, err := r.whereClause()
+	if err != nil {
+		return "", nil, err
+	}
+
+	geoSpaceID := deepestGeoFilter(filters)
+	if r.cfg.GeoSpaceIDColumn != "" && geoSpaceID.Valid {
+		c, err := quoteIdent(r.cfg.GeoSpaceIDColumn)
+		if err != nil {
+			return "", nil, err
+		}
+
+		if where != "" {
+			where += " AND "
+		}
+
+		where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
+		args = append(args, geoSpaceID)
+	}
+
+	countryCode := parseStringFilter(filters, "country_code")
+	if r.cfg.CountryColumn != "" && countryCode != "" {
+		c, err := quoteIdent(r.cfg.CountryColumn)
+		if err != nil {
+			return "", nil, err
+		}
+
+		if where != "" {
+			where += " AND "
+		}
+
+		where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
+		args = append(args, countryCode)
+	}
+
+	if r.cfg.FilterParam != "" && r.cfg.FilterColumn != "" {
+		if fv := parseStringFilter(filters, r.cfg.FilterParam); fv != "" {
+			c, err := quoteIdent(r.cfg.FilterColumn)
+			if err != nil {
+				return "", nil, err
+			}
+			if where != "" {
+				where += " AND "
+			}
+			where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
+			args = append(args, fv)
+		}
+	}
+
+	if where != "" {
+		where += " AND "
+	}
+
+	qArg := len(args) + 1
+
+	slugSearch := ""
+
+	if r.cfg.SlugColumn != "" {
+		c, err := quoteIdent(r.cfg.SlugColumn)
+		if err != nil {
+			return "", nil, err
+		}
+
+		slugSearch = fmt.Sprintf(" OR t.%s ILIKE $%d", c, qArg)
+	}
+
+	where += fmt.Sprintf("(t.%s ILIKE $%d%s)", titleCol, qArg, slugSearch)
+
+	args = append(args, "%"+query+"%")
+
+	if r.cfg.ActiveWhere != "" {
+		where += " AND " + r.cfg.ActiveWhere
+	}
+
+	return where, args, nil
+}
+
+// Count returns the total number of rows matching the same filter set as
+// Search, so the /compare picker can expose real totals and detect
+// fully-loaded bounded result sets.
+func (r *DBResolver) Count(ctx context.Context, query string, filters map[string]any) (int64, error) {
+	table, err := quoteIdent(r.cfg.Table)
+	if err != nil {
+		return 0, err
+	}
+
+	where, args, err := r.searchWhere(query, filters)
+	if err != nil {
+		return 0, err
+	}
+
+	var total int64
+	err = r.db.QueryRow(ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s t %s WHERE %s", table, r.cfg.PlatformJoin, where),
+		args...,
+	).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("counting %s: %w", r.cfg.Entity, err)
+	}
+
+	return total, nil
+}
+
 // Search performs a case-insensitive prefix/substring search against the title
 // and optional slug columns for the configured table. If the /compare scope
 // chain provides a geo scope filter, it is applied against DBConfig.GeoSpaceIDColumn
@@ -330,78 +442,9 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 		return nil, err
 	}
 
-	where, args, err := r.whereClause()
+	where, args, err := r.searchWhere(query, filters)
 	if err != nil {
 		return nil, err
-	}
-
-	geoSpaceID := deepestGeoFilter(filters)
-	if r.cfg.GeoSpaceIDColumn != "" && geoSpaceID.Valid {
-		c, err := quoteIdent(r.cfg.GeoSpaceIDColumn)
-		if err != nil {
-			return nil, err
-		}
-
-		if where != "" {
-			where += " AND "
-		}
-
-		where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
-		args = append(args, geoSpaceID)
-	}
-
-	countryCode := parseStringFilter(filters, "country_code")
-	if r.cfg.CountryColumn != "" && countryCode != "" {
-		c, err := quoteIdent(r.cfg.CountryColumn)
-		if err != nil {
-			return nil, err
-		}
-
-		if where != "" {
-			where += " AND "
-		}
-
-		where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
-		args = append(args, countryCode)
-	}
-
-	if r.cfg.FilterParam != "" && r.cfg.FilterColumn != "" {
-		if fv := parseStringFilter(filters, r.cfg.FilterParam); fv != "" {
-			c, err := quoteIdent(r.cfg.FilterColumn)
-			if err != nil {
-				return nil, err
-			}
-			if where != "" {
-				where += " AND "
-			}
-			where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
-			args = append(args, fv)
-		}
-	}
-
-	if where != "" {
-		where += " AND "
-	}
-
-	qArg := len(args) + 1
-
-	slugSearch := ""
-
-	if r.cfg.SlugColumn != "" {
-		c, err := quoteIdent(r.cfg.SlugColumn)
-		if err != nil {
-			return nil, err
-		}
-
-		slugSearch = fmt.Sprintf(" OR t.%s ILIKE $%d", c, qArg)
-	}
-
-	where += fmt.Sprintf("(t.%s ILIKE $%d%s)", titleCol, qArg, slugSearch)
-
-	args = append(args, "%"+query+"%")
-
-	if r.cfg.ActiveWhere != "" {
-		where += " AND " + r.cfg.ActiveWhere
 	}
 
 	querySQL := fmt.Sprintf(

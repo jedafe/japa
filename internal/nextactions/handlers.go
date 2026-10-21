@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -94,6 +95,10 @@ func (h *Handlers) Dismiss(w http.ResponseWriter, r *http.Request) {
 		body.SnoozeHours = maxSnoozeHours
 	}
 	if err := h.svc.Dismiss(r.Context(), r, id, body.SnoozeHours); err != nil {
+		if errors.Is(err, ErrRuleNotServed) {
+			errpkg.WriteError(w, http.StatusNotFound, "rule_not_served", "This suggestion was not served to you")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "dismiss_failed", "Failed to dismiss suggestion")
 		return
 	}
@@ -107,6 +112,10 @@ func (h *Handlers) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Complete(r.Context(), r, id); err != nil {
+		if errors.Is(err, ErrRuleNotServed) {
+			errpkg.WriteError(w, http.StatusNotFound, "rule_not_served", "This suggestion was not served to you")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "complete_failed", "Failed to complete suggestion")
 		return
 	}
@@ -127,6 +136,10 @@ func (h *Handlers) Track(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Track(r.Context(), r, id, body.Event); err != nil {
+		if errors.Is(err, ErrRuleNotServed) {
+			errpkg.WriteError(w, http.StatusNotFound, "rule_not_served", "This suggestion was not served to you")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "track_failed", "Failed to record event")
 		return
 	}
@@ -223,7 +236,11 @@ func (h *Handlers) GetRule(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := h.svc.read.GetNextActionRule(r.Context(), id)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "rule_not_found", "Rule not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "rule_not_found", "Rule not found")
+			return
+		}
+		errpkg.WriteError(w, http.StatusInternalServerError, "rule_lookup_failed", "Failed to load rule")
 		return
 	}
 	rule, err := decodeRule(row)
@@ -272,7 +289,11 @@ func (h *Handlers) CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.svc.InvalidateRulesCache(r.Context())
-	out, _ := decodeRule(row)
+	out, err := decodeRule(row)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "rule_decode_failed", "Rule saved but failed to decode")
+		return
+	}
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": out})
 }
 
@@ -316,7 +337,11 @@ func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.svc.InvalidateRulesCache(r.Context())
-	out, _ := decodeRule(row)
+	out, err := decodeRule(row)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "rule_decode_failed", "Rule saved but failed to decode")
+		return
+	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 

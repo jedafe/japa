@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import type { Component } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import {
 		createQuickComparison,
 		createGuestSelection,
@@ -99,6 +100,9 @@
 	let nestedType = $state(initialNestedType);
 	let selectedItems = $state<ResolvedItem[]>([]);
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+	onDestroy(() => {
+		if (searchTimeout) clearTimeout(searchTimeout);
+	});
 
 	// SSR-safe initial value — same computation as the sync effect below so the
 	// narrow summary chip renders correctly on first paint.
@@ -111,6 +115,17 @@
 	$effect(() => {
 		// Sync local scope state with the server-loaded page data on every navigation.
 		scopeSelections = initialScope();
+	});
+
+	$effect(() => {
+		// Mirror the URL on SPA navigation (back/forward, redirects): these
+		// controls are init-once snapshots — without resync the grid shows the
+		// new page's items while the controls claim the old sort/search/page.
+		const sp = page.url.searchParams;
+		currentPage = parseInt(sp.get('page') ?? '1', 10) || 1;
+		sortBy = sp.get('sort') ?? 'title';
+		query = sp.get('q') ?? '';
+		nestedType = sp.get('nested_type') ?? '';
 	});
 
 	$effect(() => {
@@ -281,10 +296,14 @@
 		if (old === value) return;
 		scopeSelections = { ...scopeSelections, [step]: value };
 
-		// Reset downstream selections so we don't keep stale IDs.
-		const idx = selectedType?.config?.scope_chain?.indexOf(step) ?? -1;
-		if (idx >= 0 && selectedType?.config?.scope_chain) {
-			for (const next of selectedType.config.scope_chain.slice(idx + 1)) {
+		// Reset downstream selections so we don't keep stale IDs. Use the
+		// effective chain (data.scopeChain — post augmentation/self-step drop),
+		// not the raw config chain, so appended steps (e.g. university for
+		// course sources) reset correctly too.
+		const effectiveChain = data.scopeChain ?? [];
+		const idx = effectiveChain.indexOf(step);
+		if (idx >= 0) {
+			for (const next of effectiveChain.slice(idx + 1)) {
 				delete scopeSelections[next];
 			}
 		}
@@ -299,8 +318,8 @@
 			url.searchParams.delete(param);
 		}
 		// Also remove downstream params.
-		if (idx >= 0 && selectedType?.config?.scope_chain) {
-			for (const next of selectedType.config.scope_chain.slice(idx + 1)) {
+		if (idx >= 0) {
+			for (const next of effectiveChain.slice(idx + 1)) {
 				url.searchParams.delete(scopeParamFor(next));
 			}
 		}

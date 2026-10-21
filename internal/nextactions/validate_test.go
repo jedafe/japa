@@ -46,6 +46,15 @@ func TestValidateRuleRejectsUnknownChannel(t *testing.T) {
 	}
 }
 
+func TestValidateRuleRejectsEmptyCompletionSignal(t *testing.T) {
+	t.Parallel()
+	r := validRule()
+	r.CompletionSignal = &ConditionGroup{}
+	if err := ValidateRule(r, nil); err == nil {
+		t.Fatal("expected error for empty completion_signal — empty groups evaluate true")
+	}
+}
+
 func TestValidateRuleRejectsUnknownPredicate(t *testing.T) {
 	t.Parallel()
 	r := validRule()

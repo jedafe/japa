@@ -37,7 +37,11 @@
 	}
 
 	function labelFor(step: string): string {
-		return t(`jce.compare.scope.select_${step}`);
+		const fallback = step
+			.split(/[-_]/)
+			.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+			.join(' ');
+		return t(`jce.compare.scope.select_${step}`, fallback);
 	}
 
 	function filtersFor(step: string): Record<string, string> {
@@ -52,6 +56,7 @@
 				break;
 			case 'city':
 				if (selections.state) filters.state_id = selections.state;
+				else if (selections.country) filters.country_id = selections.country;
 				break;
 			case 'university':
 				if (selections.city) filters.city_id = selections.city;

@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
 import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '$lib/types/jce';
 import type { Comment } from '$lib/types';
-import type { ContentAnalytics, ContentArticle } from '$lib/types/content';
+import type { ContentArticle } from '$lib/types/content';
 import type { PageServerLoad } from './$types';
 
 function resolvedItems(cmp: JCEComparisonDetail): ResolvedItem[] {
@@ -38,15 +38,15 @@ export const load: PageServerLoad = async (event) => {
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			if (err.code === 'feature_disabled') {
-				throw error(503, { code: 'feature_disabled', message: 'jce.error.feature_disabled' });
+				throw error(404, { code: 'feature_disabled', message: 'Comparisons are not available' });
 			}
-			error(404, { code: 'not_found', message: 'jce.error.not_found' });
+			error(404, { code: 'not_found', message: 'Comparison not found' });
 		}
 		throw err;
 	}
 
 	if (!comparison) {
-		error(404, { code: 'not_found', message: 'jce.error.not_found' });
+		error(404, { code: 'not_found', message: 'Comparison not found' });
 	}
 
 	const isOwner = !!event.locals.user?.id && comparison.content.author_id === event.locals.user.id;
@@ -68,13 +68,6 @@ export const load: PageServerLoad = async (event) => {
 		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, loadError: true })
 	);
 
-	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
-	// analytics.admin only). Fetch only for the author to avoid guaranteed
-	// 403s for other viewers; a failure degrades to no stats card.
-	const analyticsPromise = isOwner
-		? apiGet<ContentAnalytics>(ctx, `/content/${contentId}/analytics`).catch(() => null)
-		: Promise.resolve(null);
-
 	// Hydrate the CreatorCard follow button's initial state. Best-effort:
 	// a failure degrades to `false` (not following). Skip when the viewer
 	// is the author (no self-follow) or the author is unknown.
@@ -95,9 +88,8 @@ export const load: PageServerLoad = async (event) => {
 		.then((r) => r ?? [])
 		.catch(() => [] as ContentArticle[]);
 
-	const [commentsResult, analytics, isFollowing, recommendedContent] = await Promise.all([
+	const [commentsResult, isFollowing, recommendedContent] = await Promise.all([
 		commentsPromise,
-		analyticsPromise,
 		followingPromise,
 		recommendedPromise
 	]);
@@ -125,7 +117,6 @@ export const load: PageServerLoad = async (event) => {
 		comparison,
 		matrix,
 		resolvedItems: resolvedItems(comparison),
-		analytics,
 		canEdit,
 		authed,
 		currentUserId,

@@ -96,6 +96,11 @@ export const load: PageServerLoad = async (event) => {
 		const res = await apiGet<ComparisonType[]>(ctx, '/jce/comparison-types?page_size=100');
 		allTypes = enrichTypes(res ?? []);
 		types = allTypes.filter((t) => t.can_create !== false);
+		// The mentors type workspace is gated by mentorship.comparison — a card
+		// that hard-404s on click must not be offered on the landing grid.
+		if (features['mentorship.comparison'] !== true) {
+			types = types.filter((t) => t.slug !== 'mentors');
+		}
 	} catch (err) {
 		if (err instanceof ApiError) {
 			if (err.status === 403) {
@@ -305,6 +310,25 @@ export const load: PageServerLoad = async (event) => {
 						items = full.items;
 						allItemsLoaded = items.length >= total;
 						total = full.meta?.total ?? total;
+					}
+				}
+			} else if (total === null) {
+				if (fetchOffset === 0 && items.length < fetchLimit) {
+					// First-page fetch already covers the entire result set.
+					allItemsLoaded = true;
+					total = items.length;
+				} else if (items.length >= fetchLimit) {
+					// The resolver exposes no count — probe the full window once;
+					// a result under the cap means the client owns the complete
+					// set (e.g. visa routes, mentors, scholarships, nested
+					// comparisons) and can sort/paginate it globally.
+					params.set('limit', String(FULL_LOAD_CAP));
+					params.set('offset', '0');
+					const full = await apiList<ResolvedItem>(ctx, `/jce/entities/${source}?${params.toString()}`);
+					if (full.items && full.items.length < FULL_LOAD_CAP) {
+						items = full.items;
+						allItemsLoaded = true;
+						total = items.length;
 					}
 				}
 			}

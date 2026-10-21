@@ -6,6 +6,8 @@
 	import { goto } from '$app/navigation';
 	import { getRule, createRule, updateRule, deleteRule, type NextActionRule } from '$lib/api/nextactions';
 	import PredicateGroupEditor from '$lib/components/PredicateGroupEditor.svelte';
+	import AudienceEditor from '$lib/components/AudienceEditor.svelte';
+	import FrequencyEditor from '$lib/components/FrequencyEditor.svelte';
 
 	const id = $derived(page.params.id ?? '');
 	const isNew = $derived(id === 'new');
@@ -24,11 +26,11 @@
 	let icon = $state('');
 	let validFrom = $state('');
 	let validUntil = $state('');
-	let audienceJson = $state('{"user_class":["regular"]}');
+	let audienceObj = $state<Record<string, any>>({ user_class: ['regular'] });
 	let conditionsObj = $state<Record<string, any>>({ all: [] });
 	let completionObj = $state<Record<string, any> | null>(null);
 	let completionEnabled = $state(false);
-	let frequencyJson = $state('{"mode":"recurring","max_impressions":5,"cooldown_hours":72,"snooze_default_hours":168}');
+	let frequencyObj = $state<Record<string, any>>({ mode: 'recurring', max_impressions: 5, cooldown_hours: 72, snooze_default_hours: 168 });
 
 	let loading = $state(false);
 	let message = $state('');
@@ -50,18 +52,13 @@
 			validFrom = toLocalInput(d.valid_from);
 			validUntil = toLocalInput(d.valid_until);
 			channelsSel = d.channels ?? [];
-			audienceJson = JSON.stringify(d.audience ?? {}, null, 2);
+			audienceObj = (d.audience && typeof d.audience === 'object' ? d.audience : {}) as Record<string, any>;
 			conditionsObj = (d.conditions && typeof d.conditions === 'object' ? d.conditions : { all: [] }) as Record<string, any>;
 			completionObj = d.completion_signal && typeof d.completion_signal === 'object' ? d.completion_signal : null;
 			completionEnabled = !!d.completion_signal;
-			frequencyJson = JSON.stringify(d.frequency ?? {}, null, 2);
+			frequencyObj = (d.frequency && typeof d.frequency === 'object' ? d.frequency : {}) as Record<string, any>;
 		});
 	});
-
-	function parseJson(raw: string, label: string, required = true) {
-		if (!required && raw.trim() === '') return null;
-		try { return JSON.parse(raw); } catch { throw new Error(`${label} is not valid JSON`); }
-	}
 
 	// datetime-local inputs need local "YYYY-MM-DDTHH:mm"; the API wants
 	// an RFC3339 timestamp. Empty string clears the field (sends null).
@@ -83,12 +80,12 @@
 		try {
 			const payload = {
 				slug, name, description, enabled, priority, upsell,
-				audience: parseJson(audienceJson, 'audience'),
+				audience: audienceObj,
 				conditions: conditionsObj,
 				payload: { title, body, cta_label: ctaLabel, cta_url: ctaUrl, icon },
 				channels: channelsSel,
 				completion_signal: completionEnabled ? completionObj : null,
-				frequency: parseJson(frequencyJson, 'frequency'),
+				frequency: frequencyObj,
 				valid_from: toApiTs(validFrom),
 				valid_until: toApiTs(validUntil)
 			};
@@ -196,23 +193,15 @@
 		{/if}
 	</fieldset>
 
-	{#each [
-		['audience', 'audienceJson'],
-		['frequency', 'frequencyJson']
-	] as [label, key]}
-		<label class="block text-sm">{label}
-			<textarea
-				rows={5}
-				class="border-border bg-background mt-1 w-full rounded-[var(--radius)] border px-3 py-1.5 font-mono text-xs"
-				value={key === 'audienceJson' ? audienceJson : frequencyJson}
-				oninput={(e) => {
-					const v = (e.target as HTMLTextAreaElement).value;
-					if (key === 'audienceJson') audienceJson = v;
-					else frequencyJson = v;
-				}}
-			></textarea>
-		</label>
-	{/each}
+	<fieldset class="border-border rounded-[var(--radius-card)] border p-3">
+		<legend class="text-muted-foreground px-1 text-xs">Audience</legend>
+		<AudienceEditor bind:value={audienceObj} />
+	</fieldset>
+
+	<fieldset class="border-border rounded-[var(--radius-card)] border p-3">
+		<legend class="text-muted-foreground px-1 text-xs">Frequency</legend>
+		<FrequencyEditor bind:value={frequencyObj} />
+	</fieldset>
 
 	<div class="flex gap-2">
 		<button type="submit" disabled={loading} class="bg-primary text-primary-foreground rounded-[var(--radius)] px-4 py-2 text-sm">{loading ? 'Saving…' : 'Save rule'}</button>

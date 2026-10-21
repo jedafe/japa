@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { onDestroy } from 'svelte';
 	import { Search, Eye, MessageCircle, Share2, Plus, GitCompare } from 'lucide-svelte';
 	import { i18n, t, siteName} from '$lib/i18n';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
@@ -18,14 +19,15 @@
 	let loadErrorParams = $derived(data.loadErrorParams ?? {});
 	let user = $derived(data.user);
 
-	let query = $state('');
-	let queryInitialized = $state(false);
+	// SSR-safe initial value — mirrors the resync effect below (same pattern
+	// as /compare: a one-time URL snapshot, not a reactive read).
+	const initialQuery = page.url.searchParams.get('q') ?? '';
+	let query = $state(initialQuery);
 
-	$effect.pre(() => {
-		if (!queryInitialized) {
-			query = filters.q ?? '';
-			queryInitialized = true;
-		}
+	// Mirror the URL on SPA navigation (back/forward, cleared filters):
+	// without resync the box shows the old term while results reflect the new.
+	$effect(() => {
+		query = filters.q ?? '';
 	});
 
 	// Ref: sections/30-generic-comparison-system.md — sort/page-size options come from the API list meta.
@@ -136,6 +138,9 @@
 	const isMine = $derived(filters.mine);
 
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+	onDestroy(() => {
+		if (searchTimeout) clearTimeout(searchTimeout);
+	});
 	function onSearchInput() {
 		if (searchTimeout) clearTimeout(searchTimeout);
 		searchTimeout = setTimeout(() => apply(), 300);
@@ -253,10 +258,10 @@
 								{#if item.type_name}
 									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.type_name}</span>
 								{/if}
-								<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.depth}</span>
+								<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.depth.${item.depth}`, item.depth)}</span>
 								{#if isMine}
-									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.status}</span>
-									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.visibility}</span>
+									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.status.${item.status}`, item.status)}</span>
+									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.visibility.${item.visibility}`, item.visibility)}</span>
 								{/if}
 							</div>
 

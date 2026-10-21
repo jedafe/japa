@@ -6,8 +6,8 @@
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Plus, RefreshCw } from 'lucide-svelte';
-	import { listRules, getStats, type NextActionRule, type NextActionStat } from '$lib/api/nextactions';
-	import type { DataTableColumn } from '$lib/api/types';
+	import { listRules, getStats, deleteRule, type NextActionRule, type NextActionStat } from '$lib/api/nextactions';
+	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
 	import { goto } from '$app/navigation';
 
 	let rules = $state<NextActionRule[]>([]);
@@ -33,6 +33,25 @@
 			  render: (v: unknown) => `<a href="/next-actions/${escapeHtml(v)}" class="text-primary text-xs underline">Edit</a>` }
 		];
 	});
+
+	async function remove(row: NextActionRule) {
+		if (!confirm(`Delete rule "${row.slug}"?`)) return;
+		const r = await deleteRule(row.id);
+		if (r.ok) await load();
+		else { message = r.error || 'Delete failed'; messageType = 'error'; }
+	}
+
+	const rowActions: DataTableRowAction[] = [
+		{
+			label: 'Edit',
+			onClick: (row) => goto(`/next-actions/${row.id}`)
+		},
+		{
+			label: 'Delete',
+			onClick: (row) => void remove(row as unknown as NextActionRule),
+			variant: 'destructive'
+		}
+	];
 
 	async function load() {
 		loading = true;
@@ -75,7 +94,7 @@
 	<button onclick={load} class="text-muted-foreground hover:text-foreground p-1" aria-label="Refresh"><RefreshCw size={14} /></button>
 </div>
 
-<DataTable {columns} rows={filtered} {loading} />
+<DataTable {columns} rows={filtered} {loading} {rowActions} />
 
 {#if stats.length > 0}
 	<h2 class="text-foreground mt-8 mb-2 text-sm font-medium">Funnel (lifetime)</h2>

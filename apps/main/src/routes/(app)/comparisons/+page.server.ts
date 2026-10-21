@@ -54,7 +54,9 @@ export const load: PageServerLoad = async (event) => {
 	let loadError = '';
 	let loadErrorParams: Record<string, string> = {};
 	try {
-		const res = await apiGet<ComparisonType[]>(ctx, '/jce/comparison-types');
+		// page_size=100 — the default page (20) truncates the type list, which
+		// silently drops badges and filter options for types beyond the cut.
+		const res = await apiGet<ComparisonType[]>(ctx, '/jce/comparison-types?page_size=100');
 		types = res ?? [];
 	} catch (err) {
 		types = [];

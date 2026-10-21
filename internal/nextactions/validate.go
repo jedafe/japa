@@ -46,8 +46,8 @@ func PredicateNames() []string {
 // PredicateArg describes one argument slot of a predicate for the Control
 // rule builder — drives which input fields the editor renders.
 type PredicateArg struct {
-	Key      string `json:"key"`       // in|eq|lt|gt|gte|slug|type|feature|within_days|window
-	Type     string `json:"type"`      // string_list|bool|number|string|select
+	Key      string `json:"key"`  // in|eq|lt|gt|gte|slug|type|feature|within_days|window
+	Type     string `json:"type"` // string_list|bool|number|string|select
 	Required bool   `json:"required"`
 	Options  string `json:"options,omitempty"` // for select: hint shown in placeholder
 }
@@ -162,10 +162,20 @@ func ValidateRule(r Rule, allowedOrigins []string) error {
 			}
 		}
 	}
+	// An inverted schedule window can never match — catch it at write time
+	// instead of leaving an always-dead rule.
+	if r.ValidFrom.Valid && r.ValidUntil.Valid && !r.ValidUntil.Time.After(r.ValidFrom.Time) {
+		return fmt.Errorf("valid_until must be after valid_from")
+	}
 	if err := validateGroup(r.Conditions); err != nil {
 		return fmt.Errorf("conditions: %w", err)
 	}
 	if r.CompletionSignal != nil {
+		// An empty group evaluates true — an enabled-but-empty signal would
+		// auto-complete the rule on every eval and never render it.
+		if len(r.CompletionSignal.All)+len(r.CompletionSignal.Any) == 0 {
+			return fmt.Errorf("completion_signal requires at least one predicate")
+		}
 		if err := validateGroup(*r.CompletionSignal); err != nil {
 			return fmt.Errorf("completion_signal: %w", err)
 		}
@@ -193,6 +203,22 @@ func validatePredicateArgs(p Predicate) error {
 		"destination_country", "origin_country", "current_country", "surface":
 		if len(p.In) == 0 {
 			return fmt.Errorf("%s requires a non-empty in list", p.Predicate)
+		}
+		// Bounded vocabularies — a typo'd value makes the rule silently
+		// never-match, same as the audience.user_class check above.
+		switch p.Predicate {
+		case "user_class":
+			for _, v := range p.In {
+				if !userClassSet[v] {
+					return fmt.Errorf("user_class: unknown value %q", v)
+				}
+			}
+		case "surface":
+			for _, v := range p.In {
+				if !surfaceSet[v] {
+					return fmt.Errorf("surface: unknown value %q", v)
+				}
+			}
 		}
 	case "tool_used", "tool_not_used", "feature_used", "feature_not_used":
 		if p.Slug == "" {

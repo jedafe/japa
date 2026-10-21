@@ -121,6 +121,19 @@ func TestUpsellFlagFlowsToSuggestion(t *testing.T) {
 	}
 }
 
+func TestSweepLockTTL(t *testing.T) {
+	t.Parallel()
+	if got := sweepLockTTL(defaultSweepIntervalMinutes); got != 55*time.Minute {
+		t.Errorf("default interval: got %v, want 55m", got)
+	}
+	if got := sweepLockTTL(240); got != 235*time.Minute {
+		t.Errorf("240m interval: got %v, want 235m", got)
+	}
+	if got := sweepLockTTL(2); got != time.Minute {
+		t.Errorf("tiny interval: got %v, want 1m floor", got)
+	}
+}
+
 func TestParseUUID(t *testing.T) {
 	t.Parallel()
 	id := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}

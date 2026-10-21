@@ -228,5 +228,7 @@
   "jce.compare.visibility.public": "Publique",
   "jce.compare.visibility.unlisted": "Non répertoriée",
   "jce.compare.visibility.private": "Privée",
-  "forum.poll_error": "Échec de l’envoi de votre vote. Veuillez réessayer."
+  "forum.poll_error": "Échec de l’envoi de votre vote. Veuillez réessayer.",
+  "jce.comparisons.errors.load_types": "Impossible de charger les types de comparaison. {message}",
+  "jce.comparisons.errors.types_not_found": "Types de comparaison introuvables."
 }

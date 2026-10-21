@@ -18,7 +18,13 @@ PRIMARY_HOST="${PRIMARY_HOST:-postgres}"
 PRIMARY_PORT="${PRIMARY_PORT:-5432}"
 REPLICA_USER="${REPLICA_USER:-replicator}"
 REPLICA_PASSWORD="${REPLICA_PASSWORD:-japa_replica}"
-PGDATA="/var/lib/postgresql/data"
+# PostgreSQL 18+ images store data in a versioned pg_ctlcluster-style
+# directory (/var/lib/postgresql/{major}/docker), not the legacy flat
+# /var/lib/postgresql/data. The volume is mounted at /var/lib/postgresql —
+# an old-layout data dir left at .../data is ignored and can be removed.
+# Exported so docker-entrypoint.sh resolves the same path.
+PGDATA="${PGDATA:-/var/lib/postgresql/18/docker}"
+export PGDATA
 
 # If data directory already has content, skip basebackup and just start.
 if [ -s "$PGDATA/PG_VERSION" ]; then

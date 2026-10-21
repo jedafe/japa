@@ -21,15 +21,16 @@ import (
 
 // defaults — fallbacks when system_settings keys are unset (Rule 3).
 const (
-	defaultCacheTTLSeconds    = 300
-	defaultMaxActive          = 5
-	defaultMaxUpsellPerDay    = 1
-	defaultGuestStateTTL      = 2592000 // 30 days
-	defaultSnoozeHours        = 168
-	defaultSweepWindowDays    = 7
-	defaultSweepBatch         = 500
-	rulesCacheTTL             = 5 * time.Minute
-	sessionCounterFieldPrefix = "ctr:"
+	defaultCacheTTLSeconds      = 300
+	defaultMaxActive            = 5
+	defaultMaxUpsellPerDay      = 1
+	defaultGuestStateTTL        = 2592000 // 30 days
+	defaultSnoozeHours          = 168
+	defaultSweepWindowDays      = 7
+	defaultSweepIntervalMinutes = 60
+	defaultSweepBatch           = 500
+	rulesCacheTTL               = 5 * time.Minute
+	sessionCounterFieldPrefix   = "ctr:"
 )
 
 // EventTracker is the analytics slice the service needs (§40 writes).
@@ -96,15 +97,8 @@ func (s *Service) settingInt(ctx context.Context, key string, fallback int) int 
 func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface string, limit int) ([]Suggestion, error) {
 	state := s.resolver.Resolve(ctx, r, surface)
 
-	// One-shot guest→user state merge: the first authed request carrying the
-	// jc_guest cookie (or IP fallback) copies guest dismissals/completions
-	// into user_next_actions so pre-auth nudge fatigue doesn't resurface (§122).
-	if state.UserID.Valid && s.cache != nil {
-		mergedKey := valkey.MustKey("nextactions:merged:%s", state.UserID.String())
-		if ok, err := s.cache.SetNX(ctx, mergedKey, "1", 90*24*time.Hour).Result(); err == nil && ok {
-			s.MergeGuestState(ctx, state.UserID, guestSessionKey(r))
-		}
-	}
+	// One-shot guest→user state merge (see ensureMerged).
+	s.ensureMerged(ctx, state, r)
 
 	cacheKey := s.cacheKey(state)
 	if s.cache != nil {
@@ -112,11 +106,15 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 			if b, err := s.cache.Get(ctx, cacheKey).Bytes(); err == nil {
 				var cached []Suggestion
 				if json.Unmarshal(b, &cached) == nil {
-					return sliceSuggestions(cached, limit), nil
+					shown := sliceSuggestions(cached, limit)
+					s.markDelivered(ctx, state, shown)
+					return shown, nil
 				}
 			}
 		} else if cached, ok := s.guestCacheRead(ctx, state.SessionKey, state.Surface); ok {
-			return sliceSuggestions(cached, limit), nil
+			shown := sliceSuggestions(cached, limit)
+			s.markDelivered(ctx, state, shown)
+			return shown, nil
 		}
 	}
 
@@ -163,13 +161,13 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 	}
 
 	// Rules are already priority-ordered (ListEnabledNextActionRules ORDER BY
-	// priority). Impressions are recorded for the whole evaluated set, not
-	// just the limit-truncated slice — everything in `out` is cacheable and
-	// may be returned on later requests, so it all counts as served.
+	// priority). Impressions fire on DELIVERY, not eval: only the `shown`
+	// slice reaches the wire — items beyond `limit` were never sent to a
+	// client and must not count as served (nor earn a serve marker that would
+	// legitimise forged track calls). On later cache hits, markDelivered
+	// counts items newly entering the response via the served-marker check.
 	shown := sliceSuggestions(out, limit)
-	for _, sug := range out {
-		s.recordImpression(ctx, state, sug)
-	}
+	s.markDelivered(ctx, state, shown)
 
 	if s.cache != nil {
 		if b, err := json.Marshal(out); err == nil {
@@ -200,6 +198,45 @@ func (s *Service) cacheKey(state *UserState) string {
 // guestCacheFieldName is the per-surface result-cache field inside the guest
 // state hash.
 func guestCacheFieldName(surface string) string { return "_cache:" + surface }
+
+// servedMarkerTTL bounds how long after serving a rule the client may report
+// lifecycle events for it — long enough that a CTA click hours after a
+// session-cached render still lands, short enough that forged track calls for
+// unserved rules get rejected.
+const servedMarkerTTL = 24 * time.Hour
+
+// ErrRuleNotServed — a /track call referenced a rule this identity was never
+// served within the marker TTL (forged or expired). Maps to 404.
+var ErrRuleNotServed = errors.New("nextactions: rule not served to this caller")
+
+// servedKey — jc:nextactions:served:{user|guest}:{id}:{rule_id} evidence
+// marker written on serve; /track requires it.
+func (s *Service) servedKey(state *UserState, ruleID pgtype.UUID) string {
+	id := state.SessionKey
+	kind := "guest"
+	if state.UserID.Valid {
+		kind = "user"
+		id = state.UserID.String()
+	}
+	return valkey.MustKey("nextactions:served:%s:%s:%s", kind, id, ruleID.String())
+}
+
+func (s *Service) markServed(ctx context.Context, state *UserState, ruleID pgtype.UUID) {
+	if s.cache != nil {
+		_ = s.cache.Set(ctx, s.servedKey(state, ruleID), "1", servedMarkerTTL).Err()
+	}
+}
+
+// wasServed gates /track — the marker means this identity actually received
+// the rule recently. Cache failure degrades open (analytics over suppression);
+// a missing marker is a forged or stale call and is rejected.
+func (s *Service) wasServed(ctx context.Context, state *UserState, ruleID pgtype.UUID) bool {
+	if s.cache == nil {
+		return true
+	}
+	n, err := s.cache.Exists(ctx, s.servedKey(state, ruleID)).Result()
+	return err != nil || n > 0
+}
 
 // loadRules returns enabled in-window rules, cached 5 min in Valkey.
 func (s *Service) loadRules(ctx context.Context) ([]Rule, error) {
@@ -377,6 +414,39 @@ func (s *Service) upsellShownToday(ctx context.Context, state *UserState) int64 
 // Impressions + lifecycle
 // ---------------------------------------------------------------------------
 
+// markDelivered records the impression for each suggestion actually being
+// returned. The served marker doubles as "already counted" evidence, making
+// the call idempotent across cold evals and cache-hit deliveries.
+func (s *Service) markDelivered(ctx context.Context, state *UserState, shown []Suggestion) {
+	for _, sug := range shown {
+		ruleID := parseUUID(sug.ID)
+		if !ruleID.Valid || s.wasServed(ctx, state, ruleID) {
+			continue
+		}
+		s.recordImpression(ctx, state, sug)
+	}
+}
+
+// ensureMerged runs the one-shot guest→user merge: the first authed request
+// carrying the jc_guest cookie (or IP fallback) copies guest dismissals/
+// completions into user_next_actions so pre-auth nudge fatigue doesn't
+// resurface (§122). Called from Suggestions AND the lifecycle mutations —
+// a signup-success complete() can arrive before the first authed pull.
+func (s *Service) ensureMerged(ctx context.Context, state *UserState, r *http.Request) {
+	if state.UserID.Valid && s.cache != nil {
+		mergedKey := valkey.MustKey("nextactions:merged:%s", state.UserID.String())
+		if ok, err := s.cache.SetNX(ctx, mergedKey, "1", 90*24*time.Hour).Result(); err == nil && ok {
+			// Drop the marker when the merge fails so the next authed
+			// request retries — otherwise a mid-merge DB blip loses the
+			// guest's state for the marker's whole 90-day TTL.
+			if err := s.MergeGuestState(ctx, state.UserID, guestSessionKey(r)); err != nil {
+				slog.Warn("nextactions: guest merge failed, will retry", "user_id", state.UserID, "error", err)
+				_ = s.cache.Del(ctx, mergedKey).Err()
+			}
+		}
+	}
+}
+
 // recordImpression marks a served suggestion shown: DB row for members,
 // guest hash + shown platform_event for guests.
 func (s *Service) recordImpression(ctx context.Context, state *UserState, sug Suggestion) {
@@ -395,16 +465,42 @@ func (s *Service) recordImpression(ctx context.Context, state *UserState, sug Su
 			s.guestUpsellBump(ctx, state.SessionKey)
 		}
 	}
+	s.markServed(ctx, state, ruleID)
 	// Server-authoritative shown event — the §40 funnel no longer depends on
 	// clients calling track('shown'). Shipped renderers don't emit their own
 	// shown events; the /track endpoint still accepts 'shown' for compat.
 	s.trackSlug(ctx, state, ruleID, sug.RuleSlug, analytics.EventNextActionShown)
 }
 
+// lifecycleMutationAllowed gates dismiss/complete the same way wasServed
+// gates /track, plus the sweep path: a member row materialized by the push
+// sweep has a user_next_actions row but may never have been pull-served, so
+// row existence counts as evidence too.
+func (s *Service) lifecycleMutationAllowed(ctx context.Context, state *UserState, ruleID pgtype.UUID) bool {
+	if s.wasServed(ctx, state, ruleID) {
+		return true
+	}
+	if state.UserID.Valid && s.read != nil {
+		has, err := s.read.HasUserNextAction(ctx, gen.HasUserNextActionParams{UserID: state.UserID, RuleID: ruleID})
+		return err != nil || has // read failure degrades open
+	}
+	// Guests: the per-rule field in the state hash is itself serve evidence
+	// (written by guestMarkShown; outlives the 24h marker via the 30d TTL).
+	if !state.UserID.Valid && s.cache != nil && state.SessionKey != "" {
+		has, err := s.cache.HExists(ctx, valkey.MustKey("nextactions:guest:%s", state.SessionKey), ruleID.String()).Result()
+		return err != nil || has
+	}
+	return false
+}
+
 // Dismiss marks a suggestion dismissed (optional snooze_hours — a snooze is
 // a temporary dismiss per §122 semantics).
 func (s *Service) Dismiss(ctx context.Context, r *http.Request, ruleID pgtype.UUID, snoozeHours int) error {
 	state := s.resolver.Resolve(ctx, r, "")
+	s.ensureMerged(ctx, state, r) // a post-signup dismiss may arrive before the first authed pull
+	if !s.lifecycleMutationAllowed(ctx, state, ruleID) {
+		return fmt.Errorf("%w: rule %s", ErrRuleNotServed, ruleID.String())
+	}
 	if state.UserID.Valid {
 		if s.write == nil {
 			return errors.New("nextactions: no write pool")
@@ -435,6 +531,10 @@ func (s *Service) Dismiss(ctx context.Context, r *http.Request, ruleID pgtype.UU
 // Complete marks a suggestion's action taken.
 func (s *Service) Complete(ctx context.Context, r *http.Request, ruleID pgtype.UUID) error {
 	state := s.resolver.Resolve(ctx, r, "")
+	s.ensureMerged(ctx, state, r) // signup-success pending completion arrives before the first pull
+	if !s.lifecycleMutationAllowed(ctx, state, ruleID) {
+		return fmt.Errorf("%w: rule %s", ErrRuleNotServed, ruleID.String())
+	}
 	if state.UserID.Valid {
 		if s.write == nil {
 			return errors.New("nextactions: no write pool")
@@ -454,6 +554,7 @@ func (s *Service) Complete(ctx context.Context, r *http.Request, ruleID pgtype.U
 // Track records a shown|clicked lifecycle event for the suggestion.
 func (s *Service) Track(ctx context.Context, r *http.Request, ruleID pgtype.UUID, event string) error {
 	state := s.resolver.Resolve(ctx, r, "")
+	s.ensureMerged(ctx, state, r)
 	var et analytics.EventType
 	switch event {
 	case "shown":
@@ -462,6 +563,9 @@ func (s *Service) Track(ctx context.Context, r *http.Request, ruleID pgtype.UUID
 		et = analytics.EventNextActionClicked
 	default:
 		return fmt.Errorf("nextactions: unknown track event %q", event)
+	}
+	if !s.wasServed(ctx, state, ruleID) {
+		return fmt.Errorf("%w: rule %s", ErrRuleNotServed, ruleID.String())
 	}
 	if et == analytics.EventNextActionShown && s.shownAlreadyEmitted(ctx, state, ruleID) {
 		return nil // server-side recordImpression already counted this impression
@@ -761,24 +865,28 @@ func (s *Service) guestCacheWrite(ctx context.Context, key, surface string, data
 // MergeGuestState copies guest states into user_next_actions at register/
 // login — terminal statuses so nudges don't resurface, plus impressions,
 // last_shown_at, and snoozed_until so frequency caps carry pre-auth history
-// (MergeGuestNextAction handles the status precedence).
-func (s *Service) MergeGuestState(ctx context.Context, userID pgtype.UUID, guestKey string) {
+// (MergeGuestNextAction handles the status precedence). Returns the first
+// write error so ensureMerged can retry rather than burn the one-shot marker.
+func (s *Service) MergeGuestState(ctx context.Context, userID pgtype.UUID, guestKey string) error {
 	if s.write == nil || !userID.Valid || guestKey == "" {
-		return
+		return nil
 	}
+	var firstErr error
 	for rid, st := range s.guestStates(ctx, guestKey) {
 		status := st.Status
 		if status == "" {
 			status = StatusPending
 		}
-		_ = s.write.MergeGuestNextAction(ctx, gen.MergeGuestNextActionParams{
+		if err := s.write.MergeGuestNextAction(ctx, gen.MergeGuestNextActionParams{
 			UserID:       userID,
 			RuleID:       pgtype.UUID{Bytes: rid, Valid: true},
 			Status:       status,
 			Impressions:  st.Impressions,
 			LastShownAt:  st.LastShownAt,
 			SnoozedUntil: st.SnoozedUntil,
-		})
+		}); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 	// Attribute pre-auth platform_events to the new user — guest tool/usage
 	// history must count for member-scoped predicates (e.g. a guest who ran
@@ -786,14 +894,31 @@ func (s *Service) MergeGuestState(ctx context.Context, userID pgtype.UUID, guest
 	if n, err := s.write.BackfillGuestSessionEvents(ctx, gen.BackfillGuestSessionEventsParams{
 		UserID:    userID,
 		SessionID: &guestKey,
-	}); err == nil && n > 0 {
+	}); err != nil {
+		if firstErr == nil {
+			firstErr = err
+		}
+	} else if n > 0 {
 		slog.Info("nextactions: backfilled guest events", "user_id", userID, "events", n)
 	}
+	return firstErr
 }
 
 // ---------------------------------------------------------------------------
 // Sweep (Task 10 wires the worker; the engine lives here)
 // ---------------------------------------------------------------------------
+
+// sweepLockTTL maps nextactions.sweep_interval_minutes to the run-lock TTL —
+// 5 minutes shorter than the interval so the next hourly scheduler fire lands
+// after expiry (a TTL equal to the interval could skip a fire by milliseconds
+// and silently halve the cadence). Floored at 1 minute.
+func sweepLockTTL(intervalMin int) time.Duration {
+	ttl := time.Duration(intervalMin)*time.Minute - 5*time.Minute
+	if ttl < time.Minute {
+		return time.Minute
+	}
+	return ttl
+}
 
 // Sweep materializes user_next_actions rows for push-channel rules over
 // recently-active users and dispatches them via the notifier. Auth-only —
@@ -804,7 +929,11 @@ func (s *Service) Sweep(ctx context.Context) error {
 	}
 	if s.cache != nil {
 		lock := valkey.MustKey("nextactions:sweep:lock")
-		if ok, err := s.cache.SetNX(ctx, lock, "1", 55*time.Minute).Result(); err == nil && !ok {
+		// The run-lock doubles as the cadence check: the scheduler fires
+		// hourly and the lock lives for the configured
+		// nextactions.sweep_interval_minutes — see sweepLockTTL.
+		intervalMin := s.settingInt(ctx, "nextactions.sweep_interval_minutes", defaultSweepIntervalMinutes)
+		if ok, err := s.cache.SetNX(ctx, lock, "1", sweepLockTTL(intervalMin)).Result(); err == nil && !ok {
 			slog.Info("nextactions: sweep already running, skipping")
 			return nil
 		}

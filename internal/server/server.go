@@ -4665,13 +4665,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/jce/data-sources/{id}", jceHandlers.HandleDeleteDataSource)
 
 				// JCE Sub-spec 4: freshness, refresh, and ingestion jobs.
-				// Freshness enforces per-comparison access inside the service
-				// (canViewJCEComparison); the route itself only requires auth.
+				// Freshness and ingestion-job listing enforce per-comparison
+				// access inside the service (canViewJCEComparison); the routes
+				// themselves only require auth.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh")).
 					Get("/jce/comparisons/{id}/freshness", jceHandlers.HandleGetFreshness)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh"), rbac.RequirePermission(rbacResolver, "jce.refresh.trigger")).
 					Post("/jce/comparisons/{id}/refresh", jceHandlers.HandleRefreshComparison)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh"), rbac.RequirePermission(rbacResolver, "jce.ingestion_job.view")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh")).
 					Get("/jce/comparisons/{id}/ingestion-jobs", jceHandlers.HandleListIngestionJobs)
 			})
 

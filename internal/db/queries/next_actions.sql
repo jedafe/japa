@@ -246,3 +246,9 @@ WHERE status IN ('pending','shown','snoozed')
 UPDATE platform_events
 SET user_id = @user_id
 WHERE session_id = @session_id AND user_id IS NULL;
+
+-- name: HasUserNextAction :one
+SELECT EXISTS(
+    SELECT 1 FROM user_next_actions
+    WHERE user_id = @user_id AND rule_id = @rule_id
+);

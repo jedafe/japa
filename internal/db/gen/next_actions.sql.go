@@ -520,6 +520,25 @@ func (q *Queries) HasRecentNextActionShown(ctx context.Context, arg HasRecentNex
 	return has_recent, err
 }
 
+const hasUserNextAction = `-- name: HasUserNextAction :one
+SELECT EXISTS(
+    SELECT 1 FROM user_next_actions
+    WHERE user_id = $1 AND rule_id = $2
+)
+`
+
+type HasUserNextActionParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	RuleID pgtype.UUID `json:"rule_id"`
+}
+
+func (q *Queries) HasUserNextAction(ctx context.Context, arg HasUserNextActionParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasUserNextAction, arg.UserID, arg.RuleID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listActiveUsersForSweep = `-- name: ListActiveUsersForSweep :many
 SELECT DISTINCT user_id FROM platform_events
 WHERE user_id IS NOT NULL

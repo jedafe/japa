@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getFreshness } from '$lib/api/jce';
-	import { t } from '$lib/i18n';
+	import { i18n, t } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import {
 		deduplicateMatrix,
@@ -29,6 +29,7 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { formatMoney } from '$lib/utils/currency';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
@@ -54,7 +55,7 @@
 	let publishedDate = $derived(
 		new Date(
 			comparison.content.published_at ?? comparison.content.created_at ?? Date.now()
-		).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+		).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' })
 	);
 	let sidebarWidgets = $derived(
 		(data.rightSidebarWidgets as { id: string; widget_type: string; label: string; props: Record<string, unknown>; sort_order: number }[]) ??
@@ -84,6 +85,11 @@
 
 	function formatValue(cell?: MatrixDimension) {
 		if (!cell) return '—';
+		// Currency dimensions carry a normalized rating + ISO code — render
+		// through formatMoney like the quick-compare matrix does.
+		if (cell.currency_code && cell.value_rating !== undefined && cell.value_rating !== null) {
+			return formatMoney(cell.value_rating, cell.currency_code, page.data.currencies);
+		}
 		if (cell.value !== undefined && cell.value !== null) return cell.value;
 		if (cell.value_rating !== undefined && cell.value_rating !== null) return cell.value_rating;
 		if (cell.value_boolean !== undefined && cell.value_boolean !== null)

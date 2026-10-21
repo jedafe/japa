@@ -5,6 +5,7 @@
 	// audience/state filtering; popup cap comes from meta.popup_max_per_session.
 	import { onMount } from 'svelte';
 	import { env } from '$env/dynamic/public';
+	import { Dialog } from 'bits-ui';
 
 	const API_BASE = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
@@ -101,21 +102,24 @@
 	</div>
 {/if}
 
-{#if popup && open}
-	<div class="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4" role="presentation" onclick={softClose} onkeydown={(e) => e.key === 'Escape' && softClose()}>
-		<div class="w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xl" role="dialog" aria-modal="true" aria-label={popup.title} onclick={(e) => e.stopPropagation()}>
-			<h2 class="text-base font-semibold text-[var(--color-text)]">{popup.title}</h2>
-			{#if popup.body}<p class="mt-2 text-sm text-[var(--color-text-muted)]">{popup.body}</p>{/if}
-			<div class="mt-4 flex items-center gap-2">
-				<a href={popup.cta_url} onclick={() => cta(popup!)} class="flex-1 rounded-full bg-[var(--color-accent)] px-4 py-2 text-center text-sm font-medium text-white hover:opacity-90">{popup.cta_label}</a>
-				{#if popup.snooze_default_hours > 0}
-					<button onclick={() => act(popup!, popup!.snooze_default_hours)} class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]">Later</button>
-				{/if}
-				<button onclick={() => act(popup!)} class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]">Dismiss</button>
-			</div>
-		</div>
-	</div>
-{/if}
+<Dialog.Root {open} onOpenChange={(v) => { if (!v) softClose(); else open = true; }}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-[90] bg-black/40" />
+		<Dialog.Content class="fixed left-1/2 top-1/2 z-[91] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xl">
+			{#if popup}
+				<Dialog.Title class="text-base font-semibold text-[var(--color-text)]">{popup.title}</Dialog.Title>
+				{#if popup.body}<Dialog.Description class="mt-2 text-sm text-[var(--color-text-muted)]">{popup.body}</Dialog.Description>{/if}
+				<div class="mt-4 flex items-center gap-2">
+					<a href={popup.cta_url} onclick={() => cta(popup!)} class="flex-1 rounded-full bg-[var(--color-accent)] px-4 py-2 text-center text-sm font-medium text-white hover:opacity-90">{popup.cta_label}</a>
+					{#if popup.snooze_default_hours > 0}
+						<button onclick={() => act(popup!, popup!.snooze_default_hours)} class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]">Later</button>
+					{/if}
+					<button onclick={() => act(popup!)} class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]">Dismiss</button>
+				</div>
+			{/if}
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
 
 {#if inline && inlineAction}
 	<aside class="my-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">

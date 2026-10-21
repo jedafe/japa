@@ -178,13 +178,18 @@
 		</div>
 		{#if isOwner}
 			<div class="flex flex-wrap gap-2">
-				<button
-					type="button"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					onclick={edit}
-				>
-					<Pencil size={12} /> {t('jce.compare.edit_selection')}
-				</button>
+				{#if typeSlug}
+					<!-- Edit selection needs a comparison type for the picker to
+					     stage preselects — untyped comparisons (free-form items)
+					     have no picker source to restore into. -->
+					<button
+						type="button"
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						onclick={edit}
+					>
+						<Pencil size={12} /> {t('jce.compare.edit_selection')}
+					</button>
+				{/if}
 				<button
 					type="button"
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
