@@ -73,8 +73,15 @@ jobs:
             --tag "$IMAGE:${{ inputs.sha || github.sha }}" \
             --tag "$IMAGE:production" \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
-            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
             --push $ARGS .
+      - name: Export build cache (best-effort)
+        continue-on-error: true
+        run: |
+          docker buildx build \
+            --file "apps/${{ matrix.app }}/Dockerfile" \
+            --tag "$IMAGE:cache-probe" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
+            --output "type=cacheonly" $ARGS .
         env:
           PUBLIC_JC_API_URL: ${{ vars.PUBLIC_JC_API_URL }}
           PUBLIC_JC_WS_URL: ${{ vars.PUBLIC_JC_WS_URL }}

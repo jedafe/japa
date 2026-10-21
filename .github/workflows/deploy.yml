@@ -157,8 +157,16 @@ jobs:
             --tag "$IMAGE:${{ github.sha }}" \
             --tag "$IMAGE:staging" \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
-            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
             --push ${{ steps.args.outputs.args }} .
+      - name: Export build cache (best-effort)
+        continue-on-error: true
+        run: |
+          if [ "${{ matrix.app }}" = "api" ]; then DOCKERFILE=Dockerfile; else DOCKERFILE=apps/${{ matrix.app }}/Dockerfile; fi
+          docker buildx build \
+            --file "$DOCKERFILE" \
+            --tag "$IMAGE:cache-probe" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
+            --output "type=cacheonly" .
 
   deploy-staging:
     needs: [filter, build-images]
