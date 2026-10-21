@@ -102,9 +102,10 @@ the tag and roll the container.
 
 ### Two flows
 
-- **Staging** (`deploy.yml`, automatic on green CI): builds all 7 apps
-  with the `staging` environment's `PUBLIC_*` variables, tags
-  `:<sha>` + `:staging`, calls each app's deploy webhook.
+- **Staging** (`deploy.yml`, manual dispatch): builds only the changed
+  apps (`apps` input: `changed`/`all`/comma list) with the `staging`
+  environment's `PUBLIC_*` variables, tags `:<sha>` + `:staging`, calls
+  each deployed app's webhook.
 - **Production** (`deploy-production.yml`, manual dispatch): retags the
   api image `:staging`→`:production` registry-side (it is env-agnostic —
   all config is runtime `JC_*` env), builds the 6 frontends with the
@@ -128,9 +129,10 @@ tags weekly. Reclaim blob space with a weekly cron on the VPS:
 `docker exec <registry> registry garbage-collect /etc/docker/registry/config.yml`
 followed by `docker system prune -f`.
 
-**Update flow (gated promotion):** every green CI run on `main`
-auto-deploys staging. Production ships only when a maintainer runs the
-`Deploy Production` workflow (`deploy-production.yml`) by hand —
+**Update flow (manual staging, gated production):** a maintainer runs
+`Deploy Staging` from Actions — path-filtered, so only apps whose source
+changed since the last deploy rebuild. Production ships only when a
+maintainer runs the `Deploy Production` workflow (`deploy-production.yml`) by hand —
 **Actions → Deploy Production → Run workflow** on a commit that has
 already been exercised on staging. The manual dispatch is the promotion
 gate: GitHub's required-reviewers environment rule needs a paid plan
