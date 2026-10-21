@@ -83,9 +83,9 @@ for env in ["staging", "production"]:
         if u: show(f"start {env}/{nm}", *req("POST", f"/services/{u}/start"))
 
 APPS = [("api","api.b.japa.to","api.japa.to","8080"),("main","b.japa.to","japa.to","3000"),
-        ("admin","admin.b.japa.to","admin.japa.to","3000"),("control","control.b.japa.to","control.japa.to","3000"),
-        ("academy","academy.b.japa.to","academy.japa.to","3000"),("docs","docs.b.japa.to","docs.japa.to","3000"),
-        ("tools","tools.b.japa.to","tools.japa.to","3000")]
+        ("admin","admin.b.japa.to","admin.japa.to","3001"),("control","control.b.japa.to","control.japa.to","3002"),
+        ("academy","academy.b.japa.to","academy.japa.to","3003"),("docs","docs.b.japa.to","docs.japa.to","3004"),
+        ("tools","tools.b.japa.to","tools.japa.to","3005")]
 wh = {}
 for env, tag in [("staging","staging"),("production","production")]:
     for name, sh, ph, port in APPS:
