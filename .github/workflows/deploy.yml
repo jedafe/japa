@@ -58,7 +58,7 @@ jobs:
     env:
       IMAGE: ${{ vars.REGISTRY_HOST }}/japa-${{ matrix.app }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # api Dockerfile derives version from commit count
 
