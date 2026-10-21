@@ -11,6 +11,7 @@ import { apiBaseUrl } from '$lib/api/client';
  */
 export function remoteImageUrl(url: string | null | undefined): string {
 	if (!url) return '';
+	if (/^\/api\/v1\//.test(url)) return `${apiBaseUrl}${url.slice('/api/v1'.length)}`;
 	if (!/^https?:\/\//i.test(url)) return url;
 	return `${apiBaseUrl}/media/proxy?url=${encodeURIComponent(url)}`;
 }

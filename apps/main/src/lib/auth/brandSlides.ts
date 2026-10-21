@@ -13,6 +13,15 @@ export interface BrandSlide {
  * empty array for any malformed input so the AuthShell can fall back to its
  * default static brand panel.
  */
+import { apiBaseUrl } from '$lib/api/client';
+
+function normalizeImageUrl(image: string): string {
+	// API returns relative media paths — resolve them against the API origin
+	// so they don't 404 on the frontend host.
+	if (image.startsWith('/api/v1/')) return `${apiBaseUrl}${image.slice('/api/v1'.length)}`;
+	return image;
+}
+
 export function parseBrandSlides(
 	siteSettings: Record<string, unknown> | undefined | null
 ): BrandSlide[] {
@@ -27,7 +36,7 @@ export function parseBrandSlides(
 					typeof s === 'object' && s !== null && typeof s.image === 'string'
 			)
 			.map((s) => ({
-				image: s.image,
+				image: normalizeImageUrl(s.image),
 				headline: typeof s.headline === 'string' ? s.headline : '',
 				subheading: typeof s.subheading === 'string' ? s.subheading : ''
 			}));
