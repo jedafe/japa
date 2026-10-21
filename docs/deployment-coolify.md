@@ -69,20 +69,38 @@ JC_VAPID_PUBLIC_KEY / JC_VAPID_PRIVATE_KEY / JC_VAPID_SUBJECT
 JC_STRIPE_SECRET_KEY / webhook / price ids…
 ```
 
-## GitHub → GHCR → Coolify image deploys
+## GitHub → private registry → Coolify image deploys
 
-Images are built on the self-hosted CI runner and pushed to GHCR as
-`ghcr.io/<owner>/japa-<app>` — the Coolify host never builds from source.
-Each app's **Deployment Type** is **Docker Image**:
+Images are built on the self-hosted CI runner and pushed to a private
+`registry:2` container on the Coolify host — no GitHub Packages quota,
+no public registry, images never leave your infra. Each app's
+**Deployment Type** is **Docker Image**:
 
-- staging apps track `ghcr.io/<owner>/japa-<app>:staging`
-- production apps track `ghcr.io/<owner>/japa-<app>:production`
+- staging apps track `<registry-host>/japa-<app>:staging`
+- production apps track `<registry-host>/japa-<app>:production`
 
-Coolify needs registry credentials once (**Settings → Registries** →
-`ghcr.io` + a classic PAT with `read:packages`) since the packages are
-private. The deploy webhook then pulls the tag and rolls the container.
+### The registry container
 
-Two flows:
+Deploy `registry:2` in the Coolify project as a **Docker Image** service:
+
+- domain: `registry.japa.to` → container port `5000` (Traefik issues TLS)
+- volume: `/var/lib/registry` (blob storage — size it generously)
+- auth (htpasswd — required, it's internet-facing):
+  ```
+  REGISTRY_AUTH=htpasswd
+  REGISTRY_AUTH_HTPASSWD_REALM=japa-registry
+  REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd
+  REGISTRY_HTTP_SECRET=<random 64+ chars>
+  ```
+  Mount an htpasswd file at `/auth/htpasswd`:
+  `docker run --rm httpd:2-alpine htpasswd -Bbn ci <password> > htpasswd`
+  (the `ci` user = `REGISTRY_USERNAME`/`REGISTRY_PASSWORD` repo secrets)
+
+Coolify app pulls authenticate once via **Settings → Registries** →
+`registry.japa.to` + the same credentials. Deploy webhooks then pull
+the tag and roll the container.
+
+### Two flows
 
 - **Staging** (`deploy.yml`, automatic on green CI): builds all 7 apps
   with the `staging` environment's `PUBLIC_*` variables, tags
@@ -101,11 +119,14 @@ Dockerfiles' `ARG`s (`PUBLIC_JC_API_URL`, `PUBLIC_JC_WS_URL`,
 `PUBLIC_MAIN_ORIGIN`, `PUBLIC_ADMIN_ORIGIN`, `PUBLIC_DOCS_ORIGIN`,
 `PUBLIC_JC_ACADEMY_ORIGIN`, `PUBLIC_JC_TOOLS_ORIGIN`). Deploy webhook
 URLs are **environment secrets** (`COOLIFY_WEBHOOK_*` on `production`,
-`*_STAGING` on `staging`).
+`*_STAGING` on `staging`). Registry credentials are repo secrets
+(`REGISTRY_USERNAME`/`REGISTRY_PASSWORD`); `REGISTRY_HOST` is a repo
+variable.
 
-Private-package quota note: GHCR counts storage/bandwidth against the
-account (500 MB free on Free plan). `registry-retention.yml` prunes old
-`sha` tags weekly — keep it, or set a Packages budget/payment method.
+Retention: `registry-retention.yml` deletes all but the newest 10 `sha`
+tags weekly. Reclaim blob space with a weekly cron on the VPS:
+`docker exec <registry> registry garbage-collect /etc/docker/registry/config.yml`
+followed by `docker system prune -f`.
 
 **Update flow (gated promotion):** every green CI run on `main`
 auto-deploys staging. Production ships only when a maintainer runs the

@@ -7,11 +7,11 @@ on:
     branches: [main]
 
 # Image-based Coolify deployment: this job builds each app's Dockerfile on
-# the self-hosted runner and pushes to ghcr.io; the deploy job then calls
+# the self-hosted runner and pushes to the private registry on the Coolify host; the deploy job then calls
 # each Coolify app's Deploy Webhook, which pulls the tagged image and rolls
 # the service. No image is ever rebuilt on the Coolify host.
 #
-# Image naming: ghcr.io/<owner>/japa-<app> tagged with the commit SHA plus
+# Image naming: <registry-host>/japa-<app> tagged with the commit SHA plus
 # the floating `staging` tag that staging apps track.
 #
 # PUBLIC_* values are vite build-time args — they come from the `staging`
@@ -23,6 +23,11 @@ on:
 # Extra --build-arg flags unused by a given Dockerfile only warn, so all
 # frontends share one arg set.
 #
+# Registry config (repo/environment vars + secrets):
+#   vars.REGISTRY_HOST          — e.g. registry.japa.to
+#   secrets.REGISTRY_USERNAME   — htpasswd user
+#   secrets.REGISTRY_PASSWORD   — htpasswd password
+#
 # Staging deploy webhooks live on the `staging` environment's secrets:
 #   COOLIFY_WEBHOOK_API_STAGING, _MAIN_, _ADMIN_, _CONTROL_, _ACADEMY_,
 #   _DOCS_, _TOOLS_STAGING
@@ -31,7 +36,6 @@ on:
 
 permissions:
   contents: read
-  packages: write # GITHUB_TOKEN pushes to ghcr.io
 
 jobs:
   build-images:
@@ -52,14 +56,14 @@ jobs:
           - { app: docs, dockerfile: apps/docs/Dockerfile }
           - { app: tools, dockerfile: apps/tools/Dockerfile }
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/japa-${{ matrix.app }}
+      IMAGE: ${{ vars.REGISTRY_HOST }}/japa-${{ matrix.app }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # api Dockerfile derives version from commit count
 
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Log in to the private registry
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${{ vars.REGISTRY_HOST }}" -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
       - uses: docker/setup-buildx-action@v3
 

@@ -23,23 +23,22 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   promote-api:
     runs-on: [self-hosted]
     environment: production
     steps:
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Log in to the private registry
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${{ vars.REGISTRY_HOST }}" -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
       - uses: docker/setup-buildx-action@v3
 
       - name: Retag api staging → production
         run: |
           docker buildx imagetools create \
-            --tag ghcr.io/${{ github.repository_owner }}/japa-api:production \
-            ghcr.io/${{ github.repository_owner }}/japa-api:${{ inputs.sha || 'staging' }}
+            --tag ${{ vars.REGISTRY_HOST }}/japa-api:production \
+            ${{ vars.REGISTRY_HOST }}/japa-api:${{ inputs.sha || 'staging' }}
 
   build-frontends:
     runs-on: [self-hosted]
@@ -49,14 +48,14 @@ jobs:
       matrix:
         app: [main, admin, control, academy, docs, tools]
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/japa-${{ matrix.app }}
+      IMAGE: ${{ vars.REGISTRY_HOST }}/japa-${{ matrix.app }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.sha || github.sha }}
 
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Log in to the private registry
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${{ vars.REGISTRY_HOST }}" -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
       - uses: docker/setup-buildx-action@v3
 

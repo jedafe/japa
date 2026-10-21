@@ -5,33 +5,53 @@ on:
     - cron: '17 3 * * 1' # weekly, Monday 03:17 UTC
   workflow_dispatch:
 
-# Private GHCR storage is quota-billed — prune old tag versions while
-# keeping the mutable staging/production tags and the N newest sha tags
-# per package. Without this, per-push sha tags grow storage unboundedly.
-
-permissions:
-  packages: write
+# Private registry retention: delete all but the KEEP newest `sha` tag
+# manifests per repo (never the mutable `staging`/`production` tags).
+# Blob space is only reclaimed by registry garbage-collection — run a
+# weekly cron on the Coolify host:
+#   docker exec <registry-container> registry garbage-collect \
+#     /etc/docker/registry/config.yml && docker system prune -f
+#
+# Vars: REGISTRY_HOST. Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD.
 
 jobs:
   prune:
     runs-on: [self-hosted]
+    env:
+      REGISTRY_HOST: ${{ vars.REGISTRY_HOST }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+      KEEP: "10"
     steps:
-      - name: Prune old package versions
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-          KEEP: "10"
+      - name: Prune old sha tags
         run: |
-          set -e
-          for app in api main admin control academy docs tools; do
-            pkg="japa-$app"
-            # container package versions live under /user/packages
-            ids=$(gh api "users/$OWNER/packages/container/$pkg/versions?per_page=100" \
-              --jq '.[] | select((.metadata.container.tags | any(. == "staging" or . == "production")) | not) | .id' 2>/dev/null || true)
-            count=$(echo "$ids" | grep -c . || true)
-            if [ "$count" -le "$KEEP" ]; then continue; fi
-            echo "$ids" | tail -n +$((KEEP + 1)) | while read -r vid; do
-              [ -n "$vid" ] && gh api -X DELETE "users/$OWNER/packages/container/$pkg/versions/$vid" >/dev/null \
-                && echo "deleted $pkg version $vid"
-            done
-          done
+          python3 - <<'PYEOF'
+          import json, os, urllib.request, base64
+
+          host = os.environ['REGISTRY_HOST']
+          keep = int(os.environ['KEEP'])
+          auth = base64.b64encode(
+              f"{os.environ['REGISTRY_USERNAME']}:{os.environ['REGISTRY_PASSWORD']}".encode()
+          ).decode()
+
+          def req(method, path, accept=None):
+              r = urllib.request.Request(f"https://{host}{path}", method=method)
+              r.add_header('Authorization', f'Basic {auth}')
+              if accept: r.add_header('Accept', accept)
+              with urllib.request.urlopen(r) as resp:
+                  return resp.read(), resp.headers
+
+          apps = ['api','main','admin','control','academy','docs','tools']
+          MANIFEST = ('application/vnd.docker.distribution.manifest.v2+json,'
+                      'application/vnd.oci.image.manifest.v1+json')
+          for app in apps:
+              body, _ = req('GET', f'/v2/japa-{app}/tags/list')
+              tags = [t for t in json.loads(body).get('tags') or []
+                      if t not in ('staging','production')]
+              if len(tags) <= keep: continue
+              for tag in sorted(tags)[:-keep]:
+                  _, h = req('GET', f'/v2/japa-{app}/manifests/{tag}', MANIFEST)
+                  digest = h['Docker-Content-Digest']
+                  req('DELETE', f'/v2/japa-{app}/manifests/{digest}')
+                  print(f'deleted japa-{app}:{tag} ({digest[:19]})')
+          PYEOF
