@@ -72,8 +72,8 @@ jobs:
             --file "apps/${{ matrix.app }}/Dockerfile" \
             --tag "$IMAGE:${{ inputs.sha || github.sha }}" \
             --tag "$IMAGE:production" \
-            --cache-from "type=local,src=$HOME/docker-cache/${{ matrix.app }}" \
-            --cache-to "type=local,dest=$HOME/docker-cache/${{ matrix.app }},mode=max" \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
             --push $ARGS .
         env:
           PUBLIC_JC_API_URL: ${{ vars.PUBLIC_JC_API_URL }}

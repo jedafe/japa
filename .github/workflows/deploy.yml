@@ -156,8 +156,8 @@ jobs:
             --file "$DOCKERFILE" \
             --tag "$IMAGE:${{ github.sha }}" \
             --tag "$IMAGE:staging" \
-            --cache-from "type=local,src=$HOME/docker-cache/${{ matrix.app }}" \
-            --cache-to "type=local,dest=$HOME/docker-cache/${{ matrix.app }},mode=max" \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
             --push ${{ steps.args.outputs.args }} .
 
   deploy-staging:
