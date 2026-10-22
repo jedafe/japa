@@ -72,6 +72,7 @@ var defaultCORSHeaders = []string{
 	"X-API-Key",
 	"X-Device-Id",
 	"X-JC-Surface",
+	"X-Skip-Refresh",
 }
 
 // AllowedCORSHeaders returns the Access-Control-Allow-Headers value used by

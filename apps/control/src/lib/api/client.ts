@@ -116,13 +116,17 @@ export async function apiFetch<T>(
 	// Ref: internal/server/server.go — Control Panel routes are mounted at the
 	// top-level /control/* group (NOT under /api/v1). The Vite dev proxy maps
 	// /control -> http://localhost:8080, so pages call these endpoints as
-	// /control/... and the request reaches the backend unchanged. Pass version: ''
-	// so buildApiUrl does not prepend /api/v1 to these paths.
+	// /control/... and the request reaches the backend unchanged. For /control/*
+	// paths the /api/v1 suffix must also be stripped from the versioned
+	// PUBLIC_JC_API_URL, otherwise they resolve to /api/v1/control/* (404).
 	// Callers pass either /control/* routes or full /api/v1/* paths. version:''
 	// means buildApiUrl won't dedupe, so strip the /api/v1 prefix here —
 	// otherwise it doubles onto the versioned PUBLIC_JC_API_URL
 	// (api.b.japa.to/api/v1/api/v1/...).
-	const url = buildApiUrl(path.replace(/^\/api\/v1/, ''), PUBLIC_JC_API_URL, { version: '' });
+	const base = path.startsWith('/control/')
+		? PUBLIC_JC_API_URL.replace(/\/api\/v1\/?$/, '')
+		: PUBLIC_JC_API_URL;
+	const url = buildApiUrl(path.replace(/^\/api\/v1/, ''), base, { version: '' });
 	const method = (options.method ?? 'GET').toString().toUpperCase();
 	const isMutating = MUTATING_METHODS.has(method);
 
