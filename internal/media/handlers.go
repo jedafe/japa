@@ -1087,7 +1087,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"media_id": mediaID.String(),
-			"url":      "/api/v1/media/serve/" + bucket + "/" + storagePath,
+			"url":      ServeURL(bucket, storagePath),
 		},
 	})
 }

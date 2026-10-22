@@ -385,7 +385,7 @@ func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filen
 	// The media serve endpoint is same-origin (/api/v1 is proxied to the
 	// backend), so the stored source_url is the relative serve path. Video
 	// files bypass imgproxy — the serve endpoint streams them directly.
-	sourceURL := fmt.Sprintf("/api/v1/media/serve/%s/%s", m.StorageBucket, m.StoragePath)
+	sourceURL := media.ServeURL(m.StorageBucket, m.StoragePath)
 
 	if title == "" {
 		title = filename
@@ -502,7 +502,7 @@ func (s *Service) storeVideoPoster(ctx context.Context, uploaderID pgtype.UUID, 
 		return pgtype.UUID{}, "", fmt.Errorf("loading poster media: %w", err)
 	}
 
-	return posterID, fmt.Sprintf("/api/v1/media/serve/%s/%s", pm.StorageBucket, pm.StoragePath), nil
+	return posterID, media.ServeURL(pm.StorageBucket, pm.StoragePath), nil
 }
 
 // GetSourceByID returns a single active video source in the platform.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -131,7 +132,7 @@ func loadMediaURLConfig() mediaURLConfig {
 // reads and hex decoding across all items in a list (BUG-008).
 func mediaURLWithConfig(storageBucket, storagePath string, opts ImageProxyOpts, cfg mediaURLConfig) string {
 	if !cfg.valid || cfg.baseURL == "" {
-		return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
+		return ServeURL(storageBucket, storagePath)
 	}
 
 	src := "s3://" + storageBucket + "/" + storagePath
@@ -181,7 +182,11 @@ func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { /
 // imgproxy cannot transform — videos, audio, PDFs — where the imgproxy
 // pipeline would corrupt or reject the payload.
 func ServeURL(storageBucket, storagePath string) string {
-	return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
+	// JC_API_PUBLIC_URL makes emitted URLs absolute so cross-origin frontends
+	// (admin/control/academy on separate hosts) resolve media on the API host
+	// instead of their own origin. Empty keeps dev's relative same-origin path.
+	base := strings.TrimRight(os.Getenv("JC_API_PUBLIC_URL"), "/")
+	return base + "/api/v1/media/serve/" + storageBucket + "/" + storagePath
 }
 
 // URLFromParts resolves a displayable URL from a nullable storage bucket/path
