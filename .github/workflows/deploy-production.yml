@@ -6,6 +6,12 @@ on:
       sha:
         description: 'Commit SHA to promote (blank = last staging build)'
         required: false
+      runner:
+        description: "Build runner: 'github' (hosted) or 'vps' (Coolify host)"
+        type: choice
+        options: [github, vps]
+        default: github
+        required: true
 
 # Manual production deploy — the dispatch click is the promotion gate.
 #
@@ -26,7 +32,7 @@ permissions:
 
 jobs:
   promote-api:
-    runs-on: [self-hosted]
+    runs-on: ${{ inputs.runner == 'vps' && 'vps' || 'ubuntu-latest' }}
     environment: production
     steps:
       - name: Log in to the private registry
@@ -41,7 +47,7 @@ jobs:
             ${{ vars.REGISTRY_HOST }}/japa-api:${{ inputs.sha || 'staging' }}
 
   build-frontends:
-    runs-on: [self-hosted]
+    runs-on: ${{ inputs.runner == 'vps' && 'vps' || 'ubuntu-latest' }}
     environment: production
     strategy:
       fail-fast: false
@@ -60,6 +66,17 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Build + push ${{ matrix.app }}
+        env:
+          PUBLIC_JC_API_URL: ${{ vars.PUBLIC_JC_API_URL }}
+          PUBLIC_JC_WS_URL: ${{ vars.PUBLIC_JC_WS_URL }}
+          PUBLIC_JC_ENV: ${{ vars.PUBLIC_JC_ENV }}
+          PUBLIC_JC_SITE_URL: ${{ vars.PUBLIC_JC_SITE_URL }}
+          PUBLIC_JC_GLITCHTIP_DSN: ${{ vars.PUBLIC_JC_GLITCHTIP_DSN }}
+          PUBLIC_MAIN_ORIGIN: ${{ vars.PUBLIC_MAIN_ORIGIN }}
+          PUBLIC_ADMIN_ORIGIN: ${{ vars.PUBLIC_ADMIN_ORIGIN }}
+          PUBLIC_DOCS_ORIGIN: ${{ vars.PUBLIC_DOCS_ORIGIN }}
+          PUBLIC_JC_ACADEMY_ORIGIN: ${{ vars.PUBLIC_JC_ACADEMY_ORIGIN }}
+          PUBLIC_JC_TOOLS_ORIGIN: ${{ vars.PUBLIC_JC_TOOLS_ORIGIN }}
         run: |
           ARGS=""
           for V in PUBLIC_JC_API_URL PUBLIC_JC_WS_URL PUBLIC_JC_ENV \
@@ -73,30 +90,12 @@ jobs:
             --tag "$IMAGE:${{ inputs.sha || github.sha }}" \
             --tag "$IMAGE:production" \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
             --push $ARGS .
-      - name: Export build cache (best-effort)
-        continue-on-error: true
-        run: |
-          docker buildx build \
-            --file "apps/${{ matrix.app }}/Dockerfile" \
-            --tag "$IMAGE:cache-probe" \
-            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=min" \
-            --output "type=cacheonly",compression=zstd,force-compression=true $ARGS .
-        env:
-          PUBLIC_JC_API_URL: ${{ vars.PUBLIC_JC_API_URL }}
-          PUBLIC_JC_WS_URL: ${{ vars.PUBLIC_JC_WS_URL }}
-          PUBLIC_JC_ENV: ${{ vars.PUBLIC_JC_ENV }}
-          PUBLIC_JC_SITE_URL: ${{ vars.PUBLIC_JC_SITE_URL }}
-          PUBLIC_JC_GLITCHTIP_DSN: ${{ vars.PUBLIC_JC_GLITCHTIP_DSN }}
-          PUBLIC_MAIN_ORIGIN: ${{ vars.PUBLIC_MAIN_ORIGIN }}
-          PUBLIC_ADMIN_ORIGIN: ${{ vars.PUBLIC_ADMIN_ORIGIN }}
-          PUBLIC_DOCS_ORIGIN: ${{ vars.PUBLIC_DOCS_ORIGIN }}
-          PUBLIC_JC_ACADEMY_ORIGIN: ${{ vars.PUBLIC_JC_ACADEMY_ORIGIN }}
-          PUBLIC_JC_TOOLS_ORIGIN: ${{ vars.PUBLIC_JC_TOOLS_ORIGIN }}
 
   deploy-production:
     needs: [promote-api, build-frontends]
-    runs-on: [self-hosted]
+    runs-on: ${{ inputs.runner == 'vps' && 'vps' || 'ubuntu-latest' }}
     environment: production
     steps:
       - name: Deploy api

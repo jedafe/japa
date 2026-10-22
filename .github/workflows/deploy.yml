@@ -10,11 +10,18 @@ on:
       base:
         description: "Base ref for change detection (default: last deployed commit)"
         required: false
+      runner:
+        description: "Build runner: 'github' (hosted) or 'vps' (Coolify host)"
+        type: choice
+        options: [github, vps]
+        default: github
+        required: true
 
-# Manual staging deploy. Builds each app image on the self-hosted runner
-# and pushes to the private registry on the Coolify host; the deploy job
-# then calls each app's Coolify webhook which pulls + redeploys the
-# :staging tag.
+# Manual staging deploy. Builds each app image on the selected runner
+# (GitHub-hosted by default, or the Coolify host's runner via the `vps`
+# label) and pushes to the private registry on the Coolify host; the
+# deploy job then calls each app's Coolify webhook which pulls +
+# redeploys the :staging tag.
 #
 # Change detection: 'changed' (default) diffs against `base` input, or
 # the commit recorded by the last successful staging deploy
@@ -36,7 +43,7 @@ permissions:
 
 jobs:
   filter:
-    runs-on: [self-hosted]
+    runs-on: ${{ inputs.runner == 'vps' && 'vps' || 'ubuntu-latest' }}
     outputs:
       apps: ${{ steps.pick.outputs.apps }}
       changed: ${{ steps.filter.outputs.changes }}
@@ -111,7 +118,7 @@ jobs:
   build-images:
     needs: filter
     if: ${{ needs.filter.outputs.apps != '[]' }}
-    runs-on: [self-hosted]
+    runs-on: ${{ inputs.runner == 'vps' && 'vps' || 'ubuntu-latest' }}
     environment: staging
     strategy:
       fail-fast: false
@@ -149,6 +156,7 @@ jobs:
             A="$A --build-arg $v=${!v}"
           done
           echo "args=$A" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
       - name: Build + push
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then DOCKERFILE=Dockerfile; else DOCKERFILE=apps/${{ matrix.app }}/Dockerfile; fi
@@ -157,20 +165,12 @@ jobs:
             --tag "$IMAGE:${{ github.sha }}" \
             --tag "$IMAGE:staging" \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
             --push ${{ steps.args.outputs.args }} .
-      - name: Export build cache (best-effort)
-        continue-on-error: true
-        run: |
-          if [ "${{ matrix.app }}" = "api" ]; then DOCKERFILE=Dockerfile; else DOCKERFILE=apps/${{ matrix.app }}/Dockerfile; fi
-          docker buildx build \
-            --file "$DOCKERFILE" \
-            --tag "$IMAGE:cache-probe" \
-            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=min" \
-            --output "type=cacheonly",compression=zstd,force-compression=true .
 
   deploy-staging:
     needs: [filter, build-images]
-    runs-on: [self-hosted]
+    runs-on: ${{ inputs.runner == 'vps' && 'vps' || 'ubuntu-latest' }}
     environment: staging
     steps:
       - name: Deploy api

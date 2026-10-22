@@ -2,26 +2,24 @@ name: Registry Retention
 
 on:
   schedule:
-    - cron: '17 3 * * 1' # weekly, Monday 03:17 UTC
+    - cron: '17 3 */3 * *' # every 3 days, 03:17 UTC
   workflow_dispatch:
 
 # Private registry retention: delete all but the KEEP newest `sha` tag
 # manifests per repo (never the mutable `staging`/`production` tags).
-# Blob space is only reclaimed by registry garbage-collection — run a
-# weekly cron on the Coolify host:
-#   docker exec <registry-container> registry garbage-collect \
-#     /etc/docker/registry/config.yml && docker system prune -f
+# Blob space is only reclaimed by registry garbage-collection — a daily
+# cron on the Coolify host runs it one hour after this job (04:17).
 #
 # Vars: REGISTRY_HOST. Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD.
 
 jobs:
   prune:
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
     env:
       REGISTRY_HOST: ${{ vars.REGISTRY_HOST }}
       REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
       REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-      KEEP: "10"
+      KEEP: "5"
     steps:
       - name: Prune old sha tags
         run: |
