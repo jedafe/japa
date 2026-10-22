@@ -17,6 +17,8 @@ jobs:
         with:
           channel: stable
           flutter-version-file: apps/mobile/pubspec.yaml
+          # Cache the ~1GB SDK + pub cache so hosted runners stay warm.
+          cache: true
       - run: flutter pub get
         working-directory: packages/japaconnect_core
       - run: flutter analyze
