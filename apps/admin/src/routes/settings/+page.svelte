@@ -27,6 +27,9 @@
 	let loading = $state(true);
 	let error = $state('');
 	let messageType = $state<'success' | 'error' | ''>('');
+	let resetting = $state(false);
+	let showResetDialog = $state(false);
+	let resetTargetCategory = $state('');
 
 	interface SettingDef {
 		key: string;
@@ -388,6 +391,44 @@
 			error = '';
 			messageType = '';
 		}, 3000);
+	}
+
+	function askResetCategory(categoryKey: string) {
+		resetTargetCategory = categoryKey;
+		showResetDialog = true;
+	}
+
+	// Reset restores the persisted system defaults for a whole category — the
+	// backend deletes the stored overrides so catalog defaults apply again.
+	// Unlike revertAll (which only discards unsaved edits), this changes data
+	// on the server, then refetches so originals/toggles rebuild clean.
+	async function confirmResetCategory() {
+		if (!resetTargetCategory) return;
+		resetting = true;
+		error = '';
+		messageType = '';
+		try {
+			const result = await settingsAdminApi.resetCategory(resetTargetCategory);
+			if (result.ok) {
+				showResetDialog = false;
+				resetTargetCategory = '';
+				await loadSettings();
+				error = t('settings.reset_defaults_success', 'Settings reset to system defaults.');
+				messageType = 'success';
+				setTimeout(() => {
+					error = '';
+					messageType = '';
+				}, 3000);
+			} else {
+				error = result.error;
+				messageType = 'error';
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t('settings.reset_failed', 'Failed to reset settings');
+			messageType = 'error';
+		} finally {
+			resetting = false;
+		}
 	}
 
 	let uploadingKey = $state('');
@@ -874,6 +915,14 @@
 					{/if}
 
 					{#if canManage}
+						<Button disabled={saving || resetting} variant="outline" size="sm" onclick={() => askResetCategory(category.key)}>
+							{#if resetting && resetTargetCategory === category.key}
+								<RefreshCw class="h-4 w-4 animate-spin" />
+							{:else}
+								<RotateCcw class="h-4 w-4" />
+							{/if}
+							{t('settings.reset_defaults', 'Reset to Defaults')}
+						</Button>
 						<Button disabled={saving || !isDirty} variant="outline" size="sm" onclick={() => revertAll()}>
 							<Undo2 class="h-4 w-4" />
 							{t('settings.revert', 'Revert')}
@@ -903,6 +952,23 @@
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showUnsavedDialog = false)}>{t('common.stay_here', 'Stay Here')}</Button>
 		<Button variant="destructive" onclick={confirmLeaveWithUnsaved}>{t('common.leave', 'Leave')}</Button>
+	</div>
+</Modal>
+
+<Modal bind:open={showResetDialog} title={t('settings.reset_defaults_title', 'Reset to System Defaults')} size="sm">
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t('settings.reset_defaults_confirm', 'This removes every saved customization in this category and restores the system defaults. Any unsaved changes will be lost.')}
+	</p>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" disabled={resetting} onclick={() => (showResetDialog = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" disabled={resetting} onclick={confirmResetCategory}>
+			{#if resetting}
+				<RefreshCw class="h-4 w-4 animate-spin" />
+				{t('settings.resetting', 'Resetting...')}
+			{:else}
+				{t('settings.reset_defaults', 'Reset to Defaults')}
+			{/if}
+		</Button>
 	</div>
 </Modal>
 

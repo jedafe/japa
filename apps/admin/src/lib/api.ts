@@ -1312,6 +1312,8 @@ export const settingsAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/settings${params ? `?${params}` : ''}`),
 	updateCategory: (category: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/settings/${category}`, { method: 'PUT', body }),
+	resetCategory: (category: string) =>
+		api<unknown>(`/admin/settings/${category}/reset`, { method: 'POST' }),
 };
 
 export const spacesAdminApiExtended = {

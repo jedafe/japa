@@ -467,6 +467,30 @@ func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, settings m
 	return nil
 }
 
+// DeleteSettingsBatch atomically removes multiple settings rows in a single
+// transaction. Keys are full dot-notation (e.g. "appearance.primary_color").
+// Removing a row restores the catalog default at read time — this is how a
+// settings-category reset is implemented. The cache is invalidated once after
+// commit so callers do not need to invalidate per key.
+func (s *Settings) DeleteSettingsBatch(ctx context.Context, keys []string) error {
+	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		for _, key := range keys {
+			if err := q.DeleteSystemSetting(ctx, key); err != nil {
+				return fmt.Errorf("deleting setting %q: %w", key, err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	s.InvalidateSettings(ctx)
+
+	return nil
+}
+
 // GetPublicSettings returns all settings marked as public.
 func (s *Settings) GetPublicSettings(ctx context.Context) (map[string]any, error) {
 	rows, err := s.q.GetPublicSettings(ctx)

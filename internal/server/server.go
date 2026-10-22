@@ -6489,6 +6489,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/settings", adminHandlers.ListSettings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Put("/admin/settings/{category}", adminHandlers.UpdateSettings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Post("/admin/settings/{category}/reset", adminHandlers.ResetSettings)
 
 			// Template Literals admin CRUD
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).

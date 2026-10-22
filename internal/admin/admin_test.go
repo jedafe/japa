@@ -409,6 +409,82 @@ func TestUpdateSettings_ValidKeyDBError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// ResetSettings — unauthorized
+// ---------------------------------------------------------------------------
+
+func TestResetSettings_Unauthorized(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlers()
+	req := httptest.NewRequest(http.MethodPost, "/admin/settings/appearance/reset", nil)
+	rr := httptest.NewRecorder()
+
+	h.ResetSettings(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ResetSettings — missing category
+// ---------------------------------------------------------------------------
+
+func TestResetSettings_MissingCategory(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlers()
+	req := httptest.NewRequest(http.MethodPost, "/admin/settings//reset", nil)
+	req = withAuthAndPlatform(t, req)
+	req = withChiURLParam(req, "category", "")
+	rr := httptest.NewRecorder()
+
+	h.ResetSettings(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+
+	var body map[string]any
+
+	json.Unmarshal(rr.Body.Bytes(), &body)
+
+	errObj, _ := body["error"].(map[string]any)
+	if errObj["code"] != "missing_category" {
+		t.Errorf("error.code = %v, want missing_category", errObj["code"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ResetSettings — invalid category
+// ---------------------------------------------------------------------------
+
+func TestResetSettings_InvalidCategory(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlers()
+	req := httptest.NewRequest(http.MethodPost, "/admin/settings/nonexistent/reset", nil)
+	req = withAuthAndPlatform(t, req)
+	req = withChiURLParam(req, "category", "nonexistent")
+	rr := httptest.NewRecorder()
+
+	h.ResetSettings(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+
+	var body map[string]any
+
+	json.Unmarshal(rr.Body.Bytes(), &body)
+
+	errObj, _ := body["error"].(map[string]any)
+	if errObj["code"] != "invalid_category" {
+		t.Errorf("error.code = %v, want invalid_category", errObj["code"])
+	}
+}
+
+// ---------------------------------------------------------------------------
 // ListModeration — unauthorized
 // ---------------------------------------------------------------------------
 

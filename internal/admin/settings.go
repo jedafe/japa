@@ -1001,3 +1001,81 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
+// ---------------------------------------------------------------------------
+// ResetSettings — POST /admin/settings/{category}/reset
+// ---------------------------------------------------------------------------
+
+// ResetSettings removes every stored override for a category, restoring the
+// catalog defaults declared in defaultSettings. ListSettings falls back to the
+// catalog only when no system_settings row exists, so deleting the rows —
+// rather than writing defaults back — is what actually resets the category
+// (several appearance keys intentionally have no catalog value; "unset" IS
+// their default).
+func (h *Handlers) ResetSettings(w http.ResponseWriter, r *http.Request) {
+	actor, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	category := chi.URLParam(r, "category")
+	if category == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_category", "Category is required")
+		return
+	}
+
+	def, ok := defaultSettings[category]
+	if !ok {
+		errpkg.WriteError(w, http.StatusNotFound, "invalid_category", "Unknown settings category: "+category)
+		return
+	}
+
+	// Every catalog key in the category is deleted — including Hidden keys,
+	// which are still category-scoped customizations even though they render
+	// on a dedicated surface.
+	keys := make([]string, 0, len(def.Settings))
+	for _, s := range def.Settings {
+		keys = append(keys, category+"."+s.Key)
+	}
+
+	ctx := r.Context()
+
+	if err := h.Settings.DeleteSettingsBatch(ctx, keys); err != nil {
+		slog.Error("admin: failed to reset settings", "category", category, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to reset settings")
+		return
+	}
+
+	// Same post-write hook as UpdateSettings — a content reset can clear the
+	// link-preview blacklist.
+	if category == "content" && h.Valkey != nil {
+		invalidateLinkPreviewCache(r.Context(), h.Valkey)
+	}
+
+	// Audit-trail the reset — same traceability bar as a settings write.
+	// Best-effort (Rule 8): a failed audit write never blocks the reset.
+	if h.DB != nil {
+		meta, _ := json.Marshal(map[string]any{"category": category, "keys": keys})
+		ip := clientip.FromRequest(r)
+
+		var ipArg any
+
+		if ip != "" {
+			ipArg = ip
+		}
+
+		if _, err := h.DB.Writer.Exec(ctx, `
+			INSERT INTO audit_logs (actor_user_id, action_type, target_type, metadata, ip_address)
+			VALUES ($1, 'admin.settings.reset', 'system_setting', $2::jsonb, $3::inet)
+		`, actor.UserID, meta, ipArg); err != nil {
+			slog.Warn("admin: failed to write settings reset audit log", "category", category, "error", err)
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{
+			"status":   "reset",
+			"category": category,
+		},
+	})
+}
