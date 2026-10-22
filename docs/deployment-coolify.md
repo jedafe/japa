@@ -385,3 +385,37 @@ What this deliberately does **not** carry over: dev user accounts, posts,
 and user-uploaded media. If the baseline ever feels stale relative to dev
 (it's a snapshot — regenerated via `python3 scripts/gen_baseline.py`),
 regenerate it rather than dumping the dev DB.
+
+## CI/CD runners and registry (ADR-133)
+
+- **Registry:** private `registry:2` container on the Coolify host
+  (`registry.japa.to`, htpasswd `ci` user). Builds push over loopback —
+  no external registry, no egress cost.
+- **Runners:** `coolify-vps` self-hosted runner on the Coolify host
+  (label `vps`, `/opt/actions-runner`). `ubuntu-latest` is preferred but
+  billing-blocked today; a `probe`/`decide` job pair in `ci.yml`,
+  `deploy.yml`, and `deploy-production.yml` auto-routes to hosted when
+  it comes online. Dispatch input `runner: auto|github|vps`.
+- **Every downstream job must declare `if:` on its direct needs** —
+  implicit `success()` checks the transitive closure and skips the whole
+  graph when `probe` fails. (see ADR-133 §3)
+- **CI is opt-in on push:** add `[ci]` to the head commit message; PRs
+  and `workflow_dispatch` always run. `paths-ignore` skips docs-only
+  pushes.
+- **Deploy flow:** `gh workflow run deploy.yml` → filter diffs
+  `LAST_DEPLOYED_SHA` → builds only changed apps → push → Coolify
+  webhooks → staging. `gh workflow run deploy-production.yml` promotes
+  (api retags the staging digest; frontends rebuild with prod env).
+- **Retention:** `registry-retention.yml` keeps 5 sha tags/app every
+  3 days; host cron 04:17 daily runs registry `garbage-collect` +
+  `docker system prune -f` + `docker image prune -af`.
+- **YAML trap:** `run:` lines containing `": "` inside quotes (e.g.
+  `-H "Authorization: Bearer …"`) must be single-quoted or GitHub
+  rejects the workflow file entirely. `actionlint` validates locally
+  (`.github/actionlint.yaml` declares the `vps` label).
+- **`PUBLIC_*` env blocks must sit on the build step** in
+  deploy-production.yml — they were once on the discarded cache-export
+  step and prod images built with empty args.
+- **Image builds use `--cache-to type=registry ... mode=max` inline** —
+  required for `bun install`/`go mod download` stage caching;
+  `docker/setup-buildx-action` needed on hosted runners.
