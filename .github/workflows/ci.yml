@@ -3,16 +3,50 @@ name: CI
 on:
   push:
     branches: [main, staging]
+    paths-ignore: ['docs/**', '**.md', '.github/**', '.jeos/**', 'dumps/**']
   pull_request:
     branches: [main, staging]
+    paths-ignore: ['docs/**', '**.md', '.github/**', '.jeos/**', 'dumps/**']
 
 permissions:
   contents: read
 
 jobs:
+  probe:
+    name: Probe hosted runner
+    # continue-on-error keeps the run green when hosted runners are
+    # billing-blocked; the `up` output is only written when a hosted
+    # runner actually picked the job up, which is the real signal.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    outputs:
+      up: ${{ steps.up.outputs.up }}
+    steps:
+      - id: up
+        run: echo "up=1" >> "$GITHUB_OUTPUT"
+
+  decide:
+    name: Pick runner
+    # Pinned to the vps runner so it always executes even when hosted
+    # runners are unavailable; every real job routes through its output.
+    needs: probe
+    if: always()
+    runs-on: vps
+    timeout-minutes: 10
+    outputs:
+      runner: ${{ steps.decide.outputs.runner }}
+    steps:
+      - id: decide
+        run: |
+          [ "${{ needs.probe.outputs.up }}" = "1" ] && R=ubuntu-latest || R=vps
+          echo "runner=$R" >> "$GITHUB_OUTPUT"
+          echo "CI runner selected: $R"
+
   lint:
     name: Lint
-    runs-on: [self-hosted]
+    needs: decide
+    runs-on: ${{ needs.decide.outputs.runner }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -31,7 +65,8 @@ jobs:
 
   build:
     name: Build & Vet
-    runs-on: [self-hosted]
+    needs: decide
+    runs-on: ${{ needs.decide.outputs.runner }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -50,7 +85,8 @@ jobs:
 
   frontend:
     name: Frontend (${{ matrix.app }})
-    runs-on: [self-hosted]
+    needs: decide
+    runs-on: ${{ needs.decide.outputs.runner }}
     env:
       # svelte-check on apps/main exceeds the default ~2GB node heap.
       NODE_OPTIONS: --max-old-space-size=6144
@@ -95,7 +131,8 @@ jobs:
         run: python3 scripts/check_runtime_imports.py apps/${{ matrix.app }}
   extension:
     name: Extension
-    runs-on: [self-hosted]
+    needs: decide
+    runs-on: ${{ needs.decide.outputs.runner }}
     defaults:
       run:
         working-directory: apps/extension
@@ -123,7 +160,8 @@ jobs:
 
   test:
     name: Test
-    runs-on: [self-hosted]
+    needs: decide
+    runs-on: ${{ needs.decide.outputs.runner }}
     steps:
       - uses: actions/checkout@v6
 

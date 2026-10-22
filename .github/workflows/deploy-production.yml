@@ -33,12 +33,18 @@ permissions:
 jobs:
   probe:
     # Billing-blocked hosted runners fail fast here; a long queue times
-    # out after 5 min. Either outcome routes work to the vps fallback.
+    # out after 5 min. continue-on-error keeps the run green; the `up`
+    # output is only written when a hosted runner actually picked the
+    # job up, which is the real signal decide reads.
     if: inputs.runner == 'auto'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    continue-on-error: true
+    outputs:
+      up: ${{ steps.up.outputs.up }}
     steps:
-      - run: echo "hosted runner reachable"
+      - id: up
+        run: echo "up=1" >> "$GITHUB_OUTPUT"
 
   decide:
     # Pinned to the vps runner so it always executes even when hosted
@@ -53,12 +59,12 @@ jobs:
       - id: decide
         env:
           CHOICE: ${{ inputs.runner }}
-          PROBE: ${{ needs.probe.result }}
+          PROBE: ${{ needs.probe.outputs.up }}
         run: |
           case "$CHOICE" in
             github) R=ubuntu-latest ;;
             vps) R=vps ;;
-            *) [ "$PROBE" = success ] && R=ubuntu-latest || R=vps ;;
+            *) [ "$PROBE" = "1" ] && R=ubuntu-latest || R=vps ;;
           esac
           echo "runner=$R" >> "$GITHUB_OUTPUT"
           echo "Selected runner: $R (choice=$CHOICE probe=$PROBE)"
