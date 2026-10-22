@@ -204,7 +204,30 @@ PUBLIC_JC_API_URL=https://api.staging.japa.to/api/v1
 PUBLIC_JC_WS_URL=wss://api.staging.japa.to/api/v1/ws
 PUBLIC_*_ORIGIN=https://<app>.staging.japa.to   # cross-app links
 PRIVATE_API_BASE_URL=http://<staging-api-service>:8080  # runtime env, internal name
+PORT=3000                                        # runtime env, EVERY frontend app
 ```
+
+**`PORT=3000` is required on every SvelteKit frontend** (main/admin/control/
+academy/docs/tools). Coolify generates Traefik loadbalancer labels pointing at
+port 3000 regardless of `ports_exposes` or the Dockerfile `EXPOSE`/`ENV PORT`
+— adapter-node honors the runtime `PORT` env, so the container must listen
+where Traefik routes. Verified on Coolify v4.4.6; `domain_port_overrides`,
+FQDN `host:port` suffixes, and `port`/`internal_port` API fields do not
+propagate to the generated labels.
+
+**`PRIVATE_API_BASE_URL` must resolve inside the `coolify` docker network** —
+containers cannot hairpin back through the VPS's public IP, so
+`https://api.<domain>` times out from SSR. Give the api application a stable
+alias via its **Custom Network Aliases** field (e.g. `japa-api-staging`,
+`japa-api-production`) and point each env's frontends at
+`http://japa-api-<env>:8080`.
+
+**Infra services (postgres/valkey/meilisearch) must share the `coolify`
+network** with the apps — `docker network connect coolify <container>` works
+but is lost when the service redeploys; persist `networks: [coolify]` in the
+service compose instead. Never use bare service names (`postgres`, `valkey`)
+in app envs — Coolify's own `coolify-db` owns the `postgres` alias on that
+network; use the environment-specific container name.
 
 Host detection (runtime env on the SvelteKit apps):
 
