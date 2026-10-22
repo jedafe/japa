@@ -82,6 +82,7 @@ jobs:
 
   filter:
     needs: decide
+    if: needs.decide.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     outputs:
       apps: ${{ steps.pick.outputs.apps }}
@@ -156,7 +157,7 @@ jobs:
 
   build-images:
     needs: [decide, filter]
-    if: ${{ needs.filter.outputs.apps != '[]' }}
+    if: needs.decide.result == 'success' && needs.filter.outputs.apps != '[]'
     runs-on: ${{ needs.decide.outputs.runner }}
     environment: staging
     strategy:
@@ -209,6 +210,7 @@ jobs:
 
   deploy-staging:
     needs: [decide, filter, build-images]
+    if: needs.decide.result == 'success' && needs.build-images.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     environment: staging
     steps:

@@ -46,6 +46,7 @@ jobs:
   lint:
     name: Lint
     needs: decide
+    if: needs.decide.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -66,6 +67,7 @@ jobs:
   build:
     name: Build & Vet
     needs: decide
+    if: needs.decide.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -86,6 +88,7 @@ jobs:
   frontend:
     name: Frontend (${{ matrix.app }})
     needs: decide
+    if: needs.decide.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     env:
       # svelte-check on apps/main exceeds the default ~2GB node heap.
@@ -132,6 +135,7 @@ jobs:
   extension:
     name: Extension
     needs: decide
+    if: needs.decide.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     defaults:
       run:
@@ -161,6 +165,7 @@ jobs:
   test:
     name: Test
     needs: decide
+    if: needs.decide.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     steps:
       - uses: actions/checkout@v6

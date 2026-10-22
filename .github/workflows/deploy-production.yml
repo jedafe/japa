@@ -71,6 +71,7 @@ jobs:
 
   promote-api:
     needs: decide
+    if: needs.decide.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     environment: production
     steps:
@@ -87,6 +88,7 @@ jobs:
 
   build-frontends:
     needs: decide
+    if: needs.decide.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     environment: production
     strategy:
@@ -135,6 +137,7 @@ jobs:
 
   deploy-production:
     needs: [decide, promote-api, build-frontends]
+    if: needs.decide.result == 'success' && needs.promote-api.result == 'success' && needs.build-frontends.result == 'success'
     runs-on: ${{ needs.decide.outputs.runner }}
     environment: production
     steps:
