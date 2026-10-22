@@ -49,7 +49,7 @@ export async function initSiteSettings(): Promise<void> {
 	if (initStarted) return;
 	initStarted = true;
 	try {
-		const res = await fetch(buildApiUrl('/api/v1/site/settings/public', PUBLIC_JC_API_URL, { version: '' }), {
+		const res = await fetch(buildApiUrl('/site/settings/public', PUBLIC_JC_API_URL), {
 			headers: { 'X-JC-Surface': 'control' }
 		});
 		if (!res.ok) return;

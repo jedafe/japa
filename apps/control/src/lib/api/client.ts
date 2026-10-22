@@ -118,7 +118,11 @@ export async function apiFetch<T>(
 	// /control -> http://localhost:8080, so pages call these endpoints as
 	// /control/... and the request reaches the backend unchanged. Pass version: ''
 	// so buildApiUrl does not prepend /api/v1 to these paths.
-	const url = buildApiUrl(path, PUBLIC_JC_API_URL, { version: '' });
+	// Callers pass either /control/* routes or full /api/v1/* paths. version:''
+	// means buildApiUrl won't dedupe, so strip the /api/v1 prefix here —
+	// otherwise it doubles onto the versioned PUBLIC_JC_API_URL
+	// (api.b.japa.to/api/v1/api/v1/...).
+	const url = buildApiUrl(path.replace(/^\/api\/v1/, ''), PUBLIC_JC_API_URL, { version: '' });
 	const method = (options.method ?? 'GET').toString().toUpperCase();
 	const isMutating = MUTATING_METHODS.has(method);
 
