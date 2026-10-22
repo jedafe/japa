@@ -5,6 +5,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, DEFAULT_SITE_NAME } from '$lib/i18n';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
+	import { seedAccessToken, clearAccessToken } from '$lib/api/token.svelte';
 	import { env } from '$env/dynamic/public';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
@@ -21,6 +22,13 @@
 	// Ref: japa-bugs-hunters.md §5.2 — audit finding C1.
 	$effect(() => {
 		seedCsrfToken(data.csrfToken ?? null);
+	});
+
+	// Seed the browser-side Bearer store for authed api calls; clear when the
+	// session is gone so stale tokens can't linger after logout.
+	$effect(() => {
+		if (data.accessToken) seedAccessToken(data.accessToken);
+		else clearAccessToken();
 	});
 
 	// The i18n locale is derived from `page.data.locale` (request-scoped during

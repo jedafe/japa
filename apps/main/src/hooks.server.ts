@@ -64,6 +64,23 @@ const csrfCache = new Map<string, CachedCsrf>();
 const BASE_DOMAIN = (env.JC_BASE_DOMAIN ?? 'japa.to').trim().toLowerCase() || 'japa.to';
 
 /**
+ * Domain shared by the frontend host and the api host (api.<domain>). The
+ * csrf_token cookie must reach api.<domain> for the double-submit check, but
+ * a host-only cookie scoped to the frontend host never leaves it — so
+ * mutating browser calls without a Bearer token fail with 403
+ * csrf_token_invalid. Derived from the public api URL (api.b.japa.to →
+ * b.japa.to; api.japa.to → japa.to); empty when unparseable (dev → host-only).
+ */
+const CSRF_COOKIE_DOMAIN = (() => {
+	try {
+		const apiHost = new URL(env.PUBLIC_JC_API_URL ?? '').hostname;
+		return apiHost.startsWith('api.') ? apiHost.slice(4) : '';
+	} catch {
+		return '';
+	}
+})();
+
+/**
  * ADR-063: detect whether the request host is the Japa Academy branded
  * surface. The canonical host is academy.{BASE_DOMAIN}; additional custom
  * domains (e.g. japauni.com) can be configured via the JC_ACADEMY_HOSTS env
@@ -155,6 +172,7 @@ async function resolveSession(
 		}
 		event.cookies.set('csrf_token', csrfResult.token, {
 			path: '/',
+			...(CSRF_COOKIE_DOMAIN ? { domain: CSRF_COOKIE_DOMAIN } : {}),
 			httpOnly: false,
 			secure: true,
 			sameSite: 'lax'

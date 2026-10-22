@@ -1,6 +1,7 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { page } from '$app/state';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
+import { getAccessToken, seedAccessToken, clearAccessToken } from '$lib/api/token.svelte';
 import { buildApiUrl } from '@japaconnect/api-url';
 import type { ListMeta } from '$lib/types';
 
@@ -69,6 +70,15 @@ async function refreshSession(): Promise<boolean> {
 			});
 			if (!res.ok) return false;
 			lastRefreshOkAt = Date.now();
+			// The endpoint returns the freshly minted access token in the body —
+			// seed the in-memory store so retried requests carry the new Bearer.
+			try {
+				const body = (await res.clone().json()) as { access_token?: string };
+				if (body?.access_token) seedAccessToken(body.access_token);
+			} catch {
+				// Body absent/unparseable — the cookie was still rotated; the
+				// retried request will 401 again and re-enter refresh.
+			}
 			return true;
 		} catch {
 			return false;
@@ -110,6 +120,16 @@ async function clientFetchRaw<T>(
 		...((init.headers as Record<string, string>) ?? {})
 	};
 
+	// The Go API authenticates Authorization: Bearer only — the HttpOnly
+	// jc_token cookie never reaches api.<domain> and cannot be read by JS
+	// anyway. The in-memory token (seeded from SSR page data / refresh)
+	// is the browser's credential. Bearer also makes the request CSRF-exempt
+	// (IsNonCookieAuthenticated) since cross-site callers can't forge headers.
+	const accessToken = getAccessToken();
+	if (accessToken && !('authorization' in baseHeaders) && !('Authorization' in baseHeaders)) {
+		baseHeaders['authorization'] = `Bearer ${accessToken}`;
+	}
+
 	async function doFetch(): Promise<Response> {
 		return fetch(buildApiUrl(path, API_BASE), {
 			...init,
@@ -145,6 +165,7 @@ async function clientFetchRaw<T>(
 					// to /login server-side. Guests never reach this branch —
 					// without the isAuthed gate a guest hitting an authed
 					// endpoint would reload-loop.
+					clearAccessToken();
 					window.location.reload();
 				}
 			}

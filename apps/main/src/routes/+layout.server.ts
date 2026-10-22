@@ -240,6 +240,10 @@ export const load: LayoutServerLoad = async (event) => {
 		isAcademyHost: event.locals.isAcademyHost,
 		isRoadmapHost: event.locals.isRoadmapHost,
 		csrfToken: event.locals.csrfToken ?? null,
+		// Bearer token for the browser-side api client ($lib/api/client.ts) —
+		// the Go API accepts Authorization: Bearer only, and the HttpOnly
+		// jc_token cookie never reaches api.<domain> from browser fetches.
+		accessToken: event.locals.token ?? null,
 		siteSettings,
 		currencies,
 		menu,

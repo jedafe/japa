@@ -181,7 +181,10 @@ export async function POST(event: RequestEvent) {
 				}
 				setSessionCookie(event, result.access_token);
 				if (result.refresh_token) setRefreshCookie(event, result.refresh_token);
-				return json({ ok: true });
+				// The browser-side token store ($lib/api/token.svelte) needs the
+				// fresh access token — the HttpOnly cookie update alone can't
+				// reach client JS. The api authenticates Bearer only.
+				return json({ ok: true, access_token: result.access_token });
 			}
 
 			default:
