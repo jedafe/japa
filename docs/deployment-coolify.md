@@ -223,11 +223,18 @@ alias via its **Custom Network Aliases** field (e.g. `japa-api-staging`,
 `http://japa-api-<env>:8080`.
 
 **Infra services (postgres/valkey/meilisearch) must share the `coolify`
-network** with the apps — `docker network connect coolify <container>` works
-but is lost when the service redeploys; persist `networks: [coolify]` in the
-service compose instead. Never use bare service names (`postgres`, `valkey`)
-in app envs — Coolify's own `coolify-db` owns the `postgres` alias on that
-network; use the environment-specific container name.
+network** with the apps — `docker network connect` is lost on redeploy, so
+each service's `docker_compose_raw` carries `networks: [coolify]` (external)
+and staging-mailpit additionally declares the `mailpit` network alias
+(`JC_SMTP_HOST=mailpit` resolves to it). Never use bare service names
+(`postgres`, `valkey`) in app envs — Coolify's own `coolify-db` owns the
+`postgres` alias on that network; use the environment-specific container name.
+
+**Registry push timeouts** are pinned in the proxy compose
+(`/data/coolify/proxy/docker-compose.yml`): `respondingTimeouts` 900s on the
+http+https entrypoints. Coolify may regenerate that file on a Coolify
+self-upgrade — re-check after upgrades; pushes of large image layers fail
+with HTTP 499/transport errors when the default 60s timeout is in force.
 
 Host detection (runtime env on the SvelteKit apps):
 
