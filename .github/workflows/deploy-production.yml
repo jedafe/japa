@@ -7,10 +7,10 @@ on:
         description: 'Commit SHA to promote (blank = last staging build)'
         required: false
       runner:
-        description: "Build runner: 'github' (hosted) or 'vps' (Coolify host)"
+        description: "Build runner: auto probes github, falls back to vps"
         type: choice
-        options: [github, vps]
-        default: github
+        options: [auto, github, vps]
+        default: auto
         required: true
 
 # Manual production deploy — the dispatch click is the promotion gate.
@@ -31,8 +31,41 @@ permissions:
   contents: read
 
 jobs:
+  probe:
+    # Billing-blocked hosted runners fail fast here; a long queue times
+    # out after 5 min. Either outcome routes work to the vps fallback.
+    if: inputs.runner == 'auto'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "hosted runner reachable"
+
+  decide:
+    # Pinned to the vps runner so it always executes even when hosted
+    # runners are unavailable; every real job routes through its output.
+    needs: probe
+    if: always()
+    runs-on: vps
+    timeout-minutes: 10
+    outputs:
+      runner: ${{ steps.decide.outputs.runner }}
+    steps:
+      - id: decide
+        env:
+          CHOICE: ${{ inputs.runner }}
+          PROBE: ${{ needs.probe.result }}
+        run: |
+          case "$CHOICE" in
+            github) R=ubuntu-latest ;;
+            vps) R=vps ;;
+            *) [ "$PROBE" = success ] && R=ubuntu-latest || R=vps ;;
+          esac
+          echo "runner=$R" >> "$GITHUB_OUTPUT"
+          echo "Selected runner: $R (choice=$CHOICE probe=$PROBE)"
+
   promote-api:
-    runs-on: ${{ inputs.runner == 'vps' && 'vps' || 'ubuntu-latest' }}
+    needs: decide
+    runs-on: ${{ needs.decide.outputs.runner }}
     environment: production
     steps:
       - name: Log in to the private registry
@@ -47,7 +80,8 @@ jobs:
             ${{ vars.REGISTRY_HOST }}/japa-api:${{ inputs.sha || 'staging' }}
 
   build-frontends:
-    runs-on: ${{ inputs.runner == 'vps' && 'vps' || 'ubuntu-latest' }}
+    needs: decide
+    runs-on: ${{ needs.decide.outputs.runner }}
     environment: production
     strategy:
       fail-fast: false
@@ -94,8 +128,8 @@ jobs:
             --push $ARGS .
 
   deploy-production:
-    needs: [promote-api, build-frontends]
-    runs-on: ${{ inputs.runner == 'vps' && 'vps' || 'ubuntu-latest' }}
+    needs: [decide, promote-api, build-frontends]
+    runs-on: ${{ needs.decide.outputs.runner }}
     environment: production
     steps:
       - name: Deploy api
