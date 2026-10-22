@@ -3,8 +3,10 @@ name: Flutter CI
 on:
   push:
     branches: [main]
+    paths: ['apps/mobile/**', 'packages/japaconnect_core/**']
   pull_request:
     branches: [main]
+    paths: ['apps/mobile/**', 'packages/japaconnect_core/**']
 
 jobs:
   build-and-test:
