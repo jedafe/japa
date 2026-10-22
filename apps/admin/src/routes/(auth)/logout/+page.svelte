@@ -4,10 +4,12 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { clearUser } from '$lib/stores/auth.svelte';
 	import { clearAccessToken } from '$lib/api/token';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 
 	(async () => {
 		try {
-			await fetch('/api/v1/auth/logout', {
+			await fetch(buildApiUrl('/auth/logout', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				credentials: 'include'
 			});

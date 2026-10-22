@@ -6,6 +6,8 @@
 	import { goto } from '$app/navigation';
 	import { getPermissions } from '$lib/stores/permissions.svelte';
 	import { setChallenge } from '$lib/api/challenge';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 
 	let email = $state('');
 	let password = $state('');
@@ -20,7 +22,7 @@
 
 		try {
 			// Call login endpoint directly with fetch to get cookies set
-			const res = await fetch('/api/v1/auth/login', {
+			const res = await fetch(buildApiUrl('/auth/login', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',

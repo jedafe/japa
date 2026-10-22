@@ -17,6 +17,9 @@
  * TypeScript (no Svelte) so it can be driven from a Runes store.
  */
 
+import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
+
 export type WSEventType =
 	| 'notification'
 	| 'presence'
@@ -38,7 +41,7 @@ type MintResult = { ticket: string | null; status: number };
 /** Mint a short-lived WS ticket via POST /api/v1/auth/ws-ticket. */
 async function mintTicket(): Promise<MintResult> {
 	try {
-		const res = await fetch('/api/v1/auth/ws-ticket', {
+		const res = await fetch(buildApiUrl('/auth/ws-ticket', PUBLIC_JC_API_URL), {
 			method: 'POST',
 			credentials: 'include',
 			headers: { 'content-type': 'application/json', 'x-jc-surface': 'academy' }
@@ -53,6 +56,18 @@ async function mintTicket(): Promise<MintResult> {
 }
 
 function resolveWsUrl(): string {
+	// In production PUBLIC_JC_API_URL is absolute (https://api.example.com/api/v1)
+	// — derive the WS origin from it. In dev it's a relative /api/v1 path that
+	// goes through the Vite proxy, so fall back to the page origin.
+	try {
+		const api = new URL(PUBLIC_JC_API_URL, 'http://localhost:8080');
+		if (api.protocol === 'https:' || api.protocol === 'http:') {
+			const wsProto = api.protocol === 'https:' ? 'wss:' : 'ws:';
+			return `${wsProto}//${api.host}/api/v1/ws`;
+		}
+	} catch {
+		// fall through to same-origin
+	}
 	if (typeof window === 'undefined') {
 		return `ws://localhost:8080/api/v1/ws`;
 	}

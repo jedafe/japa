@@ -6,6 +6,8 @@
 	import Switch from '$lib/components/ui/Switch.svelte';
 	import Tooltip from '$lib/components/ui/Tooltip.svelte';
 	import { api, getToken } from '$lib/api';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 	import type { SystemSetting } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
@@ -1024,7 +1026,7 @@
 			formData.append('file', convertedFile);
 			const token = getToken();
 			const csrf = readCookieValue('csrf_token');
-			const res = await fetch('/api/v1/admin/media/upload', {
+			const res = await fetch(buildApiUrl('/admin/media/upload', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				headers: {
 					...(token ? { authorization: `Bearer ${token}` } : {}),

@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
-import { PUBLIC_JC_WS_URL } from '$env/static/public';
+import { PUBLIC_JC_WS_URL, PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 import { getAccessToken } from '$lib/api/token';
 
 // PUBLIC_JC_WS_URL is the WS *origin* (e.g. ws://localhost:8080); the
@@ -64,7 +65,7 @@ class AdminWebSocketClient {
 				return;
 			}
 
-			const ticketRes = await fetch('/api/v1/auth/ws-ticket', {
+			const ticketRes = await fetch(buildApiUrl('/auth/ws-ticket', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				headers: { Authorization: `Bearer ${bearer}` }
 			});

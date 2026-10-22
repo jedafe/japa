@@ -15,6 +15,8 @@
 	import { clearChallenge, getChallengeEmail, getChallengeToken } from '$lib/api/challenge';
 	import { restoreSession } from '$lib/stores/session.svelte';
 	import { getPermissions } from '$lib/stores/permissions.svelte';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 
 	let code = $state('');
 	let backupCode = $state('');
@@ -62,7 +64,7 @@
 		}
 		loading = true;
 		try {
-			const res = await fetch('/api/v1/auth/totp/verify-challenge', {
+			const res = await fetch(buildApiUrl('/auth/totp/verify-challenge', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
@@ -98,7 +100,7 @@
 		}
 		loading = true;
 		try {
-			const res = await fetch('/api/v1/auth/totp/backup', {
+			const res = await fetch(buildApiUrl('/auth/totp/backup', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',

@@ -3,6 +3,8 @@
 	import { setToken } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { setChallenge } from '$lib/api/challenge';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 
 	let email = $state('');
 	let password = $state('');
@@ -25,7 +27,7 @@
 			// token theft. On reload, the layout calls /auth/refresh to
 			// re-establish the session using the httpOnly cookie.
 			// Ref: sections/02-authentication-sessions.md (Token model)
-			const res = await fetch('/api/v1/auth/login', {
+			const res = await fetch(buildApiUrl('/auth/login', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
