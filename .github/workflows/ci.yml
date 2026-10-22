@@ -7,6 +7,7 @@ on:
   pull_request:
     branches: [main, staging]
     paths-ignore: ['docs/**', '**.md', '.github/**', '.jeos/**', 'dumps/**']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,9 +15,12 @@ permissions:
 jobs:
   probe:
     name: Probe hosted runner
+    # CI is opt-in on push: only runs when the head commit message
+    # contains '[ci]' (PRs and manual dispatch always run).
     # continue-on-error keeps the run green when hosted runners are
     # billing-blocked; the `up` output is only written when a hosted
     # runner actually picked the job up, which is the real signal.
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[ci]')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     continue-on-error: true
@@ -31,7 +35,7 @@ jobs:
     # Pinned to the vps runner so it always executes even when hosted
     # runners are unavailable; every real job routes through its output.
     needs: probe
-    if: always()
+    if: always() && (github.event_name != 'push' || contains(github.event.head_commit.message, '[ci]'))
     runs-on: vps
     timeout-minutes: 10
     outputs:
