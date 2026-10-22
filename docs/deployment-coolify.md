@@ -232,9 +232,12 @@ and staging-mailpit additionally declares the `mailpit` network alias
 
 **Registry push timeouts** are pinned in the proxy compose
 (`/data/coolify/proxy/docker-compose.yml`): `respondingTimeouts` 900s on the
-http+https entrypoints. Coolify may regenerate that file on a Coolify
-self-upgrade — re-check after upgrades; pushes of large image layers fail
-with HTTP 499/transport errors when the default 60s timeout is in force.
+http+https entrypoints. They also survive Coolify regeneration/self-upgrades
+— the flagged compose is stored as the server's
+`last_saved_proxy_configuration` in coolify-db, and Coolify's
+`extractCustomProxyCommands` carries non-default `command:` flags into
+regenerated configs. Without the 900s timeouts, pushes of large image
+layers fail with HTTP 499/transport errors around the 60s mark.
 
 Host detection (runtime env on the SvelteKit apps):
 
