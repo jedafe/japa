@@ -94,7 +94,7 @@
 			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 			aria-label={t('ama.back', 'Back to AMA')}
 		>
-			<ArrowLeft size={18} />
+			<ArrowLeft class="rtl:-scale-x-100" size={18} />
 		</a>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">
 			{t('ama.edit_heading', 'Edit AMA')}
@@ -191,7 +191,7 @@
 				{#if loading}
 					<Loader2 size={16} class="animate-spin" />
 				{:else}
-					<Send size={16} />
+					<Send class="rtl:-scale-x-100" size={16} />
 				{/if}
 				{loading ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
 			</button>

@@ -128,7 +128,7 @@
 			<div class="relative min-w-0 flex-1">
 				<Search
 					size={15}
-					class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+					class="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
 				/>
 				<input
 					type="search"
@@ -136,7 +136,7 @@
 					oninput={(e) => onSearchInput(e.currentTarget.value)}
 					placeholder={t('messages.requests_search', 'Search requests')}
 					aria-label={t('messages.requests_search', 'Search requests')}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-9 pr-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-9 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 			</div>
 			<div class="w-40">

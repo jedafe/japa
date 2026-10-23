@@ -8,9 +8,12 @@ import "context"
 
 // MediaCleaner defines the contract for purging soft-deleted media rows
 // and their storage objects past the retention window
-// (media.deleted_retention_days).
+// (media.deleted_retention_days), plus the missing_at reconcile sweep
+// (m000924 — flags rows whose storage object is absent, clears rows
+// whose object returned).
 type MediaCleaner interface {
 	PurgeDeletedMedia(ctx context.Context, retentionDays, limit int) (int, error)
+	ReconcileMissingObjects(ctx context.Context, maxRows int32) (checked, marked, cleared int, exhausted bool, err error)
 }
 
 var mediaCleaner MediaCleaner

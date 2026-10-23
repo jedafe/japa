@@ -522,7 +522,7 @@
 	}
 	:global(.mpm-content) {
 		position: fixed;
-		left: 50%;
+		inset-inline-start: 50%;
 		top: 50%;
 		z-index: 201;
 		display: flex;
@@ -605,7 +605,7 @@
 	}
 	.modal-search :global(.modal-search-icon) {
 		position: absolute;
-		left: 1.75rem;
+		inset-inline-start: 1.75rem;
 		top: 50%;
 		transform: translateY(-50%);
 		color: var(--color-muted, var(--color-text-subtle));
@@ -824,7 +824,7 @@
 	.stock-preview-btn {
 		position: absolute;
 		top: 6px;
-		right: 6px;
+		inset-inline-end: 6px;
 		display: grid;
 		place-items: center;
 		width: 26px;
@@ -933,7 +933,7 @@
 	}
 	.license-badge {
 		display: inline-block;
-		margin-left: 4px;
+		margin-inline-start: 4px;
 		padding: 0 3px;
 		border: 1px solid currentColor;
 		border-radius: 2px;

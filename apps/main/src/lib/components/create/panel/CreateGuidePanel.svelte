@@ -27,6 +27,12 @@
 		oncoveruploaded: (asset: MediaAsset) => void;
 		oncoverremove: () => void;
 		onedit: () => void;
+		/** Active content type's label — the panel title reflects what is
+		 *  being composed ("Story", "Blog Post") instead of always "Guide". */
+		panelTitle?: string;
+		/** TypeEntry.supportsSeries — false hides the series selector (lists,
+		 *  stories, videos, comparisons, news don't join blog series). */
+		supportsSeries?: boolean;
 	}
 
 	let {
@@ -47,7 +53,9 @@
 		ontagsfocus,
 		oncoveruploaded,
 		oncoverremove,
-		onedit
+		onedit,
+		panelTitle,
+		supportsSeries = true
 	}: Props = $props();
 
 	const helpKey = $derived(
@@ -57,7 +65,7 @@
 
 <div class="guide-panel">
 	<div class="guide-help">
-		<h3 class="guide-title">{t('create.guide.title')}</h3>
+		<h3 class="guide-title">{panelTitle ?? t('create.guide.title')}</h3>
 		<p class="guide-text">{t(helpKey)}</p>
 	</div>
 
@@ -80,15 +88,17 @@
 				onfocus={ontagsfocus}
 			/>
 		</div>
-		<div class="footer-section">
-			<span class="footer-label">{t('create.label.series')}</span>
-			<SeriesSelector
-				bind:series
-				{seriesId}
-				onselect={(id) => { onseries(id); onedit(); }}
-				onfocus={onseriesfocus}
-			/>
-		</div>
+		{#if supportsSeries}
+			<div class="footer-section">
+				<span class="footer-label">{t('create.label.series')}</span>
+				<SeriesSelector
+					bind:series
+					{seriesId}
+					onselect={(id) => { onseries(id); onedit(); }}
+					onfocus={onseriesfocus}
+				/>
+			</div>
+		{/if}
 		<div class="footer-section">
 			<span class="footer-label">{t('create.label.space')}</span>
 			<SpaceSelector

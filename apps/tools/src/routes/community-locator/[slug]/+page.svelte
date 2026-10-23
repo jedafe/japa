@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -72,7 +72,7 @@
 	function formatDate(iso?: string | null): string {
 		if (!iso) return '';
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -234,7 +234,7 @@
 					{/if}
 				</button>
 				{#if claimError}
-					<span class="text-xs text-red-500 ml-2">{claimError}</span>
+					<span class="text-xs text-red-500 ms-2">{claimError}</span>
 				{/if}
 			{:else}
 				<button

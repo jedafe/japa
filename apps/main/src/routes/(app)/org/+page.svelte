@@ -299,7 +299,7 @@
 							href={buildHref(data.page - 1)}
 							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page <= 1 ? 'pointer-events-none opacity-40' : ''}"
 						>
-							<ChevronLeft size={16} /> {t('common.prev', 'Prev')}
+							<ChevronLeft class="rtl:-scale-x-100" size={16} /> {t('common.prev', 'Prev')}
 						</a>
 						<span class="text-xs text-[var(--color-muted)]">
 							{data.page} / {data.totalPages}
@@ -308,7 +308,7 @@
 							href={buildHref(data.page + 1)}
 							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page >= data.totalPages ? 'pointer-events-none opacity-40' : ''}"
 						>
-							{t('common.next', 'Next')} <ChevronRight size={16} />
+							{t('common.next', 'Next')} <ChevronRight class="rtl:-scale-x-100" size={16} />
 						</a>
 					</div>
 				{/if}

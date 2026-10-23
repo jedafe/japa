@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { t, DEFAULT_SITE_NAME } from '$lib/i18n';
+	import { t, DEFAULT_SITE_NAME, isRtl } from '$lib/i18n';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import { seedAccessToken, clearAccessToken } from '$lib/api/token.svelte';
 	import { env } from '$env/dynamic/public';
@@ -36,6 +36,13 @@
 	// sync needed here. When the `jc_locale` cookie changes (e.g. after visiting
 	// /fr or saving a language preference + invalidateAll), `page.data.locale`
 	// updates and `i18n.locale` reactively follows.
+	//
+	// <html lang/dir> is stamped by hooks on full loads; client-side locale
+	// switches never re-render the html element — sync both attributes here.
+	$effect(() => {
+		document.documentElement.lang = data.locale || 'en';
+		document.documentElement.dir = isRtl(data.locale || 'en') ? 'rtl' : 'ltr';
+	});
 
 	// Admin appearance theming (appearance.* → CSS vars) is injected server-side
 	// into the static <style id="jc-theme-overrides"> tag in app.html by
@@ -202,9 +209,9 @@
 
 <a
 	href="#main-content"
-	class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:inline-flex focus:min-h-11 focus:min-w-11 focus:items-center focus:justify-center focus:rounded-[var(--radius)] focus:bg-[var(--color-primary)] focus:px-4 focus:py-3 focus:text-white"
+	class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:start-2 focus:z-[100] focus:inline-flex focus:min-h-11 focus:min-w-11 focus:items-center focus:justify-center focus:rounded-[var(--radius)] focus:bg-[var(--color-primary)] focus:px-4 focus:py-3 focus:text-white"
 >
-	Skip to content
+	{t('a11y.skip_to_content', 'Skip to content')}
 </a>
 
 <div id="main-content">

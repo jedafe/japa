@@ -407,7 +407,7 @@
 				: "color: var(--color-muted)"}
 			onclick={() => handleStatusTab(tab.value)}
 		>
-			<Icon class="mr-2 h-4 w-4" />
+			<Icon class="me-2 h-4 w-4" />
 			{tab.label}
 		</button>
 	{/each}
@@ -424,7 +424,7 @@
 			<DataTable {columns} data={tickets} pageSize={10} selectable bind:selectedIds filters={filterDefs} bind:filterValue={filterValues} onfilterapply={() => { currentPage = 0; }} onfilterclear={() => { filterValues = {}; currentPage = 0; }} actions={rowActions}>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
-						<Trash2 class="mr-1 h-3.5 w-3.5" />
+						<Trash2 class="me-1 h-3.5 w-3.5" />
 						{bulkDeleting ? t("common.deleting", "Deleting...") : `${t("tickets.delete_selected", "Delete Selected")} (${selectedIds.size})`}
 					</Button>
 				{/snippet}

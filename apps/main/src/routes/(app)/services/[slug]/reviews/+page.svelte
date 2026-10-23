@@ -73,16 +73,16 @@
 			<a href="/" class="transition-colors hover:text-[var(--color-text)]"
 				>{t('nav.home', 'Home')}</a
 			>
-			<ChevronRight size={12} aria-hidden="true" />
+			<ChevronRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />
 			<a href="/services" class="transition-colors hover:text-[var(--color-text)]"
 				>{t('marketplace.nav_services', 'Services')}</a
 			>
-			<ChevronRight size={12} aria-hidden="true" />
+			<ChevronRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />
 			<a
 				href="/services/{service.slug}"
 				class="truncate transition-colors hover:text-[var(--color-text)]">{service.title}</a
 			>
-			<ChevronRight size={12} aria-hidden="true" />
+			<ChevronRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />
 			<span class="font-medium text-[var(--color-text)]" aria-current="page"
 				>{t('services.reviews_heading', 'Reviews')}</span
 			>

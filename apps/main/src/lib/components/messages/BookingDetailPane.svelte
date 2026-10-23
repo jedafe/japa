@@ -288,7 +288,7 @@
 		onclick={onClose}
 		class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft size={14} /> {t('messages.back', 'Back')}
+		<ArrowLeft class="rtl:-scale-x-100" size={14} /> {t('messages.back', 'Back')}
 	</button>
 </div>
 

@@ -339,7 +339,7 @@
 		if (!s) return '';
 		const d = new Date(s);
 		if (isNaN(d.getTime())) return '';
-		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+		return d.toLocaleDateString(document.documentElement.lang || 'en', { month: 'short', day: 'numeric', year: 'numeric' });
 	}
 
 	// Build the Main app URL for cross-app links. In dev, the Control app
@@ -401,7 +401,7 @@
 			{#each queues as q (q.key)}
 				<button
 					type="button"
-					class="border-border-card bg-background-alt shadow-card group flex items-center gap-4 rounded-xl border p-4 text-left transition-colors hover:border-border-input-hover {q.href ? 'cursor-pointer' : 'cursor-default'}"
+					class="border-border-card bg-background-alt shadow-card group flex items-center gap-4 rounded-xl border p-4 text-start transition-colors hover:border-border-input-hover {q.href ? 'cursor-pointer' : 'cursor-default'}"
 					onclick={() => {
 						if (!q.href) return;
 						if (q.href.startsWith('#')) {
@@ -421,7 +421,7 @@
 						<p class="text-muted-foreground mt-0.5 truncate text-xs">{q.subtitle}</p>
 					</div>
 					{#if q.href}
-						<ArrowRight class="text-muted-foreground size-4 opacity-0 transition-opacity group-hover:opacity-100" />
+						<ArrowRight class="text-muted-foreground size-4 opacity-0 transition-opacity group-hover:opacity-100 rtl:-scale-x-100" />
 					{/if}
 				</button>
 			{/each}
@@ -489,7 +489,7 @@
 						class="text-emerald-500 hover:text-emerald-400 mt-2 inline-flex items-center gap-1 text-sm font-medium"
 					>
 						{t('intel.open_review_queue', 'Open Review Queue')}
-						<ArrowRight class="size-3.5" />
+						<ArrowRight class="size-3.5 rtl:-scale-x-100" />
 					</a>
 				</div>
 			{:else}
@@ -527,9 +527,9 @@
 											target="_blank"
 											rel="noopener"
 											class="text-muted-foreground hover:text-foreground transition-colors"
-											title="View on public site"
+											title={t('intel.view_on_site', 'View on public site')}
 										>
-											<ExternalLink class="size-4" />
+											<ExternalLink class="size-4 rtl:-scale-x-100" />
 										</a>
 									{/if}
 								</div>

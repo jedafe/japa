@@ -69,7 +69,7 @@
             <Icon size={14} />
           {/if}
         {/if}
-        <button type="button" onclick={() => toggleExpand(block.id)} class="flex-1 text-left text-sm text-[var(--color-text)]">
+        <button type="button" onclick={() => toggleExpand(block.id)} class="flex-1 text-start text-sm text-[var(--color-text)]">
           {meta?.label ?? block.type}
         </button>
         <button type="button" onclick={() => moveUp(i)} disabled={i === 0} class="text-xs text-[var(--color-muted)] disabled:opacity-30">&#8593;</button>
@@ -90,7 +90,7 @@
   <Dialog.Root bind:open={showAddDialog}>
     <Dialog.Portal>
       <Dialog.Overlay class="fixed inset-0 bg-black/50 z-50" />
-      <Dialog.Content class="fixed left-1/2 top-1/2 z-50 max-h-[80vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
+      <Dialog.Content class="fixed start-1/2 top-1/2 z-50 max-h-[80vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
         <Dialog.Title class="mb-4 text-lg font-semibold text-[var(--color-text)]">Add Block</Dialog.Title>
         <div class="grid grid-cols-2 gap-2">
           {#each allowedTypes as type}
@@ -100,7 +100,7 @@
               <button
                 type="button"
                 onclick={() => addBlock(type)}
-                class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] p-3 text-left hover:bg-[var(--color-surface-subtle)]"
+                class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] p-3 text-start hover:bg-[var(--color-surface-subtle)]"
               >
                 {#if Icon}
                   <Icon size={16} />
@@ -113,7 +113,7 @@
             {/if}
           {/each}
         </div>
-        <Dialog.Close class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]" aria-label="Close">&#10005;</Dialog.Close>
+        <Dialog.Close class="absolute end-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]" aria-label="Close">&#10005;</Dialog.Close>
       </Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root>

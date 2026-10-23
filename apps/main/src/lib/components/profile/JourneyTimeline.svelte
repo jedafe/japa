@@ -5,7 +5,7 @@
 	// later stages upcoming. Only the current stage carries a date — the
 	// API exposes a single `updated_at`, so past milestones have no date.
 	import { Check, CircleDot, CircleDashed } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { journeySteps } from './journey';
 	import type { PublicJapaStage } from '$lib/types';
 
@@ -32,7 +32,7 @@
 
 	const updatedDate = $derived(
 		japaStage?.updated_at
-			? new Date(japaStage.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })
+			? new Date(japaStage.updated_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short' })
 			: ''
 	);
 </script>
@@ -44,7 +44,7 @@
 			<li class="relative flex gap-3 pb-5 {isLast ? 'pb-0' : ''}">
 				{#if !isLast}
 					<span
-						class="absolute left-[15px] top-8 bottom-0 w-px {step.status === 'done'
+						class="absolute start-[15px] top-8 bottom-0 w-px {step.status === 'done'
 							? 'bg-[var(--color-primary)]'
 							: 'bg-[var(--color-border)]'}"
 					></span>

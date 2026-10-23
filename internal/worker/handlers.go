@@ -2087,6 +2087,44 @@ func HandleMediaCleanupDeleted(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
+// HandleMediaReconcileMissing is the media:reconcile_missing sweep —
+// stats each media row's storage object and sets/clears missing_at to
+// match reality (m000924). Covers rows whose objects went missing before
+// the flag existed and abandoned two-step uploads whose PUT never landed;
+// loops until the table is exhausted (bounded batches — an S3 deployment
+// pays a HEAD request per row).
+func HandleMediaReconcileMissing(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("task:media:reconcile_missing")
+
+	if mediaCleaner == nil {
+		slog.Warn("task:media:reconcile_missing: no media cleaner registered, skipping")
+		return nil
+	}
+
+	totalChecked, totalMarked, totalCleared := 0, 0, 0
+
+	for {
+		checked, marked, cleared, exhausted, err := mediaCleaner.ReconcileMissingObjects(ctx, 5000)
+		if err != nil {
+			slog.Error("task:media:reconcile_missing: failed", "error", err)
+			return err
+		}
+
+		totalChecked += checked
+		totalMarked += marked
+		totalCleared += cleared
+
+		if exhausted {
+			break
+		}
+	}
+
+	slog.Info("task:media:reconcile_missing: complete",
+		"checked", totalChecked, "marked", totalMarked, "cleared", totalCleared)
+
+	return nil
+}
+
 // defaultScore returns a valid pgtype.Numeric with value 0, suitable for
 // feed inserts where the score column is NOT NULL with DEFAULT 0. An
 // uninitialized pgtype.Numeric{} sends SQL NULL which violates the constraint.

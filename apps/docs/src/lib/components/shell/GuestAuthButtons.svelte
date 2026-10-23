@@ -16,7 +16,7 @@
 
 <div class="guest-auth" class:compact>
 	<a href={`${mainOrigin}/login?redirect=${returnTo}`} class="guest-auth-login">
-		<LogIn size={16} />
+		<LogIn class="rtl:-scale-x-100" size={16} />
 		{#if !compact}<span>{t('auth.login')}</span>{/if}
 	</a>
 	<a href={`${mainOrigin}/signup?redirect=${returnTo}`} class="guest-auth-signup">

@@ -49,15 +49,16 @@ export const load: PageServerLoad = async (event) => {
 	// amendment: user-selectable baseline).
 	const cityIdsParam = event.url.searchParams.get('city_ids');
 	const baselineParam = event.url.searchParams.get('baseline_id');
-	// Dedupe + keep only UUID-shaped values so crafted URLs
-	// (?city_ids=a,a or ?city_ids=not-a-uuid) can't produce duplicate keyed
-	// rows client-side or trip the compare endpoint's 400s.
-	const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+	// Dedupe + keep only safe tokens — UUIDs or geo-space slugs (the
+	// compare endpoint resolves both; slugs keep share URLs readable).
+	// Crafted URLs (?city_ids=a,a or weird input) can't produce duplicate
+	// keyed rows client-side or trip the endpoint's 400s.
+	const REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9-]{1,44}$/;
 	const preselected = cityIdsParam
-		? [...new Set(cityIdsParam.split(',').filter((id) => UUID_RE.test(id.trim())))]
+		? [...new Set(cityIdsParam.split(',').map((t) => t.trim()).filter((t) => REF_RE.test(t)))]
 		: [];
 	const preselectedBaseline =
-		baselineParam && UUID_RE.test(baselineParam.trim()) ? baselineParam.trim() : null;
+		baselineParam && REF_RE.test(baselineParam.trim()) ? baselineParam.trim() : null;
 
 	// The matrix needs only the URL params — it rides the same wave as the
 	// city list.

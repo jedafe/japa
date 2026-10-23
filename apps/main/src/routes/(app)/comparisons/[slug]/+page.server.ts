@@ -63,9 +63,10 @@ export const load: PageServerLoad = async (event) => {
 		(envelope) => ({
 			comments: envelope.data ?? [],
 			deletedUserIds: envelope.deleted_user_ids ?? null,
+			commentsTotal: (envelope.meta as { total?: number } | undefined)?.total ?? null,
 			loadError: false
 		}),
-		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, loadError: true })
+		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, commentsTotal: null as number | null, loadError: true })
 	);
 
 	// Hydrate the CreatorCard follow button's initial state. Best-effort:
@@ -94,7 +95,7 @@ export const load: PageServerLoad = async (event) => {
 		recommendedPromise
 	]);
 
-	const { comments, deletedUserIds: commentDeletedUserIds, loadError: commentsLoadError } =
+	const { comments, deletedUserIds: commentDeletedUserIds, commentsTotal, loadError: commentsLoadError } =
 		commentsResult;
 
 	// §30 edit affordance: the author or a comparison moderator can jump
@@ -123,6 +124,7 @@ export const load: PageServerLoad = async (event) => {
 		canModerate,
 		comments,
 		commentsLoadError,
+		commentsTotal,
 		recommendedContent,
 		deletedUserIds: commentDeletedUserIds,
 		initiallyFollowing: isFollowing

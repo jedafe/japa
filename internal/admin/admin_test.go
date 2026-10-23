@@ -484,6 +484,122 @@ func TestResetSettings_InvalidCategory(t *testing.T) {
 	}
 }
 
+// withChiURLParams injects a chi route context with multiple URL params.
+func withChiURLParams(r *http.Request, params map[string]string) *http.Request {
+	routeCtx := chi.NewRouteContext()
+
+	for k, v := range params {
+		routeCtx.URLParams.Add(k, v)
+	}
+
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, routeCtx))
+}
+
+// ---------------------------------------------------------------------------
+// ResetSetting — unauthorized
+// ---------------------------------------------------------------------------
+
+func TestResetSetting_Unauthorized(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlers()
+	req := httptest.NewRequest(http.MethodPost, "/admin/settings/appearance/reset/primary_color", nil)
+	rr := httptest.NewRecorder()
+
+	h.ResetSetting(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ResetSetting — missing key
+// ---------------------------------------------------------------------------
+
+func TestResetSetting_MissingKey(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlers()
+	req := httptest.NewRequest(http.MethodPost, "/admin/settings/appearance/reset/", nil)
+	req = withAuthAndPlatform(t, req)
+	req = withChiURLParams(req, map[string]string{"category": "appearance", "key": ""})
+	rr := httptest.NewRecorder()
+
+	h.ResetSetting(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+
+	var body map[string]any
+
+	json.Unmarshal(rr.Body.Bytes(), &body)
+
+	errObj, _ := body["error"].(map[string]any)
+	if errObj["code"] != "missing_key" {
+		t.Errorf("error.code = %v, want missing_key", errObj["code"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ResetSetting — invalid category
+// ---------------------------------------------------------------------------
+
+func TestResetSetting_InvalidCategory(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlers()
+	req := httptest.NewRequest(http.MethodPost, "/admin/settings/nonexistent/reset/primary_color", nil)
+	req = withAuthAndPlatform(t, req)
+	req = withChiURLParams(req, map[string]string{"category": "nonexistent", "key": "primary_color"})
+	rr := httptest.NewRecorder()
+
+	h.ResetSetting(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+
+	var body map[string]any
+
+	json.Unmarshal(rr.Body.Bytes(), &body)
+
+	errObj, _ := body["error"].(map[string]any)
+	if errObj["code"] != "invalid_category" {
+		t.Errorf("error.code = %v, want invalid_category", errObj["code"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ResetSetting — invalid key
+// ---------------------------------------------------------------------------
+
+func TestResetSetting_InvalidKey(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlers()
+	req := httptest.NewRequest(http.MethodPost, "/admin/settings/appearance/reset/nonexistent", nil)
+	req = withAuthAndPlatform(t, req)
+	req = withChiURLParams(req, map[string]string{"category": "appearance", "key": "nonexistent"})
+	rr := httptest.NewRecorder()
+
+	h.ResetSetting(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+
+	var body map[string]any
+
+	json.Unmarshal(rr.Body.Bytes(), &body)
+
+	errObj, _ := body["error"].(map[string]any)
+	if errObj["code"] != "invalid_key" {
+		t.Errorf("error.code = %v, want invalid_key", errObj["code"])
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ListModeration — unauthorized
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Modal } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import {
 		cancelSubscription,
 		reactivateSubscription,
@@ -98,7 +98,7 @@
 
 	const renewsLabel = $derived(
 		sub?.current_period_end
-			? new Date(sub.current_period_end).toLocaleDateString(undefined, {
+			? new Date(sub.current_period_end).toLocaleDateString(i18n.locale, {
 					year: 'numeric',
 					month: 'short',
 					day: 'numeric'
@@ -125,7 +125,7 @@
 
 	function formatPrice(amount: number, currency: string): string {
 		const symbol = currencySymbolMap.get(currency) ?? currency;
-		return `${symbol}${(amount / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+		return `${symbol}${(amount / 100).toLocaleString(i18n.locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 	}
 
 	// Seed the subscribe flow defaults once plans/providers arrive.
@@ -294,7 +294,7 @@
 				{#each subscribablePlans as plan (plan.id)}
 					<button
 						type="button"
-						class="rounded-[var(--radius)] border p-4 text-left transition-colors {selectedPlan === plan.id
+						class="rounded-[var(--radius)] border p-4 text-start transition-colors {selectedPlan === plan.id
 							? 'border-[var(--color-primary)] bg-[var(--color-surface)] ring-1 ring-[var(--color-primary)]'
 							: 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'}"
 						onclick={() => (selectedPlan = plan.id)}

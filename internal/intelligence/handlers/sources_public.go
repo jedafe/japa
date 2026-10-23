@@ -239,6 +239,20 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 			continue
 		}
 
+		// Batch-resolve follow state per collection (§4.1 — no per-row N+1).
+		followingSet := make(map[pgtype.UUID]bool)
+		if authed && h.followsSvc != nil && len(sources) > 0 {
+			ids := make([]pgtype.UUID, 0, len(sources))
+			for _, s := range sources {
+				ids = append(ids, s.ID)
+			}
+			if m, err := h.followsSvc.GetBulkFollowingStatus(r.Context(), userID, follows.EntityTypeSource, ids); err == nil {
+				followingSet = m
+			} else {
+				slog.Error("intel: collection following status failed", "collection_id", c.ID, "error", err)
+			}
+		}
+
 		public := make([]publicSource, 0, len(sources))
 
 		for _, s := range sources {
@@ -246,12 +260,7 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 				continue
 			}
 
-			isFollowing := false
-			if authed && h.followsSvc != nil {
-				isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), userID, follows.EntityTypeSource, s.ID)
-			}
-
-			public = append(public, intelSourceToPublic(s, isFollowing, false, nil))
+			public = append(public, intelSourceToPublic(s, followingSet[s.ID], false, nil))
 		}
 
 		if len(public) == 0 && c.CollectionType == "manual" {
@@ -321,6 +330,21 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 		}
 	}
 
+	// Batch-resolve follow state — the previous per-row IsFollowing call was
+	// an N+1 (one DB round-trip per source card) (§4.1).
+	followingSet := make(map[pgtype.UUID]bool)
+	if authed && h.followsSvc != nil {
+		ids := make([]pgtype.UUID, 0, len(rows))
+		for _, s := range rows {
+			ids = append(ids, s.ID)
+		}
+		if m, err := h.followsSvc.GetBulkFollowingStatus(r.Context(), userID, follows.EntityTypeSource, ids); err == nil {
+			followingSet = m
+		} else {
+			slog.Error("intel: public sources following status failed", "error", err)
+		}
+	}
+
 	entries := make([]publicSource, 0, len(rows))
 
 	for _, s := range rows {
@@ -328,12 +352,7 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 			continue
 		}
 
-		isFollowing := false
-		if authed && h.followsSvc != nil {
-			isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), userID, follows.EntityTypeSource, s.ID)
-		}
-
-		entries = append(entries, intelSourceToPublic(s, isFollowing, false, nil))
+		entries = append(entries, intelSourceToPublic(s, followingSet[s.ID], false, nil))
 	}
 
 	h.resolveLiterals(r, &entries)
@@ -562,11 +581,6 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource) {
 		keywordList = append(keywordList, kw)
 	}
 
-	if len(slugList) == 0 {
-		src.TagSlugs = tagSlugs
-		return
-	}
-
 	existing, err := h.tagSvc.ResolveTagSlugs(ctx, slugList)
 	if err != nil {
 		slog.Debug("intel: source tag resolution failed; leaving keywords unlinked", "source", src.Slug, "error", err)
@@ -575,38 +589,55 @@ func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource) {
 		return
 	}
 
+	// Read path stays pure — a GET must never create rows. Only keywords whose
+	// tag already exists are linked; creation happens on the write path in
+	// createSourceTags (called by the propose/approve/update handlers).
 	found := make(map[string]struct{}, len(existing))
 	for _, row := range existing {
 		found[row.Slug] = struct{}{}
 	}
 
 	for i, kw := range keywordList {
-		slug := slugList[i]
-		if _, ok := found[slug]; ok {
-			continue
-		}
-
-		_, cerr := h.tagSvc.CreateTag(ctx, tags.CreateTagInput{
-			Name:     kw,
-			Slug:     slug,
-			IsSystem: false,
-		})
-		if cerr != nil {
-			// The tag may have been created by a concurrent request. Re-resolve
-			// this single slug; if it now exists, keep the mapping. Otherwise
-			// remove the keyword from the linkable set so the chip won't 404.
-			retry, rerr := h.tagSvc.ResolveTagSlugs(ctx, []string{slug})
-			if rerr == nil && len(retry) > 0 {
-				found[slug] = struct{}{}
-				continue
-			}
-
+		if _, ok := found[slugList[i]]; !ok {
 			delete(tagSlugs, kw)
-			slog.Debug("intel: source tag creation failed; removing keyword link", "source", src.Slug, "slug", slug, "error", cerr)
 		}
 	}
 
 	src.TagSlugs = tagSlugs
+}
+
+// createSourceTags materializes directory tags for a source's keywords on the
+// write path (propose/approve/update), so the public GET only has to link
+// existing tags. Concurrent creation is fine — ResolveTagSlugs is re-run for
+// any slug the insert raced.
+func (h *Handlers) createSourceTags(ctx context.Context, keywords []string) {
+	if h.tagSvc == nil {
+		return
+	}
+
+	for _, kw := range keywords {
+		kw = strings.TrimSpace(kw)
+		if kw == "" || strings.ContainsAny(kw, " \t\n\r") {
+			continue
+		}
+
+		slug := content.Slugify(kw)
+		if slug == "" || slug == "untitled" {
+			continue
+		}
+
+		if existing, err := h.tagSvc.ResolveTagSlugs(ctx, []string{slug}); err == nil && len(existing) > 0 {
+			continue
+		}
+
+		if _, cerr := h.tagSvc.CreateTag(ctx, tags.CreateTagInput{
+			Name:     kw,
+			Slug:     slug,
+			IsSystem: false,
+		}); cerr != nil {
+			slog.Debug("intel: source tag creation failed", "slug", slug, "error", cerr)
+		}
+	}
 }
 
 // resolveSourceFeedEntityTypes returns the entity types a source's item feed
@@ -952,6 +983,10 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slug := derefString(src.Slug)
+
+	// Materialize directory tags for the proposed keywords here (write path)
+	// so GET /sources/{slug} only has to link existing tags.
+	h.createSourceTags(r.Context(), src.Keywords)
 
 	h.resolveLiterals(r, &src)
 

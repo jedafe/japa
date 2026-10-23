@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CornerUpLeft } from 'lucide-svelte';
-	import { encodeTiptapDoc } from '$lib/tiptap/serialize';
+	import { invalidateAll } from '$app/navigation';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import type { ForumReply } from '$lib/types';
@@ -61,13 +62,22 @@
 	let addedTop: ForumReply[] = $state([]);
 
 	async function submitTopReply() {
-		if (!topBody || topSubmitting || !authed) return;
+		if (topSubmitting) return;
+		// Guests click Post reply → redirect to /login with a return-to
+		// param (the button stays enabled for them — see the markup below).
+		if (!(await requireAuthOrRedirect())) return;
+		if (!topBody) return;
 		topSubmitting = true;
 		const res = await api.post<ForumReply>(`/forum/${threadId}/replies`, { body: topBody });
 		topSubmitting = false;
 		if (res.error || !res.data) return;
-		addedTop = [...addedTop, res.data];
 		topBody = '';
+		// Refetch so the new reply renders with the joined author row — the
+		// POST response is a bare forum_replies row (no author fields), and a
+		// locally-appended copy would show "Member" + a blank avatar plus
+		// duplicate once the server list refreshes.
+		await invalidateAll();
+		addedTop = [];
 	}
 
 	const allTop = $derived.by(() => {
@@ -92,27 +102,27 @@
 <div id="replies" class="mt-10 border-t border-[var(--color-border)] pt-6">
 	<h2 class="mb-4 text-base font-semibold text-[var(--color-text)]">
 		{t('forum.replies_heading', 'Replies')}
-		<span class="ml-1.5 text-sm font-normal text-[var(--color-muted)]">{replyCount}</span>
+		<span class="ms-1.5 text-sm font-normal text-[var(--color-muted)]">{replyCount}</span>
 	</h2>
 
-	{#if authed}
-		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-			<CommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} />
-			<div class="mt-2 flex items-center justify-between">
-				<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
-					<CornerUpLeft size={12} /> {t('forum.replying_to_thread', 'Replying to this thread')}
-				</span>
-				<button
-					type="button"
-					onclick={submitTopReply}
-					disabled={!topBody || topSubmitting}
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-				>
-					{topSubmitting ? t('common.loading', 'Loading') : t('forum.post_reply', 'Post reply')}
-				</button>
-			</div>
+	<!-- Composer renders for guests too — the submit button stays enabled
+	     and redirects to /login on click (see submitTopReply). -->
+	<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<CommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} />
+		<div class="mt-2 flex items-center justify-between">
+			<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
+				<CornerUpLeft class="rtl:-scale-x-100" size={12} /> {t('forum.replying_to_thread', 'Replying to this thread')}
+			</span>
+			<button
+				type="button"
+				onclick={submitTopReply}
+				disabled={authed && (!topBody || topSubmitting)}
+				class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+			>
+				{topSubmitting ? t('common.loading', 'Loading') : t('forum.post_reply', 'Post reply')}
+			</button>
 		</div>
-	{/if}
+	</div>
 
 	{#if allTop.length === 0}
 		<p class="py-8 text-center text-sm text-[var(--color-muted)]">

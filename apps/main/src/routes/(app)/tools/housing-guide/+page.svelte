@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { Home, MapPin, ChevronDown, ChevronUp, Globe, AlertTriangle, Lock } from 'lucide-svelte';
@@ -71,7 +71,7 @@
 	function formatDate(iso?: string | null): string {
 		if (!iso) return '';
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -228,7 +228,7 @@
 						<button
 							type="button"
 							onclick={() => toggleExpand(guide.id)}
-							class="w-full flex items-center justify-between p-4 text-left hover:bg-[var(--color-surface-subtle)] transition-colors"
+							class="w-full flex items-center justify-between p-4 text-start hover:bg-[var(--color-surface-subtle)] transition-colors"
 							aria-expanded={expandedId === guide.id}
 						>
 							<div class="min-w-0">

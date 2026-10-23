@@ -181,7 +181,7 @@
 								{#if en.access_type}
 									<span class="rounded-full bg-[var(--color-surface-subtle)] px-1.5 py-0.5 capitalize">{en.access_type}</span>
 								{/if}
-								<span class="ml-auto">{activityLine(en)}</span>
+								<span class="ms-auto">{activityLine(en)}</span>
 							</div>
 						</div>
 						<a

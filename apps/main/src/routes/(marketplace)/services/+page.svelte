@@ -348,7 +348,7 @@
 				class="!min-h-0 !border-b-0 !bg-transparent !px-0"
 			/>
 		{/if}
-		<div class="ml-auto flex items-center gap-2">
+		<div class="ms-auto flex items-center gap-2">
 			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="services-filter-panel" />
 			<SelectField
 				value={data.filters.sort}

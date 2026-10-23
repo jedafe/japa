@@ -57,6 +57,7 @@
 	let typeFilter = $state<TypeFilter>('');
 	let statusFilter = $state<StatusFilter>('');
 	let flaggedOnly = $state(false);
+	let missingOnly = $state(false);
 	let search = $state('');
 	let viewMode = $state<ViewMode>('grid');
 	let loading = $state(false);
@@ -156,6 +157,7 @@
 			q: search || undefined,
 			status: statusFilter || undefined,
 			flagged: flaggedOnly || undefined,
+			missing: missingOnly ? 'only' : undefined,
 			page_size: PAGE_SIZE,
 			page_offset: offset
 		});
@@ -189,6 +191,12 @@
 
 	function onFlaggedToggle() {
 		flaggedOnly = !flaggedOnly;
+		page = 1;
+		fetchPage();
+	}
+
+	function onMissingToggle() {
+		missingOnly = !missingOnly;
 		page = 1;
 		fetchPage();
 	}
@@ -396,10 +404,10 @@
 	<!-- Filters -->
 	<div class="flex flex-wrap items-center gap-3">
 		<div class="relative flex-1">
-			<Search size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+			<Search size={16} class="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 			<input
 				type="text"
-				class="w-full min-w-0 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-primary)] sm:w-64"
+				class="w-full min-w-0 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-9 pe-3 text-sm text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-primary)] sm:w-64"
 				placeholder={t('media.library.search_placeholder')}
 				value={search}
 				oninput={(e) => onSearchInput(e.currentTarget.value)}
@@ -434,6 +442,20 @@
 		>
 			<AlertTriangle size={14} />
 			{t('media.library.flagged_only', 'Flagged only')}
+		</button>
+		<button
+			type="button"
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors"
+			class:border-[var(--color-border)]={!missingOnly}
+			class:bg-[var(--color-surface)]={!missingOnly}
+			class:text-[var(--color-muted)]={!missingOnly}
+			class:border-[var(--destructive,#dc2626)]={missingOnly}
+			class:text-[var(--destructive,#dc2626)]={missingOnly}
+			class:bg-red-50={missingOnly}
+			onclick={onMissingToggle}
+		>
+			<ImageIcon size={14} />
+			{t('media.library.missing_only', 'Missing objects')}
 		</button>
 	</div>
 
@@ -491,12 +513,12 @@
 							<File class="h-8 w-8 text-[var(--color-muted)]" />
 						{/if}
 						{#if m.flagged}
-							<div class="absolute left-2 top-2 flex items-center gap-1 rounded bg-red-500 px-1.5 py-0.5 text-[10px] font-medium text-white">
+							<div class="absolute start-2 top-2 flex items-center gap-1 rounded bg-red-500 px-1.5 py-0.5 text-[10px] font-medium text-white">
 								<AlertTriangle size={10} />
 								{t('media.library.flagged', 'Flagged')}
 							</div>
 						{/if}
-						<div class="absolute right-2 top-2 z-10">
+						<div class="absolute end-2 top-2 z-10">
 							<input
 								type="checkbox"
 								checked={selectedIds.has(m.id)}
@@ -564,7 +586,7 @@
 	{:else}
 		<div class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 			<table class="w-full text-sm">
-				<thead class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-left text-xs text-[var(--color-muted)]">
+				<thead class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-start text-xs text-[var(--color-muted)]">
 					<tr>
 						<th class="w-10 px-3 py-2">
 							<input
@@ -579,7 +601,7 @@
 						<th class="px-3 py-2">{t('media.size', 'Size')}</th>
 						<th class="px-3 py-2">{t('media.status', 'Status')}</th>
 						<th class="px-3 py-2">{t('media.uploaded', 'Uploaded')}</th>
-						<th class="px-3 py-2 text-right">{t('media.library.actions', 'Actions')}</th>
+						<th class="px-3 py-2 text-end">{t('media.library.actions', 'Actions')}</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-[var(--color-border)]">
@@ -631,7 +653,7 @@
 								</div>
 							</td>
 							<td class="px-3 py-2 text-[var(--color-muted)]">{formatDate(m.created_at)}</td>
-							<td class="px-3 py-2 text-right">
+							<td class="px-3 py-2 text-end">
 								<div class="flex items-center justify-end gap-1">
 									<button
 										type="button"
@@ -832,7 +854,7 @@
 							{#if isImage(m) || isVideo(m)}
 								<button
 									type="button"
-									class="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity hover:bg-black/75 focus-visible:opacity-100 group-hover:opacity-100"
+									class="absolute end-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity hover:bg-black/75 focus-visible:opacity-100 group-hover:opacity-100"
 									onclick={() => openLightbox(items, items.findIndex((i) => i.id === m.id))}
 									aria-label={t('media.view_full', 'View full size')}
 								>
@@ -915,7 +937,7 @@
 					</div>
 				{/if}
 			</div>
-			<div class="border-t border-[var(--color-border)] p-4 text-right">
+			<div class="border-t border-[var(--color-border)] p-4 text-end">
 				<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 					{t('media.picker.cancel')}
 				</button>

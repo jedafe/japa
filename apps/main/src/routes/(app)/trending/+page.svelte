@@ -262,7 +262,7 @@
 								slug={item.username}
 								name={item.display_name ?? item.username}
 								avatar={item.avatar_url}
-								class="group inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+								class="group inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
 									<span

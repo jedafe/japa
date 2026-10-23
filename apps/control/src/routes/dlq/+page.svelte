@@ -428,7 +428,7 @@
 									<p class="text-destructive truncate text-xs">{entry.error_message}</p>
 									<p class="text-muted-foreground text-[10px]">{t('dlq.retries')}: {entry.retry_count} | {formatDate(entry.failed_at)}</p>
 								</div>
-								<div class="ml-4 flex items-center gap-1">
+								<div class="ms-4 flex items-center gap-1">
 									<button
 										class="text-accent-foreground hover:bg-accent rounded-5px p-1 transition-colors"
 										disabled={retrying === entry.task_id}

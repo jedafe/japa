@@ -21,7 +21,7 @@
 	);
 </script>
 
-<section class="mx-auto max-w-3xl px-6 py-8" class:text-left={align === 'left'} class:text-center={align === 'center'} class:text-right={align === 'right'}>
+<section class="mx-auto max-w-3xl px-6 py-8" class:text-start={align === 'left'} class:text-center={align === 'center'} class:text-end={align === 'right'}>
 	{#if href}
 		<a
 			href={href}

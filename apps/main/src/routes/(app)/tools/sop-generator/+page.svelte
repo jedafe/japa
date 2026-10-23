@@ -387,11 +387,11 @@
 				{generating ? t('sop_generator.generating', 'Generating…') : t('sop_generator.generate', 'Generate draft')}
 			</button>
 			{#if !authed}
-				<span class="ml-3 text-xs text-[var(--color-muted)]">
+				<span class="ms-3 text-xs text-[var(--color-muted)]">
 					{t('sop_generator.signin_required', 'Sign in to generate')}
 				</span>
 			{:else if !canGenerate}
-				<span class="ml-3 text-xs text-[var(--color-danger)]">
+				<span class="ms-3 text-xs text-[var(--color-danger)]">
 					{t('sop_generator.quota_exhausted', 'Monthly quota exhausted')}
 				</span>
 			{/if}
@@ -457,13 +457,13 @@
 			<div class="space-y-2">
 				{#each drafts as draft (draft.id)}
 					<div class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-						<button class="flex-1 text-left" onclick={() => openDraft(draft)}>
+						<button class="flex-1 text-start" onclick={() => openDraft(draft)}>
 							<div class="text-sm font-medium text-[var(--color-text)]">{draft.title || draft.purpose}</div>
 							<div class="mt-0.5 text-xs text-[var(--color-muted)]">
 								{draftMeta(draft)}
 							</div>
 						</button>
-						<button class="ml-3 text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => deleteDraft(draft.id)} aria-label={t('sop_generator.delete_draft', 'Delete draft')}>
+						<button class="ms-3 text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => deleteDraft(draft.id)} aria-label={t('sop_generator.delete_draft', 'Delete draft')}>
 							<Trash2 size={14} />
 						</button>
 					</div>

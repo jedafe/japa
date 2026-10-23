@@ -193,3 +193,21 @@ WHERE ci.type_id = (SELECT id FROM comparison_type_definitions
  AND ci.geo_space_id = @geo_space_id
  AND ci.deleted_at IS NULL
 LIMIT 1;
+
+-- =====================================================================
+-- Resolve a city's geo-space slug to its cost_of_living comparison item
+-- id — lets the compare endpoint accept human-readable slugs
+-- (?city_ids=lagos,abuja) alongside UUIDs (shareable URLs).
+-- =====================================================================
+
+-- name: GetCOLCityIDBySpaceSlug :one
+SELECT ci.id
+FROM comparison_items ci
+JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
+WHERE ci.type_id = (SELECT id FROM comparison_type_definitions
+ WHERE slug = 'cost_of_living'
+ AND is_system = true
+ LIMIT 1)
+ AND ci.deleted_at IS NULL
+ AND s.slug = @space_slug
+LIMIT 1;

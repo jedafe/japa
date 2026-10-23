@@ -73,7 +73,7 @@
 	     --current-nav-width / --sidebar-width vars (inherited from .shell).
 	     Falls back to full width on tablet/mobile where the nav/sidebar drop. -->
 	<div
-		class="composer-sheet fixed bottom-0 left-[var(--current-nav-width)] right-[var(--sidebar-width)] z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"
+		class="composer-sheet fixed bottom-0 start-[var(--current-nav-width)] end-[var(--sidebar-width)] z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"
 		transition:slide={{ duration: 250, axis: 'y' }}
 	>
 		<!-- Drag handle -->
@@ -82,7 +82,7 @@
 			<button
 				type="button"
 				onclick={() => compose.close()}
-				class="absolute right-3 top-2.5 grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+				class="absolute end-3 top-2.5 grid h-8 w-8 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 				aria-label={t('actions.close', 'Close')}
 			>
 				<X size={18} />
@@ -105,7 +105,7 @@
 						<button
 							type="button"
 							onclick={() => compose.openDiscussion(false)}
-							class="flex flex-1 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-left text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+							class="flex flex-1 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-start text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 						>
 							<MessageSquare size={20} class="text-[var(--color-primary)]" />
 							<span>{t('create.discussion', 'Discussion')}</span>
@@ -113,7 +113,7 @@
 						<button
 							type="button"
 							onclick={() => compose.openDiscussion(true)}
-							class="flex flex-1 items-center justify-end gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-right text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+							class="flex flex-1 items-center justify-end gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-end text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 						>
 							<span>{t('create.question', 'Question')}</span>
 							<HelpCircle size={20} class="text-[var(--color-primary)]" />
@@ -126,7 +126,7 @@
 							<button
 								type="button"
 								onclick={() => selectRoute(row[0])}
-								class="flex flex-1 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-left text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+								class="flex flex-1 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-start text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 							>
 								<LeftIcon size={20} class="text-[var(--color-primary)]" />
 								<span>{row[0].label}</span>
@@ -136,7 +136,7 @@
 								<button
 									type="button"
 									onclick={() => selectRoute(row[1])}
-									class="flex flex-1 items-center justify-end gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-right text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+									class="flex flex-1 items-center justify-end gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-end text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 								>
 									<span>{row[1].label}</span>
 									<RightIcon size={20} class="text-[var(--color-primary)]" />
@@ -156,12 +156,12 @@
 	   and the left nav drops below 768px, so the sheet reclaims that space. */
 	@media (max-width: 1279px) {
 		.composer-sheet {
-			right: 0;
+			inset-inline-end: 0;
 		}
 	}
 	@media (max-width: 767px) {
 		.composer-sheet {
-			left: 0;
+			inset-inline-start: 0;
 		}
 	}
 </style>

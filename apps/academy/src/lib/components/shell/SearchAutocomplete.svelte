@@ -107,7 +107,7 @@
 	>
 		<Search
 			size={16}
-			class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+			class="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
 		/>
 		<input
 			type="search"
@@ -118,7 +118,7 @@
 			onblur={onBlur}
 			onfocus={() => { if (suggestions.length > 0) showDropdown = true; }}
 			placeholder={placeholder || t('sidebar.search_placeholder')}
-			class="w-full rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+			class="w-full rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-9 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			aria-expanded={showDropdown}
 			aria-autocomplete="list"
 			aria-controls="search-suggestions"
@@ -129,7 +129,7 @@
 
 	{#if loading && showDropdown}
 		<!-- Loading indicator (§54: loading states) -->
-		<div class="absolute left-0 right-0 top-full z-50 mt-1 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] py-3 text-center shadow-lg">
+		<div class="absolute start-0 end-0 top-full z-50 mt-1 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] py-3 text-center shadow-lg">
 			<span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)]"></span>
 		</div>
 	{/if}
@@ -137,7 +137,7 @@
 	{#if showDropdown && suggestions.length > 0}
 		<ul
 			id="search-suggestions"
-			class="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg"
+			class="absolute start-0 end-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg"
 			role="listbox"
 		>
 			{#each suggestions as s, i (s.id)}
@@ -146,7 +146,7 @@
 						type="button"
 						onclick={() => select(s)}
 						onmouseenter={() => (activeIndex = i)}
-						class="flex w-full items-start gap-2 px-3 py-2 text-left transition {i === activeIndex ? 'bg-[var(--color-surface-subtle)]' : ''}"
+						class="flex w-full items-start gap-2 px-3 py-2 text-start transition {i === activeIndex ? 'bg-[var(--color-surface-subtle)]' : ''}"
 					>
 						{#if s.thumbnail_url}
 							<img src={s.thumbnail_url} alt="" class="h-10 w-10 shrink-0 rounded object-cover" />

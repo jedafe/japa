@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/i18n';
 	// §122 Next-Action renderer (tools surface) — announcement_bar + popup
 	// (+ an in_article card slot the page can opt into via the `inline` flag
 	// on tools pages that render article-style content). The API does all
@@ -74,10 +75,10 @@
 </script>
 
 {#if bar}
-	<div class="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-accent-subtle)] px-4 py-2 text-sm" role="region" aria-label="Suggestion">
+	<div class="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-accent-subtle)] px-4 py-2 text-sm" role="region" aria-label={t('a11y.suggestion', 'Suggestion')}>
 		<span class="min-w-0 flex-1 truncate text-[var(--color-text)]">
 			<strong class="font-medium">{bar.title}</strong>
-			{#if bar.body}<span class="ml-1 hidden text-[var(--color-text-muted)] sm:inline">{bar.body}</span>{/if}
+			{#if bar.body}<span class="ms-1 hidden text-[var(--color-text-muted)] sm:inline">{bar.body}</span>{/if}
 		</span>
 		<a href={bar.cta_url} onclick={() => cta(bar!)} class="shrink-0 rounded-full bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white hover:opacity-90">{bar.cta_label}</a>
 		{#if bar.snooze_default_hours > 0}
@@ -90,7 +91,7 @@
 <Dialog.Root {open} onOpenChange={(v) => { if (!v) softClose(); else open = true; }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="fixed inset-0 z-[90] bg-black/40" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-[91] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xl">
+		<Dialog.Content class="fixed start-1/2 top-1/2 z-[91] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xl">
 			{#if popup}
 				<Dialog.Title class="text-base font-semibold text-[var(--color-text)]">{popup.title}</Dialog.Title>
 				{#if popup.body}<Dialog.Description class="mt-2 text-sm text-[var(--color-text-muted)]">{popup.body}</Dialog.Description>{/if}

@@ -5,7 +5,7 @@
 	// aggregate summary cards ("Average monthly expenses"), an estimated
 	// total + share-of-total donut for money fields, and the per-descendant
 	// values table ("Cost of Living by City") with a compare-preselect rail.
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { PieChart } from 'layerchart';
 	import type { WikiRollup, WikiRollupField } from '$lib/types';
@@ -47,7 +47,7 @@
 	}
 
 	const fmtNum = (n: number | undefined) =>
-		n === undefined ? '—' : n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+		n === undefined ? '—' : n.toLocaleString(i18n.locale, { maximumFractionDigits: 0 });
 
 	const moneyNum = (f: WikiRollupField, n: number | undefined) => {
 		if (n === undefined) return '—';
@@ -60,7 +60,7 @@
 		// Local fmtNum is 0-decimals (rolled-up sums are large); the base
 		// equivalent needs 2 decimals for sub-unit amounts like $0.28.
 		const amt = n / contextFx.rate;
-		const eq = amt.toLocaleString(undefined, { maximumFractionDigits: amt < 100 ? 2 : 0 });
+		const eq = amt.toLocaleString(i18n.locale, { maximumFractionDigits: amt < 100 ? 2 : 0 });
 		const equiv = baseSym && baseSym !== contextFx.base ? `${baseSym}${eq}` : `${contextFx.base} ${eq}`;
 		return `${primary} (${equiv})`;
 	};
@@ -309,7 +309,7 @@
 								][i % 6]}
 							></span>
 							<span class="min-w-0 truncate text-[var(--color-text)]">{s.label}</span>
-							<span class="ml-auto shrink-0 tabular-nums text-[var(--color-muted)]">
+							<span class="ms-auto shrink-0 tabular-nums text-[var(--color-muted)]">
 								{Math.round((s.value / estimatedTotal) * 100)}%
 							</span>
 						</li>
@@ -322,7 +322,7 @@
 			<div class="overflow-x-auto rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)]">
 				<table class="w-full text-sm">
 					<thead>
-						<tr class="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
+						<tr class="border-b border-[var(--color-border)] text-start text-xs uppercase tracking-wide text-[var(--color-muted)]">
 							<th class="px-4 py-2 font-medium">
 								{pageScope ? t('wiki.rollup_col_page', 'Page') : spaceColLabel}
 							</th>
@@ -334,7 +334,7 @@
 								{/each}
 							{/if}
 							{#if compareRows.length >= 2}
-								<th class="px-4 py-2 text-right font-medium" aria-label={t('wiki.rollup_compare_col', 'Compare')}></th>
+								<th class="px-4 py-2 text-end font-medium" aria-label={t('wiki.rollup_compare_col', 'Compare')}></th>
 							{/if}
 						</tr>
 					</thead>
@@ -384,7 +384,7 @@
 									{/each}
 								{/if}
 								{#if compareRows.length >= 2}
-									<td class="px-4 py-2 text-right">
+									<td class="px-4 py-2 text-end">
 										{#if row.space.id && compareTarget && row.space.type_slug === compareTarget.source}
 											<label class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--color-muted)]">
 												<input

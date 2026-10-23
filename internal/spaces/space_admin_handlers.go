@@ -186,15 +186,22 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		spaceID = space.ID
 	}
 
-	// [auth, space-admin] per JEOS §215 — only the space owner or an assigned
-	// moderator may view the analytics dashboard. Guests are blocked by
-	// RequireAuth on the route; non-admin members are blocked here.
+	// [auth, space-admin] per JEOS §215 — the space owner, an assigned
+	// moderator, or a platform moderator holding spaces.moderate.any
+	// (super_admin wildcard included) may view the analytics dashboard.
+	// Guests are blocked by RequireAuth on the route; non-admin members
+	// are blocked here.
 	canManage, err := h.Service.CanManageSpace(r.Context(), spaceID, user.UserID)
 	if err != nil {
 		slog.Error("space stats: checking manage permission", "error", err, "space_id", spaceID.String())
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to authorize analytics")
 
 		return
+	}
+
+	if !canManage && h.permChecker != nil &&
+		h.permChecker.HasPermission(r.Context(), user.UserID, "spaces.moderate.any") {
+		canManage = true
 	}
 
 	if !canManage {

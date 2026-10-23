@@ -87,6 +87,7 @@
 				nextCursor = rows.length >= data.pageSize && last ? `${last.created_at}|${last.id}` : null;
 			}
 		} catch {
+			// Keep nextCursor so the user can retry; surface the failure.
 			moreError = true;
 		} finally {
 			loadingMore = false;
@@ -133,13 +134,13 @@
 		{#snippet actions()}
 			{#if data.authed}
 				<PageAction
-					href="/create?type=list"
+					href="/studio/create?type=list"
 					icon={PenSquare}
 					label={t('lists.new_list', 'New list')}
 				/>
 			{:else}
 				<PageAction
-					href="/login?redirect=/create?type=list"
+					href="/login?redirect=/studio%2Fcreate%3Ftype%3Dlist"
 					icon={PenSquare}
 					label={t('lists.new_list', 'New list')}
 				/>
@@ -161,6 +162,11 @@
 				{/each}
 			</div>
 
+			{#if moreError}
+				<p class="mt-4 text-center text-sm text-[var(--color-text-subtle)]">
+					{t('lists.load_error', 'Failed to load lists. Please try again later.')}
+				</p>
+			{/if}
 			{#if nextCursor}
 				<div class="mt-4 flex justify-center">
 					<button
@@ -173,10 +179,6 @@
 						<ChevronDown size={14} />
 					</button>
 				</div>
-			{:else if moreError}
-				<p class="mt-4 text-center text-sm text-[var(--color-text-subtle)]">
-					{t('lists.load_error', 'Failed to load lists. Please try again later.')}
-				</p>
 			{/if}
 		{/if}
 	</div>

@@ -104,7 +104,7 @@
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-4 flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
 		<a href="/forum" class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('forum.new.back', 'Back to forum')}>
-			<ArrowLeft size={18} />
+			<ArrowLeft class="rtl:-scale-x-100" size={18} />
 		</a>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">
 			{isQuestion ? t('forum.new.heading_question', 'New question') : t('forum.new.heading', 'New discussion')}
@@ -179,7 +179,9 @@
 		<div>
 			<label for="body" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">{t('forum.new.label_body', 'Body')}</label>
 			<input type="hidden" name="body" value={body} />
-			<CommentEditor placeholder={t('forum.new.placeholder_body', 'Write your discussion…')} oninput={(b) => (body = b)} />
+			<!-- initialBody restores the drafted body after a failed submit —
+			     the editor accepts base64 TipTap JSON. -->
+			<CommentEditor initialBody={body || null} placeholder={t('forum.new.placeholder_body', 'Write your discussion…')} oninput={(b) => (body = b)} />
 		</div>
 
 		<!-- Anonymous toggle -->
@@ -288,7 +290,7 @@
 				disabled={!canSubmit}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 			>
-				<Send size={16} /> {isQuestion ? t('forum.new.submit_question', 'Post question') : t('forum.new.submit', 'Post discussion')}
+				<Send class="rtl:-scale-x-100" size={16} /> {isQuestion ? t('forum.new.submit_question', 'Post question') : t('forum.new.submit', 'Post discussion')}
 			</button>
 		</div>
 	</form>

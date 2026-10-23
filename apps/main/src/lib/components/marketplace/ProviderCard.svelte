@@ -63,7 +63,7 @@
 				class="mt-4 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				{t('services.provider_view', 'View provider')}
-				<ArrowRight size={14} aria-hidden="true" />
+				<ArrowRight class="rtl:-scale-x-100" size={14} aria-hidden="true" />
 			</a>
 		{/if}
 	</section>

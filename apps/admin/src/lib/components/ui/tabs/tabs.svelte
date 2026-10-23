@@ -88,11 +88,11 @@
       >
         {#if tab.icon}
           {@const Icon = tab.icon}
-          <Icon class="mr-2 h-4 w-4" />
+          <Icon class="me-2 h-4 w-4" />
         {/if}
         {tab.label}
         {#if tab.count !== undefined}
-          <span class="ml-2 rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-surface); color: var(--color-foreground-alt)">
+          <span class="ms-2 rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-surface); color: var(--color-foreground-alt)">
             {tab.count}
           </span>
         {/if}

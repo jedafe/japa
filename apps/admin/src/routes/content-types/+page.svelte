@@ -117,7 +117,7 @@
 {#if loading}
 	<div class="flex items-center justify-center py-12">
 		<RefreshCw class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
-		<span class="ml-2 text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</span>
+		<span class="ms-2 text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</span>
 	</div>
 {:else}
 	<!-- Message banner -->
@@ -225,7 +225,7 @@
 	{#if canManage}
 		<div class="mt-4 flex items-center justify-end gap-3">
 			<Button variant="outline" size="sm" onclick={revertAll} disabled={saving || !isDirty}>
-				<Undo2 class="h-4 w-4" />
+				<Undo2 class="h-4 w-4 rtl:-scale-x-100" />
 				{t('settings.revert', 'Revert')}
 			</Button>
 			<Button variant="default" size="sm" onclick={save} disabled={saving || !isDirty}>

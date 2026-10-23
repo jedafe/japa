@@ -123,7 +123,7 @@
 			href="/radar"
 			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={15} />
+			<ArrowLeft class="rtl:-scale-x-100" size={15} />
 			{t('radar.back')}
 		</a>
 		<!-- v1: only scholarships are savable (spec §763 reserves saved_jobs
@@ -158,7 +158,7 @@
 					{item.country}
 				</span>
 			{/if}
-			<span class="ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {verified ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}">
+			<span class="ms-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {verified ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}">
 				{#if verified}
 					<ShieldCheck size={12} />
 					{t('radar.detail.verified')}
@@ -292,7 +292,7 @@
 					class="mt-6 inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
 				>
 					{t('radar.detail.apply')}
-					<ExternalLink size={15} />
+					<ExternalLink class="rtl:-scale-x-100" size={15} />
 				</a>
 			{/if}
 		</div>

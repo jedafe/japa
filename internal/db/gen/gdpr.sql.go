@@ -1920,7 +1920,7 @@ func (q *Queries) GdprExportUserLessonProgress(ctx context.Context, userID pgtyp
 
 const gdprExportUserMedia = `-- name: GdprExportUserMedia :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE uploader_user_id = $1) t
+FROM (SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged, missing_at FROM media WHERE uploader_user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserMedia(ctx context.Context, userID pgtype.UUID) (interface{}, error) {

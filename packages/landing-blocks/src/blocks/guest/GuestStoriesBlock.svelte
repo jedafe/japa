@@ -97,7 +97,7 @@
       <p class="stories-subtitle">{subtitle}</p>
       <a href={ctaHref} class="stories-cta">
         {ctaLabel}
-        <ArrowRight size={18} />
+        <ArrowRight class="rtl:-scale-x-100" size={18} />
       </a>
     </div>
 
@@ -108,7 +108,7 @@
         onclick={() => scrollBy(-1)}
         aria-label="Previous"
       >
-        <ChevronLeft size={20} />
+        <ChevronLeft class="rtl:-scale-x-100" size={20} />
       </button>
 
       <div bind:this={scroller} class="story-scroll">
@@ -144,7 +144,7 @@
         onclick={() => scrollBy(1)}
         aria-label="Next"
       >
-        <ChevronRight size={20} />
+        <ChevronRight class="rtl:-scale-x-100" size={20} />
       </button>
     </div>
 

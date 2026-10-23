@@ -476,14 +476,14 @@
 				</div>
 			{:else}
 				<div class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]">
-					<table class="w-full text-left text-sm">
+					<table class="w-full text-start text-sm">
 						<thead class="bg-[var(--color-surface-subtle)] text-xs uppercase text-[var(--color-muted)]">
 							<tr>
 								<th class="px-4 py-2 font-medium">{t('universities.col_name', 'Name')}</th>
 								<th class="px-4 py-2 text-center font-medium">{t('universities.col_initials', 'Initials')}</th>
-								<th class="px-4 py-2 text-right font-medium">{t('universities.col_members', 'Members')}</th>
-								<th class="px-4 py-2 text-right font-medium">{t('universities.col_posts', 'Posts')}</th>
-								<th class="px-4 py-2 text-right font-medium">{t('universities.col_followers', 'Followers')}</th>
+								<th class="px-4 py-2 text-end font-medium">{t('universities.col_members', 'Members')}</th>
+								<th class="px-4 py-2 text-end font-medium">{t('universities.col_posts', 'Posts')}</th>
+								<th class="px-4 py-2 text-end font-medium">{t('universities.col_followers', 'Followers')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -516,9 +516,9 @@
 												>{uni.initials}</span>
 										{/if}
 									</td>
-									<td class="px-4 py-2.5 text-right tabular-nums text-[var(--color-muted)]">{uni.member_count}</td>
-									<td class="px-4 py-2.5 text-right tabular-nums text-[var(--color-muted)]">{uni.post_count}</td>
-									<td class="px-4 py-2.5 text-right tabular-nums text-[var(--color-muted)]">{uni.follower_count}</td>
+									<td class="px-4 py-2.5 text-end tabular-nums text-[var(--color-muted)]">{uni.member_count}</td>
+									<td class="px-4 py-2.5 text-end tabular-nums text-[var(--color-muted)]">{uni.post_count}</td>
+									<td class="px-4 py-2.5 text-end tabular-nums text-[var(--color-muted)]">{uni.follower_count}</td>
 								</tr>
 							{/each}
 						</tbody>

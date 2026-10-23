@@ -14,6 +14,7 @@
 	import type { Component } from 'svelte';
 	import { blockRegistry, type Block, type BlockMeta } from '@japaconnect/landing-blocks';
 	import { isContainerLike, childrenOf, childSlotsOf, getContainerLayout, getContainerColumns, DEFAULT_SLOT } from '$lib/utils/blocks';
+	import { t } from '$lib/stores/i18n.svelte';
 	import ContainerChildren from './ContainerChildren.svelte';
 
 	let {
@@ -100,7 +101,7 @@
 	});
 </script>
 
-<div class="ml-3 border-l pl-2" style="border-color: var(--color-border)">
+<div class="ms-3 border-s ps-2" style="border-color: var(--color-border)">
 	{#each children as child, i (child.id)}
 		{@const m = meta(child.type)}
 		{@const sortable = sortables[i]}
@@ -111,7 +112,7 @@
 				: 'hover:bg-[var(--surface)]'} {sortable.isDragging ? 'opacity-40 ring-2 ring-[var(--primary)]' : ''}"
 			role="button"
 			tabindex="0"
-			aria-label="Select child section"
+			aria-label={t('landing_editor.select_child', 'Select child section')}
 			onclick={onSelect.bind(null, child.id)}
 			onkeydown={(e) => {
 				if (e.key === 'Enter' || e.key === ' ') {
@@ -132,26 +133,26 @@
 				{#if Icon}<Icon size={12} />{/if}
 			{/if}
 			<span class="flex-1 truncate text-[var(--foreground)]">{child.label ?? m?.label ?? child.type}</span>
-			{#if !child.visible}<span class="text-[10px] text-[var(--muted)]">hidden</span>{/if}
+			{#if !child.visible}<span class="text-[10px] text-[var(--muted)]">{t('landing_editor.hidden', 'hidden')}</span>{/if}
 			{#if layout === 'grid'}<span class="font-mono text-[10px] text-[var(--muted)]">{effectiveSpan(child)}/12</span>{/if}
 			<!-- Quick actions (always visible for accessibility) -->
-			<button type="button" onclick={() => onReorder(containerId, slotKey, i, i - 1)} disabled={i === 0} class="text-[var(--muted)] disabled:opacity-20 hover:text-[var(--foreground)]" aria-label="Move up">
+			<button type="button" onclick={() => onReorder(containerId, slotKey, i, i - 1)} disabled={i === 0} class="text-[var(--muted)] disabled:opacity-20 hover:text-[var(--foreground)]" aria-label={t('common.move_up', 'Move up')}>
 				<ChevronUp class="h-3 w-3" />
 			</button>
-			<button type="button" onclick={() => onReorder(containerId, slotKey, i, i + 1)} disabled={i === children.length - 1} class="text-[var(--muted)] disabled:opacity-20 hover:text-[var(--foreground)]" aria-label="Move down">
+			<button type="button" onclick={() => onReorder(containerId, slotKey, i, i + 1)} disabled={i === children.length - 1} class="text-[var(--muted)] disabled:opacity-20 hover:text-[var(--foreground)]" aria-label={t('common.move_down', 'Move down')}>
 				<ChevronDown class="h-3 w-3" />
 			</button>
-			<button type="button" onclick={() => onMoveOut(containerId, slotKey, child.id)} class="text-[var(--muted)] hover:text-[var(--foreground)]" aria-label="Move to top level" title="Move to top level">
-				<ArrowUpRight class="h-3 w-3" />
+			<button type="button" onclick={() => onMoveOut(containerId, slotKey, child.id)} class="text-[var(--muted)] hover:text-[var(--foreground)]" aria-label={t('landing_editor.move_to_top', 'Move to top level')} title={t('landing_editor.move_to_top', 'Move to top level')}>
+				<ArrowUpRight class="h-3 w-3 rtl:-scale-x-100" />
 			</button>
-			<button type="button" onclick={() => onRemove(containerId, slotKey, child.id)} class="text-[var(--danger)] hover:opacity-80" aria-label="Remove child">
+			<button type="button" onclick={() => onRemove(containerId, slotKey, child.id)} class="text-[var(--danger)] hover:opacity-80" aria-label={t('landing_editor.remove_child', 'Remove child')}>
 				<X class="h-3 w-3" />
 			</button>
 		</div>
 		<!-- Span slider — visible when this child is selected and container is in grid mode -->
 		{#if layout === 'grid' && selectedBlockId === child.id}
 			<div class="flex items-center gap-2 px-3 py-1">
-				<span class="text-[9px] text-[var(--muted)] whitespace-nowrap">span</span>
+				<span class="text-[9px] text-[var(--muted)] whitespace-nowrap">{t('landing_editor.span', 'span')}</span>
 				<input
 					type="range"
 					min="1"
@@ -160,7 +161,7 @@
 					oninput={(e) => onSpanChange(containerId, slotKey, child.id, Number(e.currentTarget.value))}
 					class="flex-1 h-1 cursor-pointer"
 					style="accent-color: var(--color-primary)"
-					aria-label="Column span (1-12)"
+					aria-label={t('landing_editor.column_span', 'Column span (1-12)')}
 				/>
 				<!-- Visual 12-col bar -->
 				<div class="flex gap-px" style="width: 48px">
@@ -176,7 +177,7 @@
 
 		{#if isContainerLike(child)}
 			{@const slots = childSlotsOf(child)}
-			<div class="ml-2">
+			<div class="ms-2">
 				<button
 					type="button"
 					onclick={() => toggleExpand(child.id)}
@@ -188,7 +189,7 @@
 			{#if expandedContainers.has(child.id)}
 				{#each slots as slot (slot.key)}
 					{#if slot.label}
-						<div class="ml-2 mt-1 px-1 text-[10px] font-medium uppercase tracking-wider text-[var(--muted)]">{slot.label}</div>
+						<div class="ms-2 mt-1 px-1 text-[10px] font-medium uppercase tracking-wider text-[var(--muted)]">{slot.label}</div>
 					{/if}
 					<ContainerChildren
 						containerId={child.id}

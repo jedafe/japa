@@ -104,7 +104,7 @@
 				aria-label={t('radar.widget.view_all')}
 			>
 				{t('radar.widget.view_all')}
-				<ArrowRight size={13} />
+				<ArrowRight class="rtl:-scale-x-100" size={13} />
 			</a>
 		</header>
 

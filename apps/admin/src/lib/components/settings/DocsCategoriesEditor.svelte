@@ -206,7 +206,7 @@
 					style="color: var(--color-muted)"
 					disabled={disabled || i === 0}
 					onclick={() => moveRow(i, -1)}
-					aria-label="Move up"
+					aria-label={t('common.move_up', 'Move up')}
 				>
 					<ChevronUp class="h-4 w-4" />
 				</button>
@@ -216,7 +216,7 @@
 					style="color: var(--color-muted)"
 					disabled={disabled || i === rows.length - 1}
 					onclick={() => moveRow(i, 1)}
-					aria-label="Move down"
+					aria-label={t('common.move_down', 'Move down')}
 				>
 					<ChevronDown class="h-4 w-4" />
 				</button>
@@ -226,7 +226,7 @@
 					style="color: var(--color-danger, #ef4444)"
 					disabled={disabled}
 					onclick={() => removeRow(i)}
-					aria-label="Remove category"
+					aria-label={t('settings.category_remove', 'Remove category')}
 				>
 					<Trash2 class="h-4 w-4" />
 				</button>
@@ -261,7 +261,7 @@
 							style="color: var(--color-muted)"
 							disabled={disabled || si === 0}
 							onclick={() => moveSub(i, si, -1)}
-							aria-label="Move subcategory up"
+							aria-label={t('settings.subcategory_move_up', 'Move subcategory up')}
 						>
 							<ChevronUp class="h-3.5 w-3.5" />
 						</button>
@@ -271,7 +271,7 @@
 							style="color: var(--color-muted)"
 							disabled={disabled || si === row.subs.length - 1}
 							onclick={() => moveSub(i, si, 1)}
-							aria-label="Move subcategory down"
+							aria-label={t('settings.subcategory_move_down', 'Move subcategory down')}
 						>
 							<ChevronDown class="h-3.5 w-3.5" />
 						</button>
@@ -281,7 +281,7 @@
 							style="color: var(--color-danger, #ef4444)"
 							disabled={disabled}
 							onclick={() => removeSub(i, si)}
-							aria-label="Remove subcategory"
+							aria-label={t('settings.subcategory_remove', 'Remove subcategory')}
 						>
 							<Trash2 class="h-3.5 w-3.5" />
 						</button>

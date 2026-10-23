@@ -4,7 +4,7 @@
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { formatMoney } from '$lib/utils/currency';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -181,7 +181,7 @@
 		if (matrix?.display_currency && city.converted) {
 			return formatMoney(v, matrix.display_currency, data.currencies);
 		}
-		const n = v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+		const n = v.toLocaleString(i18n.locale, { maximumFractionDigits: 0 });
 		return city.currency_code ? `${n} ${city.currency_code}` : n;
 	}
 
@@ -389,10 +389,10 @@
 			<div class="overflow-x-auto rounded-lg border border-border">
 				<table class="w-full text-sm">
 					<thead>
-						<tr class="border-b border-border text-left text-xs text-muted">
+						<tr class="border-b border-border text-start text-xs text-muted">
 							<th class="px-3 py-2 font-medium">{t('col.attribute_header', 'Attribute')}</th>
 							{#each matrix.cities as city (city.id)}
-								<th class="px-3 py-2 text-right font-medium">
+								<th class="px-3 py-2 text-end font-medium">
 									{#if city.geo_space_slug}
 										<a
 											href={wikiUrl(city.geo_space_slug)}
@@ -413,7 +413,7 @@
 							<tr class="border-b border-border last:border-0">
 								<td class="px-3 py-2 text-text">{cat.label}</td>
 								{#each matrix.cities as city (city.id)}
-									<td class="px-3 py-2 text-right text-text">
+									<td class="px-3 py-2 text-end text-text">
 										<div class="font-medium">{formatCellValue(city, cat.values[city.id])}</div>
 										{#if !city.is_baseline && cat.ratios[city.id]}
 											<div class="text-xs text-muted">{formatRatio(cat.ratios[city.id])}</div>

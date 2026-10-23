@@ -98,6 +98,32 @@ LEFT JOIN user_profiles sup ON sup.user_id = ft.solved_by_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.slug = @slug AND ft.deleted_at IS NULL;
 
+-- name: GetForumThreadSpaceAccess :one
+-- Resolves the containing space's visibility + the viewer's membership for
+-- the forum space-visibility cascade (§05): 'public'→full, 'members'→title
+-- only for non-members, 'private'→404. Space-less threads default to
+-- 'public' (COALESCE) — they carry no space gate.
+SELECT COALESCE(s.visibility, 'public') AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = @viewer_id
+ ) AS is_member
+FROM forum_threads ft
+LEFT JOIN spaces s ON s.id = ft.space_id
+WHERE ft.id = @thread_id;
+
+-- name: GetSpaceAccess :one
+-- Same cascade for space-scoped listings (ListThreadsBySpace).
+SELECT s.visibility AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = s.id AND sm.user_id = @viewer_id
+ ) AS is_member
+FROM spaces s
+WHERE s.id = @space_id;
+
 -- name: ListForumThreadsWithDetails :many
 SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
@@ -109,13 +135,28 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  s.name AS space_name,
  s.slug AS space_slug,
- s.level AS space_level
+ s.level AS space_level,
+ COALESCE(s.visibility, 'public') AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = @viewer_id
+ ) AS space_is_member
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.deleted_at IS NULL
  AND ft.solved = COALESCE(sqlc.narg(solved)::bool, ft.solved)
+ -- §05 space-visibility: 'private'-space threads are invisible to
+ -- non-members; 'members'-space threads stay in the list (title visible)
+ -- but their bodies are masked by the handler.
+ AND (s.visibility IS NULL OR s.visibility <> 'private'
+ OR EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = @viewer_id
+ ))
  AND (
  (@sort_by = 'top' AND (
  sqlc.narg(cursor_vote_score)::int IS NULL
@@ -188,7 +229,13 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  s.name AS space_name,
  s.slug AS space_slug,
- s.level AS space_level
+ s.level AS space_level,
+ COALESCE(s.visibility, 'public') AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = @viewer_id
+ ) AS space_is_member
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
@@ -196,6 +243,12 @@ LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.author_user_id = @author_user_id
  AND ft.deleted_at IS NULL
  AND ft.solved = COALESCE(sqlc.narg(solved)::bool, ft.solved)
+ AND (s.visibility IS NULL OR s.visibility <> 'private'
+ OR EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = @viewer_id
+ ))
  AND (
  (@sort_by = 'top' AND (
  sqlc.narg(cursor_vote_score)::int IS NULL
@@ -228,7 +281,13 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  s.name AS space_name,
  s.slug AS space_slug,
- s.level AS space_level
+ s.level AS space_level,
+ COALESCE(s.visibility, 'public') AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = @viewer_id
+ ) AS space_is_member
 FROM forum_threads ft
 JOIN content_tags ct ON ct.content_id = ft.content_id
 LEFT JOIN users u ON u.id = ft.author_user_id
@@ -237,6 +296,12 @@ LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ct.tag_id = @tag_id
  AND ft.deleted_at IS NULL
  AND ft.solved = COALESCE(sqlc.narg(solved)::bool, ft.solved)
+ AND (s.visibility IS NULL OR s.visibility <> 'private'
+ OR EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = @viewer_id
+ ))
  AND (
  (@sort_by = 'top' AND (
  sqlc.narg(cursor_vote_score)::int IS NULL
@@ -329,13 +394,19 @@ WHERE fr.id = @id
  AND fr.deleted_at IS NULL;
 
 -- name: ListForumRepliesByThread :many
-SELECT id, thread_id, parent_reply_id, author_user_id,
- body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
-FROM forum_replies
-WHERE thread_id = @thread_id
- AND deleted_at IS NULL
-ORDER BY created_at ASC;
+-- Tombstones (§49 parity): a deleted reply that still has live children is
+-- returned so the tree stays navigable — its body is scrubbed by the caller.
+SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
+FROM forum_replies fr
+WHERE fr.thread_id = @thread_id
+ AND (fr.deleted_at IS NULL OR EXISTS (
+ SELECT 1 FROM forum_replies child
+ WHERE child.parent_reply_id = fr.id
+ AND child.deleted_at IS NULL
+ ))
+ORDER BY fr.created_at ASC;
 
 -- name: ListForumRepliesByThreadWithAuthor :many
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
@@ -348,7 +419,11 @@ FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
 WHERE fr.thread_id = @thread_id
- AND fr.deleted_at IS NULL
+ AND (fr.deleted_at IS NULL OR EXISTS (
+ SELECT 1 FROM forum_replies child
+ WHERE child.parent_reply_id = fr.id
+ AND child.deleted_at IS NULL
+ ))
 ORDER BY fr.created_at ASC;
 
 -- name: GetTopReplyForThread :one
@@ -385,9 +460,11 @@ RETURNING fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at;
 
 -- name: SoftDeleteForumReply :exec
+-- deleted_at IS NULL keeps the write idempotent — a second delete is a no-op
+-- instead of restamping the timestamp.
 UPDATE forum_replies
 SET deleted_at = now(), updated_at = now()
-WHERE id = @id;
+WHERE id = @id AND deleted_at IS NULL;
 
 -- =====================
 -- Votes

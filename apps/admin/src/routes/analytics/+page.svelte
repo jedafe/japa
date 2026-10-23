@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '$lib/stores/i18n.svelte';
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -290,7 +290,7 @@
 	const chartAxisFormat: any = {
 		format: (v: any) =>
 			v instanceof Date
-				? v.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+				? v.toLocaleDateString(locale.current, { month: 'short', day: 'numeric' })
 				: Number(v).toLocaleString()
 	};
 
@@ -546,10 +546,10 @@
 					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.security_scans', 'Security Scans')}</h3>
 					<Button onclick={runSecurityScan} disabled={scanning}>
 						{#if scanning}
-							<RefreshCw class="mr-2 h-4 w-4 animate-spin" />
+							<RefreshCw class="me-2 h-4 w-4 animate-spin" />
 							{t('analytics.scanning', 'Scanning...')}
 						{:else}
-							<Shield class="mr-2 h-4 w-4" />
+							<Shield class="me-2 h-4 w-4" />
 							{t('analytics.run_scan', 'Run Scan')}
 						{/if}
 					</Button>
@@ -686,7 +686,7 @@
 				onValueChange={(v) => { advancedPeriod = v; loadAdvancedAnalytics(v); }}
 				options={[{ value: '7d', label: '7d' }, { value: '30d', label: '30d' }, { value: '90d', label: '90d' }]}
 			/>
-			<div class="ml-auto flex gap-2">
+			<div class="ms-auto flex gap-2">
 				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('top_content')}>{t('analytics.export_top_content', 'Export Top Content')}</Button>
 				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('revenue_streams')}>{t('analytics.export_revenue', 'Export Revenue')}</Button>
 				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('ad_performance')}>{t('analytics.export_ads', 'Export Ads')}</Button>
@@ -736,7 +736,7 @@
 				<CardContent>
 					<DataTable
 						columns={[
-							{ key: "month", label: t('analytics.month', 'Month'), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : '—' },
+							{ key: "month", label: t('analytics.month', 'Month'), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString(locale.current, { year: 'numeric', month: 'short' }) : '—' },
 							{ key: "subscription_revenue", label: t('analytics.subscription', 'Subscription'), sortable: true, render: (v: number) => `$${Number(v ?? 0).toLocaleString()}` },
 							{ key: "course_revenue", label: t('analytics.course', 'Course'), sortable: true, render: (v: number) => `$${Number(v ?? 0).toLocaleString()}` },
 							{ key: "ad_revenue", label: t('analytics.ad_revenue', 'Ads'), sortable: true, render: (v: number) => `$${Number(v ?? 0).toLocaleString()}` },
@@ -830,7 +830,7 @@
 		<Button variant="outline" onclick={() => flushModalOpen = false}>{t('analytics.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={handleFlushCache} disabled={flushing}>
 			{#if flushing}
-				<RefreshCw class="h-4 w-4 mr-2 animate-spin" />
+				<RefreshCw class="h-4 w-4 me-2 animate-spin" />
 				{t('analytics.flushing', 'Flushing...')}
 			{:else}
 				{t('analytics.flush_cache', 'Flush Cache')}

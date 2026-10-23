@@ -14,7 +14,7 @@
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { Scholarship, SavedScholarship, ScholarshipStatus, GeoSpaceOption, CatalogOption } from '$lib/types';
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName, i18n } from '$lib/i18n';
 
 	/**
 	 * Scholarship Finder tool — §73, ADR-073.
@@ -180,7 +180,7 @@
 
 	function formatDate(date: string | null | undefined): string {
 		if (!date) return '—';
-		return new Date(date).toLocaleDateString('en-US', {
+		return new Date(date).toLocaleDateString(i18n.locale, {
 			year: 'numeric',
 			month: 'short',
 			day: 'numeric'
@@ -463,7 +463,7 @@
 										<p class="text-sm text-text-subtle mt-2 line-clamp-2">{s.description}</p>
 									{/if}
 								</div>
-								<div class="flex-shrink-0 text-right">
+								<div class="flex-shrink-0 text-end">
 									{#if s.award_amount_usd !== null && s.award_amount_usd !== undefined}
 										<div class="text-lg font-bold text-[var(--tool-accent)]">
 											{formatAmount(s.award_amount_usd)}

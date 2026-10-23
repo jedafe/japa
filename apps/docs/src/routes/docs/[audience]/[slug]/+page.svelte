@@ -164,14 +164,14 @@
 	<article class="doc-article">
 		<header class="doc-header">
 			<!-- Breadcrumb (Ref: §44 ROADMAP 02.03) — Docs / Audience / parents -->
-			<nav class="breadcrumb" aria-label="Breadcrumb">
+			<nav class="breadcrumb" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
 				<a href="/docs" class="crumb">{t('audience.overview')}</a>
-				<ChevronRight size={12} class="crumb-sep" />
+				<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 				<a href="/docs/{data.audience}" class="crumb">
 					{t(data.audienceLabelKey, data.audience)}
 				</a>
 				{#each breadcrumb as crumb (crumb.slug)}
-					<ChevronRight size={12} class="crumb-sep" />
+					<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 					<a href="/docs/{data.audience}/{crumb.slug}" class="crumb">{crumb.title}</a>
 				{/each}
 			</nav>
@@ -262,10 +262,10 @@
 
 			<!-- Prev/Next navigation (Ref: §44 ROADMAP 02.05) -->
 			{#if prev || next}
-				<nav class="prev-next" aria-label="Page navigation">
+				<nav class="prev-next" aria-label={t('a11y.page_nav', 'Page navigation')}>
 					{#if prev}
 						<a href="/docs/{data.audience}/{prev.slug}" class="pn-card pn-prev">
-							<span class="pn-label"><ArrowLeft size={14} /> {t('page.previous', 'Previous')}</span>
+							<span class="pn-label"><ArrowLeft class="rtl:-scale-x-100" size={14} /> {t('page.previous', 'Previous')}</span>
 							<span class="pn-title">{prev.title}</span>
 						</a>
 					{:else}
@@ -273,7 +273,7 @@
 					{/if}
 					{#if next}
 						<a href="/docs/{data.audience}/{next.slug}" class="pn-card pn-next">
-							<span class="pn-label">{t('page.next', 'Next')} <ArrowRight size={14} /></span>
+							<span class="pn-label">{t('page.next', 'Next')} <ArrowRight class="rtl:-scale-x-100" size={14} /></span>
 							<span class="pn-title">{next.title}</span>
 						</a>
 					{:else}
@@ -323,7 +323,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
-		margin-left: auto;
+		margin-inline-start: auto;
 		font-size: 0.8125rem;
 		font-weight: 500;
 		color: var(--color-primary);
@@ -450,7 +450,7 @@
 			text-decoration: none;
 		}
 		.mobile-toc a:hover { color: var(--color-primary); }
-		.mobile-toc li.level-3 a { padding-left: 1rem; font-size: 0.8125rem; }
+		.mobile-toc li.level-3 a { padding-inline-start: 1rem; font-size: 0.8125rem; }
 	}
 	.prev-next {
 		display: grid;
@@ -474,7 +474,7 @@
 		box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 5%, transparent);
 	}
 	.pn-placeholder { visibility: hidden; }
-	.pn-next { text-align: right; }
+	.pn-next { text-align: end; }
 	.pn-label {
 		display: inline-flex;
 		align-items: center;
@@ -493,8 +493,8 @@
 	}
 	@media (max-width: 560px) {
 		.prev-next { grid-template-columns: 1fr; }
-		.pn-next { text-align: left; }
+		.pn-next { text-align: start; }
 		.pn-next .pn-label { justify-content: flex-start; }
-		.meta-edit-link { margin-left: 0; }
+		.meta-edit-link { margin-inline-start: 0; }
 	}
 </style>

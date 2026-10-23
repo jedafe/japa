@@ -171,7 +171,7 @@
 					onclick={() => (op.open = !op.open)}
 					aria-label={op.open ? 'Collapse' : 'Expand'}
 				>
-					{#if op.open}<ChevronDown class="size-4" />{:else}<ChevronRight class="size-4" />{/if}
+					{#if op.open}<ChevronDown class="size-4" />{:else}<ChevronRight class="size-4 rtl:-scale-x-100" />{/if}
 				</button>
 				<input
 					class="{inputCls} flex-1 font-medium"
@@ -290,7 +290,7 @@
 									{:else}
 										<input class={inputCls} placeholder="placeholder" bind:value={param.placeholder} oninput={emit} {disabled} />
 									{/if}
-									<button type="button" class="text-destructive disabled:opacity-30" onclick={() => removeParam(op, pi)} {disabled} aria-label="Remove param">
+									<button type="button" class="text-destructive disabled:opacity-30" onclick={() => removeParam(op, pi)} {disabled} aria-label={t('seeds_editor.remove_param', 'Remove param')}>
 										<Trash2 class="size-3.5" />
 									</button>
 								</div>

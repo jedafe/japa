@@ -439,7 +439,7 @@
 			class="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-sm transition-colors"
 			onclick={() => goto('/intelligence/review')}
 		>
-			<ArrowLeft class="size-4" />
+			<ArrowLeft class="size-4 rtl:-scale-x-100" />
 			{t('intel.back_to_queue', 'Back to queue')}
 		</button>
 		{#if record}
@@ -452,7 +452,7 @@
 						title={t('intel.next_in_queue', 'Next in queue')}
 					>
 						{t('intel.next', 'Next')}
-						<ChevronRight class="size-4" />
+						<ChevronRight class="size-4 rtl:-scale-x-100" />
 					</button>
 				{/if}
 				{#if canApprove && isReviewable}
@@ -648,7 +648,7 @@
 									{#if isSafeUrl(source.source_url)}
 										<a href={source.source_url} target="_blank" rel="noopener noreferrer" class="text-accent-foreground inline-flex items-center gap-1 truncate font-mono text-xs hover:underline">
 											{source.source_url}
-											<ExternalLink class="size-3 shrink-0" />
+											<ExternalLink class="size-3 shrink-0 rtl:-scale-x-100" />
 										</a>
 									{:else}
 										<span class="font-mono text-xs break-all">{source.source_url}</span>

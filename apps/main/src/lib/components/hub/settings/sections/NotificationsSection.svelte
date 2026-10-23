@@ -138,7 +138,7 @@
 			>
 				<Icon size={14} />
 				{t(`settings.notifications.cat_${cat}`)}
-				<span class="ml-0.5 rounded-full bg-[var(--color-surface-subtle)] px-1.5 text-xs text-[var(--color-muted)]">{tabCounts[cat]}</span>
+				<span class="ms-0.5 rounded-full bg-[var(--color-surface-subtle)] px-1.5 text-xs text-[var(--color-muted)]">{tabCounts[cat]}</span>
 			</button>
 		{/each}
 	</div>
@@ -224,7 +224,7 @@
 			class="sticky bottom-0 mt-6 flex items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] py-3"
 		>
 			{#if form.error}
-				<span class="mr-auto text-xs text-[var(--color-danger,#dc2626)]">{form.error.message}</span>
+				<span class="me-auto text-xs text-[var(--color-danger,#dc2626)]">{form.error.message}</span>
 			{/if}
 			<button
 				type="button"

@@ -88,9 +88,10 @@ export const load: PageServerLoad = async (event) => {
 		(envelope) => ({
 			comments: envelope.data ?? [],
 			deletedUserIds: envelope.deleted_user_ids ?? null,
+			commentsTotal: (envelope.meta as { total?: number } | undefined)?.total ?? null,
 			loadError: false
 		}),
-		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, loadError: true })
+		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, commentsTotal: null as number | null, loadError: true })
 	);
 
 	// Series parts (Section 34 / Phase 06.10). Public series detail now shows
@@ -147,7 +148,7 @@ export const load: PageServerLoad = async (event) => {
 	// BUG-004: include moderator permission check, not just content author.
 	const canModerate = isOwner || isSuperAdmin || hasCommentsPinPermission;
 
-	const { comments, deletedUserIds: commentDeletedUserIds, loadError: commentsLoadError } =
+	const { comments, deletedUserIds: commentDeletedUserIds, commentsTotal, loadError: commentsLoadError } =
 		commentsResult;
 
 	// Merge deleted user IDs from the article body and comments so the
@@ -190,6 +191,7 @@ export const load: PageServerLoad = async (event) => {
 		canDelete,
 		comments,
 		commentsLoadError,
+		commentsTotal,
 		seriesPosts,
 		relatedContent,
 		recommendedContent,

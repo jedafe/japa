@@ -963,6 +963,37 @@ func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 
+	// F-009: parent_id lists replies under a comment — parity with the
+	// session API. Without it, external consumers could never reach replies
+	// (children under tombstoned parents were unreachable entirely).
+	if parentStr := r.URL.Query().Get("parent_id"); parentStr != "" {
+		var parentID pgtype.UUID
+		if err := parentID.Scan(parentStr); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
+			return
+		}
+
+		replies, err := h.Queries.ListPublicRepliesByParent(r.Context(), gen.ListPublicRepliesByParentParams{
+			ParentID:   parentID,
+			ContentID:  contentID,
+			PageOffset: offset,
+			PageLimit:  limit,
+		})
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		scrubPublicReplies(replies)
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+			"data":   replies,
+			"limit":  limit,
+			"offset": offset,
+		})
+		return
+	}
+
 	comments, err := h.Queries.ListPublicCommentsByContent(r.Context(), gen.ListPublicCommentsByContentParams{
 		ContentID: contentID,
 
@@ -974,11 +1005,51 @@ func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scrubPublicComments(comments)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":   comments,
 		"limit":  limit,
 		"offset": offset,
 	})
+}
+
+// scrubPublicComments redacts anonymous author identity and tombstones
+// deleted comments on the public list.
+//
+// C-022: anonymous authors' username/display_name/avatar_url previously
+// leaked through this endpoint — the SQL always joined users/user_profiles
+// and the handler returned them verbatim. Unlike the session API, the API
+// key holder is never the comment's author, so ALL identity fields are
+// zeroed, including author_user_id.
+// C-009 parity: tombstone rows keep their slot so live replies stay
+// reachable via ?parent_id=, but the original body must not leak.
+func scrubPublicComments(comments []gen.ListPublicCommentsByContentRow) {
+	for i := range comments {
+		if comments[i].IsAnonymous {
+			comments[i].AuthorUserID = pgtype.UUID{}
+			comments[i].Username = ""
+			comments[i].DisplayName = ""
+			comments[i].AvatarUrl = ""
+		}
+		if comments[i].DeletedAt.Valid {
+			comments[i].Body = nil
+		}
+	}
+}
+
+func scrubPublicReplies(replies []gen.ListPublicRepliesByParentRow) {
+	for i := range replies {
+		if replies[i].IsAnonymous {
+			replies[i].AuthorUserID = pgtype.UUID{}
+			replies[i].Username = ""
+			replies[i].DisplayName = ""
+			replies[i].AvatarUrl = ""
+		}
+		if replies[i].DeletedAt.Valid {
+			replies[i].Body = nil
+		}
+	}
 }
 
 // ListUsers handles GET /api/v1/public/users — returns a paginated list of

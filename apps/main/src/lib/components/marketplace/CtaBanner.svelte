@@ -33,11 +33,11 @@
 >
 	<!-- faint oversized rings — the mockup's decorative circles -->
 	<span
-		class="pointer-events-none absolute -left-20 -top-24 h-64 w-64 rounded-full border-[24px] border-white/10"
+		class="pointer-events-none absolute -start-20 -top-24 h-64 w-64 rounded-full border-[24px] border-white/10"
 		aria-hidden="true"
 	></span>
 	<span
-		class="pointer-events-none absolute -bottom-28 -right-16 h-72 w-72 rounded-full border-[28px] border-white/10"
+		class="pointer-events-none absolute -bottom-28 -end-16 h-72 w-72 rounded-full border-[28px] border-white/10"
 		aria-hidden="true"
 	></span>
 

@@ -95,7 +95,7 @@
 			style="z-index: {zIndex}"
 		/>
 		<Dialog.Content
-			class="fixed left-1/2 top-1/2 flex max-h-[85vh] w-full -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-[var(--radius-card,var(--radius-md,12px))] border border-[var(--color-border)] bg-[var(--color-surface,var(--background))] {padded ? 'p-5' : ''} shadow-xl {sizes[size] ?? size} data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 {className}"
+			class="fixed start-1/2 top-1/2 flex max-h-[85vh] w-full -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-[var(--radius-card,var(--radius-md,12px))] border border-[var(--color-border)] bg-[var(--color-surface,var(--background))] {padded ? 'p-5' : ''} shadow-xl {sizes[size] ?? size} data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 {className}"
 			style="z-index: {zIndex}"
 			onInteractOutside={(e) => {
 				// Autocomplete dropdowns portal to document.body to escape the
@@ -125,7 +125,7 @@
 							<Dialog.Title class="sr-only">{ariaTitle ?? 'Dialog'}</Dialog.Title>
 						{/if}
 						<Dialog.Close
-							class="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius,var(--radius-9px,8px))] text-[var(--color-muted-foreground,var(--muted-foreground,var(--color-muted)))] transition-colors hover:bg-[var(--color-surface-subtle,var(--muted))]"
+							class="ms-auto grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius,var(--radius-9px,8px))] text-[var(--color-muted-foreground,var(--muted-foreground,var(--color-muted)))] transition-colors hover:bg-[var(--color-surface-subtle,var(--muted))]"
 							aria-label={closeLabel}
 						>
 							<X size={16} />

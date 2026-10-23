@@ -43,9 +43,9 @@
 		<MenuItem href="/settings/wallet" icon={Wallet}>{t('nav.wallet', 'Wallet')}</MenuItem>
 		<MenuItem href="/settings/profile" icon={Settings}>{t('nav.settings', 'Settings')}</MenuItem>
 		<MenuSeparator />
-		<MenuItem href="/logout" icon={LogOut}>{t('nav.logout', 'Logout')}</MenuItem>
+		<MenuItem href="/logout" icon={LogOut} iconClass="rtl:-scale-x-100">{t('nav.logout', 'Logout')}</MenuItem>
 	{:else}
-		<MenuItem href="/login" icon={LogIn}>{t('nav.login', 'Login')}</MenuItem>
+		<MenuItem href="/login" icon={LogIn} iconClass="rtl:-scale-x-100">{t('nav.login', 'Login')}</MenuItem>
 		<MenuItem href="/signup" icon={User}>{t('nav.signup', 'Sign up')}</MenuItem>
 	{/if}
 </Menu>

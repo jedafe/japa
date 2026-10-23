@@ -537,7 +537,7 @@
 		href="/dashboard/instructor"
 		class="inline-flex items-center gap-1 text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
 	>
-		<ArrowLeft size={16} /> {t('common.back', 'Back')}
+		<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('common.back', 'Back')}
 	</a>
 
 	{#if loading}
@@ -554,7 +554,7 @@
 						{t(`academy.submission_${curriculum.track.academy_submission_status}`, curriculum.track.academy_submission_status)}
 					</span>
 					<a href="/tracks/{curriculum.track.slug}" class="inline-flex items-center gap-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]">
-						<ExternalLink size={12} /> {t('curriculum.view_track', 'View public page')}
+						<ExternalLink class="rtl:-scale-x-100" size={12} /> {t('curriculum.view_track', 'View public page')}
 					</a>
 					<a href="/dashboard/instructor/tracks/{trackId}/edit" class="inline-flex items-center gap-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]">
 						<Pencil size={12} /> {t('curriculum.edit_details', 'Edit details')}
@@ -578,7 +578,7 @@
 					disabled={submittingTrack}
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>
-					<Send size={14} />
+					<Send class="rtl:-scale-x-100" size={14} />
 					{submittingTrack ? t('common.processing', 'Processing...') : t('academy.submit_course', 'Submit for review')}
 				</button>
 			{/if}
@@ -598,10 +598,10 @@
 					<!-- Module header -->
 					<div class="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
 						<div class="flex flex-col">
-							<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={mi === 0} onclick={() => moveModule(curriculum!.modules, mi, -1)} aria-label="Move module up">
+							<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={mi === 0} onclick={() => moveModule(curriculum!.modules, mi, -1)} aria-label={t('curriculum.move_module_up', 'Move module up')}>
 								<ChevronUp size={16} />
 							</button>
-							<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={mi === curriculum!.modules.length - 1} onclick={() => moveModule(curriculum!.modules, mi, 1)} aria-label="Move module down">
+							<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={mi === curriculum!.modules.length - 1} onclick={() => moveModule(curriculum!.modules, mi, 1)} aria-label={t('curriculum.move_module_down', 'Move module down')}>
 								<ChevronDown size={16} />
 							</button>
 						</div>
@@ -626,7 +626,7 @@
 									</div>
 								</div>
 							{:else}
-								<button type="button" class="text-left" onclick={() => startEditModule(m)}>
+								<button type="button" class="text-start" onclick={() => startEditModule(m)}>
 									<span class="text-xs font-semibold text-[var(--color-muted)]">{t('academy.module', 'Module')} {mi + 1}</span>
 									<h2 class="font-semibold text-[var(--color-text)]">{m.title}</h2>
 									{#if m.description}<p class="text-xs text-[var(--color-muted)]">{m.description}</p>{/if}
@@ -634,8 +634,8 @@
 							{/if}
 						</div>
 						<div class="flex items-center gap-1">
-							<button type="button" onclick={() => startEditModule(m)} class="rounded-[var(--radius)] p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]" aria-label="Edit module"><Pencil size={15} /></button>
-							<button type="button" onclick={() => deleteModule(m)} class="rounded-[var(--radius)] p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-destructive)]" aria-label="Delete module"><Trash2 size={15} /></button>
+							<button type="button" onclick={() => startEditModule(m)} class="rounded-[var(--radius)] p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]" aria-label={t('curriculum.edit_module', 'Edit module')}><Pencil size={15} /></button>
+							<button type="button" onclick={() => deleteModule(m)} class="rounded-[var(--radius)] p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-destructive)]" aria-label={t('curriculum.delete_module', 'Delete module')}><Trash2 size={15} /></button>
 						</div>
 					</div>
 
@@ -646,8 +646,8 @@
 							{@const TypeIcon = meta.icon}
 							<li class="flex items-center gap-3 px-4 py-2.5">
 								<div class="flex flex-col">
-									<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={li === 0} onclick={() => moveLesson(m.lessons, li, -1)} aria-label="Move lesson up"><ChevronUp size={14} /></button>
-									<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={li === m.lessons.length - 1} onclick={() => moveLesson(m.lessons, li, 1)} aria-label="Move lesson down"><ChevronDown size={14} /></button>
+									<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={li === 0} onclick={() => moveLesson(m.lessons, li, -1)} aria-label={t('curriculum.move_lesson_up', 'Move lesson up')}><ChevronUp size={14} /></button>
+									<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={li === m.lessons.length - 1} onclick={() => moveLesson(m.lessons, li, 1)} aria-label={t('curriculum.move_lesson_down', 'Move lesson down')}><ChevronDown size={14} /></button>
 								</div>
 								<TypeIcon size={16} class="shrink-0 text-[var(--color-muted)]" />
 								<div class="flex-1 min-w-0">
@@ -664,8 +664,8 @@
 								{#if !lesson.is_published}
 									<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning,#d97706)]">{t('curriculum.draft', 'DRAFT')}</span>
 								{/if}
-								<button type="button" onclick={() => openLessonEditor(m.id, lesson)} class="rounded-[var(--radius)] p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]" aria-label="Edit lesson"><Pencil size={15} /></button>
-								<button type="button" onclick={() => deleteLesson(lesson)} class="rounded-[var(--radius)] p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-destructive)]" aria-label="Delete lesson"><Trash2 size={15} /></button>
+								<button type="button" onclick={() => openLessonEditor(m.id, lesson)} class="rounded-[var(--radius)] p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]" aria-label={t('curriculum.edit_lesson', 'Edit lesson')}><Pencil size={15} /></button>
+								<button type="button" onclick={() => deleteLesson(lesson)} class="rounded-[var(--radius)] p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-destructive)]" aria-label={t('curriculum.delete_lesson', 'Delete lesson')}><Trash2 size={15} /></button>
 							</li>
 						{/each}
 						{#if m.lessons.length === 0}
@@ -749,7 +749,7 @@
 											<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 												<div class="mb-2 flex items-start justify-between gap-2">
 													<span class="text-xs font-semibold text-[var(--color-muted)]">Q{qi + 1}</span>
-													<button type="button" onclick={() => removeQuestion(qi)} class="text-[var(--color-muted)] hover:text-[var(--color-destructive)]" aria-label="Remove question"><Trash2 size={14} /></button>
+													<button type="button" onclick={() => removeQuestion(qi)} class="text-[var(--color-muted)] hover:text-[var(--color-destructive)]" aria-label={t('curriculum.remove_question', 'Remove question')}><Trash2 size={14} /></button>
 												</div>
 												<input type="text" bind:value={q.question} placeholder={t('curriculum.question_text', 'Question')} oninput={() => (quizDirty = true)} class="mb-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm text-[var(--color-text)]" />
 												<div class="space-y-1.5">
@@ -763,8 +763,8 @@
 																class="shrink-0"
 																title={t('curriculum.mark_correct', 'Mark as correct answer')}
 															/>
-															<input type="text" bind:value={q.options[oi]} oninput={() => (quizDirty = true)} placeholder="Option {oi + 1}" class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-sm text-[var(--color-text)]" />
-															<button type="button" onclick={() => removeOption(q, oi)} class="text-[var(--color-muted)] hover:text-[var(--color-destructive)]" aria-label="Remove option"><Trash2 size={13} /></button>
+															<input type="text" bind:value={q.options[oi]} oninput={() => (quizDirty = true)} placeholder={t('curriculum.option_ph', 'Option {n}').replace('{n}', String(oi + 1))} class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-sm text-[var(--color-text)]" />
+															<button type="button" onclick={() => removeOption(q, oi)} class="text-[var(--color-muted)] hover:text-[var(--color-destructive)]" aria-label={t('curriculum.remove_option', 'Remove option')}><Trash2 size={13} /></button>
 														</div>
 													{/each}
 												</div>
@@ -793,7 +793,7 @@
 										<div class="block">
 											<span class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">{t('curriculum.attach_file', 'Attach file')}</span>
 											<div class="flex items-center gap-3">
-												<input type="file" onchange={onFilePicked} disabled={uploadingFile} class="text-xs text-[var(--color-text-subtle)] file:mr-3 file:rounded-[var(--radius)] file:border-0 file:bg-[var(--color-surface-subtle)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--color-text)]" />
+												<input type="file" onchange={onFilePicked} disabled={uploadingFile} class="text-xs text-[var(--color-text-subtle)] file:me-3 file:rounded-[var(--radius)] file:border-0 file:bg-[var(--color-surface-subtle)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--color-text)]" />
 												{#if uploadingFile}<span class="text-xs text-[var(--color-muted)]">{t('curriculum.uploading', 'Uploading…')}</span>{/if}
 												{#if lessonMediaId}
 													<span class="text-xs text-[var(--color-progress)]">✓ {t('curriculum.file_attached', 'File attached')}</span>

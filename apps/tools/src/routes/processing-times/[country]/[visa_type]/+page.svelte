@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -80,7 +80,7 @@
 
 	function fmtDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -243,23 +243,23 @@
 					</h2>
 					<table class="w-full text-sm">
 						<thead>
-							<tr class="text-left text-muted border-b border-border">
-								<th class="py-2 pr-4 font-medium">{t('processing_tracker.period', 'Period')}</th>
-								<th class="py-2 pr-4 font-medium">{t('processing_tracker.avg_days', 'Average')}</th>
-								<th class="py-2 pr-4 font-medium">{t('processing_tracker.median_days', 'Median')}</th>
-								<th class="py-2 pr-4 font-medium">{t('processing_tracker.fastest', 'p10')}</th>
-								<th class="py-2 pr-4 font-medium">{t('processing_tracker.slowest', 'p90')}</th>
+							<tr class="text-start text-muted border-b border-border">
+								<th class="py-2 pe-4 font-medium">{t('processing_tracker.period', 'Period')}</th>
+								<th class="py-2 pe-4 font-medium">{t('processing_tracker.avg_days', 'Average')}</th>
+								<th class="py-2 pe-4 font-medium">{t('processing_tracker.median_days', 'Median')}</th>
+								<th class="py-2 pe-4 font-medium">{t('processing_tracker.fastest', 'p10')}</th>
+								<th class="py-2 pe-4 font-medium">{t('processing_tracker.slowest', 'p90')}</th>
 								<th class="py-2 font-medium">{t('processing_tracker.sample_count', 'Samples')}</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each [...stats].sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime()) as stat (stat.id ?? stat.period_start + stat.consulate)}
 								<tr class="border-b border-border/50">
-									<td class="py-2 pr-4 text-text">{fmtDate(stat.period_start)}</td>
-									<td class="py-2 pr-4 text-text">{fmtDays(stat.avg_days)}</td>
-									<td class="py-2 pr-4 text-text">{fmtDays(stat.median_days)}</td>
-									<td class="py-2 pr-4 text-green-600">{fmtDays(stat.p10_days)}</td>
-									<td class="py-2 pr-4 text-orange-600">{fmtDays(stat.p90_days)}</td>
+									<td class="py-2 pe-4 text-text">{fmtDate(stat.period_start)}</td>
+									<td class="py-2 pe-4 text-text">{fmtDays(stat.avg_days)}</td>
+									<td class="py-2 pe-4 text-text">{fmtDays(stat.median_days)}</td>
+									<td class="py-2 pe-4 text-green-600">{fmtDays(stat.p10_days)}</td>
+									<td class="py-2 pe-4 text-orange-600">{fmtDays(stat.p90_days)}</td>
 									<td class="py-2 text-muted">{stat.sample_count}</td>
 								</tr>
 							{/each}

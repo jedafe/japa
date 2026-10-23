@@ -445,7 +445,7 @@
 											name={company || source.name}
 											avatar={logo}
 											externalHref={extHref}
-											class="flex min-w-0 items-center gap-3 text-left"
+											class="flex min-w-0 items-center gap-3 text-start"
 										>
 											{#snippet trigger()}
 												{@render jobAvatar(logo, company || source.name)}
@@ -467,7 +467,7 @@
 											slug={poster.slug}
 											name={company || poster.name}
 											avatar={logo}
-											class="flex min-w-0 items-center gap-3 text-left"
+											class="flex min-w-0 items-center gap-3 text-start"
 										>
 											{#snippet trigger()}
 												{@render jobAvatar(logo, company || poster.name)}
@@ -495,7 +495,7 @@
 											</span>
 										</div>
 									{/if}
-									<div class="ml-auto flex shrink-0 items-center gap-1">
+									<div class="ms-auto flex shrink-0 items-center gap-1">
 										<input
 											type="checkbox"
 											checked={selectedJobSlugs.has(job.slug)}
@@ -579,7 +579,7 @@
 										class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
 									>
 										{t('jobs.view_details', 'View Details')}
-										<ChevronRight size={15} />
+										<ChevronRight class="rtl:-scale-x-100" size={15} />
 									</a>
 									{#if safeHttpUrl(field(job, 'application_url'))}
 										<a
@@ -589,7 +589,7 @@
 											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-4 py-2 text-sm font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
 										>
 											{t('jobs.quick_apply', 'Quick Apply')}
-											<ArrowRight size={15} />
+											<ArrowRight class="rtl:-scale-x-100" size={15} />
 										</a>
 									{:else}
 										<a
@@ -597,7 +597,7 @@
 											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-4 py-2 text-sm font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
 										>
 											{t('jobs.quick_apply', 'Quick Apply')}
-											<ArrowRight size={15} />
+											<ArrowRight class="rtl:-scale-x-100" size={15} />
 										</a>
 									{/if}
 								</div>

@@ -1451,6 +1451,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// scam_alert:notify_subscribers processor (§81, ADR-089).
 	scamAlertService.SetEnqueuer(taskEnqueuer)
 	scamAlertService.SetNotifier(notificationService)
+	// Subscriber-notification dedup guard — jc:scam_alert:notified:* (24h).
+	scamAlertService.SetValkey(vkClient.Redis())
 	// §64: the reporter's community_guardian badge fires via the wallet
 	// activity pipeline — the emitted event is evaluated by
 	// wallet:process_activity_event, not by a direct awarder call.
@@ -2325,7 +2327,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Community discussion tools (§08 forum, §49 comments). forumService is
 	// created later inside the API route group; agentDeps.Forum is wired
 	// there — handlers resolve deps lazily at call time.
-	agentDeps.Comments = &agentCommentsAdapter{svc: commentsService}
+	agentDeps.Comments = &agentCommentsAdapter{
+		svc:      commentsService,
+		spam:     spamPipeline,
+		space:    spacePostChecker,
+		notifier: commentNotificationAdapter{svc: notificationService},
+		onCreate: commentsHandlers.EnqueueEngagementUpdate,
+	}
 	// Deterministic calculator tools (§107 CRS, §108 POF, §112 FX).
 	agentDeps.FXConverter = &agentFXAdapter{svc: fxService}
 	agentDeps.CRSCalculator = &agentCRSAdapter{svc: crsCalculatorService}
@@ -2334,6 +2342,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// the wiki.min_reputation_to_edit community-submission gate.
 	agentDeps.Wiki = &agentWikiAdapter{svc: wikiService, store: wikiStore}
 	agentDeps.Points = walletService
+	// §113 roadmap tools (migration 000928): the admin item/category
+	// surface exposed to the agent catalog + §119 MCP bridge under the
+	// same roadmap.* RBAC nodes as the REST routes.
+	agentDeps.Roadmap = &agentRoadmapAdapter{svc: roadmapService, checker: featureChecker}
 	// §20 V1 assist tools (migration 000847): the agent executor shares
 	// the same AssistRunner implementation as POST /ai/assist/*.
 	agentDeps.Assist = aiHandlers
@@ -4298,6 +4310,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/media/upload", mediaHandlers.AdminUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
 				Post("/admin/media/reoptimize", mediaHandlers.AdminReoptimize)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
+				Post("/admin/media/reconcile-missing", mediaHandlers.AdminReconcileMissing)
 
 			// Stock photo routes (Section 34 — Stock Photo Integration).
 			// Openverse is available with media.stock.search; the other three
@@ -6491,6 +6505,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Put("/admin/settings/{category}", adminHandlers.UpdateSettings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Post("/admin/settings/{category}/reset", adminHandlers.ResetSettings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Post("/admin/settings/{category}/reset/{key}", adminHandlers.ResetSetting)
 
 			// Template Literals admin CRUD
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).

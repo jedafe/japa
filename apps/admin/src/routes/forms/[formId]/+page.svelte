@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -877,7 +877,7 @@
 						<h3 class="text-sm font-semibold text-foreground">{t('forms.steps', 'Form Steps')}</h3>
 						{#if canManage}
 							<Button onclick={() => { stepError = ''; newStepTitle = ''; showAddStepModal = true; }}>
-								<Plus class="mr-1 h-4 w-4" /> {t('forms.addStep', 'Add Step')}
+								<Plus class="me-1 h-4 w-4" /> {t('forms.addStep', 'Add Step')}
 							</Button>
 						{/if}
 					</div>
@@ -1012,7 +1012,7 @@
 								</div>
 								{#if canManage}
 									<Button size="sm" onclick={() => { selectedStepForField = step; newFieldLabel = ''; newFieldType = 'text'; newFieldRequired = false; newFieldPlaceholder = ''; showAddFieldModal = true; }}>
-										<Plus class="mr-1 h-4 w-4" /> {t('forms.addFieldToStep', 'Add Field to Step')}
+										<Plus class="me-1 h-4 w-4" /> {t('forms.addFieldToStep', 'Add Field to Step')}
 									</Button>
 								{/if}
 							</div>
@@ -1059,7 +1059,7 @@
 				<CardContent class="p-4">
 					<div class="mb-4 flex justify-end">
 						<Button onclick={() => { selectedStepForField = null; (showAddFieldModal = true); }}>
-							<Plus class="mr-1 h-4 w-4" /> {t('forms.addField', 'Add Field')}
+							<Plus class="me-1 h-4 w-4" /> {t('forms.addField', 'Add Field')}
 						</Button>
 					</div>
 					{#if fields.length === 0}
@@ -1166,7 +1166,7 @@
 				<CardContent class="p-0">
 					<DataTable
 						columns={[
-							{ key: 'created_at', label: t('forms.submitted', 'Submitted'), sortable: true, render: (v: string) => new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) },
+							{ key: 'created_at', label: t('forms.submitted', 'Submitted'), sortable: true, render: (v: string) => new Date(v).toLocaleDateString(locale.current, { year: 'numeric', month: 'short', day: 'numeric' }) },
 							{ key: 'status', label: t('forms.status', 'Status'), sortable: true, render: (v: string) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold">${v}</span>` },
 						]}
 						data={submissions}
@@ -1237,7 +1237,7 @@
 						<p class="text-sm text-muted">{t('forms.triggersDescription', 'Configure triggers that fire when this form is submitted.')}</p>
 						{#if canManage}
 							<Button onclick={() => { resetTriggerConfig(); showAddTriggerModal = true; }}>
-								<Plus class="mr-1 h-4 w-4" /> {t('forms.addTrigger', 'Add Trigger')}
+								<Plus class="me-1 h-4 w-4" /> {t('forms.addTrigger', 'Add Trigger')}
 							</Button>
 						{/if}
 					</div>
@@ -1287,7 +1287,7 @@
 
 					{#if newTriggerType === 'assign_user_group'}
 						<div>
-							<label for="trigger-group-id" class="mb-1 block text-sm font-medium text-foreground-alt">Group ID *</label>
+							<label for="trigger-group-id" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_group_id', 'Group ID')} *</label>
 							<input id="trigger-group-id" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigGroupId} placeholder={t('forms.ph_enter_user_group_id', 'Enter user group ID')} />
 						</div>
 					{:else if newTriggerType === 'send_email'}
@@ -1296,16 +1296,16 @@
 							<input id="trigger-email-to" type="email" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailTo} placeholder="admin@example.com" />
 						</div>
 						<div>
-							<label for="trigger-email-subject" class="mb-1 block text-sm font-medium text-foreground-alt">Subject *</label>
+							<label for="trigger-email-subject" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_email_subject', 'Subject')} *</label>
 							<input id="trigger-email-subject" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailSubject} placeholder={t('forms.ph_new_form_submission', 'New form submission')} />
 						</div>
 						<div>
-							<label for="trigger-email-template" class="mb-1 block text-sm font-medium text-foreground-alt">Template</label>
+							<label for="trigger-email-template" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_email_template', 'Template')}</label>
 							<input id="trigger-email-template" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailTemplate} placeholder={t('forms.ph_optional_template_name', 'Optional template name')} />
 						</div>
 					{:else if newTriggerType === 'send_webhook'}
 						<div>
-							<label for="trigger-webhook-url" class="mb-1 block text-sm font-medium text-foreground-alt">Webhook URL *</label>
+							<label for="trigger-webhook-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_webhook_url', 'Webhook URL')} *</label>
 							<input id="trigger-webhook-url" type="url" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigWebhookUrl} placeholder="https://example.com/webhook" />
 						</div>
 						<div>
@@ -1314,16 +1314,16 @@
 						</div>
 					{:else if newTriggerType === 'create_ticket'}
 						<div>
-							<label for="trigger-ticket-priority" class="mb-1 block text-sm font-medium text-foreground-alt">Priority *</label>
+							<label for="trigger-ticket-priority" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_ticket_priority', 'Priority')} *</label>
 							<Select options={TICKET_PRIORITIES} bind:value={triggerConfigTicketPriority} />
 						</div>
 						<div>
-							<label for="trigger-ticket-category" class="mb-1 block text-sm font-medium text-foreground-alt">Category</label>
+							<label for="trigger-ticket-category" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_ticket_category', 'Category')}</label>
 							<input id="trigger-ticket-category" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigTicketCategory} placeholder={t('forms.ph_eg_feedback', 'e.g., Feedback')} />
 						</div>
 					{:else if newTriggerType === 'notify_admin'}
 						<div>
-							<label for="trigger-notify-message" class="mb-1 block text-sm font-medium text-foreground-alt">Message *</label>
+							<label for="trigger-notify-message" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_notify_message', 'Message')} *</label>
 							<textarea id="trigger-notify-message" rows="3" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigNotifyMessage} placeholder={t('forms.ph_notification_message_text', 'Notification message text')}></textarea>
 						</div>
 					{/if}

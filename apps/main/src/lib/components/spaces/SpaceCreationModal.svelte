@@ -246,7 +246,7 @@
 							disabled={submitting}
 						/>
 						{#if nameSearchLoading}
-							<div class="absolute right-3 top-[26px]">
+							<div class="absolute end-3 top-[26px]">
 								<Loader2 size={14} class="animate-spin text-[var(--color-muted)]" />
 							</div>
 						{/if}
@@ -303,7 +303,7 @@
 									selectedParents = [...selectedParents, space];
 								}
 							}}
-							placeholder={t('spaces.parent_placeholder', 'Search a country, state, or city…')}
+							placeholder={t('spaces.parent_search_placeholder', 'Search a country, state, or city…')}
 							disabled={submitting}
 						/>
 						{#if selectedParents.length > 0}

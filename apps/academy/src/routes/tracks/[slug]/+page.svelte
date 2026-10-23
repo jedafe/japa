@@ -510,7 +510,7 @@
 				{#each track.modules as module, moduleIndex (module.id)}
 					<Accordion.Item value={module.id} class="overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]">
 						<Accordion.Header>
-							<Accordion.Trigger class="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+							<Accordion.Trigger class="flex w-full items-center justify-between px-4 py-3 text-start text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 								<span class="flex items-center gap-2">
 									<span class="text-xs font-semibold text-[var(--color-muted)]">{t('academy.module')} {moduleIndex + 1}</span>
 									{module.title}

@@ -242,7 +242,7 @@
 		flex-shrink: 0;
 		color: var(--color-muted);
 		pointer-events: none;
-		margin-right: 4px;
+		margin-inline-end: 4px;
 	}
 	.tag-input {
 		flex: 1;
@@ -300,8 +300,8 @@
 	/* Dropdown */
 	.tag-dropdown {
 		position: absolute;
-		left: 0;
-		right: 0;
+		inset-inline-start: 0;
+		inset-inline-end: 0;
 		z-index: 40;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
@@ -342,7 +342,7 @@
 		background: transparent;
 		color: var(--color-text);
 		font-size: 0.8125rem;
-		text-align: left;
+		text-align: start;
 		cursor: pointer;
 		transition: background 0.1s;
 	}

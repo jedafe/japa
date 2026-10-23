@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { ThumbsUp, ThumbsDown, LogIn } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { getCookie } from '$lib/api/client';
 	import { page } from '$app/state';
 	import { env } from '$env/dynamic/public';
@@ -103,7 +103,7 @@
 	let reviewedLabel = $derived(
 		lastReviewedAt
 			? t('page.last_reviewed', '', {
-					date: new Date(lastReviewedAt).toLocaleDateString(undefined, {
+					date: new Date(lastReviewedAt).toLocaleDateString(i18n.locale, {
 						year: 'numeric',
 						month: 'short',
 						day: 'numeric'
@@ -127,7 +127,7 @@
 				{/if}
 			</span>
 			<a href={loginHref} class="signin-link">
-				<LogIn size={14} />
+				<LogIn class="rtl:-scale-x-100" size={14} />
 				{t('page.feedback_sign_in', 'Sign in to vote')}
 			</a>
 		{:else}

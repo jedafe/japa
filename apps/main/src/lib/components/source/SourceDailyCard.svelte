@@ -41,6 +41,8 @@
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
+		const target = e.target as HTMLElement | null;
+		if (target && (target.closest('a') || target.closest('button'))) return;
 		if (e.key === 'Enter') goto(item.href);
 	}
 
@@ -89,7 +91,7 @@
 		{/if}
 
 		<!-- Top-right action cluster -->
-		<div class="absolute right-3 top-3 z-20 flex items-center gap-2">
+		<div class="absolute end-3 top-3 z-20 flex items-center gap-2">
 			{#if viewHref}
 				<a
 					href={viewHref}
@@ -98,7 +100,7 @@
 					class="invisible flex translate-x-2 items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white opacity-0 backdrop-blur-sm transition-all group-hover:visible group-focus-within:visible group-hover:translate-x-0 group-focus-within:translate-x-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-black/70"
 					onclick={(e) => e.stopPropagation()}
 				>
-					<ExternalLink size={14} />
+					<ExternalLink class="rtl:-scale-x-100" size={14} />
 					{viewLabel}
 				</a>
 			{/if}
@@ -114,7 +116,7 @@
 
 		<!-- Entity-type badge overlay -->
 		{#if entityLabel}
-			<div class="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
+			<div class="absolute bottom-3 start-3 flex flex-wrap gap-1.5">
 				<span
 					class="rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm"
 				>
@@ -127,7 +129,8 @@
 	<!-- Body -->
 	<div class="flex flex-1 flex-col gap-2 p-4">
 		<h2 class="line-clamp-2 text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
-			{item.title}
+			<!-- relative z-10 keeps the title link above the full-card overlay anchor. -->
+			<a href={item.href} class="relative z-10 transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
 		</h2>
 
 		{#if item.excerpt}
@@ -150,7 +153,7 @@
 						avatar={sourceLogo}
 						variant="row"
 						secondary={time}
-						class="inline-flex w-fit min-w-0 max-w-full items-center gap-3 text-left"
+						class="inline-flex w-fit min-w-0 max-w-full items-center gap-3 text-start"
 					/>
 				{:else if sourceName}
 					<span class="inline-flex items-center gap-2 text-xs text-[var(--color-text-muted)]">

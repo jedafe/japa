@@ -385,14 +385,25 @@ func (s *Service) GetChecklistItems(ctx context.Context, guideID pgtype.UUID) ([
 	rawItems := extractDocumentItems(field)
 	items := make([]ChecklistItem, 0, len(rawItems))
 
+	// Duplicate labels slug to the same item_key — suffix duplicates so each
+	// item keeps a stable unique key (frontend each-block keys and progress
+	// rows are keyed on item_key).
+	seen := make(map[string]bool, len(rawItems))
 	for _, ri := range rawItems {
 		label := strings.TrimSpace(ri.Label)
 		if label == "" {
 			continue
 		}
 
+		base := slugifyItemKey(label)
+		key := base
+		for i := 2; seen[key]; i++ {
+			key = fmt.Sprintf("%s-%d", base, i)
+		}
+		seen[key] = true
+
 		items = append(items, ChecklistItem{
-			ItemKey:     slugifyItemKey(label),
+			ItemKey:     key,
 			Label:       label,
 			Description: ri.Description,
 			Required:    ri.Required,
@@ -460,21 +471,24 @@ func (s *Service) GetProgress(ctx context.Context, userID, guideID pgtype.UUID) 
 // 0, a wallet:award_points task is enqueued fire-and-forget (Rule 8).
 func (s *Service) UpsertProgress(ctx context.Context, userID, guideID pgtype.UUID, itemKey string, completed *bool, notes *string) (gen.ChecklistProgress, error) {
 	// Resolve nil completed: a note-only PATCH must preserve the existing
-	// completion state. Fetch the current row; if none exists, default to
-	// false (new item, not yet checked).
+	// completion state AND its timestamp. Fetch the current row; if none
+	// exists, default to false (new item, not yet checked).
 	resolvedCompleted := false
+	var completedAt pgtype.Timestamptz
 	if completed != nil {
 		resolvedCompleted = *completed
+		if resolvedCompleted {
+			completedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		}
 	} else {
+		// Note-only update: keep the original completed_at rather than
+		// stamping now() — refreshing it on every note save would rewrite
+		// when the user actually finished the item.
 		existing, err := s.store.GetSingleProgress(ctx, userID, guideID, itemKey)
 		if err == nil {
 			resolvedCompleted = existing.Completed
+			completedAt = existing.CompletedAt
 		}
-	}
-
-	var completedAt pgtype.Timestamptz
-	if resolvedCompleted {
-		completedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	}
 
 	row, err := s.store.UpsertChecklistProgress(ctx, gen.UpsertChecklistProgressParams{

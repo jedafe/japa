@@ -615,8 +615,8 @@
 	.dim-header {
 		padding: 10px;
 		border-bottom: 1px solid var(--color-border);
-		border-left: 1px solid var(--color-border);
-		text-align: left;
+		border-inline-start: 1px solid var(--color-border);
+		text-align: start;
 		vertical-align: top;
 		background: var(--color-surface-subtle);
 		min-width: 160px;
@@ -693,7 +693,7 @@
 	.value-cell {
 		padding: 8px 10px;
 		border-bottom: 1px solid var(--color-border);
-		border-left: 1px solid var(--color-border);
+		border-inline-start: 1px solid var(--color-border);
 		background: var(--color-surface);
 	}
 	.value-cell:last-child {

@@ -42,10 +42,16 @@
 	const authorName = $derived(item.author_name ?? null);
 	const authorAvatar = $derived(item.author_avatar_url ?? null);
 
-	function navigate() {
+	function navigate(e: MouseEvent) {
+		const target = e.target as HTMLElement | null;
+		if (target && (target.closest('a') || target.closest('button'))) return;
 		if (style !== 'daily') goto(itemHref);
 	}
 	function onKeyDown(e: KeyboardEvent) {
+		// Let Enter on inner links/buttons run their native behavior —
+		// otherwise the card's goto() double-navigates.
+		const target = e.target as HTMLElement | null;
+		if (target && (target.closest('a') || target.closest('button'))) return;
 		if (style !== 'daily' && e.key === 'Enter') {
 			e.preventDefault();
 			e.stopPropagation();
@@ -66,7 +72,7 @@
 	{#if item.cover_image_url}
 		<button
 			type="button"
-			class="absolute right-1.5 top-1.5 z-10 grid place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity hover:bg-black/75 focus-visible:opacity-100 group-hover:opacity-100 {sm ? 'h-6 w-6' : 'h-8 w-8'}"
+			class="absolute end-1.5 top-1.5 z-10 grid place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity hover:bg-black/75 focus-visible:opacity-100 group-hover:opacity-100 {sm ? 'h-6 w-6' : 'h-8 w-8'}"
 			onclick={zoomCover}
 			onkeydown={(e) => e.stopPropagation()}
 			aria-label={t('feed.view_image', 'View image')}
@@ -139,11 +145,11 @@
 	{#if isVideo}
 		<span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/25">
 			<span class="grid h-11 w-11 place-items-center rounded-full bg-black/60 text-white">
-				<Play size={20} class="ml-0.5" />
+				<Play size={20} class="ms-0.5" />
 			</span>
 		</span>
 		{#if duration}
-			<span class="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[10.5px] font-semibold text-white [font-variant-numeric:tabular-nums]">{duration}</span>
+			<span class="absolute bottom-1.5 end-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[10.5px] font-semibold text-white [font-variant-numeric:tabular-nums]">{duration}</span>
 		{/if}
 	{/if}
 {/snippet}
@@ -172,7 +178,7 @@
 				name={authorName}
 				avatar={authorAvatar}
 				variant="row"
-				class="inline-flex max-w-full items-center text-left"
+				class="inline-flex max-w-full items-center text-start"
 			>
 				{#snippet trigger()}
 					<span>{authorName}</span>
@@ -204,7 +210,7 @@
 					onclick={(e) => { e.stopPropagation(); }}
 					aria-label={t('feed.original_source', 'View original source')}
 				>
-					<ExternalLink size={12} />
+					<ExternalLink class="rtl:-scale-x-100" size={12} />
 				</a>
 			{/if}
 		{/if}
@@ -237,7 +243,9 @@
 		{/if}
 		<div class="flex flex-1 flex-col gap-2 p-3">
 			{@render badge()}
-			<h2 class="line-clamp-2 text-[18px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">{item.title}</h2>
+			<h2 class="line-clamp-2 text-[18px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
+				<a href={itemHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+			</h2>
 			{#if item.space_name}
 				<span class="text-xs font-medium text-[var(--color-text-subtle)]">{item.space_name}</span>
 			{/if}
@@ -250,7 +258,7 @@
 						name={authorName}
 						avatar={authorAvatar}
 						variant="row"
-						class="inline-flex max-w-full items-center gap-2 text-left"
+						class="inline-flex max-w-full items-center gap-2 text-start"
 					>
 						{#snippet trigger()}
 							{@render avatar(20)}
@@ -287,7 +295,7 @@
 			<span class="flex w-11 shrink-0 items-center gap-1 text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]"><ArrowUp size={13} class="text-[var(--color-muted)]" /> {item.vote_score ?? 0}</span>
 		{/if}
 		<span class="min-w-0 flex-1 flex flex-col justify-center">
-			<span class="truncate text-sm font-medium text-[var(--color-text)]">{item.title}</span>
+			<a href={itemHref} class="truncate text-sm font-medium text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
 			{@render journeyBadges()}
 		</span>
 		{#if item.space_name}<span class="hidden shrink-0 text-xs text-[var(--color-muted)] sm:inline">{item.space_name}{#if time} · {time}{/if}</span>{/if}
@@ -311,7 +319,7 @@
 				name={authorName}
 				avatar={authorAvatar}
 				variant="row"
-				class="mb-3.5 inline-flex w-full min-w-0 max-w-full items-center gap-2.5 text-left"
+				class="mb-3.5 inline-flex w-full min-w-0 max-w-full items-center gap-2.5 text-start"
 			>
 				{#snippet trigger()}
 					{@render avatar(34)}
@@ -332,7 +340,9 @@
 			<div class="relative mb-3.5 aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]">{@render videoOverlay()}</div>
 		{/if}
 		{@render badge()}
-		<h2 class="mt-2 mb-2 text-balance font-serif text-[25px] font-medium leading-tight tracking-tight text-[var(--color-text)]">{item.title}</h2>
+		<h2 class="mt-2 mb-2 text-balance font-serif text-[25px] font-medium leading-tight tracking-tight text-[var(--color-text)]">
+			<a href={itemHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+		</h2>
 		{#if item.excerpt}<p class="mb-3.5 line-clamp-2 text-[15px] leading-relaxed text-[var(--color-text-subtle)]">{item.excerpt}</p>{/if}
 		{@render journeyBadges()}
 		<div class="flex flex-wrap items-center justify-between gap-3.5">{@render tags()}{@render metrics()}</div>
@@ -364,7 +374,9 @@
 		{/if}
 		<span class="min-w-0 flex-1">
 			{@render metaLine()}
-			<h2 class="mb-0.5 mt-1 text-[15.5px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">{item.title}</h2>
+			<h2 class="mb-0.5 mt-1 text-[15.5px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
+				<a href={itemHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+			</h2>
 			{#if item.excerpt}<p class="mb-2 line-clamp-1 text-[13.5px] text-[var(--color-text-subtle)]">{item.excerpt}{#if item.reading_time_minutes} · {item.reading_time_minutes} {t('feed.min_read', 'min read')}{/if}</p>{/if}
 			<div class="flex items-center justify-between gap-3">{@render tags()}{@render metrics()}</div>
 		</span>

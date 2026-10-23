@@ -400,7 +400,7 @@
 						</div>
 					</div>
 					{#if j.updated_at}
-						<p class="mt-1.5 pl-4 text-[10px] text-[var(--color-text-subtle)]">
+						<p class="mt-1.5 ps-4 text-[10px] text-[var(--color-text-subtle)]">
 							{t('japa_stage.updated', 'Updated')} <RelativeTime iso={j.updated_at} />
 						</p>
 					{/if}

@@ -13,7 +13,7 @@
 		<span class="text-2xl font-bold" style="color: var(--color-foreground)">{value}</span>
 		{#if delta !== undefined}
 			<span
-				class="ml-2 text-sm font-medium"
+				class="ms-2 text-sm font-medium"
 				style="color: {delta >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}"
 			>
 				{delta >= 0 ? '+' : ''}{delta}%

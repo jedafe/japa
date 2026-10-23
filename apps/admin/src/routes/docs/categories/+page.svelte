@@ -68,7 +68,7 @@
 	class="mb-4 inline-flex items-center gap-1.5 text-sm"
 	style="color: var(--color-muted)"
 >
-	<ArrowLeft class="h-3.5 w-3.5" />
+	<ArrowLeft class="h-3.5 w-3.5 rtl:-scale-x-100" />
 	{t('docs.back_to_docs', 'Back to Documentation')}
 </a>
 

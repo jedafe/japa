@@ -2,7 +2,7 @@
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { LineChart } from 'layerchart';
@@ -92,7 +92,7 @@
 
 	function fmtDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+			return new Date(iso).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' });
 		} catch {
 			return iso;
 		}
@@ -286,23 +286,23 @@
 				<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					<table class="w-full text-sm">
 						<thead>
-							<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-text-subtle)]">
-								<th class="py-2 pr-4 font-medium">{t('visa_timelines.period', 'Period')}</th>
-								<th class="py-2 pr-4 font-medium">{t('visa_timelines.avg_days', 'Average')}</th>
-								<th class="py-2 pr-4 font-medium">{t('visa_timelines.median_days', 'Median')}</th>
-								<th class="py-2 pr-4 font-medium">{t('visa_timelines.p10_days', 'p10')}</th>
-								<th class="py-2 pr-4 font-medium">{t('visa_timelines.p90_days', 'p90')}</th>
+							<tr class="border-b border-[var(--color-border)] text-start text-xs text-[var(--color-text-subtle)]">
+								<th class="py-2 pe-4 font-medium">{t('visa_timelines.period', 'Period')}</th>
+								<th class="py-2 pe-4 font-medium">{t('visa_timelines.avg_days', 'Average')}</th>
+								<th class="py-2 pe-4 font-medium">{t('visa_timelines.median_days', 'Median')}</th>
+								<th class="py-2 pe-4 font-medium">{t('visa_timelines.p10_days', 'p10')}</th>
+								<th class="py-2 pe-4 font-medium">{t('visa_timelines.p90_days', 'p90')}</th>
 								<th class="py-2 font-medium">{t('visa_timelines.sample_count', 'Samples')}</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each [...stats].sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime()) as s (s.period_start + (s.consulate ?? ''))}
 								<tr class="border-b border-[var(--color-border)]/50">
-									<td class="py-2 pr-4 text-[var(--color-text)]">{fmtDate(s.period_start)}</td>
-									<td class="py-2 pr-4 text-[var(--color-text)]">{fmtDays(s.avg_days)}</td>
-									<td class="py-2 pr-4 text-[var(--color-text)]">{fmtDays(s.median_days)}</td>
-									<td class="py-2 pr-4 text-[var(--color-success)]">{fmtDays(s.p10_days)}</td>
-									<td class="py-2 pr-4 text-[var(--color-warning)]">{fmtDays(s.p90_days)}</td>
+									<td class="py-2 pe-4 text-[var(--color-text)]">{fmtDate(s.period_start)}</td>
+									<td class="py-2 pe-4 text-[var(--color-text)]">{fmtDays(s.avg_days)}</td>
+									<td class="py-2 pe-4 text-[var(--color-text)]">{fmtDays(s.median_days)}</td>
+									<td class="py-2 pe-4 text-[var(--color-success)]">{fmtDays(s.p10_days)}</td>
+									<td class="py-2 pe-4 text-[var(--color-warning)]">{fmtDays(s.p90_days)}</td>
 									<td class="py-2 text-[var(--color-text-subtle)]">{s.sample_count}</td>
 								</tr>
 							{/each}

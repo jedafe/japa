@@ -77,7 +77,7 @@
 	});
 </script>
 
-<PageHeader title="Next-Action Suggestions" description="Manage contextual next-step suggestion rules (§122)" />
+<PageHeader title={t('nextactions.title', 'Next-Action Suggestions')} description={t('nextactions.description', 'Manage contextual next-step suggestion rules (§122)')} />
 
 <div class="mb-3 flex items-center gap-2">
 	<button onclick={() => goto('/next-actions/new')} class="bg-primary text-primary-foreground inline-flex items-center gap-1 rounded-[var(--radius)] px-3 py-1.5 text-sm">
@@ -90,8 +90,8 @@
 {/if}
 
 <div class="mb-3 flex items-center gap-2">
-	<input bind:value={search} placeholder="Filter rules…" class="border-border bg-background w-64 rounded-[var(--radius)] border px-3 py-1.5 text-sm" />
-	<button onclick={load} class="text-muted-foreground hover:text-foreground p-1" aria-label="Refresh"><RefreshCw size={14} /></button>
+	<input bind:value={search} placeholder={t('nextactions.filter_ph', 'Filter rules…')} class="border-border bg-background w-64 rounded-[var(--radius)] border px-3 py-1.5 text-sm" />
+	<button onclick={load} class="text-muted-foreground hover:text-foreground p-1" aria-label={t('common.refresh', 'Refresh')}><RefreshCw size={14} /></button>
 </div>
 
 <DataTable {columns} rows={filtered} {loading} {rowActions} />
@@ -101,8 +101,8 @@
 	<p class="text-muted-foreground mb-2 text-xs">Served = suggestions returned by the API (a suggestion may be served without rendering); Completed = real completions via completion_signal or an explicit complete call, not CTA clicks.</p>
 	<div class="border-border overflow-x-auto rounded-[var(--radius-card)] border">
 		<table class="w-full text-sm">
-			<thead><tr class="text-muted-foreground border-border border-b text-left">
-				<th class="px-3 py-2">Rule</th><th class="px-3 py-2">Served</th><th class="px-3 py-2">Clicked</th><th class="px-3 py-2">Dismissed</th><th class="px-3 py-2">Completed</th>
+			<thead><tr class="text-muted-foreground border-border border-b text-start">
+				<th class="px-3 py-2">{t('nextactions.col_rule', 'Rule')}</th><th class="px-3 py-2">{t('nextactions.col_served', 'Served')}</th><th class="px-3 py-2">{t('nextactions.col_clicked', 'Clicked')}</th><th class="px-3 py-2">{t('nextactions.col_dismissed', 'Dismissed')}</th><th class="px-3 py-2">{t('nextactions.col_completed', 'Completed')}</th>
 			</tr></thead>
 			<tbody>
 				{#each stats as s (s.slug)}

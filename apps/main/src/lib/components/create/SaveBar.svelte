@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { statusLabel } from './gate';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -32,7 +32,7 @@
 	function formatSavedAt(ts: number | null): string {
 		if (!ts) return '';
 		const d = new Date(ts);
-		return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+		return d.toLocaleTimeString(i18n.locale, { hour: '2-digit', minute: '2-digit' });
 	}
 
 	// "Post as yourself" is a special item with a sentinel id. It is
@@ -177,7 +177,7 @@
 	.gate-reason {
 		font-size: 0.75rem;
 		color: var(--color-muted);
-		margin-right: 4px;
+		margin-inline-end: 4px;
 	}
 	.btn-secondary {
 		padding: 6px 14px;
@@ -237,7 +237,7 @@
 			width: 100%;
 			margin: 0 0 4px 0;
 			font-size: 0.75rem;
-			text-align: left;
+			text-align: start;
 		}
 		.btn-secondary,
 		.btn-primary {

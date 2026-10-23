@@ -4,7 +4,7 @@
 	// SlideOver, bulkActionsList). Tabbed page (all/system/active/inactive);
 	// keeps page-local Modals for create/edit (forms with slug auto-fill) and
 	// delete confirmation. View detail opens in a SlideOver.
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
@@ -95,7 +95,7 @@
 				<div>
 					<a href="/forms/${row.id}" class="font-medium text-foreground hover:underline cursor-pointer" onclick="event.stopPropagation()">${row.name}</a>
 					<p class="text-xs font-mono text-muted">${row.slug}</p>
-					${row.is_system ? '<span class="mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold" style="border-color: var(--color-info); color: var(--color-info)">System</span>' : ''}
+					${row.is_system ? `<span class="mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold" style="border-color: var(--color-info); color: var(--color-info)">${t('common.system', 'System')}</span>` : ''}
 				</div>
 			`
 		},
@@ -123,7 +123,7 @@
 		{
 			key: 'created_at',
 			label: t('forms.created', 'Created'),
-			render: (v: string) => new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+			render: (v: string) => new Date(v).toLocaleDateString(locale.current, { year: 'numeric', month: 'short', day: 'numeric' })
 		}
 	];
 

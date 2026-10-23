@@ -167,7 +167,7 @@
               oninput={(e) => updateCol({ ...col, title: e.currentTarget.value })}
               placeholder="Column title"
             />
-            <div class="space-y-1 border-l border-[var(--color-border)] pl-2">
+            <div class="space-y-1 border-s border-[var(--color-border)] ps-2">
               {#each links as link, li (li)}
                 <div class="flex items-center gap-2">
                   <input

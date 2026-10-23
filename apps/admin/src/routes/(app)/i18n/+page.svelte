@@ -368,7 +368,7 @@
 					>
 						{#snippet bulkActions()}
 							<Button variant="destructive" size="sm" onclick={bulkDeleteLanguages} disabled={bulkDeleting || selectedLanguageIds.size === 0}>
-								<Trash2 class="h-3.5 w-3.5 mr-1" />
+								<Trash2 class="h-3.5 w-3.5 me-1" />
 								{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedLanguageIds.size})
 							</Button>
 						{/snippet}
@@ -410,7 +410,7 @@
 					>
 						{#snippet bulkActions()}
 							<Button variant="destructive" size="sm" onclick={bulkDeleteTranslations} disabled={bulkDeleting || selectedTranslationIds.size === 0}>
-								<Trash2 class="h-3.5 w-3.5 mr-1" />
+								<Trash2 class="h-3.5 w-3.5 me-1" />
 								{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedTranslationIds.size})
 							</Button>
 						{/snippet}

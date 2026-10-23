@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Wallet, TriangleAlert } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
@@ -292,7 +292,7 @@
 						<div class="rounded-[var(--radius)] border border-[var(--color-border)] p-3">
 							<div class="text-xs text-[var(--color-muted)]">NGN</div>
 							<div class="text-lg font-semibold tabular-nums text-[var(--color-text)]">
-								{currencySymbol('NGN', data.currencies)}{result.ngn_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+								{currencySymbol('NGN', data.currencies)}{result.ngn_equivalent.toLocaleString(i18n.locale, { maximumFractionDigits: 0 })}
 							</div>
 						</div>
 					{/if}
@@ -300,7 +300,7 @@
 						<div class="rounded-[var(--radius)] border border-[var(--color-border)] p-3">
 							<div class="text-xs text-[var(--color-muted)]">USD</div>
 							<div class="text-lg font-semibold tabular-nums text-[var(--color-text)]">
-								{currencySymbol('USD', data.currencies)}{result.usd_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+								{currencySymbol('USD', data.currencies)}{result.usd_equivalent.toLocaleString(i18n.locale, { maximumFractionDigits: 0 })}
 							</div>
 						</div>
 					{/if}

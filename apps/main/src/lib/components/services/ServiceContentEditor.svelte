@@ -493,7 +493,7 @@
 			{t('services.content_details_section', 'Content details (optional)')}
 			<ChevronDown
 				size={16}
-				class="ml-auto shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-180"
+				class="ms-auto shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-180"
 			/>
 		</summary>
 		<div class="space-y-5 border-t border-[var(--color-border)] px-4 py-4">

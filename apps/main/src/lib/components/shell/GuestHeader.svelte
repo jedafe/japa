@@ -59,7 +59,7 @@
 				{#if theme.resolved === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 			</button>
 			<a href="/login" class="guest-login-btn guest-auth-link">
-				<LogIn size={16} />
+				<LogIn class="rtl:-scale-x-100" size={16} />
 				<span>{t('landing.login')}</span>
 			</a>
 			<a href="/signup" class="guest-signup-btn guest-auth-link">
@@ -85,7 +85,7 @@
 		aria-label={t('a11y.close_menu', 'Close menu')}
 		onclick={() => (mobileMenuOpen = false)}
 	></button>
-	<div class="fixed left-0 top-0 z-50 h-screen w-[min(80vw,18rem)] border-r border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
+	<div class="fixed start-0 top-0 z-50 h-screen w-[min(80vw,18rem)] border-e border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
 		<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
 			<span class="font-semibold text-[var(--color-text)]">{t('nav.menu', 'Menu')}</span>
 			<button
@@ -110,7 +110,7 @@
 		</nav>
 		<div class="mt-6 flex flex-col gap-2 border-t border-[var(--color-border)] pt-4">
 			<a href="/login" class="guest-login-btn guest-drawer-btn w-full justify-center">
-				<LogIn size={16} />
+				<LogIn class="rtl:-scale-x-100" size={16} />
 				<span>{t('landing.login')}</span>
 			</a>
 			<a href="/signup" class="guest-signup-btn guest-drawer-btn w-full justify-center">
@@ -183,7 +183,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		flex-shrink: 0;
-		margin-left: auto;
+		margin-inline-start: auto;
 	}
 	.guest-search {
 		width: 200px;

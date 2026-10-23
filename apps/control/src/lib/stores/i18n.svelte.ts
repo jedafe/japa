@@ -4,6 +4,9 @@ import { substituteSiteName } from './site.svelte';
 
 type Locale = string;
 
+const RTL_LOCALES = new Set(['ar', 'he', 'fa', 'ur']);
+const isRtl = (locale: Locale): boolean => RTL_LOCALES.has(locale);
+
 let currentLocale = $state<Locale>('en');
 let translationsState = $state<Record<string, string>>({});
 
@@ -20,13 +23,17 @@ export function initLocale(serverLocale: Locale, serverTranslations?: Record<str
 		translationsState = serverTranslations;
 		loaded[serverLocale] = serverTranslations;
 	}
-	if (browser) document.documentElement.lang = serverLocale;
+	if (browser) {
+		document.documentElement.lang = serverLocale;
+		document.documentElement.dir = isRtl(serverLocale) ? 'rtl' : 'ltr';
+	}
 }
 
 export async function setLocale(locale: Locale) {
 	currentLocale = locale;
 	if (browser) {
 		document.documentElement.lang = locale;
+		document.documentElement.dir = isRtl(locale) ? 'rtl' : 'ltr';
 		document.cookie = `jc_locale=${locale};path=/;max-age=31536000;samesite=lax`;
 	}
 	await loadTranslations(locale);

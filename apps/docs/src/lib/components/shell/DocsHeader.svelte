@@ -243,7 +243,7 @@
 		color: var(--color-muted);
 		font-size: 0.8125rem;
 		cursor: pointer;
-		text-align: left;
+		text-align: start;
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
 	.search-field:hover {
@@ -270,7 +270,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
-		margin-left: auto;
+		margin-inline-start: auto;
 		flex-shrink: 0;
 	}
 	.icon-btn {

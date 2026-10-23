@@ -179,7 +179,7 @@
 			label: t('app.academy.col_sub_eligible', 'Sub.'),
 			render: (value: boolean) => {
 				if (value) {
-					return `<span class="inline-flex items-center rounded-full border bg-primary/15 text-primary border-primary px-2 py-0.5 text-xs font-semibold">Sub</span>`;
+					return `<span class="inline-flex items-center rounded-full border bg-primary/15 text-primary border-primary px-2 py-0.5 text-xs font-semibold">${t('app.academy.sub_badge', 'Sub')}</span>`;
 				}
 				return `<span class="text-sm text-muted">—</span>`;
 			}
@@ -1183,10 +1183,10 @@
 			<table class="w-full text-sm">
 				<thead>
 					<tr class="border-b">
-						<th class="px-3 py-2 text-left font-medium text-muted">{t('app.academy.col_user', 'User')}</th>
-						<th class="px-3 py-2 text-left font-medium text-muted">{t('app.academy.col_access_type', 'Access Type')}</th>
-						<th class="px-3 py-2 text-left font-medium text-muted">{t('app.academy.col_progress', 'Progress')}</th>
-						<th class="px-3 py-2 text-left font-medium text-muted">{t('app.academy.col_enrolled_at', 'Enrolled')}</th>
+						<th class="px-3 py-2 text-start font-medium text-muted">{t('app.academy.col_user', 'User')}</th>
+						<th class="px-3 py-2 text-start font-medium text-muted">{t('app.academy.col_access_type', 'Access Type')}</th>
+						<th class="px-3 py-2 text-start font-medium text-muted">{t('app.academy.col_progress', 'Progress')}</th>
+						<th class="px-3 py-2 text-start font-medium text-muted">{t('app.academy.col_enrolled_at', 'Enrolled')}</th>
 					</tr>
 				</thead>
 				<tbody>

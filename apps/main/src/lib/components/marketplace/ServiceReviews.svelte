@@ -85,10 +85,10 @@
 				<button
 					type="button"
 					onclick={() => scrollBy(-1)}
-					class="absolute -left-4 top-1/2 z-10 hidden -translate-y-1/2 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-sm transition hover:bg-[var(--color-surface-subtle)] md:grid"
+					class="absolute -start-4 top-1/2 z-10 hidden -translate-y-1/2 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-sm transition hover:bg-[var(--color-surface-subtle)] md:grid"
 					aria-label={t('services.reviews_prev', 'Previous reviews')}
 				>
-					<ChevronLeft size={16} aria-hidden="true" />
+					<ChevronLeft class="rtl:-scale-x-100" size={16} aria-hidden="true" />
 				</button>
 			{/if}
 			<ul
@@ -102,7 +102,7 @@
 					>
 						<Quote
 							size={26}
-							class="absolute right-4 top-4 text-[var(--color-primary)]/15"
+							class="absolute end-4 top-4 text-[var(--color-primary)]/15"
 							aria-hidden="true"
 						/>
 						<!-- Mockup card header: avatar + name, review title as the
@@ -158,10 +158,10 @@
 				<button
 					type="button"
 					onclick={() => scrollBy(1)}
-					class="absolute -right-4 top-1/2 z-10 hidden -translate-y-1/2 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-sm transition hover:bg-[var(--color-surface-subtle)] md:grid"
+					class="absolute -end-4 top-1/2 z-10 hidden -translate-y-1/2 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-sm transition hover:bg-[var(--color-surface-subtle)] md:grid"
 					aria-label={t('services.reviews_next', 'More reviews')}
 				>
-					<ChevronRight size={16} aria-hidden="true" />
+					<ChevronRight class="rtl:-scale-x-100" size={16} aria-hidden="true" />
 				</button>
 			{/if}
 		</div>
@@ -173,7 +173,7 @@
 			class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] transition-colors hover:underline"
 		>
 			{t('services.reviews_view_all', 'View all {count} reviews', { count: aggregate.count })}
-			<ArrowRight size={14} aria-hidden="true" />
+			<ArrowRight class="rtl:-scale-x-100" size={14} aria-hidden="true" />
 		</a>
 	{/if}
 </section>

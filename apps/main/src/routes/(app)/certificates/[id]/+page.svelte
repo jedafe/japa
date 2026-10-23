@@ -64,7 +64,7 @@
 						variant="row"
 					>
 						{#snippet trigger()}
-							{recipient.display_name} <ExternalLink size={14} />
+							{recipient.display_name} <ExternalLink class="rtl:-scale-x-100" size={14} />
 						{/snippet}
 					</UserHoverCard>
 				{:else}

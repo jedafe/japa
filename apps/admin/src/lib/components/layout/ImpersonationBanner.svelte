@@ -104,7 +104,7 @@
 			onclick={endSession}
 			disabled={ending}
 		>
-			<LogOut class="h-3.5 w-3.5" />
+			<LogOut class="h-3.5 w-3.5 rtl:-scale-x-100" />
 			{t('impersonate.end_session', 'End Session')}
 		</button>
 	</div>

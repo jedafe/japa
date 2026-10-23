@@ -154,7 +154,7 @@
 					style="color: var(--color-muted)"
 					disabled={disabled || i === 0}
 					onclick={() => moveItem(i, -1)}
-					aria-label="Move up"
+					aria-label={t('common.move_up', 'Move up')}
 				>
 					<ChevronUp class="h-4 w-4" />
 				</button>
@@ -164,7 +164,7 @@
 					style="color: var(--color-muted)"
 					disabled={disabled || i === items.length - 1}
 					onclick={() => moveItem(i, 1)}
-					aria-label="Move down"
+					aria-label={t('common.move_down', 'Move down')}
 				>
 					<ChevronDown class="h-4 w-4" />
 				</button>
@@ -174,7 +174,7 @@
 					style="color: var(--color-danger, #ef4444)"
 					disabled={disabled}
 					onclick={() => removeItem(i)}
-					aria-label="Remove link"
+					aria-label={t('settings.link_remove', 'Remove link')}
 				>
 					<Trash2 class="h-4 w-4" />
 				</button>

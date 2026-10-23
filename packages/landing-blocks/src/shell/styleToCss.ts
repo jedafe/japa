@@ -51,7 +51,7 @@ const JUSTIFY_MAP: Record<string, string> = {
   between: 'justify-between', around: 'justify-around', evenly: 'justify-evenly',
 };
 const TEXT_ALIGN_MAP: Record<string, string> = {
-  left: 'text-left', center: 'text-center', right: 'text-right', justify: 'text-justify',
+  left: 'text-start', center: 'text-center', right: 'text-end', justify: 'text-justify',
 };
 const OVERFLOW_MAP: Record<string, string> = {
   hidden: 'overflow-hidden', clip: 'overflow-clip',

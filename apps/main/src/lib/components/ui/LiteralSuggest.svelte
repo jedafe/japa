@@ -159,14 +159,14 @@
 
 	{#if open}
 		<ul
-			class="absolute bottom-full left-0 z-30 mb-1 w-64 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
+			class="absolute bottom-full start-0 z-30 mb-1 w-64 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
 			role="listbox"
 		>
 			{#each items as hit, i (hit.id)}
 				<li role="option" aria-selected={i === activeIndex}>
 					<button
 						type="button"
-						class="flex w-full items-baseline gap-2 px-3 py-2 text-left text-sm {i === activeIndex
+						class="flex w-full items-baseline gap-2 px-3 py-2 text-start text-sm {i === activeIndex
 							? 'bg-[var(--color-surface-subtle)]'
 							: ''} hover:bg-[var(--color-surface-subtle)]"
 						onmousedown={(e) => e.preventDefault()}

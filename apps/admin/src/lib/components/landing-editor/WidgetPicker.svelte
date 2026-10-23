@@ -5,6 +5,7 @@
 	// of pasting a UUID.
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { apiRaw } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	interface WidgetListItem {
 		id: string;
@@ -51,8 +52,8 @@
 </script>
 
 <Autocomplete
-	placeholder="Search widgets by name…"
-	emptyMessage="No widgets found"
+	placeholder={t('landing_editor.widget_search_ph', 'Search widgets by name…')}
+	emptyMessage={t('common.no_results', 'No results found')}
 	{fetcher}
 	{initialFetcher}
 	{selectedId}

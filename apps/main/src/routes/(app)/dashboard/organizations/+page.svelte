@@ -287,7 +287,7 @@
 								<p class="truncate text-sm font-medium text-[var(--color-text)]">
 									{o.name}
 									{#if o.verified}
-										<ShieldCheck class="ml-1 inline h-3.5 w-3.5 text-[var(--color-primary)]" />
+										<ShieldCheck class="ms-1 inline h-3.5 w-3.5 text-[var(--color-primary)]" />
 									{/if}
 								</p>
 								<p class="truncate text-xs text-[var(--color-muted)]">

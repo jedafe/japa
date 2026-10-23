@@ -66,7 +66,7 @@
             <button
               type="button"
               onclick={() => { onchange({ id: result.id as string, slug: result.slug as string | undefined }); showSearch = false; }}
-              class="block w-full px-3 py-1.5 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+              class="block w-full px-3 py-1.5 text-start text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
             >
               {(result.title ?? result.name ?? result.id) as string}
             </button>

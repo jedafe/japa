@@ -43,6 +43,7 @@ const (
 	TypeLanguagePackAITranslate       = "i18n:translate_language_pack"
 	TypeMediaScan                     = "content:scan_media"
 	TypeMediaCleanupDeleted           = "media:cleanup_deleted"
+	TypeMediaReconcileMissing         = "media:reconcile_missing"
 	TypeContentFanOutToFeeds          = "content:fan_out_to_feeds"
 	TypeAIGenerateContentEmbedding    = "content:generate_embedding"
 	TypeRAGReindexSpecs               = "rag:reindex_specs"
@@ -219,6 +220,7 @@ var handlerRegistry = []struct {
 	{TypeLanguagePackAITranslate, HandleLanguagePackAITranslate},
 	{TypeMediaScan, HandleMediaScan},
 	{TypeMediaCleanupDeleted, HandleMediaCleanupDeleted},
+	{TypeMediaReconcileMissing, HandleMediaReconcileMissing},
 	{TypeContentFanOutToFeeds, HandleContentFanOutToFeeds},
 	{TypeAIGenerateContentEmbedding, HandleAIGenerateContentEmbedding},
 	{TypeRAGReindexSpecs, HandleRAGReindexSpecs},

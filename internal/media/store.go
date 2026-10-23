@@ -268,15 +268,17 @@ func (s *Store) CountSearchMedia(ctx context.Context, query string) (int32, erro
 }
 
 // ListMediaFiltered returns paginated media matching the given filters
-// (uploader, mime type, search query, status, flagged). Empty/zero values mean
-// "no filter on this field". Used by the admin media list endpoint.
-func (s *Store) ListMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged, deleted string, limit, offset int32) ([]gen.Medium, error) {
+// (uploader, mime type, search query, status, flagged, deleted, missing).
+// Empty/zero values mean "no filter on this field". Used by the admin and
+// own-library media list endpoints.
+func (s *Store) ListMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged, deleted, missing string, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	items, err := s.read.ListMediaFiltered(ctx, gen.ListMediaFilteredParams{
 		Deleted:        deleted,
+		Missing:        missing,
 		UploaderUserID: uploaderID,
 		MimePattern:    mimePattern,
 		Query:          query,
@@ -294,9 +296,10 @@ func (s *Store) ListMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, m
 
 // CountMediaFiltered returns the count of media matching the given filters,
 // ignoring limit/offset. Used to compute total_pages for the admin list.
-func (s *Store) CountMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged, deleted string) (int32, error) {
+func (s *Store) CountMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, mimePattern, query, status, flagged, deleted, missing string) (int32, error) {
 	count, err := s.read.CountMediaFiltered(ctx, gen.CountMediaFilteredParams{
 		Deleted:        deleted,
+		Missing:        missing,
 		UploaderUserID: uploaderID,
 		MimePattern:    mimePattern,
 		Query:          query,
@@ -308,6 +311,46 @@ func (s *Store) CountMediaFiltered(ctx context.Context, uploaderID pgtype.UUID, 
 	}
 
 	return count, nil
+}
+
+// MarkMediaMissingByObject flags the row at bucket/path as missing its
+// storage object. Idempotent — a no-op once flagged.
+func (s *Store) MarkMediaMissingByObject(ctx context.Context, bucket, storagePath string) error {
+	if err := s.write.MarkMediaMissingByObject(ctx, gen.MarkMediaMissingByObjectParams{
+		StorageBucket: bucket,
+		StoragePath:   storagePath,
+	}); err != nil {
+		return fmt.Errorf("marking media missing: %w", err)
+	}
+
+	return nil
+}
+
+// ClearMediaMissingByObject clears the missing flag on the row at
+// bucket/path — called when an object lands or verifies present.
+func (s *Store) ClearMediaMissingByObject(ctx context.Context, bucket, storagePath string) error {
+	if err := s.write.ClearMediaMissingByObject(ctx, gen.ClearMediaMissingByObjectParams{
+		StorageBucket: bucket,
+		StoragePath:   storagePath,
+	}); err != nil {
+		return fmt.Errorf("clearing media missing flag: %w", err)
+	}
+
+	return nil
+}
+
+// ListMediaObjectsForReconcile returns a keyset-paginated batch of
+// storage-object coordinates for the reconcile-missing sweep.
+func (s *Store) ListMediaObjectsForReconcile(ctx context.Context, afterID pgtype.UUID, limit int32) ([]gen.ListMediaObjectsForReconcileRow, error) {
+	rows, err := s.read.ListMediaObjectsForReconcile(ctx, gen.ListMediaObjectsForReconcileParams{
+		AfterID:  afterID,
+		RowLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing media objects for reconcile: %w", err)
+	}
+
+	return rows, nil
 }
 
 // ListMediaFromPublicPostsByUser returns paginated media that is the

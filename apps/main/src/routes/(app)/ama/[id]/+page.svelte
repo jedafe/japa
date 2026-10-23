@@ -146,7 +146,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		href="/ama"
 		class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft size={16} /> {t('ama.back', 'Back to AMAs')}
+		<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('ama.back', 'Back to AMAs')}
 	</a>
 
 	{#if data.loadError || !session}
@@ -180,7 +180,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							type="button"
 							onclick={closeAma}
 							disabled={closing || !isLive}
-							class="ml-auto inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+							class="ms-auto inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 						>
 							{#if closing}
 								<Loader2 size={13} class="animate-spin" />

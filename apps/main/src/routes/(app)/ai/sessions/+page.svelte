@@ -212,7 +212,7 @@
 									<p class="mt-1 text-xs" style="color: var(--color-danger)">{truncate(session.error_message, 100)}</p>
 								{/if}
 							</div>
-							<ChevronRight size={16} style="color: var(--color-muted)" class="shrink-0" />
+							<ChevronRight size={16} style="color: var(--color-muted)" class="shrink-0 rtl:-scale-x-100" />
 						</div>
 					</a>
 					<!-- §103 AI Projects — move menu. Sits beside the link, not
@@ -223,7 +223,7 @@
 						<button
 							type="button"
 							onclick={() => { moveMenuFor = moveMenuFor === session.id ? null : session.id; }}
-							class="absolute right-8 top-3 rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
+							class="absolute end-8 top-3 rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
 							aria-label={t('ai.projects.move', 'Move to project')}
 							title={t('ai.projects.move', 'Move to project')}
 						>
@@ -232,12 +232,12 @@
 						{#if moveMenuFor === session.id}
 							<div
 								role="menu"
-								class="absolute right-8 top-9 z-30 w-44 rounded-lg border p-1 shadow-lg"
+								class="absolute end-8 top-9 z-30 w-44 rounded-lg border p-1 shadow-lg"
 								style="border-color: var(--color-border); background-color: var(--color-card)"
 							>
 								<button
 									type="button"
-									class="w-full rounded px-2 py-1 text-left text-xs hover:bg-[var(--color-surface-elevated)] {!session.project_id
+									class="w-full rounded px-2 py-1 text-start text-xs hover:bg-[var(--color-surface-elevated)] {!session.project_id
 										? 'text-[var(--color-primary)]'
 										: 'text-[var(--color-text)]'}"
 									onclick={() => assignSessionProject(session.id, null)}
@@ -247,7 +247,7 @@
 								{#each projects as p}
 									<button
 										type="button"
-										class="w-full rounded px-2 py-1 text-left text-xs hover:bg-[var(--color-surface-elevated)] {session.project_id === p.id
+										class="w-full rounded px-2 py-1 text-start text-xs hover:bg-[var(--color-surface-elevated)] {session.project_id === p.id
 											? 'text-[var(--color-primary)]'
 											: 'text-[var(--color-text)]'}"
 										onclick={() => assignSessionProject(session.id, p.id)}

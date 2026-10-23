@@ -345,6 +345,77 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID p
 
 	if err != nil {
 		slog.Warn("content: story meta sync failed", "content_id", contentID, "error", err)
+		return
+	}
+
+	// §79: published stories federate into the destination country Space
+	// feed via content_spaces. A story created through the composer keeps
+	// the author's picked primary space, but the destination must still be
+	// present as an additional assignment or the destination feed misses it.
+	// When the destination changed, the old federation row is dropped so the
+	// story leaves the stale feed. A user's explicit primary assignment is
+	// never touched.
+	spaces, spErr := q.GetContentSpaces(ctx, contentID)
+	if spErr != nil {
+		slog.Warn("content: story destination federation lookup failed", "content_id", contentID, "error", spErr)
+		return
+	}
+
+	destPresent := false
+
+	var stale pgtype.UUID
+
+	for _, sp := range spaces {
+		if isSameUUID(sp.SpaceID, dest) {
+			destPresent = true
+			break
+		}
+	}
+
+	if metaErr == nil && existingMeta.DestinationSpaceID.Valid && !isSameUUID(existingMeta.DestinationSpaceID, dest) {
+		// Only remove the old destination when it exists as a non-primary
+		// federation row — if the author explicitly filed the story there,
+		// that is their choice, not our stale assignment.
+		for _, sp := range spaces {
+			if isSameUUID(sp.SpaceID, existingMeta.DestinationSpaceID) && !sp.IsPrimary {
+				stale = existingMeta.DestinationSpaceID
+			}
+		}
+	}
+
+	// Remove the stale federation row first (delete-all + rebuild minus the
+	// stale space, since content_spaces has no single-row delete query),
+	// then add the new destination — rebuilding from the snapshot taken
+	// before the add keeps the ordering correct.
+	if stale.Valid {
+		if err := q.DeleteContentSpaces(ctx, contentID); err == nil {
+			for _, sp := range spaces {
+				if isSameUUID(sp.SpaceID, stale) {
+					continue
+				}
+
+				if err := q.AddContentSpace(ctx, gen.AddContentSpaceParams{
+					ContentID: contentID,
+					SpaceID:   sp.SpaceID,
+					IsPrimary: sp.IsPrimary,
+				}); err != nil {
+					slog.Warn("content: story federation rebuild failed", "content_id", contentID, "error", err)
+					break
+				}
+			}
+		} else {
+			slog.Warn("content: stale story federation removal failed", "content_id", contentID, "error", err)
+		}
+	}
+
+	if !destPresent {
+		if err := q.AddContentSpace(ctx, gen.AddContentSpaceParams{
+			ContentID: contentID,
+			SpaceID:   dest,
+			IsPrimary: false,
+		}); err != nil {
+			slog.Warn("content: story destination federation failed", "content_id", contentID, "error", err)
+		}
 	}
 }
 
@@ -364,6 +435,16 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 
 	if (input.TargetCountry == nil || *input.TargetCountry == "") && dst != "" {
 		input.TargetCountry = &dst
+	}
+
+	// §79: a story's origin/destination are explicit structured fields — the
+	// destination drives story_meta (and therefore wall visibility), so it
+	// must never be inferred from the posting space. A story filed into an
+	// unrelated space would otherwise surface on the wall under the wrong
+	// country. Other content types keep the space fallback since their
+	// journey fields only feed recommendations.
+	if input.ContentType == TypeStory {
+		return
 	}
 
 	primarySpaceID := input.GeoSpaceID
@@ -1030,6 +1111,13 @@ func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Quer
 
 	if (input.TargetCountry == nil || *input.TargetCountry == "") && dst != "" {
 		input.TargetCountry = &dst
+	}
+
+	// §79: a story's origin/destination are explicit structured fields —
+	// never infer the destination from the posting space, or a story filed
+	// into an unrelated space surfaces on the wall under the wrong country.
+	if existing.ContentType == TypeStory {
+		return
 	}
 
 	primarySpaceID := input.GeoSpaceID
@@ -2524,6 +2612,26 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, pr
 
 				if !ok {
 					return ErrNotSpaceMember
+				}
+			}
+		}
+
+		// §79: a story always federates into its destination country Space
+		// feed — keep story_meta.destination_space_id in the assignment set
+		// even when the caller (e.g. the composer's space editor) replaces it,
+		// or every save would silently un-federate the story. The destination
+		// never requires a posting grant and never displaces the primary.
+		if row, err := q.GetContentByID(ctx, contentID); err == nil && row.ContentType == TypeStory {
+			if meta, err := q.GetStoryMetaByContent(ctx, contentID); err == nil && meta.DestinationSpaceID.Valid && !isSameUUID(meta.DestinationSpaceID, primarySpaceID) {
+				present := false
+				for _, sid := range additionalSpaceIDs {
+					if isSameUUID(sid, meta.DestinationSpaceID) {
+						present = true
+						break
+					}
+				}
+				if !present {
+					additionalSpaceIDs = append(additionalSpaceIDs, meta.DestinationSpaceID)
 				}
 			}
 		}

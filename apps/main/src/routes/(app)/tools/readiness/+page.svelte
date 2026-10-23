@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { untrack } from 'svelte';
@@ -574,7 +574,7 @@
 						{/if}
 						{#if ctx.travel_date}
 							<span class="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text)]">
-								<Calendar size={12} /> {new Date(ctx.travel_date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+								<Calendar size={12} /> {new Date(ctx.travel_date).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' })}
 							</span>
 						{/if}
 					</div>
@@ -629,7 +629,7 @@
 										{/if}
 									</div>
 									<a href="/content/{item.slug}" class="mt-1 inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline">
-										{t('assessment.read_more', 'Read more')} <ArrowRight size={12} />
+										{t('assessment.read_more', 'Read more')} <ArrowRight class="rtl:-scale-x-100" size={12} />
 									</a>
 								</span>
 							</li>
@@ -654,7 +654,7 @@
 									{/if}
 									{#if step.content_slug}
 										<a href="/content/{step.content_slug}" class="mt-1 inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline">
-											{t('assessment.read_more', 'Read more')} <ArrowRight size={12} />
+											{t('assessment.read_more', 'Read more')} <ArrowRight class="rtl:-scale-x-100" size={12} />
 										</a>
 									{/if}
 								</span>
@@ -759,7 +759,7 @@
 				</div>
 				<p class="mb-4 text-xs text-[var(--color-muted)]">
 					{t('assessment.section_progress', 'Section {current} of {total}', { current: currentStep + 1, total: totalSteps })}
-					<span class="ml-2 capitalize">{stepLabel(currentStepData?.name ?? '')}</span>
+					<span class="ms-2 capitalize">{stepLabel(currentStepData?.name ?? '')}</span>
 				</p>
 			{/if}
 
@@ -915,7 +915,7 @@
 						class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
 					>
 						{t('assessment.next', 'Next')}
-						<ArrowRight size={16} />
+						<ArrowRight class="rtl:-scale-x-100" size={16} />
 					</button>
 				{:else}
 					<button
@@ -962,10 +962,10 @@
 							type="button"
 							onclick={() => viewHistoryResult(item)}
 							disabled={loadingResult}
-							class="w-full rounded-[var(--radius)] px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+							class="w-full rounded-[var(--radius)] px-2 py-1.5 text-start text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 						>
 							<span class="font-medium">{new Date(item.created_at).toLocaleDateString()}</span>
-							<span class="ml-2 text-[var(--color-muted)]">
+							<span class="ms-2 text-[var(--color-muted)]">
 								{Math.round((item.total_score / Math.max(maxScore, 1)) * 100)}%
 								{#if item.threshold_label}
 									— {item.threshold_label}

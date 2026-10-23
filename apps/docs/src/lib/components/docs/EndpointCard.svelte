@@ -243,7 +243,7 @@
 		margin-top: 0.5rem;
 	}
 	.params-table th {
-		text-align: left;
+		text-align: start;
 		font-size: 0.6875rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;

@@ -18,6 +18,8 @@
 	interface Props {
 		/** Lucide icon component or kebab-case icon name; defaults to an inbox. */
 		icon?: IconComponent | string;
+		/** Extra classes applied to the icon (e.g. `rtl:-scale-x-100`). */
+		iconClass?: string;
 		title?: string;
 		/** Muted subtext — `body` is accepted as an alias. */
 		description?: string;
@@ -31,6 +33,7 @@
 
 	let {
 		icon = Inbox,
+		iconClass = '',
 		title,
 		description,
 		body,
@@ -48,7 +51,7 @@
 		<div
 			class="grid h-14 w-14 place-items-center rounded-full bg-[var(--color-surface-subtle,var(--color-muted))]/30 text-[var(--color-muted-foreground,var(--muted-foreground,var(--color-muted)))]"
 		>
-			<Icon size={26} strokeWidth={1.5} />
+			<Icon size={26} strokeWidth={1.5} class={iconClass} />
 		</div>
 	{/if}
 	{#if title}

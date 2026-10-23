@@ -279,7 +279,7 @@
 				<BookmarkIcon size={14} />
 				{t('academy.bookmarks_all', 'All')}
 				{#if totalCount != null}
-					<span class="ml-auto text-xs text-[var(--color-muted)]">{totalCount}</span>
+					<span class="ms-auto text-xs text-[var(--color-muted)]">{totalCount}</span>
 				{/if}
 			</button>
 
@@ -322,7 +322,7 @@
 							<Folder size={14} />
 							<span class="truncate">{folder.name}</span>
 							{#if folder.bookmark_count != null}
-								<span class="ml-auto text-xs text-[var(--color-muted)]">{folder.bookmark_count}</span>
+								<span class="ms-auto text-xs text-[var(--color-muted)]">{folder.bookmark_count}</span>
 							{/if}
 						</button>
 						{#if isEmptyFolder(folder)}
@@ -363,7 +363,7 @@
 						<ChevronDown size={12} />
 						{t('academy.bookmarks_hide_empty_folders')}
 					{:else}
-						<ChevronRight size={12} />
+						<ChevronRight class="rtl:-scale-x-100" size={12} />
 						{t('academy.bookmarks_show_empty_folders').replace('{count}', String(hiddenEmptyCount))}
 					{/if}
 				</button>
@@ -416,7 +416,7 @@
 										{bm.entity_type} · {new Date(bm.created_at).toLocaleDateString()}
 									</p>
 								</div>
-								<ExternalLink class="h-4 w-4 shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-primary)]" />
+								<ExternalLink class="h-4 w-4 shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-primary)] rtl:-scale-x-100" />
 							</a>
 							<button
 								type="button"

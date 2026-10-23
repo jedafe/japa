@@ -31,6 +31,6 @@
 	<Filter size={16} />
 	{t('common.filters', 'Filters')}
 	{#if active}
-		<span class="ml-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+		<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
 	{/if}
 </button>

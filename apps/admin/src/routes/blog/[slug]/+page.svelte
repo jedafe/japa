@@ -323,12 +323,12 @@
 			<div class="flex gap-2">
 				{#if originalStatus === 'draft' || originalStatus === 'in_review'}
 					<Button type="button" variant="outline" onclick={handlePublish} disabled={saving} style="color: var(--color-success)">
-						<CheckCircle class="mr-2 h-4 w-4" />
+						<CheckCircle class="me-2 h-4 w-4" />
 						{t('app.blog.action_publish', 'Publish')}
 					</Button>
 				{:else if originalStatus === 'published'}
 					<Button type="button" variant="outline" onclick={handleUnpublish} disabled={saving} style="color: var(--color-warning)">
-						<XCircle class="mr-2 h-4 w-4" />
+						<XCircle class="me-2 h-4 w-4" />
 						{t('app.blog.action_unpublish', 'Unpublish')}
 					</Button>
 				{:else if originalStatus === 'archived'}
@@ -349,13 +349,13 @@
 							saving = false;
 						}
 					}} disabled={saving} style="color: var(--color-info)">
-						<RefreshCw class="mr-2 h-4 w-4" />
+						<RefreshCw class="me-2 h-4 w-4" />
 						{t('app.blog.action_restore', 'Restore')}
 					</Button>
 				{/if}
 				{#if canManageBlog}
 					<Button type="button" variant="destructive" onclick={handleDelete} disabled={saving}>
-						<Trash2 class="mr-2 h-4 w-4" />
+						<Trash2 class="me-2 h-4 w-4" />
 						{t('app.blog.delete', 'Delete')}
 					</Button>
 				{/if}
@@ -365,7 +365,7 @@
 					{t('app.blog.cancel', 'Cancel')}
 				</Button>
 				<Button type="submit" disabled={saving}>
-					<Save class="mr-2 h-4 w-4" />
+					<Save class="me-2 h-4 w-4" />
 					{saving ? t('app.blog.saving', 'Saving...') : t('app.blog.save', 'Save')}
 				</Button>
 			</div>
@@ -383,7 +383,7 @@
 			{t('common.cancel', 'Cancel')}
 		</Button>
 		<Button variant="destructive" onclick={confirmDelete} disabled={saving}>
-			<Trash2 class="mr-2 h-4 w-4" />
+			<Trash2 class="me-2 h-4 w-4" />
 			{t('app.blog.delete', 'Delete')}
 		</Button>
 	</div>

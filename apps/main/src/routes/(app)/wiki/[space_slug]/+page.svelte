@@ -359,7 +359,7 @@
 				</li>
 				{#if data.ancestors?.length}
 					{#each data.ancestors as anc (anc.slug)}
-						<li aria-hidden="true"><ChevronRight size={12} /></li>
+						<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 						<li>
 							<a
 								href="/wiki/{encodeURIComponent(anc.slug)}"
@@ -370,10 +370,10 @@
 						</li>
 					{/each}
 				{:else}
-					<li aria-hidden="true"><ChevronRight size={12} /></li>
+					<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 					<li>{crumbKind}</li>
 				{/if}
-				<li aria-hidden="true"><ChevronRight size={12} /></li>
+				<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 				<li class="truncate font-medium text-[var(--color-text)]">{spaceName}</li>
 			</ol>
 		</nav>
@@ -494,7 +494,7 @@
 					class="max-h-72 w-full object-cover"
 				/>
 				<span
-					class="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+					class="absolute end-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
 				>
 					<Maximize2 size={15} />
 				</span>
@@ -577,10 +577,10 @@
 									{categoryDesc(group.category)}
 								</span>
 							</span>
-							<ChevronRight size={18} class="shrink-0 text-[var(--color-muted)]" aria-hidden="true" />
+							<ChevronRight size={18} class="shrink-0 text-[var(--color-muted)] rtl:-scale-x-100" aria-hidden="true" />
 						</a>
 						{#if group.pages.length > 1 || group.templates.length > 0}
-							<div class="flex flex-wrap items-center gap-1.5 border-t border-[var(--color-border)] px-4 py-2.5 pl-[4.25rem]">
+							<div class="flex flex-wrap items-center gap-1.5 border-t border-[var(--color-border)] px-4 py-2.5 ps-[4.25rem]">
 								{#each group.pages.slice(1) as p (p.id)}
 									<a
 										href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(p.slug)}"
@@ -650,7 +650,7 @@
 	
 		{#if entityChildGroups.length > 0}
 			<section class="entity-children space-y-3">
-				<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">Related entities</h2>
+				<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">{t('wiki.related_entities', 'Related entities')}</h2>
 				{#each entityChildGroups as [typeSlug, items] (typeSlug)}
 					<div>
 						<h3 class="text-xs font-medium capitalize text-[var(--color-muted)]">{typeSlug.replaceAll('_', ' ')}</h3>

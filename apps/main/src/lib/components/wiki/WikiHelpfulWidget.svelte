@@ -111,7 +111,7 @@
 		</span>
 	{/if}
 	{#if children}
-		<div class="ml-auto flex items-center">
+		<div class="ms-auto flex items-center">
 			{@render children()}
 		</div>
 	{/if}

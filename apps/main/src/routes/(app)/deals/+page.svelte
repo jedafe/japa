@@ -426,7 +426,7 @@
 			<div class="relative lg:w-72">
 				<Search
 					size={16}
-					class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--color-text-subtle)]"
+					class="pointer-events-none absolute top-1/2 start-3 -translate-y-1/2 text-[var(--color-text-subtle)]"
 				/>
 				<input
 					id="deals-search"
@@ -436,7 +436,7 @@
 					onkeydown={onSearchKeydown}
 					placeholder={t('deals.search_placeholder', 'Search deals…')}
 					aria-label={t('deals.search_aria', 'Search deals')}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pr-3 pl-9 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pe-3 ps-9 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 			</div>
 			<div class="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-3">
@@ -547,14 +547,14 @@
 								>
 									{#if discountShort(coupon)}
 										<span
-											class="absolute top-3 left-3 inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-gray-900 shadow"
+											class="absolute top-3 start-3 inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-gray-900 shadow"
 										>
 											🔥 {discountShort(coupon)}
 										</span>
 									{/if}
 									<CardIcon
 										size={96}
-										class="absolute -right-4 -bottom-4 text-white opacity-30"
+										class="absolute -end-4 -bottom-4 text-white opacity-30"
 									/>
 								</a>
 								<div class="p-4">
@@ -611,7 +611,7 @@
 											href={dealPath(coupon)}
 											class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-dashed border-[var(--color-primary)]/60 px-3 py-2 text-sm font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/5"
 										>
-											<ExternalLink size={15} />
+											<ExternalLink class="rtl:-scale-x-100" size={15} />
 											{t('coupons.claim', 'Claim')}
 										</a>
 									{/if}
@@ -622,7 +622,7 @@
 				{:else}
 					<!-- List view: costgoat-style table (Provider / Category / Deal / Details / Claim) -->
 				<div class="hidden overflow-x-auto sm:block">
-					<table class="w-full border-collapse text-left text-sm">
+					<table class="w-full border-collapse text-start text-sm">
 						<thead>
 							<tr
 								class="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-subtle)]"
@@ -691,7 +691,7 @@
 										<span
 											class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
 										>
-											<ExternalLink size={12} />
+											<ExternalLink class="rtl:-scale-x-100" size={12} />
 											{t('coupons.claim', 'Claim')}
 										</span>
 									</td>
@@ -743,7 +743,7 @@
 									{#if discountLabel(coupon)}
 										{discountLabel(coupon)}
 									{:else}
-										<ExternalLink size={14} />
+										<ExternalLink class="rtl:-scale-x-100" size={14} />
 									{/if}
 								</span>
 								{#if data.canManage}

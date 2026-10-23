@@ -276,7 +276,7 @@
 					onclick={() => go(-1)}
 					aria-label={t('lightbox.prev', 'Previous')}
 				>
-					<ChevronLeft size={22} />
+					<ChevronLeft class="rtl:-scale-x-100" size={22} />
 				</button>
 			{/if}
 			{#if safeIndex < items.length - 1}
@@ -286,7 +286,7 @@
 					onclick={() => go(1)}
 					aria-label={t('lightbox.next', 'Next')}
 				>
-					<ChevronRight size={22} />
+					<ChevronRight class="rtl:-scale-x-100" size={22} />
 				</button>
 			{/if}
 
@@ -389,7 +389,7 @@
 	}
 	:global(.lb-close) {
 		pointer-events: auto;
-		margin-left: auto;
+		margin-inline-start: auto;
 		display: grid;
 		place-items: center;
 		height: 36px;
@@ -425,8 +425,8 @@
 		background: rgb(0 0 0 / 0.7);
 		color: #fff;
 	}
-	.lb-nav-prev { left: 8px; }
-	.lb-nav-next { right: 8px; }
+	.lb-nav-prev { inset-inline-start: 8px; }
+	.lb-nav-next { inset-inline-end: 8px; }
 	.lb-stage {
 		display: flex;
 		height: 100%;

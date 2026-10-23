@@ -400,7 +400,7 @@
 	{#if canManage}
 		<div class="mb-4 flex justify-end">
 			<Button onclick={openGenerate}>
-				<Sparkles size={16} class="mr-1.5" />
+				<Sparkles size={16} class="me-1.5" />
 				{t('common.generate', 'Generate')}
 			</Button>
 		</div>
@@ -462,7 +462,7 @@
 						<div>
 							<p class="text-sm font-medium" style="color: var(--color-foreground)">
 								{t('common.update', 'Update')} #{update.step_index ?? '—'}
-								<span class="ml-2 text-xs font-normal" style="color: var(--color-muted)">({update.status})</span>
+								<span class="ms-2 text-xs font-normal" style="color: var(--color-muted)">({update.status})</span>
 							</p>
 							<p class="text-xs" style="color: var(--color-muted)">
 								{update.fee_estimate ?? '—'} · {update.turnaround_days ?? '—'} days

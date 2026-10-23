@@ -37,7 +37,7 @@
         <tr class="bg-[var(--color-surface-subtle)]">
           {#each props.columns as col}
             <th
-              class="px-4 py-3 text-sm font-semibold text-[var(--color-text)] {col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'} {props.sortable ? 'cursor-pointer select-none hover:bg-[var(--color-surface)]' : ''}"
+              class="px-4 py-3 text-sm font-semibold text-[var(--color-text)] {col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-end' : 'text-start'} {props.sortable ? 'cursor-pointer select-none hover:bg-[var(--color-surface)]' : ''}"
               onclick={() => props.sortable && toggleSort(col.key)}
             >
               {col.label}
@@ -52,7 +52,7 @@
         {#each sortedRows() as row, i}
           <tr class="{props.striped && i % 2 === 1 ? 'bg-[var(--color-surface-subtle)]' : ''} border-b border-[var(--color-border)]">
             {#each props.columns as col}
-              <td class="px-4 py-3 text-sm text-[var(--color-text-subtle)] {col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'}">
+              <td class="px-4 py-3 text-sm text-[var(--color-text-subtle)] {col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-end' : 'text-start'}">
                 {row[col.key] ?? ''}
               </td>
             {/each}

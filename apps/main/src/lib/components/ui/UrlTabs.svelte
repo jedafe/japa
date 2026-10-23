@@ -196,7 +196,7 @@
 				value={tab.value}
 				class="flex shrink-0 cursor-pointer items-center px-4 text-sm font-medium transition-colors after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors data-[state=active]:text-[var(--color-text)] data-[state=active]:after:bg-[var(--color-primary)] data-[state=inactive]:text-[var(--color-muted)] data-[state=inactive]:hover:text-[var(--color-text)] {autoOverflow &&
 				i >= effVisible
-					? 'invisible absolute left-0'
+					? 'invisible absolute start-0'
 					: 'relative'}"
 			>
 				{#snippet child({ props })}
@@ -206,7 +206,7 @@
 		{/each}
 		{#if autoOverflow}
 			<div
-				class="absolute right-3 top-0 flex h-full items-center bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur {visibleCount !==
+				class="absolute end-3 top-0 flex h-full items-center bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur {visibleCount !==
 					0 && overflowTabs.length === 0
 					? 'hidden'
 					: ''}"

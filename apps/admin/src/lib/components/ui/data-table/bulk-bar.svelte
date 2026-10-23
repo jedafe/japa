@@ -35,11 +35,11 @@
         disabled={action.disabled?.(selectedIds, selectedRows) ?? false}
         onclick={() => action.onclick(selectedIds)}
       >
-        {#if action.icon}<action.icon class="mr-1 h-3.5 w-3.5" />{/if}
+        {#if action.icon}<action.icon class="me-1 h-3.5 w-3.5" />{/if}
         {action.label}
       </Button>
     {/each}
-    <Button size="sm" variant="ghost" style="margin-left: auto" onclick={onclear}>
+    <Button size="sm" variant="ghost" style="margin-inline-start: auto" onclick={onclear}>
       {t("common.clear", "Clear")}
     </Button>
   </div>

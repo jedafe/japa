@@ -424,7 +424,7 @@
 						{#if loading}
 							<Loader2 size={16} class="animate-spin" />
 						{:else}
-							<Send size={16} />
+							<Send class="rtl:-scale-x-100" size={16} />
 						{/if}
 						{loading
 							? (phase === 'creating_claim'

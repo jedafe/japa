@@ -109,7 +109,7 @@
 					href="/"
 					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
 				>
-					<ArrowLeft size={16} /> {t('academy.back_to_explore', 'Back to explore')}
+					<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('academy.back_to_explore', 'Back to explore')}
 				</a>
 			{/snippet}
 		</EmptyState>
@@ -128,7 +128,7 @@
 					href="/"
 					class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 				>
-					<ArrowLeft size={16} /> {t('academy.back_to_explore', 'Back to explore')}
+					<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('academy.back_to_explore', 'Back to explore')}
 				</a>
 			</div>
 		</div>
@@ -216,7 +216,7 @@
 				href="/tracks/{track.slug}"
 				class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 			>
-				<ArrowLeft size={16} /> {t('academy.back_to_track', 'Back to track')}
+				<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('academy.back_to_track', 'Back to track')}
 			</a>
 			{#if !isComplete}
 				<a

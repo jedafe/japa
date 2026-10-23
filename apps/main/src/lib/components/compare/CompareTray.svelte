@@ -77,7 +77,7 @@
 			{/if}
 		</div>
 
-		<div class="mr-16 flex shrink-0 items-center justify-end gap-2 sm:mr-0">
+		<div class="me-16 flex shrink-0 items-center justify-end gap-2 sm:me-0">
 			{#if items.length > 0}
 				<span class="text-xs whitespace-nowrap text-[var(--color-muted)]">
 					{items.length}/{maxItems}
@@ -102,7 +102,7 @@
 					class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 				>
 					{creating ? t('jce.compare.creating') : t('jce.compare.compare_now')}
-					<ArrowRight size={15} />
+					<ArrowRight class="rtl:-scale-x-100" size={15} />
 				</button>
 			{:else}
 				<button

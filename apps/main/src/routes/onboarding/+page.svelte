@@ -326,9 +326,9 @@
 				<div class="onb-focal">
 					<Globe size={64} strokeWidth={1.1} class="text-[var(--color-primary)]" />
 				</div>
-				<div class="onb-chip" style="top: 8%; left: 12%;"><Landmark size={18} class="text-[var(--color-primary)]" /></div>
-				<div class="onb-chip" style="top: 30%; right: 8%;"><Luggage size={18} class="text-[var(--color-primary)]" /></div>
-				<div class="onb-chip" style="bottom: 22%; left: 6%;"><MapPin size={18} class="text-[var(--color-primary)]" /></div>
+				<div class="onb-chip" style="top: 8%; inset-inline-start: 12%;"><Landmark size={18} class="text-[var(--color-primary)]" /></div>
+				<div class="onb-chip" style="top: 30%; inset-inline-end: 8%;"><Luggage size={18} class="text-[var(--color-primary)]" /></div>
+				<div class="onb-chip" style="bottom: 22%; inset-inline-start: 6%;"><MapPin size={18} class="text-[var(--color-primary)]" /></div>
 				<div class="onb-plane"><Plane size={20} class="text-[var(--color-primary)]" /></div>
 			</div>
 
@@ -518,7 +518,7 @@
 						<button
 							type="button"
 							onclick={() => (selectedUsers = toggleIn(selectedUsers, rec.id))}
-							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-left transition-colors {selectedUsers.includes(rec.id)
+							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-start transition-colors {selectedUsers.includes(rec.id)
 								? 'border-[var(--color-primary)] bg-[var(--color-surface-subtle)]'
 								: 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
 						>
@@ -549,7 +549,7 @@
 						<button
 							type="button"
 							onclick={() => (selectedSpaces = toggleIn(selectedSpaces, rec.id))}
-							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-left transition-colors {selectedSpaces.includes(rec.id)
+							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-start transition-colors {selectedSpaces.includes(rec.id)
 								? 'border-[var(--color-primary)] bg-[var(--color-surface-subtle)]'
 								: 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
 						>
@@ -580,7 +580,7 @@
 						<button
 							type="button"
 							onclick={() => (selectedSources = toggleIn(selectedSources, source.id))}
-							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-left transition-colors {selectedSources.includes(source.id)
+							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-start transition-colors {selectedSources.includes(source.id)
 								? 'border-[var(--color-primary)] bg-[var(--color-surface-subtle)]'
 								: 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
 						>
@@ -679,7 +679,7 @@
 							disabled={saving}
 							class="flex items-center gap-1 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:opacity-50"
 						>
-							<ChevronLeft size={16} />
+							<ChevronLeft class="rtl:-scale-x-100" size={16} />
 							{t('onboarding.back', 'Back')}
 						</button>
 					{/if}
@@ -701,7 +701,7 @@
 					class="flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>
 					{saving ? t('onboarding.saving', 'Saving...') : currentStep === totalSteps ? t('onboarding.finish', 'Get started') : t('onboarding.next', 'Continue')}
-					{#if currentStep < totalSteps}<ChevronRight size={16} />{/if}
+					{#if currentStep < totalSteps}<ChevronRight class="rtl:-scale-x-100" size={16} />{/if}
 				</button>
 			</div>
 
@@ -735,7 +735,7 @@
 	.onb-focal {
 		position: absolute;
 		top: 50%;
-		left: 50%;
+		inset-inline-start: 50%;
 		translate: -50% -50%;
 		display: grid;
 		place-items: center;
@@ -758,7 +758,7 @@
 	.onb-plane {
 		position: absolute;
 		top: 10%;
-		right: 18%;
+		inset-inline-end: 18%;
 		color: var(--color-primary);
 		opacity: 0.8;
 	}

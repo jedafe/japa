@@ -399,7 +399,7 @@
 		<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab===tab?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab===tab?'white':'var(--color-foreground)'}" onclick={() => activeTab=tab as any}>{t(`sop_generator.tab_${tab}`, tab)}</button>
 	{/each}
 	{#if canManage && activeTab === 'templates'}
-		<button class="ml-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:white" onclick={generateTemplateDraft}>{t('sop_generator.generate_ai_draft', 'Generate AI Draft')}</button>
+		<button class="ms-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:white" onclick={generateTemplateDraft}>{t('sop_generator.generate_ai_draft', 'Generate AI Draft')}</button>
 	{/if}
 </div>
 

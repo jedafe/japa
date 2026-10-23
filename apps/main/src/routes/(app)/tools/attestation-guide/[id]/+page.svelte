@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Stamp, ArrowLeft, Download, Globe, AlertTriangle } from 'lucide-svelte';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
@@ -30,7 +30,7 @@
 	function formatDate(iso?: string | null): string {
 		if (!iso) return '';
 		try {
-			return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+			return new Date(iso).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' });
 		} catch {
 			return iso;
 		}
@@ -68,7 +68,7 @@
 				: '/tools/attestation-guide'}
 			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} />
+			<ArrowLeft class="rtl:-scale-x-100" size={16} />
 			{t('attestation_guide.back', 'Back to attestation guide')}
 		</a>
 	</div>

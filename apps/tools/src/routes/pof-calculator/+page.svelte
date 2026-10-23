@@ -4,7 +4,7 @@
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -293,7 +293,7 @@
 							<div class="rounded-lg border border-border p-3">
 								<div class="text-xs text-muted">NGN</div>
 								<div class="text-lg font-semibold tabular-nums">
-									{currencySymbol('NGN', data.currencies)}{result.ngn_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+									{currencySymbol('NGN', data.currencies)}{result.ngn_equivalent.toLocaleString(i18n.locale, { maximumFractionDigits: 0 })}
 								</div>
 							</div>
 						{/if}
@@ -301,7 +301,7 @@
 							<div class="rounded-lg border border-border p-3">
 								<div class="text-xs text-muted">USD</div>
 								<div class="text-lg font-semibold tabular-nums">
-									{currencySymbol('USD', data.currencies)}{result.usd_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+									{currencySymbol('USD', data.currencies)}{result.usd_equivalent.toLocaleString(i18n.locale, { maximumFractionDigits: 0 })}
 								</div>
 							</div>
 						{/if}

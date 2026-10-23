@@ -216,7 +216,7 @@
 			key: 'request_count',
 			label: t('api_keys.requests'),
 			sortable: true,
-			class: 'text-right',
+			class: 'text-end',
 			render: (val: unknown) =>
 				`<span class="font-mono text-xs">${escapeHtml(formatNumber(Number(val)))}</span>`
 		}
@@ -599,7 +599,7 @@
 									<span class="font-mono text-xs text-muted-foreground">{key.key_prefix}</span>
 									<span class="text-foreground">{key.name}</span>
 								</div>
-								<span class="text-muted-foreground text-xs">No requests</span>
+								<span class="text-muted-foreground text-xs">{t('api_keys.no_requests', 'No requests')}</span>
 							</div>
 						{/each}
 					</div>
@@ -750,14 +750,14 @@
 							<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium">
 								{scope}
 								<button
-									class="hover:text-destructive ml-0.5 rounded"
+									class="hover:text-destructive ms-0.5 rounded"
 									onclick={() => createForm.scopes = createForm.scopes.filter((s) => s !== scope)}
 								>×</button>
 							</span>
 						{/each}
 					</div>
 					<Autocomplete
-						placeholder="Add scope..."
+						placeholder={t('api_keys.add_scope', 'Add scope...')}
 						emptyMessage={t('common.no_results', 'No results')}
 						fetcher={(q) => fetchScopes(q, createForm.scopes)}
 						initialFetcher={() => fetchScopesInitial(createForm.scopes)}
@@ -901,14 +901,14 @@
 							<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium">
 								{scope}
 								<button
-									class="hover:text-destructive ml-0.5 rounded"
+									class="hover:text-destructive ms-0.5 rounded"
 									onclick={() => editForm.scopes = editForm.scopes.filter((s) => s !== scope)}
 								>×</button>
 							</span>
 						{/each}
 					</div>
 					<Autocomplete
-						placeholder="Add scope..."
+						placeholder={t('api_keys.add_scope', 'Add scope...')}
 						emptyMessage={t('common.no_results', 'No results')}
 						fetcher={(q) => fetchScopes(q, editForm.scopes)}
 						initialFetcher={() => fetchScopesInitial(editForm.scopes)}

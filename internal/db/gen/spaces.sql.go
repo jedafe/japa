@@ -355,6 +355,21 @@ func (q *Queries) CountSpaceMembers(ctx context.Context, spaceID pgtype.UUID) (i
 	return count, err
 }
 
+const countSpaceOwners = `-- name: CountSpaceOwners :one
+SELECT COUNT(*) AS count
+FROM space_members
+WHERE space_id = $1 AND role = 'owner' AND status = 'approved'
+`
+
+// SPACES-017: count approved owners so the sole owner cannot orphan the
+// space by leaving (moderator assignment and deletion are owner-gated).
+func (q *Queries) CountSpaceOwners(ctx context.Context, spaceID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countSpaceOwners, spaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countSpacePublishedContent = `-- name: CountSpacePublishedContent :one
 SELECT COUNT(*) AS count
 FROM contents

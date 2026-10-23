@@ -190,22 +190,22 @@
 <div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] {cls}">
 	<!-- Toolbar -->
 	<div class="flex items-center gap-0.5 border-b border-[var(--color-border)] px-1.5 py-1">
-		<button type="button" onclick={toggleBold} class="{btnBase} {isBold ? btnOn : btnOff}" aria-label="Bold" title="Bold">
+		<button type="button" onclick={toggleBold} class="{btnBase} {isBold ? btnOn : btnOff}" aria-label={t('create.editor.toolbar.bold', 'Bold')} title={t('create.editor.toolbar.bold', 'Bold')}>
 			<Bold size={14} />
 		</button>
-		<button type="button" onclick={toggleItalic} class="{btnBase} {isItalic ? btnOn : btnOff}" aria-label="Italic" title="Italic">
+		<button type="button" onclick={toggleItalic} class="{btnBase} {isItalic ? btnOn : btnOff}" aria-label={t('create.editor.toolbar.italic', 'Italic')} title={t('create.editor.toolbar.italic', 'Italic')}>
 			<Italic size={14} />
 		</button>
-		<button type="button" onclick={toggleStrike} class="{btnBase} {isStrike ? btnOn : btnOff}" aria-label="Strikethrough" title="Strikethrough">
+		<button type="button" onclick={toggleStrike} class="{btnBase} {isStrike ? btnOn : btnOff}" aria-label={t('create.editor.toolbar.strike', 'Strikethrough')} title={t('create.editor.toolbar.strike', 'Strikethrough')}>
 			<Strikethrough size={14} />
 		</button>
-		<button type="button" onclick={toggleCode} class="{btnBase} {isCode ? btnOn : btnOff}" aria-label="Inline code" title="Inline code">
+		<button type="button" onclick={toggleCode} class="{btnBase} {isCode ? btnOn : btnOff}" aria-label={t('create.editor.toolbar.code', 'Inline code')} title={t('create.editor.toolbar.code', 'Inline code')}>
 			<Code size={14} />
 		</button>
-		<button type="button" onclick={openLinkModal} class="{btnBase} {isLink ? btnOn : btnOff}" aria-label="Link" title="Link">
+		<button type="button" onclick={openLinkModal} class="{btnBase} {isLink ? btnOn : btnOff}" aria-label={t('create.editor.toolbar.link', 'Link')} title={t('create.editor.toolbar.link', 'Link')}>
 			<LinkIcon size={14} />
 		</button>
-		<button type="button" onclick={openImagePicker} class="{btnBase} {btnOff}" aria-label="Image" title="Image">
+		<button type="button" onclick={openImagePicker} class="{btnBase} {btnOff}" aria-label={t('create.editor.toolbar.image', 'Image')} title={t('create.editor.toolbar.image', 'Image')}>
 			<ImagePlus size={14} />
 		</button>
 		<EmojiPicker onselect={insertEmoji} {t} />
@@ -249,7 +249,7 @@
 		color: var(--color-muted);
 		content: attr(data-placeholder);
 		pointer-events: none;
-		float: left;
+		float: inline-start;
 		height: 0;
 	}
 	:global(.tiptap-comment-editor .mention) {

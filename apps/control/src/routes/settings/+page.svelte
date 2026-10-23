@@ -1080,7 +1080,7 @@
 					onclick={() => selectCategory('all')}
 				>
 					<Settings class="size-4 shrink-0" />
-					<span class="flex-1 text-left">{t('settings.all', 'All')}</span>
+					<span class="flex-1 text-start">{t('settings.all', 'All')}</span>
 					<span class="text-muted-foreground text-xs">{currentSettings.length}</span>
 				</button>
 				{#each categoryItems as { category, count }}
@@ -1092,7 +1092,7 @@
 						onclick={() => selectCategory(category)}
 					>
 						<Icon class="size-4 shrink-0" />
-						<span class="flex-1 text-left">{formatNamespace(category)}</span>
+						<span class="flex-1 text-start">{formatNamespace(category)}</span>
 						<span class="text-muted-foreground text-xs">{count}</span>
 					</button>
 				{/each}
@@ -1168,7 +1168,7 @@
 					onclick={() => { confirmResetAllOpen = true; }}
 					disabled={isSaving}
 				>
-					<Undo2 class="size-3" />
+					<Undo2 class="size-3 rtl:-scale-x-100" />
 					{t('settings.reset_all', 'Reset All')}
 				</button>
 				<button
@@ -1243,7 +1243,7 @@
 										isBoolValue(setting.value) &&
 										setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
 									<div class="flex items-center gap-2">
-										<span class="text-muted-foreground w-8 text-right text-xs">
+										<span class="text-muted-foreground w-8 text-end text-xs">
 											{isTrue ? t('settings.on') : t('settings.off')}
 										</span>
 										<Switch
@@ -1654,7 +1654,7 @@
 										{#if componentType === 'switch'}
 											{@const isTrue = isBoolValue(setting.value) && setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
 											<div class="flex items-center gap-2">
-												<span class="text-muted-foreground w-8 text-right text-xs">{isTrue ? t('settings.on') : t('settings.off')}</span>
+												<span class="text-muted-foreground w-8 text-end text-xs">{isTrue ? t('settings.on') : t('settings.off')}</span>
 												<Switch
 													id="setting-{setting.key}"
 													checked={isTrue}
@@ -1893,7 +1893,7 @@
 							{/each}
 							{#if catSettings.length > 5}
 								<button
-									class="text-accent-foreground hover:bg-muted/50 w-full px-5 py-2.5 text-left text-xs font-medium transition-colors"
+									class="text-accent-foreground hover:bg-muted/50 w-full px-5 py-2.5 text-start text-xs font-medium transition-colors"
 									onclick={() => selectCategory(category)}
 								>
 									{t('settings.view_all_count', 'View all {count} settings').replace('{count}', String(catSettings.length))} →

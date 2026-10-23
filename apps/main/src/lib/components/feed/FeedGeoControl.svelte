@@ -121,14 +121,14 @@
 			{#each quickCountries as c (c.code)}
 				<DropdownMenu.Item
 					onclick={() => changeCountry(c.code)}
-					class="block w-full cursor-pointer px-3 py-1.5 text-left text-xs data-[highlighted]:bg-[var(--color-surface-subtle)] {c.code === currentCountry ? 'font-medium text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)]'}"
+					class="block w-full cursor-pointer px-3 py-1.5 text-start text-xs data-[highlighted]:bg-[var(--color-surface-subtle)] {c.code === currentCountry ? 'font-medium text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)]'}"
 				>
 					{c.label}
 				</DropdownMenu.Item>
 			{/each}
 			<DropdownMenu.Item
 				onclick={() => { void goto('/settings/language'); }}
-				class="mt-1 block w-full cursor-pointer border-t border-[var(--color-border)] px-3 py-1.5 text-left text-xs text-[var(--color-primary)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
+				class="mt-1 block w-full cursor-pointer border-t border-[var(--color-border)] px-3 py-1.5 text-start text-xs text-[var(--color-primary)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
 			>
 				{t('feed.geo_more', 'More options…')}
 			</DropdownMenu.Item>

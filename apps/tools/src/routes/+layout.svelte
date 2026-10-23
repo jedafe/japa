@@ -11,7 +11,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import { getTool } from '$lib/tools/registry';
-	import { t } from '$lib/i18n';
+	import { t, isRtl } from '$lib/i18n';
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
 	import { ensureAiPanelDeps } from '$lib/ai/panel';
 	import { resolveAiPageContext } from '$lib/ai/pageContext';
@@ -33,6 +33,13 @@
 	// i18n.default_language setting). The store derives locale from
 	// `page.data.locale` — no manual setLocale() call needed (SSR-safe).
 	// Ref: §7 (i18n), ADR-013.
+
+	// <html lang/dir> is stamped by hooks on full loads; client-side locale
+	// switches never re-render the html element — sync both attributes here.
+	$effect(() => {
+		document.documentElement.lang = data.locale || 'en';
+		document.documentElement.dir = isRtl(data.locale || 'en') ? 'rtl' : 'ltr';
+	});
 
 	// Seed the browser-side CSRF token from server-rendered page data so the
 	// first client mutation already carries X-CSRF-Token without a boot fetch.
@@ -123,7 +130,7 @@
 		aria-label={t('ai.panel.title', 'Japa AI')}
 		title={t('ai.panel.title', 'Japa AI')}
 		aria-expanded={aiPanelOpen}
-		class="fixed bottom-5 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105"
+		class="fixed bottom-5 end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105"
 	>
 		<Sparkles size={22} />
 	</button>

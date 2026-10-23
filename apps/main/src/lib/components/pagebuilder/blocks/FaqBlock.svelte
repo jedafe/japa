@@ -14,7 +14,7 @@
 				<Accordion.Item value={`faq-${i}`} class="overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					<Accordion.Header>
 						<Accordion.Trigger
-							class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] [&[data-state=open]>svg]:rotate-180"
+							class="flex w-full items-center justify-between gap-3 px-4 py-3 text-start text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] [&[data-state=open]>svg]:rotate-180"
 						>
 							<span>{item.question}</span>
 							<ChevronDown size={16} class="shrink-0 text-[var(--color-muted)] transition-transform" />

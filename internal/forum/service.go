@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -40,6 +42,28 @@ func (s *Service) SetSettings(r forumSettingsReader) {
 	s.settings = r
 }
 
+// reservedForumSlugs are first-segment paths under /forum/ that route to
+// endpoints other than GET /forum/{slug} — a thread carrying one of these
+// slugs is unreachable because chi's static segment wins over the {slug}
+// wildcard. Matches both the API routes registered in server.go and the
+// frontend /forum/rss.xml feed route.
+var reservedForumSlugs = map[string]struct{}{
+	"ama":       {},
+	"bookmarks": {},
+	"polls":     {},
+	"replies":   {},
+	"tags":      {},
+	"rss.xml":   {},
+}
+
+// deconflictForumSlug suffixes a reserved slug so the thread stays reachable.
+func deconflictForumSlug(slug string) string {
+	if _, reserved := reservedForumSlugs[strings.ToLower(slug)]; reserved {
+		return slug + "-thread"
+	}
+	return slug
+}
+
 // CreateThread creates a new forum thread and optionally a poll in a single
 // transaction. The poll is only created when input.Poll is non-nil and has at
 // least two options, so the thread and its poll are always committed (or
@@ -48,6 +72,8 @@ func (s *Service) CreateThread(ctx context.Context, authorUserID pgtype.UUID, in
 	if input.Title == "" {
 		return gen.ForumThread{}, errors.New("title is required")
 	}
+
+	input.Slug = deconflictForumSlug(input.Slug)
 
 	editWindow := input.EditWindowMinutes
 	if editWindow <= 0 {
@@ -354,32 +380,69 @@ type CreateReplyInput struct {
 }
 
 // CreateReply creates a new reply and increments the parent thread's reply_count.
+// maxForumReplyDepth mirrors the §49 comment nesting cap — reply trees
+// deeper than this are rejected at the service layer.
+const maxForumReplyDepth = 3
+
 func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype.UUID, input CreateReplyInput) (gen.ForumReply, error) {
 	if input.Body == nil {
 		input.Body = []byte("[]")
 	}
 
-	reply, err := s.store.createReply(ctx, gen.CreateForumReplyParams{
-		ThreadID:      threadID,
-		ParentReplyID: input.ParentReplyID,
-		AuthorUserID:  authorUserID,
-		Body:          input.Body,
-		IsAnonymous:   input.IsAnonymous,
-	})
+	// F-001: the thread must exist — forum_threads uses soft deletes, so the
+	// FK alone would happily accept replies on deleted threads.
+	thread, err := s.store.getThreadByID(ctx, threadID)
 	if err != nil {
-		return gen.ForumReply{}, fmt.Errorf("creating forum reply: %w", err)
+		return gen.ForumReply{}, fmt.Errorf("getting thread: %w", err)
 	}
 
-	// Load the parent thread once for both the AMA question-approval check
-	// and the reply notification (§88 / §35).
-	thread, threadErr := s.store.getThreadByID(ctx, threadID)
+	// F-009: a viewer who can only see the title cannot reply to content
+	// they cannot read (members-only/private spaces).
+	if err := s.requireFullThreadAccess(ctx, threadID, authorUserID); err != nil {
+		return gen.ForumReply{}, err
+	}
+
+	// F-001: the parent reply must belong to THIS thread, be live, and not
+	// push the tree past maxForumReplyDepth.
+	if input.ParentReplyID.Valid {
+		if err := s.validateReplyParent(ctx, threadID, input.ParentReplyID); err != nil {
+			return gen.ForumReply{}, err
+		}
+	}
+
+	// F-003: the insert and the denormalized reply_count increment commit
+	// atomically — the previous log-and-continue path drifted counters.
+	reply, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.ForumReply, error) {
+		r, err := q.CreateForumReply(ctx, gen.CreateForumReplyParams{
+			ThreadID:      threadID,
+			ParentReplyID: input.ParentReplyID,
+			AuthorUserID:  authorUserID,
+			Body:          input.Body,
+			IsAnonymous:   input.IsAnonymous,
+		})
+		if err != nil {
+			return gen.ForumReply{}, fmt.Errorf("creating forum reply: %w", err)
+		}
+
+		if err := q.IncrementThreadReplyCount(ctx, gen.IncrementThreadReplyCountParams{
+			ID:    threadID,
+			Delta: 1,
+		}); err != nil {
+			return gen.ForumReply{}, fmt.Errorf("incrementing reply count: %w", err)
+		}
+
+		return r, nil
+	})
+	if err != nil {
+		return gen.ForumReply{}, err
+	}
 
 	// §88 question_approval_required: if the parent thread is an AMA with
 	// question_approval_required = true and the reply author is not the
 	// host, mark the reply as pending host approval (BUG-003).
 	amaPending := false
 
-	if threadErr == nil && s.amaQuestions != nil && thread.AmaConfig != nil {
+	if s.amaQuestions != nil && thread.AmaConfig != nil {
 		if thread.AuthorUserID != authorUserID && amaRequiresApproval(thread.AmaConfig) {
 			if markErr := s.amaQuestions.MarkReplyPending(ctx, reply.ID); markErr != nil {
 				slog.Warn("ama: failed to mark reply pending", "reply_id", reply.ID, "error", markErr)
@@ -390,23 +453,27 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 		}
 	}
 
-	// Increment the parent thread's reply count.
-	if err := s.store.incrementReplyCount(ctx, threadID, 1); err != nil {
-		// Log but don't fail the reply creation.
-		slog.Warn("failed to increment reply count", "thread_id", threadID, "error", err)
-	}
-
 	s.emitWebhook(ctx, "forum.reply.created", map[string]any{
 		"reply_id": reply.ID, "thread_id": threadID, "author_id": authorUserID,
 	})
 
 	// BUG-013: Notify the thread author about the reply (fire-and-forget, Rule 8).
 	// Don't notify if the reply author is the thread author.
-	if s.notifier != nil && threadErr == nil && thread.AuthorUserID != authorUserID {
+	// F-002 / C-003 parity: anonymous replies never attribute an actor —
+	// the notification would de-anonymize the author in the recipient's feed.
+	// An AMA-pending reply still notifies the host (it's a moderation queue
+	// signal) but with a zeroed actor UUID.
+	if s.notifier != nil && thread.AuthorUserID != authorUserID &&
+		(!reply.IsAnonymous || amaPending) {
 		notifyType := "forum_reply"
 		if amaPending {
 			// §88: host notified when questions queue up.
 			notifyType = "ama_question_pending"
+		}
+
+		actorID := authorUserID
+		if reply.IsAnonymous {
+			actorID = pgtype.UUID{}
 		}
 
 		go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
@@ -420,7 +487,7 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 			_ = s.notifier.DispatchNotification(
 				notifyCtx, thread.AuthorUserID,
 				notifyType, subjectTitle,
-				authorUserID,
+				actorID,
 				subjectType, subjectID,
 				subjectURL, actorName, actorAvatar,
 			)
@@ -466,6 +533,116 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 	return reply, nil
 }
 
+// ThreadAccessLevel enumerates what a viewer may see on a forum thread,
+// driven by the containing space's visibility (§05):
+//   - 'public'  → ThreadAccessFull for everyone (also threads with no space)
+//   - 'members' → ThreadAccessTitleOnly for non-members (title visible,
+//     body + replies hidden — the space owner's default)
+//   - 'private' → ThreadAccessNone for non-members (404 — the owner chose
+//     to hide the space's forum content entirely)
+// Members always get ThreadAccessFull.
+type ThreadAccessLevel int
+
+const (
+	ThreadAccessNone ThreadAccessLevel = iota
+	ThreadAccessTitleOnly
+	ThreadAccessFull
+)
+
+// ErrMembersOnly is returned when a non-member tries to read or interact
+// with members-only forum content (title_only → 403 members_only).
+var ErrMembersOnly = errors.New("members_only")
+
+// ThreadAccessLevel resolves the viewer's access to a thread via its
+// containing space (F-009).
+func (s *Service) ThreadAccessLevel(ctx context.Context, threadID, viewerID pgtype.UUID) (ThreadAccessLevel, error) {
+	row, err := s.store.read.GetForumThreadSpaceAccess(ctx, gen.GetForumThreadSpaceAccessParams{
+		ThreadID: threadID,
+		ViewerID: viewerID,
+	})
+	if err != nil {
+		return ThreadAccessNone, err
+	}
+
+	return spaceAccessLevel(row.SpaceVisibility, row.IsMember), nil
+}
+
+// SpaceAccessLevel resolves the viewer's access to a space directly
+// (space-scoped thread listings).
+func (s *Service) SpaceAccessLevel(ctx context.Context, spaceID, viewerID pgtype.UUID) (ThreadAccessLevel, error) {
+	row, err := s.store.read.GetSpaceAccess(ctx, gen.GetSpaceAccessParams{
+		SpaceID:  spaceID,
+		ViewerID: viewerID,
+	})
+	if err != nil {
+		return ThreadAccessNone, err
+	}
+
+	return spaceAccessLevel(row.SpaceVisibility, row.IsMember), nil
+}
+
+func spaceAccessLevel(visibility string, isMember bool) ThreadAccessLevel {
+	if isMember {
+		return ThreadAccessFull
+	}
+
+	switch visibility {
+	case "private":
+		return ThreadAccessNone
+	case "members":
+		return ThreadAccessTitleOnly
+	default:
+		return ThreadAccessFull
+	}
+}
+
+// requireFullThreadAccess gates reply/vote mutations — a viewer who can only
+// see the title cannot interact with content they cannot read.
+func (s *Service) requireFullThreadAccess(ctx context.Context, threadID, viewerID pgtype.UUID) error {
+	level, err := s.ThreadAccessLevel(ctx, threadID, viewerID)
+	if err != nil {
+		return err
+	}
+
+	if level != ThreadAccessFull {
+		return fmt.Errorf("%w: join the space to participate", ErrMembersOnly)
+	}
+
+	return nil
+}
+
+// validateReplyParent walks the parent chain of a proposed reply parent.
+// The parent must exist (deleted replies fail the lookup), belong to the
+// same thread, and the resulting tree must not exceed maxForumReplyDepth
+// (F-001 / §49 parity).
+func (s *Service) validateReplyParent(ctx context.Context, threadID, parentID pgtype.UUID) error {
+	depth := 1 // the parent itself
+
+	for {
+		parent, err := s.store.getReplyByID(ctx, parentID)
+		if err != nil {
+			return fmt.Errorf("%w: parent reply", errpkg.ErrNotFound)
+		}
+
+		if parent.ThreadID != threadID {
+			return fmt.Errorf("%w: parent reply belongs to a different thread", errpkg.ErrInvalid)
+		}
+
+		if !parent.ParentReplyID.Valid {
+			break
+		}
+
+		depth++
+		if depth >= maxForumReplyDepth {
+			return fmt.Errorf("%w: reply depth exceeds %d", errpkg.ErrInvalid, maxForumReplyDepth)
+		}
+
+		parentID = parent.ParentReplyID
+	}
+
+	return nil
+}
+
 // GetReply retrieves a reply by ID.
 func (s *Service) GetReply(ctx context.Context, id pgtype.UUID) (gen.ForumReply, error) {
 	return s.store.getReplyByID(ctx, id)
@@ -486,10 +663,16 @@ func (s *Service) UpdateReply(ctx context.Context, id, userID pgtype.UUID, body 
 	}
 
 	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.edit_any") {
-		return gen.ForumReply{}, errors.New("only the author or a moderator can edit this reply")
+		return gen.ForumReply{}, fmt.Errorf("%w: only the author or a moderator can edit this reply", errpkg.ErrForbidden)
 	}
 
 	if reply.AuthorUserID == userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.edit_any") {
+		// F-009: an author removed from the space loses edit access too —
+		// they can no longer read the content they're editing.
+		if err := s.requireFullThreadAccess(ctx, reply.ThreadID, userID); err != nil {
+			return gen.ForumReply{}, err
+		}
+
 		thread, terr := s.store.getThreadByID(ctx, reply.ThreadID)
 		if terr == nil {
 			if expired := editWindowExpired(thread.EditWindowMinutes, reply.CreatedAt); expired {
@@ -530,16 +713,30 @@ func (s *Service) DeleteReply(ctx context.Context, id, userID pgtype.UUID) error
 	}
 
 	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.delete_any") {
-		return errors.New("only the author or a moderator can delete this reply")
+		return fmt.Errorf("%w: only the author or a moderator can delete this reply", errpkg.ErrForbidden)
 	}
 
-	if err := s.store.softDeleteReply(ctx, id); err != nil {
+	if reply.AuthorUserID == userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.delete_any") {
+		// F-009: an author removed from the space loses delete access too.
+		if err := s.requireFullThreadAccess(ctx, reply.ThreadID, userID); err != nil {
+			return err
+		}
+	}
+
+	// F-003: the delete and the reply_count decrement commit atomically.
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if err := q.SoftDeleteForumReply(ctx,
+			id,
+		); err != nil {
+			return fmt.Errorf("deleting reply: %w", err)
+		}
+
+		return q.IncrementThreadReplyCount(ctx, gen.IncrementThreadReplyCountParams{
+			ID:    reply.ThreadID,
+			Delta: -1,
+		})
+	}); err != nil {
 		return err
-	}
-
-	// BUG-007: decrement the denormalized reply_count on the parent thread.
-	if err := s.store.incrementReplyCount(ctx, reply.ThreadID, -1); err != nil {
-		slog.Warn("failed to decrement thread reply count", "error", err)
 	}
 
 	s.emitWebhook(ctx, "forum.reply.deleted", map[string]any{"reply_id": id, "actor_id": userID})
@@ -580,25 +777,62 @@ type VoteInput struct {
 // Vote upserts a vote on a thread or reply and recalculates the entity's score.
 func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput) (gen.ForumVote, error) {
 	if input.Value != VoteDown && input.Value != VoteUp {
-		return gen.ForumVote{}, errors.New("vote value must be -1 or 1")
+		return gen.ForumVote{}, fmt.Errorf("%w: vote value must be -1 or 1", errpkg.ErrInvalid)
 	}
 
 	if input.EntityType != EntityTypeThread && input.EntityType != EntityTypeReply {
-		return gen.ForumVote{}, errors.New("entity type must be 'thread' or 'reply'")
+		return gen.ForumVote{}, fmt.Errorf("%w: entity type must be 'thread' or 'reply'", errpkg.ErrInvalid)
 	}
 
-	vote, err := s.store.upsertVote(ctx, gen.UpsertForumVoteParams{
-		UserID:     userID,
-		EntityType: input.EntityType,
-		EntityID:   input.EntityID,
-		Value:      input.Value,
-	})
-	if err != nil {
-		return gen.ForumVote{}, fmt.Errorf("upserting vote: %w", err)
+	// F-005 / C-007 parity: votes only count on live entities — a deleted
+	// thread (or reply / reply on a deleted thread) rejects the vote.
+	// F-009: votes also only count where the voter can read the content.
+	var voteThreadID pgtype.UUID
+
+	switch input.EntityType {
+	case EntityTypeThread:
+		if _, err := s.store.getThreadByID(ctx, input.EntityID); err != nil {
+			return gen.ForumVote{}, fmt.Errorf("%w: thread", errpkg.ErrNotFound)
+		}
+		voteThreadID = input.EntityID
+	case EntityTypeReply:
+		reply, err := s.store.getReplyByID(ctx, input.EntityID)
+		if err != nil {
+			return gen.ForumVote{}, fmt.Errorf("%w: reply", errpkg.ErrNotFound)
+		}
+
+		if _, err := s.store.getThreadByID(ctx, reply.ThreadID); err != nil {
+			return gen.ForumVote{}, fmt.Errorf("%w: thread", errpkg.ErrNotFound)
+		}
+		voteThreadID = reply.ThreadID
 	}
 
-	// Recalculate the entity's vote score.
-	s.recalcVoteScore(ctx, input.EntityType, input.EntityID)
+	if err := s.requireFullThreadAccess(ctx, voteThreadID, userID); err != nil {
+		return gen.ForumVote{}, err
+	}
+
+	// F-003: the vote upsert and the score recalculation commit atomically.
+	var vote gen.ForumVote
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		v, err := q.UpsertForumVote(ctx, gen.UpsertForumVoteParams{
+			UserID:     userID,
+			EntityType: input.EntityType,
+			EntityID:   input.EntityID,
+			Value:      input.Value,
+		})
+		if err != nil {
+			return fmt.Errorf("upserting vote: %w", err)
+		}
+		vote = v
+
+		if input.EntityType == EntityTypeThread {
+			return q.UpdateThreadVoteScore(ctx, input.EntityID)
+		}
+
+		return q.UpdateReplyVoteScore(ctx, input.EntityID)
+	}); err != nil {
+		return gen.ForumVote{}, err
+	}
 
 	s.emitWebhook(ctx, "forum.vote.cast", map[string]any{
 		"entity_type": input.EntityType, "entity_id": input.EntityID,
@@ -612,30 +846,25 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 // the entity's score. Ref: api-routes-catalog L591 (DELETE /forum/{id}/vote).
 func (s *Service) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if entityType != EntityTypeThread && entityType != EntityTypeReply {
-		return errors.New("entity type must be 'thread' or 'reply'")
+		return fmt.Errorf("%w: entity type must be 'thread' or 'reply'", errpkg.ErrInvalid)
 	}
 
-	if err := s.store.deleteVote(ctx, userID, entityType, entityID); err != nil {
-		return fmt.Errorf("removing vote: %w", err)
-	}
-
-	s.recalcVoteScore(ctx, entityType, entityID)
-
-	return nil
-}
-
-// recalcVoteScore recalculates the denormalized vote_score for an entity.
-func (s *Service) recalcVoteScore(ctx context.Context, entityType string, entityID pgtype.UUID) {
-	switch entityType {
-	case EntityTypeThread:
-		if err := s.store.updateThreadVoteScore(ctx, entityID); err != nil {
-			slog.Warn("failed to update thread vote score", "error", err)
+	// F-003: the delete and the score recalculation commit atomically.
+	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if err := q.DeleteForumVote(ctx, gen.DeleteForumVoteParams{
+			UserID:     userID,
+			EntityType: entityType,
+			EntityID:   entityID,
+		}); err != nil {
+			return fmt.Errorf("removing vote: %w", err)
 		}
-	case EntityTypeReply:
-		if err := s.store.updateReplyVoteScore(ctx, entityID); err != nil {
-			slog.Warn("failed to update reply vote score", "error", err)
+
+		if entityType == EntityTypeThread {
+			return q.UpdateThreadVoteScore(ctx, entityID)
 		}
-	}
+
+		return q.UpdateReplyVoteScore(ctx, entityID)
+	})
 }
 
 // GetVoteScore returns the aggregate vote score for an entity.
@@ -822,8 +1051,8 @@ func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID pgtype.UUI
 
 // ListThreadsByPlatformWithDetails returns paginated threads with author + space.
 // BUG-011: supports ?solved and ?sort=top|latest filters and keyset cursors.
-func (s *Service) ListThreadsByPlatformWithDetails(ctx context.Context, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsWithDetailsRow, error) {
-	return s.store.listThreadsByPlatformWithDetails(ctx, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
+func (s *Service) ListThreadsByPlatformWithDetails(ctx context.Context, viewerID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsWithDetailsRow, error) {
+	return s.store.listThreadsByPlatformWithDetails(ctx, viewerID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // amaRequiresApproval parses an ama_config JSONB blob and returns true if
@@ -847,13 +1076,13 @@ func (s *Service) ListThreadsBySpaceWithDetails(ctx context.Context, spaceID pgt
 }
 
 // ListThreadsByAuthorWithDetails returns paginated threads for an author with author + space.
-func (s *Service) ListThreadsByAuthorWithDetails(ctx context.Context, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
-	return s.store.listThreadsByAuthorWithDetails(ctx, authorUserID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
+func (s *Service) ListThreadsByAuthorWithDetails(ctx context.Context, viewerID, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
+	return s.store.listThreadsByAuthorWithDetails(ctx, viewerID, authorUserID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // ListThreadsByTagWithDetails returns paginated threads for a tag with author + space.
-func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
-	return s.store.listThreadsByTagWithDetails(ctx, tagID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
+func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, viewerID, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
+	return s.store.listThreadsByTagWithDetails(ctx, viewerID, tagID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // ListRepliesByThreadWithAuthor returns all replies for a thread with author data.

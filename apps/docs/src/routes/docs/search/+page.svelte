@@ -197,7 +197,7 @@
 	}
 	:global(.search-icon) {
 		position: absolute;
-		left: 0.75rem;
+		inset-inline-start: 0.75rem;
 		color: var(--color-muted);
 		pointer-events: none;
 	}

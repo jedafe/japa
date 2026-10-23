@@ -24,5 +24,5 @@
 	tabindex={-1}
 	aria-hidden="true"
 	bind:value
-	style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none"
+	style="position:absolute;inset-inline-start:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none"
 />

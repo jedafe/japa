@@ -466,7 +466,7 @@
 			<DataTable {columns} data={filtered} actions={rowActions} pageSize={10} selectable bind:selectedIds searchable searchPlaceholder={t('webhooks.search', 'Search webhooks...')} onsearch={(q) => { searchQuery = q; }} filters={statusFilters} bind:filterValue={filterValues} onfilterapply={() => {}} onfilterclear={() => {}}>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
-						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						<Trash2 class="h-3.5 w-3.5 me-1" />
 						{bulkDeleting ? t("common.deleting", "Deleting...") : t("common.deleteSelected", "Delete Selected")} ({selectedIds.size})
 					</Button>
 				{/snippet}
@@ -564,14 +564,14 @@
 			<table class="w-full text-sm">
 				<thead>
 					<tr class="border-b" style="border-color: var(--color-border)">
-						<th class="px-2 py-2 text-left font-medium" style="color: var(--color-muted)">{t("webhooks.events", "Events")}</th>
-						<th class="px-2 py-2 text-left font-medium" style="color: var(--color-muted)">{t("common.status", "Status")}</th>
-						<th class="px-2 py-2 text-left font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_attempts", "Attempts")}</th>
-						<th class="px-2 py-2 text-left font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_last_error", "Last Error")}</th>
-						<th class="px-2 py-2 text-left font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_response_code", "Response Code")}</th>
-						<th class="px-2 py-2 text-left font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_created_at", "Created At")}</th>
-						<th class="px-2 py-2 text-left font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_delivered_at", "Delivered At")}</th>
-						<th class="px-2 py-2 text-left font-medium" style="color: var(--color-muted)"></th>
+						<th class="px-2 py-2 text-start font-medium" style="color: var(--color-muted)">{t("webhooks.events", "Events")}</th>
+						<th class="px-2 py-2 text-start font-medium" style="color: var(--color-muted)">{t("common.status", "Status")}</th>
+						<th class="px-2 py-2 text-start font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_attempts", "Attempts")}</th>
+						<th class="px-2 py-2 text-start font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_last_error", "Last Error")}</th>
+						<th class="px-2 py-2 text-start font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_response_code", "Response Code")}</th>
+						<th class="px-2 py-2 text-start font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_created_at", "Created At")}</th>
+						<th class="px-2 py-2 text-start font-medium" style="color: var(--color-muted)">{t("webhooks.delivery_delivered_at", "Delivered At")}</th>
+						<th class="px-2 py-2 text-start font-medium" style="color: var(--color-muted)"></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -591,7 +591,7 @@
 							<td class="px-2 py-2">
 								{#if delivery.status === "failed"}
 									<Button size="sm" variant="outline" onclick={() => retryDelivery(delivery)} disabled={retryingDeliveryId === delivery.id}>
-										<RefreshCw class="h-3.5 w-3.5 mr-1" />
+										<RefreshCw class="h-3.5 w-3.5 me-1" />
 										{retryingDeliveryId === delivery.id ? t("common.loading", "Loading...") : t("webhooks.delivery_retry", "Retry")}
 									</Button>
 								{/if}

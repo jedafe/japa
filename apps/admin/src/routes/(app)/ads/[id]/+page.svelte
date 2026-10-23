@@ -420,19 +420,19 @@
 						<table class="w-full text-xs">
 							<thead>
 								<tr class="border-b border-border bg-surface">
-									<th class="px-3 py-2 text-left text-muted">{t('ads.date', 'Date')}</th>
-									<th class="px-3 py-2 text-right text-muted">{t('ads.impressions', 'Impressions')}</th>
-									<th class="px-3 py-2 text-right text-muted">{t('ads.clicks', 'Clicks')}</th>
-									<th class="px-3 py-2 text-right text-muted">{t('ads.spend', 'Spend')}</th>
+									<th class="px-3 py-2 text-start text-muted">{t('ads.date', 'Date')}</th>
+									<th class="px-3 py-2 text-end text-muted">{t('ads.impressions', 'Impressions')}</th>
+									<th class="px-3 py-2 text-end text-muted">{t('ads.clicks', 'Clicks')}</th>
+									<th class="px-3 py-2 text-end text-muted">{t('ads.spend', 'Spend')}</th>
 								</tr>
 							</thead>
 							<tbody>
 								{#each stats.daily_stats as day (day)}
 									<tr class="border-b border-border last:border-0">
 										<td class="px-3 py-2">{day.date}</td>
-										<td class="px-3 py-2 text-right">{(day.impressions ?? 0).toLocaleString()}</td>
-										<td class="px-3 py-2 text-right">{(day.clicks ?? 0).toLocaleString()}</td>
-										<td class="px-3 py-2 text-right">{(day.spend ?? 0).toFixed(2)}</td>
+										<td class="px-3 py-2 text-end">{(day.impressions ?? 0).toLocaleString()}</td>
+										<td class="px-3 py-2 text-end">{(day.clicks ?? 0).toLocaleString()}</td>
+										<td class="px-3 py-2 text-end">{(day.spend ?? 0).toFixed(2)}</td>
 									</tr>
 								{/each}
 							</tbody>

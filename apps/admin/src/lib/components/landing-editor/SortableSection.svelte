@@ -3,6 +3,7 @@
 	import { createSortable } from '@dnd-kit/svelte/sortable';
 	import { GripVertical, Trash2 } from 'lucide-svelte';
 	import type { Component } from 'svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 	import type { Block, BlockMeta } from '@japaconnect/landing-blocks';
 
 	let {
@@ -48,7 +49,7 @@
 		: 'hover:bg-[var(--surface)]'} {sortable.isDragging ? 'opacity-40 ring-2 ring-[var(--primary)]' : ''}"
 	role="button"
 	tabindex="0"
-	aria-label="Select section {label}"
+	aria-label={t('landing_editor.select_section', 'Select section {label}').replace('{label}', label)}
 	onclick={onSelect}
 	onkeydown={(e) => {
 		if (e.key === 'Enter' || e.key === ' ') {
@@ -68,14 +69,14 @@
 		<Icon size={14} />
 	{/if}
 	<span class="flex-1 truncate text-[var(--foreground)]">{label}</span>
-	{#if !block.visible}<span class="text-xs text-[var(--muted)]">hidden</span>{/if}
+	{#if !block.visible}<span class="text-xs text-[var(--muted)]">{t('landing_editor.hidden', 'hidden')}</span>{/if}
 	<span class="font-mono text-[10px] text-[var(--muted)]">#{index + 1}</span>
 	{#if onRemove}
 		<button
 			type="button"
-			class="ml-0.5 p-0.5 text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100"
-			aria-label="Remove section {label}"
-			title="Remove section"
+			class="ms-0.5 p-0.5 text-[var(--muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100"
+			aria-label={t('landing_editor.remove_section', 'Remove section {label}').replace('{label}', label)}
+			title={t('landing_editor.remove', 'Remove section')}
 			onclick={(e) => {
 				e.stopPropagation();
 				onRemove();

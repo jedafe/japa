@@ -1437,8 +1437,30 @@ func (s *Service) AddOwner(ctx context.Context, spaceID, userID pgtype.UUID) err
 	return nil
 }
 
-// Leave removes the user from the space membership.
+// Leave removes the user from the space. SPACES-017: the sole owner cannot
+// leave — an ownerless space can never gain moderators (assignment is
+// owner-gated) nor be deleted (owner-only, 0-member rule). The owner must
+// delete the space or have a platform admin (spaces.moderate.any /
+// spaces.delete) intervene.
 func (s *Service) Leave(ctx context.Context, spaceID, userID pgtype.UUID) error {
+	isOwner, err := s.read.CheckSpaceOwnership(ctx, gen.CheckSpaceOwnershipParams{
+		SpaceID: spaceID,
+		UserID:  userID,
+	})
+	if err != nil {
+		return fmt.Errorf("checking space ownership: %w", err)
+	}
+
+	if isOwner {
+		owners, err := s.read.CountSpaceOwners(ctx, spaceID)
+		if err != nil {
+			return fmt.Errorf("counting space owners: %w", err)
+		}
+		if owners <= 1 {
+			return fmt.Errorf("%w: the sole owner cannot leave their space — delete it or ask a platform admin to take over", errpkg.ErrForbidden)
+		}
+	}
+
 	if err := s.write.RemoveSpaceMember(ctx, gen.RemoveSpaceMemberParams{
 		SpaceID: spaceID,
 		UserID:  userID,

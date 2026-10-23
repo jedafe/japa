@@ -130,7 +130,7 @@
               <button
                 type="button"
                 onclick={() => removeSlide(i)}
-                class="absolute right-1 top-1 z-10 text-xs text-[var(--color-danger)] hover:underline"
+                class="absolute end-1 top-1 z-10 text-xs text-[var(--color-danger)] hover:underline"
               >Remove</button>
               <MediaPicker value={slide} onchange={(m) => onSlideChange(i, m)} {mediaPickerComponent} />
             </div>
@@ -155,7 +155,7 @@
           <button
             type="button"
             onclick={() => removeCta(i)}
-            class="absolute right-1 top-1 z-10 text-xs text-[var(--color-danger)] hover:underline"
+            class="absolute end-1 top-1 z-10 text-xs text-[var(--color-danger)] hover:underline"
           >Remove</button>
           <CTAEditor value={cta} onchange={(v) => updateCta(i, v)} />
         </div>

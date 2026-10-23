@@ -23,8 +23,16 @@ export const load: PageServerLoad = async (event) => {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Scam alert not found' });
 		}
-		return { alert: null, loadError: true, authed };
+		return { alert: null, loadError: true, authed, canEdit: false };
 	}
 
-	return { alert, loadError: false, authed };
+	// §81: the reporter (is_reporter) or a scam_alert.edit_any holder may edit
+	// — the detail page needs this to render the Edit affordance that
+	// discovers /scam-alerts/[id]/edit.
+	const canEdit =
+		authed &&
+		(alert.is_reporter === true ||
+			(event.locals.user?.permissions ?? []).includes('scam_alert.edit_any'));
+
+	return { alert, loadError: false, authed, canEdit };
 };

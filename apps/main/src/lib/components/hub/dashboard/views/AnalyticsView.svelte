@@ -485,7 +485,7 @@
 									<span class="text-[var(--color-text-subtle)] whitespace-nowrap">
 										{formatContentType(point.contentType)} · {formatDate(point.createdAt)}
 									</span>
-									<span class="text-right whitespace-nowrap">
+									<span class="text-end whitespace-nowrap">
 										{formatMetric(point.views)} {t('profile.views', 'views')}
 										{#if point.comments > 0}
 											· {formatMetric(point.comments)} {t('dashboard.analytics.comments', 'comments')}
@@ -560,7 +560,7 @@
 							{#each trendingContentSeries as point (point.content_id)}
 								<div class="contents">
 									<span class="truncate" title={point.fullTitle}>{point.fullTitle}</span>
-									<span class="text-left whitespace-nowrap text-[var(--color-text-subtle)]">
+									<span class="text-start whitespace-nowrap text-[var(--color-text-subtle)]">
 										{formatMetric(point.views)} {t('dashboard.analytics.views', 'views')}
 										{#if point.reactions > 0}
 											· {formatMetric(point.reactions)} {t('dashboard.analytics.reactions', 'reactions')}
@@ -661,7 +661,7 @@
 							{#each countrySeries as point (point.country)}
 								<div class="contents">
 									<span class="truncate" title={point.country}>{point.country}</span>
-									<span class="text-right whitespace-nowrap">
+									<span class="text-end whitespace-nowrap">
 										{formatMetric(point.readers)} {t('dashboard.analytics.readers', 'readers')}
 									</span>
 								</div>
@@ -700,7 +700,7 @@
 							{#each trafficSourcesSeries as point (point.referrer)}
 								<div class="contents">
 									<span class="truncate" title={point.referrer}>{point.referrer}</span>
-									<span class="text-right whitespace-nowrap text-[var(--color-text-subtle)]">
+									<span class="text-end whitespace-nowrap text-[var(--color-text-subtle)]">
 										{formatMetric(point.visits)} {t('dashboard.analytics.visits', 'visits')}
 									</span>
 								</div>
@@ -781,7 +781,7 @@
 							{#each adPerformanceSeries as point (point.campaign_id)}
 								<div class="contents">
 									<span class="truncate" title={point.fullName}>{point.fullName}</span>
-									<span class="text-left whitespace-nowrap text-[var(--color-text-subtle)]">
+									<span class="text-start whitespace-nowrap text-[var(--color-text-subtle)]">
 										{formatMetric(point.ctr)}% {t('dashboard.analytics.ctr', 'CTR')}
 										· {formatMetric(point.impressions)} {t('dashboard.analytics.impressions', 'impressions')}
 										· {formatMetric(point.clicks)} {t('dashboard.analytics.clicks', 'clicks')}

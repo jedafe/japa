@@ -400,7 +400,7 @@
 					<legend class="text-sm font-medium px-1">{t('crs_calculator.spouse', 'Spouse')}</legend>
 					<div class="grid gap-4 sm:grid-cols-3">
 						<div>
-							<label class="block text-xs text-muted mb-1" for="spouseEdu">Education</label>
+							<label class="block text-xs text-muted mb-1" for="spouseEdu">{t('crs.spouse_education', 'Education')}</label>
 							<AutocompleteSelect
 								id="spouseEdu"
 								bind:value={spouseEducation}
@@ -409,7 +409,7 @@
 							/>
 						</div>
 						<div>
-							<label class="block text-xs text-muted mb-1" for="spouseExp">Canadian experience (yrs)</label>
+							<label class="block text-xs text-muted mb-1" for="spouseExp">{t('crs.spouse_experience', 'Canadian experience (yrs)')}</label>
 							<input id="spouseExp" type="number" bind:value={spouseCanadianExp} min="0" max="10" class="input w-full" />
 						</div>
 						<div class="sm:col-span-1"></div>

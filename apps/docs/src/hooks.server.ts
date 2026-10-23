@@ -2,6 +2,7 @@ import { error, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
+import { isRtl } from '$lib/i18n/rtl';
 
 /**
  * In-process cache for GET /site/settings/public (same pattern as the main
@@ -242,7 +243,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 			html
 				.replace('%jc.themevars%', () => buildThemeOverrides(settings))
 				.replace('%jc.theme%', () => event.locals.resolvedTheme)
-				.replace('lang="en"', `lang="${event.locals.locale}"`)
+				.replace(
+					'lang="en"',
+					() => `lang="${event.locals.locale}" dir="${isRtl(event.locals.locale ?? '') ? 'rtl' : 'ltr'}"`
+				)
 	});
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');

@@ -724,7 +724,7 @@
 				</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
 					{widgetsSidebar.name}
-					<span class="ml-2 text-sm font-normal" style="color: var(--color-muted)">
+					<span class="ms-2 text-sm font-normal" style="color: var(--color-muted)">
 						({t("sidebars.app_" + widgetsSidebar.app, widgetsSidebar.app)} · {t("sidebars.position_" + widgetsSidebar.position, widgetsSidebar.position)} · {widgetsSidebar.page_pattern})
 					</span>
 				</p>
@@ -741,7 +741,7 @@
 
 			{#if canManage}
 				<Button onclick={openCreateWidget} size="sm">
-					<Plus class="mr-1 h-3.5 w-3.5" />
+					<Plus class="me-1 h-3.5 w-3.5" />
 					{t("sidebars.add_widget", "Add Widget")}
 				</Button>
 			{/if}
@@ -833,7 +833,7 @@
 							<input type="checkbox" checked={widgetPropsObj[field.key] === true} onchange={(e) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: e.currentTarget.checked }; }} />
 							{field.label}
 						</label>
-						{#if field.help}<p class="-mt-2 pl-6 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
+						{#if field.help}<p class="-mt-2 ps-6 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
 					{:else if field.type === 'select'}
 						<div>
 							<label for="prop-{field.key}" class="block text-sm font-medium" style="color: var(--color-foreground)">{field.label}</label>
@@ -967,7 +967,7 @@
 					{#each selectedGroupObjs as group (group.id)}
 						<span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-foreground)">
 							{group.name}
-							<button type="button" class="ml-0.5 opacity-60 hover:opacity-100" style="color: var(--color-foreground)" onclick={() => removeGroup(group.id)} aria-label={t("common.remove", "Remove")}>
+							<button type="button" class="ms-0.5 opacity-60 hover:opacity-100" style="color: var(--color-foreground)" onclick={() => removeGroup(group.id)} aria-label={t("common.remove", "Remove")}>
 								<X size={12} />
 							</button>
 						</span>
@@ -1168,7 +1168,7 @@
 					{#each selectedSidebarGroupObjs as group (group.id)}
 						<span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-foreground)">
 							{group.name}
-							<button type="button" class="ml-0.5 opacity-60 hover:opacity-100" style="color: var(--color-foreground)" onclick={() => removeSidebarGroup(value, group.id)} aria-label={t("common.remove", "Remove")}>&times;</button>
+							<button type="button" class="ms-0.5 opacity-60 hover:opacity-100" style="color: var(--color-foreground)" onclick={() => removeSidebarGroup(value, group.id)} aria-label={t("common.remove", "Remove")}>&times;</button>
 						</span>
 					{/each}
 					<input
@@ -1192,10 +1192,10 @@
 					<ul class="absolute z-[60] mt-1 max-h-48 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
 						{#each sidebarGroupSuggestions as group (group.id)}
 							<li>
-								<button type="button" class="w-full px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-2" style="color: var(--color-foreground)" onmousedown={(e) => { e.preventDefault(); addSidebarGroup(value, group.id); }}>
+								<button type="button" class="w-full px-3 py-2 text-start text-sm hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-2" style="color: var(--color-foreground)" onmousedown={(e) => { e.preventDefault(); addSidebarGroup(value, group.id); }}>
 									<span>{group.name}</span>
 									{#if group.is_system ?? false}<span class="text-xs px-1.5 py-0.5 rounded" style="background: var(--color-muted); color: var(--color-surface)">system</span>{/if}
-									<span class="ml-auto text-xs" style="color: var(--color-muted)">{group.member_count ?? 0}</span>
+									<span class="ms-auto text-xs" style="color: var(--color-muted)">{group.member_count ?? 0}</span>
 								</button>
 							</li>
 						{/each}

@@ -77,7 +77,7 @@
 </script>
 
 <nav
-	class="flex h-full w-full flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]"
+	class="flex h-full w-full flex-col border-e border-[var(--color-border)] bg-[var(--color-surface)]"
 	aria-label={t('a11y.main_nav')}
 >
 	<!-- Logo + collapse toggle -->
@@ -100,10 +100,10 @@
 			<button
 				type="button"
 				onclick={onToggle}
-				class="ml-auto grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+				class="ms-auto grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 				aria-label={t('nav.collapse')}
 			>
-				<PanelLeftClose size={18} />
+				<PanelLeftClose class="rtl:-scale-x-100" size={18} />
 			</button>
 		{/if}
 	</div>
@@ -115,7 +115,7 @@
 			class="mx-auto mb-1 grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 			aria-label={t('nav.expand')}
 		>
-			<PanelLeftOpen size={18} />
+			<PanelLeftOpen class="rtl:-scale-x-100" size={18} />
 		</button>
 	{/if}
 
@@ -170,7 +170,7 @@
 				href={loginUrl()}
 				class="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 			>
-				<LogIn size={18} />
+				<LogIn class="rtl:-scale-x-100" size={18} />
 				{#if !collapsed}<span>{t('nav.account')}</span>{/if}
 			</a>
 		{/if}

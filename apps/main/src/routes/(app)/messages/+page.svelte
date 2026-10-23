@@ -448,14 +448,14 @@
 	<div class="flex min-h-0 flex-1 gap-0">
 		<!-- Conversation list -->
 		<aside
-			class="flex w-full shrink-0 flex-col border-r border-[var(--color-border)] sm:max-w-xs sm:flex"
+			class="flex w-full shrink-0 flex-col border-e border-[var(--color-border)] sm:max-w-xs sm:flex"
 			class:hidden={!!activeId}
 		>
 			<div class="space-y-2 border-b border-[var(--color-border)] px-3 py-3">
 				<div class="relative">
 					<Search
 						size={15}
-						class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+						class="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
 					/>
 					<input
 						type="search"
@@ -463,7 +463,7 @@
 						oninput={(e) => onSearchInput(e.currentTarget.value)}
 						placeholder={t('messages.search_placeholder', 'Search conversations')}
 						aria-label={t('messages.search_placeholder', 'Search conversations')}
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-9 pr-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-9 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 					/>
 				</div>
 				<div class="flex gap-2">
@@ -509,7 +509,7 @@
 								type="button"
 								onclick={() => selectConversation(conv.id)}
 								aria-current={active ? 'true' : undefined}
-								class="flex w-full items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 text-left transition-colors {active
+								class="flex w-full items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 text-start transition-colors {active
 									? 'bg-[var(--color-surface-subtle)]'
 									: 'hover:bg-[var(--color-surface-subtle)]'}"
 							>
@@ -592,7 +592,7 @@
 						class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] sm:hidden"
 						aria-label={t('messages.back', 'Back')}
 					>
-						<ArrowLeft size={18} />
+						<ArrowLeft class="rtl:-scale-x-100" size={18} />
 					</button>
 					{#if activeConversation?.other_avatar_url}
 						<img
@@ -745,7 +745,7 @@
 						class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 						aria-label={t('messages.send', 'Send')}
 					>
-						<Send size={16} />
+						<Send class="rtl:-scale-x-100" size={16} />
 					</button>
 				</form>
 			{/if}

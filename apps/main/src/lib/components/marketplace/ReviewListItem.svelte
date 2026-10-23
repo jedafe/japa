@@ -43,7 +43,7 @@
 					name={review.author_display_name ?? review.author_username}
 					avatar={review.author_avatar_url}
 					variant="row"
-					class="inline-flex max-w-full items-center text-left text-sm font-medium text-[var(--color-text)] hover:underline"
+					class="inline-flex max-w-full items-center text-start text-sm font-medium text-[var(--color-text)] hover:underline"
 				>
 					{#snippet trigger()}
 						<span>{authorName(review)}</span>

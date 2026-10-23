@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { FileText, ArrowRight } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import type { PageData } from './$types';
@@ -10,7 +10,7 @@
 
 	function formatDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -53,7 +53,7 @@
 							<span>{formatDate(p.created_at)}</span>
 							<span class="flex items-center gap-1 text-[var(--color-primary)] opacity-0 transition group-hover:opacity-100">
 								{t('pages_list.view')}
-								<ArrowRight size={14} />
+								<ArrowRight class="rtl:-scale-x-100" size={14} />
 							</span>
 						</div>
 					</a>

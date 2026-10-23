@@ -10,7 +10,7 @@ import type { Reroute } from '@sveltejs/kit';
 // (en). `reroute` cannot await system_settings, so keep this in sync with
 // the shipped packs in src/lib/i18n/*.json — an unknown /xx/ prefix must
 // still 404 rather than silently render a different route (e.g. /me/*).
-const PREFIXED_LOCALES = new Set(['fr', 'yo']);
+const PREFIXED_LOCALES = new Set(['fr', 'yo', 'es', 'de', 'pt', 'it', 'nl', 'ar', 'zh']);
 
 export const reroute: Reroute = ({ url }) => {
 	const m = url.pathname.match(/^\/([a-z]{2})(?=\/|$)/);

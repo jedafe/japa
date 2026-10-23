@@ -405,7 +405,7 @@
 							{/if}
 							<div class="mt-3 flex items-center justify-end text-xs text-[var(--color-text-subtle)]">
 								<span class="flex items-center gap-1 group-hover:text-[var(--color-primary)]">
-									{t('blog_series.view', 'View series')} <ArrowRight size={14} />
+									{t('blog_series.view', 'View series')} <ArrowRight class="rtl:-scale-x-100" size={14} />
 								</span>
 							</div>
 						</a>

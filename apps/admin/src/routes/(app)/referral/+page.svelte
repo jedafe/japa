@@ -379,7 +379,7 @@
 				>
 					{#snippet bulkActions()}
 						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
-							<Trash2 class="h-3.5 w-3.5 mr-1" />
+							<Trash2 class="h-3.5 w-3.5 me-1" />
 							{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.delete_selected', 'Delete Selected')} ({selectedIds.size})
 						</Button>
 					{/snippet}
@@ -404,7 +404,7 @@
 		<Card>
 			<CardContent class="p-0">
 				{#if v2Flagged.length === 0}
-					<p class="py-8 text-center text-sm text-muted">No flagged referrals awaiting review.</p>
+					<p class="py-8 text-center text-sm text-muted">{t('referral.no_flagged', 'No flagged referrals awaiting review.')}</p>
 				{:else}
 					<div class="divide-y divide-border">
 						{#each v2Flagged as row}
@@ -420,7 +420,7 @@
 										onclick={() => resolveFlagged(row.id, 'credit')}
 										disabled={resolving === row.id}
 									>
-										<Check class="h-3.5 w-3.5 mr-1" />
+										<Check class="h-3.5 w-3.5 me-1" />
 										Credit
 									</Button>
 									<Button
@@ -429,7 +429,7 @@
 										onclick={() => resolveFlagged(row.id, 'reject')}
 										disabled={resolving === row.id}
 									>
-										<X class="h-3.5 w-3.5 mr-1" />
+										<X class="h-3.5 w-3.5 me-1" />
 										Reject
 									</Button>
 								</div>
@@ -443,9 +443,9 @@
 		<!-- V2 Stats (BUG-014 fix) -->
 		<Card>
 			<CardContent class="p-6">
-				<h3 class="mb-4 text-lg font-semibold text-foreground">Referral Stats</h3>
+				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('referral.stats', 'Referral Stats')}</h3>
 				{#if v2Stats.length === 0}
-					<p class="text-sm text-muted">No referral data yet.</p>
+					<p class="text-sm text-muted">{t('referral.no_data', 'No referral data yet.')}</p>
 				{:else}
 					<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
 						{#each v2Stats as stat}

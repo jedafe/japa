@@ -83,7 +83,7 @@
           <span class={labelClass}>
             Tablet columns
             {#if props.responsive_columns?.tablet !== undefined}
-              <button type="button" class="ml-1 text-[10px] text-[var(--color-danger)] hover:underline" onclick={() => { const rc = { ...props.responsive_columns }; delete rc.tablet; update('responsive_columns', Object.keys(rc).length > 0 ? rc : undefined); }}>reset</button>
+              <button type="button" class="ms-1 text-[10px] text-[var(--color-danger)] hover:underline" onclick={() => { const rc = { ...props.responsive_columns }; delete rc.tablet; update('responsive_columns', Object.keys(rc).length > 0 ? rc : undefined); }}>reset</button>
             {/if}
           </span>
           <input
@@ -100,7 +100,7 @@
           <span class={labelClass}>
             Mobile columns
             {#if props.responsive_columns?.mobile !== undefined}
-              <button type="button" class="ml-1 text-[10px] text-[var(--color-danger)] hover:underline" onclick={() => { const rc = { ...props.responsive_columns }; delete rc.mobile; update('responsive_columns', Object.keys(rc).length > 0 ? rc : undefined); }}>reset</button>
+              <button type="button" class="ms-1 text-[10px] text-[var(--color-danger)] hover:underline" onclick={() => { const rc = { ...props.responsive_columns }; delete rc.mobile; update('responsive_columns', Object.keys(rc).length > 0 ? rc : undefined); }}>reset</button>
             {/if}
           </span>
           <input

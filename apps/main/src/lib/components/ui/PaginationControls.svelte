@@ -25,7 +25,7 @@
 		class="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:cursor-not-allowed disabled:opacity-40"
 		aria-label={t('pagination.prev', 'Previous page')}
 	>
-		<ChevronLeft size={16} />
+		<ChevronLeft class="rtl:-scale-x-100" size={16} />
 	</button>
 
 	<span class="text-sm text-[var(--color-text-subtle)]">
@@ -43,6 +43,6 @@
 		class="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:cursor-not-allowed disabled:opacity-40"
 		aria-label={t('pagination.next', 'Next page')}
 	>
-		<ChevronRight size={16} />
+		<ChevronRight class="rtl:-scale-x-100" size={16} />
 	</button>
 </nav>

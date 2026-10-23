@@ -11,6 +11,8 @@
 		Check
 	} from 'lucide-svelte';
 	import { untrack } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Menu, MenuItem } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
@@ -96,23 +98,25 @@
 	// §88 AMA: is this reply from the AMA host? When true, highlight it.
 	const isHostReply = $derived(!!hostUserId && reply.author_user_id === hostUserId);
 
-	// §88 AMA: is this a pending question awaiting host approval?
-	const isPending = $derived(!!reply.ama_pending);
-
 	let approving = $state(false);
+	let approvedLocally = $state(false);
+
+	// §88 AMA: is this a pending question awaiting host approval?
+	const isPending = $derived(!!reply.ama_pending && !approvedLocally);
 
 	// §88: host approves a pending question via POST /forum/ama/:id/questions/:replyId/approve
 	async function approveQuestion() {
 		if (approving) return;
 		approving = true;
-		await api.post(`/forum/ama/${threadId}/questions/${reply.id}/approve`, {});
+		const res = await api.post(`/forum/ama/${threadId}/questions/${reply.id}/approve`, {});
 		approving = false;
-		reply.ama_pending = false;
+		if (!res.error) approvedLocally = true;
 	}
 
 	// Replies with children start collapsed — same "View N replies" pattern as
 	// the comments section. untrack: intentional one-time snapshot of props.
 	let collapsed = $state(untrack(() => childrenOf(reply.id).length > 0));
+	let deepExpanded = $state(false);
 	let composing = $state(false);
 	let replyBody = $state<string>('');
 	let submitting = $state(false);
@@ -229,7 +233,8 @@
 	);
 
 	async function submitReply() {
-		if (!replyBody || submitting || !authed) return;
+		if (!replyBody || submitting) return;
+		if (!(await requireAuthOrRedirect())) return;
 		submitting = true;
 		const res = await api.post<ForumReply>(`/forum/${threadId}/replies`, {
 			body: replyBody,
@@ -237,10 +242,13 @@
 		});
 		submitting = false;
 		if (res.error || !res.data) return;
-		localChildren = [...localChildren, res.data];
 		replyBody = '';
 		composing = false;
 		collapsed = false;
+		// Refetch so the new reply renders with the joined author row — the
+		// POST response is a bare row without author fields (see ReplyThread).
+		await invalidateAll();
+		localChildren = [];
 	}
 
 	async function startEdit() {
@@ -270,11 +278,10 @@
 					: res.error?.message || t('forum.edit_error', 'Failed to save edits.');
 			return;
 		}
-		// Mutate the local reply so the UI updates without a full reload.
-		reply.body = res.data.body;
-		reply.is_edited = res.data.is_edited;
-		reply.updated_at = res.data.updated_at;
+		// Load-data props aren't deeply reactive — mutating reply.* fields
+		// would never re-render, so refetch to show the edited body + flag.
 		editing = false;
+		await invalidateAll();
 	}
 
 	async function deleteReply() {
@@ -314,7 +321,7 @@
 	{#if allChildren.length > 0}
 		<!-- Vertical thread rail: runs from the replier avatar down through descendants. -->
 		<div
-			class="thread-rail absolute left-9 top-9 -z-10 w-px bg-[var(--color-border)]"
+			class="thread-rail absolute start-9 top-9 -z-10 w-px bg-[var(--color-border)]"
 			style="bottom: {railBottom}px"
 		></div>
 	{/if}
@@ -407,7 +414,7 @@
 		{/if}
 	</header>
 
-	<div class="break-words z-[1] mt-1 ml-[52px]">
+	<div class="break-words z-[1] mt-1 ms-[52px]">
 		{#if removed}
 			<p class="text-sm italic text-[var(--color-muted)]">
 				{t('forum.deleted_reply', '[deleted]')}
@@ -462,7 +469,7 @@
 						<button
 							type="button"
 							onclick={() => (collapsed = true)}
-							class="{iconBtn} absolute -left-12 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							class="{iconBtn} absolute -start-12 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
 							aria-label={t('comments.collapse', 'Collapse')}
 							title={t('comments.collapse', 'Collapse')}
 						>
@@ -479,17 +486,22 @@
 						userVote={myVote}
 					/>
 
-					{#if authed}
-						<button
-							type="button"
-							onclick={() => (composing = !composing)}
-							class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
-							aria-label={t('forum.reply', 'Reply')}
-							title={t('forum.reply', 'Reply')}
-						>
-							<Reply size={18} />
-						</button>
-					{/if}
+					<!-- Visible for guests — clicking redirects to /login. -->
+					<button
+						type="button"
+						onclick={() => {
+							if (!authed) {
+								void requireAuthOrRedirect();
+								return;
+							}
+							composing = !composing;
+						}}
+						class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+						aria-label={t('forum.reply', 'Reply')}
+						title={t('forum.reply', 'Reply')}
+					>
+						<Reply class="rtl:-scale-x-100" size={18} />
+					</button>
 
 					<button
 						type="button"
@@ -567,22 +579,25 @@
 					type="button"
 					bind:this={railEndEl}
 					onclick={() => (collapsed = false)}
-					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]"
+					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]"
 				>
 					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
 						<Plus size={14} />
 					</span>
 					{viewRepliesLabel}
 				</button>
-			{:else if !collapsed && !beyondMaxDepth}
+			{:else if !collapsed && (!beyondMaxDepth || deepExpanded)}
 				{#if allChildren.length > 0}
-					<div class="relative -left-8 mt-3 pl-5" bind:this={childrenWrap}>
+					<div class="relative -start-8 mt-3 ps-5" bind:this={childrenWrap}>
 						<div class="space-y-3">
 							{#each allChildren as child (child.id)}
+								<!-- At MAX_DEPTH children stay at the same visual depth —
+								     each one renders its own "Continue this thread"
+								     affordance for the level below. -->
 								<ReplyItem
 									reply={child}
 									{childrenOf}
-									depth={depth + 1}
+									depth={beyondMaxDepth ? depth : depth + 1}
 									{threadId}
 									{authed}
 									{canSolve}
@@ -599,16 +614,17 @@
 					</div>
 				{/if}
 			{:else if allChildren.length > 0}
-				<a
-					href={`/forum/${threadId}?reply=${allChildren[0].id}#continue`}
+				<button
+					type="button"
 					bind:this={railEndEl}
-					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
+					onclick={() => (deepExpanded = true)}
+					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
 				>
 					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
 						<Plus size={14} />
 					</span>
 					{t('forum.continue_thread', 'Continue this thread →')}
-				</a>
+				</button>
 			{/if}
 		{/if}
 	</div>
@@ -633,19 +649,19 @@
 		color: var(--color-primary-hover);
 	}
 
-	/* Curved thread branch (╰ elbow): the parent's rail (left-9 / avatar center)
+	/* Curved thread branch (╰ elbow): the parent's rail (start-9 / avatar center)
 	 * bends right into the child reply avatar. Paired with the .thread-rail
 	 * vertical line, which terminates at the last child's junction. */
 	.comment-reply::before {
 		content: '';
 		position: absolute;
-		left: -20px;
+		inset-inline-start: -20px;
 		top: 20px;
 		width: 36px;
 		height: 15px;
-		border-left: 1px solid var(--color-border);
+		border-inline-start: 1px solid var(--color-border);
 		border-bottom: 1px solid var(--color-border);
-		border-bottom-left-radius: 12px;
+		border-end-start-radius: 12px;
 		z-index: -10;
 	}
 </style>

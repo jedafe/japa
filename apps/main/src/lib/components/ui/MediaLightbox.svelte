@@ -263,7 +263,7 @@
 					{safeIndex + 1} / {items.length}
 				</span>
 				<Dialog.Close
-					class="pointer-events-auto ml-auto grid h-9 w-9 place-items-center rounded-full bg-black/50 text-white/80 transition-colors hover:bg-black/70 hover:text-white"
+					class="pointer-events-auto ms-auto grid h-9 w-9 place-items-center rounded-full bg-black/50 text-white/80 transition-colors hover:bg-black/70 hover:text-white"
 					aria-label={t('lightbox.close', 'Close')}
 				>
 					<X size={18} />
@@ -274,21 +274,21 @@
 			{#if safeIndex > 0}
 				<button
 					type="button"
-					class="absolute left-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/50 text-white/80 transition-colors hover:bg-black/70 hover:text-white"
+					class="absolute start-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/50 text-white/80 transition-colors hover:bg-black/70 hover:text-white"
 					onclick={() => go(-1)}
 					aria-label={t('lightbox.prev', 'Previous')}
 				>
-					<ChevronLeft size={22} />
+					<ChevronLeft class="rtl:-scale-x-100" size={22} />
 				</button>
 			{/if}
 			{#if safeIndex < items.length - 1}
 				<button
 					type="button"
-					class="absolute right-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/50 text-white/80 transition-colors hover:bg-black/70 hover:text-white"
+					class="absolute end-2 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/50 text-white/80 transition-colors hover:bg-black/70 hover:text-white"
 					onclick={() => go(1)}
 					aria-label={t('lightbox.next', 'Next')}
 				>
-					<ChevronRight size={22} />
+					<ChevronRight class="rtl:-scale-x-100" size={22} />
 				</button>
 			{/if}
 

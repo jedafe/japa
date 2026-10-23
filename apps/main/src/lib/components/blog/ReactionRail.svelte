@@ -53,8 +53,8 @@
 	const bookmarksEnabled = $derived(features['feature.bookmarks'] ?? true);
 
 	const isHorizontal = $derived(horizontal || bottom);
-	const reactionPopoverPosition = $derived(bottom ? 'left-0 bottom-[calc(100%+0.5rem)] sm:bottom-auto sm:left-1/2 sm:top-10 sm:-translate-x-1/2' : (isHorizontal ? 'left-1/2 top-10 -translate-x-1/2' : 'left-12 top-0'));
-	const sharePopoverPosition = $derived(bottom ? 'right-0 bottom-[calc(100%+0.5rem)] sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-10 sm:-translate-x-1/2' : (isHorizontal ? 'left-1/2 top-10 -translate-x-1/2' : 'left-12 top-0'));
+	const reactionPopoverPosition = $derived(bottom ? 'start-0 bottom-[calc(100%+0.5rem)] sm:bottom-auto sm:start-1/2 sm:top-10 sm:-translate-x-1/2' : (isHorizontal ? 'start-1/2 top-10 -translate-x-1/2' : 'start-12 top-0'));
+	const sharePopoverPosition = $derived(bottom ? 'end-0 bottom-[calc(100%+0.5rem)] sm:bottom-auto sm:start-1/2 sm:end-auto sm:top-10 sm:-translate-x-1/2' : (isHorizontal ? 'start-1/2 top-10 -translate-x-1/2' : 'start-12 top-0'));
 
 	let isBookmarked = $state(untrack(() => bookmarked));
 	let activeReactions = $state<Set<string>>(new Set());
@@ -314,7 +314,7 @@
 -->
 <div
 	class="{bottom
-		? 'fixed bottom-0 left-0 right-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur sm:static sm:z-30 sm:w-full sm:items-stretch sm:justify-start sm:gap-2 sm:rounded-[var(--radius-card)] sm:border sm:bg-[var(--color-surface)] sm:px-3 sm:py-2 sm:pb-2 sm:backdrop-blur-none'
+		? 'fixed bottom-0 start-0 end-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur sm:static sm:z-30 sm:w-full sm:items-stretch sm:justify-start sm:gap-2 sm:rounded-[var(--radius-card)] sm:border sm:bg-[var(--color-surface)] sm:px-3 sm:py-2 sm:pb-2 sm:backdrop-blur-none'
 		: horizontal
 			? 'relative z-30 flex w-full flex-row items-stretch gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2'
 			: 'sticky top-24 z-40 flex flex-col items-center gap-1.5 py-4'}"
@@ -375,7 +375,7 @@
 								disabled={reactionPending !== null}
 							>
 								<span class="text-lg">{r.emoji}</span>
-								<span class="flex-1 truncate text-left">{r.label}</span>
+								<span class="flex-1 truncate text-start">{r.label}</span>
 								<span class="text-xs text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
 									{count > 0 ? count : ''}
 								</span>
@@ -459,7 +459,7 @@
 						>
 							{platform.label.charAt(0)}
 						</span>
-						<span class="flex-1 text-left">{platform.label}</span>
+						<span class="flex-1 text-start">{platform.label}</span>
 					</button>
 				{/each}
 				<div class="my-1 border-t border-[var(--color-border)]"></div>
@@ -471,7 +471,7 @@
 					<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-text)]">
 						<Share2 size={14} />
 					</span>
-					<span class="flex-1 text-left">{t('blog.copy_link', 'Copy link / Native share')}</span>
+					<span class="flex-1 text-start">{t('blog.copy_link', 'Copy link / Native share')}</span>
 				</button>
 			</div>
 		{/if}

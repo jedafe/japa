@@ -88,7 +88,7 @@
       />
       <button type="submit" class="newsletter-btn" disabled={newsletterStatus === 'loading'}>
         {cta}
-        <ArrowRight size={18} />
+        <ArrowRight class="rtl:-scale-x-100" size={18} />
       </button>
     </form>
 

@@ -43,6 +43,9 @@ type MediaResponse struct {
 	DurationSecs *float64 `json:"duration_secs,omitempty"`
 	Status       string   `json:"status"`
 	Flagged      bool     `json:"flagged"`
+	// Missing is true when the row's storage object is absent (m000924) —
+	// surfaced so ?missing=only admin audits can distinguish flagged rows.
+	Missing      bool     `json:"missing"`
 	CreatedAt    string   `json:"created_at"`
 	URL          string   `json:"url"`
 	UserGroupID  *string  `json:"user_group_id"`
@@ -94,6 +97,7 @@ func toMediaResponse(m *gen.Medium, url string) MediaResponse {
 		DurationSecs:          duration,
 		Status:                status,
 		Flagged:               m.Flagged,
+		Missing:               m.MissingAt.Valid,
 		CreatedAt:             m.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
 		URL:                   url,
 		UserGroupID:           userGroupID,
@@ -738,7 +742,13 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, total, err := h.service.ListMedia(r.Context(), uploaderID, mimeType, query, status, flagged, deleted, limit, offset)
+	missing := r.URL.Query().Get("missing")
+	if missing != "" && missing != "only" && missing != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "missing must be 'only' or 'all'")
+		return
+	}
+
+	items, total, err := h.service.ListMedia(r.Context(), uploaderID, mimeType, query, status, flagged, deleted, missing, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
@@ -796,7 +806,13 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, total, err := h.service.ListMedia(r.Context(), &user.UserID, mimeType, query, status, flagged, deleted, limit, offset)
+	missing := r.URL.Query().Get("missing")
+	if missing != "" && missing != "only" && missing != "all" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "missing must be 'only' or 'all'")
+		return
+	}
+
+	items, total, err := h.service.ListMedia(r.Context(), &user.UserID, mimeType, query, status, flagged, deleted, missing, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
@@ -1166,6 +1182,52 @@ func (h *Handlers) AdminReoptimize(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// AdminReconcileMissing handles POST /admin/media/reconcile-missing —
+// stats each media row's storage object and sets/clears missing_at to
+// match reality (m000924). Backfill for rows whose objects went missing
+// before the flag existed (never-synced object stores, out-of-band
+// deletes). Optional body: {"limit": N} rows to scan (default 500, max
+// 5000) — repeat calls until "exhausted" is true.
+func (h *Handlers) AdminReconcileMissing(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
+
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+
+	limit := int32(500)
+
+	if r.ContentLength > 0 {
+		var input struct {
+			Limit int32 `json:"limit"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+			return
+		}
+
+		if input.Limit > 0 {
+			limit = input.Limit
+		}
+	}
+
+	checked, marked, cleared, exhausted, err := h.service.ReconcileMissingObjects(r.Context(), limit)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "reconcile_error", "Reconcile failed")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"checked":   checked,
+			"marked":    marked,
+			"cleared":   cleared,
+			"exhausted": exhausted,
+		},
+	})
+}
+
 // BulkDelete handles POST /api/v1/media/bulk-delete.
 // Request body: { "media_ids": ["...", "..."] }
 // Response: { "data": { "deleted": 2 } }.
@@ -1250,6 +1312,12 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 
 	info, err := os.Stat(localPath)
 	if err != nil || info.IsDir() {
+		// Flag the row as missing its object so list endpoints can drop
+		// the placeholder noise (m000924). Best-effort — a failed mark
+		// still serves the placeholder; the reconcile sweep is the backstop.
+		if markErr := h.service.MarkObjectMissing(r.Context(), bucket, storagePath); markErr != nil {
+			slog.Warn("media serve: mark missing failed", "path", localPath, "error", markErr)
+		}
 		writePlaceholderSVG(w)
 		return
 	}
@@ -1482,6 +1550,12 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The object now exists — clear any missing flag so the row re-appears
+	// in listings (best-effort; a failed clear is fixed by reconcile).
+	if err := h.service.ClearObjectMissing(r.Context(), bucket, storagePath); err != nil {
+		slog.Warn("seaweedfs upload: clear missing flag failed", "path", localPath, "error", err)
+	}
+
 	// Enqueue the virus scan for the pending row now that bytes have landed
 	// (ConfirmUpload enqueues again; the task is idempotent on media id).
 	h.enqueueMediaTasks(r.Context(), pending.ID)
@@ -1590,7 +1664,10 @@ func writePlaceholderSVG(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	// Short TTL: a placeholder means "object absent", and the object can
+	// land later — long caching kept stale placeholders on screen after
+	// rows/files were fixed.
+	w.Header().Set("Cache-Control", "public, max-age=60")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">

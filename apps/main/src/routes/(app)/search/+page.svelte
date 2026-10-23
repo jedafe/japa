@@ -203,7 +203,7 @@
 				slug={item.username}
 				name={item.display_name ?? item.username ?? item.name ?? title}
 				avatar={item.avatar_url}
-				class="block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+				class="block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				{#snippet trigger()}
 					{#if showTypeBadge}
@@ -221,7 +221,7 @@
 				id={item.id}
 				slug={item.slug}
 				name={item.name ?? title}
-				class="block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+				class="block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				{#snippet trigger()}
 					{#if showTypeBadge}
@@ -308,7 +308,7 @@
 					<section>
 						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">
 							{groupLabels[group.type] ?? group.type}
-							<span class="ml-1 text-xs text-[var(--color-muted)]">({group.total})</span>
+							<span class="ms-1 text-xs text-[var(--color-muted)]">({group.total})</span>
 						</h2>
 						<div class="space-y-2">
 							{#each group.results as result (resultID(result))}

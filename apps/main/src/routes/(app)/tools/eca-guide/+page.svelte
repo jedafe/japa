@@ -281,7 +281,7 @@
 		<div class="mt-6 space-y-3">
 			{#each guides as guide (guide.id)}
 				<div class="{cardCls}">
-					<button class="flex w-full items-center justify-between gap-4 p-4 text-left" onclick={() => toggleDetail(guide)}>
+					<button class="flex w-full items-center justify-between gap-4 p-4 text-start" onclick={() => toggleDetail(guide)}>
 						<div>
 							<div class="font-medium text-[var(--color-text)]">
 								{guide.provider_name ?? guide.provider_slug ?? 'Guide'} — {purposeLabel(guide.purpose)}

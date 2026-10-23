@@ -654,7 +654,7 @@
 					<div class="relative">
 						<img
 							src={value.cover_url}
-							alt="Tag cover"
+							alt={t('tags.cover_alt', 'Tag cover')}
 							class="h-12 w-20 rounded-lg border object-cover"
 							style="border-color: var(--color-border)"
 						/>
@@ -664,7 +664,7 @@
 								value.cover_media_id = "";
 								value.cover_url = "";
 							}}
-							class="absolute -right-1 -top-1 rounded-full p-0.5"
+							class="absolute -end-1 -top-1 rounded-full p-0.5"
 							style="background: var(--color-danger); color: white"
 							aria-label={t("common.remove", "Remove")}
 						>
@@ -680,7 +680,7 @@
 					</div>
 				{/if}
 				<Button type="button" variant="outline" size="sm" onclick={() => (coverPickerOpen = true)}>
-					<ImageIcon class="mr-1 h-4 w-4" />
+					<ImageIcon class="me-1 h-4 w-4" />
 					{t("tags.choose_cover", "Choose Cover")}
 				</Button>
 			</div>
@@ -696,7 +696,7 @@
 					<div class="relative">
 						<img
 							src={value.logo_url}
-							alt="Tag logo"
+							alt={t('tags.logo_alt', 'Tag logo')}
 							class="h-12 w-12 rounded-lg border object-cover"
 							style="border-color: var(--color-border)"
 						/>
@@ -706,7 +706,7 @@
 								value.logo_media_id = "";
 								value.logo_url = "";
 							}}
-							class="absolute -right-1 -top-1 rounded-full p-0.5"
+							class="absolute -end-1 -top-1 rounded-full p-0.5"
 							style="background: var(--color-danger); color: white"
 							aria-label={t("common.remove", "Remove")}
 						>
@@ -722,7 +722,7 @@
 					</div>
 				{/if}
 				<Button type="button" variant="outline" size="sm" onclick={() => (logoPickerOpen = true)}>
-					<ImageIcon class="mr-1 h-4 w-4" />
+					<ImageIcon class="me-1 h-4 w-4" />
 					{t("tags.choose_logo", "Choose Logo")}
 				</Button>
 			</div>

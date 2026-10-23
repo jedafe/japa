@@ -56,7 +56,7 @@
                   onSelect={() => insertPlaceholder(p.token)}
                 >
                   <span class="font-mono text-xs">{p.token}</span>
-                  <span class="ml-2 text-xs text-[var(--color-muted)]">{p.label}</span>
+                  <span class="ms-2 text-xs text-[var(--color-muted)]">{p.label}</span>
                 </DropdownMenu.Item>
               {/each}
             </DropdownMenu.Content>
@@ -85,7 +85,7 @@
                 onSelect={() => insertPlaceholder(p.token)}
               >
                 <span class="font-mono text-xs">{p.token}</span>
-                <span class="ml-2 text-xs text-[var(--color-muted)]">{p.label}</span>
+                <span class="ms-2 text-xs text-[var(--color-muted)]">{p.label}</span>
               </DropdownMenu.Item>
             {/each}
           </DropdownMenu.Content>

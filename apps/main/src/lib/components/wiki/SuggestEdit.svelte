@@ -559,7 +559,7 @@
 												{#each readonly as f (f.id)}
 													<div class="flex items-baseline justify-between gap-3 text-sm">
 														<dt class="text-[var(--color-muted)]">{f.label}</dt>
-														<dd class="text-right text-[var(--color-text)]">
+														<dd class="text-end text-[var(--color-text)]">
 															{formatValue(f)}
 														</dd>
 													</div>
@@ -575,7 +575,7 @@
 									<button
 										type="button"
 										onclick={togglePropose}
-										class="flex w-full items-center gap-1.5 text-left text-xs font-medium text-[var(--color-text)]"
+										class="flex w-full items-center gap-1.5 text-start text-xs font-medium text-[var(--color-text)]"
 									>
 										<Plus size={13} class="text-[var(--color-muted)]" />
 										{t('wiki.propose_field', 'Propose a new field')}
@@ -712,7 +712,7 @@
 									<button
 										type="button"
 										onclick={() => (deleteOpen = !deleteOpen)}
-										class="flex w-full items-center gap-1.5 text-left text-xs font-medium text-red-600"
+										class="flex w-full items-center gap-1.5 text-start text-xs font-medium text-red-600"
 									>
 										<Trash2 size={13} />
 										{t('wiki.delete_fields', 'Delete fields')}
@@ -816,7 +816,7 @@
 									{#if submitting}
 										<Loader2 size={14} class="animate-spin" />
 									{:else}
-										<Send size={14} />
+										<Send class="rtl:-scale-x-100" size={14} />
 									{/if}
 									{t('wiki.suggest_submit', 'Submit suggestion')}
 								</button>

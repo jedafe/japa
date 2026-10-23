@@ -40,10 +40,22 @@ export const load: LayoutServerLoad = async (event) => {
 	// Ref: §4.1 (performance), conventions/system-settings-catalog.md.
 	const siteSettings = event.locals.siteSettings;
 
+	// §18 / ADR-013 — locales without a bundled dictionary are served from the
+	// DB pack; the i18n store layers it over English so a missing key still
+	// resolves to English text.
+	const locale = event.locals.locale ?? 'en';
+	const i18nPack = ['en', 'fr'].includes(locale)
+		? null
+		: await apiGet<Record<string, string>>(
+				apiContext(event),
+				`/i18n/packs/${encodeURIComponent(locale)}`
+			).catch(() => null);
+
 	return {
 		user,
 		theme: event.locals.theme,
 		locale: event.locals.locale,
+		i18nPack,
 		toolSurface: event.locals.toolSurface,
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,

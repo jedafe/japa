@@ -599,7 +599,7 @@
 								<!-- Card header (click to expand) -->
 								<button
 									onclick={() => toggleExpand(org.id)}
-									class="w-full p-4 text-left flex items-start justify-between gap-3 hover:bg-surface-subtle transition-colors"
+									class="w-full p-4 text-start flex items-start justify-between gap-3 hover:bg-surface-subtle transition-colors"
 								>
 									<div class="min-w-0">
 										<div class="flex items-center gap-2 flex-wrap">
@@ -738,7 +738,7 @@
 													{/if}
 												</button>
 												{#if claimError && claimErrorId === org.id}
-													<span class="text-xs text-red-500 ml-2">{claimError}</span>
+													<span class="text-xs text-red-500 ms-2">{claimError}</span>
 												{/if}
 											{:else}
 												<button

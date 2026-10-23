@@ -61,9 +61,12 @@ type PermissionChecker interface {
 // SpaceCommentChecker checks whether a user may comment or reply in a space,
 // based on the space's commenting_perm and replying_perm axes (Section 05
 // lines 145-154, BUG-002). Implemented by spaces.PostCheckerAdapter.
+// CanPostInSpace (posting_perm axis) is used by StartConversation, which
+// creates a discussion thread inside the blog's space (C-013).
 type SpaceCommentChecker interface {
 	CanCommentInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
 	CanReplyInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
+	CanPostInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -280,6 +283,43 @@ func redactAnonymousComments[T any](
 	}
 }
 
+// scrubDeletedComment zeroes the body and interactive fields on a
+// soft-deleted comment row so it can be returned as a "[deleted]" tombstone
+// without leaking the original content (Section 49, C-009). Author identity
+// is retained — it was public information when the comment was live.
+func scrubDeletedComment(deletedAt pgtype.Timestamptz, body *[]byte, isEdited *bool, userVote *int16) {
+	if !deletedAt.Valid {
+		return
+	}
+
+	*body = nil
+	*isEdited = false
+	*userVote = 0
+}
+
+func scrubDeletedComments(rows []gen.ListCommentsByContentRow) {
+	for i := range rows {
+		scrubDeletedComment(rows[i].DeletedAt, &rows[i].Body, &rows[i].IsEdited, &rows[i].UserVote)
+	}
+}
+
+func scrubDeletedReplies(rows []gen.ListRepliesByParentRow) {
+	for i := range rows {
+		scrubDeletedComment(rows[i].DeletedAt, &rows[i].Body, &rows[i].IsEdited, &rows[i].UserVote)
+	}
+}
+
+// mapKeys returns the keys of a string set as a slice (deterministic order is
+// not required — callers treat it as an opaque ID set).
+func mapKeys(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+
+	return out
+}
+
 // ListComments handles GET /api/v1/content/{id}/comments.
 func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	contentID, err := parseUUIDParam(r, "id")
@@ -308,8 +348,23 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		sort = "top"
 	}
 
-	parentIDStr := r.URL.Query().Get("parent_id")
+	// C-001: comments are only as visible as their parent content. Invisible
+	// or absent content is 404 — never 403 — so the endpoint cannot be used
+	// to probe restricted content.
 	viewerID := viewerIDFromRequest(r)
+	authed := auth.FromContext(r.Context()) != nil
+	visible, err := h.Service.CanViewComments(r.Context(), contentID, viewerID, authed)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
+	parentIDStr := r.URL.Query().Get("parent_id")
 
 	if parentIDStr != "" {
 		var parentID pgtype.UUID
@@ -318,7 +373,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		replies, err := h.Service.ListRepliesByParent(r.Context(), parentID, viewerID, limit, offset)
+		replies, repliesTotal, err := h.Service.ListRepliesByParent(r.Context(), contentID, parentID, viewerID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -328,19 +383,45 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			replies = []gen.ListRepliesByParentRow{}
 		}
 
-		// BUG-002: redact author identity on anonymous replies.
+		// BUG-002: redact author identity on anonymous replies. C-015: keep
+		// author_user_id when the author IS the viewer — redaction is per-
+		// request, so this leaks nothing, and it lets the author manage their
+		// own anonymous comment (edit/delete affordances).
 		redactAnonymousComments(replies,
 			func(r *gen.ListRepliesByParentRow) bool { return r.IsAnonymous },
 			func(r *gen.ListRepliesByParentRow) {
-				r.AuthorUserID = pgtype.UUID{}
+				if r.AuthorUserID.Bytes != viewerID.Bytes {
+					r.AuthorUserID = pgtype.UUID{}
+				}
 				r.Username = ""
 				r.DisplayName = ""
 				r.AvatarUrl = ""
 			})
 
+		// C-009: tombstone soft-deleted replies (body scrubbed server-side).
+		scrubDeletedReplies(replies)
+
 		h.resolveLiterals(r, &replies)
 
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": replies})
+		// C-006: compute erased-mention IDs for replies too — the frontend
+		// reads deleted_user_ids on this branch the same as the top-level one.
+		resp := map[string]any{
+			"data": replies,
+			"meta": map[string]any{"total": repliesTotal, "page_size": limit, "page_offset": offset},
+		}
+		erasedSet := make(map[string]struct{})
+
+		for _, c := range replies {
+			for _, id := range h.computeErasedMentionIDs(r.Context(), c.Body) {
+				erasedSet[id] = struct{}{}
+			}
+		}
+
+		if len(erasedSet) > 0 {
+			resp["deleted_user_ids"] = mapKeys(erasedSet)
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, resp)
 
 		return
 	}
@@ -355,21 +436,37 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		comments = []gen.ListCommentsByContentRow{}
 	}
 
-	// BUG-002: redact author identity on anonymous comments.
+	// BUG-002: redact author identity on anonymous comments. C-015: keep
+	// author_user_id for the author so they can manage their own comment.
 	redactAnonymousComments(comments,
 		func(c *gen.ListCommentsByContentRow) bool { return c.IsAnonymous },
 		func(c *gen.ListCommentsByContentRow) {
-			c.AuthorUserID = pgtype.UUID{}
+			if c.AuthorUserID.Bytes != viewerID.Bytes {
+				c.AuthorUserID = pgtype.UUID{}
+			}
 			c.Username = ""
 			c.DisplayName = ""
 			c.AvatarUrl = ""
 		})
 
+	// C-009: tombstone soft-deleted comments that still have live replies.
+	scrubDeletedComments(comments)
+
 	h.resolveLiterals(r, &comments)
+
+	// C-011: pagination meta so the frontend can render a load-more affordance.
+	total, err := h.Service.CountTopLevelCommentsByContent(r.Context(), contentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
 
 	// GDPR / ADR-029: compute erased-mention IDs across all comments so the
 	// frontend can render @[deleted user] for mentions of erased users.
-	resp := map[string]any{"data": comments}
+	resp := map[string]any{
+		"data": comments,
+		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},
+	}
 	erasedSet := make(map[string]struct{})
 
 	for _, c := range comments {
@@ -379,12 +476,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(erasedSet) > 0 {
-		erasedIDs := make([]string, 0, len(erasedSet))
-		for id := range erasedSet {
-			erasedIDs = append(erasedIDs, id)
-		}
-
-		resp["deleted_user_ids"] = erasedIDs
+		resp["deleted_user_ids"] = mapKeys(erasedSet)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, resp)
@@ -413,9 +505,27 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// BUG-002: redact author identity on anonymous comments.
+	// C-001: a comment is only as visible as its parent content — 404 (never
+	// 403) so the endpoint cannot probe restricted content.
+	authed := auth.FromContext(r.Context()) != nil
+	visible, err := h.Service.CanViewComments(r.Context(), comment.ContentID, viewerIDFromRequest(r), authed)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comment not found")
+		return
+	}
+
+	// BUG-002: redact author identity on anonymous comments. C-015: keep
+	// author_user_id for the author so they can manage their own comment.
 	if comment.IsAnonymous {
-		comment.AuthorUserID = pgtype.UUID{}
+		viewerID := viewerIDFromRequest(r)
+		if comment.AuthorUserID.Bytes != viewerID.Bytes {
+			comment.AuthorUserID = pgtype.UUID{}
+		}
 		comment.Username = ""
 		comment.DisplayName = ""
 		comment.AvatarUrl = ""
@@ -559,6 +669,21 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// per Rule 8. Ref: Section 32, Guide §21.
 	h.EnqueueEngagementUpdate("content", contentID, "comment", 1)
 
+	// C-020: return the JOINED row (username/display_name/avatar_url) so the
+	// frontend renders the new comment correctly without a refetch — the
+	// raw insert row carries no author display fields. C-015 applies: an
+	// anonymous author keeps author_user_id so they can manage the comment.
+	if row, getErr := h.Service.GetComment(r.Context(), comment.ID); getErr == nil {
+		if row.IsAnonymous {
+			row.Username = ""
+			row.DisplayName = ""
+			row.AvatarUrl = ""
+		}
+		h.resolveLiterals(r, &row)
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": row})
+		return
+	}
+
 	h.resolveLiterals(r, &comment)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
@@ -618,7 +743,28 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	comment, err := h.Service.UpdateComment(r.Context(), commentID, user.UserID, input.Body)
+	// C-019: resolve the author-vs-moderator path up front. comments.edit_own
+	// uses the author query (edit window applies); comments.edit_any is the
+	// moderator path (no window, no author filter).
+	existing, err := h.Service.GetComment(r.Context(), commentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	isAuthor := existing.AuthorUserID.Valid && existing.AuthorUserID.Bytes == user.UserID.Bytes
+
+	var comment gen.Comment
+	if isAuthor {
+		comment, err = h.Service.UpdateComment(r.Context(), commentID, user.UserID, input.Body)
+	} else {
+		if h.perms == nil || !h.perms.HasPermission(r.Context(), user.UserID, "comments.edit_any") {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only edit your own comments")
+			return
+		}
+		comment, err = h.Service.UpdateCommentModerate(r.Context(), commentID, user.UserID, input.Body)
+	}
+
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -674,7 +820,10 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 
 	isAuthor := existing.AuthorUserID.Valid && existing.AuthorUserID.Bytes == user.UserID.Bytes
 
-	if isAuthor {
+	canDeleteOwn := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, "comments.delete_own")
+	canDeleteAny := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, "comments.delete_any")
+
+	if isAuthor && canDeleteOwn {
 		// Author path — comments.delete_own. The sqlc query enforces
 		// author_user_id atomically, so even if the row changed hands between
 		// the GetComment and the delete, a non-author cannot delete.
@@ -693,8 +842,9 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Moderator path — comments.delete_any. Requires the RBAC checker; when
-	// not wired, deny (test-only default).
-	if h.perms == nil || !h.perms.HasPermission(r.Context(), user.UserID, "comments.delete_any") {
+	// not wired, deny (test-only default). Also covers a moderator deleting
+	// their own comment when they hold delete_any but not delete_own.
+	if !canDeleteAny {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only delete your own comments")
 		return
 	}
@@ -786,7 +936,7 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.PinComment(r.Context(), commentID); err != nil {
+	if err := h.Service.PinComment(r.Context(), commentID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -813,7 +963,7 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UnpinComment(r.Context(), commentID); err != nil {
+	if err := h.Service.UnpinComment(r.Context(), commentID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

@@ -206,14 +206,14 @@
 				label: t('gamification.active', 'Active'),
 				sortable: true,
 				render: (value: boolean) => value
-					? `<span class="inline-flex items-center rounded-md border border-success bg-success/15 px-2 py-0.5 text-xs font-medium text-success">Active</span>`
-					: `<span class="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Inactive</span>`
+					? `<span class="inline-flex items-center rounded-md border border-success bg-success/15 px-2 py-0.5 text-xs font-medium text-success">${t('common.active', 'Active')}</span>`
+					: `<span class="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">${t('common.inactive', 'Inactive')}</span>`
 			},
 			{
 				key: 'is_system',
 				label: t('gamification.system', 'System'),
 				sortable: true,
-				render: (value: boolean) => value ? `<span class="text-xs text-muted-foreground">System</span>` : `<span class="text-xs text-muted-foreground">Custom</span>`
+				render: (value: boolean) => value ? `<span class="text-xs text-muted-foreground">${t('common.system', 'System')}</span>` : `<span class="text-xs text-muted-foreground">${t('common.custom', 'Custom')}</span>`
 			}
 		],
 		filters: badgeFilters,
@@ -348,8 +348,8 @@
 				label: t('gamification.active', 'Active'),
 				sortable: true,
 				render: (value: boolean) => value
-					? `<span class="inline-flex items-center rounded-md border border-success bg-success/15 px-2 py-0.5 text-xs font-medium text-success">Active</span>`
-					: `<span class="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Inactive</span>`
+					? `<span class="inline-flex items-center rounded-md border border-success bg-success/15 px-2 py-0.5 text-xs font-medium text-success">${t('common.active', 'Active')}</span>`
+					: `<span class="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">${t('common.inactive', 'Inactive')}</span>`
 			},
 			{
 				key: 'ends_at',
@@ -534,7 +534,7 @@
 			{t('common.cancel', 'Cancel')}
 		</Button>
 		<Button variant="destructive" onclick={confirmDelete} disabled={acting}>
-			<Trash2 class="mr-2 h-4 w-4" />
+			<Trash2 class="me-2 h-4 w-4" />
 			{acting ? t('common.deleting', 'Deleting...') : t('common.delete', 'Delete')}
 		</Button>
 	</div>

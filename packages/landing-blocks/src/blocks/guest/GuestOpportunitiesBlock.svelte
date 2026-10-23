@@ -146,7 +146,7 @@
       </div>
       <a href={viewAllHref} class="section-link">
         {viewAllLabel}
-        <ArrowRight size={16} />
+        <ArrowRight class="rtl:-scale-x-100" size={16} />
       </a>
     </div>
 
@@ -157,7 +157,7 @@
         onclick={() => scrollBy(-1)}
         aria-label="Previous"
       >
-        <ChevronLeft size={20} />
+        <ChevronLeft class="rtl:-scale-x-100" size={20} />
       </button>
 
       <div bind:this={scroller} class="opportunity-scroll">
@@ -205,7 +205,7 @@
         onclick={() => scrollBy(1)}
         aria-label="Next"
       >
-        <ChevronRight size={20} />
+        <ChevronRight class="rtl:-scale-x-100" size={20} />
       </button>
     </div>
   </div>

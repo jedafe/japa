@@ -322,15 +322,15 @@
 	<button
 		type="button"
 		class="fixed inset-0 z-40 bg-black/50 md:hidden"
-		aria-label="Close sidebar"
+		aria-label={t('common.close_sidebar', 'Close sidebar')}
 		onclick={() => { mobileOpen = false; onclose?.(); }}
 	></button>
 {/if}
 
 <aside
 	class={clsx(
-		"flex h-full flex-col border-r transition-transform duration-200",
-		"fixed inset-y-0 left-0 z-50 w-64 md:static md:translate-x-0",
+		"flex h-full flex-col border-e transition-transform duration-200",
+		"fixed inset-y-0 start-0 z-50 w-64 md:static md:translate-x-0",
 		!mobileOpen && "-translate-x-full md:translate-x-0",
 		effectiveCollapsed && "md:w-16"
 	)}
@@ -351,11 +351,11 @@
 	{#if !effectiveCollapsed}
 		<div class="px-3 pt-3">
 			<div class="relative">
-				<Search class="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
+				<Search class="absolute start-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
 				<input
 					type="text"
 					placeholder={t('common.search_nav', 'Search navigation...')}
-					class="w-full rounded-md border py-1.5 pl-7 pr-3 text-sm"
+					class="w-full rounded-md border py-1.5 ps-7 pe-3 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 					bind:value={searchQuery}
 				/>
@@ -378,7 +378,7 @@
 						{#if expandedSections.has(section.id)}
 							<ChevronDown class="h-4 w-4" style="color: var(--color-muted)" />
 						{:else}
-							<ChevronRight class="h-4 w-4" style="color: var(--color-muted)" />
+							<ChevronRight class="h-4 w-4 rtl:-scale-x-100" style="color: var(--color-muted)" />
 						{/if}
 					</button>
 
@@ -450,7 +450,7 @@
 					href="/logout"
 					class="rounded p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 					style="color: var(--color-muted)"
-					title="Logout"
+					title={t('common.logout', 'Logout')}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
 				</a>

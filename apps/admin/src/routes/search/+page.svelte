@@ -366,7 +366,7 @@
 			>
 				{tab.label}
 				{#if tab.count() > 0}
-					<span class="ml-1.5 inline-flex items-center justify-center rounded-full px-1.5 text-xs" style="background-color: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary)">
+					<span class="ms-1.5 inline-flex items-center justify-center rounded-full px-1.5 text-xs" style="background-color: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary)">
 						{tab.count()}
 					</span>
 				{/if}

@@ -307,7 +307,7 @@
 <div class="mb-4 flex justify-end">
 	{#if canManage}
 		<Button onclick={openGenerate} disabled={acting}>
-			<Sparkles class="mr-1.5 h-4 w-4" />
+			<Sparkles class="me-1.5 h-4 w-4" />
 			{t('app.digest.generate', 'Generate')}
 		</Button>
 	{/if}

@@ -477,7 +477,7 @@
             bind:value={searchInput}
             oninput={handleSearchInput}
             aria-label={searchPlaceholder}
-            class="w-full rounded-lg border p-2 pr-10 text-sm outline-none focus:ring-2"
+            class="w-full rounded-lg border p-2 pe-10 text-sm outline-none focus:ring-2"
             style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
           />
           {#if searchInput}
@@ -485,7 +485,7 @@
               type="button"
               onclick={clearSearch}
               aria-label={t("common.clearSelection", "Clear search")}
-              class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1"
+              class="absolute end-2 top-1/2 -translate-y-1/2 rounded p-1"
               style="color: var(--color-muted)"
             >
               ✕
@@ -531,7 +531,7 @@
       {/if}
       {#if createLabel && onCreate}
         <Button onclick={onCreate}>
-          <Plus class="mr-1 h-4 w-4" />
+          <Plus class="me-1 h-4 w-4" />
           {createLabel}
         </Button>
       {/if}
@@ -542,7 +542,7 @@
       <thead>
         <tr style="border-color: var(--color-border)">
           {#if canSelect}
-            <th class="h-12 w-12 px-4 text-left align-middle font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">
+            <th class="h-12 w-12 px-4 text-start align-middle font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">
               <input
                 type="checkbox"
                 checked={allSelected}
@@ -556,7 +556,7 @@
           {#each visibleColumns as column (column.key)}
             <th
               class={clsx(
-                "relative h-12 px-4 text-left align-middle font-medium",
+                "relative h-12 px-4 text-start align-middle font-medium",
                 column.sortable && "cursor-pointer select-none",
                 column.class
               )}
@@ -565,7 +565,7 @@
               aria-sort={column.sortable ? (sortColumn === column.key ? (sortDirection === "asc" ? "ascending" : "descending") : "none") : undefined}
               onclick={() => column.sortable && handleSort(column)}
             >
-              <div class="flex items-center gap-2 pr-2">
+              <div class="flex items-center gap-2 pe-2">
                 {column.label}
                 {#if column.sortable}
                   {#if sortColumn === column.key}
@@ -582,7 +582,7 @@
               {#if column.resizable !== false}
                 <button
                   type="button"
-                  class="absolute right-0 top-0 h-full w-1.5 cursor-col-resize touch-none border-none bg-transparent"
+                  class="absolute end-0 top-0 h-full w-1.5 cursor-col-resize touch-none border-none bg-transparent"
                   onmousedown={(e) => startResize(e, column.key)}
                   onclick={(e) => e.stopPropagation()}
                   ondblclick={(e) => { e.stopPropagation(); if (columnWidths[column.key]) { const next = { ...columnWidths }; delete next[column.key]; columnWidths = next; } }}
@@ -592,7 +592,7 @@
             </th>
           {/each}
           {#if actions}
-            <th class="h-12 w-12 px-4 text-left align-middle font-medium" style="color: var(--color-foreground-alt); background-color: var(--color-surface)" scope="col">
+            <th class="h-12 w-12 px-4 text-start align-middle font-medium" style="color: var(--color-foreground-alt); background-color: var(--color-surface)" scope="col">
               {actionsLabel}
             </th>
           {/if}
@@ -685,7 +685,7 @@
       {#if bulkActionsSnippet}
         {@render bulkActionsSnippet()}
       {/if}
-      <Button variant="ghost" size="sm" onclick={clearSelection} disabled={selectedIds.size === 0} style="margin-left: auto">{t('common.clear', 'Clear')}</Button>
+      <Button variant="ghost" size="sm" onclick={clearSelection} disabled={selectedIds.size === 0} style="margin-inline-start: auto">{t('common.clear', 'Clear')}</Button>
     </div>
   {/if}
 </div>

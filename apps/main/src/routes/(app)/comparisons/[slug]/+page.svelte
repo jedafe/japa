@@ -28,7 +28,8 @@
 	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import { formatMoney } from '$lib/utils/currency';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
@@ -129,6 +130,13 @@
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={comparison.content.title} />
 	{#if headDescription}<meta name="twitter:description" content={headDescription} />{/if}
+	{@html safeJsonLdScript(
+		breadcrumbJsonLd([
+			{ name: 'Home', path: page.url.origin },
+			{ name: 'Comparisons', path: `${page.url.origin}/comparisons` },
+			{ name: comparison.content.title, path: canonical }
+		])
+	)}
 </svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout. Left nav auto-collapses;
@@ -172,12 +180,12 @@
 				href="/comparisons"
 				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			>
-				<ArrowLeft size={16} /> {t('jce.comparisons.back')}
+				<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('jce.comparisons.back')}
 			</a>
 			<div class="flex flex-wrap items-center gap-2">
 				{#if data.canEdit}
 					<a
-						href="/create?type=comparison&draft={comparison.content.id}"
+						href="/studio/create?draft={comparison.content.id}&type=comparison"
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
 					>
 						<Pencil size={14} /> {t('common.edit', 'Edit')}
@@ -253,7 +261,7 @@
 							target="_blank" rel="noopener noreferrer"
 							class="inline-flex items-center gap-1 text-xs text-[var(--color-text)] underline"
 						>
-							<ExternalLink size={12} /> {t('jce.common.view')}
+							<ExternalLink class="rtl:-scale-x-100" size={12} /> {t('jce.common.view')}
 						</a>
 					{/if}
 				</div>
@@ -320,6 +328,7 @@
 	<!-- Unified comment engine (Section 49) — top-level comments are SSR-seeded. -->
 	<CommentThread
 		comments={data.comments}
+		commentsTotal={data.commentsTotal}
 		totalCount={comparison.content.comment_count}
 		contentId={comparison.content.id}
 		contentType="comparison"

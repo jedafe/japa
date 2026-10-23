@@ -609,11 +609,11 @@
 								<span class="font-semibold tabular-nums">{item.score}</span>
 								<span class="text-[var(--color-muted)]">
 									{new Date(item.created_at).toLocaleDateString()}
-									<span class="ml-1 inline-block transition-transform group-open:rotate-90">›</span>
+									<span class="ms-1 inline-block transition-transform group-open:rotate-90">›</span>
 								</span>
 							</summary>
 							{#if item.breakdown?.length}
-								<div class="mt-2 space-y-1 pl-2">
+								<div class="mt-2 space-y-1 ps-2">
 									{#each item.breakdown as b, i (`${b.key}-${i}`)}
 										<div class="flex items-center justify-between text-xs text-[var(--color-muted)]">
 											<span>{b.label}</span>

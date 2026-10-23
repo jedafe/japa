@@ -6,6 +6,7 @@
 	 * standalone card with no hover preview. Shows the source logo, name,
 	 * domain, description, follower/post counts, and trust level.
 	 */
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { Users, FileText, Shield } from 'lucide-svelte';
@@ -19,7 +20,9 @@
 
 	let { source }: Props = $props();
 
-	let followerCount = $state(0);
+	// Seed with the SSR value — the previous $state(0)+$effect pair rendered
+	// "0 followers" server-side then jumped to the real count on hydration.
+	let followerCount = $state(untrack(() => source.follower_count));
 
 	$effect(() => {
 		followerCount = source.follower_count;

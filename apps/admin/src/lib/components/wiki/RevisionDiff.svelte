@@ -117,11 +117,11 @@
 	<div class="overflow-x-auto">
 		<table class="w-full text-sm" style="color: var(--color-foreground)">
 			<thead>
-				<tr class="border-b text-left" style="border-color: var(--color-border)">
-					<th class="py-2 pr-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.diff_op', 'Op')}</th>
-					<th class="py-2 pr-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.diff_target', 'Target')}</th>
-					<th class="py-2 pr-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.diff_field', 'Field / Group')}</th>
-					<th class="py-2 pr-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.diff_value', 'Current → Proposed')}</th>
+				<tr class="border-b text-start" style="border-color: var(--color-border)">
+					<th class="py-2 pe-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.diff_op', 'Op')}</th>
+					<th class="py-2 pe-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.diff_target', 'Target')}</th>
+					<th class="py-2 pe-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.diff_field', 'Field / Group')}</th>
+					<th class="py-2 pe-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.diff_value', 'Current → Proposed')}</th>
 					<th class="py-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.diff_source', 'Source')}</th>
 				</tr>
 			</thead>
@@ -130,8 +130,8 @@
 					{@const tgt = opTarget(op)}
 					{@const current = currentValues[targetKey(op)]?.[op.field_key ?? '']}
 					<tr class="border-b align-top" style="border-color: var(--color-border)">
-						<td class="py-2 pr-3 font-mono text-xs">{op.op}</td>
-						<td class="py-2 pr-3">
+						<td class="py-2 pe-3 font-mono text-xs">{op.op}</td>
+						<td class="py-2 pe-3">
 							{#if tgt.type}
 								<span class="font-medium">{tgt.type}</span>
 								{#if tgt.id}
@@ -143,12 +143,12 @@
 								—
 							{/if}
 						</td>
-						<td class="py-2 pr-3 font-mono text-xs">{fieldLabel(op)}</td>
-						<td class="py-2 pr-3">
+						<td class="py-2 pe-3 font-mono text-xs">{fieldLabel(op)}</td>
+						<td class="py-2 pe-3">
 							{#if op.op === 'set_value'}
 								{#if current !== undefined}
 									<span style="color: var(--color-muted)">{fmt(current)}</span>
-									<span class="mx-1" style="color: var(--color-muted)">→</span>
+									<span class="mx-1" style="color: var(--color-muted)"><span class="inline-block rtl:-scale-x-100">→</span></span>
 								{/if}
 								<span class="font-medium">{fmt(op.value)}</span>
 							{:else}

@@ -12,12 +12,60 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
+const canViewComments = `-- name: CanViewComments :one
+SELECT EXISTS (
+    SELECT 1
+    FROM contents c
+    LEFT JOIN spaces s ON s.id = c.space_id
+    WHERE c.id = $1
+      AND c.status = 'published'
+      AND c.deleted_at IS NULL
+      AND c.auto_hidden = false
+      AND (
+          s.id IS NULL
+          OR (s.deleted_at IS NULL AND (
+              s.visibility = 'public'
+              OR EXISTS (
+                  SELECT 1 FROM space_members sm
+                  WHERE sm.space_id = s.id
+                    AND sm.user_id = $2
+                    AND sm.status = 'approved'
+              )
+          ))
+      )
+      AND (
+          c.visibility = 'public'
+          OR (c.visibility = 'members' AND $3::boolean)
+          OR (c.visibility = 'private' AND c.author_id = $2)
+      )
+) AS visible
+`
+
+type CanViewCommentsParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+	Authed    bool        `json:"authed"`
+}
+
+// Section 49 (C-001): whether the viewer may read/create comments on this
+// content. Mirrors IsContentVisibleToUser (contents.sql) plus the
+// members-only-needs-auth nuance — the session list route serves anonymous
+// guests, for whom 'members' content comments must stay hidden. Private
+// content comments are author-only (moderators use admin surfaces).
+func (q *Queries) CanViewComments(ctx context.Context, arg CanViewCommentsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, canViewComments, arg.ContentID, arg.UserID, arg.Authed)
+	var visible bool
+	err := row.Scan(&visible)
+	return visible, err
+}
+
 const countCommentsByAuthor = `-- name: CountCommentsByAuthor :one
 SELECT COUNT(*)::int AS count
 FROM comments c
 JOIN contents ct ON ct.id = c.content_id
 WHERE c.author_user_id = $1
  AND c.deleted_at IS NULL
+ AND c.status = 'published'
  AND c.is_anonymous = false
  AND ct.status = 'published'
  AND ct.visibility = 'public'
@@ -64,12 +112,38 @@ func (q *Queries) CountContentThreadLinks(ctx context.Context, contentID pgtype.
 const countRepliesByParent = `-- name: CountRepliesByParent :one
 SELECT COUNT(*)::int AS count
 FROM comments
-WHERE parent_id = $1 AND deleted_at IS NULL
+WHERE parent_id = $1 AND content_id = $2
+ AND (deleted_at IS NULL OR reply_count > 0)
  AND status = 'published'
 `
 
-func (q *Queries) CountRepliesByParent(ctx context.Context, parentID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countRepliesByParent, parentID)
+type CountRepliesByParentParams struct {
+	ParentID  pgtype.UUID `json:"parent_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+// Mirrors the ListRepliesByParent predicate (tombstones included,
+// content-scoped).
+func (q *Queries) CountRepliesByParent(ctx context.Context, arg CountRepliesByParentParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countRepliesByParent, arg.ParentID, arg.ContentID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTopLevelCommentsByContent = `-- name: CountTopLevelCommentsByContent :one
+SELECT COUNT(*)::int AS count
+FROM comments
+WHERE content_id = $1 AND parent_id IS NULL
+ AND (deleted_at IS NULL OR reply_count > 0)
+ AND status = 'published'
+`
+
+// Top-level published comments only — drives the frontend load-more meta.
+// Mirrors the list predicate (deleted parents with live replies count as
+// tombstones).
+func (q *Queries) CountTopLevelCommentsByContent(ctx context.Context, contentID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countTopLevelCommentsByContent, contentID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -485,7 +559,8 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.content_id = $2 AND c.deleted_at IS NULL
+WHERE c.content_id = $2
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL)
 ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
@@ -523,6 +598,9 @@ type ListCommentsByContentRow struct {
 	AvatarUrl     string             `json:"avatar_url"`
 }
 
+// Soft-deleted comments with live replies are returned as tombstones
+// (Section 49 — body scrubbed by the handler) so reply trees stay intact.
+// Leaf soft-deletes stay filtered out.
 func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByContentParams) ([]ListCommentsByContentRow, error) {
 	rows, err := q.db.Query(ctx, listCommentsByContent,
 		arg.ViewerID,
@@ -588,7 +666,8 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.content_id = $2 AND c.deleted_at IS NULL
+WHERE c.content_id = $2
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL)
 ORDER BY c.is_pinned DESC, c.created_at DESC
@@ -692,7 +771,8 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.content_id = $2 AND c.deleted_at IS NULL
+WHERE c.content_id = $2
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL)
 ORDER BY c.is_pinned DESC, c.created_at ASC
@@ -860,7 +940,7 @@ JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 JOIN contents parent ON parent.id = c.content_id
 WHERE c.content_id = $2
- AND c.deleted_at IS NULL
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL)
  AND parent.status = 'published'
@@ -953,6 +1033,109 @@ func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPubli
 	return items, nil
 }
 
+const listPublicRepliesByParent = `-- name: ListPublicRepliesByParent :many
+SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+ c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.reply_count,
+ 0::smallint AS user_vote,
+ c.is_anonymous,
+ COALESCE(u.public_username, u.username, '') AS username,
+ COALESCE(up.display_name, '') AS display_name,
+ COALESCE(up.avatar_url, '') AS avatar_url
+FROM comments c
+JOIN users u ON u.id = c.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+JOIN contents parent ON parent.id = c.content_id
+WHERE c.parent_id = $1 AND c.content_id = $2
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
+ AND c.status = 'published'
+ AND parent.status = 'published'
+ AND parent.visibility = 'public'
+ AND parent.deleted_at IS NULL
+ORDER BY c.created_at ASC
+LIMIT $4 OFFSET $3
+`
+
+type ListPublicRepliesByParentParams struct {
+	ParentID   pgtype.UUID `json:"parent_id"`
+	ContentID  pgtype.UUID `json:"content_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListPublicRepliesByParentRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ContentID     pgtype.UUID        `json:"content_id"`
+	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
+	ParentID      pgtype.UUID        `json:"parent_id"`
+	Body          []byte             `json:"body"`
+	Depth         int32              `json:"depth"`
+	VoteScore     int32              `json:"vote_score"`
+	UpvoteCount   int32              `json:"upvote_count"`
+	DownvoteCount int32              `json:"downvote_count"`
+	IsPinned      bool               `json:"is_pinned"`
+	IsEdited      bool               `json:"is_edited"`
+	EditedAt      pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount    int32              `json:"reply_count"`
+	UserVote      int16              `json:"user_vote"`
+	IsAnonymous   bool               `json:"is_anonymous"`
+	Username      string             `json:"username"`
+	DisplayName   string             `json:"display_name"`
+	AvatarUrl     string             `json:"avatar_url"`
+}
+
+// Public API parity with ListRepliesByParent: replies for a parent comment,
+// only when the parent content is public (tombstones included).
+func (q *Queries) ListPublicRepliesByParent(ctx context.Context, arg ListPublicRepliesByParentParams) ([]ListPublicRepliesByParentRow, error) {
+	rows, err := q.db.Query(ctx, listPublicRepliesByParent,
+		arg.ParentID,
+		arg.ContentID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicRepliesByParentRow
+	for rows.Next() {
+		var i ListPublicRepliesByParentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContentID,
+			&i.AuthorUserID,
+			&i.ParentID,
+			&i.Body,
+			&i.Depth,
+			&i.VoteScore,
+			&i.UpvoteCount,
+			&i.DownvoteCount,
+			&i.IsPinned,
+			&i.IsEdited,
+			&i.EditedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.ReplyCount,
+			&i.UserVote,
+			&i.IsAnonymous,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRepliesByParent = `-- name: ListRepliesByParent :many
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
@@ -971,15 +1154,17 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.parent_id = $2 AND c.deleted_at IS NULL
+WHERE c.parent_id = $2 AND c.content_id = $3
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
 ORDER BY c.vote_score DESC, c.created_at ASC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListRepliesByParentParams struct {
 	ViewerID   pgtype.UUID `json:"viewer_id"`
 	ParentID   pgtype.UUID `json:"parent_id"`
+	ContentID  pgtype.UUID `json:"content_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -1012,6 +1197,7 @@ func (q *Queries) ListRepliesByParent(ctx context.Context, arg ListRepliesByPare
 	rows, err := q.db.Query(ctx, listRepliesByParent,
 		arg.ViewerID,
 		arg.ParentID,
+		arg.ContentID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -1058,6 +1244,7 @@ func (q *Queries) ListRepliesByParent(ctx context.Context, arg ListRepliesByPare
 const pinComment = `-- name: PinComment :exec
 UPDATE comments SET is_pinned = true, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
+ AND status = 'published'
 `
 
 func (q *Queries) PinComment(ctx context.Context, id pgtype.UUID) error {
@@ -1096,6 +1283,7 @@ UPDATE comments
 SET status = 'removed',
  removed_by = $1,
  removed_reason = $2,
+ is_pinned = false,
  updated_at = now()
 WHERE id = $3 AND deleted_at IS NULL
 `
@@ -1117,10 +1305,11 @@ func (q *Queries) RemoveComment(ctx context.Context, arg RemoveCommentParams) er
 
 const softDeleteComment = `-- name: SoftDeleteComment :exec
 UPDATE comments
-SET deleted_at = now(), updated_at = now()
+SET deleted_at = now(), is_pinned = false, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
 `
 
+// is_pinned is cleared so a deleted comment can't keep the top slot.
 func (q *Queries) SoftDeleteComment(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteComment, id)
 	return err
@@ -1128,7 +1317,7 @@ func (q *Queries) SoftDeleteComment(ctx context.Context, id pgtype.UUID) error {
 
 const softDeleteCommentByAuthor = `-- name: SoftDeleteCommentByAuthor :exec
 UPDATE comments
-SET deleted_at = now(), updated_at = now()
+SET deleted_at = now(), is_pinned = false, updated_at = now()
 WHERE id = $1 AND author_user_id = $2
  AND deleted_at IS NULL
 `
@@ -1159,6 +1348,7 @@ func (q *Queries) SoftDeleteCommentByID(ctx context.Context, id pgtype.UUID) err
 const unpinComment = `-- name: UnpinComment :exec
 UPDATE comments SET is_pinned = false, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
+ AND status = 'published'
 `
 
 func (q *Queries) UnpinComment(ctx context.Context, id pgtype.UUID) error {
@@ -1170,6 +1360,7 @@ const updateComment = `-- name: UpdateComment :one
 UPDATE comments
 SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = $2 AND author_user_id = $3 AND deleted_at IS NULL
+ AND status = 'published'
 RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
 `
 
@@ -1210,10 +1401,55 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 	return i, err
 }
 
+const updateCommentByID = `-- name: UpdateCommentByID :one
+UPDATE comments
+SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
+WHERE id = $2 AND deleted_at IS NULL
+ AND status = 'published'
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
+`
+
+type UpdateCommentByIDParams struct {
+	Body []byte      `json:"body"`
+	ID   pgtype.UUID `json:"id"`
+}
+
+// Moderator edit (comments.edit_any) — no author filter; moderators bypass
+// the author edit window per Section 49.
+func (q *Queries) UpdateCommentByID(ctx context.Context, arg UpdateCommentByIDParams) (Comment, error) {
+	row := q.db.QueryRow(ctx, updateCommentByID, arg.Body, arg.ID)
+	var i Comment
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.AuthorUserID,
+		&i.ParentID,
+		&i.Body,
+		&i.Depth,
+		&i.VoteScore,
+		&i.IsPinned,
+		&i.IsEdited,
+		&i.EditedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.IsAnonymous,
+		&i.ReplyCount,
+		&i.Status,
+		&i.RemovedBy,
+		&i.RemovedReason,
+		&i.ViewCount,
+		&i.UpvoteCount,
+		&i.DownvoteCount,
+	)
+	return i, err
+}
+
 const updateCommentUnmarked = `-- name: UpdateCommentUnmarked :one
 UPDATE comments
 SET body = $1, updated_at = now()
 WHERE id = $2 AND author_user_id = $3 AND deleted_at IS NULL
+ AND status = 'published'
 RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
 `
 

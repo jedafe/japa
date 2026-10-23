@@ -56,7 +56,7 @@
 	</span>
 
 	{#if showNarrow}
-		<ChevronRight size={14} class="text-[var(--color-muted)]" />
+		<ChevronRight size={14} class="text-[var(--color-muted)] rtl:-scale-x-100" />
 		<!-- Step 2: narrow -->
 		<button
 			type="button"
@@ -70,7 +70,7 @@
 		</button>
 	{/if}
 
-	<ChevronRight size={14} class="text-[var(--color-muted)]" />
+	<ChevronRight size={14} class="text-[var(--color-muted)] rtl:-scale-x-100" />
 	<!-- Step 3: select / browse -->
 	<span
 		class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-text)]"

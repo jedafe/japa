@@ -78,7 +78,7 @@
 					<div>
 						<p class="text-sm text-[var(--color-text)]">
 							{s.device_name ?? s.ip_address ?? t('settings.security.session_unknown')}
-							{#if s.current}<span class="ml-2 text-xs text-[var(--color-primary)]">{t('settings.security.session_current')}</span>{/if}
+							{#if s.current}<span class="ms-2 text-xs text-[var(--color-primary)]">{t('settings.security.session_current')}</span>{/if}
 						</p>
 						{#if s.last_used_at}
 							<p class="text-xs text-[var(--color-muted)]">{t('settings.security.session_last_active')}: {s.last_used_at}</p>

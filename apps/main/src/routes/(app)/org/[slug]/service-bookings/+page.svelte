@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
@@ -62,7 +62,7 @@
 
 	function formatDate(iso?: string): string {
 		if (!iso) return '';
-		return new Date(iso).toLocaleDateString(undefined, {
+		return new Date(iso).toLocaleDateString(i18n.locale, {
 			year: 'numeric',
 			month: 'short',
 			day: 'numeric'

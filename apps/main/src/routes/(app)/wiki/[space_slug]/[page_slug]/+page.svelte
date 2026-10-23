@@ -2,7 +2,7 @@
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
@@ -388,7 +388,7 @@
 				</li>
 				{#if data.page?.ancestors?.length}
 					{#each data.page.ancestors as anc (anc.slug)}
-						<li aria-hidden="true"><ChevronRight size={12} /></li>
+						<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 						<li>
 							<a
 								href="/wiki/{encodeURIComponent(anc.slug)}"
@@ -399,10 +399,10 @@
 						</li>
 					{/each}
 				{:else}
-					<li aria-hidden="true"><ChevronRight size={12} /></li>
+					<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 					<li>{crumbKind}</li>
 				{/if}
-				<li aria-hidden="true"><ChevronRight size={12} /></li>
+				<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 				<li>
 					<a
 						href="/wiki/{encodeURIComponent(data.spaceSlug)}"
@@ -414,7 +414,7 @@
 				<!-- §80 Wiki Topic Pages — in-page ancestors: category stub +
 				     template chain, each a real /wiki/{space}/{slug} target. -->
 				{#each pageParents as par (par.slug)}
-					<li aria-hidden="true"><ChevronRight size={12} /></li>
+					<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 					<li>
 						<a
 							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(par.slug)}"
@@ -425,7 +425,7 @@
 					</li>
 				{/each}
 				{#if data.page}
-					<li aria-hidden="true"><ChevronRight size={12} /></li>
+					<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 					<li class="truncate font-medium text-[var(--color-text)]">{data.page.title}</li>
 				{/if}
 			</ol>
@@ -498,7 +498,7 @@
 							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(parentPage.slug)}"
 							class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
 						>
-							<ChevronLeft size={13} class="shrink-0" />
+							<ChevronLeft size={13} class="shrink-0 rtl:-scale-x-100" />
 							{t('wiki.back_to_parent', 'Back to {title}', { title: parentPage.title })}
 						</a>
 					</div>
@@ -537,7 +537,7 @@
 							<span>
 								{t('wiki.updated_on', 'Updated {date}').replace(
 									'{date}',
-									new Date(data.page.updated_at).toLocaleDateString(undefined, {
+									new Date(data.page.updated_at).toLocaleDateString(i18n.locale, {
 										year: 'numeric',
 										month: 'short',
 										day: 'numeric'
@@ -635,7 +635,7 @@
 								disabled={loading}
 								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition hover:opacity-90 disabled:opacity-50"
 							>
-								<Send size={14} />
+								<Send class="rtl:-scale-x-100" size={14} />
 								{loading ? '...' : t('wiki.submit_revision', 'Submit revision')}
 							</button>
 						</div>
@@ -717,7 +717,7 @@
 								{#if item.children.length > 0}
 									<!-- §80 Wiki Topic Pages — child topic templates nest
 									     under their parent's chip. -->
-									<span class="inline-flex flex-wrap items-center gap-1.5 border-l border-[var(--color-border)] pl-1.5">
+									<span class="inline-flex flex-wrap items-center gap-1.5 border-s border-[var(--color-border)] ps-1.5">
 										{#each item.children as child (child.slug)}
 											<a
 												href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(child.slug)}"
@@ -778,7 +778,7 @@
 									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(prevSibling.slug)}"
 									class="inline-flex min-w-0 items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
 								>
-									<ChevronLeft size={14} class="shrink-0" />
+									<ChevronLeft size={14} class="shrink-0 rtl:-scale-x-100" />
 									<span class="truncate">{prevSibling.title}</span>
 								</a>
 							{:else}
@@ -787,10 +787,10 @@
 							{#if nextSibling}
 								<a
 									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(nextSibling.slug)}"
-									class="inline-flex min-w-0 items-center justify-end gap-1.5 text-right text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+									class="inline-flex min-w-0 items-center justify-end gap-1.5 text-end text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
 								>
 									<span class="truncate">{nextSibling.title}</span>
-									<ChevronRight size={14} class="shrink-0" />
+									<ChevronRight size={14} class="shrink-0 rtl:-scale-x-100" />
 								</a>
 							{:else}
 								<span></span>

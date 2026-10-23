@@ -97,7 +97,7 @@
 			href="/planning-groups"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={14} /> {t('planning_groups.back', 'All planning groups')}
+			<ArrowLeft class="rtl:-scale-x-100" size={14} /> {t('planning_groups.back', 'All planning groups')}
 		</a>
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Users size={20} /> {t('planning_groups.new_heading', 'Create Planning Group')}

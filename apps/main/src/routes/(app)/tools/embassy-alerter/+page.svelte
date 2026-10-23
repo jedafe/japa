@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import {
@@ -214,7 +214,7 @@
 
 	function formatDateTime(iso: string | null | undefined): string {
 		if (!iso) return '—';
-		return new Date(iso).toLocaleString('en-US', {
+		return new Date(iso).toLocaleString(i18n.locale, {
 			month: 'short',
 			day: 'numeric',
 			hour: '2-digit',
@@ -399,7 +399,7 @@
 														rel="noopener noreferrer"
 														class="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline"
 													>
-														<ExternalLink size={12} />
+														<ExternalLink class="rtl:-scale-x-100" size={12} />
 														{t('embassy_alerter.booking_page', 'Booking page')}
 													</a>
 												{/if}
@@ -707,7 +707,7 @@
 				class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]"
 			>
 				{t('register.create_alerts_desc', 'Create a free account to set embassy appointment alerts and get notified when slots open.')}
-				<a href="/login" class="ml-1 text-[var(--color-primary)] hover:underline"
+				<a href="/login" class="ms-1 text-[var(--color-primary)] hover:underline"
 					>{t('common.sign_in', 'Sign in')}</a
 				>.
 			</div>

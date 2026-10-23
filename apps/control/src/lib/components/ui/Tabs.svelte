@@ -54,7 +54,7 @@
 					{@render tab.label()}
 				{/if}
 				{#if tab.badge !== undefined}
-					<span class="bg-accent text-accent-foreground ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium">
+					<span class="bg-accent text-accent-foreground ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium">
 						{tab.badge}
 					</span>
 				{/if}

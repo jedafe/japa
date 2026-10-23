@@ -473,6 +473,16 @@ LEFT JOIN content_scores cs ON cs.content_id = c.id
 WHERE ir.source_id = $1
  AND ir.status = 'published'
  AND ($2::text IS NULL OR $2 = '' OR ir.entity_type = $2)
+ -- Only records whose backing row exists are renderable by the public feed
+ -- (recordToSourceItem skips orphans); filter them here so page contents and
+ -- CountIntelRecordsBySource's total stay in alignment.
+ AND (
+   (ir.entity_type = 'scholarship' AND EXISTS (SELECT 1 FROM scholarships sch WHERE sch.intel_record_id = ir.id))
+   OR (ir.entity_type = 'job' AND EXISTS (SELECT 1 FROM intel_jobs j WHERE j.intel_record_id = ir.id))
+   OR (ir.entity_type = 'remittance' AND EXISTS (SELECT 1 FROM remittance_rates rr WHERE rr.intel_record_id = ir.id))
+   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
+   OR (ir.entity_type = 'wiki_page' AND EXISTS (SELECT 1 FROM wiki_pages wp2 WHERE wp2.intel_record_id = ir.id))
+ )
 ORDER BY
  CASE
  WHEN $5 = 'popular' THEN COALESCE(cs.view_count, c.view_count, 0)
@@ -483,10 +493,19 @@ ORDER BY
 LIMIT $3 OFFSET $4;
 
 -- name: CountIntelRecordsBySource :one
-SELECT COUNT(*) FROM intel_records
-WHERE source_id = $1
- AND status = 'published'
- AND ($2::text IS NULL OR $2 = '' OR entity_type = $2);
+-- Mirrors the backing-row existence filter in ListIntelRecordsBySource so the
+-- reported total only counts items the public feed can actually render.
+SELECT COUNT(*) FROM intel_records ir
+WHERE ir.source_id = $1
+ AND ir.status = 'published'
+ AND ($2::text IS NULL OR $2 = '' OR ir.entity_type = $2)
+ AND (
+   (ir.entity_type = 'scholarship' AND EXISTS (SELECT 1 FROM scholarships sch WHERE sch.intel_record_id = ir.id))
+   OR (ir.entity_type = 'job' AND EXISTS (SELECT 1 FROM intel_jobs j WHERE j.intel_record_id = ir.id))
+   OR (ir.entity_type = 'remittance' AND EXISTS (SELECT 1 FROM remittance_rates rr WHERE rr.intel_record_id = ir.id))
+   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
+   OR (ir.entity_type = 'wiki_page' AND EXISTS (SELECT 1 FROM wiki_pages wp2 WHERE wp2.intel_record_id = ir.id))
+ );
 
 -- name: ListDistinctIntelRecordEntityTypesBySource :many
 -- Distinct published entity types in a source's feed — the public detail

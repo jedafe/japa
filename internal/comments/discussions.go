@@ -2,12 +2,17 @@ package comments
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content"
@@ -103,11 +108,18 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 	var createdThread gen.CreateContentRow
 
 	if input.ThreadID.Valid {
-		// Validate the existing thread exists in the same platform before linking.
-		if _, err := s.read.GetContentByID(ctx,
+		// Validate the existing thread exists in the same platform before
+		// linking, and that it is actually a discussion — linking an arbitrary
+		// content item would surface a non-thread as a conversation (C-013).
+		thread, err := s.read.GetContentByID(ctx,
 			input.ThreadID,
-		); err != nil {
+		)
+		if err != nil {
 			return StartConversationResult{}, fmt.Errorf("resolving existing thread: %w", err)
+		}
+
+		if thread.ContentType != "discussion" {
+			return StartConversationResult{}, fmt.Errorf("linked thread must be a discussion: %w", errpkg.ErrInvalid)
 		}
 
 		threadID = input.ThreadID
@@ -122,18 +134,30 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 
 		title := "Discussing: " + blog.Title
 
+		// Rule 12 requires a content_hash on every contents insert, but the
+		// normalized-body hash would make every derived "Discussing: X" thread
+		// for the same content identical — the unique index would reject the
+		// second conversation. The hash input includes the parent content id
+		// and a fresh UUID so each derived thread hashes uniquely while still
+		// satisfying the rule (dedup is meaningless for generated threads).
+		hashInput := strings.ToLower(strings.Join(strings.Fields(title), " ")) +
+			"|" + contentID.String() + "|" + uuid.NewString()
+		hashSum := sha256.Sum256([]byte(hashInput))
+		contentHash := hex.EncodeToString(hashSum[:])
+
 		thread, err := s.write.CreateContent(ctx, gen.CreateContentParams{
 			AuthorID:    userID,
 			ContentType: "discussion",
 			Title:       title,
 			Slug:        content.Slugify(title),
 			// Body is empty — users add comments to the thread.
-			Body:       "",
-			BodyHtml:   "",
-			GeoSpaceID: blog.GeoSpaceID,
-			SpaceID:    blog.SpaceID,
-			Status:     "published",
-			Visibility: blog.Visibility,
+			Body:        "",
+			BodyHtml:    "",
+			ContentHash: &contentHash,
+			GeoSpaceID:  blog.GeoSpaceID,
+			SpaceID:     blog.SpaceID,
+			Status:      "published",
+			Visibility:  blog.Visibility,
 		})
 		if err != nil {
 			return StartConversationResult{}, fmt.Errorf("creating discussion thread: %w", err)
@@ -222,6 +246,38 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 		if err := in.ThreadID.Scan(*input.ThreadID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread_id format")
 			return
+		}
+	}
+
+	// C-021: starting a conversation on content the caller cannot see leaks
+	// the content's existence (and spawns a public discussion on it).
+	visible, err := h.Service.CanViewComments(r.Context(), contentID, user.UserID, true)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
+	// When a NEW discussion thread is being created it lands in the blog's
+	// space — the caller must hold the space's posting_perm, not just
+	// comments.create (C-013). Linking an existing thread adds no content.
+	if h.spaceChecker != nil && !in.ThreadID.Valid {
+		spaceID, err := h.Service.GetContentSpaceID(r.Context(), contentID)
+		if err != nil {
+			slog.Warn("comments: failed to resolve content space for posting_perm check", "content_id", contentID.String(), "error", err)
+		} else if spaceID.Valid {
+			allowed, err := h.spaceChecker.CanPostInSpace(r.Context(), spaceID, user.UserID)
+			if err != nil {
+				slog.Warn("comments: space posting_perm check failed", "space_id", spaceID.String(), "error", err)
+			} else if !allowed {
+				errpkg.WriteError(w, http.StatusForbidden, "space_permission_denied",
+					"You do not have permission to post in this space")
+				return
+			}
 		}
 	}
 

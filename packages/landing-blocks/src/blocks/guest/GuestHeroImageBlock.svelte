@@ -144,7 +144,7 @@
       onclick={prev}
       aria-label="Previous slide"
     >
-      <ChevronLeft size={20} />
+      <ChevronLeft class="rtl:-scale-x-100" size={20} />
     </button>
     <button
       type="button"
@@ -152,7 +152,7 @@
       onclick={next}
       aria-label="Next slide"
     >
-      <ChevronRight size={20} />
+      <ChevronRight class="rtl:-scale-x-100" size={20} />
     </button>
   {/if}
 
@@ -175,7 +175,7 @@
   .hero-dots {
     position: absolute;
     bottom: 1rem;
-    left: 50%;
+    inset-inline-start: 50%;
     transform: translateX(-50%);
     display: flex;
     gap: 0.5rem;

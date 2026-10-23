@@ -81,7 +81,7 @@
 	<Dialog.Portal>
 		<Dialog.Overlay class="fixed inset-0 z-[90] bg-black/40" />
 		<Dialog.Content
-			class="fixed left-1/2 top-1/2 z-[91] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xl"
+			class="fixed start-1/2 top-1/2 z-[91] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xl"
 		>
 			{#if action}
 				{@const Icon = nextActionIcon(action.icon)}

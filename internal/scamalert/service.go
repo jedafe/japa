@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/wallet"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // ScamReportDTO is the API response shape for a single scam report.
@@ -53,7 +54,10 @@ type ScamReportDTO struct {
 	ReviewedBy    string `json:"reviewed_by,omitempty"`
 	ReviewedAt    string `json:"reviewed_at,omitempty"`
 	// ADR-088 universal AI-generation fields (admin review surfaces).
-	AiGenerated    bool   `json:"ai_generated"`
+	// AiGenerated is a *bool so the public redaction path can omit the key
+	// entirely — §81 strips ai_*/hitl_* provenance for every caller except
+	// the reporter; a plain false would leak (and misreport) the flag.
+	AiGenerated    *bool  `json:"ai_generated,omitempty"`
 	AiModel        string `json:"ai_model,omitempty"`
 	AiGeneratedAt  string `json:"ai_generated_at,omitempty"`
 	HitlReviewedBy string `json:"hitl_reviewed_by,omitempty"`
@@ -121,6 +125,12 @@ const (
 	TaskAwardPoints       = "wallet:award_points"
 )
 
+// deduper is the SetNX surface used for the subscriber-notification dedup
+// guard (valkeycompat.Cmdable is satisfied by valkey.Client.Redis()).
+type deduper interface {
+	SetNX(ctx context.Context, key string, value any, expiration time.Duration) *valkeycompat.BoolCmd
+}
+
 // Service holds the business logic for the Scam Alert Board.
 type Service struct {
 	store    *Store
@@ -130,6 +140,7 @@ type Service struct {
 	enqueuer TaskEnqueuer
 	checker  FeatureChecker
 	rbac     permissionChecker
+	vk       deduper
 }
 
 // NewService creates a scam-alert service.
@@ -158,6 +169,11 @@ func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 // SetRBAC injects the permission resolver used for edit authorization
 // (scam_alert.edit_own / scam_alert.edit_any).
 func (s *Service) SetRBAC(r permissionChecker) { s.rbac = r }
+
+// SetValkey injects the cache client used for the
+// jc:scam_alert:notified:{user_id}:{report_id} dedup guard (24h TTL —
+// valkey-keys-catalog). Optional — nil-safe.
+func (s *Service) SetValkey(c deduper) { s.vk = c }
 
 // Enabled checks whether the scam_alert feature is enabled for the given
 // platform. Delegates to the features.Checker (feature_flags table) when
@@ -210,12 +226,13 @@ var validScamTypes = map[string]bool{
 }
 
 var validPlatforms = map[string]bool{
-	"whatsapp":  true,
-	"instagram": true,
-	"linkedin":  true,
-	"email":     true,
-	"website":   true,
-	"other":     true,
+	"whatsapp":    true,
+	"instagram":   true,
+	"linkedin":    true,
+	"email":       true,
+	"website":     true,
+	"japaconnect": true,
+	"other":       true,
 }
 
 // human labels for schema endpoint (Rule 16: backend owns canonical values).
@@ -229,12 +246,13 @@ var scamTypeLabels = map[string]string{
 }
 
 var platformLabels = map[string]string{
-	"whatsapp":  "WhatsApp",
-	"instagram": "Instagram",
-	"linkedin":  "LinkedIn",
-	"email":     "Email",
-	"website":   "Website",
-	"other":     "Other",
+	"whatsapp":    "WhatsApp",
+	"instagram":   "Instagram",
+	"linkedin":    "LinkedIn",
+	"email":       "Email",
+	"website":     "Website",
+	"japaconnect": "japa.to",
+	"other":       "Other",
 }
 
 func sortOptions(opts []Option) {
@@ -283,6 +301,14 @@ var ErrInvalidStatus = errors.New("invalid status")
 // do not own and they do not hold scam_alert.edit_any.
 var ErrEditForbidden = errors.New("edit forbidden")
 
+// ErrInvalidDestination is returned when destination_space_id does not
+// resolve to a live country-level space (geo-aware pattern, §§79–101).
+var ErrInvalidDestination = errors.New("invalid destination_space_id")
+
+// ErrInvalidOrigin is returned when origin_space_id does not resolve to a
+// live country-level space.
+var ErrInvalidOrigin = errors.New("invalid origin_space_id")
+
 // ErrModeratorNoteRequired is returned when a report is confirmed without a
 // moderator note. §81 legal boundary: a confirmed report must always carry a
 // moderator note — it is also the HITL record for AI-generated reports
@@ -297,12 +323,41 @@ const (
 	MaxModeratorNoteRunes   = 5000
 )
 
+// validateGeoSpaces enforces the geo-aware pattern (§§79–101): destination
+// is always required and must be a country-level space; origin is optional
+// but must resolve to a country space when provided.
+func (s *Service) validateGeoSpaces(ctx context.Context, report ScamReport) error {
+	ok, err := s.store.CountrySpaceExists(ctx, report.DestinationSpaceID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrInvalidDestination
+	}
+
+	if report.OriginSpaceID.Valid {
+		ok, err = s.store.CountrySpaceExists(ctx, report.OriginSpaceID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrInvalidOrigin
+		}
+	}
+
+	return nil
+}
+
 // Submit creates a new scam report in 'under_review' status. reporterID may
 // be zero-valued (invalid) for anonymous reports when anonymous reports are
 // allowed.
 func (s *Service) Submit(ctx context.Context, reporterID pgtype.UUID, input SubmitReportInput) (ScamReportDTO, error) {
 	report, err := buildScamReport(UpdateReportInput(input))
 	if err != nil {
+		return ScamReportDTO{}, err
+	}
+
+	if err := s.validateGeoSpaces(ctx, report); err != nil {
 		return ScamReportDTO{}, err
 	}
 
@@ -463,6 +518,10 @@ func (s *Service) Update(ctx context.Context, id, callerID pgtype.UUID, input Up
 		return ScamReportDTO{}, err
 	}
 
+	if err := s.validateGeoSpaces(ctx, report); err != nil {
+		return ScamReportDTO{}, err
+	}
+
 	row, err := s.store.UpdateReport(ctx, id, report)
 	if err != nil {
 		return ScamReportDTO{}, fmt.Errorf("scamalert: update: %w", err)
@@ -513,6 +572,17 @@ func (s *Service) GetForViewer(ctx context.Context, id, callerID pgtype.UUID) (S
 		}
 
 		return ScamReportDTO{}, fmt.Errorf("scamalert: get for viewer: %w", rerr)
+	}
+
+	// The reporter sees their own report in any state; moderators and
+	// edit_any holders see every state too — they already list pending
+	// reports in the /admin/scam-alerts queue and PATCH them, so hiding the
+	// single-report read would be an inconsistent denial (and it breaks the
+	// main-app edit page for non-reporter moderators).
+	if s.rbac != nil &&
+		(s.rbac.HasPermission(ctx, callerID, "scam_alert.review") ||
+			s.rbac.HasPermission(ctx, callerID, "scam_alert.edit_any")) {
+		return rowToDTO(row), nil
 	}
 
 	if !row.ReporterID.Valid || row.ReporterID != callerID {
@@ -718,6 +788,19 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID pgtype.UUID) e
 			actionURL := "/scam-alerts/" + reportID.String()
 
 			for _, subID := range subscribers {
+				// Dedup guard — jc:scam_alert:notified:{user_id}:{report_id}
+				// (valkey-keys-catalog, 24h TTL). Asynq retries must not
+				// re-notify a subscriber who already got this alert.
+				if s.vk != nil {
+					key := "jc:scam_alert:notified:" + subID.String() + ":" + reportID.String()
+					set, derr := s.vk.SetNX(ctx, key, "1", 24*time.Hour).Result()
+					if derr != nil {
+						slog.Warn("scamalert: notify: dedup guard failed, sending anyway", "subscriber_id", subID.String(), "error", derr)
+					} else if !set {
+						continue
+					}
+				}
+
 				if err := s.notifier.CreateNotification(
 					ctx, subID,
 					"scam_alert.confirmed", "system", pgtype.UUID{},
@@ -886,7 +969,8 @@ func rowToDTO(r ScamReportRow) ScamReportDTO {
 		dto.ReviewedBy = r.ReviewedBy.String()
 	}
 
-	dto.AiGenerated = r.AiGenerated
+	aiGen := r.AiGenerated
+	dto.AiGenerated = &aiGen
 	dto.AiGeneratedAt = formatTs(r.AiGeneratedAt)
 	dto.HitlReviewedAt = formatTs(r.HitlReviewedAt)
 

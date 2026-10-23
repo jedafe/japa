@@ -42,7 +42,7 @@
 			href="/series"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} /> {t('series_detail.back', 'All series')}
+			<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('series_detail.back', 'All series')}
 		</a>
 		<div class="flex items-center gap-3">
 			{#if series.cover_image_url}

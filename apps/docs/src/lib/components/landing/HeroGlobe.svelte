@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/i18n';
 	// Decorative hero illustration — a stylized globe with orbiting docs
 	// domains (API, Members, Analytics, Security). Pure SVG/CSS so it follows
 	// the theme tokens and needs no image assets. aria-hidden: decoration only.
@@ -28,23 +29,23 @@
 		<path d="M 96 252 Q 180 300 264 252" stroke="var(--color-primary)" stroke-opacity="0.3" stroke-width="1.2" fill="none" stroke-linecap="round" />
 	</svg>
 
-	<span class="plane"><Send size={20} /></span>
+	<span class="plane"><Send class="rtl:-scale-x-100" size={20} /></span>
 
 	<div class="float-card fc-api">
 		<span class="fc-icon"><Code2 size={16} /></span>
-		<span class="fc-label">API</span>
+		<span class="fc-label">{t('landing.globe_api', 'API')}</span>
 	</div>
 	<div class="float-card fc-members">
 		<span class="fc-icon"><Users size={16} /></span>
-		<span class="fc-label">Members</span>
+		<span class="fc-label">{t('landing.globe_members', 'Members')}</span>
 	</div>
 	<div class="float-card fc-analytics">
 		<span class="fc-icon"><BarChart3 size={16} /></span>
-		<span class="fc-label">Analytics</span>
+		<span class="fc-label">{t('landing.globe_analytics', 'Analytics')}</span>
 	</div>
 	<div class="float-card fc-security">
 		<span class="fc-icon"><ShieldCheck size={16} /></span>
-		<span class="fc-label">Security</span>
+		<span class="fc-label">{t('landing.globe_security', 'Security')}</span>
 	</div>
 </div>
 
@@ -63,7 +64,7 @@
 	.plane {
 		position: absolute;
 		top: 4%;
-		right: 12%;
+		inset-inline-end: 12%;
 		display: grid;
 		place-items: center;
 		height: 2.5rem;
@@ -99,10 +100,10 @@
 		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 		color: var(--color-primary);
 	}
-	.fc-api { top: 8%; left: 0; animation-delay: 0s; }
-	.fc-members { top: 14%; right: -4%; animation-delay: 1.5s; }
-	.fc-analytics { bottom: 18%; left: -2%; animation-delay: 3s; }
-	.fc-security { bottom: 8%; right: 4%; animation-delay: 4.5s; }
+	.fc-api { top: 8%; inset-inline-start: 0; animation-delay: 0s; }
+	.fc-members { top: 14%; inset-inline-end: -4%; animation-delay: 1.5s; }
+	.fc-analytics { bottom: 18%; inset-inline-start: -2%; animation-delay: 3s; }
+	.fc-security { bottom: 8%; inset-inline-end: 4%; animation-delay: 4.5s; }
 
 	@keyframes float {
 		0%, 100% { transform: translateY(0); }

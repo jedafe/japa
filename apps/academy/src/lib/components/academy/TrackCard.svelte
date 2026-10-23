@@ -60,13 +60,13 @@
 			</div>
 		{/if}
 		<!-- Level badge (top-left) -->
-		<div class="absolute left-3 top-3">
+		<div class="absolute start-3 top-3">
 			<LevelBadge level={track.level} />
 		</div>
 		<!-- Price badge (top-right) -->
 		{#if priceLabel}
 			<span
-				class="absolute right-3 top-3 rounded-full bg-[var(--color-surface)]/90 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-text)] backdrop-blur"
+				class="absolute end-3 top-3 rounded-full bg-[var(--color-surface)]/90 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-text)] backdrop-blur"
 			>
 				{priceLabel}
 			</span>

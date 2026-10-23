@@ -73,7 +73,7 @@ describe('serializeListBodyHtml', () => {
 		], {});
 		expect(html).toContain('data-type="content-embed"');
 		expect(html).toContain('data-content-slug="visa-guide"');
-		expect(html).toContain('href="/content/visa-guide"');
+		expect(html).toContain('href="/guide/visa-guide"');
 		expect(html).toContain('Visa Guide');
 		expect(html).toContain('All about visas');
 		expect(html).toContain('https://cdn.example.com/v.png');
@@ -157,5 +157,22 @@ describe('serializeListBodyHtml', () => {
 	it('serializes an empty list to just the intro', () => {
 		expect(serializeListBodyHtml('numbered', '<p>Only intro</p>', [], {})).toBe('<p>Only intro</p>');
 		expect(serializeListBodyHtml('numbered', '', [], {})).toBe('');
+	});
+
+	it('drops markup-free empty paragraphs from intro and item bodies', () => {
+		const html = serializeListBodyHtml('numbered', '<p></p>', [
+			item({ heading: 'A', body_html: '<p><br></p>' }),
+			item({ heading: 'B', body_html: '<p>real</p>' })
+		], {});
+		expect(html.startsWith('<p></p>')).toBe(false);
+		expect(html).toContain('id="item-1"><h3>');
+		expect(html).toContain('<p>real</p>');
+	});
+
+	it('links the content-embed card via the generic route when the snapshot lacks content_type', () => {
+		const html = serializeListBodyHtml('numbered', '', [
+			item({ embed: { kind: 'content', content_slug: 'x-post', snapshot: { title: 'X' } } })
+		], {});
+		expect(html).toContain('href="/content/x-post"');
 	});
 });

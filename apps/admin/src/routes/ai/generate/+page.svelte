@@ -260,7 +260,7 @@
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
 		<div class="flex items-center gap-3 text-sm" style="color: var(--color-muted)">
 			<AlertTriangle class="h-5 w-5" />
-			You don't have permission to use AI generation.
+			{t('ai.no_permission', "You don't have permission to use AI generation.")}
 		</div>
 	</div>
 {:else}
@@ -362,9 +362,9 @@
 								<input type="checkbox" id="gen-humanize" bind:checked={humanize} />
 								<label for="gen-humanize" class="text-sm font-medium">{t('ai.humanize.label')}</label>
 							</div>
-							<p class="ml-6 mt-1 text-xs" style="color: var(--color-muted)">{t('ai.humanize.description')}</p>
+							<p class="ms-6 mt-1 text-xs" style="color: var(--color-muted)">{t('ai.humanize.description')}</p>
 							{#if humanize}
-								<div class="ml-6 mt-3">
+								<div class="ms-6 mt-3">
 									<label for="gen-humanize-level" class="mb-1 block text-xs font-medium">{t('ai.humanize.level.label')}</label>
 									<Select
 										options={humanizeLevelOptions.map(o => ({ value: o.value, label: t(o.labelKey) }))}
@@ -450,7 +450,7 @@
 								disabled={sentToReview}
 								onclick={sendToReview}
 							>
-								<Send class="h-3 w-3" />
+								<Send class="h-3 w-3 rtl:-scale-x-100" />
 								{sentToReview ? t('ai.sent_to_review') : t('ai.send_to_review')}
 							</button>
 							{#if reviewMessage}
@@ -486,7 +486,7 @@
 				<div class="space-y-2 max-h-[600px] overflow-y-auto">
 					{#each history as entry (entry.id)}
 						<button
-							class="w-full rounded-md border p-3 text-left transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
+							class="w-full rounded-md border p-3 text-start transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 							style="border-color: var(--color-border); background-color: var(--color-background)"
 							onclick={() => loadFromHistory(entry)}
 						>

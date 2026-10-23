@@ -82,7 +82,7 @@ func redactReportForCaller(report *ScamReportDTO, callerID string) {
 	report.ReporterID = ""
 	report.ReporterName = ""
 	report.ReviewedBy = ""
-	report.AiGenerated = false
+	report.AiGenerated = nil
 	report.AiModel = ""
 	report.AiGeneratedAt = ""
 	report.HitlReviewedBy = ""
@@ -346,6 +346,16 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, ErrInvalidDestination) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", "Destination must be a country")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidOrigin) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_origin", "Origin must be a country")
+			return
+		}
+
 		slog.Error("scamalert: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit scam report")
 
@@ -428,6 +438,16 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, ErrInvalidPlatform) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_platform", "Platform must be one of: whatsapp, instagram, linkedin, email, website, other")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidDestination) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", "Destination must be a country")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidOrigin) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_origin", "Origin must be a country")
 			return
 		}
 

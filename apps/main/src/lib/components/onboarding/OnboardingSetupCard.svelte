@@ -50,7 +50,7 @@
 			class="flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] hover:opacity-90"
 		>
 			{t('onboarding.reminder_cta', 'Continue setup')}
-			<ArrowRight size={14} />
+			<ArrowRight class="rtl:-scale-x-100" size={14} />
 		</a>
 		<button
 			type="button"

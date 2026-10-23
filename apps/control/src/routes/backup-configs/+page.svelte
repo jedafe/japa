@@ -186,7 +186,7 @@
 		{
 			key: 'retention_days',
 			label: t('backup_configs.retention_days', 'Retention (days)'),
-			class: 'text-right',
+			class: 'text-end',
 			render: (val) =>
 				`<span class="text-foreground tabular-nums text-sm">${val ?? '—'}</span>`
 		},
@@ -195,8 +195,8 @@
 			label: t('backup_configs.enabled', 'Enabled'),
 			render: (val) =>
 				val
-					? `<span class="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-5px px-2 py-0.5 text-xs font-medium">Enabled</span>`
-					: `<span class="bg-muted text-muted-foreground rounded-5px px-2 py-0.5 text-xs font-medium">Disabled</span>`
+					? `<span class="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-5px px-2 py-0.5 text-xs font-medium">{t('common.enabled', 'Enabled')}</span>`
+					: `<span class="bg-muted text-muted-foreground rounded-5px px-2 py-0.5 text-xs font-medium">{t('common.disabled', 'Disabled')}</span>`
 		},
 		{
 			key: 'last_run_at',
@@ -563,7 +563,7 @@
 						type="text"
 						bind:value={createForm.name}
 						class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-						placeholder="Daily DB Backup"
+						placeholder={t('backup_configs.name_ph', 'Daily DB Backup')}
 					/>
 				</div>
 				<div>
@@ -610,7 +610,7 @@
 										type="button"
 										class="text-muted-foreground hover:text-foreground"
 										onclick={() => removeBackupTarget(target.key)}
-										aria-label="Remove {target.label}"
+										aria-label={t('backup_configs.remove_target', 'Remove {label}').replace('{label}', target.label)}
 									>
 										<X class="size-3" />
 									</button>

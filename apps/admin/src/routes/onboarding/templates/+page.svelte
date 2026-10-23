@@ -246,7 +246,7 @@
 				class="w-full rounded-lg border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={value.name}
-				placeholder="Default 7-step flow"
+				placeholder={t('onboarding.templates.name_ph', 'Default 7-step flow')}
 				required
 			/>
 		</div>
@@ -260,7 +260,7 @@
 				class="w-full rounded-lg border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={value.description}
-				placeholder="Describe what this template configures…"
+				placeholder={t('onboarding.templates.description_ph', 'Describe what this template configures…')}
 			></textarea>
 		</div>
 		<div>

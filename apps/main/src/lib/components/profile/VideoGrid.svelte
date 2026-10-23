@@ -44,11 +44,11 @@
 				{/if}
 				<span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/25">
 					<span class="grid h-11 w-11 place-items-center rounded-full bg-black/60 text-white">
-						<Play size={20} class="ml-0.5" />
+						<Play size={20} class="ms-0.5" />
 					</span>
 				</span>
 				{#if duration}
-					<span class="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[10.5px] font-semibold text-white [font-variant-numeric:tabular-nums]">{duration}</span>
+					<span class="absolute bottom-1.5 end-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[10.5px] font-semibold text-white [font-variant-numeric:tabular-nums]">{duration}</span>
 				{/if}
 			</span>
 			<span class="flex flex-1 flex-col gap-1 p-3">
@@ -60,13 +60,13 @@
 						{sourceLabel(video.source_type)}
 					</span>
 					{#if external}
-						<ExternalLink size={12} />
+						<ExternalLink class="rtl:-scale-x-100" size={12} />
 					{/if}
 					{#if isChannel}
 						<span>{t('profile.videos.channel_source', 'Channel import')}</span>
 					{/if}
 					{#if video.created_at}
-						<span class="ml-auto">{relativeTime(video.created_at, new Date(page.data.serverNow ?? Date.now()), i18n.locale)}</span>
+						<span class="ms-auto">{relativeTime(video.created_at, new Date(page.data.serverNow ?? Date.now()), i18n.locale)}</span>
 					{/if}
 				</span>
 			</span>

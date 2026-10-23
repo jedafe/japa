@@ -51,7 +51,7 @@
 				</MenuItem>
 				<MenuSeparator />
 				<MenuItem>
-					<button type="button" class="w-full text-left" onclick={() => { showDropdown = false; void goto('/logout'); }}>{t('nav.sign_out')}</button>
+					<button type="button" class="w-full text-start" onclick={() => { showDropdown = false; void goto('/logout'); }}>{t('nav.sign_out')}</button>
 				</MenuItem>
 			</Menu>
 		{/if}

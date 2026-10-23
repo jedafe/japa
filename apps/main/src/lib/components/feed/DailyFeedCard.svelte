@@ -1,3 +1,41 @@
+<script module lang="ts">
+	// Forum threads bookmark through the forum bookmark store
+	// (entity_type='forum_thread') — the same store the thread detail page
+	// and /dashboard/bookmarks consume. /me/content-states is content-scoped
+	// so it never reflects them, and a 'content' bookmark on the backing
+	// contents row would render as a /blog link on the dashboard and not
+	// update thread.bookmark_count (§08). Shared across all card instances:
+	// one GET /me/bookmarks serves every forum card on the page.
+	let forumBookmarkMap: Map<string, string> | null = null;
+	let forumBookmarkPromise: Promise<Map<string, string>> | null = null;
+
+	async function loadForumBookmarks(): Promise<Map<string, string>> {
+		if (forumBookmarkMap) return forumBookmarkMap;
+		if (!forumBookmarkPromise) {
+			forumBookmarkPromise = api
+				.get<{ id: string; entity_type: string; entity_id: string }[]>('/me/bookmarks?page_size=500')
+				.then((res) => {
+					const m = new Map<string, string>();
+					for (const b of res.data ?? []) {
+						if (b.entity_type === 'forum_thread') m.set(b.entity_id, b.id);
+					}
+					forumBookmarkMap = m;
+					return m;
+				})
+				.catch(() => {
+					forumBookmarkPromise = null;
+					return new Map<string, string>();
+				});
+		}
+		return forumBookmarkPromise;
+	}
+
+	function invalidateForumBookmarks() {
+		forumBookmarkMap = null;
+		forumBookmarkPromise = null;
+	}
+</script>
+
 <script lang="ts">
 	/**
 	 * Daily.dev-inspired feed card.
@@ -47,6 +85,13 @@
 		if (bookmarkInitialized || !authed) return;
 		bookmarkInitialized = true;
 		// Batched: one GET /me/content-states serves every card on the page.
+		// Forum cards resolve against the forum bookmark store instead.
+		if (isForum && item.forum_thread_id) {
+			loadForumBookmarks().then((m) => {
+				bookmarked = m.has(item.forum_thread_id ?? '');
+			});
+			return;
+		}
 		getViewerState(item.id).then((state) => {
 			bookmarked = state.bookmarked;
 		});
@@ -120,6 +165,8 @@
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
+		const target = e.target as HTMLElement | null;
+		if (target && (target.closest('a') || target.closest('button'))) return;
 		if (e.key === 'Enter') goto(canonicalHref);
 	}
 
@@ -145,9 +192,38 @@
 		const next = !bookmarked;
 		bookmarked = next;
 		bookmarkCount += next ? 1 : -1;
-		updateViewerState(item.id, { bookmarked: next });
+		const forumId = isForum ? (item.forum_thread_id ?? null) : null;
+		if (!forumId) updateViewerState(item.id, { bookmarked: next });
 		try {
-			if (next) {
+			if (forumId) {
+				if (next) {
+					const res = await api.post<{ id: string }>(`/forum/bookmarks`, {
+						entity_type: 'forum_thread',
+						entity_id: forumId
+					});
+					if (res.error) {
+						// A duplicate still means the bookmark exists — sync
+						// rather than fail.
+						const m = await loadForumBookmarks();
+						if (!m.has(forumId)) throw new Error(res.error.message);
+					}
+					if (res.data?.id) forumBookmarkMap?.set(forumId, res.data.id);
+				} else {
+					let m = await loadForumBookmarks();
+					let bmId = m.get(forumId);
+					if (!bmId) {
+						// Stale cache — refetch once before giving up.
+						invalidateForumBookmarks();
+						m = await loadForumBookmarks();
+						bmId = m.get(forumId);
+					}
+					if (bmId) {
+						const res = await api.delete(`/forum/bookmarks/${bmId}`);
+						if (res.error) throw new Error(res.error.message);
+						m.delete(forumId);
+					}
+				}
+			} else if (next) {
 				const res = await api.post(`/content/${item.id}/bookmark`, {});
 				if (res.error) throw new Error(res.error.message);
 			} else {
@@ -157,7 +233,7 @@
 		} catch {
 			bookmarked = !next;
 			bookmarkCount += next ? -1 : 1;
-			updateViewerState(item.id, { bookmarked: !next });
+			if (!forumId) updateViewerState(item.id, { bookmarked: !next });
 			bookmarkPending = false;
 			return;
 		}
@@ -196,7 +272,7 @@
 			variant="row"
 			secondary={secondary}
 		/>
-		<div class="ml-auto flex shrink-0 items-center gap-3">
+		<div class="ms-auto flex shrink-0 items-center gap-3">
 			<a
 				href={canonicalHref}
 				class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-[var(--color-primary)]/10 px-3 py-1.5 text-[13px] font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
@@ -229,7 +305,7 @@
 		<div class="flex min-w-0 flex-1 flex-col gap-3">
 			<!-- Title -->
 			<h2 class="text-balance text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
-				{item.title}
+				<a href={canonicalHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
 			</h2>
 
 			{#if item.excerpt}
@@ -258,10 +334,10 @@
 					<img src={item.cover_image_url} alt={item.title} loading="lazy" class="h-full w-full object-cover" />
 					{#if isVideo}
 						<span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/25">
-							<Play size={22} class="ml-0.5 text-white" />
+							<Play size={22} class="ms-0.5 text-white" />
 						</span>
 						{#if duration}
-							<span class="absolute bottom-1 right-1 rounded bg-black/75 px-1 py-0.5 text-[10px] font-semibold text-white">{duration}</span>
+							<span class="absolute bottom-1 end-1 rounded bg-black/75 px-1 py-0.5 text-[10px] font-semibold text-white">{duration}</span>
 						{/if}
 					{/if}
 				</div>
@@ -327,10 +403,10 @@
 				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="h-full w-full object-cover" />
 				{#if isVideo}
 					<span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/25">
-						<Play size={22} class="ml-0.5 text-white" />
+						<Play size={22} class="ms-0.5 text-white" />
 					</span>
 					{#if duration}
-						<span class="absolute bottom-1 right-1 rounded bg-black/75 px-1 py-0.5 text-[10px] font-semibold text-white">{duration}</span>
+						<span class="absolute bottom-1 end-1 rounded bg-black/75 px-1 py-0.5 text-[10px] font-semibold text-white">{duration}</span>
 					{/if}
 				{/if}
 			</div>
@@ -338,7 +414,7 @@
 			<div class="relative hidden aspect-video w-[220px] shrink-0 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)] sm:grid">
 				<Play size={22} class="text-[var(--color-muted)]" />
 				{#if duration}
-					<span class="absolute bottom-1 right-1 rounded bg-black/75 px-1 py-0.5 text-[10px] font-semibold text-white">{duration}</span>
+					<span class="absolute bottom-1 end-1 rounded bg-black/75 px-1 py-0.5 text-[10px] font-semibold text-white">{duration}</span>
 				{/if}
 			</div>
 		{/if}

@@ -97,7 +97,7 @@
 					class="rounded p-0.5 text-muted-foreground disabled:opacity-30"
 					disabled={disabled || i === 0}
 					onclick={() => moveReaction(i, -1)}
-					aria-label="Move up"
+					aria-label={t('common.move_up', 'Move up')}
 				>
 					<GripVertical class="h-3.5 w-3.5 rotate-180" />
 				</button>
@@ -106,7 +106,7 @@
 					class="rounded p-0.5 text-muted-foreground disabled:opacity-30"
 					disabled={disabled || i === reactions.length - 1}
 					onclick={() => moveReaction(i, 1)}
-					aria-label="Move down"
+					aria-label={t('common.move_down', 'Move down')}
 				>
 					<GripVertical class="h-3.5 w-3.5" />
 				</button>
@@ -120,7 +120,7 @@
 				class="h-9 w-12 shrink-0 rounded-md border border-border-input bg-background px-2 py-1.5 text-center text-lg"
 				disabled={disabled}
 				oninput={(e) => updateField(i, 'emoji', (e.target as HTMLInputElement).value)}
-				aria-label="Emoji"
+				aria-label={t('settings.achievement_reactions_emoji', 'Emoji')}
 			/>
 
 			<!-- Label input -->
@@ -131,7 +131,7 @@
 				class="h-9 flex-1 rounded-md border border-border-input bg-background px-2.5 py-1.5 text-sm"
 				disabled={disabled}
 				oninput={(e) => updateField(i, 'label', (e.target as HTMLInputElement).value)}
-				aria-label="Label"
+				aria-label={t('settings.achievement_reactions_label', 'Label')}
 			/>
 
 			<!-- Preview -->
@@ -145,7 +145,7 @@
 				class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500 disabled:opacity-30"
 				disabled={disabled}
 				onclick={() => removeReaction(i)}
-				aria-label="Remove reaction"
+				aria-label={t('settings.achievement_reactions_remove', 'Remove reaction')}
 			>
 				<Trash2 class="h-4 w-4" />
 			</button>

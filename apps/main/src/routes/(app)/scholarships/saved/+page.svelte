@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { GraduationCap, ClipboardList, ArrowLeft, ExternalLink, Trash2 } from 'lucide-svelte';
@@ -81,7 +81,7 @@
 
 	function formatDate(date: string | null | undefined): string {
 		if (!date) return '—';
-		return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+		return new Date(date).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' });
 	}
 
 	function daysUntil(date: string | null | undefined): number | null {
@@ -124,7 +124,7 @@
 			href="/scholarships"
 			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} />
+			<ArrowLeft class="rtl:-scale-x-100" size={16} />
 			{t('scholarships.back_to_list', 'Back to scholarships')}
 		</a>
 	</div>
@@ -199,9 +199,9 @@
 											{t('scholarships.deadline', 'Deadline')}: {formatDate(s.application_deadline)}
 											{#if days !== null}
 												{#if days < 0}
-													<span class="ml-1 text-[var(--color-danger)]">({t('scholarships.deadline_passed', 'Deadline passed')})</span>
+													<span class="ms-1 text-[var(--color-danger)]">({t('scholarships.deadline_passed', 'Deadline passed')})</span>
 												{:else}
-													<span class="ml-1 {days < 7 ? 'text-[var(--color-danger)]' : ''}">
+													<span class="ms-1 {days < 7 ? 'text-[var(--color-danger)]' : ''}">
 														({days} {days === 1 ? t('scholarships.day', 'day') : t('scholarships.days', 'days')} left)
 													</span>
 												{/if}
@@ -265,7 +265,7 @@
 								class="mt-3 inline-flex items-center gap-1.5 text-xs text-[var(--color-primary)] hover:underline"
 							>
 								{t('scholarships.apply', 'Apply')}
-								<ExternalLink size={12} />
+								<ExternalLink class="rtl:-scale-x-100" size={12} />
 							</a>
 						{/if}
 					</div>

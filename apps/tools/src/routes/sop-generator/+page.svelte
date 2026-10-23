@@ -438,11 +438,11 @@
 					{generating ? t('sop_generator.generating', 'Generating…') : t('sop_generator.generate', 'Generate draft')}
 				</button>
 				{#if !user}
-					<span class="ml-3 text-xs text-muted">
+					<span class="ms-3 text-xs text-muted">
 						{t('sop_generator.signin_required', 'Sign in to generate')}
 					</span>
 				{:else if !canGenerate}
-					<span class="ml-3 text-xs text-red-600">
+					<span class="ms-3 text-xs text-red-600">
 						{t('sop_generator.quota_exhausted', 'Monthly quota exhausted')}
 					</span>
 				{/if}
@@ -515,14 +515,14 @@
 				<div class="space-y-2">
 					{#each drafts as draft (draft.id)}
 						<div class="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3">
-							<button class="text-left flex-1" onclick={() => openDraft(draft)}>
+							<button class="text-start flex-1" onclick={() => openDraft(draft)}>
 								<div class="font-medium text-sm">{draft.title || draft.purpose}</div>
 								<div class="text-xs text-muted mt-0.5">
 									{draftMeta(draft)}
 								</div>
 							</button>
 							<button
-								class="text-xs text-muted hover:text-red-600 ml-3"
+								class="text-xs text-muted hover:text-red-600 ms-3"
 								onclick={() => deleteDraft(draft.id)}
 								aria-label={t('sop_generator.delete_draft', 'Delete draft')}
 							>

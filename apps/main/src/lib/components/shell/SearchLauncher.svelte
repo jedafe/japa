@@ -69,7 +69,7 @@
 		flex: 1;
 		min-width: 0;
 		overflow: hidden;
-		text-align: left;
+		text-align: start;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}

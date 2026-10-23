@@ -25,20 +25,40 @@
 
 	let { open = $bindable(), spaceId, spaceName, count }: Props = $props();
 
+	const PAGE_SIZE = 50;
 	let items = $state<FollowListItem[]>([]);
 	let loading = $state(false);
 	let loaded = $state(false);
+	let endReached = $state(false);
 
 	async function loadList() {
 		if (loaded || loading) return;
 		loading = true;
 		try {
-			const res = await api.get<FollowListItem[]>(`/spaces/${spaceId}/followers`);
+			const res = await api.get<FollowListItem[]>(`/spaces/${spaceId}/followers?page_size=${PAGE_SIZE}`);
 			items = res.data ?? [];
+			endReached = items.length < PAGE_SIZE;
 			loaded = true;
 		} catch {
 			items = [];
 			loaded = true;
+		} finally {
+			loading = false;
+		}
+	}
+
+	// Offset-paginate remaining followers — the modal previously fetched only
+	// the first page, silently truncating lists longer than the default page.
+	async function loadMore() {
+		if (loading || endReached) return;
+		loading = true;
+		try {
+			const res = await api.get<FollowListItem[]>(
+				`/spaces/${spaceId}/followers?page_size=${PAGE_SIZE}&page_offset=${items.length}`
+			);
+			const next = res.data ?? [];
+			items = [...items, ...next];
+			endReached = next.length < PAGE_SIZE;
 		} finally {
 			loading = false;
 		}
@@ -49,6 +69,7 @@
 			items = [];
 			loaded = false;
 			loading = false;
+			endReached = false;
 		} else {
 			loadList();
 		}
@@ -62,7 +83,7 @@
 		<div class="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
 			<h2 class="text-base font-medium text-[var(--color-text)]">
 				{t('space.followers_label', `Followers of ${spaceName ?? ''}`)}
-				<span class="ml-1.5 text-sm font-normal text-[var(--color-muted)]">{count}</span>
+				<span class="ms-1.5 text-sm font-normal text-[var(--color-muted)]">{count}</span>
 			</h2>
 			<button
 				type="button"
@@ -129,6 +150,16 @@
 							</li>
 						{/each}
 					</ul>
+					{#if !endReached}
+						<button
+							type="button"
+							onclick={loadMore}
+							disabled={loading}
+							class="mx-auto mt-3 block rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-1.5 text-sm text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						>
+							{loading ? t('common.loading', 'Loading…') : t('feed.load_more', 'Load more')}
+						</button>
+					{/if}
 				{/if}
 			</div>
 	{/snippet}

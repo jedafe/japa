@@ -55,7 +55,7 @@
 									border border-transparent"
 								>
 									<span class="min-w-0 flex-1 truncate">{tool.label}</span>
-									<span class="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">{tool.reason}</span>
+									<span class="ms-2 shrink-0 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">{tool.reason}</span>
 								</a>
 							</li>
 						{/each}
@@ -78,7 +78,7 @@
 									border border-transparent"
 								>
 									<span class="min-w-0 flex-1 truncate">{feature.label}</span>
-									<span class="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">{feature.reason}</span>
+									<span class="ms-2 shrink-0 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">{feature.reason}</span>
 								</a>
 							</li>
 						{/each}
@@ -122,7 +122,7 @@
 								>
 									<span class="min-w-0 flex-1 truncate">{space.name}</span>
 									{#if space.level}
-										<span class="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">{space.level}</span>
+										<span class="ms-2 shrink-0 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">{space.level}</span>
 									{/if}
 								</a>
 							</li>

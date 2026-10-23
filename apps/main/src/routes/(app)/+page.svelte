@@ -121,7 +121,7 @@
 				class="border-b-0"
 			/>
 			{#if data.authed}
-				<div class="ml-auto pr-1">
+				<div class="ms-auto pe-1">
 					<FeedGeoControl />
 				</div>
 			{/if}

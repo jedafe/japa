@@ -12,9 +12,16 @@
 // on img — emitting it would produce a silent diff on save.
 
 import type { ListItem, ListMode } from '$lib/types';
+import { contentHref } from '$lib/utils/contentLink';
 
 const esc = (s: string) =>
 	s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** True when the HTML carries no text — an untouched TipTap doc serializes
+ *  as `<p></p>` (or `<p><br></p>`) which must not be persisted as content. */
+export function isEmptyHtml(html: string | null | undefined): boolean {
+	return !html || html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() === '';
+}
 
 /** Displayed number for the item at `index`. Numbered/unnumbered lists count
  *  up from 1; countdown lists bake the reverse number (first item = total). */
@@ -35,8 +42,12 @@ function embedHtml(item: ListItem, mediaUrls: Record<string, string>): string {
 	if (!e) return '';
 	if (e.kind === 'content' && e.content_slug) {
 		const snap = e.snapshot ?? {};
+		// Link to the embedded item's canonical route family (/guide/{slug},
+		// /list/{slug}, …) — /content/{slug} only 301s to it, so emitting the
+		// canonical href saves a redirect and keeps internal links clean.
+		const href = contentHref({ slug: e.content_slug, content_type: snap.content_type });
 		const card =
-			`<a href="/content/${esc(e.content_slug)}" class="ce-card">` +
+			`<a href="${esc(href)}" class="ce-card">` +
 			(snap.image_url ? `<img src="${esc(snap.image_url)}" alt="">` : '') +
 			`<span class="ce-title">${esc(snap.title ?? e.content_slug)}</span>` +
 			(snap.excerpt ? `<span class="ce-excerpt">${esc(snap.excerpt)}</span>` : '') +
@@ -73,7 +84,7 @@ export function serializeListBodyHtml(
 	mediaUrls: Record<string, string>
 ): string {
 	const parts: string[] = [];
-	if (introHtml.trim()) parts.push(introHtml);
+	if (!isEmptyHtml(introHtml)) parts.push(introHtml);
 	items.forEach((item, i) => {
 		const n = i + 1;
 		const num = displayNumber(mode, i, items.length);
@@ -86,7 +97,7 @@ export function serializeListBodyHtml(
 		// Item body_html embeds raw — the server re-sanitizes on save and
 		// field_values.items[].body_html is re-sanitized by
 		// validateListFieldValues before persistence.
-		const body = item.body_html?.trim() ? item.body_html : '';
+		const body = !isEmptyHtml(item.body_html) ? (item.body_html ?? '') : '';
 		const visual = embedHtml(item, mediaUrls);
 		const credit = item.source_url || item.credit
 			? `<p class="li-credit">${

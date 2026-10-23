@@ -433,18 +433,6 @@ func (s *Store) isSpaceModerator(ctx context.Context, userID, spaceID pgtype.UUI
 }
 
 // incrementReplyCount adjusts the reply_count on a thread.
-func (s *Store) incrementReplyCount(ctx context.Context, id pgtype.UUID, delta int32) error {
-	if err := s.write.IncrementThreadReplyCount(ctx, gen.IncrementThreadReplyCountParams{
-		ID: id,
-
-		Delta: delta,
-	}); err != nil {
-		return fmt.Errorf("incrementing thread reply count: %w", err)
-	}
-
-	return nil
-}
-
 // incrementThreadViewCount atomically increments the view_count on a thread by
 // the requested delta. Called fire-and-forget from the GetThread handler and
 // from the Valkey view-count flush worker.
@@ -464,15 +452,6 @@ func (s *Store) incrementThreadViewCount(ctx context.Context, id pgtype.UUID, de
 // ---------------------------------------------------------------------------
 
 // createReply inserts a new forum reply.
-func (s *Store) createReply(ctx context.Context, p gen.CreateForumReplyParams) (gen.ForumReply, error) {
-	r, err := s.write.CreateForumReply(ctx, p)
-	if err != nil {
-		return gen.ForumReply{}, fmt.Errorf("creating forum reply: %w", err)
-	}
-
-	return r, nil
-}
-
 // getReplyByID returns a reply by ID and platform.
 func (s *Store) getReplyByID(ctx context.Context, id pgtype.UUID) (gen.ForumReply, error) {
 	r, err := s.read.GetForumReplyByID(ctx, id)
@@ -506,41 +485,12 @@ func (s *Store) updateReply(ctx context.Context, p gen.UpdateForumReplyParams) (
 }
 
 // softDeleteReply marks a reply as deleted.
-func (s *Store) softDeleteReply(ctx context.Context, id pgtype.UUID) error {
-	if err := s.write.SoftDeleteForumReply(ctx, id); err != nil {
-		return fmt.Errorf("soft-deleting forum reply: %w", err)
-	}
-
-	return nil
-}
-
 // ---------------------------------------------------------------------------
 // Votes
 // ---------------------------------------------------------------------------
 
 // upsertVote inserts or updates a vote and returns the new row.
-func (s *Store) upsertVote(ctx context.Context, p gen.UpsertForumVoteParams) (gen.ForumVote, error) {
-	v, err := s.write.UpsertForumVote(ctx, p)
-	if err != nil {
-		return gen.ForumVote{}, fmt.Errorf("upserting forum vote: %w", err)
-	}
-
-	return v, nil
-}
-
 // deleteVote removes a user's vote on an entity (DELETE /forum/{id}/vote).
-func (s *Store) deleteVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
-	if err := s.write.DeleteForumVote(ctx, gen.DeleteForumVoteParams{
-		UserID:     userID,
-		EntityType: entityType,
-		EntityID:   entityID,
-	}); err != nil {
-		return fmt.Errorf("deleting forum vote: %w", err)
-	}
-
-	return nil
-}
-
 // getUserVotesForThread returns the current user's vote values for a thread
 // and all of its replies.
 func (s *Store) getUserVotesForThread(ctx context.Context, threadID, userID pgtype.UUID) ([]gen.ListUserVotesForThreadRow, error) {
@@ -1189,12 +1139,13 @@ func (s *Store) getThreadBySlugWithDetails(ctx context.Context, slug string) (ge
 }
 
 // listThreadsByPlatformWithDetails returns paginated threads with author + space.
-func (s *Store) listThreadsByPlatformWithDetails(ctx context.Context, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsWithDetailsRow, error) {
+func (s *Store) listThreadsByPlatformWithDetails(ctx context.Context, viewerID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.ListForumThreadsWithDetails(ctx, gen.ListForumThreadsWithDetailsParams{
+		ViewerID:        viewerID,
 		Solved:          solved,
 		SortBy:          sortBy,
 		CursorVoteScore: cursorVoteScore,
@@ -1232,12 +1183,13 @@ func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, spaceID pgtyp
 }
 
 // listThreadsByAuthorWithDetails returns paginated threads for an author with author + space.
-func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
+func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, viewerID, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.ListForumThreadsByAuthorWithDetails(ctx, gen.ListForumThreadsByAuthorWithDetailsParams{
+		ViewerID:        viewerID,
 		AuthorUserID:    authorUserID,
 		Solved:          solved,
 		SortBy:          sortBy,
@@ -1254,12 +1206,13 @@ func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, authorUserID
 }
 
 // listThreadsByTagWithDetails returns paginated threads for a tag with author + space.
-func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
+func (s *Store) listThreadsByTagWithDetails(ctx context.Context, viewerID, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.ListForumThreadsByTagWithDetails(ctx, gen.ListForumThreadsByTagWithDetailsParams{
+		ViewerID:        viewerID,
 		TagID:           tagID,
 		Solved:          solved,
 		SortBy:          sortBy,

@@ -268,10 +268,10 @@
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="border-border-card border-b">
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('ai_budget.provider')}</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.tokens')}</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.cost')}</th>
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('ai_budget.share')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-start font-medium">{t('ai_budget.provider')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('ai_budget.tokens')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('ai_budget.cost')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-start font-medium">{t('ai_budget.share')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -279,8 +279,8 @@
 								{@const totalTokens = budget.by_provider.reduce((sum, x) => sum + x.tokens_used, 0)}
 								<tr class="border-border-card border-t">
 									<td class="px-4 py-3 font-medium">{p.provider}</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">{p.tokens_used.toLocaleString()}</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">{formatCost(p.cost_usd)}</td>
+									<td class="px-4 py-3 text-end font-mono text-xs">{p.tokens_used.toLocaleString()}</td>
+									<td class="px-4 py-3 text-end font-mono text-xs">{formatCost(p.cost_usd)}</td>
 									<td class="px-4 py-3">
 										<div class="bg-muted h-2 w-full max-w-[100px] rounded-full">
 											<div class="bg-foreground h-full rounded-full" style="width: {totalTokens > 0 ? (p.tokens_used / totalTokens) * 100 : 0}%"></div>
@@ -305,19 +305,19 @@
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="border-border-card border-b">
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('ai_budget.task_type')}</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.calls')}</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.tokens')}</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.cost')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-start font-medium">{t('ai_budget.task_type')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('ai_budget.calls')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('ai_budget.tokens')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('ai_budget.cost')}</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each budget.by_task_type as task}
 								<tr class="border-border-card border-t">
 									<td class="px-4 py-3 font-medium">{task.task_type}</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">{task.call_count.toLocaleString()}</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">{task.tokens_used.toLocaleString()}</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">{formatCost(task.cost_usd)}</td>
+									<td class="px-4 py-3 text-end font-mono text-xs">{task.call_count.toLocaleString()}</td>
+									<td class="px-4 py-3 text-end font-mono text-xs">{task.tokens_used.toLocaleString()}</td>
+									<td class="px-4 py-3 text-end font-mono text-xs">{formatCost(task.cost_usd)}</td>
 								</tr>
 							{/each}
 						</tbody>

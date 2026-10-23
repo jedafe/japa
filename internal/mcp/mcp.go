@@ -148,6 +148,13 @@ var apiKeyToolGates = map[string]toolGate{
 	// on the calculator surface but has no api.read.* scope of its own, so
 	// it gates on agent.use like the other agent-infrastructure reads.
 	"col.city.get": {scope: agentUsePermission},
+	// Roadmap read tools (migration 000928) — agent infrastructure like
+	// the intel reads; the catalog's roadmap.view RBAC filter still
+	// applies to the key owner. The write tools are deliberately absent —
+	// only agent.write-elevated keys reach them.
+	"roadmap.categories.list": {scope: agentUsePermission},
+	"roadmap.items.list":      {scope: agentUsePermission},
+	"roadmap.item.get":        {scope: agentUsePermission},
 	// §120 ChatGPT deep-research aliases — same gate as the underlying
 	// content.search / content.read tools.
 	"search": {scope: "api.read.content"},

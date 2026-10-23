@@ -5,7 +5,7 @@
 	// thread (via the item's shadow contents row). Moderators carrying
 	// roadmap.moderate get the same inline status select as board cards.
 	import { page } from '$app/state';
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName, i18n } from '$lib/i18n';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
@@ -59,7 +59,7 @@
 		return t(`roadmap.phase_${flag.phase}`, flag.phase.replace(/_/g, ' '));
 	});
 	const createdDate = $derived(
-		new Date(item.created_at).toLocaleDateString(undefined, {
+		new Date(item.created_at).toLocaleDateString(i18n.locale, {
 			year: 'numeric',
 			month: 'long',
 			day: 'numeric'
@@ -67,7 +67,7 @@
 	);
 	const shippedDate = $derived(
 		item.shipped_at
-			? new Date(item.shipped_at).toLocaleDateString(undefined, {
+			? new Date(item.shipped_at).toLocaleDateString(i18n.locale, {
 					year: 'numeric',
 					month: 'long',
 					day: 'numeric'
@@ -103,7 +103,7 @@
 		href="/roadmap"
 		class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft class="h-4 w-4" />
+		<ArrowLeft class="h-4 w-4 rtl:-scale-x-100" />
 		{t('roadmap.back_to_board', 'Back to roadmap')}
 	</a>
 
@@ -213,6 +213,7 @@
 	{#if item.content_id}
 		<CommentThread
 			comments={data.comments}
+			commentsTotal={data.commentsTotal}
 			contentId={item.content_id}
 			contentType="roadmap"
 			authed={data.authed}

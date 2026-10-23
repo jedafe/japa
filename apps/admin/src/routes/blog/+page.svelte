@@ -460,7 +460,7 @@
 			<Button variant="outline" onclick={() => goto(`/blog/${viewTarget?.slug || viewTarget?.id}`)}>{t('app.blog.detail_edit', 'Edit')}</Button>
 			{#if viewTarget?.url}
 				<Button variant="outline" onclick={() => viewTarget?.url && window.open(viewTarget.url, '_blank')}>
-					<ExternalLink class="mr-1 h-3.5 w-3.5" /> {t('app.blog.view_live', 'View Live')}
+					<ExternalLink class="me-1 h-3.5 w-3.5 rtl:-scale-x-100" /> {t('app.blog.view_live', 'View Live')}
 				</Button>
 			{/if}
 		</div>

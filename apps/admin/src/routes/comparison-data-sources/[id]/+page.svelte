@@ -154,7 +154,7 @@
 		class="inline-flex items-center gap-1.5 text-sm hover:opacity-70"
 		style="color: var(--color-muted)"
 	>
-		<ArrowLeft class="h-4 w-4" />
+		<ArrowLeft class="h-4 w-4 rtl:-scale-x-100" />
 		{t('data_sources.back_to_list', 'Back to data sources')}
 	</a>
 
@@ -169,7 +169,7 @@
 		</div>
 		{#if canManage && source}
 			<Button variant="destructive" onclick={() => (deleteOpen = true)}>
-				<Trash2 class="mr-2 h-4 w-4" />
+				<Trash2 class="me-2 h-4 w-4" />
 				{t('common.delete', 'Delete')}
 			</Button>
 		{/if}

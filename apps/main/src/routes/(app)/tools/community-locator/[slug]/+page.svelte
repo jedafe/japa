@@ -73,7 +73,7 @@
 			href="/tools/community-locator"
 			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} />
+			<ArrowLeft class="rtl:-scale-x-100" size={16} />
 			{t('community_locator.back', 'Back to community locator')}
 		</a>
 	</div>

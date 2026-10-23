@@ -751,7 +751,7 @@
 						onclick={() => setTab(false)}
 						class="mt-1 inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
-						<ArrowRight size={16} /> {t('jce.compare.empty_create_one')}
+						<ArrowRight class="rtl:-scale-x-100" size={16} /> {t('jce.compare.empty_create_one')}
 					</button>
 				</EmptyState>
 			{:else}
@@ -776,7 +776,7 @@
 									href="/compare/{item.slug}"
 									class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)]"
 								>
-									<ExternalLink size={12} /> {t('jce.common.open')}
+									<ExternalLink class="rtl:-scale-x-100" size={12} /> {t('jce.common.open')}
 								</a>
 								<button
 									type="button"
@@ -876,13 +876,13 @@
 		<!-- Unified filter row: search + source switch + sort/display popover -->
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
 			<div class="relative w-full sm:flex-1">
-				<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+				<Search size={16} class="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 				<input
 					type="text"
 					value={query}
 					oninput={(e) => setSearch(e.currentTarget.value)}
 					placeholder={t('jce.compare.search_placeholder', 'Search {label}...', { label: sourcePlural(source) })}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-4 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-9 pe-4 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 			</div>
 
@@ -956,7 +956,7 @@
 					{#if source === 'comparison'}
 						<a
 							href="/comparisons/{comparisonSlug || item.id}"
-							class="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+							class="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-start text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<div class="flex items-start justify-between gap-3">
 								<span
@@ -966,7 +966,7 @@
 								</span>
 								<span class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-text)]">
 									{t('jce.common.view')}
-									<ArrowRight size={14} />
+									<ArrowRight class="rtl:-scale-x-100" size={14} />
 								</span>
 							</div>
 
@@ -991,7 +991,7 @@
 							type="button"
 							onclick={() => toggleItem(item)}
 							disabled={!selected && !canSelect}
-							class="flex flex-col gap-3 rounded-[var(--radius-card)] border p-4 text-left text-[var(--color-text)] transition-colors disabled:opacity-40 {selected ? 'border-[var(--color-text)] bg-[var(--color-surface-subtle)]' : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'}"
+							class="flex flex-col gap-3 rounded-[var(--radius-card)] border p-4 text-start text-[var(--color-text)] transition-colors disabled:opacity-40 {selected ? 'border-[var(--color-text)] bg-[var(--color-surface-subtle)]' : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'}"
 							aria-pressed={selected}
 						>
 							<div class="flex items-start justify-between gap-3">

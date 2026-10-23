@@ -91,7 +91,7 @@
 				} else {
 					const res = await api.get<{
 						results: { type: string; item: { id: string; name: string; slug?: string; level?: string; url?: string; excerpt?: string } }[]
-					}>(`/spaces/search?q=${encodeURIComponent(q.trim())}`);
+					}>(`/spaces/search?q=${encodeURIComponent(q.trim())}${filter ? `&filter=${encodeURIComponent(filter)}` : ''}`);
 					items = (res.data?.results ?? []).map((r) => ({
 						id: r.item.id,
 						name: r.item.name,
@@ -174,10 +174,10 @@
 		</div>
 	{:else}
 		<div class="relative">
-			<Search size={15} class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+			<Search size={15} class="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 			<input
 				type="text"
-				class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-8 pr-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] disabled:opacity-50"
+				class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-8 pe-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] disabled:opacity-50"
 				placeholder={resolvedPlaceholder}
 				value={query}
 				disabled={disabled}
@@ -185,7 +185,7 @@
 				onfocus={() => { open = true; if (parentMode && query.trim().length < 1) doSearch(''); }}
 			/>
 			{#if loading}
-				<div class="absolute right-2.5 top-1/2 -translate-y-1/2">
+				<div class="absolute end-2.5 top-1/2 -translate-y-1/2">
 					<Loader2 size={14} class="animate-spin text-[var(--color-muted)]" />
 				</div>
 			{/if}

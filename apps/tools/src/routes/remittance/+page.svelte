@@ -474,7 +474,7 @@
 										{/if}
 									</div>
 								</div>
-								<div class="text-right flex-shrink-0">
+								<div class="text-end flex-shrink-0">
 									<span class="text-base font-semibold text-text">{formatRate(rate.rate)}</span>
 									<p class="text-xs text-muted">{rate.receive_currency} {t('remittance.per', 'per')} {rate.send_currency}</p>
 								</div>
@@ -662,7 +662,7 @@
 												<span class="font-semibold text-text">{formatRate(alert.target_rate)}</span>
 												<span class="text-muted"> ({alert.send_currency}→{alert.receive_currency})</span>
 												{#if !alert.is_active}
-													<span class="ml-2 text-xs text-muted">{t('remittance.alert_inactive', '(inactive)')}</span>
+													<span class="ms-2 text-xs text-muted">{t('remittance.alert_inactive', '(inactive)')}</span>
 												{/if}
 											</div>
 											<div class="flex items-center gap-1">

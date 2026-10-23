@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Home, ArrowLeft, Globe, AlertTriangle, ShieldCheck, MapPin } from 'lucide-svelte';
 	import type { PageData } from './$types';
@@ -39,7 +39,7 @@
 	function formatDate(iso?: string | null): string {
 		if (!iso) return '';
 		try {
-			return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+			return new Date(iso).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' });
 		} catch {
 			return iso;
 		}
@@ -62,7 +62,7 @@
 			href="/tools/housing-guide"
 			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} />
+			<ArrowLeft class="rtl:-scale-x-100" size={16} />
 			{t('housing_guide.back', 'Back to housing guide')}
 		</a>
 	</div>

@@ -808,8 +808,8 @@
 				<span class="tb-sep"></span>
 				<EmojiPicker onselect={insertEmoji} {t} compact />
 				<span class="tb-sep"></span>
-				<button type="button" class="tb-btn" title={t('create.editor.toolbar.undo', 'Undo')} onclick={() => tb('undo')} disabled={!canRun('undo')}><Undo2 size={16} /></button>
-				<button type="button" class="tb-btn" title={t('create.editor.toolbar.redo', 'Redo')} onclick={() => tb('redo')} disabled={!canRun('redo')}><Redo2 size={16} /></button>
+				<button type="button" class="tb-btn" title={t('create.editor.toolbar.undo', 'Undo')} onclick={() => tb('undo')} disabled={!canRun('undo')}><Undo2 class="rtl:-scale-x-100" size={16} /></button>
+				<button type="button" class="tb-btn" title={t('create.editor.toolbar.redo', 'Redo')} onclick={() => tb('redo')} disabled={!canRun('redo')}><Redo2 class="rtl:-scale-x-100" size={16} /></button>
 			</div>
 		{/if}
 		<div
@@ -852,7 +852,7 @@
 	{/if}
 
 	{#if mode === 'block' && slashOpen && filteredBlocks.length > 0}
-		<div class="slash-menu" style="top: {slashTop}px; left: {slashLeft}px">
+		<div class="slash-menu" style="top: {slashTop}px; inset-inline-start: {slashLeft}px">
 			{#each filteredBlocks as block, i (block.key)}
 				{@const Icon = ICONS[block.icon]}
 				<button
@@ -895,7 +895,7 @@
 	.ai-trigger {
 		position: absolute;
 		bottom: 20px;
-		left: 20px;
+		inset-inline-start: 20px;
 		z-index: 20;
 	}
 
@@ -903,7 +903,7 @@
 	.mode-switcher {
 		position: absolute;
 		bottom: 20px;
-		right: 8px;
+		inset-inline-end: 8px;
 		z-index: 20;
 		display: inline-flex;
 		gap: 2px;
@@ -1079,7 +1079,7 @@
 	.prose-content :global(.ProseMirror p.is-editor-empty:first-child::before) {
 		content: attr(data-placeholder);
 		color: var(--color-muted);
-		float: left;
+		float: inline-start;
 		height: 0;
 		pointer-events: none;
 	}
@@ -1119,20 +1119,20 @@
 	}
 	.prose-content :global(ul) {
 		list-style: disc;
-		padding-left: 1.5rem;
+		padding-inline-start: 1.5rem;
 		margin: 0.5rem 0;
 	}
 	.prose-content :global(ol) {
 		list-style: decimal;
-		padding-left: 1.5rem;
+		padding-inline-start: 1.5rem;
 		margin: 0.5rem 0;
 	}
 	.prose-content :global(li) {
 		margin: 0.25rem 0;
 	}
 	.prose-content :global(blockquote) {
-		border-left: 3px solid var(--color-primary);
-		padding-left: 1rem;
+		border-inline-start: 3px solid var(--color-primary);
+		padding-inline-start: 1rem;
 		margin: 0.75rem 0;
 		color: var(--color-text-subtle);
 		font-style: italic;
@@ -1185,7 +1185,7 @@
 	.prose-content :global(.youtube-embed iframe) {
 		position: absolute;
 		top: 0;
-		left: 0;
+		inset-inline-start: 0;
 		width: 100%;
 		height: 100%;
 		border: 0;
@@ -1232,7 +1232,7 @@
 	.prose-content :global(td) {
 		border: 1px solid var(--color-border);
 		padding: 8px 12px;
-		text-align: left;
+		text-align: start;
 		font-size: 0.9rem;
 	}
 	.prose-content :global(th) {
@@ -1245,7 +1245,7 @@
 	}
 	.prose-content :global(.column-resize-handle) {
 		position: absolute;
-		right: -2px;
+		inset-inline-end: -2px;
 		top: 0;
 		bottom: 0;
 		width: 4px;
@@ -1282,7 +1282,7 @@
 		border-radius: 6px;
 		background: transparent;
 		color: var(--color-text);
-		text-align: left;
+		text-align: start;
 		cursor: pointer;
 	}
 	:global(.suggestion-popup .suggestion-item.active) {
@@ -1329,7 +1329,7 @@
 		border-radius: calc(var(--radius) - 2px);
 		background: transparent;
 		color: var(--color-text);
-		text-align: left;
+		text-align: start;
 		cursor: pointer;
 		transition: background 0.1s;
 	}

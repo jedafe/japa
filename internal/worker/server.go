@@ -183,6 +183,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// media.deleted_retention_days (Section 34, Rule 11 approved path).
 	schedule("30 2 * * *", TypeMediaCleanupDeleted, 24*time.Hour)
 
+	// Nightly 02:45 UTC: reconcile media.missing_at against object
+	// storage — flags rows whose object is absent, clears restored ones.
+	schedule("45 2 * * *", TypeMediaReconcileMissing, 24*time.Hour)
+
 	// Weekly: prune old feeds, prune audit logs, DM cleanup, prune push tokens.
 	schedule("0 2 * * 0", TypeMaintenancePruneOldFeeds, 7*24*time.Hour)
 	schedule("0 2 * * 0", TypeMaintenancePruneAuditLogs, 7*24*time.Hour)

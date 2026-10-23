@@ -407,7 +407,7 @@
 				<div class="mb-4 flex items-center justify-between">
 					<h3 class="text-lg font-semibold text-foreground">{t('app.wallet.activity_point_rules', 'Activity Point Rules')}</h3>
 					<Button onclick={openAddRuleModal}>
-						<Plus class="h-4 w-4 mr-2" />
+						<Plus class="h-4 w-4 me-2" />
 						{t('app.wallet.add_rule', 'Add Rule')}
 					</Button>
 				</div>
@@ -470,15 +470,15 @@
 					<div class="relative flex-1">
 						<input type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.search_placeholder', 'Search by username or UUID...')} bind:value={userSearch} oninput={onUserSearchInput} onfocus={() => { if (userSuggestions.length > 0) showSuggestions = true; }} onblur={() => { setTimeout(() => showSuggestions = false, 200); }} onkeydown={(e) => { if (e.key === 'Enter') { showSuggestions = false; searchUser(); } }} />
 						{#if userSearch && !userSearchLoading}
-							<button class="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground" onclick={clearUserSearch} type="button"><X class="h-4 w-4" /></button>
+							<button class="absolute end-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground" onclick={clearUserSearch} type="button"><X class="h-4 w-4" /></button>
 						{/if}
 						{#if userSearchLoading}
-							<span class="absolute right-8 top-1/2 -translate-y-1/2 text-xs text-muted">{t('common.searching', 'Searching...')}</span>
+							<span class="absolute end-8 top-1/2 -translate-y-1/2 text-xs text-muted">{t('common.searching', 'Searching...')}</span>
 						{/if}
 						{#if showSuggestions && userSuggestions.length > 0}
-							<div class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border bg-surface shadow-lg">
+							<div class="absolute start-0 end-0 top-full z-50 mt-1 rounded-lg border bg-surface shadow-lg">
 								{#each userSuggestions as user (user)}
-									<button type="button" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent" onmousedown={() => selectSuggestion(user)}>
+									<button type="button" class="flex w-full items-center gap-3 px-3 py-2 text-start text-sm hover:bg-accent" onmousedown={() => selectSuggestion(user)}>
 										<span class="font-medium text-foreground">{user.username}</span>
 										<span class="text-xs text-muted">{user.email}</span>
 									</button>

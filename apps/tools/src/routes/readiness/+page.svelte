@@ -4,7 +4,7 @@
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -500,7 +500,7 @@
 						{/if}
 						{#if ctx.travel_date}
 							<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface-subtle text-xs text-text">
-								<Icon name="calendar" size={12} /> {new Date(ctx.travel_date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+								<Icon name="calendar" size={12} /> {new Date(ctx.travel_date).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' })}
 							</span>
 						{/if}
 					</div>
@@ -625,12 +625,12 @@
 						{#each history as past (past.id)}
 							<button
 								onclick={() => viewHistoryResult(past)}
-								class="w-full flex items-center justify-between p-3 bg-surface border border-border rounded-lg hover:border-[var(--tool-accent)] transition-colors text-left"
+								class="w-full flex items-center justify-between p-3 bg-surface border border-border rounded-lg hover:border-[var(--tool-accent)] transition-colors text-start"
 							>
 								<div>
 									<span class="text-sm font-medium text-text">{past.threshold_label}</span>
 									<p class="text-xs text-muted mt-0.5">
-										{new Date(past.created_at).toLocaleDateString('en-US', {
+										{new Date(past.created_at).toLocaleDateString(i18n.locale, {
 											year: 'numeric',
 											month: 'short',
 											day: 'numeric'

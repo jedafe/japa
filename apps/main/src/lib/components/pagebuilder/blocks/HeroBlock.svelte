@@ -17,8 +17,8 @@
 
 <section
 	class="relative flex min-h-[420px] flex-col items-center justify-center px-6 py-16 text-center"
-	class:text-left={align === 'left'}
-	class:text-right={align === 'right'}
+	class:text-start={align === 'left'}
+	class:text-end={align === 'right'}
 >
 	{#if bgSrc}
 		<img

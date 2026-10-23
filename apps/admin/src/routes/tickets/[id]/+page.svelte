@@ -269,30 +269,30 @@
 
 <div class="mb-4 flex items-center gap-3">
 	<Button variant="outline" size="sm" onclick={() => goto('/tickets')}>
-		<ArrowLeft class="mr-1.5 h-3.5 w-3.5" />
+		<ArrowLeft class="me-1.5 h-3.5 w-3.5 rtl:-scale-x-100" />
 		{t('tickets.detail.back', 'Back to Tickets')}
 	</Button>
 	<Button variant="outline" size="sm" onclick={loadTicket} disabled={loading}>
-		<RefreshCw class="mr-1.5 h-3.5 w-3.5" />
+		<RefreshCw class="me-1.5 h-3.5 w-3.5" />
 		{t('common.refresh', 'Refresh')}
 	</Button>
 	{#if (canManageTickets || canDeleteTickets || canCommentInternal) && ticket}
-		<div class="ml-auto flex gap-2">
+		<div class="ms-auto flex gap-2">
 {#if canManageTickets}
 				<Button variant="outline" size="sm" onclick={openEdit}>
-					<Pencil class="mr-1.5 h-3.5 w-3.5" />
+					<Pencil class="me-1.5 h-3.5 w-3.5" />
 					{t('common.edit', 'Edit')}
 				</Button>
 			{/if}
 			{#if ticket.status !== 'resolved' && ticket.status !== 'closed'}
 				<Button variant="outline" size="sm" onclick={() => (showResolveModal = true)}>
-					<CheckCircle class="mr-1.5 h-3.5 w-3.5" />
+					<CheckCircle class="me-1.5 h-3.5 w-3.5" />
 					{t('tickets.detail.resolve', 'Resolve')}
 				</Button>
 			{/if}
 {#if canDeleteTickets}
 				<Button variant="destructive" size="sm" onclick={() => (showDeleteConfirm = true)}>
-					<Trash2 class="mr-1.5 h-3.5 w-3.5" />
+					<Trash2 class="me-1.5 h-3.5 w-3.5" />
 					{t('common.delete', 'Delete')}
 				</Button>
 			{/if}
@@ -369,11 +369,11 @@
 					{#if events.length === 0}
 						<p class="text-muted-foreground py-6 text-center text-sm">{t('tickets.detail.no_events', 'No events yet.')}</p>
 					{:else}
-						<ol class="relative space-y-4 border-l border-border pl-6">
+						<ol class="relative space-y-4 border-s border-border ps-6">
 							{#each events as ev (ev)}
 								{@const EvIcon = eventIcon(ev.event_type)}
 								<li class="relative">
-									<span class="absolute -left-[31px] flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background">
+									<span class="absolute -start-[31px] flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background">
 										<EvIcon class="h-3 w-3 text-muted-foreground" />
 									</span>
 									<div class="flex items-center gap-2">
@@ -400,7 +400,7 @@
 			<Card>
 				<CardHeader>
 					<h3 class="text-sm font-semibold">
-						<MessageSquare class="mr-1.5 inline h-4 w-4" />
+						<MessageSquare class="me-1.5 inline h-4 w-4" />
 						{t('tickets.detail.add_comment', 'Add Comment')}
 					</h3>
 				</CardHeader>
@@ -412,7 +412,7 @@
 						placeholder={t('tickets.detail.comment_placeholder', 'Write a public comment...')}
 					></textarea>
 					<Button class="mt-2 w-full" size="sm" onclick={submitComment} disabled={addingComment || !newComment.trim()}>
-						<Send class="mr-1.5 h-3.5 w-3.5" />
+						<Send class="me-1.5 h-3.5 w-3.5 rtl:-scale-x-100" />
 						{addingComment ? t('common.saving', 'Sending...') : t('tickets.detail.send_comment', 'Send Comment')}
 					</Button>
 				</CardContent>
@@ -422,7 +422,7 @@
 			<Card>
 				<CardHeader>
 					<h3 class="text-sm font-semibold">
-						<StickyNote class="mr-1.5 inline h-4 w-4" />
+						<StickyNote class="me-1.5 inline h-4 w-4" />
 						{t('tickets.detail.add_note', 'Add Internal Note')}
 					</h3>
 				</CardHeader>
@@ -434,7 +434,7 @@
 						placeholder={t('tickets.detail.note_placeholder', 'Internal note (not visible to submitter)...')}
 					></textarea>
 					<Button class="mt-2 w-full" size="sm" variant="outline" onclick={submitNote} disabled={addingNote || !newNote.trim()}>
-						<Send class="mr-1.5 h-3.5 w-3.5" />
+						<Send class="me-1.5 h-3.5 w-3.5 rtl:-scale-x-100" />
 						{addingNote ? t('common.saving', 'Saving...') : t('tickets.detail.save_note', 'Save Note')}
 					</Button>
 				</CardContent>
@@ -495,7 +495,7 @@
 	<div class="mt-6 flex justify-end gap-3">
 		<Button variant="outline" onclick={() => (showResolveModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button onclick={submitResolve} disabled={resolving}>
-			<CheckCircle class="mr-1.5 h-4 w-4" />
+			<CheckCircle class="me-1.5 h-4 w-4" />
 			{resolving ? t('common.saving', 'Saving...') : t('tickets.detail.resolve', 'Resolve')}
 		</Button>
 	</div>
@@ -509,7 +509,7 @@
 	<div class="mt-6 flex justify-end gap-3">
 		<Button variant="outline" onclick={() => (showDeleteConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={executeDelete} disabled={deleting}>
-			<Trash2 class="mr-1.5 h-4 w-4" />
+			<Trash2 class="me-1.5 h-4 w-4" />
 			{deleting ? t('common.deleting', 'Deleting...') : t('common.delete', 'Delete')}
 		</Button>
 	</div>

@@ -923,13 +923,13 @@
 				{/if}
 				<div class="mb-4 flex items-center gap-3">
 					<div class="relative flex-1">
-						<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+						<Search class="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
 						<input
 							type="text"
 							placeholder={t('common.search', 'Search…')}
 							value={searchQuery}
 							oninput={(e) => handleSearch(e.currentTarget.value)}
-							class="w-full rounded-lg border bg-surface py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+							class="w-full rounded-lg border bg-surface py-2 ps-9 pe-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
 							style="border-color: var(--color-border); color: var(--color-foreground)"
 						/>
 						{#if searchQuery}
@@ -937,7 +937,7 @@
 								type="button"
 								onclick={() => handleSearch('')}
 								aria-label={t('common.clearSelection', 'Clear search')}
-								class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1"
+								class="absolute end-2 top-1/2 -translate-y-1/2 rounded p-1"
 								style="color: var(--color-muted)"
 							>
 								✕

@@ -127,7 +127,7 @@
 			href="/dashboard/instructor"
 			class="mb-3 inline-flex items-center gap-1 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} />
+			<ArrowLeft class="rtl:-scale-x-100" size={16} />
 			{t('academy.back_to_dashboard')}
 		</a>
 		<h1 class="flex items-center gap-2 text-2xl font-bold text-[var(--color-text)]">

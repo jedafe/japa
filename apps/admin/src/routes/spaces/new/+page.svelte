@@ -298,7 +298,7 @@
 			<div class="flex justify-end gap-2 pt-4">
 				<Button variant="ghost" type="button" onclick={() => goto(page.url.searchParams.get("from") ?? "/spaces")}>{t("common.cancel", "Cancel")}</Button>
 				<Button type="submit" disabled={submitting}>
-					<Save class="mr-1 h-4 w-4" />
+					<Save class="me-1 h-4 w-4" />
 					{submitting ? t("common.creating", "Creating...") : t("spaces.create", "Create Space")}
 				</Button>
 			</div>

@@ -77,7 +77,7 @@
 
 <form onsubmit={submit} class="flex flex-col gap-5" novalidate>
 	<HoneypotField bind:value={honeypot} />
-	<div class="flex flex-col items-center gap-2 text-center sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:text-left">
+	<div class="flex flex-col items-center gap-2 text-center sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:text-start">
 		<div>
 			<h1 class="text-2xl font-semibold text-[var(--color-text)]">{t('auth.signup.title')}</h1>
 			<p class="mt-1 text-sm text-[var(--color-muted)]">{t('auth.signup.subtitle')}</p>
@@ -166,7 +166,7 @@
 
 	<div class="relative my-1">
 		<div class="border-t border-[var(--color-border)]"></div>
-		<span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-[var(--color-bg)] px-3 text-xs text-[var(--color-muted)]">
+		<span class="absolute start-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-[var(--color-bg)] px-3 text-xs text-[var(--color-muted)]">
 			{t('auth.oauth.or_continue_with')}
 		</span>
 	</div>

@@ -27,6 +27,19 @@
 	let hasVoted = $state(untrack(() => (pollData.user_votes ?? []).length > 0));
 	let error = $state('');
 
+	// Reseed when the server payload changes (invalidateAll after creating
+	// the poll, editing the thread, etc.) — the one-time untrack seed would
+	// otherwise keep showing stale results and a stale voted state.
+	$effect(() => {
+		const next = pollData;
+		untrack(() => {
+			poll = next.poll;
+			results = next.results;
+			selected = new Set(next.user_votes ?? []);
+			hasVoted = (next.user_votes ?? []).length > 0;
+		});
+	});
+
 	// Subscribe to the space room and listen for live poll result updates.
 	// Capture spaceId once per run — it's a lazily-evaluated prop getter, so
 	// re-reading it in the teardown could hit a detached parent (undefined)
@@ -166,7 +179,7 @@
 					type="button"
 					onclick={() => onOptionClick(r.option_id)}
 					disabled={isClosed || voting}
-					class="w-full text-left"
+					class="w-full text-start"
 				>
 					<div class="flex items-center gap-2">
 						<span

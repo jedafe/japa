@@ -552,7 +552,7 @@
 					onClear={onOriginCountryClear}
 				/>
 				{#if savingOrigin}
-					<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+					<span class="absolute end-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
 				{/if}
 			</div>
 
@@ -570,7 +570,7 @@
 						onClear={onOriginStateClear}
 					/>
 					{#if originLoadingStates}
-						<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+						<span class="absolute end-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
 					{/if}
 				</div>
 			{/if}
@@ -591,7 +591,7 @@
 						addActionLabel={t('settings.location.add_city', 'Add "{query}"')}
 					/>
 					{#if originLoadingCities}
-						<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+						<span class="absolute end-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
 					{/if}
 				</div>
 			{/if}
@@ -620,7 +620,7 @@
 				onClear={clearDestCountry}
 			/>
 			{#if savingDest}
-				<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+				<span class="absolute end-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
 			{/if}
 		</div>
 		<p class="mt-1.5 text-xs text-[var(--color-muted)]">
@@ -636,7 +636,7 @@
 		</span>
 
 		{#if loadingLocation}
-			<p class="text-sm text-[var(--color-muted)]"><Loader2 size={14} class="inline animate-spin" /> Loading…</p>
+			<p class="text-sm text-[var(--color-muted)]"><Loader2 size={14} class="inline animate-spin" /> {t('common.loading', 'Loading…')}</p>
 		{:else if currentLocationDisplay}
 			<p class="mb-3 text-sm text-[var(--color-text)]">{currentLocationDisplay}</p>
 		{:else}
@@ -706,7 +706,7 @@
 							onClear={onStateClear}
 						/>
 						{#if loadingStates}
-							<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+							<span class="absolute end-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
 						{/if}
 					</div>
 
@@ -741,8 +741,8 @@
 						onAdd={addCurrentCity}
 						addActionLabel={t('settings.location.add_city', 'Add "{query}"')}
 					/>
-					{#if loadingCities}<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>{/if}
-					{#if savingLocation}<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>{/if}
+					{#if loadingCities}<span class="absolute end-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>{/if}
+					{#if savingLocation}<span class="absolute end-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>{/if}
 				</div>
 			{/if}
 		</div>

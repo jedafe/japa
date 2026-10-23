@@ -326,7 +326,7 @@
 												class="flex items-center gap-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
 												onclick={(e) => e.stopPropagation()}
 											>
-												<ExternalLink size={12} />
+												<ExternalLink class="rtl:-scale-x-100" size={12} />
 												{t('visa_routes.source', 'Source')}</a>
 									<a
 										href="/tools/visa-routes/{route.id}"
@@ -370,11 +370,11 @@
 								<table class="w-full text-sm">
 									<thead>
 										<tr class="border-b border-[var(--color-border)]">
-											<th class="text-left p-3 font-semibold text-[var(--color-muted)] uppercase tracking-wide text-xs w-32">
+											<th class="text-start p-3 font-semibold text-[var(--color-muted)] uppercase tracking-wide text-xs w-32">
 												{t('visa_routes.attribute', 'Attribute')}
 											</th>
 											{#each comparisonData as route (route.id)}
-												<th class="text-left p-3 font-semibold text-[var(--color-text)] align-top">
+												<th class="text-start p-3 font-semibold text-[var(--color-text)] align-top">
 													{route.name}
 													<span class="block text-xs font-normal text-[var(--color-muted)] mt-0.5">{route.visa_category}</span>
 												</th>
@@ -417,7 +417,7 @@
 															rel="noopener noreferrer"
 															class="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline"
 														>
-															<ExternalLink size={12} />
+															<ExternalLink class="rtl:-scale-x-100" size={12} />
 															{t('visa_routes.view_source', 'View')}
 														</a>
 													{:else}

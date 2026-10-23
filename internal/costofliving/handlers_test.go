@@ -298,7 +298,7 @@ func TestParseCityIDs(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/compare", nil)
 		rr := httptest.NewRecorder()
 
-		_, ok := parseCityIDs(rr, req)
+		_, ok := NewHandlers(&Service{}, nil).parseCityIDs(rr, req)
 		if ok {
 			t.Error("parseCityIDs with no param should return ok=false")
 		}
@@ -312,7 +312,7 @@ func TestParseCityIDs(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/compare?city_ids=not-a-uuid", nil)
 		rr := httptest.NewRecorder()
 
-		_, ok := parseCityIDs(rr, req)
+		_, ok := NewHandlers(&Service{}, nil).parseCityIDs(rr, req)
 		if ok {
 			t.Error("parseCityIDs with invalid UUID should return ok=false")
 		}
@@ -323,7 +323,7 @@ func TestParseCityIDs(t *testing.T) {
 		u2 := uuid.New()
 		req := httptest.NewRequest(http.MethodGet, "/compare?city_ids="+u1.String()+","+u2.String(), nil)
 		rr := httptest.NewRecorder()
-		ids, ok := parseCityIDs(rr, req)
+		ids, ok := NewHandlers(&Service{}, nil).parseCityIDs(rr, req)
 
 		if !ok {
 			t.Fatalf("parseCityIDs with valid UUIDs should return ok=true, got error: %s", rr.Body.String())
@@ -338,7 +338,7 @@ func TestParseCityIDs(t *testing.T) {
 		u1 := uuid.New()
 		req := httptest.NewRequest(http.MethodGet, "/compare?city_ids="+u1.String()+",,", nil)
 		rr := httptest.NewRecorder()
-		ids, ok := parseCityIDs(rr, req)
+		ids, ok := NewHandlers(&Service{}, nil).parseCityIDs(rr, req)
 
 		if !ok {
 			t.Fatalf("parseCityIDs should succeed with trailing commas, got: %s", rr.Body.String())

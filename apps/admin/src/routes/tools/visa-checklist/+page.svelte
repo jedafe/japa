@@ -155,17 +155,17 @@
 			<table class="mt-3 w-full text-sm">
 				<thead>
 					<tr style="color: var(--color-muted)">
-						<th class="pb-2 text-left font-medium">{t('app.tools.col_guide_id', 'Guide')}</th>
-						<th class="pb-2 text-right font-medium">{t('app.tools.visa_checklist_total_users', 'Total Users')}</th>
-						<th class="pb-2 text-right font-medium">{t('app.tools.visa_checklist_users_completed', 'Users w/ Any Completion')}</th>
+						<th class="pb-2 text-start font-medium">{t('app.tools.col_guide_id', 'Guide')}</th>
+						<th class="pb-2 text-end font-medium">{t('app.tools.visa_checklist_total_users', 'Total Users')}</th>
+						<th class="pb-2 text-end font-medium">{t('app.tools.visa_checklist_users_completed', 'Users w/ Any Completion')}</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each stats as s (s.guide_id)}
 						<tr class="border-t" style="border-color: var(--color-border)">
 							<td class="py-2 font-mono text-xs" style="color: var(--color-foreground)">{s.guide_id}</td>
-							<td class="py-2 text-right">{s.total_users}</td>
-							<td class="py-2 text-right">{s.users_with_any_completion}</td>
+							<td class="py-2 text-end">{s.total_users}</td>
+							<td class="py-2 text-end">{s.users_with_any_completion}</td>
 						</tr>
 					{/each}
 				</tbody>

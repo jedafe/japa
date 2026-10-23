@@ -117,7 +117,7 @@
 <div class="relative">
 	<Search
 		size={16}
-		class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+		class="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
 	/>
 	<input
 		type="search"
@@ -133,18 +133,18 @@
 		aria-autocomplete="list"
 		aria-controls="search-input-suggestions"
 		role="combobox"
-		class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-9 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none {inputClass}"
+		class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-9 pe-9 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none {inputClass}"
 	/>
 	{#if loading}
 		<Loader2
 			size={14}
-			class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-[var(--color-muted)]"
+			class="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 animate-spin text-[var(--color-muted)]"
 		/>
 	{/if}
 	{#if showDropdown && suggestions.length > 0}
 		<ul
 			id="search-input-suggestions"
-			class="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg"
+			class="absolute start-0 end-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg"
 			role="listbox"
 		>
 			{#each suggestions as s, i (s.id)}
@@ -153,7 +153,7 @@
 						type="button"
 						onclick={() => select(s)}
 						onmouseenter={() => (activeIndex = i)}
-						class="flex w-full items-start gap-2 px-3 py-2 text-left transition {i === activeIndex
+						class="flex w-full items-start gap-2 px-3 py-2 text-start transition {i === activeIndex
 							? 'bg-[var(--color-surface-subtle)]'
 							: ''}"
 					>

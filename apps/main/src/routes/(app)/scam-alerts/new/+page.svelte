@@ -20,11 +20,11 @@
 	const scamTypeOpts = $derived(scamTypeOptions(t, data.scamTypes));
 	const scamPlatformOpts = $derived(scamPlatformOptions(t, data.scamPlatforms));
 
-	let scamType = $state<ScamType>(untrack(() => data.scamTypes[0] ?? 'fraudulent_agent'));
+	let scamType = $state<ScamType | ''>('');
 	let destinationSpaceId = $state('');
 	let originSpaceId = $state('');
 	let originCommunity = $state('');
-	let platformUsed = $state<ScamPlatform>(untrack(() => data.scamPlatforms[0] ?? 'whatsapp'));
+	let platformUsed = $state<ScamPlatform | ''>('');
 	let approximateDate = $state('');
 	let amountRange = $state('');
 	let description = $state('');
@@ -89,18 +89,11 @@
 	);
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
-		const allLabel = t('common.all_countries', 'All countries');
 		const query = q.toLowerCase().trim();
-		const allItem: AutocompleteItem = { id: '', label: allLabel };
-		if (query === '') {
-			return Promise.resolve([allItem, ...destCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
-		}
-		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = destCountries.filter(
+		const items = (query === '' ? destCountries : destCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
-		);
-		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
-		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+		)).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(items);
 	}
 	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
 		return fetchDestinationCountries('');
@@ -110,18 +103,11 @@
 	);
 
 	function fetchOriginCountries(q: string): Promise<AutocompleteItem[]> {
-		const allLabel = t('common.all_countries', 'All countries');
 		const query = q.toLowerCase().trim();
-		const allItem: AutocompleteItem = { id: '', label: allLabel };
-		if (query === '') {
-			return Promise.resolve([allItem, ...originCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
-		}
-		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = originCountries.filter(
+		const items = (query === '' ? originCountries : originCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
-		);
-		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
-		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+		)).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(items);
 	}
 	function fetchOriginCountriesInitial(): Promise<AutocompleteItem[]> {
 		return fetchOriginCountries('');
@@ -147,7 +133,7 @@
 			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 			aria-label={t('scam_alerts.back', 'Back to scam alerts')}
 		>
-			<ArrowLeft size={18} />
+			<ArrowLeft class="rtl:-scale-x-100" size={18} />
 		</a>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">
 			{t('scam_alerts.new_heading', 'Report a Scam')}
@@ -160,6 +146,13 @@
 			{t('scam_alerts.new_disclaimer', 'Do not include exact personal financial details. Use approximate amounts only.')}
 		</div>
 
+		{#if !data.user}
+			<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-subtle)]">
+				{t('scam_alerts.anonymous_note', 'You are reporting anonymously. Sign in to track and edit your report after submission.')}
+				<a href="/login?redirect=/scam-alerts/new" class="font-medium text-[var(--color-primary)] hover:underline">{t('common.sign_in', 'Sign in')}</a>
+			</div>
+		{/if}
+
 		<!-- Destination + origin country — destination-first per the geo-aware
 		     tool pattern (§§79–101: destination country is the primary axis). -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -168,6 +161,7 @@
 					{t('scam_alerts.field_destination', 'Destination country')} <span class="text-red-500">*</span>
 				</label>
 				<Autocomplete
+					id="destination_space_id"
 					placeholder={t('scam_alerts.placeholder_destination', 'Select destination country')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchDestinationCountries}
@@ -183,6 +177,7 @@
 					{t('scam_alerts.field_origin_country', 'Origin country')}
 				</label>
 				<Autocomplete
+					id="origin_space_id"
 					placeholder={t('scam_alerts.placeholder_origin_country', 'Select origin country')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchOriginCountries}
@@ -204,6 +199,7 @@
 				id="scam_type"
 				value={scamType}
 				options={scamTypeOpts}
+				placeholder={t('scam_alerts.placeholder_scam_type', 'Select scam type')}
 				onValueChange={(v) => (scamType = v as ScamType)}
 			/>
 		</div>
@@ -219,6 +215,7 @@
 				value={originCommunity}
 				oninput={(e) => (originCommunity = e.currentTarget.value)}
 				placeholder={t('scam_alerts.placeholder_origin_community', 'e.g. Yoruba, Igbo')}
+				maxlength={200}
 				class={inputClass}
 			/>
 		</div>
@@ -232,7 +229,9 @@
 				id="platform_used"
 				value={platformUsed}
 				options={scamPlatformOpts}
-				onValueChange={(v) => (platformUsed = v as ScamPlatform)}
+				placeholder={t('scam_alerts.placeholder_platform', 'Select platform')}
+				clearable
+				onValueChange={(v) => (platformUsed = v as ScamPlatform | '')}
 			/>
 		</div>
 
@@ -247,6 +246,7 @@
 					type="date"
 					value={approximateDate}
 					oninput={(e) => (approximateDate = e.currentTarget.value)}
+					max={new Date().toISOString().slice(0, 10)}
 					class={inputClass}
 				/>
 			</div>
@@ -260,6 +260,7 @@
 					value={amountRange}
 					oninput={(e) => (amountRange = e.currentTarget.value)}
 					placeholder={t('scam_alerts.placeholder_amount', 'e.g. £500–£1000')}
+					maxlength={100}
 					class={inputClass}
 				/>
 			</div>
@@ -276,6 +277,7 @@
 			user={data.user}
 			features={data.features ?? {}}
 			required
+			maxlength={10000}
 			placeholder={t('scam_alerts.placeholder_description', 'Describe what happened, how the scam worked, and any warning signs…')}
 			rows={6}
 		/>
@@ -310,7 +312,7 @@
 				disabled={!canSubmit}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 			>
-				<Send size={16} /> {loading ? t('common.submitting', 'Submitting…') : t('scam_alerts.submit', 'Submit report')}
+				<Send class="rtl:-scale-x-100" size={16} /> {loading ? t('common.submitting', 'Submitting…') : t('scam_alerts.submit', 'Submit report')}
 			</button>
 		</div>
 	</form>

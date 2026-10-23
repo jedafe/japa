@@ -2,13 +2,12 @@ package comments
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/mentions"
@@ -28,9 +27,42 @@ type CreateCommentInput struct {
 	IsAnonymous bool
 }
 
+// CanViewComments reports whether the viewer may read or create comments on
+// the given content (C-001/C-002). It mirrors the detail-page visibility
+// predicate (IsContentVisibleToUser) plus the members-only-needs-auth nuance:
+// the session list route serves anonymous guests, for whom 'members' content
+// comments must stay hidden. Invisible or absent content must surface as 404
+// (never 403) so callers cannot probe restricted content.
+func (s *Service) CanViewComments(ctx context.Context, contentID, viewerID pgtype.UUID, authed bool) (bool, error) {
+	visible, err := s.read.CanViewComments(ctx, gen.CanViewCommentsParams{
+		ContentID: contentID,
+		UserID:    viewerID,
+		Authed:    authed,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking comment visibility: %w", err)
+	}
+
+	return visible, nil
+}
+
 // CreateComment creates a new comment or reply. The depth is computed from the
-// parent comment's depth (0 for top-level).
+// parent comment's depth (0 for top-level). The comment insert and the
+// denormalized counters (contents.comment_count, parent reply_count) commit
+// in one transaction so a partial failure cannot drift the counts (C-010).
 func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input CreateCommentInput) (gen.Comment, error) {
+	// C-002: reject comments on content the author cannot see (drafts,
+	// deleted, members-only for the wrong audience, private) and on
+	// nonexistent content — 404, never 403.
+	visible, err := s.CanViewComments(ctx, input.ContentID, userID, true)
+	if err != nil {
+		return gen.Comment{}, err
+	}
+
+	if !visible {
+		return gen.Comment{}, fmt.Errorf("%w: content", errpkg.ErrNotFound)
+	}
+
 	var depth int32
 
 	if input.ParentID.Valid {
@@ -39,6 +71,15 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 		)
 		if err != nil {
 			return gen.Comment{}, fmt.Errorf("getting parent comment for depth: %w", err)
+		}
+
+		// C-005: the reply target must be a live comment on the SAME content
+		// item — otherwise the reply attaches to a foreign thread and the
+		// denormalized counters split across two contents.
+		if parent.ContentID != input.ContentID ||
+			parent.DeletedAt.Valid ||
+			parent.Status != "published" {
+			return gen.Comment{}, fmt.Errorf("%w: parent comment", errpkg.ErrNotFound)
 		}
 
 		depth = parent.Depth + 1
@@ -52,38 +93,43 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 		parentID = input.ParentID
 	}
 
-	comment, err := s.write.CreateComment(ctx, gen.CreateCommentParams{
-		ContentID:    input.ContentID,
-		AuthorUserID: userID,
-		ParentID:     parentID,
-		Body:         input.Body,
-		Depth:        depth,
-		IsAnonymous:  input.IsAnonymous,
+	comment, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.Comment, error) {
+		c, err := q.CreateComment(ctx, gen.CreateCommentParams{
+			ContentID:    input.ContentID,
+			AuthorUserID: userID,
+			ParentID:     parentID,
+			Body:         input.Body,
+			Depth:        depth,
+			IsAnonymous:  input.IsAnonymous,
+		})
+		if err != nil {
+			return gen.Comment{}, fmt.Errorf("creating comment: %w", err)
+		}
+
+		// Increment the denormalized comment_count on the content row so feed
+		// cards (which read contents.comment_count) show accurate counts
+		// immediately, without waiting for the async scoring pipeline.
+		// Ref: Section 32, Guide §21.
+		if err := q.IncrementContentCommentCount(ctx,
+			input.ContentID,
+		); err != nil {
+			return gen.Comment{}, fmt.Errorf("incrementing content comment_count: %w", err)
+		}
+
+		// Keep the parent comment's denormalized reply_count in sync
+		// (Section 49, BUG-008).
+		if input.ParentID.Valid {
+			if err := q.IncrementCommentReplyCount(ctx,
+				input.ParentID,
+			); err != nil {
+				return gen.Comment{}, fmt.Errorf("incrementing parent reply_count: %w", err)
+			}
+		}
+
+		return c, nil
 	})
 	if err != nil {
-		return gen.Comment{}, fmt.Errorf("creating comment: %w", err)
-	}
-
-	// Increment the denormalized comment_count on the content row so feed
-	// cards (which read contents.comment_count) show accurate counts
-	// immediately, without waiting for the async scoring pipeline.
-	// Ref: Section 32, Guide §21.
-	if err := s.write.IncrementContentCommentCount(ctx,
-		input.ContentID,
-	); err != nil {
-		slog.Warn("comments: failed to increment content comment_count",
-			"content_id", input.ContentID.String(), "error", err)
-	}
-
-	// Keep the parent comment's denormalized reply_count in sync (Section 49,
-	// BUG-008). Fire-and-forget: a failure only logs.
-	if input.ParentID.Valid {
-		if err := s.write.IncrementCommentReplyCount(ctx,
-			input.ParentID,
-		); err != nil {
-			slog.Warn("comments: failed to increment parent reply_count",
-				"parent_id", input.ParentID.String(), "error", err)
-		}
+		return gen.Comment{}, err
 	}
 
 	// §64: record the comment.created activity so badge/challenge triggers
@@ -107,6 +153,13 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 //  3. mention.comment — to each @mentioned user (extracted from TipTap JSON body)
 func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.Comment, dispatcher NotificationDispatcher) {
 	if dispatcher == nil {
+		return
+	}
+
+	// C-003: anonymous comments never generate actor-attributed notifications.
+	// The notification pipeline renders the real actor_id to recipients, which
+	// would de-anonymize the commenter to the content/parent/mentioned authors.
+	if comment.IsAnonymous {
 		return
 	}
 
@@ -219,6 +272,11 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 // are dispatched while pre-existing mentions are suppressed.
 func (s *Service) DispatchMentionNotifications(ctx context.Context, comment gen.Comment, dispatcher NotificationDispatcher) {
 	if dispatcher == nil {
+		return
+	}
+
+	// C-003: anonymous comments never generate actor-attributed notifications.
+	if comment.IsAnonymous {
 		return
 	}
 
@@ -443,24 +501,36 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 	return out
 }
 
-// ListRepliesByParent returns replies for a given parent comment.
-func (s *Service) ListRepliesByParent(ctx context.Context, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error) {
+// ListRepliesByParent returns replies for a given parent comment, scoped to
+// the parent content (C-005 hardening — a parent_id from another content item
+// returns an empty page rather than a foreign thread). Also returns the total
+// for pagination meta.
+func (s *Service) ListRepliesByParent(ctx context.Context, contentID, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, int32, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 
 	replies, err := s.read.ListRepliesByParent(ctx, gen.ListRepliesByParentParams{
-		ViewerID: viewerID,
-		ParentID: parentID,
+		ViewerID:  viewerID,
+		ParentID:  parentID,
+		ContentID: contentID,
 
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing replies: %w", err)
+		return nil, 0, fmt.Errorf("listing replies: %w", err)
 	}
 
-	return replies, nil
+	total, err := s.read.CountRepliesByParent(ctx, gen.CountRepliesByParentParams{
+		ParentID:  parentID,
+		ContentID: contentID,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting replies: %w", err)
+	}
+
+	return replies, total, nil
 }
 
 // UpdateComment updates a comment's body. Only the author can edit (enforced
@@ -477,6 +547,17 @@ func (s *Service) UpdateComment(ctx context.Context, commentID, userID pgtype.UU
 	)
 	if err != nil {
 		return gen.Comment{}, fmt.Errorf("getting comment for edit-window check: %w", err)
+	}
+
+	// C-018: the comment is only editable while its parent content is
+	// visible to the editor — consistent with vote/pin guards.
+	visible, err := s.CanViewComments(ctx, existing.ContentID, userID, true)
+	if err != nil {
+		return gen.Comment{}, err
+	}
+
+	if !visible {
+		return gen.Comment{}, fmt.Errorf("%w: comment", errpkg.ErrNotFound)
 	}
 
 	// Determine whether this edit falls within the grace period. The sqlc
@@ -525,6 +606,25 @@ func (s *Service) UpdateComment(ctx context.Context, commentID, userID pgtype.UU
 	return comment, nil
 }
 
+// UpdateCommentModerate is the comments.edit_any path — any published
+// comment regardless of author, no edit window. The comment must still be on
+// content the moderator can see (C-018).
+func (s *Service) UpdateCommentModerate(ctx context.Context, commentID, userID pgtype.UUID, body []byte) (gen.Comment, error) {
+	if err := s.checkCommentVisible(ctx, commentID, userID); err != nil {
+		return gen.Comment{}, err
+	}
+
+	comment, err := s.write.UpdateCommentByID(ctx, gen.UpdateCommentByIDParams{
+		ID:   commentID,
+		Body: body,
+	})
+	if err != nil {
+		return gen.Comment{}, fmt.Errorf("moderator updating comment: %w", err)
+	}
+
+	return comment, nil
+}
+
 // SoftDeleteComment soft-deletes a comment by setting deleted_at. This is the
 // moderator path (comments.delete_any) — no author check. Authors must use
 // SoftDeleteCommentByAuthor instead (Section 49, BUG-003).
@@ -542,13 +642,18 @@ func (s *Service) SoftDeleteComment(ctx context.Context, commentID pgtype.UUID) 
 		return nil
 	}
 
-	if err := s.write.SoftDeleteComment(ctx,
-		commentID,
-	); err != nil {
-		return fmt.Errorf("deleting comment: %w", err)
-	}
+	// C-010: the soft-delete and the counter decrements commit atomically.
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if err := q.SoftDeleteComment(ctx,
+			commentID,
+		); err != nil {
+			return fmt.Errorf("deleting comment: %w", err)
+		}
 
-	s.decrementCommentCounters(ctx, comment)
+		return decrementCommentCountersTx(ctx, q, comment)
+	}); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -571,15 +676,20 @@ func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, commentID, user
 		return nil
 	}
 
-	if err := s.write.SoftDeleteCommentByAuthor(ctx, gen.SoftDeleteCommentByAuthorParams{
-		ID: commentID,
+	// C-010: the soft-delete and the counter decrements commit atomically.
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if err := q.SoftDeleteCommentByAuthor(ctx, gen.SoftDeleteCommentByAuthorParams{
+			ID: commentID,
 
-		AuthorUserID: userID,
+			AuthorUserID: userID,
+		}); err != nil {
+			return fmt.Errorf("deleting own comment: %w", err)
+		}
+
+		return decrementCommentCountersTx(ctx, q, comment)
 	}); err != nil {
-		return fmt.Errorf("deleting own comment: %w", err)
+		return err
 	}
-
-	s.decrementCommentCounters(ctx, comment)
 
 	return nil
 }
@@ -606,44 +716,54 @@ func (s *Service) RemoveComment(ctx context.Context, commentID, moderatorID pgty
 		reasonPtr = &reason
 	}
 
-	if err := s.write.RemoveComment(ctx, gen.RemoveCommentParams{
-		ID: commentID,
+	// C-010: the removal and the counter decrements commit atomically.
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if err := q.RemoveComment(ctx, gen.RemoveCommentParams{
+			ID: commentID,
 
-		RemovedBy:     moderatorID,
-		RemovedReason: reasonPtr,
+			RemovedBy:     moderatorID,
+			RemovedReason: reasonPtr,
+		}); err != nil {
+			return fmt.Errorf("removing comment: %w", err)
+		}
+
+		return decrementCommentCountersTx(ctx, q, comment)
 	}); err != nil {
-		return fmt.Errorf("removing comment: %w", err)
+		return err
 	}
-
-	s.decrementCommentCounters(ctx, comment)
 
 	return nil
 }
 
-// decrementCommentCounters keeps the denormalized content.comment_count and
+// decrementCommentCountersTx keeps the denormalized content.comment_count and
 // the parent comment's reply_count in sync when a published comment is
-// soft-deleted or removed. Failures are logged, not returned, so the request
-// still succeeds (Rule 8).
-func (s *Service) decrementCommentCounters(ctx context.Context, comment gen.GetCommentRow) {
-	if err := s.write.DecrementContentCommentCount(ctx,
+// soft-deleted or removed. Runs inside the caller's transaction so the
+// delete/remove and the counters commit or roll back together (C-010).
+func decrementCommentCountersTx(ctx context.Context, q *gen.Queries, comment gen.GetCommentRow) error {
+	if err := q.DecrementContentCommentCount(ctx,
 		comment.ContentID,
 	); err != nil {
-		slog.Warn("comments: failed to decrement content comment_count",
-			"content_id", comment.ContentID.String(), "error", err)
+		return fmt.Errorf("decrementing content comment_count: %w", err)
 	}
 
 	if comment.ParentID.Valid {
-		if err := s.write.DecrementCommentReplyCount(ctx,
+		if err := q.DecrementCommentReplyCount(ctx,
 			comment.ParentID,
 		); err != nil {
-			slog.Warn("comments: failed to decrement parent reply_count",
-				"parent_id", comment.ParentID.String(), "error", err)
+			return fmt.Errorf("decrementing parent reply_count: %w", err)
 		}
 	}
+
+	return nil
 }
 
-// PinComment pins a comment (only content author or moderator).
-func (s *Service) PinComment(ctx context.Context, commentID pgtype.UUID) error {
+// PinComment pins a comment (only content author or moderator). The pin must
+// only be possible on comments the pinner can actually see (C-018).
+func (s *Service) PinComment(ctx context.Context, commentID, userID pgtype.UUID) error {
+	if err := s.checkCommentVisible(ctx, commentID, userID); err != nil {
+		return err
+	}
+
 	if err := s.write.PinComment(ctx,
 		commentID,
 	); err != nil {
@@ -654,11 +774,35 @@ func (s *Service) PinComment(ctx context.Context, commentID pgtype.UUID) error {
 }
 
 // UnpinComment unpins a comment.
-func (s *Service) UnpinComment(ctx context.Context, commentID pgtype.UUID) error {
+func (s *Service) UnpinComment(ctx context.Context, commentID, userID pgtype.UUID) error {
+	if err := s.checkCommentVisible(ctx, commentID, userID); err != nil {
+		return err
+	}
+
 	if err := s.write.UnpinComment(ctx,
 		commentID,
 	); err != nil {
 		return fmt.Errorf("unpinning comment: %w", err)
+	}
+
+	return nil
+}
+
+// checkCommentVisible resolves a comment's parent content and verifies the
+// caller can see it — shared by pin/unpin/update-moderate guards.
+func (s *Service) checkCommentVisible(ctx context.Context, commentID, userID pgtype.UUID) error {
+	comment, err := s.read.GetComment(ctx, commentID)
+	if err != nil {
+		return fmt.Errorf("getting comment: %w", err)
+	}
+
+	visible, err := s.CanViewComments(ctx, comment.ContentID, userID, true)
+	if err != nil {
+		return err
+	}
+
+	if !visible {
+		return fmt.Errorf("%w: comment", errpkg.ErrNotFound)
 	}
 
 	return nil
@@ -669,55 +813,93 @@ func (s *Service) UnpinComment(ctx context.Context, commentID pgtype.UUID) error
 // ---------------------------------------------------------------------------
 
 // VoteComment upserts a vote on a comment and recalculates the vote score.
+// The target must be a live published comment — votes on deleted, removed, or
+// nonexistent comments are rejected (C-007).
 func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID, value int16) error {
 	if value != 1 && value != -1 {
-		return errors.New("vote value must be 1 or -1")
+		return fmt.Errorf("vote value must be 1 or -1: %w", errpkg.ErrInvalid)
 	}
 
-	if _, err := s.write.UpsertCommentVote(ctx, gen.UpsertCommentVoteParams{
-		CommentID: commentID,
-		UserID:    userID,
-		Value:     value,
-	}); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return fmt.Errorf("duplicate vote: %w", errpkg.ErrDuplicate)
+	target, err := s.read.GetComment(ctx,
+		commentID,
+	)
+	if err != nil {
+		return fmt.Errorf("getting comment for vote: %w", err)
+	}
+
+	if target.DeletedAt.Valid || target.Status != "published" {
+		return fmt.Errorf("%w: comment", errpkg.ErrNotFound)
+	}
+
+	// C-014: votes only count on comments the voter can actually see — the
+	// comment is only as visible as its parent content.
+	visible, err := s.CanViewComments(ctx, target.ContentID, userID, true)
+	if err != nil {
+		return err
+	}
+
+	if !visible {
+		return fmt.Errorf("%w: comment", errpkg.ErrNotFound)
+	}
+
+	// The vote upsert and the score recalculation commit atomically (C-010).
+	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if _, err := q.UpsertCommentVote(ctx, gen.UpsertCommentVoteParams{
+			CommentID: commentID,
+			UserID:    userID,
+			Value:     value,
+		}); err != nil {
+			return fmt.Errorf("voting on comment: %w", err)
 		}
 
-		return fmt.Errorf("voting on comment: %w", err)
-	}
+		if err := q.RecalculateCommentVoteScore(ctx,
+			commentID,
+		); err != nil {
+			return fmt.Errorf("recalculating comment vote score: %w", err)
+		}
 
-	if err := s.write.RecalculateCommentVoteScore(ctx,
-		commentID,
-	); err != nil {
-		return fmt.Errorf("recalculating comment vote score: %w", err)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // RemoveCommentVote removes a user's vote and recalculates the score.
 // Platform-scoped per Guide §4.2/§9 (SEC-001).
 func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) error {
-	if err := s.write.DeleteCommentVote(ctx, gen.DeleteCommentVoteParams{
-		CommentID: commentID,
-		UserID:    userID,
-	}); err != nil {
-		return fmt.Errorf("removing comment vote: %w", err)
-	}
+	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if err := q.DeleteCommentVote(ctx, gen.DeleteCommentVoteParams{
+			CommentID: commentID,
+			UserID:    userID,
+		}); err != nil {
+			return fmt.Errorf("removing comment vote: %w", err)
+		}
 
-	if err := s.write.RecalculateCommentVoteScore(ctx,
-		commentID,
-	); err != nil {
-		return fmt.Errorf("recalculating comment vote score: %w", err)
-	}
+		if err := q.RecalculateCommentVoteScore(ctx,
+			commentID,
+		); err != nil {
+			return fmt.Errorf("recalculating comment vote score: %w", err)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------------------
 // Counts
 // ---------------------------------------------------------------------------
+
+// CountTopLevelCommentsByContent returns the total number of top-level
+// comments for content (tombstones included, matching the list predicate) —
+// used for the list endpoint's pagination meta (C-011).
+func (s *Service) CountTopLevelCommentsByContent(ctx context.Context, contentID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountTopLevelCommentsByContent(ctx,
+		contentID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("counting top-level comments: %w", err)
+	}
+
+	return count, nil
+}
 
 // CountCommentsByContent returns the total comment count for content.
 func (s *Service) CountCommentsByContent(ctx context.Context, contentID pgtype.UUID) (int32, error) {

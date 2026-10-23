@@ -538,5 +538,16 @@
 	"ai.panel.mode": "Mode",
 	"ai.panel.mode_chat": "Discussion",
 	"ai.panel.mode_agent": "Agent",
-	"ai.panel.placeholder_chat": "Envoyer un message à Japa AI…"
+	"ai.panel.placeholder_chat": "Envoyer un message à Japa AI…",
+	"a11y.suggestion": "Suggestion",
+	"curriculum.move_module_up": "Monter le module",
+	"curriculum.move_module_down": "Descendre le module",
+	"curriculum.edit_module": "Modifier le module",
+	"curriculum.delete_module": "Supprimer le module",
+	"curriculum.move_lesson_up": "Monter la leçon",
+	"curriculum.move_lesson_down": "Descendre la leçon",
+	"curriculum.delete_lesson": "Supprimer la leçon",
+	"curriculum.remove_question": "Supprimer la question",
+	"curriculum.option_ph": "Option {n}",
+	"curriculum.remove_option": "Supprimer l'option"
 }

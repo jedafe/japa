@@ -217,10 +217,10 @@
 {/if}
 
 <div class="mb-4 flex gap-2">
-	<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab==='rulesets'?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab==='rulesets'?'white':'var(--color-foreground)'}" onclick={() => activeTab='rulesets'}>Rulesets</button>
-	<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab==='draws'?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab==='draws'?'white':'var(--color-foreground)'}" onclick={() => activeTab='draws'}>Draws</button>
+	<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab==='rulesets'?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab==='rulesets'?'white':'var(--color-foreground)'}" onclick={() => activeTab='rulesets'}>{t('crs.rulesets', 'Rulesets')}</button>
+	<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab==='draws'?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab==='draws'?'white':'var(--color-foreground)'}" onclick={() => activeTab='draws'}>{t('crs.draws', 'Draws')}</button>
 	{#if canManage && activeTab === 'rulesets'}
-		<button class="ml-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:white" onclick={generateDraft}>Generate AI Draft</button>
+		<button class="ms-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:white" onclick={generateDraft}>{t('common.generate_ai_draft', 'Generate AI Draft')}</button>
 	{/if}
 </div>
 

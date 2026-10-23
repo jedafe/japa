@@ -272,7 +272,7 @@
       <div class="hero-actions">
         <a href="/signup" class="hero-btn hero-btn-primary">
           {c('cta_start', 'Get Started Free')}
-          <ArrowRight size={18} />
+          <ArrowRight class="rtl:-scale-x-100" size={18} />
         </a>
         <a href="/explore" class="hero-btn hero-btn-secondary">
           {c('cta_explore', 'Explore Opportunities')}
@@ -325,14 +325,14 @@
           </ul>
           <a href="/explore" class="destination-all">
             {c('see_all_countries', 'See all countries')}
-            <ArrowRight size={14} />
+            <ArrowRight class="rtl:-scale-x-100" size={14} />
           </a>
         </div>
 
         <div class="floating-card floating-card-community">
           <div class="community-avatars">
             {#each [1, 2, 3] as i (i)}
-              <div class="community-avatar" style="z-index: {4 - i}; margin-left: {i === 1 ? 0 : -10}px">
+              <div class="community-avatar" style="z-index: {4 - i}; margin-inline-start: {i === 1 ? 0 : -10}px">
                 <Users size={16} />
               </div>
             {/each}
@@ -346,7 +346,7 @@
             </p>
           </div>
           <a href="/explore" class="community-cta" aria-label={c('join_cta_label', 'Join the community')}>
-            <ArrowRight size={18} />
+            <ArrowRight class="rtl:-scale-x-100" size={18} />
           </a>
         </div>
       </div>
@@ -375,7 +375,7 @@
           <p class="category-description">{cat.description}</p>
           <span class="category-link">
             {c('explore_link', 'Explore {title}', { title: cat.title })}
-            <ArrowRight size={16} />
+            <ArrowRight class="rtl:-scale-x-100" size={16} />
           </span>
         </a>
       {/each}
@@ -390,7 +390,7 @@
       <h2 id="opportunities-heading" class="section-title">{c('opportunities_title', 'Featured Opportunities')}</h2>
       <a href="/explore" class="section-link">
         {c('opportunities_view_all', 'View all opportunities')}
-        <ArrowRight size={16} />
+        <ArrowRight class="rtl:-scale-x-100" size={16} />
       </a>
     </div>
 
@@ -401,7 +401,7 @@
         onclick={() => scrollBy(oppScroller, -1)}
         aria-label={c('carousel_prev', 'Previous')}
       >
-        <ChevronLeft size={20} />
+        <ChevronLeft class="rtl:-scale-x-100" size={20} />
       </button>
 
       <div bind:this={oppScroller} class="opportunity-scroll">
@@ -445,7 +445,7 @@
         onclick={() => scrollBy(oppScroller, 1)}
         aria-label={c('carousel_next', 'Next')}
       >
-        <ChevronRight size={20} />
+        <ChevronRight class="rtl:-scale-x-100" size={20} />
       </button>
     </div>
   </div>
@@ -462,7 +462,7 @@
       </p>
       <a href="/stories" class="stories-cta">
         {c('stories_read_more', 'Read More Stories')}
-        <ArrowRight size={18} />
+        <ArrowRight class="rtl:-scale-x-100" size={18} />
       </a>
     </div>
 
@@ -473,7 +473,7 @@
         onclick={() => scrollBy(storyScroller, -1)}
         aria-label={c('carousel_prev', 'Previous')}
       >
-        <ChevronLeft size={20} />
+        <ChevronLeft class="rtl:-scale-x-100" size={20} />
       </button>
 
       <div bind:this={storyScroller} class="story-scroll" role="list">
@@ -505,7 +505,7 @@
         onclick={() => scrollBy(storyScroller, 1)}
         aria-label={c('carousel_next', 'Next')}
       >
-        <ChevronRight size={20} />
+        <ChevronRight class="rtl:-scale-x-100" size={20} />
       </button>
     </div>
 
@@ -576,7 +576,7 @@
       />
       <button type="submit" class="newsletter-btn" disabled={newsletterStatus === 'loading'}>
         {c('newsletter_cta', 'Subscribe Now')}
-        <ArrowRight size={18} />
+        <ArrowRight class="rtl:-scale-x-100" size={18} />
       </button>
     </form>
 
@@ -801,13 +801,13 @@
 
   .floating-card-destinations {
     top: 1.5rem;
-    left: -1.5rem;
+    inset-inline-start: -1.5rem;
     width: 220px;
   }
 
   .floating-card-community {
     bottom: 2.5rem;
-    right: -1.5rem;
+    inset-inline-end: -1.5rem;
     width: 260px;
     display: flex;
     align-items: center;
@@ -816,11 +816,11 @@
 
   @container (max-width: 1024px) and (min-width: 641px) {
     .floating-card-destinations {
-      left: 1rem;
+      inset-inline-start: 1rem;
       width: 200px;
     }
     .floating-card-community {
-      right: 1rem;
+      inset-inline-end: 1rem;
       width: 220px;
     }
     .floating-card-community .community-avatars {
@@ -835,12 +835,12 @@
     }
 
     .floating-card-destinations {
-      left: 1rem;
+      inset-inline-start: 1rem;
       width: 170px;
     }
 
     .floating-card-community {
-      right: 1rem;
+      inset-inline-end: 1rem;
       width: 200px;
       gap: 0.5rem;
     }
@@ -1112,10 +1112,10 @@
     background: var(--color-surface-subtle);
   }
   .carousel-arrow-left {
-    left: -1rem;
+    inset-inline-start: -1rem;
   }
   .carousel-arrow-right {
-    right: -1rem;
+    inset-inline-end: -1rem;
   }
   @container (max-width: 768px) {
     .carousel-arrow {

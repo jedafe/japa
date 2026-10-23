@@ -20,7 +20,10 @@ interface VoiceOption {
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw redirect(307, '/login?redirect=/studio/prompts');
+		throw redirect(
+			307,
+			`/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`
+		);
 	}
 
 	event.depends(STUDIO_PROMPTS_TAG);

@@ -244,7 +244,7 @@
 
 	.shell-center {
 		min-width: 0;
-		border-right: 1px solid var(--color-border);
+		border-inline-end: 1px solid var(--color-border);
 	}
 
 	.shell-sidebar {
@@ -276,7 +276,7 @@
 	.drawer {
 		position: fixed;
 		top: 0;
-		left: 0;
+		inset-inline-start: 0;
 		z-index: 50;
 		width: var(--nav-width-expanded);
 		height: 100vh;
@@ -309,7 +309,7 @@
 			display: none;
 		}
 		.shell-center {
-			border-right: none;
+			border-inline-end: none;
 		}
 		.mobile-topbar {
 			display: flex;

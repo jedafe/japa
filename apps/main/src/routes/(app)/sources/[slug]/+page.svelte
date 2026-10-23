@@ -8,6 +8,8 @@
 	import SourceDailyCard from '$lib/components/source/SourceDailyCard.svelte';
 	import { api } from '$lib/api/client';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { PageData } from './$types';
 	import type { Source, SourceItemEnvelope } from '$lib/types/sources';
 
@@ -52,8 +54,10 @@
 		loadingMore = false;
 	}
 
+	// Sort labels are localized via sources.items.* keys; the backend label is
+	// the fallback for sorts added without an i18n entry yet.
 	const sortTabs = $derived<UrlTab[]>(
-		(data.itemSorts ?? []).map((s) => ({ value: s.value, label: s.label }))
+		(data.itemSorts ?? []).map((s) => ({ value: s.value, label: t(`sources.items.${s.value}`, s.label) }))
 	);
 
 	// Entity-type filter pills (v2 design: "the detail page groups or filters
@@ -78,9 +82,27 @@
 		goto(url, { keepFocus: true });
 	}
 
+	// Item-card badges reuse the same localized label as the filter pills —
+	// the raw backend label previously rendered English ("Scholarships") next
+	// to a localized pill ("Bourses") on the same screen.
 	function entityTypeLabel(type: string) {
-		return data.entityTypes?.find((e) => e.value === type)?.label ?? type.replace(/_/g, ' ');
+		return entityTypePillLabel(type);
 	}
+
+	// Section 26 — self-referencing canonical on the clean slug URL (the
+	// backend resolves UUIDs too, but the load() 301 already canonicalizes).
+	const canonical = $derived(`${page.url.origin}/sources/${source.slug}`);
+
+	// BreadcrumbList JSON-LD (Section 26 — all pages with hierarchy).
+	const breadcrumbLd = $derived(
+		JSON.stringify(
+			breadcrumbJsonLd([
+				{ name: 'Home', path: page.url.origin },
+				{ name: t('sources.heading', 'Sources'), path: `${page.url.origin}/sources` },
+				{ name: source.name, path: canonical }
+			])
+		)
+	);
 
 	const linkableKeywords = $derived(
 		(source.keywords ?? []).filter((kw) => source.tag_slugs?.[kw] !== undefined)
@@ -95,6 +117,12 @@
 <svelte:head>
 	<title>{title} — {t('sources.title', 'Sources — {site}')}</title>
 	<meta name="description" content={source.description ?? source.domain} />
+	<meta property="og:title" content={title} />
+	<meta property="og:description" content={source.description ?? source.domain} />
+	<meta property="og:type" content="profile" />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
+	{@html safeJsonLdScript(breadcrumbLd)}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl flex flex-col gap-4 p-4">
@@ -149,7 +177,7 @@
 			>
 				<Globe class="h-3.5 w-3.5" />
 				{source.domain}
-				<ExternalLink class="h-3 w-3" />
+				<ExternalLink class="h-3 w-3 rtl:-scale-x-100" />
 			</a>
 			{#if source.description}
 				<p class="text-sm text-[var(--color-text-secondary)]">{source.description}</p>
@@ -176,7 +204,7 @@
 					class="mt-1 inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
 				>
 					{t('sources.view_profile', 'View {type} profile').replace('{type}', source.linked_entity.type)}
-					<ExternalLink class="h-3 w-3" />
+					<ExternalLink class="h-3 w-3 rtl:-scale-x-100" />
 				</a>
 			{/if}
 

@@ -56,12 +56,12 @@
           {cta.label}
           {#if cta.icon}
             {#if cta.icon === 'ArrowRight'}
-              <ArrowRight size={18} />
+              <ArrowRight class="rtl:-scale-x-100" size={18} />
             {:else}
               <span class="hero-btn-icon-label">{cta.icon}</span>
             {/if}
           {:else if i === 0}
-            <ArrowRight size={18} />
+            <ArrowRight class="rtl:-scale-x-100" size={18} />
           {/if}
         </a>
       {/each}

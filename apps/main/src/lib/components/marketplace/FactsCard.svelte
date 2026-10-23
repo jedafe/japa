@@ -24,7 +24,7 @@
 							<Icon size={16} class="shrink-0 text-[var(--color-muted)]" aria-hidden="true" />
 							<span class="truncate">{fact.label}</span>
 						</dt>
-						<dd class="shrink-0 text-right text-sm font-semibold text-[var(--color-primary)]">
+						<dd class="shrink-0 text-end text-sm font-semibold text-[var(--color-primary)]">
 							{fact.value}
 						</dd>
 					</div>

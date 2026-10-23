@@ -8,7 +8,7 @@
 
   const align = $derived(props.alignment ?? 'center');
   const alignClass = $derived(
-    align === 'left' ? 'text-left items-start' : align === 'right' ? 'text-right items-end' : 'text-center items-center'
+    align === 'left' ? 'text-start items-start' : align === 'right' ? 'text-end items-end' : 'text-center items-center'
   );
 </script>
 

@@ -2430,6 +2430,7 @@ type Medium struct {
 	SourcePhotoID *string            `json:"source_photo_id"`
 	RejectedAt    pgtype.Timestamptz `json:"rejected_at"`
 	Flagged       bool               `json:"flagged"`
+	MissingAt     pgtype.Timestamptz `json:"missing_at"`
 }
 
 type MentorReview struct {

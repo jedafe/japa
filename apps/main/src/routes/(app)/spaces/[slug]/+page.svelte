@@ -297,13 +297,16 @@ import { flagUrl } from '$lib/utils/flags';
 	let searchQuery = $state('');
 	let searchResults = $state<SpaceContentItem[]>([]);
 	let searching = $state(false);
+	let searchError = $state('');
 
 	async function runSearch() {
 		if (!searchQuery.trim()) {
 			searchResults = [];
+			searchError = '';
 			return;
 		}
 		searching = true;
+		searchError = '';
 		const q = encodeURIComponent(searchQuery.trim());
 		if (authed) {
 			// GET /spaces/{id}/search — Meilisearch-backed space search. The
@@ -313,15 +316,35 @@ import { flagUrl } from '$lib/utils/flags';
 			const res = await api.get<{
 				results: { type: string; item: { id: string; title: string; slug: string; content_type: string } }[];
 			}>(`/spaces/${space.id}/search?q=${q}&limit=20`);
-			searchResults = (res.data?.results ?? []).map(
-				(r) => r.item as unknown as SpaceContentItem
-			);
+			if (res.error) {
+				// Search backend down (503 search_unavailable) — degrade to the
+				// same public substring search guests use instead of showing a
+				// misleading "No results found".
+				const fallback = await api.get<SpaceContentItem[]>(
+					`/spaces/${space.slug}/content?q=${q}&page_size=20`
+				);
+				if (fallback.error) {
+					searchError = res.error.message;
+					searchResults = [];
+				} else {
+					searchResults = fallback.data ?? [];
+				}
+			} else {
+				searchResults = (res.data?.results ?? []).map(
+					(r) => r.item as unknown as SpaceContentItem
+				);
+			}
 		} else {
 			// Guests: /spaces/{id}/search requires auth — fall back to the
 			// public content listing's ?q= substring search, which is
 			// visibility-gated by OptionalAuth on that route.
 			const res = await api.get<SpaceContentItem[]>(`/spaces/${space.slug}/content?q=${q}&page_size=20`);
-			searchResults = res.data ?? [];
+			if (res.error) {
+				searchError = res.error.message;
+				searchResults = [];
+			} else {
+				searchResults = res.data ?? [];
+			}
 		}
 		searching = false;
 	}
@@ -542,6 +565,11 @@ import { flagUrl } from '$lib/utils/flags';
 			requestError = res.error.message;
 		} else {
 			joinRequests = joinRequests.filter((r) => r.user_id !== userId);
+			// Keep the sidebar count in sync — approval converts a pending
+			// request into an approved member (SPACES-004).
+			if (status === 'approved') {
+				data.space.member_count += 1;
+			}
 		}
 		requestActionId = null;
 	}
@@ -566,7 +594,7 @@ import { flagUrl } from '$lib/utils/flags';
 </svelte:head>
 
 <SetSidebar>
-	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={spaceLogo} {initialJoined} {initialPending} following={data.initiallyFollowing} onFollowChange={(v) => (following = v)} achievements={data.achievements} members={data.members} />
+	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={spaceLogo} {initialJoined} {initialPending} isOwner={data.isOwner} following={data.initiallyFollowing} onFollowChange={(v) => (following = v)} achievements={data.achievements} members={data.members} />
 </SetSidebar>
 
 <!-- Space header — cover banner + overlapping logo, follows ProfileHeader pattern -->
@@ -706,12 +734,12 @@ import { flagUrl } from '$lib/utils/flags';
 								layout="stream"
 							/>
 							{#if item.is_pinned}
-								<span class="pointer-events-none absolute left-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+								<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
 									<Pin size={10} /> {t('space.pinned', 'Pinned')}
 								</span>
 							{/if}
 							{#if canManage}
-								<div class="absolute right-3 top-3 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+								<div class="absolute end-3 top-3 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
 									{#if item.is_pinned}
 										<button
 											type="button"
@@ -781,11 +809,11 @@ import { flagUrl } from '$lib/utils/flags';
 								style="daily"
 								layout="stream"
 							/>
-							<span class="pointer-events-none absolute left-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+							<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
 								<Pin size={10} /> {t('space.pinned', 'Pinned')}
 							</span>
 							{#if canManage}
-								<div class="absolute right-3 top-3 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+								<div class="absolute end-3 top-3 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
 									<button
 										type="button"
 										disabled={reordering}
@@ -844,7 +872,7 @@ import { flagUrl } from '$lib/utils/flags';
 								slug={member.username}
 								name={member.display_name ?? member.username}
 								avatar={member.avatar_url}
-								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
 									{#if member.avatar_url}
@@ -912,7 +940,7 @@ import { flagUrl } from '$lib/utils/flags';
 												class="mt-1.5 inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
 											>
 												{t('space.view_wiki_category', 'Browse {label}', { label: group.label })}
-												<span aria-hidden="true">→</span>
+												<span aria-hidden="true"><span class="inline-block rtl:-scale-x-100">→</span></span>
 											</a>
 										{/if}
 									</div>
@@ -926,7 +954,7 @@ import { flagUrl } from '$lib/utils/flags';
 							class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
 						>
 							{t('space.view_wiki', 'View wiki')}
-							<span aria-hidden="true">→</span>
+							<span aria-hidden="true"><span class="inline-block rtl:-scale-x-100">→</span></span>
 						</a>
 					</div>
 				{/if}
@@ -935,7 +963,7 @@ import { flagUrl } from '$lib/utils/flags';
 					<div class="mt-4 border-t border-[var(--color-border)] pt-4" use:imgLightbox>
 						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki_summary', 'From Wikipedia')}</h2>
 						{#if spaceLogo}
-							<img src={spaceLogo} alt={wikiData.title ?? space.name} class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
+							<img src={spaceLogo} alt={wikiData.title ?? space.name} class="float-end mb-3 ms-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
 						{/if}
 						{#if wikiData.description}
 							<p class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{wikiData.description}</p>
@@ -968,6 +996,8 @@ import { flagUrl } from '$lib/utils/flags';
 			</form>
 			{#if searching}
 				<p class="py-8 text-center text-sm text-[var(--color-muted)]">{t('space.searching', 'Searching…')}</p>
+			{:else if searchError}
+				<p class="py-8 text-center text-sm text-red-600 dark:text-red-400">{searchError}</p>
 			{:else if searchQuery.trim() && searchResults.length === 0}
 				<EmptyState icon={Search} title={t('space.no_search_results', 'No results found')} />
 			{:else if searchResults.length > 0}

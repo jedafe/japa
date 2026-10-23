@@ -1314,6 +1314,8 @@ export const settingsAdminApi = {
 		api<unknown>(`/admin/settings/${category}`, { method: 'PUT', body }),
 	resetCategory: (category: string) =>
 		api<unknown>(`/admin/settings/${category}/reset`, { method: 'POST' }),
+	resetSetting: (category: string, key: string) =>
+		api<unknown>(`/admin/settings/${category}/reset/${encodeURIComponent(key)}`, { method: 'POST' }),
 };
 
 export const spacesAdminApiExtended = {

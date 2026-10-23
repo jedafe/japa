@@ -174,7 +174,7 @@
 	.nav-hover-peek {
 		position: fixed;
 		top: 0;
-		left: 0;
+		inset-inline-start: 0;
 		z-index: 50;
 		width: var(--nav-width-expanded);
 		height: 100vh;

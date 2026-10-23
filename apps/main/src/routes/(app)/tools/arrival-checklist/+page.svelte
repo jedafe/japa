@@ -411,7 +411,7 @@
 															rel="noopener noreferrer"
 															class="mt-1 inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
 														>
-															<ExternalLink size={12} />
+															<ExternalLink class="rtl:-scale-x-100" size={12} />
 															{t('arrival_checklist.official_link', 'Official info')}
 														</a>
 													{/if}
@@ -493,7 +493,7 @@
 										<button
 											type="button"
 											onclick={() => resumeChecklist(c.guide_id)}
-											class="w-full rounded-[var(--radius)] p-2 text-left hover:bg-[var(--color-surface-subtle)] {activeGuideId === c.guide_id ? 'bg-[var(--color-primary)]/10' : ''}"
+											class="w-full rounded-[var(--radius)] p-2 text-start hover:bg-[var(--color-surface-subtle)] {activeGuideId === c.guide_id ? 'bg-[var(--color-primary)]/10' : ''}"
 										>
 											<div class="text-sm font-medium text-[var(--color-text)]">
 												{c.destination_space_name ?? c.destination_space_code ?? c.guide_id}

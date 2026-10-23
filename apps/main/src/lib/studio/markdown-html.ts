@@ -54,7 +54,7 @@ class TailwindRenderer extends Renderer {
 		const listClass = ordered ? 'list-decimal' : 'list-disc';
 		const startAttr = ordered && start && start !== 1 ? ` start="${start}"` : '';
 		const body = items.map((item) => this.listitem(item)).join('');
-		return `<${tag} class="${listClass} pl-6 my-2"${startAttr}>${body}</${tag}>\n`;
+		return `<${tag} class="${listClass} ps-6 my-2"${startAttr}>${body}</${tag}>\n`;
 	}
 
 	listitem(item: Tokens.ListItem): string {
@@ -78,7 +78,7 @@ class TailwindRenderer extends Renderer {
 
 	blockquote({ tokens }: Tokens.Blockquote): string {
 		const text = this.parser.parse(tokens);
-		return `<blockquote class="border-l-4 border-border pl-4 italic text-muted-foreground my-4">${text}</blockquote>\n`;
+		return `<blockquote class="border-s-4 border-border ps-4 italic text-muted-foreground my-4">${text}</blockquote>\n`;
 	}
 
 	hr(): string {

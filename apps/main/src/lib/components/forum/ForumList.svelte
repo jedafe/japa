@@ -10,13 +10,11 @@
 	import { tiptapFirstImageSrc } from '$lib/tiptap/serialize';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import NativeAd from '$lib/components/ads/NativeAd.svelte';
-	import type { CardStyleConfig } from '$lib/feed/cardStyle';
 
 	interface Props {
 		threads: ForumThread[];
 		pageSize: number;
 		loadError: boolean;
-		config?: CardStyleConfig;
 		/** Native ad slot name — when set, a NativeAd is interleaved every
 		    ads.native_feed_interval threads (max 2 per list, §25). */
 		adSlot?: string;
@@ -104,7 +102,10 @@
 	// fields (solved, is_anonymous) are preserved via the title/tags.
 	function toFeedItem(thread: ForumThread): FeedItem {
 		return {
-			id: thread.id,
+			// FeedCard actions (bookmark / report / viewer-state) key on the
+			// backing contents.id — a forum thread's own id 404s those
+			// /content/{id} routes. Votes use forum_thread_id below.
+			id: thread.content_id ?? thread.id,
 			title: thread.title,
 			slug: thread.slug,
 			content_type: 'forum_thread',

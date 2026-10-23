@@ -263,7 +263,7 @@
 					href="/jobs/{job.slug}"
 					class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 				>
-					<ArrowLeft size={16} /> {t('common.cancel', 'Cancel')}
+					<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('common.cancel', 'Cancel')}
 				</a>
 				<button
 					type="submit"

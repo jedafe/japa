@@ -22,6 +22,7 @@
 		user?: SessionUser | null;
 		features?: Record<string, boolean>;
 		required?: boolean;
+		maxlength?: number;
 	}
 
 	let {
@@ -39,7 +40,8 @@
 		disabled = false,
 		user,
 		features = {},
-		required
+		required,
+		maxlength
 	}: Props = $props();
 
 	let open = $state(false);
@@ -66,6 +68,7 @@
 		{placeholder}
 		class={inputClass}
 		{disabled}
+		{maxlength}
 	></textarea>
 </div>
 

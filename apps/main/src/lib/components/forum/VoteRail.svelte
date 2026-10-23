@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { ArrowBigUp, ArrowBigDown } from 'lucide-svelte';
+	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { t } from '$lib/i18n';
 	import type { ForumThread, ForumVoteEntity, ForumVote } from '$lib/types';
 
@@ -39,6 +41,19 @@
 	// state stays in sync across navigations without an imperative $effect.
 	let optimisticDelta = $state(0);
 	let optimisticVote = $state<1 | -1 | 0 | null>(null);
+	// Reseed when the server props change (invalidateAll / navigation):
+	// the fresh initialScore already contains the persisted vote, so
+	// keeping the optimistic overlay would double-count it.
+	$effect(() => {
+		initialScore;
+		initialVote;
+		untrack(() => {
+			optimisticDelta = 0;
+			optimisticVote = null;
+			resolvedId = '';
+			resolving = null;
+		});
+	});
 	let score = $derived(initialScore + optimisticDelta);
 	let userVote = $derived<1 | -1 | 0>(optimisticVote ?? initialVote);
 	let pending = $state(false);
@@ -69,7 +84,10 @@
 	}
 
 	async function vote(value: 1 | -1) {
-		if (!authed || pending) return;
+		if (pending) return;
+		// Guests can click the buttons — they redirect to /login with a
+		// return-to param instead of being silently disabled.
+		if (!(await requireAuthOrRedirect())) return;
 		pending = true;
 		const id = await resolveEntityId();
 		if (!id) {
@@ -125,7 +143,7 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={!authed || pending}
+			disabled={pending}
 			aria-pressed={upActive}
 			aria-label={t('forum.upvote', 'Upvote')}
 			class={upClass}
@@ -139,7 +157,7 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(-1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={!authed || pending}
+			disabled={pending}
 			aria-pressed={downActive}
 			aria-label={t('forum.downvote', 'Downvote')}
 			class={downClass}
@@ -153,7 +171,7 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={!authed || pending}
+			disabled={pending}
 			aria-pressed={upActive}
 			aria-label={t('forum.upvote', 'Upvote')}
 			class={railUpClass}
@@ -167,7 +185,7 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(-1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={!authed || pending}
+			disabled={pending}
 			aria-pressed={downActive}
 			aria-label={t('forum.downvote', 'Downvote')}
 			class={railDownClass}
@@ -181,7 +199,7 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={!authed || pending}
+			disabled={pending}
 			aria-pressed={upActive}
 			aria-label={t('forum.upvote', 'Upvote')}
 			class={upClass}
@@ -195,7 +213,7 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(-1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={!authed || pending}
+			disabled={pending}
 			aria-pressed={downActive}
 			aria-label={t('forum.downvote', 'Downvote')}
 			class={downClass}

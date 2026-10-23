@@ -108,7 +108,7 @@
 			class="mt-3 flex items-center justify-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
 			{t('achievements.widget_view_all', 'View all')}
-			<ArrowRight size={12} />
+			<ArrowRight class="rtl:-scale-x-100" size={12} />
 		</a>
 	</section>
 {:else if enabled && !loading && !hideWhenEmpty && !loadError && achievements.length === 0}

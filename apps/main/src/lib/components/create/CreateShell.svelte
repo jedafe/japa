@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
+	import { contentHref } from '$lib/utils/contentLink';
 	import { t } from '$lib/i18n';
 	import { ComposerState, type ComposerDeps } from './composerState.svelte';
 	import { evaluatePublish } from './gate';
@@ -210,6 +211,15 @@
 
 	// ---- autosave machine ----
 	let composer: ComposerState | null = $state(null);
+
+	// The content_type is immutable after the row exists — PATCH /content/{id}
+	// carries no content_type field. Switching the selector on an existing
+	// piece would re-render the wrong form kind and PATCH the new shape's
+	// field_values onto the old type's row (for a stored list that wipes
+	// field_values.items — the backend normalizes an absent array to []).
+	// Lock the selector once a row exists: a restored draft from the start, a
+	// new piece after the first autosave creates it.
+	const typeLocked = $derived.by(() => !!draft?.id || !!composer?.contentId);
 
 	// Merge base content field groups with category-specific ones for the
 	// settings panel and required-field validation. Deduplicate by group ID
@@ -435,7 +445,14 @@
 		if (draft?.status === 'scheduled' && publishAt) publishAt = null;
 		await composer?.flush();
 		await saveSpaces();
-		await composer?.publish();
+		const ok = await composer?.publish();
+		// Land on the published piece instead of silently staying in the
+		// composer — the reader now expects to see it live. Only on an
+		// actual publish: scheduled content isn't served on the canonical
+		// route yet, and a missing slug means the href can't be trusted.
+		if (ok && composer?.status === 'published' && slug) {
+			await goto(contentHref({ slug, content_type: selectedType.value }));
+		}
 	}
 
 	/** Ensure the composer has created its content row (POST /content) and
@@ -488,8 +505,12 @@
 	<div class="composer-main">
 		<div class="composer-header">
 			<h1 class="composer-title">{t('create.title')}</h1>
-			<div class="composer-type-select">
+			<div
+				class="composer-type-select"
+				title={typeLocked ? t('create.type_locked', 'Content type cannot be changed after creation') : undefined}
+			>
 				<Autocomplete
+					disabled={typeLocked}
 					placeholder={t('create.type_placeholder', 'Content type')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={staticAutocompleteFetcher(typeItems)}
@@ -560,6 +581,7 @@
 			<ListBuilder
 				initial={draft?.content_type === 'list' ? (draft.field_values as unknown as ListFieldValues) : null}
 				defaultEditor={defaultEditor}
+				{features}
 				onvalues={(fv) => { listFieldValues = fv; }}
 				onhtml={(v) => { bodyHtml = v; }}
 				oncounts={(n) => { listItemCount = n; }}
@@ -681,6 +703,8 @@
 			{title}
 			{bodyHtml}
 			contentType={selectedType.value}
+			typeLabel={selectedType.label}
+			supportsSeries={selectedType.supportsSeries}
 			onvisibility={(v) => { visibility = v; markDirty(); }}
 			oncanonical={(v) => { canonicalUrl = v; markDirty(); }}
 			onpublishat={(v) => { publishAt = v; markDirty(); }}

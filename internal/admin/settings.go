@@ -37,6 +37,13 @@ type SettingDef struct {
 	Placeholder string   `json:"placeholder,omitempty"` // placeholder text
 	Description string   `json:"description,omitempty"` // helper text below label
 	Masked      bool     `json:"masked,omitempty"`      // true for secrets — API returns "***"
+	// DefaultValue echoes the catalog default so admin surfaces can render a
+	// per-setting "reset to system default" affordance. It is populated by
+	// ListSettings before any stored override is merged into Value.
+	DefaultValue any `json:"default_value,omitempty"`
+	// Overridden reports whether a system_settings row exists for the key —
+	// i.e. the effective value is a customization, not the catalog default.
+	Overridden bool `json:"overridden,omitempty"`
 	// Hidden keeps the key writable via PUT /admin/settings/{category} but
 	// omits it from ListSettings — for settings managed on a dedicated admin
 	// surface (e.g. docs.categories on /docs/categories) rather than the
@@ -793,7 +800,12 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 				s.Options = currencyCodes
 			}
 
+			// Capture the catalog default before merging the stored override —
+			// keys with no default at all stay "unset" (their default IS unset).
+			s.DefaultValue = s.Value
+
 			if val, exists := stored[s.Key]; exists {
+				s.Overridden = true
 				if s.Masked {
 					s.Value = "***"
 				} else {
@@ -1076,6 +1088,102 @@ func (h *Handlers) ResetSettings(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]string{
 			"status":   "reset",
 			"category": category,
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// ResetSetting — POST /admin/settings/{category}/reset/{key}
+// ---------------------------------------------------------------------------
+
+// ResetSetting removes the stored override for a single setting, restoring
+// that key's catalog default. Same delete-not-write semantics as
+// ResetSettings, scoped to one key — the response echoes the catalog default
+// so the caller can update its local state without a refetch.
+func (h *Handlers) ResetSetting(w http.ResponseWriter, r *http.Request) {
+	actor, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	category := chi.URLParam(r, "category")
+	if category == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_category", "Category is required")
+		return
+	}
+
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		return
+	}
+
+	def, ok := defaultSettings[category]
+	if !ok {
+		errpkg.WriteError(w, http.StatusNotFound, "invalid_category", "Unknown settings category: "+category)
+		return
+	}
+
+	// The key must exist in the catalog — including Hidden keys, which are
+	// still category-scoped customizations even though they render on a
+	// dedicated surface (same rule as the category-wide reset).
+	var defValue any
+	found := false
+
+	for _, s := range def.Settings {
+		if s.Key == key {
+			defValue = s.Value
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		errpkg.WriteError(w, http.StatusNotFound, "invalid_key", "Unknown setting key: "+key)
+		return
+	}
+
+	fullKey := category + "." + key
+	ctx := r.Context()
+
+	if err := h.Settings.DeleteSettingsBatch(ctx, []string{fullKey}); err != nil {
+		slog.Error("admin: failed to reset setting", "category", category, "key", key, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to reset setting")
+		return
+	}
+
+	// Same post-write hook as UpdateSettings — resetting a content key can
+	// clear the link-preview blacklist.
+	if category == "content" && h.Valkey != nil {
+		invalidateLinkPreviewCache(r.Context(), h.Valkey)
+	}
+
+	// Audit-trail the reset — same traceability bar as a settings write.
+	// Best-effort (Rule 8): a failed audit write never blocks the reset.
+	if h.DB != nil {
+		meta, _ := json.Marshal(map[string]any{"category": category, "keys": []string{fullKey}})
+		ip := clientip.FromRequest(r)
+
+		var ipArg any
+
+		if ip != "" {
+			ipArg = ip
+		}
+
+		if _, err := h.DB.Writer.Exec(ctx, `
+			INSERT INTO audit_logs (actor_user_id, action_type, target_type, metadata, ip_address)
+			VALUES ($1, 'admin.settings.reset', 'system_setting', $2::jsonb, $3::inet)
+		`, actor.UserID, meta, ipArg); err != nil {
+			slog.Warn("admin: failed to write setting reset audit log", "category", category, "key", key, "error", err)
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"status":   "reset",
+			"category": category,
+			"key":      key,
+			"value":    defValue,
 		},
 	})
 }

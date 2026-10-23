@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
@@ -9,7 +9,7 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
-	import type { ColCity, ColCityData, ColComparisonMatrix } from '$lib/types';
+	import type { ColCity, ColCitiesListResponse, ColCityData, ColComparisonMatrix } from '$lib/types';
 	import type { PageData, ActionData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
@@ -22,6 +22,31 @@
 	);
 
 	const cities = $derived<ColCity[]>(data.cities);
+	// Cities fetched on demand via the endpoint's ?search= param. The SSR
+	// page caps at 200 rows — server-side search keeps every catalogue
+	// entry reachable in the pickers once it grows beyond that.
+	// Seed the extras from the SSR matrix so slug-share URLs (?city_ids=
+	// lagos,abuja) resolve labels even for cities beyond the 200-row page.
+	let extraCities = $state<ColCity[]>(
+		untrack(
+			() =>
+				data.matrix?.cities.map((c) => ({
+					id: c.id,
+					title: c.title,
+					description: '',
+					geo_space_name: c.geo_space_name,
+					geo_space_slug: c.geo_space_slug,
+					currency_code: c.currency_code ?? '',
+					is_baseline: c.is_baseline,
+					last_updated: c.last_updated,
+					position: 0
+				})) ?? []
+		)
+	);
+	const allCities = $derived<ColCity[]>([
+		...cities,
+		...extraCities.filter((c) => !cities.some((k) => k.id === c.id))
+	]);
 	const disabled = $derived(data.disabled);
 	// Tool config from col_calculator.* system_settings (Rule 3 / Rule 16).
 	const maxCities = $derived(data.maxCities ?? 3);
@@ -29,13 +54,26 @@
 
 	// The city ratios are computed against — user-selectable (§72 amendment),
 	// defaulting to the seeded is_baseline city (Lagos).
-	const seededBaselineId = $derived(cities.find((c) => c.is_baseline)?.id ?? null);
-	let baselineId = $state<string | null>(untrack(() => data.preselectedBaseline));
+	const seededBaselineId = $derived(allCities.find((c) => c.is_baseline)?.id ?? null);
+	// The matrix is the canonical source of effective ids — the backend
+	// resolves slug tokens and falls back to the seeded baseline, so state
+	// mirrors matrix.baseline_city_id / matrix.cities rather than the raw
+	// URL tokens.
+	let baselineId = $state<string | null>(
+		untrack(() => data.matrix?.baseline_city_id ?? data.preselectedBaseline)
+	);
 	// Up to maxCities destination cities compared against the baseline. The
 	// baseline is excluded in case an old-style share URL carries it inside
 	// city_ids.
 	let selectedIds = $state<string[]>(
 		untrack(() => {
+			if (data.matrix) {
+				const base = data.matrix.baseline_city_id;
+				return data.matrix.cities
+					.map((c) => c.id)
+					.filter((id) => id !== base)
+					.slice(0, maxCities);
+			}
 			const base =
 				data.preselectedBaseline ?? data.cities.find((c) => c.is_baseline)?.id ?? null;
 			return data.preselected.filter((id) => id !== base).slice(0, maxCities);
@@ -50,9 +88,11 @@
 	let fetchSeq = 0;
 
 	const effectiveBaselineId = $derived(baselineId ?? seededBaselineId);
-	const baselineCity = $derived(cities.find((c) => c.id === effectiveBaselineId) ?? null);
+	const baselineCity = $derived(allCities.find((c) => c.id === effectiveBaselineId) ?? null);
 	const selectedCities = $derived(
-		selectedIds.map((id) => cities.find((c) => c.id === id)).filter(Boolean) as ColCity[]
+		selectedIds
+			.map((ref) => allCities.find((c) => c.id === ref || c.geo_space_slug === ref))
+			.filter(Boolean) as ColCity[]
 	);
 	const idsKey = $derived(selectedIds.join(','));
 
@@ -81,14 +121,24 @@
 		fetchComparison();
 	});
 
+	// city UUID → geo-space slug for share URLs (the same identifier the
+	// wiki links use); falls back to the raw id when no slug is known.
+	const slugById = $derived.by(() => {
+		const m = new Map<string, string>();
+		for (const c of allCities) if (c.geo_space_slug) m.set(c.id, c.geo_space_slug);
+		for (const c of matrix?.cities ?? []) if (c.geo_space_slug) m.set(c.id, c.geo_space_slug);
+		return m;
+	});
+	const refForUrl = (id: string) => slugById.get(id) ?? id;
+
 	// Keep ?city_ids= + ?baseline_id= in sync so the share URL and reloads
 	// restore the same comparison. Called only from user actions —
 	// replaceState throws during hydration before the router is initialized.
 	function syncUrl() {
 		const url = new URL(page.url);
-		if (selectedIds.length >= 1) url.searchParams.set('city_ids', idsKey);
+		if (selectedIds.length >= 1) url.searchParams.set('city_ids', selectedIds.map(refForUrl).join(','));
 		else url.searchParams.delete('city_ids');
-		if (effectiveBaselineId) url.searchParams.set('baseline_id', effectiveBaselineId);
+		if (effectiveBaselineId) url.searchParams.set('baseline_id', refForUrl(effectiveBaselineId));
 		else url.searchParams.delete('baseline_id');
 		if (url.href !== page.url.href) replaceState(url, page.state);
 	}
@@ -119,10 +169,34 @@
 			return;
 		}
 		matrix = res.data;
-		// If the requested baseline didn't resolve (deleted city, stale link),
-		// the API falls back to the seeded baseline — mirror the effective one.
-		if (res.data?.baseline_city_id && res.data.baseline_city_id !== baselineId) {
-			baselineId = res.data.baseline_city_id;
+		// Canonicalize selection state from the matrix — the API resolves
+		// slug tokens and falls back to the seeded baseline, so the response
+		// ids are always the effective UUIDs. Guarded: only write state the
+		// $effect reads when it actually changes, otherwise a client-side
+		// selection triggers a redundant fetch cycle that discards this
+		// response via the seq guard.
+		if (res.data) {
+			if (baselineId !== res.data.baseline_city_id) {
+				baselineId = res.data.baseline_city_id;
+			}
+			const base = res.data.baseline_city_id;
+			const canon = res.data.cities.map((c) => c.id).filter((id) => id !== base);
+			if (canon.join(',') !== selectedIds.join(',')) selectedIds = canon;
+			const known = new Set(allCities.map((c) => c.id));
+			const fresh = res.data.cities
+				.filter((c) => !known.has(c.id))
+				.map((c) => ({
+					id: c.id,
+					title: c.title,
+					description: '',
+					geo_space_name: c.geo_space_name,
+					geo_space_slug: c.geo_space_slug,
+					currency_code: c.currency_code ?? '',
+					is_baseline: c.is_baseline,
+					last_updated: c.last_updated,
+					position: 0
+				}));
+			if (fresh.length > 0) extraCities = [...extraCities, ...fresh];
 		}
 	}
 
@@ -145,9 +219,11 @@
 		syncUrl();
 	}
 
-	// Autocomplete fetchers — filter the SSR-loaded city list client-side
-	// (Rule 16: the list comes from the API). The destination picker excludes
-	// already-selected cities and the baseline; the baseline picker lists all.
+	// Autocomplete fetchers — empty queries filter the loaded city list
+	// client-side; typed queries also hit the endpoint's ?search= param so
+	// cities beyond the 200-row SSR page stay selectable (§72: the cities
+	// route is paginated + searchable). Fetched cities are merged into
+	// extraCities so chips/labels resolve for non-SSR cities too.
 	function cityItem(c: ColCity): AutocompleteItem {
 		return {
 			id: c.id,
@@ -165,23 +241,41 @@
 		);
 	}
 
-	function fetchCityItems(q: string): Promise<AutocompleteItem[]> {
+	async function searchCities(q: string): Promise<ColCity[]> {
+		const res = await api.get<ColCitiesListResponse>(
+			`/calculator/cost-of-living/cities?search=${encodeURIComponent(q.trim())}&page=1&limit=50`
+		);
+		const fetched = res.error ? [] : (res.data?.cities ?? []);
+		if (fetched.length > 0) {
+			const known = new Set(allCities.map((c) => c.id));
+			const fresh = fetched.filter((c) => !known.has(c.id));
+			if (fresh.length > 0) extraCities = [...extraCities, ...fresh];
+		}
+		return fetched;
+	}
+
+	async function fetchCityItems(q: string): Promise<AutocompleteItem[]> {
 		const query = q.trim().toLowerCase();
-		const items = cities
+		const pool = query === '' ? allCities : await searchCities(q).catch(() => []);
+		// On API failure/empty the loaded list still answers (client-side
+		// matching is broader than the endpoint's title-only ILIKE anyway).
+		const source = query === '' || pool.length === 0 ? allCities : pool;
+		return source
 			.filter((c) => !selectedIds.includes(c.id) && c.id !== effectiveBaselineId)
 			.filter((c) => matchesCity(c, query))
 			.map(cityItem);
-		return Promise.resolve(items);
 	}
 
-	function fetchBaselineItems(q: string): Promise<AutocompleteItem[]> {
+	async function fetchBaselineItems(q: string): Promise<AutocompleteItem[]> {
 		const query = q.trim().toLowerCase();
-		return Promise.resolve(cities.filter((c) => matchesCity(c, query)).map(cityItem));
+		const pool = query === '' ? allCities : await searchCities(q).catch(() => []);
+		const source = query === '' || pool.length === 0 ? allCities : pool;
+		return source.filter((c) => matchesCity(c, query)).map(cityItem);
 	}
 
 	async function shareUrl() {
-		const params = new URLSearchParams({ city_ids: idsKey });
-		if (effectiveBaselineId) params.set('baseline_id', effectiveBaselineId);
+		const params = new URLSearchParams({ city_ids: selectedIds.map(refForUrl).join(',') });
+		if (effectiveBaselineId) params.set('baseline_id', refForUrl(effectiveBaselineId));
 		const url = `${page.url.origin}${page.url.pathname}?${params.toString()}`;
 		try {
 			await navigator.clipboard.writeText(url);
@@ -204,6 +298,20 @@
 
 	function formatValue(v: number | undefined): string {
 		if (v == null) return '—';
+		return formatMoney(v, displayCurrency, currencies);
+	}
+
+	// Per-cell denomination: when the matrix normalized money cells to the
+	// fx base, cities flagged converted:false keep raw local values (§72
+	// amendment — "unconvertible cities keep raw local values") and must be
+	// labelled with their own currency code, not the display base.
+	function formatCellValue(v: number | undefined, city: ColCityData): string {
+		if (v == null) return '—';
+		if (matrix?.display_currency && city.converted === false) {
+			return city.currency_code
+				? formatMoney(v, city.currency_code, currencies)
+				: v.toLocaleString(i18n.locale, { maximumFractionDigits: 2 });
+		}
 		return formatMoney(v, displayCurrency, currencies);
 	}
 
@@ -356,7 +464,7 @@
 							     instead of a dead disabled button (§72: tool is public,
 							     only the JCE export needs auth). -->
 							<a
-								href="/login?next={encodeURIComponent(page.url.pathname + page.url.search)}"
+								href="/login?redirect={encodeURIComponent(page.url.pathname + page.url.search)}"
 								title={t('col.compare_in_jce_hint', 'Open in JCE comparison')}
 								class="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
 							>
@@ -523,10 +631,10 @@
 				<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					<table class="w-full text-sm">
 						<thead>
-							<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
+							<tr class="border-b border-[var(--color-border)] text-start text-xs text-[var(--color-muted)]">
 								<th class="px-3 py-2 font-medium">{t('col.category', 'Category')}</th>
 								{#each matrix.cities as city (city.id)}
-									<th class="px-3 py-2 text-right font-medium">
+									<th class="px-3 py-2 text-end font-medium">
 										{#if city.geo_space_slug}
 											<a
 												href="/wiki/{city.geo_space_slug}/cost-of-living"
@@ -547,8 +655,8 @@
 								<tr class="border-b border-[var(--color-border)] last:border-0">
 									<td class="px-3 py-2 text-[var(--color-text)]">{cat.label}</td>
 									{#each matrix.cities as city (city.id)}
-										<td class="px-3 py-2 text-right text-[var(--color-text)]">
-											<div class="font-medium">{formatValue(cat.values[city.id])}</div>
+										<td class="px-3 py-2 text-end text-[var(--color-text)]">
+											<div class="font-medium">{formatCellValue(cat.values[city.id], city)}</div>
 											{#if !city.is_baseline && cat.ratios[city.id]}
 												<div class="text-xs text-[var(--color-muted)]">{formatRatio(cat.ratios[city.id])}</div>
 											{/if}
@@ -565,6 +673,9 @@
 						)}
 						{#if matrix.fx_fetched_at}
 							{t('col.fx_note', '— converted at mid-market rates')}
+						{/if}
+						{#if matrix.fx_stale}
+							{t('col.fx_stale', '(rates may be outdated)')}
 						{/if}
 					</p>
 				</div>

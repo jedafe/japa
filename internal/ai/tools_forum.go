@@ -198,9 +198,9 @@ func ForumThreadsListHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
 			}
 
-			threads, err = deps.Forum.ListThreadsBySpace(ctx, spaceID, cursor, limit)
+			threads, err = deps.Forum.ListThreadsBySpace(ctx, userID, spaceID, cursor, limit)
 		} else {
-			threads, err = deps.Forum.ListThreadsByPlatform(ctx, cursor, limit)
+			threads, err = deps.Forum.ListThreadsByPlatform(ctx, userID, cursor, limit)
 		}
 
 		if err != nil {
@@ -259,9 +259,9 @@ func ForumThreadsReadHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("invalid_thread_id", "thread_id is not a valid UUID"), nil
 			}
 
-			thread, err = deps.Forum.GetThread(ctx, id)
+			thread, err = deps.Forum.GetThread(ctx, userID, id)
 		case a.Slug != "":
-			thread, err = deps.Forum.GetThreadBySlug(ctx, a.Slug)
+			thread, err = deps.Forum.GetThreadBySlug(ctx, userID, a.Slug)
 		default:
 			return errorToolResult("missing_identifier", "one of thread_id or slug is required"), nil
 		}
@@ -274,7 +274,7 @@ func ForumThreadsReadHandler(deps *ToolDeps) ToolHandler {
 		m["body"] = json.RawMessage(thread.Body)
 
 		if a.IncludeReplies {
-			replies, err := deps.Forum.ListRepliesByThread(ctx, thread.ID)
+			replies, err := deps.Forum.ListRepliesByThread(ctx, userID, thread.ID)
 			if err != nil {
 				return errorToolResult("replies_list_failed", err.Error()), nil
 			}
@@ -543,7 +543,7 @@ func ForumRepliesListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_thread_id", "thread_id is not a valid UUID"), nil
 		}
 
-		replies, err := deps.Forum.ListRepliesByThread(ctx, threadID)
+		replies, err := deps.Forum.ListRepliesByThread(ctx, userID, threadID)
 		if err != nil {
 			return errorToolResult("replies_list_failed", err.Error()), nil
 		}

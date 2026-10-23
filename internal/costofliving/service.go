@@ -287,6 +287,29 @@ func (s *Service) ListCities(ctx context.Context, search, countryCode string, pa
 	}, nil
 }
 
+// ResolveCityRef converts one city_ids/baseline_id token to a comparison
+// item ID. UUIDs pass through; anything else is resolved as the city's
+// geo-space slug (the same public identifier used by
+// /wiki/{slug}/cost-of-living links) so share URLs stay human-readable.
+// Returns Valid=false when the token resolves to nothing.
+func (s *Service) ResolveCityRef(ctx context.Context, token string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := id.Scan(token); err == nil {
+		return id, nil
+	}
+
+	if s.store == nil {
+		return pgtype.UUID{}, nil
+	}
+
+	id, err := s.store.GetCityIDBySpaceSlug(ctx, token)
+	if err != nil {
+		return pgtype.UUID{}, nil
+	}
+
+	return id, nil
+}
+
 // baselineRef normalizes the city row that serves as the comparison
 // reference — either a user-selected city (baseline_id param) or the seeded
 // is_baseline item — so the matrix builder treats both sources uniformly.

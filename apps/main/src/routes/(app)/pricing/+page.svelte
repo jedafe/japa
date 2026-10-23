@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { Check, X } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
@@ -13,7 +13,7 @@
 	function formatPrice(amount: number, currency: string): string {
 		if (amount === 0) return t('pricing.free', 'Free');
 		const symbol = currencySymbolMap.get(currency) ?? currency;
-		return `${symbol}${(amount / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+		return `${symbol}${(amount / 100).toLocaleString(i18n.locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 	}
 </script>
 

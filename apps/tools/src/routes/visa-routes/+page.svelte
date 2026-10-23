@@ -283,11 +283,11 @@
 								<table class="w-full text-sm">
 									<thead>
 										<tr class="border-b border-border">
-											<th class="text-left p-3 font-semibold text-muted uppercase tracking-wide text-xs w-32">
+											<th class="text-start p-3 font-semibold text-muted uppercase tracking-wide text-xs w-32">
 												{t('visa_routes.attribute', 'Attribute')}
 											</th>
 											{#each comparisonData as route (route.id)}
-												<th class="text-left p-3 font-semibold text-text align-top">
+												<th class="text-start p-3 font-semibold text-text align-top">
 													{route.name}
 													<span class="block text-xs font-normal text-muted mt-0.5">{route.visa_category}</span>
 												</th>

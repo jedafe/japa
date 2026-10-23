@@ -55,7 +55,7 @@
 	<button
 		type="button"
 		onclick={() => onSelect(cmpType)}
-		class="flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+		class="flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-start text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 	>
 		<span
 			class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)]"

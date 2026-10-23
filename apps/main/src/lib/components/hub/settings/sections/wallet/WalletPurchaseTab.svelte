@@ -112,7 +112,7 @@
 							? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
 							: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40 hover:text-[var(--color-text)]'}"
 					>
-						<span class="mr-1 text-base">{c.symbol}</span>
+						<span class="me-1 text-base">{c.symbol}</span>
 						{c.code}
 					</button>
 				{/each}
@@ -136,7 +136,7 @@
 					{#each sortedPacks as pack (pack.id)}
 						<button
 							type="button"
-							class="rounded-[var(--radius-card)] border p-4 text-left transition-all hover:border-[var(--color-primary)]/40 {selectedPackId === pack.id
+							class="rounded-[var(--radius-card)] border p-4 text-start transition-all hover:border-[var(--color-primary)]/40 {selectedPackId === pack.id
 								? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)]/20'
 								: 'border-[var(--color-border)] bg-[var(--color-surface)]'}"
 							onclick={() => { selectedPackId = selectedPackId === pack.id ? '' : pack.id; customAmount = ''; }}
@@ -158,7 +158,7 @@
 									<p class="text-2xl font-bold text-[var(--color-text)]">{packTotalCredits(pack).toLocaleString()}</p>
 									<p class="text-xs text-[var(--color-muted)]">{t('wallet.purchase.credits', 'credits')}</p>
 								</div>
-								<div class="text-right">
+								<div class="text-end">
 									<p class="text-lg font-semibold text-[var(--color-text)]">{fiatPrice(pack.credit_amount)}</p>
 									<p class="text-xs text-[var(--color-muted)]">{preferredCode}</p>
 								</div>
@@ -186,7 +186,7 @@
 						placeholder={t('wallet.purchase.enter_amount', 'Enter credit amount')}
 					/>
 				</div>
-				<div class="text-right">
+				<div class="text-end">
 					<p class="text-sm text-[var(--color-muted)]">{t('wallet.purchase.price', 'Price')}</p>
 					<p class="text-lg font-semibold text-[var(--color-text)]">
 						{#if parseInt(customAmount, 10) > 0}

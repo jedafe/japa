@@ -5,7 +5,7 @@
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import {
 		Stamp,
@@ -182,7 +182,7 @@
 	function formatDate(iso?: string | null): string {
 		if (!iso) return '';
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -411,7 +411,7 @@
 							<button
 								type="button"
 								onclick={() => toggleExpand(pathway.id)}
-								class="w-full flex items-center justify-between p-4 text-left hover:bg-[var(--color-surface-subtle)] transition-colors"
+								class="w-full flex items-center justify-between p-4 text-start hover:bg-[var(--color-surface-subtle)] transition-colors"
 								aria-expanded={expandedId === pathway.id}
 							>
 								<div class="min-w-0">
@@ -646,7 +646,7 @@
 		<div class="p-4">
 			<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
 				{t('register.add_update_desc', 'Create a free account to share your attestation experience and help others navigate the process.')}
-				<a href="/login" class="ml-1 text-[var(--color-primary)] hover:underline">{t('common.sign_in', 'Sign in')}</a>.
+				<a href="/login" class="ms-1 text-[var(--color-primary)] hover:underline">{t('common.sign_in', 'Sign in')}</a>.
 			</div>
 		</div>
 	{/if}

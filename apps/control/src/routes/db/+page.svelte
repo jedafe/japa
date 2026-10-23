@@ -162,28 +162,28 @@
 			key: 'row_count',
 			label: t('db.row_count'),
 			sortable: true,
-			class: 'text-right',
+			class: 'text-end',
 			render: (val) => `<span class="font-mono text-xs text-foreground">${formatNumber(val as number)}</span>`
 		},
 		{
 			key: 'size_bytes',
 			label: t('db.size'),
 			sortable: true,
-			class: 'text-right',
+			class: 'text-end',
 			render: (val) => `<span class="font-mono text-xs text-foreground">${formatBytes(val as number)}</span>`
 		},
 		{
 			key: 'index_count',
 			label: t('db.indexes'),
 			sortable: true,
-			class: 'text-right',
+			class: 'text-end',
 			render: (val) => `<span class="font-mono text-xs text-foreground">${val ?? '—'}</span>`
 		},
 		{
 			key: 'last_vacuum',
 			label: t('db.last_vacuum'),
 			sortable: true,
-			class: 'text-right',
+			class: 'text-end',
 			render: (val) => `<span class="text-xs text-muted-foreground">${escapeHtml(formatVacuum(val as string | null))}</span>`
 		}
 	];
@@ -199,7 +199,7 @@
 			key: 'duration_ms',
 			label: t('db.duration'),
 			sortable: true,
-			class: 'text-right',
+			class: 'text-end',
 			render: (val) => {
 				const ms = val as number;
 				const danger = ms > 1000;
@@ -210,7 +210,7 @@
 			key: 'timestamp',
 			label: t('db.timestamp'),
 			sortable: true,
-			class: 'text-right',
+			class: 'text-end',
 			render: (val) => `<span class="text-xs text-muted-foreground">${escapeHtml(formatTimestamp(val as string))}</span>`
 		}
 	];
@@ -329,7 +329,7 @@
 	<div class="flex items-center gap-3">
 		<p class="text-xs text-muted-foreground">
 			{t('db.last_updated').replace('{time}', lastRefresh.toLocaleTimeString())}
-			<span class="ml-2">({t('db.seconds_ago', '{seconds}s ago').replace('{seconds}', String(secondsAgo))})</span>
+			<span class="ms-2">({t('db.seconds_ago', '{seconds}s ago').replace('{seconds}', String(secondsAgo))})</span>
 		</p>
 		<span class="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent-foreground">
 			{t('db.auto_refresh')}

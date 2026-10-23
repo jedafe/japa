@@ -4,7 +4,7 @@
 	// SlideOver, bulkActionsList). Tabbed page (all/drafts/sent); keeps
 	// page-local Modals for create broadcast (form) and send confirmation.
 	// View detail opens in a SlideOver.
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
@@ -103,7 +103,7 @@
 		{
 			key: 'sent_at',
 			label: t('broadcasts.column_sent', 'Sent'),
-			render: (v: string) => (v ? new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '<span class="text-muted">—</span>')
+			render: (v: string) => (v ? new Date(v).toLocaleDateString(locale.current, { year: 'numeric', month: 'short', day: 'numeric' }) : '<span class="text-muted">—</span>')
 		}
 	];
 
@@ -276,7 +276,7 @@
 	<div class="flex justify-end gap-3 pt-4">
 		<Button variant="outline" onclick={() => (showSendModal = false)}>{t('broadcasts.cancel', 'Cancel')}</Button>
 		<Button onclick={sendBroadcast} disabled={sending}>
-			<Send class="mr-2 h-4 w-4" />
+			<Send class="me-2 h-4 w-4 rtl:-scale-x-100" />
 			{sending ? t('broadcasts.sending', 'Sending...') : t('broadcasts.send_now', 'Send Now')}
 		</Button>
 	</div>
@@ -311,7 +311,7 @@
 			{#if canManage && viewTarget?.status === 'draft'}
 				{@const bt = viewTarget}
 				<Button onclick={() => { showViewSlideOver = false; confirmSend(bt); }}>
-					<Send class="mr-1 h-3.5 w-3.5" /> {t('common.send', 'Send')}
+					<Send class="me-1 h-3.5 w-3.5 rtl:-scale-x-100" /> {t('common.send', 'Send')}
 				</Button>
 			{/if}
 			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('common.close', 'Close')}</Button>

@@ -80,14 +80,14 @@
       <button
         onclick={prev}
         aria-label="Previous slide"
-        class="absolute left-2 top-1/2 z-20 -translate-y-1/2 rounded-full bg-[var(--color-surface)] p-2 shadow-md hover:bg-[var(--color-surface-subtle)]"
+        class="absolute start-2 top-1/2 z-20 -translate-y-1/2 rounded-full bg-[var(--color-surface)] p-2 shadow-md hover:bg-[var(--color-surface-subtle)]"
       >
         &#8592;
       </button>
       <button
         onclick={next}
         aria-label="Next slide"
-        class="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-full bg-[var(--color-surface)] p-2 shadow-md hover:bg-[var(--color-surface-subtle)]"
+        class="absolute end-2 top-1/2 z-20 -translate-y-1/2 rounded-full bg-[var(--color-surface)] p-2 shadow-md hover:bg-[var(--color-surface-subtle)]"
       >
         &#8594;
       </button>

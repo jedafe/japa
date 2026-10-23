@@ -705,14 +705,23 @@ WHERE ($2::text = '' OR ce.language = $2)
  -- rows, members rows when authenticated, private rows when privileged, and
  -- private space/forum_thread rows for approved member spaces. Mirrors the
  -- content.visibility contract used by ListContents.
+ -- F-009: space-scoped entities ('space','forum_thread') inherit SPACE
+ -- visibility, where 'members' means space-members-only — NOT the
+ -- platform-member semantics of content.visibility. Their 'members' chunks
+ -- therefore also require an approved membership, or members-space thread
+ -- bodies would leak through retrieval to any authenticated user.
  AND (
  ce.visibility = 'public'
  OR ce.author_id = $3
- OR (ce.visibility = 'members' AND $3::uuid IS NOT NULL)
- OR (ce.visibility = 'private' AND $4::boolean)
+ OR (ce.visibility = 'members' AND $3::uuid IS NOT NULL
+ AND (
+ ce.entity_type NOT IN ('space','forum_thread')
+ OR ce.space_id = ANY($4::uuid[])
+ ))
+ OR (ce.visibility = 'private' AND $5::boolean)
  OR (ce.entity_type IN ('space','forum_thread')
  AND ce.visibility = 'private'
- AND ce.space_id = ANY($5::uuid[]))
+ AND ce.space_id = ANY($4::uuid[]))
  )
 ORDER BY ce.embedding <=> $1
 LIMIT $6
@@ -722,8 +731,8 @@ type SearchContentEmbeddingsParams struct {
 	QueryEmbedding *pgvector_go.Vector `json:"query_embedding"`
 	Language       string              `json:"language"`
 	ViewerID       pgtype.UUID         `json:"viewer_id"`
-	CanSeePrivate  bool                `json:"can_see_private"`
 	MemberSpaceIds []pgtype.UUID       `json:"member_space_ids"`
+	CanSeePrivate  bool                `json:"can_see_private"`
 	TopK           int32               `json:"top_k"`
 }
 
@@ -774,8 +783,8 @@ func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContent
 		arg.QueryEmbedding,
 		arg.Language,
 		arg.ViewerID,
-		arg.CanSeePrivate,
 		arg.MemberSpaceIds,
+		arg.CanSeePrivate,
 		arg.TopK,
 	)
 	if err != nil {

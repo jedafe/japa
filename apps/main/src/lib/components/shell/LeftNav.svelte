@@ -160,15 +160,15 @@
 		<Icon size={16} strokeWidth={active ? 2.2 : 1.9} />
 		{#if badge > 0}
 			<span
-				class="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
-				aria-label="{badge} unread"
+				class="absolute -end-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
+				aria-label={t('a11y.unread_count', '{count} unread', { count: badge })}
 			>{badge > 99 ? '99+' : badge}</span>
 		{/if}
 	</span>
 {/snippet}
 
 <nav
-	class="flex h-full w-full flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]"
+	class="flex h-full w-full flex-col border-e border-[var(--color-border)] bg-[var(--color-surface)]"
 	aria-label={t('a11y.main_nav')}
 >
 	<!-- Logo + collapse toggle. With showBrand=false the row shrinks to
@@ -201,7 +201,7 @@
 					class={clsx(
 						'grid h-8 w-8 place-items-center rounded-[var(--radius)] transition-colors hover:bg-[var(--color-surface-subtle)]',
 						pinned ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]',
-						showBrand && 'ml-auto'
+						showBrand && 'ms-auto'
 					)}
 					aria-label={pinned ? t('nav.collapse') : t('nav.pin', 'Pin navigation open')}
 					aria-pressed={pinned}
@@ -224,7 +224,7 @@
 			class="mx-auto mb-1 grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 			aria-label={t('nav.expand')}
 		>
-			<PanelLeftOpen size={18} />
+			<PanelLeftOpen class="rtl:-scale-x-100" size={18} />
 		</button>
 	{/if}
 
@@ -385,7 +385,7 @@
 					{/each}
 				</div>
 				<UiMenuSeparator />
-				<UiMenuItem href="/discover?tab=spaces" icon={ExternalLink} class="font-medium text-[var(--color-primary)]">
+				<UiMenuItem href="/discover?tab=spaces" icon={ExternalLink} iconClass="rtl:-scale-x-100" class="font-medium text-[var(--color-primary)]">
 					{t('nav.space_switcher_browse')}
 				</UiMenuItem>
 			</UiMenu>
@@ -442,7 +442,7 @@
 	 * items list's overflow-y-auto clipping; left tracks the rail width. */
 	.nav-label-flyout {
 		position: fixed;
-		left: calc(var(--nav-width-collapsed) + 10px);
+		inset-inline-start: calc(var(--nav-width-collapsed) + 10px);
 		z-index: 60;
 		max-width: 16rem;
 		overflow: hidden;

@@ -28,6 +28,10 @@ export const routeFeatureFlags: Map<string, string | string[]> = new Map<
 	// Content features
 	['/blog', 'feature.blog'],
 	['/forum', 'feature.forum'],
+	// §14 list amendment — hides any seeded /lists nav item when the type is
+	// off; /list covers the singular family for completeness.
+	['/lists', 'list.enabled'],
+	['/list', 'list.enabled'],
 	// Social features
 	['/notifications', 'feature.notifications'],
 	// The bookings/mentorship inboxes live under /messages but are NOT

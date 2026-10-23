@@ -3,7 +3,7 @@
 	import { api } from '$lib/api/client';
 	import { mainAppUrl, buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -207,7 +207,7 @@
 
 	function formatDateTime(iso: string | null | undefined): string {
 		if (!iso) return '—';
-		return new Date(iso).toLocaleString('en-US', {
+		return new Date(iso).toLocaleString(i18n.locale, {
 			month: 'short',
 			day: 'numeric',
 			hour: '2-digit',

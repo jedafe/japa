@@ -666,7 +666,7 @@
 						<Package size={16} />
 						{t('services.booking_section', 'Booking & pricing')}
 						{#if svc.org_name}
-							<span class="ml-auto text-xs font-normal text-[var(--color-muted)]">{svc.org_name}</span>
+							<span class="ms-auto text-xs font-normal text-[var(--color-muted)]">{svc.org_name}</span>
 						{/if}
 					</h2>
 

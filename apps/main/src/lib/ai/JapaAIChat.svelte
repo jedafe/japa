@@ -1563,7 +1563,7 @@
 	<aside
 		class="w-full lg:w-64 lg:shrink-0 {sidebarOpen
 			? 'flex'
-			: 'hidden lg:flex'} lg:ml-4 max-h-[50vh] lg:max-h-full flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
+			: 'hidden lg:flex'} lg:ms-4 max-h-[50vh] lg:max-h-full flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
 	>
 		<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
 			<h2 class="text-sm font-semibold text-[var(--color-text)]">{t('ai.chat.history', 'Conversations')}</h2>
@@ -1608,18 +1608,18 @@
 								<button
 									type="button"
 									onclick={() => toggleProjectCollapsed(proj.id)}
-									class="flex w-full items-center gap-1.5 rounded-[var(--radius)] px-2 py-1.5 text-left text-xs font-semibold text-[var(--color-muted)] hover:text-[var(--color-text)]"
+									class="flex w-full items-center gap-1.5 rounded-[var(--radius)] px-2 py-1.5 text-start text-xs font-semibold text-[var(--color-muted)] hover:text-[var(--color-text)]"
 								>
 									{#if collapsedProjects.has(proj.id)}
-										<ChevronRight size={12} />
+										<ChevronRight class="rtl:-scale-x-100" size={12} />
 									{:else}
 										<ChevronDown size={12} />
 									{/if}
 									<Folder size={13} class="shrink-0" />
 									<span class="truncate">{proj.name}</span>
-									<span class="ml-auto shrink-0 pr-5">{members.length}</span>
+									<span class="ms-auto shrink-0 pe-5">{members.length}</span>
 								</button>
-								<div class="absolute right-1 top-1 opacity-0 transition-opacity group-hover/proj:opacity-100 group-focus-within/proj:opacity-100">
+								<div class="absolute end-1 top-1 opacity-0 transition-opacity group-hover/proj:opacity-100 group-focus-within/proj:opacity-100">
 									<button
 										type="button"
 										onclick={(e) => {
@@ -1634,7 +1634,7 @@
 									</button>
 									{#if projMenuFor === proj.id}
 										<div
-											class="absolute right-0 top-6 z-30 w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+											class="absolute end-0 top-6 z-30 w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
 											role="menu"
 										>
 											<button
@@ -1644,7 +1644,7 @@
 													projMenuFor = null;
 													startNewChatInProject(proj);
 												}}
-												class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+												class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 											>
 												<Plus size={12} class="shrink-0 text-[var(--color-muted)]" />
 												<span class="flex-1 truncate">{t('ai.projects.new_chat', 'New chat in project')}</span>
@@ -1656,7 +1656,7 @@
 													projMenuFor = null;
 													openProjectDialog(proj);
 												}}
-												class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+												class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 											>
 												<Pencil size={12} class="shrink-0 text-[var(--color-muted)]" />
 												<span class="flex-1 truncate">{t('ai.projects.edit', 'Edit project')}</span>
@@ -1669,7 +1669,7 @@
 													projMenuFor = null;
 													deleteProject(proj);
 												}}
-												class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
+												class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
 											>
 												<Trash2 size={12} class="shrink-0" />
 												<span class="flex-1 truncate">{t('ai.projects.delete', 'Delete project')}</span>
@@ -1680,7 +1680,7 @@
 							</div>
 							{#if !collapsedProjects.has(proj.id)}
 								{#if members.length > 0}
-									<ul class="ml-3 space-y-1 border-l border-[var(--color-border)] pl-2">
+									<ul class="ms-3 space-y-1 border-s border-[var(--color-border)] ps-2">
 										{#each members as conv (conv.conversation_id)}
 											{@render convItem(conv)}
 										{/each}
@@ -1711,7 +1711,7 @@
 			<button
 				type="button"
 				onclick={() => loadConversation(conv.conversation_id)}
-				class="w-full rounded-[var(--radius)] px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {conversationId === conv.conversation_id ? 'bg-[var(--color-primary)]/10 font-medium' : ''}"
+				class="w-full rounded-[var(--radius)] px-3 py-2 text-start text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {conversationId === conv.conversation_id ? 'bg-[var(--color-primary)]/10 font-medium' : ''}"
 			>
 				<div class="flex items-center gap-1.5">
 					<span class="truncate">{conv.title || conv.preview || t('ai.chat.unnamed', 'Conversation')}</span>
@@ -1735,7 +1735,7 @@
 						moveSubOpen = false;
 						moveMenuFor = moveMenuFor === conv.conversation_id ? null : conv.conversation_id;
 					}}
-					class="absolute right-1.5 top-1.5 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-text)] focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+					class="absolute end-1.5 top-1.5 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-text)] focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
 					aria-label={t('ai.chat.more_actions', 'More actions')}
 					title={t('ai.chat.more_actions', 'More actions')}
 				>
@@ -1743,19 +1743,19 @@
 				</button>
 				{#if moveMenuFor === conv.conversation_id}
 					<div
-						class="absolute right-0 top-8 z-30 w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+						class="absolute end-0 top-8 z-30 w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
 						role="menu"
 					>
 						<button
 							type="button"
 							onclick={toggleMoveSub}
-							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 							aria-haspopup="menu"
 							aria-expanded={moveSubOpen}
 						>
 							<FolderInput size={12} class="shrink-0 text-[var(--color-muted)]" />
 							<span class="flex-1 truncate">{t('ai.projects.move', 'Move to project')}</span>
-							<ChevronRight size={11} class="shrink-0 text-[var(--color-muted)]" />
+							<ChevronRight size={11} class="shrink-0 text-[var(--color-muted)] rtl:-scale-x-100" />
 						</button>
 						{#if conv.project_id}
 							<button
@@ -1764,7 +1764,7 @@
 									e.stopPropagation();
 									assignProject(conv.conversation_id, null);
 								}}
-								class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 							>
 								<FolderOutput size={12} class="shrink-0 text-[var(--color-muted)]" />
 								<span class="flex-1 truncate">{t('ai.projects.remove', 'Remove from project')}</span>
@@ -1777,7 +1777,7 @@
 								e.stopPropagation();
 								deleteConversation(conv.conversation_id);
 							}}
-							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
+							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
 						>
 							<Trash2 size={12} class="shrink-0" />
 							<span class="flex-1 truncate">{t('ai.chat.delete', 'Delete conversation')}</span>
@@ -1786,7 +1786,7 @@
 					{#if moveSubOpen}
 						<div
 							class="fixed z-40 w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
-							style="top: {flyoutPos?.top ?? 0}px; left: {flyoutPos?.left ?? 0}px"
+							style="top: {flyoutPos?.top ?? 0}px; inset-inline-start: {flyoutPos?.left ?? 0}px"
 							role="menu"
 						>
 							<button
@@ -1797,7 +1797,7 @@
 									moveSubOpen = false;
 									openProjectDialog('create');
 								}}
-								class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 							>
 								<Plus size={12} class="shrink-0 text-[var(--color-muted)]" />
 								<span class="flex-1 truncate">{t('ai.projects.new', 'New project')}</span>
@@ -1812,7 +1812,7 @@
 										e.stopPropagation();
 										assignProject(conv.conversation_id, p.id);
 									}}
-									class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-[var(--color-surface-subtle)] {conv.project_id === p.id ? 'font-medium text-[var(--color-primary)]' : 'text-[var(--color-text)]'}"
+									class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs hover:bg-[var(--color-surface-subtle)] {conv.project_id === p.id ? 'font-medium text-[var(--color-primary)]' : 'text-[var(--color-text)]'}"
 								>
 									<Folder size={11} class="shrink-0 text-[var(--color-muted)]" />
 									<span class="flex-1 truncate">{p.name}</span>
@@ -1833,7 +1833,7 @@
 			<button
 				type="button"
 				onclick={() => (sidebarOpen = !sidebarOpen)}
-				class="mr-2 inline-flex items-center gap-1 text-sm text-[var(--color-muted)] lg:hidden"
+				class="me-2 inline-flex items-center gap-1 text-sm text-[var(--color-muted)] lg:hidden"
 				aria-label={t('ai.chat.toggle_history', 'Toggle conversation history')}
 			>
 				{#if sidebarOpen}
@@ -1853,7 +1853,7 @@
 						: t('ai.chat.subtitle', 'Your AI assistant')}
 				</p>
 			</div>
-			<div class="ml-auto flex items-center gap-2">
+			<div class="ms-auto flex items-center gap-2">
 				{#if activeProject}
 					<span
 						class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)]"
@@ -1887,7 +1887,7 @@
 							: 'border-color: var(--color-border); color: var(--color-muted)'}
 						title={t('ai.templates.toggle', 'Chat templates')}
 					>
-						<PanelRight size={13} />
+						<PanelRight class="rtl:-scale-x-100" size={13} />
 						<span class="hidden sm:inline">{t('ai.templates.title', 'Templates')}</span>
 					</button>
 				{/if}
@@ -1911,7 +1911,7 @@
 									await tick();
 									send();
 								}}
-								class="rounded-lg border p-3 text-left text-sm transition-colors hover:border-[var(--color-primary)]"
+								class="rounded-lg border p-3 text-start text-sm transition-colors hover:border-[var(--color-primary)]"
 								style="border-color: var(--color-border); background-color: var(--color-surface-subtle); color: var(--color-muted)"
 							>
 								{suggestion}
@@ -1937,7 +1937,7 @@
 									<button
 										type="button"
 										onclick={() => copyTurn(turn)}
-										class="absolute -left-9 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--color-muted)_15%,transparent)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100"
+										class="absolute -start-9 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--color-muted)_15%,transparent)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100"
 										aria-label={t('common.copy', 'Copy')}
 										title={t('common.copy', 'Copy')}
 									>
@@ -2001,7 +2001,7 @@
 													<Icon size={12} style="color: var(--color-muted)" />
 													<span class="font-mono font-medium">{tc.tool_name}</span>
 													<span
-														class="ml-auto inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium"
+														class="ms-auto inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium"
 														style="background-color: color-mix(in srgb, {statusColor(tc.status)} 12%, transparent); color: {statusColor(tc.status)}"
 													>
 														{#if tc.status === 'pending'}
@@ -2088,7 +2088,7 @@
 										<button
 											type="button"
 											onclick={() => copyTurn(turn)}
-											class="ml-1 rounded-md p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--color-muted)_15%,transparent)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100"
+											class="ms-1 rounded-md p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--color-muted)_15%,transparent)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100"
 											aria-label={t('common.copy', 'Copy')}
 											title={t('common.copy', 'Copy')}
 										>
@@ -2210,7 +2210,7 @@
 						     capped so the popover can't overflow the composer on
 						     narrow viewports. -->
 						<div
-							class="absolute bottom-full left-0 z-20 mb-2 w-72 max-w-[calc(100vw-2.5rem)] rounded-lg border p-3 shadow-lg"
+							class="absolute bottom-full start-0 z-20 mb-2 w-72 max-w-[calc(100vw-2.5rem)] rounded-lg border p-3 shadow-lg"
 							style="border-color: var(--color-border); background-color: var(--color-surface)"
 						>
 							<div class="mb-2 flex items-center justify-between">
@@ -2246,11 +2246,11 @@
 											>
 												<SlidersHorizontal size={11} style="color: var(--color-muted)" />
 												{cat.name}
-												<span class="ml-auto" style="color: var(--color-muted)">
+												<span class="ms-auto" style="color: var(--color-muted)">
 													{cat.tools.filter((tl) => toolEnabled[tl.name]).length}/{cat.tools.length}
 												</span>
 											</button>
-											<div class="mt-1 space-y-0.5 pl-4">
+											<div class="mt-1 space-y-0.5 ps-4">
 												{#each cat.tools as tool (tool.name)}
 													{@const locked = !prefsAllows(tool.name, cat.name)}
 													<label class="flex items-center gap-1.5 text-xs {locked ? 'opacity-50' : 'cursor-pointer'}" style="color: var(--color-muted)">
@@ -2307,7 +2307,7 @@
 					type="button"
 					onclick={cancel}
 					disabled={cancelling}
-					class="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-full border transition-colors disabled:opacity-50 sm:ml-0"
+					class="ms-auto grid h-8 w-8 shrink-0 place-items-center rounded-full border transition-colors disabled:opacity-50 sm:ms-0"
 					style="border-color: var(--color-danger); color: var(--color-danger)"
 					aria-label={t('ai.agent.cancel', 'Cancel')}
 					title={t('ai.agent.cancel', 'Cancel')}
@@ -2323,7 +2323,7 @@
 					type="button"
 					onclick={send}
 					disabled={!input.trim() || viewingLegacy}
-					class="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-full text-white transition-colors disabled:opacity-40 sm:ml-0"
+					class="ms-auto grid h-8 w-8 shrink-0 place-items-center rounded-full text-white transition-colors disabled:opacity-40 sm:ms-0"
 					style="background-color: var(--color-primary)"
 					aria-label={t('ai.chat.send', 'Send')}
 				>
@@ -2341,7 +2341,7 @@
 	{#if templatePanelOpen && toolsOn}
 		<div
 			data-template-rail
-			class="fixed inset-y-0 right-0 z-40 flex w-[21rem] max-w-[90vw] lg:static lg:z-auto lg:mr-4 lg:w-72 lg:shrink-0 xl:w-80"
+			class="fixed inset-y-0 end-0 z-40 flex w-[21rem] max-w-[90vw] lg:static lg:z-auto lg:me-4 lg:w-72 lg:shrink-0 xl:w-80"
 		>
 			<ChatTemplatePanel
 				{templates}

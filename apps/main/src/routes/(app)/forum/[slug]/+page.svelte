@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
@@ -7,7 +8,7 @@
 	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus, MoreVertical } from 'lucide-svelte';
 	import { Modal, Menu, MenuItem, MenuSeparator } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
-	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
+	import { encodeTiptapDoc, tiptapBodyToHtml, tiptapExcerpt, type TipTapDoc } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
@@ -98,23 +99,25 @@ import { contentHref } from '$lib/utils/contentLink';
 	);
 
 	// Solve / un-solve (OP or moderator only — backend enforces the permission).
-	let solved = $state(false);
+	// Seed from SSR props — $state(false)+$effect would render the unsolved
+	// label until hydration ran (effects don't run during SSR).
+	let solved = $state(untrack(() => thread.solved));
 	let solving = $state(false);
 
-	// Sync the solved flag from the server payload on mount and on navigation.
+	// Sync the solved flag from the server payload on client-side navigation.
 	$effect(() => {
 		solved = thread.solved;
 	});
 
-	let acceptedReplyId = $state<string | null>(null);
+	let acceptedReplyId = $state<string | null>(untrack(() => data.acceptedReplyId));
 	$effect(() => {
 		acceptedReplyId = data.acceptedReplyId;
 	});
 
 	// Tag management — tags are universal (Sections 08/14). Attach/detach go
-	// through the thread tag endpoints: POST /forum/{id}/tags {tag_ids}
-	// and DELETE /forum/{id}/tags/{tagId} (cap errors surface too_many_tags).
-	const canManageTags = $derived(data.authed && (data.canEdit || data.canModerate));
+	// through the backing content row: POST /content/{id}/tags {tag_slugs}
+	// and DELETE /content/{id}/tags/{tagId} (cap errors surface too_many_tags).
+	const canManageTags = $derived(data.authed && (data.canEdit || data.canModerate) && !!thread.content_id);
 	const tagSlotsLeft = $derived(Math.max(0, 5 - (data.tags?.length ?? 0)));
 	let addingTags = $state(false);
 	let newTagSlugs = $state<string[]>([]);
@@ -123,12 +126,15 @@ import { contentHref } from '$lib/utils/contentLink';
 	let removingTagId = $state<string | null>(null);
 
 	async function saveTags() {
-		if (tagSaving || newTagSlugs.length === 0) return;
+		if (tagSaving || newTagSlugs.length === 0 || !thread.content_id) return;
 		tagSaving = true;
 		tagError = null;
-		// Thread tags attach via POST /forum/{id}/tags {tag_ids} (single +
-		// bulk paths enforce the per-thread cap with too_many_tags).
-		const res = await api.post(`/forum/${thread.id}/tags`, { tag_ids: newTagSlugs });
+		// Tags are universal (Sections 08/14): the composer's tag flow uses
+		// POST /content/{id}/tags {tag_slugs} — get-or-creates missing slugs
+		// server-side and enforces the per-content cap with too_many_tags.
+		// The /forum/{id}/tags bulk endpoint takes UUIDs and requires
+		// forum.tag.assign, so it cannot serve author-typed slugs.
+		const res = await api.post(`/content/${thread.content_id}/tags`, { tag_slugs: newTagSlugs });
 		tagSaving = false;
 		if (res.error) {
 			tagError =
@@ -143,9 +149,12 @@ import { contentHref } from '$lib/utils/contentLink';
 	}
 
 	async function removeTag(tagId: string) {
-		if (removingTagId) return;
+		if (removingTagId || !thread.content_id) return;
 		removingTagId = tagId;
-		const res = await api.delete(`/forum/${thread.id}/tags/${tagId}`);
+		// Universal content detach (Section 14) — accepts the tag UUID and is
+		// available to the content author (content.edit_own), unlike the
+		// forum.tag.assign-gated forum endpoint.
+		const res = await api.delete(`/content/${thread.content_id}/tags/${tagId}`);
 		removingTagId = null;
 		if (res.error) {
 			tagError =
@@ -236,10 +245,11 @@ import { contentHref } from '$lib/utils/contentLink';
 	// Bookmark toggle — POST/DELETE /forum/bookmarks with entity_type=thread.
 	// The backend returns bookmark_id on GetThread so DELETE can target
 	// /forum/bookmarks/{id} directly. Ref: sections/08-forum-qa-solved.md (Bookmarks)
-	let bookmarked = $state(false);
+	// Seed from SSR props (same hydration-flash fix as `solved` above).
+	let bookmarked = $state(untrack(() => data.isBookmarked));
 	let bookmarking = $state(false);
-	let bookmarkCount = $state(0);
-	let bookmarkId = $state('');
+	let bookmarkCount = $state(untrack(() => thread.bookmark_count));
+	let bookmarkId = $state(untrack(() => data.bookmarkId ?? ''));
 
 	$effect(() => {
 		bookmarked = data.isBookmarked;
@@ -248,7 +258,9 @@ import { contentHref } from '$lib/utils/contentLink';
 	});
 
 	async function toggleBookmark() {
-		if (!data.authed || bookmarking) return;
+		if (bookmarking) return;
+		// Guests can click — redirect to /login with a return-to param.
+		if (!(await requireAuthOrRedirect())) return;
 		bookmarking = true;
 		const wasBookmarked = bookmarked;
 		const prevCount = bookmarkCount;
@@ -381,7 +393,8 @@ import { contentHref } from '$lib/utils/contentLink';
 		editing = true;
 		// Fetch the raw (unresolved) thread so {{...}} literals authored via the
 		// token picker survive a re-save — the display payload is resolved.
-		const res = await api.get<ForumThread>(`/forum/${thread.id}?raw=1`);
+		// GET /forum/{slug} resolves by slug, not id — passing the UUID 404s.
+		const res = await api.get<ForumThread>(`/forum/${thread.slug}?raw=1`);
 		if (!editing || !res.data) return;
 		editTitle = res.data.title;
 		editBodyHtml = tiptapBodyToHtml(res.data.body, {
@@ -398,9 +411,17 @@ import { contentHref } from '$lib/utils/contentLink';
 
 	// Edit window (edit_window_minutes) — authors see a countdown; the menu
 	// edit entry disables once the window lapses (moderators bypass it).
+	// `now` ticks so the countdown and expiry flip live on a long-lived page.
+	let now = $state(Date.now());
+	$effect(() => {
+		const timer = setInterval(() => {
+			now = Date.now();
+		}, 30_000);
+		return () => clearInterval(timer);
+	});
 	const editWindowMs = $derived((thread.edit_window_minutes ?? 30) * 60 * 1000);
 	const editExpiresAt = $derived(new Date(thread.created_at).getTime() + editWindowMs);
-	const editMsLeft = $derived(editExpiresAt - Date.now());
+	const editMsLeft = $derived(editExpiresAt - now);
 	const editWindowExpired = $derived(editMsLeft <= 0);
 	const editCountdown = $derived.by(() => {
 		if (editMsLeft <= 0) return '';
@@ -416,7 +437,7 @@ import { contentHref } from '$lib/utils/contentLink';
 		editError = null;
 		const res = await api.patch<ForumThread>(`/forum/${thread.id}`, {
 			title: editTitle.trim(),
-			body: btoa(JSON.stringify(editBodyJson)),
+			body: encodeTiptapDoc(editBodyJson as unknown as TipTapDoc),
 			is_anonymous: editAnonymous
 		});
 		savingEdit = false;
@@ -468,7 +489,7 @@ import { contentHref } from '$lib/utils/contentLink';
 		href="/forum"
 		class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft size={16} /> {t('forum.back', 'Back to forum')}
+		<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('forum.back', 'Back to forum')}
 	</a>
 
 	<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6">
@@ -538,7 +559,7 @@ import { contentHref } from '$lib/utils/contentLink';
 						</span>
 					{/if}
 
-					<div class="ml-auto flex flex-wrap items-center gap-2">
+					<div class="ms-auto flex flex-wrap items-center gap-2">
 						{#if solved}
 							<span
 								class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-success)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--color-success)]"
@@ -777,7 +798,7 @@ import { contentHref } from '$lib/utils/contentLink';
 			<button
 				type="button"
 				onclick={toggleBookmark}
-				disabled={!data.authed || bookmarking}
+				disabled={bookmarking}
 				class="flex flex-1 items-center justify-center transition-colors disabled:cursor-not-allowed disabled:opacity-50"
 				aria-pressed={bookmarked}
 				title={data.authed ? (bookmarked ? t('forum.remove_bookmark', 'Remove bookmark') : t('forum.add_bookmark', 'Bookmark this discussion')) : t('forum.login_to_bookmark', 'Log in to bookmark')}

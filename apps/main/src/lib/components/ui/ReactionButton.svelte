@@ -231,7 +231,7 @@
 							disabled={!!reactionPending}
 						>
 							<span class="text-lg">{r.emoji}</span>
-							<span class="flex-1 truncate text-left">{r.label}</span>
+							<span class="flex-1 truncate text-start">{r.label}</span>
 							<span class="text-xs text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
 								{cnt > 0 ? cnt : ''}
 							</span>

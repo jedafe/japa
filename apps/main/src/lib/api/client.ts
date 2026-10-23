@@ -1,5 +1,6 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { page } from '$app/state';
+import { untrack } from 'svelte';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
 import { getAccessToken, seedAccessToken, clearAccessToken } from '$lib/api/token.svelte';
 import { buildApiUrl } from '@japaconnect/api-url';
@@ -90,7 +91,10 @@ async function refreshSession(): Promise<boolean> {
 }
 
 function withCsrfHeader(method: string, headers: Record<string, string>): Record<string, string> {
-	const token = getCsrfToken();
+	// untrack: credential stores are $state, and a synchronous read inside a
+	// caller's $effect would subscribe the effect to token rotation — a
+	// seed/refresh then re-fires the effect (duplicate fetches).
+	const token = untrack(getCsrfToken);
 	if (MUTATING_METHODS.has(method.toUpperCase()) && token) {
 		return { ...headers, 'x-csrf-token': token };
 	}
@@ -125,7 +129,7 @@ async function clientFetchRaw<T>(
 	// anyway. The in-memory token (seeded from SSR page data / refresh)
 	// is the browser's credential. Bearer also makes the request CSRF-exempt
 	// (IsNonCookieAuthenticated) since cross-site callers can't forge headers.
-	const accessToken = getAccessToken();
+	const accessToken = untrack(getAccessToken);
 	if (accessToken && !('authorization' in baseHeaders) && !('Authorization' in baseHeaders)) {
 		baseHeaders['authorization'] = `Bearer ${accessToken}`;
 	}

@@ -170,10 +170,19 @@ WHERE (@language::text = '' OR ce.language = @language)
  -- rows, members rows when authenticated, private rows when privileged, and
  -- private space/forum_thread rows for approved member spaces. Mirrors the
  -- content.visibility contract used by ListContents.
+ -- F-009: space-scoped entities ('space','forum_thread') inherit SPACE
+ -- visibility, where 'members' means space-members-only — NOT the
+ -- platform-member semantics of content.visibility. Their 'members' chunks
+ -- therefore also require an approved membership, or members-space thread
+ -- bodies would leak through retrieval to any authenticated user.
  AND (
  ce.visibility = 'public'
  OR ce.author_id = @viewer_id
- OR (ce.visibility = 'members' AND @viewer_id::uuid IS NOT NULL)
+ OR (ce.visibility = 'members' AND @viewer_id::uuid IS NOT NULL
+ AND (
+ ce.entity_type NOT IN ('space','forum_thread')
+ OR ce.space_id = ANY(@member_space_ids::uuid[])
+ ))
  OR (ce.visibility = 'private' AND @can_see_private::boolean)
  OR (ce.entity_type IN ('space','forum_thread')
  AND ce.visibility = 'private'

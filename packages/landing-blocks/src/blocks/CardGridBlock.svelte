@@ -100,7 +100,7 @@
 
               <!-- Wave overlay -->
               <svg
-                class="absolute -bottom-1 left-0 right-0 h-28 w-full"
+                class="absolute -bottom-1 start-0 end-0 h-28 w-full"
                 viewBox="0 0 400 120"
                 preserveAspectRatio="none"
                 aria-hidden="true"
@@ -142,7 +142,7 @@
                   >
                     {card.cta.label}
                     {#if ArrowRight}
-                      <ArrowRight size={14} />
+                      <ArrowRight class="rtl:-scale-x-100" size={14} />
                     {:else}
                       <span aria-hidden="true">&#8594;</span>
                     {/if}

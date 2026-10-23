@@ -109,7 +109,7 @@
 					href="/"
 					class="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs text-white/90 no-underline backdrop-blur-sm transition hover:bg-white/20"
 				>
-					<ArrowLeft size={12} />
+					<ArrowLeft class="rtl:-scale-x-100" size={12} />
 					{t('auth.brand.back_home')}
 				</a>
 			</div>
@@ -145,7 +145,7 @@
 							class="h-0.5 rounded-full transition-all duration-300 {activeSlide === i
 								? 'w-6 bg-white'
 								: 'w-3 bg-white/20 hover:bg-white/40'}"
-							aria-label="Slide {i + 1}"
+							aria-label={t('a11y.slide', 'Slide {n}', { n: i + 1 })}
 						></button>
 					{/each}
 				</div>

@@ -226,7 +226,7 @@
 			slug={m.username}
 			name={m.display_name ?? m.username ?? ''}
 			avatar={m.avatar_url}
-			class="inline-flex w-full min-w-0 max-w-full items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+			class="inline-flex w-full min-w-0 max-w-full items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
 			{#snippet trigger()}
 				<span class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">

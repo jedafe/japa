@@ -65,7 +65,7 @@
 	const Icon = $derived(milestoneIcon(achievement.milestone_type as AchievementMilestoneType));
 	const isAnon = $derived(achievement.is_anonymous);
 	const createdDate = $derived(
-		new Date(achievement.created_at).toLocaleDateString(undefined, {
+		new Date(achievement.created_at).toLocaleDateString(i18n.locale, {
 			year: 'numeric',
 			month: 'long',
 			day: 'numeric'
@@ -130,7 +130,7 @@
 		href="/achievements"
 		class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft size={16} /> {t('achievements.back', 'Back to achievements')}
+		<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('achievements.back', 'Back to achievements')}
 	</a>
 
 	<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6">

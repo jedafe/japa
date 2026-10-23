@@ -278,7 +278,7 @@
 				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="stories-filter-panel" />
 			{/if}
 			<PageAction
-				href={data.authed ? '/create?type=story' : '/login?redirect=/create%3Ftype%3Dstory'}
+				href={data.authed ? '/studio/create?type=story' : '/login?redirect=/studio%2Fcreate%3Ftype%3Dstory'}
 				icon={PenSquare}
 				label={t('stories.share', 'Share Your Story')}
 			/>
@@ -391,7 +391,7 @@
 							{/if}
 							<div class="mt-3 flex items-center justify-end text-xs text-[var(--color-text-subtle)]">
 								<span class="flex items-center gap-1 group-hover:text-[var(--color-primary)]">
-									{t('blog_series.view', 'View series')} <ArrowRight size={14} />
+									{t('blog_series.view', 'View series')} <ArrowRight class="rtl:-scale-x-100" size={14} />
 								</span>
 							</div>
 						</a>
@@ -430,8 +430,8 @@
 				title={t('stories.empty', 'No stories yet')}
 				body={t('stories.empty_body', 'Be the first to share your relocation journey.')}
 				action={data.authed
-					? { label: t('stories.share', 'Share Your Story'), href: '/create?type=story' }
-					: { label: t('stories.share', 'Share Your Story'), href: '/login?redirect=/create%3Ftype%3Dstory' }}
+					? { label: t('stories.share', 'Share Your Story'), href: '/studio/create?type=story' }
+					: { label: t('stories.share', 'Share Your Story'), href: '/login?redirect=/studio%2Fcreate%3Ftype%3Dstory' }}
 			/>
 		{:else}
 			<div class="grid gap-3.5 sm:grid-cols-2">

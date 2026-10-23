@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { enhance } from '$app/forms';
@@ -283,7 +283,7 @@
 		if (!iso) return '';
 		const d = new Date(iso);
 		if (isNaN(d.getTime())) return iso;
-		return d.toLocaleDateString(undefined, {
+		return d.toLocaleDateString(i18n.locale, {
 			year: 'numeric',
 			month: 'short',
 			day: 'numeric'
@@ -369,7 +369,7 @@
 				onclick={backToRequirements}
 				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
 			>
-				<ArrowLeft size={16} />
+				<ArrowLeft class="rtl:-scale-x-100" size={16} />
 				{t('language_test.back_to_requirements', 'Back to requirements')}
 			</button>
 
@@ -403,7 +403,7 @@
 							rel="noopener noreferrer"
 							class="mt-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
 						>
-							<ExternalLink size={14} />
+							<ExternalLink class="rtl:-scale-x-100" size={14} />
 							{t('language_test.official_website', 'Official website')}
 						</a>
 					{/if}
@@ -458,7 +458,7 @@
 										class="text-[var(--color-muted)] hover:text-[var(--color-text)] flex-shrink-0"
 										aria-label={t('language_test.open_resource', 'Open resource')}
 									>
-										<ExternalLink size={16} />
+										<ExternalLink class="rtl:-scale-x-100" size={16} />
 									</a>
 								</div>
 							{/each}
@@ -775,7 +775,7 @@
 								<button
 									type="button"
 									onclick={() => selectTest(req.test_slug)}
-									class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors text-left"
+									class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors text-start"
 								>
 									{req.test_name}
 								</button>
@@ -794,7 +794,7 @@
 								class="text-[var(--color-muted)] hover:text-[var(--color-text)] flex-shrink-0"
 								aria-label={t('language_test.view_test', 'View test details')}
 							>
-								<ChevronRight size={20} />
+								<ChevronRight class="rtl:-scale-x-100" size={20} />
 							</button>
 						</div>
 
@@ -820,7 +820,7 @@
 								rel="noopener noreferrer"
 								class="mt-2 inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
 							>
-								<ExternalLink size={12} />
+								<ExternalLink class="rtl:-scale-x-100" size={12} />
 								{t('language_test.source', 'Source')}
 							</a>
 						{/if}
@@ -884,7 +884,7 @@
 					{#each tests as test (test.slug)}
 						<div class="inline-flex items-center">
 							<label
-								class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-l-[var(--radius)] border-r-0 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors cursor-pointer {selectedTestSlugs.has(test.slug) ? 'border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]' : ''}"
+								class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-s-[var(--radius)] border-e-0 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors cursor-pointer {selectedTestSlugs.has(test.slug) ? 'border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]' : ''}"
 							>
 								<input
 									type="checkbox"
@@ -898,10 +898,10 @@
 							<button
 								type="button"
 								onclick={() => selectTest(test.slug)}
-								class="px-2 py-1.5 text-[var(--color-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-r-[var(--radius)] hover:text-[var(--color-text)] transition-colors"
+								class="px-2 py-1.5 text-[var(--color-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-e-[var(--radius)] hover:text-[var(--color-text)] transition-colors"
 								aria-label={t('language_test.view_test', 'View test details')}
 							>
-								<ChevronRight size={16} />
+								<ChevronRight class="rtl:-scale-x-100" size={16} />
 							</button>
 						</div>
 					{/each}
@@ -914,7 +914,7 @@
 		<div class="p-4">
 			<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
 				{t('language_test.sign_in_to_save', 'Create a free account to share your score story or save comparisons.')}
-				<a href="/login" class="ml-1 text-[var(--color-primary)] hover:underline"
+				<a href="/login" class="ms-1 text-[var(--color-primary)] hover:underline"
 					>{t('common.sign_in', 'Sign in')}</a
 				>.
 			</div>

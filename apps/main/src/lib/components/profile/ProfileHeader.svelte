@@ -46,7 +46,7 @@
 		<!-- Overflow actions pinned to the cover's top-right corner; the header
 		     row keeps only primary actions (e.g. Follow) as buttons. -->
 		{#if isOwnProfile || (menuItems && page.data.isAuthed)}
-			<div class="absolute right-3 top-3 z-10">
+			<div class="absolute end-3 top-3 z-10">
 				<Menu>
 					{#snippet trigger(props)}
 						<button
@@ -118,7 +118,7 @@
 			</a>
 			<button
 				type="button"
-				class="ml-auto transition-colors hover:text-[var(--color-text)]"
+				class="ms-auto transition-colors hover:text-[var(--color-text)]"
 				onclick={() => (followersModalOpen = true)}
 			>
 				{(user.follower_count === 1 ? t('profile.followers_one', '{n} follower') : t('profile.followers', '{n} followers')).replace('{n}', String(user.follower_count))}

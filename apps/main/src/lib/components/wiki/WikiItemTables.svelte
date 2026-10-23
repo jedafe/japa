@@ -164,7 +164,7 @@
 				{#if isPriceTable(section.fields)}
 					<table class="w-full text-sm">
 						<thead>
-							<tr class="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
+							<tr class="border-b border-[var(--color-border)] text-start text-xs uppercase tracking-wide text-[var(--color-muted)]">
 								<th class="px-4 py-2 font-medium">{t('wiki.item_col_item', 'Item')}</th>
 								<th class="px-4 py-2 font-medium">{t('wiki.item_col_avg', 'Avg. price')}</th>
 								<th class="px-4 py-2 font-medium">{t('wiki.item_col_range', 'Range')}</th>
@@ -187,7 +187,7 @@
 					     is one row, columns are the declared options.parts. -->
 					<table class="w-full text-sm">
 						<thead>
-							<tr class="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
+							<tr class="border-b border-[var(--color-border)] text-start text-xs uppercase tracking-wide text-[var(--color-muted)]">
 								<th class="px-4 py-2 font-medium">{t('wiki.item_col_item', 'Item')}</th>
 								{#each partsColumns(section.fields) as col (col.key)}
 									<th class="px-4 py-2 font-medium">{col.label || col.key}</th>
@@ -243,7 +243,7 @@
 								<dt class="shrink-0 text-[var(--color-muted)]">
 									{f.label}
 								</dt>
-								<dd class="min-w-0 truncate text-right text-[var(--color-text)]">
+								<dd class="min-w-0 truncate text-end text-[var(--color-text)]">
 									{formatWikiFieldValue(f, currencies, contextCurrency, contextFx)}
 								</dd>
 							</div>

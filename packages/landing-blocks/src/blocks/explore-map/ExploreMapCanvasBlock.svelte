@@ -106,7 +106,7 @@
 
     <!-- Zoom controls + compass -->
     {#if ctx.P.show_zoom}
-      <div class="absolute bottom-4 right-4 flex flex-col items-end gap-2">
+      <div class="absolute bottom-4 end-4 flex flex-col items-end gap-2">
         <div class="flex flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
           <button type="button" aria-label="Zoom in" class="grid h-9 w-9 place-items-center text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]" onclick={() => ctx.zoomBy(0.7)}>
             <LucideIcons.Plus size={15} />
@@ -135,7 +135,7 @@
          placement (bottom-aside mode always forces overlay; mirrors the
          zoom controls on the right). -->
     {#if (ctx.P.aside_position === 'bottom' || ctx.P.stats_position === 'overlay') && ctx.P.show_stats && (ctx.P.stats?.length ?? 0) > 0}
-      <div class="absolute bottom-4 left-4 hidden w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-3 shadow-sm backdrop-blur-sm lg:block">
+      <div class="absolute bottom-4 start-4 hidden w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-3 shadow-sm backdrop-blur-sm lg:block">
         <h3 class="mb-2.5 text-[11px] font-semibold tracking-wide text-[var(--color-muted)]">Quick stats</h3>
         <ul class="space-y-2.5">
           {#each ctx.P.stats ?? [] as stat (stat.label)}

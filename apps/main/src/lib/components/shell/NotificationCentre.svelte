@@ -212,7 +212,7 @@
 			type="button"
 			{...props}
 			class={children
-				? `w-full text-left ${klass}`
+				? `w-full text-start ${klass}`
 				: 'grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}
 			aria-label={t('nav.notifications')}
 		>
@@ -223,7 +223,7 @@
 					<Bell size={18} />
 					{#if badge > 0}
 						<span
-							class="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-0.5 text-[9px] font-semibold text-[var(--color-primary-contrast)]"
+							class="absolute -end-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-0.5 text-[9px] font-semibold text-[var(--color-primary-contrast)]"
 						>{badge > 99 ? '99+' : badge}</span>
 					{/if}
 				</span>
@@ -235,7 +235,7 @@
 				<span class="text-sm font-medium text-[var(--color-text)]">
 					{t('notifications.heading', 'Notifications')}
 					{#if unread > 0}
-						<span class="ml-1 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary-contrast)]">
+						<span class="ms-1 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary-contrast)]">
 							{unread > 99 ? '99+' : unread}
 						</span>
 					{/if}
@@ -287,7 +287,7 @@
 						<button
 							type="button"
 							onclick={() => openNotification(n)}
-							class="flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+							class="flex w-full items-start gap-2 px-3 py-2.5 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<span class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]">
 								<Icon size={13} />

@@ -287,7 +287,7 @@
 				{#if submitting}
 					<Loader2 size={16} class="motion-safe:animate-spin" aria-hidden="true" />
 				{:else}
-					<Send size={16} aria-hidden="true" />
+					<Send class="rtl:-scale-x-100" size={16} aria-hidden="true" />
 				{/if}
 				{t('mentors.send_request', 'Send request')}
 			</button>

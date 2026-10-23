@@ -487,7 +487,7 @@
 										rel="noopener noreferrer nofollow"
 										class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-primary)]"
 									>
-										<ExternalLink size={12} />
+										<ExternalLink class="rtl:-scale-x-100" size={12} />
 										{t('coupons.visit', 'Visit site')}
 									</a>
 								{/if}

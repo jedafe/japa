@@ -418,6 +418,32 @@ func (q *Queries) GetCOLCityByID(ctx context.Context, id pgtype.UUID) (GetCOLCit
 	return i, err
 }
 
+const getCOLCityIDBySpaceSlug = `-- name: GetCOLCityIDBySpaceSlug :one
+
+SELECT ci.id
+FROM comparison_items ci
+JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
+WHERE ci.type_id = (SELECT id FROM comparison_type_definitions
+ WHERE slug = 'cost_of_living'
+ AND is_system = true
+ LIMIT 1)
+ AND ci.deleted_at IS NULL
+ AND s.slug = $1
+LIMIT 1
+`
+
+// =====================================================================
+// Resolve a city's geo-space slug to its cost_of_living comparison item
+// id — lets the compare endpoint accept human-readable slugs
+// (?city_ids=lagos,abuja) alongside UUIDs (shareable URLs).
+// =====================================================================
+func (q *Queries) GetCOLCityIDBySpaceSlug(ctx context.Context, spaceSlug string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getCOLCityIDBySpaceSlug, spaceSlug)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getCOLValuesForCities = `-- name: GetCOLValuesForCities :many
 
 SELECT

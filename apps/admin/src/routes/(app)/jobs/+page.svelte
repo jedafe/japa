@@ -309,7 +309,7 @@
 			{t('common.cancel', 'Cancel')}
 		</Button>
 		<Button onclick={confirmToggleFeature} disabled={togglingId !== ''}>
-			<Star class="mr-2 h-4 w-4" />
+			<Star class="me-2 h-4 w-4" />
 			{togglingId !== '' ? t('common.processing', 'Processing...') : t('common.confirm', 'Confirm')}
 		</Button>
 	</div>

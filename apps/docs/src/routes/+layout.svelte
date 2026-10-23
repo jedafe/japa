@@ -10,6 +10,8 @@
 	import NextActions from '$lib/components/shell/NextActions.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t } from '$lib/i18n';
+	import { setRuntimePack } from '$lib/i18n/dict';
+	import { isRtl } from '$lib/i18n/rtl';
 	import { env } from '$env/dynamic/public';
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
 	import type { Snippet } from 'svelte';
@@ -48,6 +50,14 @@
 	// sync it here so a11y/SEO lang stays correct after in-app switches.
 	$effect(() => {
 		document.documentElement.lang = data.locale || 'en';
+		document.documentElement.dir = isRtl(data.locale || 'en') ? 'rtl' : 'ltr';
+	});
+
+	// Non-bundled locales are served by the DB pack fetched in
+	// +layout.server.ts — register it so the client-side t() sees the same
+	// strings the server rendered with.
+	$effect(() => {
+		if (data.i18nPack && data.locale) setRuntimePack(data.locale, data.i18nPack);
 	});
 
 	// Admin appearance overrides are injected server-side by hooks.server.ts
@@ -83,7 +93,7 @@
 
 <a
 	href="#main-content"
-	class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-[var(--radius)] focus:bg-[var(--color-primary)] focus:px-3 focus:py-1.5 focus:text-white"
+	class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:start-2 focus:z-[100] focus:rounded-[var(--radius)] focus:bg-[var(--color-primary)] focus:px-3 focus:py-1.5 focus:text-white"
 >
 	{t('a11y.skip_to_content')}
 </a>
@@ -120,7 +130,7 @@
 		aria-label={t('ai.panel.title', 'Japa AI')}
 		title={t('ai.panel.title', 'Japa AI')}
 		aria-expanded={aiPanelOpen}
-		class="fixed bottom-5 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105"
+		class="fixed bottom-5 end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105"
 	>
 		<Sparkles size={22} />
 	</button>

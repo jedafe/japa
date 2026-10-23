@@ -16,17 +16,21 @@ import type { GuideListItem } from '$lib/types/content';
 const PAGE_SIZE = 24;
 
 export const load: PageServerLoad = async (event) => {
-	// list.enabled is a PUBLIC system setting (video.enabled pattern) — the
-	// root layout exposes it via siteSettings. Missing = enabled.
-	const parent = await event.parent();
-	const siteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
-	if (siteSettings['list.enabled'] === false) {
+	// list.enabled is a feature flag (unified rollout — the legacy public
+	// system_settings key is deprecated and no longer updated). Gate on the
+	// flags map like /stories (story.enabled), not siteSettings.
+	const { features } = await event.parent();
+	if (features?.['list.enabled'] !== true) {
 		throw error(404, { code: 'feature_disabled', message: 'Lists are not available' });
 	}
 
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
-	const tab = event.url.searchParams.get('tab') ?? 'latest'; // 'latest' | 'popular' | 'featured'
+	// Unknown tab values fall back to 'latest' — passing a raw ?tab= through
+	// to the page would leave UrlTabs with no selected tab while the fetch
+	// already served latest items.
+	const rawTab = event.url.searchParams.get('tab') ?? 'latest';
+	const tab = rawTab === 'popular' || rawTab === 'featured' ? rawTab : 'latest';
 	const cursor = event.url.searchParams.get('cursor') ?? '';
 	const offset = parseInt(event.url.searchParams.get('offset') ?? '0', 10) || 0;
 

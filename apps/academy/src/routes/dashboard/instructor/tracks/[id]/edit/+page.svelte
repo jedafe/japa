@@ -212,7 +212,7 @@
 			href="/dashboard/instructor"
 			class="mb-3 inline-flex items-center gap-1 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} />
+			<ArrowLeft class="rtl:-scale-x-100" size={16} />
 			{t('common.back', 'Back')}
 		</a>
 		<h1 class="text-2xl font-bold text-[var(--color-text)]">
@@ -256,7 +256,7 @@
 					disabled={submitting}
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>
-					<Send size={13} />
+					<Send class="rtl:-scale-x-100" size={13} />
 					{submitting ? t('common.processing', 'Processing...') : t('academy.submit_course', 'Submit for review')}
 				</button>
 			{/if}

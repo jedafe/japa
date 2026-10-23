@@ -117,7 +117,7 @@
 			render: (_: any, row: any) => `
 				<div>
 					<a href="/ads/${row.id}" class="font-medium text-foreground hover:underline">${row.name}</a>
-					${row.is_house ? '<span class="ml-1 inline-flex items-center rounded-full border border-info bg-info/15 px-2 py-0.5 text-[10px] font-semibold text-info">house</span>' : ''}
+					${row.is_house ? `<span class="ms-1 inline-flex items-center rounded-full border border-info bg-info/15 px-2 py-0.5 text-[10px] font-semibold text-info">${t('ads.house_badge', 'house')}</span>` : ''}
 					<p class="text-xs text-muted">${row.start_date ?? ''} &mdash; ${row.end_date ?? 'ongoing'}</p>
 				</div>
 			`
@@ -521,19 +521,19 @@
 						<table class="w-full text-xs">
 							<thead>
 								<tr class="border-b border-border bg-surface">
-									<th class="px-3 py-2 text-left text-muted">{t('ads.date')}</th>
-									<th class="px-3 py-2 text-right text-muted">{t('ads.impressions')}</th>
-									<th class="px-3 py-2 text-right text-muted">{t('ads.clicks')}</th>
-									<th class="px-3 py-2 text-right text-muted">{t('ads.spend')}</th>
+									<th class="px-3 py-2 text-start text-muted">{t('ads.date')}</th>
+									<th class="px-3 py-2 text-end text-muted">{t('ads.impressions')}</th>
+									<th class="px-3 py-2 text-end text-muted">{t('ads.clicks')}</th>
+									<th class="px-3 py-2 text-end text-muted">{t('ads.spend')}</th>
 								</tr>
 							</thead>
 							<tbody>
 								{#each stats.daily_stats as day (day)}
 									<tr class="border-b border-border last:border-0">
 										<td class="px-3 py-2">{day.date}</td>
-										<td class="px-3 py-2 text-right">{(day.impressions ?? 0).toLocaleString()}</td>
-										<td class="px-3 py-2 text-right">{(day.clicks ?? 0).toLocaleString()}</td>
-										<td class="px-3 py-2 text-right">{(day.spend ?? 0).toFixed(2)}</td>
+										<td class="px-3 py-2 text-end">{(day.impressions ?? 0).toLocaleString()}</td>
+										<td class="px-3 py-2 text-end">{(day.clicks ?? 0).toLocaleString()}</td>
+										<td class="px-3 py-2 text-end">{(day.spend ?? 0).toFixed(2)}</td>
 									</tr>
 								{/each}
 							</tbody>

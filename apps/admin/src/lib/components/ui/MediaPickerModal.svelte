@@ -346,7 +346,7 @@
 					: 'color: var(--color-muted)'}
 				onclick={() => (activeTab = 'browse')}
 			>
-				<ImageIcon class="mr-1 inline h-4 w-4" />
+				<ImageIcon class="me-1 inline h-4 w-4" />
 				{t('ads.media_browse', 'Browse Library')}
 			</button>
 			<button
@@ -357,7 +357,7 @@
 					: 'color: var(--color-muted)'}
 				onclick={() => (activeTab = 'upload')}
 			>
-				<Upload class="mr-1 inline h-4 w-4" />
+				<Upload class="me-1 inline h-4 w-4" />
 				{t('ads.media_upload', 'Upload New')}
 			</button>
 			<button
@@ -368,7 +368,7 @@
 					: 'color: var(--color-muted)'}
 				onclick={() => (activeTab = 'stock')}
 			>
-				<Search class="mr-1 inline h-4 w-4" />
+				<Search class="me-1 inline h-4 w-4" />
 				{t('ads.media_stock', 'Stock Photos')}
 			</button>
 		</div>
@@ -376,13 +376,13 @@
 		{#if activeTab === 'browse'}
 			<!-- Search bar — always visible so typing doesn't lose focus -->
 			<div class="relative">
-				<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+				<Search class="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
 				<input
 					type="text"
 					value={searchQuery}
 					oninput={handleSearchInput}
 					placeholder={t('ads.media_search_placeholder', 'Search media...')}
-					class="w-full rounded-md border py-2 pl-9 pr-3 text-sm"
+					class="w-full rounded-md border py-2 ps-9 pe-3 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 				/>
 			</div>
@@ -437,7 +437,7 @@
 								disabled={currentPage === 0 || loading}
 								onclick={() => goToPage(currentPage - 1)}
 							>
-								<ChevronLeft class="h-4 w-4" />
+								<ChevronLeft class="h-4 w-4 rtl:-scale-x-100" />
 							</Button>
 							<Button
 								variant="outline"
@@ -445,7 +445,7 @@
 								disabled={currentPage >= totalPages - 1 || loading}
 								onclick={() => goToPage(currentPage + 1)}
 							>
-								<ChevronRight class="h-4 w-4" />
+								<ChevronRight class="h-4 w-4 rtl:-scale-x-100" />
 							</Button>
 						</div>
 					</div>
@@ -517,10 +517,10 @@
 					<Button variant="ghost" onclick={() => (open = false)}>{t('common.cancel', 'Cancel')}</Button>
 					<Button onclick={handleUpload} disabled={!uploadFile || uploading}>
 						{#if uploading}
-							<Loader2 class="mr-1 h-4 w-4 animate-spin" />
+							<Loader2 class="me-1 h-4 w-4 animate-spin" />
 							{t('common.uploading', 'Uploading...')}
 						{:else}
-							<Upload class="mr-1 h-4 w-4" />
+							<Upload class="me-1 h-4 w-4" />
 							{t('ads.media_upload_button', 'Upload & Select')}
 						{/if}
 					</Button>
@@ -543,13 +543,13 @@
 						/>
 					{/if}
 					<div class="relative flex-1">
-						<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+						<Search class="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
 						<input
 							type="text"
 							value={stockQuery}
 							oninput={handleStockSearchInput}
 							placeholder={t('ads.media_stock_placeholder', 'Search stock photos...')}
-							class="w-full rounded-md border py-2 pl-9 pr-3 text-sm"
+							class="w-full rounded-md border py-2 ps-9 pe-3 text-sm"
 							style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 						/>
 					</div>

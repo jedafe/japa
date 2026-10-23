@@ -222,13 +222,13 @@ body {
 .prose p { margin-top: 1.25rem; margin-bottom: 1.25rem; }
 .prose a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; word-break: break-word; overflow-wrap: break-word; }
 .prose a:hover { color: var(--color-primary-hover); }
-.prose ul, .prose ol { margin-top: 1.25rem; margin-bottom: 1.25rem; padding-left: 1.5rem; }
+.prose ul, .prose ol { margin-top: 1.25rem; margin-bottom: 1.25rem; padding-inline-start: 1.5rem; }
 .prose ul { list-style: disc; }
 .prose ol { list-style: decimal; }
 .prose li { margin-top: 0.5rem; margin-bottom: 0.5rem; }
 .prose blockquote {
-	border-left: 3px solid var(--color-primary);
-	padding-left: 1rem;
+	border-inline-start: 3px solid var(--color-primary);
+	padding-inline-start: 1rem;
 	font-style: italic;
 	color: var(--color-text-subtle);
 	margin-top: 1.5rem;
@@ -246,10 +246,10 @@ body {
 }
 .prose blockquote.callout p:first-child { margin-top: 0; }
 .prose blockquote.callout p:last-child { margin-bottom: 0; }
-.prose blockquote.callout-tip { border-left-color: var(--chart-3, var(--color-primary)); }
-.prose blockquote.callout-note { border-left-color: var(--color-primary); }
+.prose blockquote.callout-tip { border-inline-start-color: var(--chart-3, var(--color-primary)); }
+.prose blockquote.callout-note { border-inline-start-color: var(--color-primary); }
 .prose blockquote.callout-warning,
-.prose blockquote.callout-important { border-left-color: var(--color-danger, #dc2626); }
+.prose blockquote.callout-important { border-inline-start-color: var(--color-danger, #dc2626); }
 .prose code {
 	font-family: ui-monospace, 'SF Mono', Menlo, monospace;
 	font-size: 0.875em;
@@ -279,7 +279,7 @@ body {
 .prose-table-wrapper::after {
 	content: '';
 	position: absolute;
-	right: 0;
+	inset-inline-end: 0;
 	top: 0;
 	bottom: 0;
 	width: 1.5rem;
@@ -301,7 +301,7 @@ body {
 .prose-table-wrapper th, .prose-table-wrapper td {
 	border: 1px solid var(--color-border);
 	padding: 0.75rem;
-	text-align: left;
+	text-align: start;
 	vertical-align: top;
 }
 
@@ -323,7 +323,7 @@ body {
 .prose-table-wrapper th:first-child,
 .prose-table-wrapper td:first-child {
 	position: sticky;
-	left: 0;
+	inset-inline-start: 0;
 	z-index: 2;
 	background: var(--color-surface);
 }
@@ -377,7 +377,7 @@ body {
  * via ProseMirror decorations, but the actual visual rendering requires CSS. */
 .ProseMirror p.is-empty.is-editor-empty:first-child::before {
 	content: attr(data-placeholder);
-	float: left;
+	float: inline-start;
 	color: var(--color-muted);
 	pointer-events: none;
 	height: 0;
@@ -386,7 +386,7 @@ body {
 /* Also show placeholder on any empty paragraph when the editor has no content */
 .ProseMirror p.is-empty:first-child::before {
 	content: attr(data-placeholder);
-	float: left;
+	float: inline-start;
 	color: var(--color-muted);
 	pointer-events: none;
 	height: 0;
@@ -479,7 +479,7 @@ body {
 	border-radius: calc(var(--radius) - 2px);
 	background: transparent;
 	color: var(--color-text);
-	text-align: left;
+	text-align: start;
 	font-size: 0.875rem;
 	cursor: pointer;
 	transition: background 0.1s;
@@ -543,4 +543,11 @@ a {
 .lightbox-scope a img,
 .lightbox-scope button img {
 	cursor: pointer;
+}
+
+/* RTL bidi isolation — code, URLs, emails, phone numbers and other
+ * direction-neutral content keep LTR inside an RTL document. */
+[dir="rtl"] :is(code, pre, kbd, samp, .font-mono, [data-ltr], input[type="url"], input[type="email"], input[type="tel"]) {
+	direction: ltr;
+	unicode-bidi: isolate;
 }

@@ -65,7 +65,7 @@
 	<h3 class="text-sm font-medium text-[var(--color-text)]">{t('reviews.write_title')}</h3>
 
 	<div class="flex items-center gap-1">
-		<span class="mr-2 text-xs text-[var(--color-muted)]">{t('reviews.your_rating')}</span>
+		<span class="me-2 text-xs text-[var(--color-muted)]">{t('reviews.your_rating')}</span>
 		{#each Array(5) as _, i (i)}
 			{@const n = i + 1}
 			<button
@@ -109,7 +109,7 @@
 			disabled={submitting || rating < 1}
 			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
 		>
-			<Send class="h-4 w-4" />
+			<Send class="h-4 w-4 rtl:-scale-x-100" />
 			{submitting ? '...' : t('reviews.submit')}
 		</button>
 	</div>

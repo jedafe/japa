@@ -274,9 +274,9 @@
 			<p class="mt-1">
 				<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">{row.entity_type}</span>
 				{#if row.subject_label}
-					<span class="ml-2 text-sm" style="color: var(--color-foreground)">{row.subject_label}</span>
+					<span class="ms-2 text-sm" style="color: var(--color-foreground)">{row.subject_label}</span>
 				{/if}
-				<span class="ml-2 text-xs font-mono" style="color: var(--color-muted)">{row.entity_id}</span>
+				<span class="ms-2 text-xs font-mono" style="color: var(--color-muted)">{row.entity_id}</span>
 			</p>
 		</div>
 		<div>

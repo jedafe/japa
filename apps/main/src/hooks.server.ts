@@ -9,6 +9,7 @@ import {
 } from '$lib/server/auth';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
 import { sanitizeCustomCss } from '$lib/utils/safeHtml';
+import { isRtl } from '$lib/i18n/rtl';
 import type { SessionUser } from '$lib/types';
 
 /**
@@ -390,7 +391,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 				.replace('%jc.themevars%', () => themeVars)
 				.replace('%jc.customcss%', () => customCss)
 				.replace('%jc.theme%', () => event.locals.resolvedTheme)
-				.replace('lang="en"', `lang="${event.locals.locale}"`)
+				.replace(
+					'lang="en"',
+					() => `lang="${event.locals.locale}" dir="${isRtl(event.locals.locale ?? '') ? 'rtl' : 'ltr'}"`
+				)
 	});
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');

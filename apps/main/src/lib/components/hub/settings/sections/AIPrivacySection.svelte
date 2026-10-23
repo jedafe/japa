@@ -90,7 +90,7 @@
 					style="background-color: var(--color-muted)"
 				></div>
 				<div
-					class="absolute left-0.5 h-5 w-5 rounded-full bg-white transition-transform peer-checked:translate-x-5"
+					class="absolute start-0.5 h-5 w-5 rounded-full bg-white transition-transform peer-checked:translate-x-5"
 				></div>
 			</label>
 		</div>

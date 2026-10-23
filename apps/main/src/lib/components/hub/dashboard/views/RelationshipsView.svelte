@@ -492,12 +492,12 @@
 
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 			<div class="relative w-full max-w-xs">
-				<Search size={14} class="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+				<Search size={14} class="absolute start-2 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 				<input
 					type="search"
 					value={searchInputValue}
 					placeholder={t('dashboard.relationships.search', 'Search...')}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] pl-7 pr-2 py-1.5 text-sm text-[var(--color-text)]"
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] ps-7 pe-2 py-1.5 text-sm text-[var(--color-text)]"
 					oninput={(e) => onSearchInput((e.currentTarget as HTMLInputElement).value)}
 				/>
 			</div>
@@ -837,7 +837,7 @@
 				disabled={currentPage <= 1}
 				onclick={() => goPage(-1)}
 			>
-				<ChevronLeft size={16} />
+				<ChevronLeft class="rtl:-scale-x-100" size={16} />
 				{t('dashboard.relationships.previous', 'Previous')}
 			</button>
 			<span class="text-sm text-[var(--color-muted)]">{t('dashboard.relationships.page', 'Page')} {currentPage}</span>
@@ -848,7 +848,7 @@
 				onclick={() => goPage(1)}
 			>
 				{t('dashboard.relationships.next', 'Next')}
-				<ChevronRight size={16} />
+				<ChevronRight class="rtl:-scale-x-100" size={16} />
 			</button>
 		</div>
 	{/if}

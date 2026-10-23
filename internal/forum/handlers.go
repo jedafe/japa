@@ -331,6 +331,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusConflict, "tag_in_use", err.Error())
 	case errors.Is(err, ErrEditWindowExpired):
 		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", err.Error())
+	case errors.Is(err, ErrMembersOnly):
+		errpkg.WriteError(w, http.StatusForbidden, "members_only", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -400,6 +402,14 @@ func parseCursorID(r *http.Request) pgtype.UUID {
 
 // parseCursorVoteScore extracts the cursor_vote_score query parameter for
 // top-sort keyset pagination. Returns nil when absent.
+// requesterID returns the caller's user id or an invalid UUID for guests.
+func requesterID(r *http.Request) pgtype.UUID {
+	if u := auth.FromContext(r.Context()); u != nil {
+		return u.UserID
+	}
+	return pgtype.UUID{}
+}
+
 func parseCursorVoteScore(r *http.Request) *int32 {
 	s := r.URL.Query().Get("cursor_vote_score")
 	if s == "" {
@@ -709,6 +719,20 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// F-009 / §05: 'private'-space listings are invisible to non-members;
+		// 'members'-space listings show titles but mask bodies.
+		requester := requesterID(r)
+		accessLevel, err := h.Service.SpaceAccessLevel(r.Context(), spaceID, requester)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		if accessLevel == ThreadAccessNone {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Space not found")
+			return
+		}
+
 		threads, err := h.Service.ListThreadsBySpaceWithDetails(r.Context(), spaceID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
@@ -717,6 +741,21 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 		if threads == nil {
 			threads = []gen.ListForumThreadsBySpaceWithDetailsRow{}
+		}
+
+		// §08: withhold the author's identity on anonymous threads — the
+		// display fields are nulled in SQL but author_user_id survives;
+		// zero it for anyone who is neither the author nor a
+		// space/platform moderator (admins keep attribution).
+		for i := range threads {
+			if threads[i].IsAnonymous && threads[i].AuthorUserID != requester &&
+				!(requester.Valid && h.Service.canModerateAny(r.Context(), threads[i].SpaceID, requester, "forum.thread.edit_any")) {
+				threads[i].AuthorUserID = pgtype.UUID{}
+			}
+			// F-009: title only for non-members — bodies never leave the API.
+			if accessLevel == ThreadAccessTitleOnly {
+				threads[i].Body = nil
+			}
 		}
 
 		h.resolveLiterals(r, &threads)
@@ -730,7 +769,8 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByAuthorWithDetails(r.Context(), authorID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		requester := requesterID(r)
+		threads, err := h.Service.ListThreadsByAuthorWithDetails(r.Context(), requester, authorID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -738,6 +778,21 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 		if threads == nil {
 			threads = []gen.ListForumThreadsByAuthorWithDetailsRow{}
+		}
+
+		// §08: withhold the author's identity on anonymous threads — the
+		// display fields are nulled in SQL but author_user_id survives;
+		// zero it for anyone who is neither the author nor a
+		// space/platform moderator (admins keep attribution).
+		for i := range threads {
+			if threads[i].IsAnonymous && threads[i].AuthorUserID != requester &&
+				!(requester.Valid && h.Service.canModerateAny(r.Context(), threads[i].SpaceID, requester, "forum.thread.edit_any")) {
+				threads[i].AuthorUserID = pgtype.UUID{}
+			}
+			// F-009: mask bodies on non-public spaces the viewer isn't in.
+			if !threads[i].SpaceIsMember && threads[i].SpaceVisibility != "public" {
+				threads[i].Body = nil
+			}
 		}
 
 		h.resolveLiterals(r, &threads)
@@ -751,7 +806,8 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tagID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		requester := requesterID(r)
+		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), requester, tagID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -759,6 +815,21 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 		if threads == nil {
 			threads = []gen.ListForumThreadsByTagWithDetailsRow{}
+		}
+
+		// §08: withhold the author's identity on anonymous threads — the
+		// display fields are nulled in SQL but author_user_id survives;
+		// zero it for anyone who is neither the author nor a
+		// space/platform moderator (admins keep attribution).
+		for i := range threads {
+			if threads[i].IsAnonymous && threads[i].AuthorUserID != requester &&
+				!(requester.Valid && h.Service.canModerateAny(r.Context(), threads[i].SpaceID, requester, "forum.thread.edit_any")) {
+				threads[i].AuthorUserID = pgtype.UUID{}
+			}
+			// F-009: mask bodies on non-public spaces the viewer isn't in.
+			if !threads[i].SpaceIsMember && threads[i].SpaceVisibility != "public" {
+				threads[i].Body = nil
+			}
 		}
 
 		h.resolveLiterals(r, &threads)
@@ -774,7 +845,8 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tag.ID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		requester := requesterID(r)
+		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), requester, tag.ID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -782,6 +854,21 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 		if threads == nil {
 			threads = []gen.ListForumThreadsByTagWithDetailsRow{}
+		}
+
+		// §08: withhold the author's identity on anonymous threads — the
+		// display fields are nulled in SQL but author_user_id survives;
+		// zero it for anyone who is neither the author nor a
+		// space/platform moderator (admins keep attribution).
+		for i := range threads {
+			if threads[i].IsAnonymous && threads[i].AuthorUserID != requester &&
+				!(requester.Valid && h.Service.canModerateAny(r.Context(), threads[i].SpaceID, requester, "forum.thread.edit_any")) {
+				threads[i].AuthorUserID = pgtype.UUID{}
+			}
+			// F-009: mask bodies on non-public spaces the viewer isn't in.
+			if !threads[i].SpaceIsMember && threads[i].SpaceVisibility != "public" {
+				threads[i].Body = nil
+			}
 		}
 
 		h.resolveLiterals(r, &threads)
@@ -793,7 +880,8 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		// forum index shows everybody's threads. Callers wanting their own
 		// threads pass author_id explicitly. Uses the WithDetails variant so
 		// the frontend receives joined author + space data in one response.
-		threads, err := h.Service.ListThreadsByPlatformWithDetails(r.Context(), solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
+		requester := requesterID(r)
+		threads, err := h.Service.ListThreadsByPlatformWithDetails(r.Context(), requester, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -801,6 +889,21 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 		if threads == nil {
 			threads = []gen.ListForumThreadsWithDetailsRow{}
+		}
+
+		// §08: withhold the author's identity on anonymous threads — the
+		// display fields are nulled in SQL but author_user_id survives;
+		// zero it for anyone who is neither the author nor a
+		// space/platform moderator (admins keep attribution).
+		for i := range threads {
+			if threads[i].IsAnonymous && threads[i].AuthorUserID != requester &&
+				!(requester.Valid && h.Service.canModerateAny(r.Context(), threads[i].SpaceID, requester, "forum.thread.edit_any")) {
+				threads[i].AuthorUserID = pgtype.UUID{}
+			}
+			// F-009: mask bodies on non-public spaces the viewer isn't in.
+			if !threads[i].SpaceIsMember && threads[i].SpaceVisibility != "public" {
+				threads[i].Body = nil
+			}
 		}
 
 		h.resolveLiterals(r, &threads)
@@ -823,6 +926,24 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// F-009 / §05: 'private'-space threads 404 for non-members; 'members'-
+	// space threads return the title with the body withheld (restricted).
+	accessLevel, accErr := h.Service.ThreadAccessLevel(r.Context(), thread.ID, requesterID(r))
+	if accErr != nil {
+		handleServiceError(w, accErr)
+		return
+	}
+
+	if accessLevel == ThreadAccessNone {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Thread not found")
+		return
+	}
+
+	restricted := accessLevel == ThreadAccessTitleOnly
+	if restricted {
+		thread.Body = nil
 	}
 
 	// Resolve {{...}} literals in title/body before the JSON-LD is built so
@@ -859,7 +980,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// exists or the resolver is unavailable.
 	var jsonLd any
 
-	if thread.Solved {
+	if thread.Solved && !restricted {
 		if cached, ok := h.Service.getJSONLDCache(r.Context(), thread.ID); ok {
 			var parsed any
 			if err := json.Unmarshal([]byte(cached), &parsed); err == nil {
@@ -905,8 +1026,12 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 				h.Service.setJSONLDCache(r.Context(), thread.ID, string(b))
 			}
 		}
-	} else {
+	} else if !restricted {
 		jsonLd = h.resolveQAPageJSONLD(r, thread, questionBody, authorName, "", "", "", "")
+	}
+
+	if restricted {
+		response["restricted"] = true
 	}
 
 	response["json_ld"] = jsonLd
@@ -962,6 +1087,21 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	response["can_moderate"] = canModerate
 	response["is_bookmarked"] = isBookmarked
 	response["bookmark_id"] = bookmarkID
+
+	// §08: anonymous threads withhold the author's identity from other
+	// users (admins/moderators still see it). The WithDetails queries null
+	// the display fields in SQL but author_user_id survives — zero it for
+	// anyone who is neither the author nor a moderator/permission-holder.
+	if thread.IsAnonymous {
+		viewerIsAuthor := false
+		if u := auth.FromContext(r.Context()); u != nil && u.UserID == thread.AuthorUserID {
+			viewerIsAuthor = true
+		}
+		privileged := canSolve || canEdit || canDelete || canModerate
+		if !viewerIsAuthor && !privileged {
+			thread.AuthorUserID = pgtype.UUID{}
+		}
+	}
 
 	// GDPR / ADR-029: expose deleted_user_ids so the frontend can render
 	// @[deleted user] for mentions of erased users in the thread body
@@ -1329,12 +1469,25 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
 	// Fetch the thread to get its spaceID for private-space membership filtering.
-	var replySpaceID pgtype.UUID
-	if thread, tErr := h.Service.GetThread(r.Context(), threadID); tErr == nil {
-		replySpaceID = thread.SpaceID
+	// F-002 / C-003 parity: mention notifications name the actor — suppress
+	// them entirely for anonymous replies so the author stays anonymous.
+	if !reply.IsAnonymous {
+		var replySpaceID pgtype.UUID
+		if thread, tErr := h.Service.GetThread(r.Context(), threadID); tErr == nil {
+			replySpaceID = thread.SpaceID
+		}
+
+		h.dispatchMentionNotifications(r.Context(), user.UserID, reply.ID, replySpaceID, input.Body, "mention.comment")
 	}
 
-	h.dispatchMentionNotifications(r.Context(), user.UserID, reply.ID, replySpaceID, input.Body, "mention.comment")
+	// C-020 parity: return the joined row so the new reply renders with
+	// author name/avatar without a refetch. The joined query already
+	// NULL-wraps identity fields for anonymous replies.
+	if row, getErr := h.Service.GetReplyByIDWithAuthor(r.Context(), reply.ID); getErr == nil {
+		h.resolveLiterals(r, &row)
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": row})
+		return
+	}
 
 	h.resolveLiterals(r, &reply)
 
@@ -1349,6 +1502,30 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// F-007 / C-001 parity: replies on a deleted (or nonexistent) thread are
+	// not exposed — the thread's soft-delete would otherwise leave its
+	// replies world-readable.
+	if _, err := h.Service.GetThread(r.Context(), threadID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// F-009 / §05: replies are content — 'private'-space threads 404 for
+	// non-members; 'members'-space threads return 403 members_only so the
+	// frontend can render the join prompt (the title is still visible via
+	// the thread endpoint).
+	switch level, accErr := h.Service.ThreadAccessLevel(r.Context(), threadID, requesterID(r)); {
+	case accErr != nil:
+		handleServiceError(w, accErr)
+		return
+	case level == ThreadAccessNone:
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Thread not found")
+		return
+	case level == ThreadAccessTitleOnly:
+		errpkg.WriteError(w, http.StatusForbidden, "members_only", "Join the space to read replies")
+		return
+	}
+
 	// Use the WithAuthor variant so the frontend receives joined author data
 	// (username, display_name, avatar_url) in the same response.
 	replies, err := h.Service.ListRepliesByThreadWithAuthor(r.Context(), threadID)
@@ -1359,6 +1536,29 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 
 	if replies == nil {
 		replies = []gen.ListForumRepliesByThreadWithAuthorRow{}
+	}
+
+	// §08: withhold the author's identity on anonymous replies (same rule
+	// as threads — author_user_id is zeroed for viewers who are neither
+	// the author nor a moderator of the thread's space / _any node holder).
+	requester := requesterID(r)
+	privileged := false
+	if requester.Valid {
+		if th, err := h.Service.GetThread(r.Context(), threadID); err == nil {
+			privileged = h.Service.canModerateAny(r.Context(), th.SpaceID, requester, "forum.reply.edit_any") ||
+				h.Service.canModerateAny(r.Context(), th.SpaceID, requester, "forum.reply.delete_any") ||
+				h.Service.canModerateAny(r.Context(), th.SpaceID, requester, "forum.thread.edit_any")
+		}
+	}
+	for i := range replies {
+		if replies[i].IsAnonymous && replies[i].AuthorUserID != requester && !privileged {
+			replies[i].AuthorUserID = pgtype.UUID{}
+		}
+		// F-004 / C-009 parity: tombstone deleted replies — the row stays so
+		// live children remain reachable, but the original body must not leak.
+		if replies[i].DeletedAt.Valid {
+			replies[i].Body = nil
+		}
 	}
 
 	// Resolve {{...}} literals in reply bodies (best-effort).

@@ -169,7 +169,7 @@
 		<div class="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
 			<h2 class="text-base font-medium text-[var(--color-text)]">
 				{t(titleKey, type === 'followers' ? 'Followers' : 'Following')}
-				<span class="ml-1.5 text-sm font-normal text-[var(--color-muted)]">{count}</span>
+				<span class="ms-1.5 text-sm font-normal text-[var(--color-muted)]">{count}</span>
 			</h2>
 			<button
 				type="button"

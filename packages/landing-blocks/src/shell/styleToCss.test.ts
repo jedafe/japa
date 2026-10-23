@@ -141,7 +141,7 @@ describe('styleToCss', () => {
         text_align: 'right',
       },
     });
-    expect(result.classes).toContain('text-right');
+    expect(result.classes).toContain('text-end');
     expect(result.inline['--block-heading-size']).toBe('1.5rem');
     expect(result.inline['--block-heading-weight']).toBe('700');
     expect(result.inline['--block-heading-family']).toContain('ui-sans');

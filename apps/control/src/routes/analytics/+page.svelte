@@ -24,7 +24,7 @@
 			class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
 		>
 			{t('analytics.open_dashboard', 'Open Umami dashboard')}
-			<ExternalLink class="size-4" />
+			<ExternalLink class="size-4 rtl:-scale-x-100" />
 		</a>
 
 		{#if frameError}
@@ -37,7 +37,7 @@
 			<div class="border-border-card overflow-hidden rounded-lg border">
 				<iframe
 					src={dashboardUrl}
-					title="Umami analytics dashboard"
+					title={t('analytics.iframe_title', 'Umami analytics dashboard')}
 					class="h-[calc(100vh-14rem)] min-h-[480px] w-full bg-background"
 					sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
 					loading="lazy"

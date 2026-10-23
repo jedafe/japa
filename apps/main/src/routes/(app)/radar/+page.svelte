@@ -494,7 +494,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						onclick={() => toggleFollow(selectedSpace!)}
 						disabled={pendingSpaceId === selectedSpace!.id}
 						aria-busy={pendingSpaceId === selectedSpace!.id}
-						class="ml-auto shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 {followedSpaceIds.has(selectedSpace!.id)
+						class="ms-auto shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 {followedSpaceIds.has(selectedSpace!.id)
 							? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
 							: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 					>
@@ -724,7 +724,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				onclick={() => toggleFollow(space)}
 				disabled={pendingSpaceId === space.id}
 				aria-busy={pendingSpaceId === space.id}
-				class="absolute right-1.5 top-1.5 z-10 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:opacity-60 {following
+				class="absolute end-1.5 top-1.5 z-10 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:opacity-60 {following
 					? 'bg-black/50 text-white backdrop-blur hover:bg-black/70'
 					: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 			>

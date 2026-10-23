@@ -152,7 +152,7 @@
 				class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 				aria-label={t('mutual_aid.back', 'Back to mutual aid')}
 			>
-				<ArrowLeft size={18} />
+				<ArrowLeft class="rtl:-scale-x-100" size={18} />
 			</a>
 			<h1 class="text-lg font-semibold text-[var(--color-text)]">
 				{t('mutual_aid.new_heading', 'New Mutual Aid Post')}
@@ -280,7 +280,7 @@
 					disabled={!canSubmit}
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>
-					<Send size={16} /> {submitting ? '…' : t('mutual_aid.submit', 'Post')}
+					<Send class="rtl:-scale-x-100" size={16} /> {submitting ? '…' : t('mutual_aid.submit', 'Post')}
 				</button>
 			</div>
 		</form>

@@ -675,7 +675,7 @@
 					/>
 				{:else if flights.length > 0}
 					<div class="mb-3 flex flex-wrap items-center gap-2">
-						<p class="mr-auto text-xs text-[var(--color-muted)]">
+						<p class="me-auto text-xs text-[var(--color-muted)]">
 							{t('travel.results', '{count} results', { count: sortedFlights.length })}
 							{#if flightMeta?.source === 'stale'}· {t('travel.stale_results', 'results may be outdated')}{:else if flightMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
 						</p>
@@ -698,7 +698,7 @@
 									<span class="text-sm font-medium text-[var(--color-text)]">{formatMoney(f.price, f.currency, data.currencies)}</span>
 									{#if f.booking_url}
 										<a href={f.booking_url} target="_blank" rel="noopener sponsored" class="flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90">
-											{t('travel.book_now', 'Book now')} <ExternalLink size={12} />
+											{t('travel.book_now', 'Book now')} <ExternalLink class="rtl:-scale-x-100" size={12} />
 										</a>
 									{/if}
 								</div>
@@ -779,7 +779,7 @@
 					/>
 				{:else if hotels.length > 0}
 					<div class="mb-3 flex flex-wrap items-center gap-2">
-						<p class="mr-auto text-xs text-[var(--color-muted)]">
+						<p class="me-auto text-xs text-[var(--color-muted)]">
 							{t('travel.results', '{count} results', { count: sortedHotels.length })}
 							{#if hotelMeta?.source === 'stale'}· {t('travel.stale_results', 'results may be outdated')}{:else if hotelMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
 						</p>
@@ -804,7 +804,7 @@
 									<span class="text-sm font-medium text-[var(--color-text)]">{formatMoney(h.price, h.currency, data.currencies)}</span>
 									{#if h.booking_url}
 										<a href={h.booking_url} target="_blank" rel="noopener sponsored" class="flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90">
-											{t('travel.book_now', 'Book now')} <ExternalLink size={12} />
+											{t('travel.book_now', 'Book now')} <ExternalLink class="rtl:-scale-x-100" size={12} />
 										</a>
 									{/if}
 								</div>
@@ -865,7 +865,7 @@
 					<LoadingSkeleton variant="lines" />
 				{:else if dirItems.length > 0}
 					<div class="mb-3 flex flex-wrap items-center gap-2">
-						<p class="mr-auto text-xs text-[var(--color-muted)]">
+						<p class="me-auto text-xs text-[var(--color-muted)]">
 							{t('travel.directory_count', '{count} hotels in the directory', { count: dirTotal })}
 						</p>
 						<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={dirPageSize} onValueChange={() => dirSearch()} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
@@ -928,7 +928,7 @@
 					<LoadingSkeleton variant="lines" />
 				{:else if alItems.length > 0}
 					<div class="mb-3 flex flex-wrap items-center gap-2">
-						<p class="mr-auto text-xs text-[var(--color-muted)]">
+						<p class="me-auto text-xs text-[var(--color-muted)]">
 							{t('travel.airlines_count', '{count} airlines in the directory', { count: alTotal })}
 						</p>
 						<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={alPageSize} onValueChange={() => alSearch()} ariaLabel={t('travel.per_page', 'Results per page')} /></div>

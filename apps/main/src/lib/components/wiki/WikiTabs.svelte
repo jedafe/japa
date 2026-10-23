@@ -238,7 +238,7 @@
 	<div
 		bind:this={measureEl}
 		aria-hidden="true"
-		class="pointer-events-none invisible absolute left-0 top-0 flex w-max items-center gap-1"
+		class="pointer-events-none invisible absolute start-0 top-0 flex w-max items-center gap-1"
 	>
 		{#each tabs as tab (tab.slug)}
 			{@const Icon = tab.icon}

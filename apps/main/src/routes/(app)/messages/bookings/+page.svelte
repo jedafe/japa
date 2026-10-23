@@ -77,7 +77,7 @@
 	<div class="flex min-h-0 flex-1">
 		<!-- Booking list -->
 		<aside
-			class="w-full shrink-0 flex-col border-r border-[var(--color-border)] sm:flex sm:max-w-sm"
+			class="w-full shrink-0 flex-col border-e border-[var(--color-border)] sm:flex sm:max-w-sm"
 			class:flex={!selectedId}
 			class:hidden={!!selectedId}
 		>

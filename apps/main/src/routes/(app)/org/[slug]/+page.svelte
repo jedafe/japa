@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
-	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon, GitCompare, ArrowRight, Briefcase, Pencil } from 'lucide-svelte';
+	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon, GitCompare, ArrowRight, Briefcase, Pencil, TriangleAlert } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import OrgHeader from '$lib/components/profile/OrgHeader.svelte';
 	import OrgProfileSidebar from '$lib/components/profile/OrgProfileSidebar.svelte';
@@ -141,6 +141,16 @@
 	{#snippet children()}
 		{#if page.data.user}
 			<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} {initiallyFollowing} />
+			{#if page.data.features?.['scam_alert.enabled']}
+				<a
+					href="/scam-alerts/new"
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					title={t('scam_alerts.report_button', 'Report a Scam')}
+				>
+					<TriangleAlert size={15} />
+					{t('scam_alerts.report_button', 'Report a Scam')}
+				</a>
+			{/if}
 			{#if !org.verified}
 				<a
 					href="/claim-ownership?org={org.slug}"
@@ -224,7 +234,7 @@
 								slug={member.user.username}
 								name={member.user.display_name ?? member.user.username}
 								avatar={member.user.avatar_url}
-								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
 									{#if member.user.avatar_url}
@@ -305,7 +315,7 @@
 									<p class="mt-0.5 truncate text-xs text-[var(--color-muted)]">{job.excerpt}</p>
 								{/if}
 							</div>
-							<ArrowRight size={14} class="shrink-0 text-[var(--color-muted)]" />
+							<ArrowRight size={14} class="shrink-0 text-[var(--color-muted)] rtl:-scale-x-100" />
 						</a>
 					{/each}
 				</div>
@@ -335,7 +345,7 @@
 						class="inline-flex w-fit items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 					>
 						{t('org.compare_start', 'Start a comparison')}
-						<ArrowRight size={15} />
+						<ArrowRight class="rtl:-scale-x-100" size={15} />
 					</a>
 				</div>
 			</section>
@@ -358,7 +368,7 @@
 										· {cmp.comment_count} {t('profile.comments', 'comments')}
 									</span>
 								</span>
-								<ArrowRight size={15} class="shrink-0 text-[var(--color-muted)]" />
+								<ArrowRight size={15} class="shrink-0 text-[var(--color-muted)] rtl:-scale-x-100" />
 							</a>
 						{/each}
 					</div>

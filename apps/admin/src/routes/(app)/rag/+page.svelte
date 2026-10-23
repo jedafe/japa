@@ -297,11 +297,11 @@
 				<table class="w-full text-sm">
 					<thead style="background: var(--color-surface-alt)">
 						<tr>
-							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.entity_type')}</th>
-							<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.total_entities')}</th>
-							<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.chunk_count')}</th>
+							<th class="px-4 py-2 text-start font-medium" style="color: var(--color-muted)">{t('rag.entity_type')}</th>
+							<th class="px-4 py-2 text-end font-medium" style="color: var(--color-muted)">{t('rag.total_entities')}</th>
+							<th class="px-4 py-2 text-end font-medium" style="color: var(--color-muted)">{t('rag.chunk_count')}</th>
 							{#if canManage}
-								<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.purge')}</th>
+								<th class="px-4 py-2 text-end font-medium" style="color: var(--color-muted)">{t('rag.purge')}</th>
 							{/if}
 						</tr>
 					</thead>
@@ -311,10 +311,10 @@
 								<td class="px-4 py-2" style="color: var(--color-foreground)">
 									<Badge variant="outline">{et.entity_type}</Badge>
 								</td>
-								<td class="px-4 py-2 text-right font-mono" style="color: var(--color-foreground)">{et.entity_count.toLocaleString()}</td>
-								<td class="px-4 py-2 text-right font-mono" style="color: var(--color-foreground)">{et.chunk_count.toLocaleString()}</td>
+								<td class="px-4 py-2 text-end font-mono" style="color: var(--color-foreground)">{et.entity_count.toLocaleString()}</td>
+								<td class="px-4 py-2 text-end font-mono" style="color: var(--color-foreground)">{et.chunk_count.toLocaleString()}</td>
 								{#if canManage}
-									<td class="px-4 py-2 text-right">
+									<td class="px-4 py-2 text-end">
 										<Button
 											variant="destructive"
 											size="sm"
@@ -345,11 +345,11 @@
 				<table class="w-full text-sm">
 					<thead style="background: var(--color-surface-alt)">
 						<tr>
-							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.entity_type')}</th>
-							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.failure_entity')}</th>
-							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.failure_operation')}</th>
-							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.failure_error')}</th>
-							<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.failure_attempted')}</th>
+							<th class="px-4 py-2 text-start font-medium" style="color: var(--color-muted)">{t('rag.entity_type')}</th>
+							<th class="px-4 py-2 text-start font-medium" style="color: var(--color-muted)">{t('rag.failure_entity')}</th>
+							<th class="px-4 py-2 text-start font-medium" style="color: var(--color-muted)">{t('rag.failure_operation')}</th>
+							<th class="px-4 py-2 text-start font-medium" style="color: var(--color-muted)">{t('rag.failure_error')}</th>
+							<th class="px-4 py-2 text-end font-medium" style="color: var(--color-muted)">{t('rag.failure_attempted')}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -361,7 +361,7 @@
 								<td class="px-4 py-2 font-mono text-xs" style="color: var(--color-foreground)">{f.entity_id}</td>
 								<td class="px-4 py-2" style="color: var(--color-foreground)">{f.operation}</td>
 								<td class="px-4 py-2 text-xs" style="color: var(--color-muted)">{f.error}</td>
-								<td class="px-4 py-2 text-right text-xs" style="color: var(--color-muted)">
+								<td class="px-4 py-2 text-end text-xs" style="color: var(--color-muted)">
 									{f.attempted_at ? new Date(f.attempted_at).toLocaleString() : '—'}
 								</td>
 							</tr>

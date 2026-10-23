@@ -591,7 +591,7 @@ loadPermissionNodes();
 
 			{#if canManageMenus}
 				<Button onclick={openCreateItem} disabled={loadingItems}>
-					<Plus class="mr-1 h-3.5 w-3.5" />
+					<Plus class="me-1 h-3.5 w-3.5" />
 					{t('menus.add_item', 'Add Item')}
 				</Button>
 			{/if}
@@ -694,7 +694,7 @@ loadPermissionNodes();
 						{#each urlSuggestions.slice(0, 10) as suggestedUrl (suggestedUrl)}
 							<button
 								type="button"
-								class="block w-full px-3 py-1.5 text-left text-sm hover:opacity-80"
+								class="block w-full px-3 py-1.5 text-start text-sm hover:opacity-80"
 								style="color: var(--color-foreground)"
 								onclick={() => { itemUrl = suggestedUrl; urlDropdownOpen = false; }}
 							>
@@ -775,7 +775,7 @@ loadPermissionNodes();
 								{group.name}
 								<button
 									type="button"
-									class="ml-0.5 opacity-60 hover:opacity-100"
+									class="ms-0.5 opacity-60 hover:opacity-100"
 									style="color: var(--color-foreground)"
 									onclick={() => removeGroup(group.id)}
 									aria-label={t('common.remove', 'Remove')}
@@ -885,7 +885,7 @@ loadPermissionNodes();
 	<ul class="space-y-1">
 		{#each nodes.sort((a, b) => a.sort_order - b.sort_order) as node (node.id)}
 			<li>
-				<div class="flex items-center gap-2 rounded px-2 py-1" style="margin-left: {depth * 1}rem">
+				<div class="flex items-center gap-2 rounded px-2 py-1" style="margin-inline-start: {depth * 1}rem">
 					{#if node.icon}
 						<span class="text-xs" style="color: var(--color-muted)">{node.icon}</span>
 					{/if}

@@ -42,11 +42,11 @@
 >
 	<section class="category-page">
 		<header class="category-header">
-			<nav class="breadcrumb" aria-label="Breadcrumb">
+			<nav class="breadcrumb" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
 				<a href="/docs" class="crumb">{t('nav.home', 'Home')}</a>
-				<ChevronRight size={12} class="crumb-sep" />
+				<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 				<a href="/docs/categories" class="crumb">{t('category.title', 'Category')}</a>
-				<ChevronRight size={12} class="crumb-sep" />
+				<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 				<span class="crumb-current">{data.category.name}</span>
 			</nav>
 			<div class="category-title-row">
@@ -79,7 +79,7 @@
 							<a href="/docs/{item.audience}/{item.slug}" class="doc-card">
 								<FileText size={16} class="doc-icon" />
 								<span class="doc-title">{item.title}</span>
-								<ArrowRight size={15} class="doc-arrow" />
+								<ArrowRight size={15} class="doc-arrow rtl:-scale-x-100" />
 							</a>
 						{/each}
 					</div>

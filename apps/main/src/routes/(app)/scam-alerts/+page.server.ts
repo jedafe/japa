@@ -14,12 +14,12 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 	const dest = event.url.searchParams.get('dest') ?? '';
-	const scam_type = event.url.searchParams.get('scam_type') ?? '';
+	const rawScamType = event.url.searchParams.get('scam_type') ?? '';
 	const submitted = event.url.searchParams.get('submitted') === '1';
 
 	const params = new URLSearchParams({ page: '1', limit: String(PAGE_SIZE) });
 	if (dest) params.set('dest', dest);
-	if (scam_type) params.set('scam_type', scam_type);
+	if (rawScamType) params.set('scam_type', rawScamType);
 
 	// Countries, the schema catalog, and the filtered alert list are
 	// independent — one wave, each degrading to its empty fallback.
@@ -35,6 +35,11 @@ export const load: PageServerLoad = async (event) => {
 
 	const scamTypes = (schema?.scam_types ?? []).map((o) => o.value as ScamType);
 	const scamPlatforms = (schema?.platforms ?? []).map((o) => o.value as ScamPlatform);
+
+	// A ?scam_type= outside the canonical enum can never match a row — drop
+	// it from the echoed filters so the tab bar doesn't render a phantom
+	// active tab (the backend already returns an empty list for it).
+	const scam_type = scamTypes.length === 0 || scamTypes.includes(rawScamType as ScamType) ? rawScamType : '';
 
 	if (alertsRes.ok) {
 		return { alerts: alertsRes.items, pageSize: PAGE_SIZE, loadError: false, filters: { dest, scam_type }, submitted, countries, scamTypes, scamPlatforms };

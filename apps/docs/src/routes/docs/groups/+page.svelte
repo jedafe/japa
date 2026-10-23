@@ -39,9 +39,9 @@
 >
 	<section class="groups-page">
 		<header class="page-header">
-			<nav class="breadcrumb" aria-label="Breadcrumb">
+			<nav class="breadcrumb" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
 				<a href="/docs" class="crumb">{t('nav.home', 'Home')}</a>
-				<ChevronRight size={12} class="crumb-sep" />
+				<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 				<span class="crumb-current">{t('groups.title', 'User groups')}</span>
 			</nav>
 			<h1>{t('landing.groups_title')}</h1>
@@ -68,7 +68,7 @@
 						{:else}
 							<span class="group-count"></span>
 						{/if}
-						<ArrowRight size={15} class="card-arrow" />
+						<ArrowRight size={15} class="card-arrow rtl:-scale-x-100" />
 					</span>
 				</a>
 			{/each}

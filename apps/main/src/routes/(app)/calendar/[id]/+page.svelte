@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
 	import {
@@ -57,7 +57,7 @@
 
 	function fmtDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleString(undefined, {
+			return new Date(iso).toLocaleString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric',
@@ -144,7 +144,7 @@
 				href="/calendar"
 				class="inline-flex items-center gap-1 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 			>
-				<ArrowLeft size={16} /> {t('calendar.back', 'Back to calendar')}
+				<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('calendar.back', 'Back to calendar')}
 			</a>
 		</div>
 
@@ -228,7 +228,7 @@
 					rel="noopener noreferrer nofollow"
 					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 				>
-					<ExternalLink size={16} />
+					<ExternalLink class="rtl:-scale-x-100" size={16} />
 					{t('calendar.view_source', 'View official source')}
 				</a>
 				{#if authed}

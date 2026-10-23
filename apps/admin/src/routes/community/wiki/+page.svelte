@@ -1252,7 +1252,7 @@
 	{#if canManage}
 		<div class="mb-4 flex justify-end">
 			<Button onclick={openGenerate}>
-				<Sparkles size={16} class="mr-1.5" />
+				<Sparkles size={16} class="me-1.5" />
 				{t('app.wiki.generate_draft', 'Generate AI Draft')}
 			</Button>
 		</div>

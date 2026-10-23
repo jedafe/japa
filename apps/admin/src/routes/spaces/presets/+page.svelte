@@ -168,7 +168,7 @@
 						<h3 class="text-lg font-medium" style="color: var(--color-foreground)">
 							{p.name}
 							{#if p.is_system}
-								<span class="ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-normal" style="background: var(--color-muted); color: var(--color-muted-foreground)">
+								<span class="ms-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-normal" style="background: var(--color-muted); color: var(--color-muted-foreground)">
 									<Lock class="h-3 w-3" />
 									{t("spaces.preset_system", "System")}
 								</span>
@@ -181,7 +181,7 @@
 								disabled={saving === p.name}
 								onclick={() => savePreset(p.name)}
 							>
-								<Save class="mr-1 h-4 w-4" />
+								<Save class="me-1 h-4 w-4" />
 								{saving === p.name ? t("common.saving", "Saving...") : t("common.save", "Save")}
 							</Button>
 						{/if}

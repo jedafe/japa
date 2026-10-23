@@ -28,7 +28,7 @@
 				class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
 			>
 				{t('services.faq_view_all', 'View all FAQs')}
-				<ArrowRight size={12} aria-hidden="true" />
+				<ArrowRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />
 			</a>
 		{/if}
 	</div>
@@ -40,7 +40,7 @@
 			>
 				<Accordion.Header>
 					<Accordion.Trigger
-						class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] [&[data-state=open]>svg]:rotate-180"
+						class="flex w-full items-center justify-between gap-3 px-4 py-3 text-start text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] [&[data-state=open]>svg]:rotate-180"
 					>
 						<span>{faq.question}</span>
 						<ChevronDown

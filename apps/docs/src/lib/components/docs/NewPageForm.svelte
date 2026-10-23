@@ -225,11 +225,11 @@
 	onToggleCollapse={toggleCollapse}
 >
 	<section class="new-page">
-		<nav class="breadcrumb" aria-label="Breadcrumb">
+		<nav class="breadcrumb" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
 			<a href="/docs" class="crumb">{t('audience.overview')}</a>
-			<ChevronRight size={12} class="crumb-sep" />
+			<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 			<a href="/docs/{data.audience}" class="crumb">{t(data.labelKey, data.audience)}</a>
-			<ChevronRight size={12} class="crumb-sep" />
+			<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 			<span class="crumb-current">{t('new_page.title', 'New page')}</span>
 		</nav>
 

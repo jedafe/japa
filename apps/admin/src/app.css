@@ -245,3 +245,10 @@
   background-color: color-mix(in oklab, var(--color-surface, white) 92%, transparent);
   color: var(--color-foreground, currentColor);
 }
+
+/* RTL bidi isolation — code, URLs, emails, phone numbers and other
+ * direction-neutral content keep LTR inside an RTL document. */
+[dir="rtl"] :is(code, pre, kbd, samp, .font-mono, [data-ltr], input[type="url"], input[type="email"], input[type="tel"]) {
+	direction: ltr;
+	unicode-bidi: isolate;
+}

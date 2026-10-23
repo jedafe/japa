@@ -1,5 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
+import { setRuntimePack } from '$lib/i18n/dict';
 import { fetchDocNav } from '$lib/server/nav';
 import type { DocNavTree, Menu } from '$lib/types';
 
@@ -87,10 +88,25 @@ export const load: LayoutServerLoad = async (event) => {
 		}
 	}
 
+	// §18 / ADR-013 — locales without a bundled dictionary are served from the
+	// DB pack. Registering it in dict.ts covers every server-side tServer()
+	// caller (page loads run after this layout load); returning it as page
+	// data lets the client store register the same pack after hydration.
+	const locale = event.locals.locale ?? 'en';
+	let i18nPack: Record<string, string> | null = null;
+	if (!['en', 'fr'].includes(locale)) {
+		i18nPack = await apiGet<Record<string, string>>(
+			ctx,
+			`/i18n/packs/${encodeURIComponent(locale)}`
+		).catch(() => null);
+		if (i18nPack) setRuntimePack(locale, i18nPack);
+	}
+
 	return {
 		user: event.locals.user,
 		theme: event.locals.theme,
 		locale: event.locals.locale,
+		i18nPack,
 		accessibleAudiences: event.locals.accessibleAudiences,
 		audienceGates: event.locals.audienceGates,
 		nav,

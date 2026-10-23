@@ -268,6 +268,10 @@
 		loadingInitial = false;
 		initialResults = [];
 		results = [];
+		// Selection mode: discard any typed-but-unselected search text so the
+		// input does not show a stale query next to the selected chip after
+		// blur/close. Free-text mode keeps the query — it IS the value.
+		if (!freeText) query = '';
 		if (timer) { clearTimeout(timer); timer = null; }
 	}
 
@@ -516,7 +520,7 @@
 		bind:this={dropdownEl}
 		use:portal
 		class="autocomplete-dropdown"
-		style="position: absolute; top: {dropdownTop}px; left: {dropdownLeft}px; width: {dropdownWidth}px; z-index: 99999; pointer-events: auto;{dropUp
+		style="position: absolute; top: {dropdownTop}px; inset-inline-start: {dropdownLeft}px; width: {dropdownWidth}px; z-index: 99999; pointer-events: auto;{dropUp
 			? ' transform: translateY(-100%);'
 			: ''}"
 		role="listbox"
@@ -747,7 +751,7 @@
 		background: transparent;
 		color: var(--color-text, var(--color-foreground));
 		font-size: 0.8125rem;
-		text-align: left;
+		text-align: start;
 		cursor: pointer;
 		transition: background 0.1s;
 	}

@@ -153,7 +153,7 @@
 								</Command.Item>
 							</ul>
 							<div class="footer">
-								<span class="kbd-hint"><CornerDownLeft size={12} /> {t('search.kbd_enter', 'enter')}</span>
+								<span class="kbd-hint"><CornerDownLeft class="rtl:-scale-x-100" size={12} /> {t('search.kbd_enter', 'enter')}</span>
 								<span class="kbd-hint">{t('search.kbd_navigate', '↑↓ navigate')}</span>
 								<span class="kbd-hint">{t('search.kbd_close', 'esc close')}</span>
 							</div>
@@ -179,7 +179,7 @@
 	:global(.palette) {
 		position: fixed;
 		top: 12vh;
-		left: 50%;
+		inset-inline-start: 50%;
 		transform: translateX(-50%);
 		width: min(640px, 92vw);
 		background: var(--color-surface);
@@ -231,7 +231,7 @@
 		background: transparent;
 		border: none;
 		cursor: pointer;
-		text-align: left;
+		text-align: start;
 		color: inherit;
 		font: inherit;
 	}

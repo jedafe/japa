@@ -296,7 +296,7 @@
 				{#each wikiFacts as fact (fact.label)}
 					<div class="flex justify-between gap-2">
 						<dt class="text-[var(--color-muted)]">{fact.label}</dt>
-						<dd class="text-right text-[var(--color-text)]">
+						<dd class="text-end text-[var(--color-text)]">
 							{#if fact.href}
 								<a href={fact.href} class="break-all text-[var(--color-primary)] hover:underline" target="_blank" rel="noopener">
 									{fact.value}
@@ -438,7 +438,7 @@
 						<img
 							src={wikiData.thumbnail}
 							alt={wikiData.title ?? university.name}
-							class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover"
+							class="float-end mb-3 ms-3 h-24 w-24 rounded-[var(--radius)] object-cover"
 						/>
 					{/if}
 					{#if wikiData.description}
@@ -558,7 +558,7 @@
 						data-sveltekit-preload-data="hover"
 					>
 						{t('space.view_wiki', 'View wiki')}
-						<span aria-hidden="true">→</span>
+						<span aria-hidden="true"><span class="inline-block rtl:-scale-x-100">→</span></span>
 					</a>
 				</div>
 			{/if}
@@ -658,7 +658,7 @@
 								slug={member.username}
 								name={member.display_name ?? member.username}
 								avatar={member.avatar_url}
-								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
 									{#if member.avatar_url}
@@ -830,7 +830,7 @@
 							</span>
 						</span>
 					</span>
-					<ArrowRight size={18} class="shrink-0 text-[var(--color-text-subtle)]" />
+					<ArrowRight size={18} class="shrink-0 text-[var(--color-text-subtle)] rtl:-scale-x-100" />
 				</a>
 			</div>
 		{/if}
@@ -851,7 +851,7 @@
 					</span>
 				</span>
 			</span>
-			<ArrowRight size={18} class="shrink-0 text-[var(--color-text-subtle)]" />
+			<ArrowRight size={18} class="shrink-0 text-[var(--color-text-subtle)] rtl:-scale-x-100" />
 		</a>
 	</div>
 </div>

@@ -98,6 +98,13 @@ export const actions: Actions = {
 		const pollOptionsRaw = form.getAll('poll_option[]').map((v) => String(v).trim()).filter(Boolean);
 		const pollAllowMultiple = form.get('poll_allow_multiple') === 'on';
 		const pollExpiresAt = String(form.get('poll_expires_at') ?? '').trim() || null;
+		// datetime-local carries no timezone — normalise to RFC3339 or the
+		// backend silently drops the close date on parse failure.
+		const pollCloseAt = (() => {
+			if (!pollExpiresAt) return null;
+			const d = new Date(pollExpiresAt);
+			return Number.isNaN(d.getTime()) ? null : d.toISOString();
+		})();
 
 		if (!title) {
 			return { error: 'missing_title', title, body, spaceId, isAnonymous, tags: tagSlugs };
@@ -112,7 +119,7 @@ export const actions: Actions = {
 				? {
 						question: pollQuestion,
 						is_multi_select: pollAllowMultiple,
-						close_at: pollExpiresAt,
+						close_at: pollCloseAt,
 						options: pollOptionsRaw.map((label, i) => ({ label, position: i }))
 					}
 				: undefined;

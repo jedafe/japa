@@ -37,9 +37,9 @@
 >
 	<section class="categories-page">
 		<header class="page-header">
-			<nav class="breadcrumb" aria-label="Breadcrumb">
+			<nav class="breadcrumb" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
 				<a href="/docs" class="crumb">{t('nav.home', 'Home')}</a>
-				<ChevronRight size={12} class="crumb-sep" />
+				<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 				<span class="crumb-current">{t('categories.title', 'Documentation categories')}</span>
 			</nav>
 			<h1>{t('categories.title', 'Documentation categories')}</h1>
@@ -67,7 +67,7 @@
 								<span class="cat-subs">{cat.subcategories.slice(0, 4).join(' · ')}</span>
 							{/if}
 						</span>
-						<ArrowRight size={16} class="cat-arrow" />
+						<ArrowRight size={16} class="cat-arrow rtl:-scale-x-100" />
 					</a>
 				{/each}
 			</div>

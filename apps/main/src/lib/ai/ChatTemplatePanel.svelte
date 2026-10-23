@@ -644,7 +644,7 @@
 		<button
 			type="button"
 			onclick={() => select(tpl)}
-			class="w-full rounded-[var(--radius)] px-2.5 py-1.5 pr-8 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {activeId ===
+			class="w-full rounded-[var(--radius)] px-2.5 py-1.5 pe-8 text-start text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {activeId ===
 			tpl.id
 				? 'bg-[var(--color-primary)]/10 font-medium'
 				: ''}"
@@ -657,7 +657,7 @@
 			</span>
 		</button>
 		<div
-			class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+			class="absolute end-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
 		>
 			<button
 				type="button"
@@ -684,7 +684,7 @@
 			     resolve against that ancestor, not the viewport. -->
 			<div
 				class="fixed z-50 w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
-				style="top: {menuPos.top}px; left: {menuPos.left}px"
+				style="top: {menuPos.top}px; inset-inline-start: {menuPos.left}px"
 				role="menu"
 			>
 				<button
@@ -694,9 +694,9 @@
 						closeMenus();
 						oninsert(tpl);
 					}}
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 				>
-					<CornerDownLeft size={12} class="shrink-0 text-[var(--color-muted)]" />
+					<CornerDownLeft size={12} class="shrink-0 text-[var(--color-muted)] rtl:-scale-x-100" />
 					<span class="flex-1 truncate"
 						>{t('ai.templates.insert', 'Insert as editable prompt')}</span
 					>
@@ -708,7 +708,7 @@
 						closeMenus();
 						select(tpl);
 					}}
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 				>
 					<Pencil size={12} class="shrink-0 text-[var(--color-muted)]" />
 					<span class="flex-1 truncate">{t('ai.templates.tab_edit', 'Edit template')}</span>
@@ -720,7 +720,7 @@
 						closeMenus();
 						remove(tpl.id);
 					}}
-					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
 				>
 					<Trash2 size={12} class="shrink-0" />
 					<span class="flex-1 truncate">{t('common.delete', 'Delete')}</span>
@@ -736,19 +736,19 @@
 			<button
 				type="button"
 				onclick={() => toggleFolder(node.path)}
-				class="flex w-full items-center gap-1.5 rounded-[var(--radius)] px-2 py-1.5 text-left text-xs font-semibold text-[var(--color-muted)] hover:text-[var(--color-text)]"
+				class="flex w-full items-center gap-1.5 rounded-[var(--radius)] px-2 py-1.5 text-start text-xs font-semibold text-[var(--color-muted)] hover:text-[var(--color-text)]"
 			>
 				{#if collapsedFolders.has(node.path)}
-					<ChevronRight size={12} />
+					<ChevronRight class="rtl:-scale-x-100" size={12} />
 				{:else}
 					<ChevronDown size={12} />
 				{/if}
 				<Folder size={13} class="shrink-0" />
 				<span class="truncate">{node.name}</span>
-				<span class="ml-auto shrink-0 pr-5">{countTemplates(node)}</span>
+				<span class="ms-auto shrink-0 pe-5">{countTemplates(node)}</span>
 			</button>
 			<div
-				class="absolute right-1 top-1 opacity-0 transition-opacity group-hover/f:opacity-100 group-focus-within/f:opacity-100"
+				class="absolute end-1 top-1 opacity-0 transition-opacity group-hover/f:opacity-100 group-focus-within/f:opacity-100"
 			>
 				<button
 					type="button"
@@ -771,7 +771,7 @@
 				{#if folderMenuFor === node.path && menuPos}
 					<div
 						class="fixed z-50 w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
-						style="top: {menuPos.top}px; left: {menuPos.left}px"
+						style="top: {menuPos.top}px; inset-inline-start: {menuPos.left}px"
 						role="menu"
 					>
 						<button
@@ -780,7 +780,7 @@
 								e.stopPropagation();
 								renameFolder(node.path);
 							}}
-							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 						>
 							<Pencil size={12} class="shrink-0 text-[var(--color-muted)]" />
 							<span class="flex-1 truncate"
@@ -793,7 +793,7 @@
 								e.stopPropagation();
 								deleteFolder(node.path);
 							}}
-							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
+							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
 						>
 							<Trash2 size={12} class="shrink-0" />
 							<span class="flex-1 truncate"
@@ -805,7 +805,7 @@
 			</div>
 		</div>
 		{#if !collapsedFolders.has(node.path)}
-			<ul class="pl-4">
+			<ul class="ps-4">
 				{#each node.templates as tpl (tpl.id)}
 					{@render tplRow(tpl)}
 				{/each}
@@ -819,7 +819,7 @@
 
 <aside
 	bind:this={rootEl}
-	class="flex h-full w-full flex-col overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] rounded-l-[var(--radius-card)] lg:rounded-[var(--radius-card)]"
+	class="flex h-full w-full flex-col overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] rounded-s-[var(--radius-card)] lg:rounded-[var(--radius-card)]"
 >
 	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2.5">
 		<h2 class="text-sm font-semibold text-[var(--color-text)]">
@@ -884,7 +884,7 @@
 			<div class="relative">
 				<Search
 					size={13}
-					class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+					class="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
 				/>
 				<input
 					type="search"
@@ -1530,7 +1530,7 @@
 	/* Scoped so it always beats .tpl-input's padding shorthand — a
 	   Tailwind pl-* utility can lose to unlayered component CSS. */
 	.tpl-search {
-		padding-left: 2.375rem;
+		padding-inline-start: 2.375rem;
 	}
 	.tpl-textarea {
 		height: auto;

@@ -257,12 +257,12 @@
 <!-- Page-local export/import header actions (rendered above the scaffold) -->
 <div class="mb-4 flex items-center gap-2">
 	<Button variant="outline" size="sm" onclick={exportTemplates}>
-		<Download class="mr-1 h-3.5 w-3.5" />
+		<Download class="me-1 h-3.5 w-3.5" />
 		{t('jsonld-templates.export', 'Export')}
 	</Button>
 	{#if canManageTemplates}
 		<Button variant="outline" size="sm" onclick={handleImport} disabled={importing}>
-			<Upload class="mr-1 h-3.5 w-3.5" />
+			<Upload class="me-1 h-3.5 w-3.5" />
 			{importing ? t('common.loading', 'Loading...') : t('jsonld-templates.import', 'Import')}
 		</Button>
 	{/if}
@@ -384,7 +384,7 @@
 			<label for="template-content" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">
 				{t('jsonld-templates.content', 'JSON-LD Content')}
 				{#if jsonError}
-					<span class="ml-2" style="color: var(--color-danger)">
+					<span class="ms-2" style="color: var(--color-danger)">
 						({t('jsonld-templates.invalid_json', 'Invalid JSON')}: {jsonError})
 					</span>
 				{/if}

@@ -384,7 +384,7 @@
 						/>
 					</div>
 				</div>
-				<ArrowRight size={16} class="pb-2 text-[var(--color-muted)]" />
+				<ArrowRight size={16} class="pb-2 text-[var(--color-muted)] rtl:-scale-x-100" />
 				<div>
 					<label for="rem-recv" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('remittance.receive', 'Receive')}
@@ -416,7 +416,7 @@
 		{#if sendCurrency && receiveCurrency && sendCurrency === receiveCurrency}
 			<div class="p-4">
 				<EmptyState
-					icon={ArrowRight}
+					icon={ArrowRight} iconClass="rtl:-scale-x-100"
 					title={t('remittance.same_currency', 'Choose two different currencies')}
 					body={t('remittance.same_currency_hint', 'Send and receive currencies must differ.')}
 				/>
@@ -433,12 +433,12 @@
 						<div class="mb-4 overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 							<table class="w-full text-sm">
 								<thead>
-									<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
+									<tr class="border-b border-[var(--color-border)] text-start text-xs text-[var(--color-muted)]">
 										<th class="px-3 py-2 font-medium">{t('remittance.provider', 'Provider')}</th>
-										<th class="px-3 py-2 text-right font-medium">{t('remittance.rate', 'Rate')}</th>
-										<th class="px-3 py-2 text-right font-medium">{t('remittance.fee', 'Fee')}</th>
-										<th class="px-3 py-2 text-right font-medium">{t('remittance.transfer_time', 'Time')}</th>
-										<th class="px-3 py-2 text-right font-medium">{t('remittance.vs_best', 'vs Best')}</th>
+										<th class="px-3 py-2 text-end font-medium">{t('remittance.rate', 'Rate')}</th>
+										<th class="px-3 py-2 text-end font-medium">{t('remittance.fee', 'Fee')}</th>
+										<th class="px-3 py-2 text-end font-medium">{t('remittance.transfer_time', 'Time')}</th>
+										<th class="px-3 py-2 text-end font-medium">{t('remittance.vs_best', 'vs Best')}</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -451,16 +451,16 @@
 													{r.provider_name}
 												{/if}
 												{#if r.is_benchmark}
-													<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.mid_market', 'Mid-market')}</span>
+													<span class="ms-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.mid_market', 'Mid-market')}</span>
 												{/if}
 												{#if r.is_manual}
-													<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.manual', 'Manual')}</span>
+													<span class="ms-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.manual', 'Manual')}</span>
 												{/if}
 												{#if isStale(r)}
-													<span class="ml-1 rounded-full border border-amber-300 px-1.5 py-0.5 text-xs text-amber-600 dark:border-amber-800 dark:text-amber-400">{t('remittance.stale', 'Stale')}</span>
+													<span class="ms-1 rounded-full border border-amber-300 px-1.5 py-0.5 text-xs text-amber-600 dark:border-amber-800 dark:text-amber-400">{t('remittance.stale', 'Stale')}</span>
 												{/if}
 												{#if bestRate && r.id === bestRate.id}
-													<span class="ml-1 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-white">{t('remittance.best', 'Best')}</span>
+													<span class="ms-1 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-white">{t('remittance.best', 'Best')}</span>
 												{/if}
 												{#if r.source?.name}
 													<a
@@ -471,10 +471,10 @@
 													>{t('remittance.via', 'via')} {r.source.name}</a>
 												{/if}
 											</td>
-											<td class="px-3 py-2 text-right font-medium text-[var(--color-text)]">{formatRate(r.rate)}</td>
-											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{feeLabel(r.fee_flat, r.fee_pct, sendCurrency)}</td>
-											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{r.transfer_time || '—'}</td>
-											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{ratioVsBest(r)}</td>
+											<td class="px-3 py-2 text-end font-medium text-[var(--color-text)]">{formatRate(r.rate)}</td>
+											<td class="px-3 py-2 text-end text-[var(--color-muted)]">{feeLabel(r.fee_flat, r.fee_pct, sendCurrency)}</td>
+											<td class="px-3 py-2 text-end text-[var(--color-muted)]">{r.transfer_time || '—'}</td>
+											<td class="px-3 py-2 text-end text-[var(--color-muted)]">{ratioVsBest(r)}</td>
 										</tr>
 									{/each}
 								</tbody>
@@ -544,12 +544,12 @@
 								<div class="mt-3 overflow-x-auto rounded-[var(--radius)] border border-[var(--color-border)]">
 									<table class="w-full text-sm">
 										<thead>
-											<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
+											<tr class="border-b border-[var(--color-border)] text-start text-xs text-[var(--color-muted)]">
 												<th class="px-3 py-2 font-medium">{t('remittance.provider', 'Provider')}</th>
-												<th class="px-3 py-2 text-right font-medium">{t('remittance.rate', 'Rate')}</th>
-												<th class="px-3 py-2 text-right font-medium">{t('remittance.fee', 'Fee')}</th>
-												<th class="px-3 py-2 text-right font-medium">{t('remittance.receive_amount', 'Receive')}</th>
-												<th class="px-3 py-2 text-right font-medium">{t('remittance.total_cost', 'Total cost')}</th>
+												<th class="px-3 py-2 text-end font-medium">{t('remittance.rate', 'Rate')}</th>
+												<th class="px-3 py-2 text-end font-medium">{t('remittance.fee', 'Fee')}</th>
+												<th class="px-3 py-2 text-end font-medium">{t('remittance.receive_amount', 'Receive')}</th>
+												<th class="px-3 py-2 text-end font-medium">{t('remittance.total_cost', 'Total cost')}</th>
 											</tr>
 										</thead>
 										<tbody>
@@ -558,13 +558,13 @@
 													<td class="px-3 py-2 text-[var(--color-text)]">
 														{p.provider_name}
 														{#if p.is_benchmark}
-															<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.mid_market', 'Mid-market')}</span>
+															<span class="ms-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.mid_market', 'Mid-market')}</span>
 														{/if}
 													</td>
-													<td class="px-3 py-2 text-right">{formatRate(p.rate)}</td>
-													<td class="px-3 py-2 text-right text-[var(--color-muted)]">{feeLabel(p.fee_flat, p.fee_pct, sendCurrency)}</td>
-													<td class="px-3 py-2 text-right font-medium">{formatMoney(p.receive_amount, receiveCurrency, data.currencies)}</td>
-													<td class="px-3 py-2 text-right text-[var(--color-muted)]">{formatMoney(p.total_fees, sendCurrency, data.currencies)}</td>
+													<td class="px-3 py-2 text-end">{formatRate(p.rate)}</td>
+													<td class="px-3 py-2 text-end text-[var(--color-muted)]">{feeLabel(p.fee_flat, p.fee_pct, sendCurrency)}</td>
+													<td class="px-3 py-2 text-end font-medium">{formatMoney(p.receive_amount, receiveCurrency, data.currencies)}</td>
+													<td class="px-3 py-2 text-end text-[var(--color-muted)]">{formatMoney(p.total_fees, sendCurrency, data.currencies)}</td>
 												</tr>
 											{/each}
 										</tbody>
@@ -777,7 +777,7 @@
 												{a.send_currency}→{a.receive_currency} @ {formatRate(a.target_rate)}
 												<span class="text-[var(--color-muted)]">({directionLabel(a.direction)})</span>
 												{#if !a.is_active}
-													<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.paused', 'Paused')}</span>
+													<span class="ms-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.paused', 'Paused')}</span>
 												{/if}
 											</span>
 											<div class="flex items-center gap-2">

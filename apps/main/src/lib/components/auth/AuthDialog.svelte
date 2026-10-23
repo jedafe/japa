@@ -39,7 +39,7 @@
 			type="button"
 			onclick={close}
 			aria-label={t('common.close', 'Close')}
-			class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+			class="absolute end-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
 			<X size={20} />
 		</button>

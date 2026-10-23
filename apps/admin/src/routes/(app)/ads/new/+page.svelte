@@ -283,7 +283,7 @@
 							style={contentMode === 'text' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
 							onclick={() => switchMode('text')}
 						>
-							<Type class="mr-1 inline h-3 w-3" />{t('ads.mode_text', 'Text')}
+							<Type class="me-1 inline h-3 w-3" />{t('ads.mode_text', 'Text')}
 						</button>
 						<button
 							type="button"
@@ -291,7 +291,7 @@
 							style={contentMode === 'html' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
 							onclick={() => switchMode('html')}
 						>
-							<Code class="mr-1 inline h-3 w-3" />{t('ads.mode_html', 'HTML')}
+							<Code class="me-1 inline h-3 w-3" />{t('ads.mode_html', 'HTML')}
 						</button>
 						<button
 							type="button"
@@ -299,7 +299,7 @@
 							style={contentMode === 'markdown' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
 							onclick={() => switchMode('markdown')}
 						>
-							<FileText class="mr-1 inline h-3 w-3" />{t('ads.mode_markdown', 'Markdown')}
+							<FileText class="me-1 inline h-3 w-3" />{t('ads.mode_markdown', 'Markdown')}
 						</button>
 						<button
 							type="button"
@@ -307,7 +307,7 @@
 							style={contentMode === 'image' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
 							onclick={() => switchMode('image')}
 						>
-							<ImageIcon class="mr-1 inline h-3 w-3" />{t('ads.mode_image', 'Image')}
+							<ImageIcon class="me-1 inline h-3 w-3" />{t('ads.mode_image', 'Image')}
 						</button>
 						<button
 							type="button"
@@ -315,7 +315,7 @@
 							style={contentMode === 'preview' ? 'background-color: var(--color-primary); color: white' : 'color: var(--color-muted)'}
 							onclick={() => switchMode('preview')}
 						>
-							<Eye class="mr-1 inline h-3 w-3" />{t('ads.mode_preview', 'Preview')}
+							<Eye class="me-1 inline h-3 w-3" />{t('ads.mode_preview', 'Preview')}
 						</button>
 					</div>
 				</div>
@@ -334,7 +334,7 @@
 							<img src={imageUrl} alt="" class="max-h-48 rounded-lg border object-cover" style="border-color: var(--color-border)" />
 							<button
 								type="button"
-								class="absolute -right-2 -top-2 rounded-full p-1 shadow-lg"
+								class="absolute -end-2 -top-2 rounded-full p-1 shadow-lg"
 								style="background-color: var(--color-danger); color: white"
 								onclick={removeImage}
 								aria-label={t('common.remove', 'Remove')}

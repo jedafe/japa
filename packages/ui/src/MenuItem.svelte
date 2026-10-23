@@ -13,6 +13,7 @@
 		/** Red danger styling for destructive actions. */
 		destructive?: boolean;
 		icon?: IconComponent;
+		iconClass?: string;
 		class?: string;
 		children?: Snippet;
 	}
@@ -23,6 +24,7 @@
 		disabled = false,
 		destructive = false,
 		icon: Icon,
+		iconClass = '',
 		class: className = '',
 		children
 	}: Props = $props();
@@ -39,7 +41,7 @@
 		{#snippet child({ props })}
 			<a {href} {...props} class={itemClass}>
 				{#if Icon}
-					<Icon class="h-4 w-4" />
+					<Icon class={`h-4 w-4 ${iconClass}`} />
 				{/if}
 				{@render children?.()}
 			</a>
@@ -48,7 +50,7 @@
 {:else}
 	<DropdownMenu.Item {disabled} onSelect={(e) => onSelect?.(e)} class={itemClass}>
 		{#if Icon}
-			<Icon class="h-4 w-4" />
+			<Icon class={`h-4 w-4 ${iconClass}`} />
 		{/if}
 		{@render children?.()}
 	</DropdownMenu.Item>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto, invalidate } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { ArrowLeft, Check, Clock, Eye, Loader2, Pencil, Send, Trash2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
@@ -19,6 +19,7 @@
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { excerpt } from '$lib/utils/seo-score';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import { contentHref } from '$lib/utils/contentLink';
 	import type { PageData } from './$types';
@@ -34,14 +35,18 @@
 	const canSubmitForReview = $derived(data.canEdit && isDraft);
 	let submittingForReview = $state(false);
 	let reviewSubmitted = $state(false);
+	let actionError = $state<string | null>(null);
 
 	async function submitForReview() {
 		if (!canSubmitForReview || submittingForReview) return;
 		submittingForReview = true;
+		actionError = null;
 		const res = await api.post(`/blog/${article.id}/submit-for-review`);
 		if (!res.error) {
 			reviewSubmitted = true;
 			await invalidate(`blog:${article.slug}`);
+		} else {
+			actionError = res.error.message;
 		}
 		submittingForReview = false;
 	}
@@ -52,10 +57,12 @@
 		const confirmed = window.confirm(t('blog.delete_confirm', 'Are you sure you want to delete this post?'));
 		if (!confirmed) return;
 		deleting = true;
+		actionError = null;
 		const res = await api.delete(`/blog/${article.id}`);
 		if (!res.error) {
 			await goto('/blog');
 		} else {
+			actionError = res.error.message;
 			deleting = false;
 		}
 	}
@@ -66,9 +73,11 @@
 			(w) => w && typeof w.widget_type === 'string'
 		)
 	);
-	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }));
+	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' }));
 	const title = $derived(`${article.title} — ${t('app.name')}`);
-	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
+	const description = $derived(
+		article.excerpt ?? excerpt(article.body_html || article.body, 160)
+	);
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.
 	const canonical = $derived(`${page.url.origin}/blog/${article.slug}`);
@@ -166,7 +175,7 @@
 	<article class="min-w-0 max-w-[41rem]">
 		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
 			<a href="/blog" class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]">
-				<ArrowLeft size={16} /> {t('blog.back', 'Back to blog')}
+				<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('blog.back', 'Back to blog')}
 			</a>
 			<div class="flex flex-wrap items-center gap-2">
 				{#if data.canEdit}
@@ -189,7 +198,7 @@
 						{:else if submittingForReview}
 							<Loader2 size={14} class="animate-spin" /> {t('blog.submitting', 'Submitting…')}
 						{:else}
-							<Send size={14} /> {t('blog.submit_for_review', 'Submit for review')}
+							<Send class="rtl:-scale-x-100" size={14} /> {t('blog.submit_for_review', 'Submit for review')}
 						{/if}
 					</button>
 				{/if}
@@ -210,6 +219,10 @@
 				{/if}
 			</div>
 		</div>
+
+		{#if actionError}
+			<p class="mb-8 -mt-4 text-sm text-[var(--color-destructive)]" role="alert">{actionError}</p>
+		{/if}
 
 		{#if article.featured_image_url}
 			<img src={article.featured_image_url} alt={article.title} class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
@@ -242,7 +255,7 @@
 			{#if article.read_time_minutes > 0}
 				<span class="flex items-center gap-1"><Clock size={14} /> {article.read_time_minutes} {t('blog.min_read', 'min read')}</span>
 			{/if}
-			<span class="flex items-center gap-1"><Eye size={14} /> {article.view_count} views</span>
+			<span class="flex items-center gap-1"><Eye size={14} /> {article.view_count} {t('content.views', 'views')}</span>
 			{#if data.canEdit && article.status !== 'published'}
 				{@const statusClass =
 					article.status === 'draft'
@@ -306,6 +319,7 @@
 		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
 		<CommentThread
 			comments={data.comments}
+			commentsTotal={data.commentsTotal}
 			totalCount={article.comment_count}
 			contentId={article.id}
 			contentType={article.content_type}

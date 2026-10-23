@@ -95,7 +95,7 @@
 				>
 					<div class="mb-3 flex items-center justify-between">
 						<Award size={32} class="text-[var(--level-intermediate)]" />
-						<ExternalLink size={16} class="text-[var(--color-muted)] opacity-0 group-hover:opacity-100" />
+						<ExternalLink size={16} class="text-[var(--color-muted)] opacity-0 group-hover:opacity-100 rtl:-scale-x-100" />
 					</div>
 					<p class="text-base font-semibold text-[var(--color-text)]">{cert.title}</p>
 					<p class="mt-1 text-sm text-[var(--color-muted)]">

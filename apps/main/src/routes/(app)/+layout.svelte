@@ -319,7 +319,7 @@
 			aria-label={t('ai.panel.title', 'Japa AI')}
 			title={t('ai.panel.title', 'Japa AI')}
 			aria-expanded={aiPanelOpen}
-			class="fixed bottom-20 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"
+			class="fixed bottom-20 end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"
 		>
 			<Sparkles size={22} />
 		</button>
@@ -373,7 +373,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.25rem;
-		margin-left: auto;
+		margin-inline-start: auto;
 	}
 	.roadmap-nav-link {
 		padding: 0.375rem 0.75rem;

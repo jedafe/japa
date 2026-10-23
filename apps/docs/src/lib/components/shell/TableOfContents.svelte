@@ -83,14 +83,14 @@
 		line-height: 1.4;
 		color: var(--color-text-subtle);
 		text-decoration: none;
-		border-left: 2px solid transparent;
+		border-inline-start: 2px solid transparent;
 	}
 	.toc-link:hover { color: var(--color-text); }
 	.toc-link.active {
 		color: var(--color-primary);
-		border-left-color: var(--color-primary);
+		border-inline-start-color: var(--color-primary);
 		font-weight: 500;
 	}
-	.toc-link.level-3 { padding-left: 1.5rem; font-size: 0.75rem; }
+	.toc-link.level-3 { padding-inline-start: 1.5rem; font-size: 0.75rem; }
 	.toc-empty { height: 0; }
 </style>

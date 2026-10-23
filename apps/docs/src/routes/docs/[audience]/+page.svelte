@@ -85,9 +85,9 @@
 >
 	<section class="audience-page">
 		<header class="audience-header">
-			<nav class="breadcrumb" aria-label="Breadcrumb">
+			<nav class="breadcrumb" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
 				<a href="/docs" class="crumb">{t('audience.overview')}</a>
-				<ChevronRight size={12} class="crumb-sep" />
+				<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 				<span class="crumb-current">{t(data.labelKey, data.audience)}</span>
 			</nav>
 			<div class="audience-title-row">
@@ -158,7 +158,7 @@
 								<span class="status-badge status-{item.review_status}">
 									{t(`new_page.status.${item.review_status}`, item.review_status ?? '')}
 								</span>
-								<ArrowRight size={15} class="doc-card-arrow" />
+								<ArrowRight size={15} class="doc-card-arrow rtl:-scale-x-100" />
 							</a>
 						{/each}
 					</div>
@@ -173,14 +173,14 @@
 		<div class="doc-card doc-card-group">
 			<a href={pageHref(item.slug)} class="doc-card-head">
 				<span class="doc-card-title">{item.title}</span>
-				<ArrowUpRight size={15} class="doc-card-arrow" />
+				<ArrowUpRight size={15} class="doc-card-arrow rtl:-scale-x-100" />
 			</a>
 			<ul class="doc-card-children">
 				{#each item.children as child (child.id)}
 					<li>
 						<a href={pageHref(child.slug)} class="doc-child-link">
 							<span class="doc-child-title">{child.title}</span>
-							<ArrowRight size={13} class="doc-child-arrow" />
+							<ArrowRight size={13} class="doc-child-arrow rtl:-scale-x-100" />
 						</a>
 					</li>
 				{/each}
@@ -190,7 +190,7 @@
 		<a href={pageHref(item.slug)} class="doc-card doc-card-link">
 			<FileText size={16} class="doc-link-icon" />
 			<span class="doc-card-title">{item.title}</span>
-			<ArrowRight size={15} class="doc-card-arrow" />
+			<ArrowRight size={15} class="doc-card-arrow rtl:-scale-x-100" />
 		</a>
 	{/if}
 {/snippet}

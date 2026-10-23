@@ -45,7 +45,14 @@
 	let probeTimer: ReturnType<typeof setTimeout> | null = null;
 	let probeSeq = 0;
 
-	const kindOptions = $derived(meta.submittable_source_kinds ?? meta.source_kinds ?? []);
+	// Source-kind labels localize via sources.kind.* keys; the backend label
+	// is the fallback for kinds added without an i18n entry yet.
+	const kindOptions = $derived(
+		(meta.submittable_source_kinds ?? meta.source_kinds ?? []).map((k) => ({
+			value: k.value,
+			label: t(`sources.kind.${k.value}`, k.label)
+		}))
+	);
 	// The propose picker is the backend's submittable subset — domains
 	// whose channels reach content without AI extraction (job-family,
 	// news/article, video). Older backends without the field fall back to
@@ -358,7 +365,7 @@
 												<summary class="cursor-pointer text-[10px] text-[var(--color-muted)] transition hover:text-[var(--color-text)]">
 													{t('sources.submit.probe.endpoint_count', '{count} endpoints', { count: g.entryUrls.length })}
 												</summary>
-												<ul class="mt-0.5 flex flex-col gap-0.5 pl-3">
+												<ul class="mt-0.5 flex flex-col gap-0.5 ps-3">
 													{#each g.entryUrls as u (u)}
 														<li class="truncate text-[10px] text-[var(--color-muted)]" title={u}>{u}</li>
 													{/each}
@@ -422,7 +429,7 @@
 					<div class="mb-1.5 flex flex-wrap gap-1.5" role="group" aria-labelledby="psf-categories-label">
 						{#each categories as c (c)}
 							<span
-								class="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]/10 py-1 pl-2.5 pr-1 text-xs font-medium text-[var(--color-primary)]"
+								class="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]/10 py-1 ps-2.5 pe-1 text-xs font-medium text-[var(--color-primary)]"
 							>
 								{sourceCategoryLabel(c)}
 								<button
@@ -493,7 +500,7 @@
 				bind:value={description}
 				class={inputClass()}
 				rows={3}
-				placeholder="Official DAAD scholarship database for international students"
+				placeholder={t('sources.submit.description_placeholder', 'Official DAAD scholarship database for international students')}
 				disabled={loading}
 			></textarea>
 		</div>

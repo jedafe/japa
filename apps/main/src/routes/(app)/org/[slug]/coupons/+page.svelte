@@ -245,7 +245,7 @@
 			<button
 				type="button"
 				onclick={openCreate}
-				class="ml-auto inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				class="ms-auto inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
 			>
 				<Plus size={14} /> {t('coupons.new', 'New coupon')}
 			</button>

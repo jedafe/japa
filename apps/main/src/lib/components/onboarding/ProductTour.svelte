@@ -273,10 +273,10 @@
 		background-color: var(--color-primary-hover, var(--color-primary));
 	}
 	:global(.jc-tour .driver-popover-arrow-side-left) {
-		border-left-color: var(--color-surface);
+		border-inline-start-color: var(--color-surface);
 	}
 	:global(.jc-tour .driver-popover-arrow-side-right) {
-		border-right-color: var(--color-surface);
+		border-inline-end-color: var(--color-surface);
 	}
 	:global(.jc-tour .driver-popover-arrow-side-top) {
 		border-top-color: var(--color-surface);

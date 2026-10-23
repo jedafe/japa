@@ -8,7 +8,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
-	import { RefreshCw, Save, Check, Upload, RotateCcw, Undo2, AlertTriangle, ArrowRight, Image as ImageIcon } from 'lucide-svelte';
+	import { RefreshCw, Save, Check, Upload, RotateCcw, ListRestart, Undo2, AlertTriangle, ArrowRight, Image as ImageIcon } from 'lucide-svelte';
 	import { Switch } from "bits-ui";
 	import { settingsAdminApi, api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -30,6 +30,7 @@
 	let resetting = $state(false);
 	let showResetDialog = $state(false);
 	let resetTargetCategory = $state('');
+	let resetTargetKey = $state('');
 
 	interface SettingDef {
 		key: string;
@@ -42,6 +43,8 @@
 		placeholder?: string;
 		description?: string;
 		masked?: boolean;
+		default_value?: unknown;
+		overridden?: boolean;
 	}
 
 	interface SettingCategory {
@@ -328,6 +331,9 @@
 
 			const result = await settingsAdminApi.updateCategory(categoryKey, entries);
 			if (result.ok) {
+				// Every key in the category was upserted, so each now has a
+				// stored override row — the per-setting reset button reflects that.
+				for (const s of cat.settings) s.overridden = true;
 				// Update original state after successful save
 				originalCategories = JSON.parse(JSON.stringify(categories));
 				originalToggleStates = JSON.parse(JSON.stringify(toggleStates));
@@ -365,7 +371,7 @@
 		}
 	}
 
-	function resetSetting(catKey: string, settingKey: string) {
+	function revertSetting(catKey: string, settingKey: string) {
 		const cat = categories.find(c => c.key === catKey);
 		const origCat = originalCategories.find(c => c.key === catKey);
 		if (!cat || !origCat) return;
@@ -395,7 +401,44 @@
 
 	function askResetCategory(categoryKey: string) {
 		resetTargetCategory = categoryKey;
+		resetTargetKey = '';
 		showResetDialog = true;
+	}
+
+	function askResetSetting(categoryKey: string, settingKey: string) {
+		resetTargetCategory = categoryKey;
+		resetTargetKey = settingKey;
+		showResetDialog = true;
+	}
+
+	let resetTargetLabel = $derived(() => {
+		if (!resetTargetKey) return '';
+		const cat = categories.find(c => c.key === resetTargetCategory);
+		return cat?.settings.find(s => s.key === resetTargetKey)?.label ?? resetTargetKey;
+	});
+
+	// Applies a single-key reset locally: the stored override was deleted
+	// server-side, so the effective value is the catalog default again. The
+	// original snapshot is updated too so the row no longer reads as dirty.
+	function applySettingDefault(catKey: string, settingKey: string, defaultValue: unknown) {
+		const cat = categories.find(c => c.key === catKey);
+		const origCat = originalCategories.find(c => c.key === catKey);
+		if (!cat || !origCat) return;
+
+		const setting = cat.settings.find(s => s.key === settingKey);
+		const origSetting = origCat.settings.find(s => s.key === settingKey);
+		if (!setting || !origSetting) return;
+
+		setting.value = defaultValue;
+		setting.overridden = false;
+		origSetting.value = defaultValue;
+		origSetting.overridden = false;
+
+		if (setting.type === 'toggle') {
+			const id = `${catKey}.${settingKey}`;
+			toggleStates[id] = Boolean(defaultValue);
+			originalToggleStates[id] = Boolean(defaultValue);
+		}
 	}
 
 	// Reset restores the persisted system defaults for a whole category — the
@@ -408,6 +451,27 @@
 		error = '';
 		messageType = '';
 		try {
+			if (resetTargetKey) {
+				const result = await settingsAdminApi.resetSetting(resetTargetCategory, resetTargetKey);
+				if (result.ok) {
+					const cat = categories.find(c => c.key === resetTargetCategory);
+					const setting = cat?.settings.find(s => s.key === resetTargetKey);
+					applySettingDefault(resetTargetCategory, resetTargetKey, setting?.default_value);
+					showResetDialog = false;
+					resetTargetCategory = '';
+					resetTargetKey = '';
+					error = t('settings.reset_default_success', 'Setting reset to system default.');
+					messageType = 'success';
+					setTimeout(() => {
+						error = '';
+						messageType = '';
+					}, 3000);
+				} else {
+					error = result.error;
+					messageType = 'error';
+				}
+				return;
+			}
 			const result = await settingsAdminApi.resetCategory(resetTargetCategory);
 			if (result.ok) {
 				showResetDialog = false;
@@ -525,7 +589,7 @@
 {#if loading}
 	<div class="flex items-center justify-center py-12">
 		<RefreshCw class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
-		<span class="ml-2 text-sm" style="color: var(--color-muted)">{t('settings.loading_settings')}</span>
+		<span class="ms-2 text-sm" style="color: var(--color-muted)">{t('settings.loading_settings')}</span>
 	</div>
 {:else}
 	<!-- Message banner -->
@@ -561,7 +625,7 @@
 					onclick={revertAll}
 					disabled={saving}
 				>
-					<Undo2 class="h-4 w-4" />
+					<Undo2 class="h-4 w-4 rtl:-scale-x-100" />
 					{t('settings.revert_all', 'Revert All')}
 				</Button>
 			{/if}
@@ -585,7 +649,7 @@
 									: 'color: var(--color-muted)'}
 								onclick={() => selectTab(tab.value)}
 							>
-								<span class="flex-1 text-left">{tab.label}</span>
+								<span class="flex-1 text-start">{tab.label}</span>
 								<span class="text-xs" style="color: var(--color-muted)">{tab.count}</span>
 							</button>
 						{/each}
@@ -623,7 +687,7 @@
 					</div>
 					{#if catDirtyCount > 0}
 						<span
-							class="ml-auto rounded-full px-2 py-0.5 text-xs font-medium"
+							class="ms-auto rounded-full px-2 py-0.5 text-xs font-medium"
 							style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
 						>
 							{catDirtyCount} {t('settings.modified', 'modified')}
@@ -690,7 +754,7 @@
 										/>
 									{:else if setting.type === 'toggle'}
 										<div class="flex items-center gap-3">
-											<span class="text-sm w-8 text-right" style="color: var(--color-muted)">
+											<span class="text-sm w-8 text-end" style="color: var(--color-muted)">
 												{toggleStates[toggleId] ? t('settings.on', 'On') : t('settings.off', 'Off')}
 											</span>
 											<Switch.Root
@@ -726,7 +790,7 @@
 											style="border-color: var(--color-border); color: var(--color-primary)"
 										>
 											{t('content_types.title', 'Content Types')}
-											<ArrowRight class="h-3.5 w-3.5" />
+											<ArrowRight class="h-3.5 w-3.5 rtl:-scale-x-100" />
 										</a>
 									{:else if setting.type === 'textarea'}
 										<textarea
@@ -887,16 +951,32 @@
 										{/if}
 									{/if}
 
-									<!-- Reset button -->
+									<!-- Revert unsaved edits back to the saved value -->
 									{#if canManage && dirty}
 										<button
 											type="button"
 											class="rounded-lg p-1.5 transition-colors"
 											style="color: var(--color-muted)"
 											title={t('settings.reset_to_default', 'Reset to original value')}
-											onclick={() => resetSetting(category.key, setting.key)}
+											onclick={() => revertSetting(category.key, setting.key)}
 										>
 											<RotateCcw class="h-3.5 w-3.5" />
+										</button>
+									{/if}
+
+									<!-- Reset to system default: deletes the stored override -->
+									{#if canManage}
+										<button
+											type="button"
+											class="rounded-lg p-1.5 transition-colors {setting.overridden ? 'hover:bg-muted/50' : 'opacity-40'}"
+											style="color: var(--color-muted)"
+											title={setting.overridden
+												? t('settings.reset_to_system_default', 'Reset to system default')
+												: t('settings.already_default', 'Already at system default')}
+											disabled={!setting.overridden || resetting}
+											onclick={() => askResetSetting(category.key, setting.key)}
+										>
+											<ListRestart class="h-3.5 w-3.5" />
 										</button>
 									{/if}
 								</div>
@@ -924,7 +1004,7 @@
 							{t('settings.reset_defaults', 'Reset to Defaults')}
 						</Button>
 						<Button disabled={saving || !isDirty} variant="outline" size="sm" onclick={() => revertAll()}>
-							<Undo2 class="h-4 w-4" />
+							<Undo2 class="h-4 w-4 rtl:-scale-x-100" />
 							{t('settings.revert', 'Revert')}
 						</Button>
 						<Button disabled={saving} variant="outline" size="sm" onclick={() => saveCategory(category.key)}>
@@ -957,7 +1037,12 @@
 
 <Modal bind:open={showResetDialog} title={t('settings.reset_defaults_title', 'Reset to System Defaults')} size="sm">
 	<p class="text-sm" style="color: var(--color-foreground)">
-		{t('settings.reset_defaults_confirm', 'This removes every saved customization in this category and restores the system defaults. Any unsaved changes will be lost.')}
+		{#if resetTargetKey}
+			{t('settings.reset_default_confirm', 'This removes the saved customization for "{label}" and restores its system default.')
+				.replace('{label}', resetTargetLabel())}
+		{:else}
+			{t('settings.reset_defaults_confirm', 'This removes every saved customization in this category and restores the system defaults. Any unsaved changes will be lost.')}
+		{/if}
 	</p>
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="ghost" disabled={resetting} onclick={() => (showResetDialog = false)}>{t('common.cancel', 'Cancel')}</Button>

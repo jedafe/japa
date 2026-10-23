@@ -57,7 +57,7 @@
 				{#if theme.resolved === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 			</button>
 			<a href={`${mainOrigin}/login?redirect=${returnTo}`} class="guest-login-btn">
-				<LogIn size={16} />
+				<LogIn class="rtl:-scale-x-100" size={16} />
 				<span>{t('auth.login')}</span>
 			</a>
 			<a href={`${mainOrigin}/signup?redirect=${returnTo}`} class="guest-signup-btn">

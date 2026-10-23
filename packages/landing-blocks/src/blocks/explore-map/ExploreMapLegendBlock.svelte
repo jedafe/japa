@@ -26,7 +26,7 @@
         <li>
           <button
             type="button"
-            class="flex w-full items-center gap-2.5 rounded-[var(--radius)] px-1.5 py-1 text-left transition-colors hover:bg-[var(--color-surface-subtle)] {ctx.selCategory === cat.key ? 'bg-[var(--color-surface-subtle)] ring-1 ring-[var(--color-border)]' : ''}"
+            class="flex w-full items-center gap-2.5 rounded-[var(--radius)] px-1.5 py-1 text-start transition-colors hover:bg-[var(--color-surface-subtle)] {ctx.selCategory === cat.key ? 'bg-[var(--color-surface-subtle)] ring-1 ring-[var(--color-border)]' : ''}"
             onclick={() => (ctx.selCategory = ctx.selCategory === cat.key ? '' : cat.key)}
             aria-pressed={ctx.selCategory === cat.key}
           >

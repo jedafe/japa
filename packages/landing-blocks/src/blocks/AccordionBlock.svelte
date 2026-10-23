@@ -86,7 +86,7 @@
         {#each filteredItems as item, i}
           <Accordion.Item value={String(i)} class="overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]">
             <Accordion.Header>
-              <Accordion.Trigger class="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+              <Accordion.Trigger class="flex w-full items-center justify-between px-4 py-3 text-start text-sm font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
                 {item.title}
                 <span class="transition-transform accordion-chevron">&#9662;</span>
               </Accordion.Trigger>

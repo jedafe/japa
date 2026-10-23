@@ -245,13 +245,13 @@ body {
 .prose p { margin-top: 1.25rem; margin-bottom: 1.25rem; }
 .prose a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
 .prose a:hover { color: var(--color-primary-hover); }
-.prose ul, .prose ol { margin-top: 1.25rem; margin-bottom: 1.25rem; padding-left: 1.5rem; }
+.prose ul, .prose ol { margin-top: 1.25rem; margin-bottom: 1.25rem; padding-inline-start: 1.5rem; }
 .prose ul { list-style: disc; }
 .prose ol { list-style: decimal; }
 .prose li { margin-top: 0.5rem; margin-bottom: 0.5rem; }
 .prose blockquote {
-	border-left: 3px solid var(--color-primary);
-	padding-left: 1rem;
+	border-inline-start: 3px solid var(--color-primary);
+	padding-inline-start: 1rem;
 	font-style: italic;
 	color: var(--color-text-subtle);
 	margin-top: 1.5rem;
@@ -268,14 +268,14 @@ body {
 }
 .prose blockquote.callout p:first-child { margin-top: 0; }
 .prose blockquote.callout p:last-child { margin-bottom: 0; }
-.prose blockquote.callout-tip { border-left-color: var(--chart-3, var(--color-primary)); }
-.prose blockquote.callout-note { border-left-color: var(--color-primary); }
+.prose blockquote.callout-tip { border-inline-start-color: var(--chart-3, var(--color-primary)); }
+.prose blockquote.callout-note { border-inline-start-color: var(--color-primary); }
 .prose blockquote.callout-warning,
-.prose blockquote.callout-important { border-left-color: var(--method-delete); }
+.prose blockquote.callout-important { border-inline-start-color: var(--method-delete); }
 /* Heading permalinks — '#' appears on hover (docs convention). The anchor
    element is injected by injectHeadingAnchors() in tiptap/serialize.ts. */
 .prose .heading-anchor {
-	margin-left: 0.5rem;
+	margin-inline-start: 0.5rem;
 	font-family: var(--font-sans);
 	font-weight: 500;
 	font-size: 0.8em;
@@ -327,7 +327,7 @@ body {
 .prose .youtube-embed iframe {
 	position: absolute;
 	top: 0;
-	left: 0;
+	inset-inline-start: 0;
 	width: 100%;
 	height: 100%;
 	border: 0;
@@ -354,7 +354,7 @@ body {
 .prose-table-wrapper::after {
 	content: '';
 	position: absolute;
-	right: 0;
+	inset-inline-end: 0;
 	top: 0;
 	bottom: 0;
 	width: 1.5rem;
@@ -376,7 +376,7 @@ body {
 .prose-table-wrapper th, .prose-table-wrapper td {
 	border: 1px solid var(--color-border);
 	padding: 0.75rem;
-	text-align: left;
+	text-align: start;
 	vertical-align: top;
 }
 
@@ -398,7 +398,7 @@ body {
 .prose-table-wrapper th:first-child,
 .prose-table-wrapper td:first-child {
 	position: sticky;
-	left: 0;
+	inset-inline-start: 0;
 	z-index: 2;
 	background: var(--color-surface);
 }
@@ -416,7 +416,7 @@ body {
 .prose hr { border: none; border-top: 1px solid var(--color-border); margin-top: 2rem; margin-bottom: 2rem; }
 
 /* TaskList (TipTap task-list/task-item) */
-.prose ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.prose ul[data-type="taskList"] { list-style: none; padding-inline-start: 0; }
 .prose li[data-type="taskItem"] { display: flex; align-items: flex-start; gap: 0.5rem; }
 .prose li[data-type="taskItem"] > label { flex-shrink: 0; margin-top: 0.25rem; }
 .prose li[data-type="taskItem"] p { margin-top: 0; margin-bottom: 0; }
@@ -526,4 +526,11 @@ input[type="search"]:focus-visible {
 .lc-tooltip-container {
 	background-color: color-mix(in oklab, var(--color-surface, white) 92%, transparent);
 	color: var(--color-foreground, currentColor);
+}
+
+/* RTL bidi isolation — code, URLs, emails, phone numbers and other
+ * direction-neutral content keep LTR inside an RTL document. */
+[dir="rtl"] :is(code, pre, kbd, samp, .font-mono, [data-ltr], input[type="url"], input[type="email"], input[type="tel"]) {
+	direction: ltr;
+	unicode-bidi: isolate;
 }

@@ -172,7 +172,7 @@
 				<a
 					href={rowHref(b.id)}
 					aria-current={active ? 'true' : undefined}
-					class="flex w-full items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 text-left transition-colors {active
+					class="flex w-full items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 text-start transition-colors {active
 						? 'bg-[var(--color-surface-subtle)]'
 						: 'hover:bg-[var(--color-surface-subtle)]'}"
 				>

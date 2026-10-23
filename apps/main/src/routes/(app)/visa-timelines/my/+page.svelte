@@ -285,7 +285,7 @@
 
 	<div class="p-4">
 		<a href="/visa-timelines" class="mb-4 inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]">
-			<ArrowLeft size={13} /> {t('visa_timelines.back_to_stats', 'Back to stats')}
+			<ArrowLeft class="rtl:-scale-x-100" size={13} /> {t('visa_timelines.back_to_stats', 'Back to stats')}
 		</a>
 
 		{#if loadError}
@@ -431,7 +431,7 @@
 									: t('visa_timelines.private', 'Private')}
 							>
 								{#if tl.is_shared}
-									<Check size={12} class="mr-1 inline" />{t('visa_timelines.shared', 'Shared')}
+									<Check size={12} class="me-1 inline" />{t('visa_timelines.shared', 'Shared')}
 								{:else}
 									{t('visa_timelines.private', 'Private')}
 								{/if}
@@ -451,7 +451,7 @@
 								{#if expandedId === tl.id}
 									<ChevronDown size={14} />
 								{:else}
-									<ChevronRight size={14} />
+									<ChevronRight class="rtl:-scale-x-100" size={14} />
 								{/if}
 							</button>
 

@@ -26,7 +26,7 @@
 	let destinationSpaceId = $state(untrack(() => alert.destination_space_id ?? ''));
 	let originSpaceId = $state(untrack(() => alert.origin_space_id ?? ''));
 	let originCommunity = $state(untrack(() => alert.origin_community ?? ''));
-	let platformUsed = $state<ScamPlatform>(untrack(() => (alert.platform_used as ScamPlatform) ?? 'other'));
+	let platformUsed = $state<ScamPlatform | ''>(untrack(() => (alert.platform_used as ScamPlatform | '') ?? ''));
 	let approximateDate = $state(untrack(() => alert.approximate_date ?? ''));
 	let amountRange = $state(untrack(() => alert.amount_range ?? ''));
 	let description = $state(untrack(() => alert.description));
@@ -86,18 +86,11 @@
 	);
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
-		const allLabel = t('common.all_countries', 'All countries');
 		const query = q.toLowerCase().trim();
-		const allItem: AutocompleteItem = { id: '', label: allLabel };
-		if (query === '') {
-			return Promise.resolve([allItem, ...destCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
-		}
-		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = destCountries.filter(
+		const items = (query === '' ? destCountries : destCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
-		);
-		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
-		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+		)).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(items);
 	}
 	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
 		return fetchDestinationCountries('');
@@ -107,18 +100,11 @@
 	);
 
 	function fetchOriginCountries(q: string): Promise<AutocompleteItem[]> {
-		const allLabel = t('common.all_countries', 'All countries');
 		const query = q.toLowerCase().trim();
-		const allItem: AutocompleteItem = { id: '', label: allLabel };
-		if (query === '') {
-			return Promise.resolve([allItem, ...originCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
-		}
-		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = originCountries.filter(
+		const items = (query === '' ? originCountries : originCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
-		);
-		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
-		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+		)).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(items);
 	}
 	function fetchOriginCountriesInitial(): Promise<AutocompleteItem[]> {
 		return fetchOriginCountries('');
@@ -144,7 +130,7 @@
 			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 			aria-label={t('scam_alerts.back', 'Back to scam alert')}
 		>
-			<ArrowLeft size={18} />
+			<ArrowLeft class="rtl:-scale-x-100" size={18} />
 		</a>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">
 			{t('scam_alerts.edit_heading', 'Edit Scam Alert')}
@@ -165,6 +151,7 @@
 					{t('scam_alerts.field_destination', 'Destination country')} <span class="text-red-500">*</span>
 				</label>
 				<Autocomplete
+					id="destination_space_id"
 					placeholder={t('scam_alerts.placeholder_destination', 'Select destination country')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchDestinationCountries}
@@ -180,6 +167,7 @@
 					{t('scam_alerts.field_origin_country', 'Origin country')}
 				</label>
 				<Autocomplete
+					id="origin_space_id"
 					placeholder={t('scam_alerts.placeholder_origin_country', 'Select origin country')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchOriginCountries}
@@ -216,6 +204,7 @@
 				value={originCommunity}
 				oninput={(e) => (originCommunity = e.currentTarget.value)}
 				placeholder={t('scam_alerts.placeholder_origin_community', 'e.g. Yoruba, Igbo')}
+				maxlength={200}
 				class={inputClass}
 			/>
 		</div>
@@ -229,7 +218,9 @@
 				id="platform_used"
 				value={platformUsed}
 				options={scamPlatformOpts}
-				onValueChange={(v) => (platformUsed = v as ScamPlatform)}
+				placeholder={t('scam_alerts.placeholder_platform', 'Select platform')}
+				clearable
+				onValueChange={(v) => (platformUsed = v as ScamPlatform | '')}
 			/>
 		</div>
 
@@ -244,6 +235,7 @@
 					type="date"
 					value={approximateDate}
 					oninput={(e) => (approximateDate = e.currentTarget.value)}
+					max={new Date().toISOString().slice(0, 10)}
 					class={inputClass}
 				/>
 			</div>
@@ -257,6 +249,7 @@
 					value={amountRange}
 					oninput={(e) => (amountRange = e.currentTarget.value)}
 					placeholder={t('scam_alerts.placeholder_amount', 'e.g. £500–£1000')}
+					maxlength={100}
 					class={inputClass}
 				/>
 			</div>
@@ -273,6 +266,7 @@
 			user={data.user}
 			features={data.features ?? {}}
 			required
+			maxlength={10000}
 			placeholder={t('scam_alerts.placeholder_description', 'Describe what happened, how the scam worked, and any warning signs…')}
 			rows={6}
 		/>
@@ -310,7 +304,7 @@
 				{#if loading}
 					<Loader2 size={16} class="animate-spin" />
 				{:else}
-					<Send size={16} />
+					<Send class="rtl:-scale-x-100" size={16} />
 				{/if}
 				{loading ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
 			</button>

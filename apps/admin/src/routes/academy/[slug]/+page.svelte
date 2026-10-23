@@ -238,7 +238,7 @@
 
 <div class="mb-4">
 	<Button variant="ghost" size="sm" href="/academy">
-		<ArrowLeft class="mr-1 h-3.5 w-3.5" />
+		<ArrowLeft class="me-1 h-3.5 w-3.5 rtl:-scale-x-100" />
 		{t("academy.back_to_hub", "Back to Academy Hub")}
 	</Button>
 </div>

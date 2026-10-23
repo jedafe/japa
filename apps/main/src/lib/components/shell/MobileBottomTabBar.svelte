@@ -149,8 +149,8 @@
 					<entry.icon size={22} />
 					{#if entry.notifications && unread > 0}
 						<span
-							class="absolute -right-2 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[9px] font-semibold text-[var(--color-primary-contrast)]"
-							aria-label="{unread} unread"
+							class="absolute -end-2 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[9px] font-semibold text-[var(--color-primary-contrast)]"
+							aria-label={t('a11y.unread_count', '{count} unread', { count: unread })}
 						>{unread > 99 ? '99+' : unread}</span>
 					{/if}
 				</span>

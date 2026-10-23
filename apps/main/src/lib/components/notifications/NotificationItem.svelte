@@ -25,7 +25,7 @@
 	<button
 		type="button"
 		onclick={() => onOpen(n)}
-		class="flex flex-1 items-start gap-3 p-4 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+		class="flex flex-1 items-start gap-3 p-4 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 		aria-label={unread
 			? t('notifications.unread_open', 'Open unread notification')
 			: t('notifications.open_aria', 'Open notification')}

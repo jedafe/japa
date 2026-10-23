@@ -85,7 +85,7 @@
 			href="/tools/visa-routes"
 			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} />
+			<ArrowLeft class="rtl:-scale-x-100" size={16} />
 			{t('visa_routes.back', 'Back to visa routes')}
 		</a>
 	</div>
@@ -152,7 +152,7 @@
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:opacity-90"
 				>
 					{t('visa_routes.view_source', 'View official source')}
-					<ExternalLink size={14} />
+					<ExternalLink class="rtl:-scale-x-100" size={14} />
 				</a>
 			{/if}
 			<a

@@ -143,7 +143,7 @@
 	}
 
 	.studio-tab + .studio-tab {
-		border-left: 1px solid var(--color-border);
+		border-inline-start: 1px solid var(--color-border);
 	}
 
 	.studio-tab:hover:not(.disabled):not(.active) {

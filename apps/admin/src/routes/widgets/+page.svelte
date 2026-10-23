@@ -424,17 +424,17 @@
 		{#if isContentWidget(widgetType)}
 			<div class="mt-6 border-t pt-4" style="border-color: var(--color-border)">
 				<h4 class="mb-1 text-xs font-semibold uppercase tracking-wider" style="color: var(--color-muted)">
-					Card Type
+					{t('widgets.card_type', 'Card Type')}
 				</h4>
 				<p class="mb-3 text-[10px]" style="color: var(--color-muted)">
-					How content cards are rendered on the frontend. This is the source of truth — the page builder only controls the number of columns.
+					{t('widgets.cards_note', 'How content cards are rendered on the frontend. This is the source of truth — the page builder only controls the number of columns.')}
 				</p>
 				<div class="grid grid-cols-2 gap-2">
 					{#each cardTypeOptions as opt}
 						<button
 							type="button"
 							onclick={() => { value._config = { ...(value._config ?? existingConfig), card_type: opt.value }; }}
-							class="flex flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition-all"
+							class="flex flex-col items-start gap-1 rounded-lg border p-2.5 text-start transition-all"
 							style={String((value._config ?? existingConfig).card_type ?? 'grid') === opt.value
 								? 'border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); background: var(--color-surface-subtle)'
 								: 'border-color: var(--color-border); background: var(--color-surface)'}
@@ -540,7 +540,7 @@
 			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.widget_type}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Cache TTL</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('widgets.cache_ttl', 'Cache TTL')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.cache_ttl_secs ?? 300}s</p>
 		</div>
 		<div>
@@ -549,7 +549,7 @@
 		</div>
 		{#if row.config && Object.keys(row.config).length > 0}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Configuration</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('widgets.configuration', 'Configuration')}</p>
 				<pre class="mt-1 overflow-x-auto rounded p-2 text-xs" style="background: var(--color-surface-subtle); color: var(--color-foreground)">{JSON.stringify(row.config, null, 2)}</pre>
 			</div>
 		{/if}

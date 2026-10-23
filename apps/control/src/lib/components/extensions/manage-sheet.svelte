@@ -437,7 +437,7 @@
 			class="data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 fixed inset-0 z-50 bg-black/60"
 		/>
 		<Dialog.Content
-			class="border-border-card bg-background-alt data-[state=open]:animate-in data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[560px] flex-col border-l shadow-xl duration-300"
+			class="border-border-card bg-background-alt data-[state=open]:animate-in data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right fixed inset-y-0 end-0 z-50 flex h-full w-full max-w-[560px] flex-col border-s shadow-xl duration-300"
 			onInteractOutside={(e) => {
 				// Autocomplete dropdowns portal to document.body to escape this
 				// panel's overflow clipping — don't let option clicks dismiss it.
@@ -447,7 +447,7 @@
 			}}
 		>
 			<div class="border-border-card flex items-start justify-between border-b px-5 py-4">
-				<div class="min-w-0 pr-6">
+				<div class="min-w-0 pe-6">
 					<Dialog.Title class="text-foreground text-base font-semibold">
 						{t('extensions.manage_title', 'Manage extension')}
 					</Dialog.Title>
@@ -607,7 +607,7 @@
 																{optionLabel(audienceOptions, entry)}
 																<button
 																	type="button"
-																	class="hover:text-destructive ml-0.5 rounded"
+																	class="hover:text-destructive ms-0.5 rounded"
 																	onclick={() => removeAudience(surface, entry)}
 																	aria-label={t('common.remove', 'Remove')}
 																>×</button>
@@ -643,7 +643,7 @@
 																{optionLabel(countryOptions, code)} ({code})
 																<button
 																	type="button"
-																	class="hover:text-destructive ml-0.5 rounded"
+																	class="hover:text-destructive ms-0.5 rounded"
 																	onclick={() => removeGeo(surface, 'geo_allow', code)}
 																	aria-label={t('common.remove', 'Remove')}
 																>×</button>
@@ -677,7 +677,7 @@
 																{optionLabel(countryOptions, code)} ({code})
 																<button
 																	type="button"
-																	class="hover:text-destructive ml-0.5 rounded"
+																	class="hover:text-destructive ms-0.5 rounded"
 																	onclick={() => removeGeo(surface, 'geo_deny', code)}
 																	aria-label={t('common.remove', 'Remove')}
 																>×</button>
@@ -763,7 +763,7 @@
 					<div class="flex items-center gap-3">
 						<button
 							type="button"
-							class="text-destructive hover:bg-destructive/10 mr-auto flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+							class="text-destructive hover:bg-destructive/10 me-auto flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 							disabled={saving || deleting}
 							onclick={remove}
 							title={ext.category === 'Custom'

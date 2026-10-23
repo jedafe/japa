@@ -96,6 +96,7 @@
 	}
 
 	const hasFilters = $derived(!!data.filters.dest);
+	const hasActiveFilters = $derived(!!data.filters.dest || activeTab !== 'all');
 
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'all', label: t('scam_alerts.filter_all_types', 'All types') },
@@ -108,6 +109,16 @@
 	const showSubmitted = $derived(data.submitted && !submittedDismissed);
 	$effect(() => {
 		if (hasFilters) showFilters = true;
+	});
+
+	// ?submitted=1 is a one-shot flag — strip it from the URL once the banner
+	// is acknowledged so a refresh/back-nav does not resurrect it.
+	$effect(() => {
+		if (!showSubmitted && data.submitted) {
+			const url = new URL(page.url);
+			url.searchParams.delete('submitted');
+			history.replaceState(history.state, '', url);
+		}
 	});
 
 	function selectType(v: string) {
@@ -173,11 +184,12 @@
 			class="!border-b-0 !bg-transparent"
 		/>
 		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasFilters} controls="scam-alerts-filter-panel" />
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="scam-alerts-filter-panel" />
 			<PageAction
 				href="/scam-alerts/new"
 				icon={Plus}
 				label={t('scam_alerts.report_button', 'Report a Scam')}
+				fabIndex={1}
 			/>
 		{/snippet}
 	</ListPageBar>
@@ -221,7 +233,7 @@
 				onClear={() => { destFilter = ''; applyFilters(); }}
 			/>
 		</div>
-		{#if hasFilters}
+		{#if hasActiveFilters}
 			<button
 				type="button"
 				onclick={clearFilters}
@@ -241,12 +253,21 @@
 				body={t('scam_alerts.load_error_body', 'Please try again later.')}
 			/>
 		{:else if alerts.length === 0}
-			<EmptyState
-				icon={TriangleAlert}
-				title={t('scam_alerts.empty_title', 'No scam alerts yet')}
-				body={t('scam_alerts.empty_body', 'Be the first to report a scam and help protect the community.')}
-				action={{ label: t('scam_alerts.report_button', 'Report a Scam'), href: '/scam-alerts/new' }}
-			/>
+			{#if hasActiveFilters}
+				<EmptyState
+					icon={TriangleAlert}
+					title={t('scam_alerts.empty_filtered_title', 'No alerts match your filters')}
+					body={t('scam_alerts.empty_filtered_body', 'Try a different destination or scam type.')}
+					action={{ label: t('common.clear_filters', 'Clear filters'), onclick: clearFilters }}
+				/>
+			{:else}
+				<EmptyState
+					icon={TriangleAlert}
+					title={t('scam_alerts.empty_title', 'No scam alerts yet')}
+					body={t('scam_alerts.empty_body', 'Be the first to report a scam and help protect the community.')}
+					action={{ label: t('scam_alerts.report_button', 'Report a Scam'), href: '/scam-alerts/new' }}
+				/>
+			{/if}
 		{:else}
 			<div class="space-y-3">
 				{#each alerts as alert (alert.id)}
@@ -266,7 +287,7 @@
 							<span class={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass(alert.status as ScamStatus)}`}>
 								{statusLabel(alert.status as ScamStatus)}
 							</span>
-							<span class="ml-auto text-xs text-[var(--color-muted)]">
+							<span class="ms-auto text-xs text-[var(--color-muted)]">
 								{relativeTime(alert.created_at, new Date(), i18n.locale)}
 							</span>
 						</div>

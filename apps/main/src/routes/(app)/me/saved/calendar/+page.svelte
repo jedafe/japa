@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	// BUG-003: saved calendar entries dashboard page.
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { CalendarDays, ExternalLink, AlertTriangle, Bookmark, BookmarkX, Loader2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
@@ -20,7 +20,7 @@
 
 	function fmtDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleString(undefined, {
+			return new Date(iso).toLocaleString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric',
@@ -123,7 +123,7 @@
 									class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 									aria-label={t('calendar.source', 'Official source')}
 								>
-									<ExternalLink size={12} /> {t('calendar.source', 'Source')}
+									<ExternalLink class="rtl:-scale-x-100" size={12} /> {t('calendar.source', 'Source')}
 								</a>
 							{/if}
 							<button

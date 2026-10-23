@@ -199,7 +199,7 @@
 				<p class="mt-1 flex-1 text-xs leading-relaxed" style="color: var(--color-muted)">{card.description}</p>
 				<div class="mt-4 flex items-center gap-1 text-xs font-medium" style="color: var(--color-primary)">
 					{t("common.open", "Open")}
-					<ArrowRight class="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+					<ArrowRight class="h-3 w-3 transition-transform group-hover:translate-x-0.5 rtl:-scale-x-100" />
 				</div>
 			</a>
 		{/if}

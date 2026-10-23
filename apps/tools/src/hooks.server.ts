@@ -3,6 +3,7 @@ import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
+import { isRtl } from '$lib/i18n/rtl';
 
 /**
  * In-process cache for GET /site/settings/public (same pattern as the main
@@ -300,7 +301,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 				.replace('%jc.themevars%', () => buildThemeOverrides(siteSettings))
 				.replace('%jc.theme%', () => event.locals.resolvedTheme)
 				.replace('%jc.theme-color%', () => event.locals.resolvedTheme === 'dark' ? '#0a0a0a' : '#3b49df')
-				.replace('lang="en"', `lang="${event.locals.locale}"`)
+				.replace(
+					'lang="en"',
+					() => `lang="${event.locals.locale}" dir="${isRtl(event.locals.locale ?? '') ? 'rtl' : 'ltr'}"`
+				)
 	});
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');

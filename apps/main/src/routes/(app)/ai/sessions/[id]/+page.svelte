@@ -134,7 +134,7 @@
 		class="mb-4 inline-flex items-center gap-1 text-sm transition-colors hover:opacity-80"
 		style="color: var(--color-muted)"
 	>
-		<ArrowLeft size={14} />
+		<ArrowLeft class="rtl:-scale-x-100" size={14} />
 		{t('ai.agent.back_to_history', 'Back to session history')}
 	</a>
 
@@ -234,7 +234,7 @@
 								<Wrench size={14} style="color: var(--color-muted)" />
 								<span class="font-mono text-sm font-medium">{tc.tool_name}</span>
 								<span
-									class="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+									class="ms-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
 									style="background-color: color-mix(in srgb, {toolStatusColor(tc.status)} 12%, transparent); color: {toolStatusColor(tc.status)}"
 								>
 									{toolStatusLabel(tc.status)}

@@ -24,7 +24,8 @@
 	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
 	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink } from 'lucide-svelte';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 
 	let { data }: { data: PageData } = $props();
 
@@ -160,6 +161,13 @@
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={comparison.content.title} />
 	<meta name="twitter:description" content={headDescription} />
+	{@html safeJsonLdScript(
+		breadcrumbJsonLd([
+			{ name: 'Home', path: page.url.origin },
+			{ name: 'Compare', path: `${page.url.origin}/compare` },
+			{ name: comparison.content.title, path: canonical }
+		])
+	)}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl space-y-6 p-4">
@@ -169,7 +177,7 @@
 				href={typeSlug ? `/compare?type=${typeSlug}` : '/compare'}
 				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			>
-				<ArrowLeft size={16} /> {t('jce.compare.back')}
+				<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('jce.compare.back')}
 			</a>
 			<h1 class="text-2xl font-bold text-[var(--color-text)] sm:text-3xl">{comparison.content.title}</h1>
 			<p class="text-sm capitalize text-[var(--color-muted)]">
@@ -233,7 +241,7 @@
 							target="_blank" rel="noopener noreferrer"
 							class="inline-flex items-center gap-1 text-xs text-[var(--color-text)] underline"
 						>
-							<ExternalLink size={12} /> {t('jce.common.view')}
+							<ExternalLink class="rtl:-scale-x-100" size={12} /> {t('jce.common.view')}
 						</a>
 					{/if}
 				</div>

@@ -349,7 +349,7 @@
 						<li class="flex items-center justify-between gap-3 py-2 text-sm">
 							<span class="min-w-0">
 								<span class="capitalize text-[var(--color-text)]">{ev.event_type.replace(/_/g, ' ')}</span>
-								<span class="ml-1 text-xs text-[var(--color-muted)]">· {ev.product_type.replace(/_/g, ' ')}</span>
+								<span class="ms-1 text-xs text-[var(--color-muted)]">· {ev.product_type.replace(/_/g, ' ')}</span>
 							</span>
 							<span class="flex items-center gap-3 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
 								{#if ev.commission_amount}<span class="font-medium text-[var(--color-text)]">{ev.commission_amount}</span>{/if}
@@ -408,7 +408,7 @@
 							<p class="truncate text-xs text-[var(--color-muted)]">{link.destination_url}</p>
 							<p class="mt-0.5 text-xs text-[var(--color-muted)]">/r/{link.code} · {link.product_type.replace(/_/g, ' ')}</p>
 						</div>
-						<div class="ml-3 flex shrink-0 gap-2">
+						<div class="ms-3 flex shrink-0 gap-2">
 							<button
 								type="button"
 								class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
@@ -427,7 +427,7 @@
 					</div>
 					<!-- Phase 34.06 — share buttons -->
 					<div class="mt-2 flex items-center gap-1.5 border-t border-[var(--color-border)] pt-2">
-						<span class="mr-1 text-xs text-[var(--color-muted)]">{t('settings.affiliate.share', 'Share')}:</span>
+						<span class="me-1 text-xs text-[var(--color-muted)]">{t('settings.affiliate.share', 'Share')}:</span>
 						<button
 							type="button"
 							onclick={() => shareWhatsApp(link)}

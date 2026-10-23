@@ -87,7 +87,7 @@
 				href="/roadmap/submit"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition hover:opacity-90"
 			>
-				<Send class="h-4 w-4" />
+				<Send class="h-4 w-4 rtl:-scale-x-100" />
 				{t('roadmap.submit_cta', 'Submit a request')}
 			</a>
 		</div>
@@ -174,7 +174,7 @@
 					</a>
 				{/each}
 
-				<div class="ml-auto">
+				<div class="ms-auto">
 					<AutocompleteSelect
 						value={sort}
 						options={[

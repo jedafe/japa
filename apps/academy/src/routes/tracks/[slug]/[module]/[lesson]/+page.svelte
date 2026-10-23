@@ -302,7 +302,7 @@
 		>
 			<p class="mb-1 text-xs text-[var(--color-muted)]">{t('academy.up_next')}</p>
 			<p class="flex items-center gap-1 text-sm font-medium text-[var(--color-primary)]">
-				{lesson.next_lesson.title} <ArrowRight size={14} />
+				{lesson.next_lesson.title} <ArrowRight class="rtl:-scale-x-100" size={14} />
 			</p>
 		</a>
 	{/if}
@@ -394,7 +394,7 @@
 					></video>
 				{:else if lesson.external_url}
 					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
-						<ExternalLink size={16} /> {lesson.external_url}
+						<ExternalLink class="rtl:-scale-x-100" size={16} /> {lesson.external_url}
 					</a>
 				{:else}
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
@@ -605,7 +605,7 @@
 					</div>
 				{:else if lesson.external_url}
 					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
-						<ExternalLink size={16} /> {lesson.external_url}
+						<ExternalLink class="rtl:-scale-x-100" size={16} /> {lesson.external_url}
 					</a>
 				{:else}
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
@@ -634,7 +634,7 @@
 					</div>
 				{:else if lesson.external_url}
 					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
-						<ExternalLink size={16} /> {lesson.external_url}
+						<ExternalLink class="rtl:-scale-x-100" size={16} /> {lesson.external_url}
 					</a>
 				{:else}
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
@@ -658,7 +658,7 @@
 					<audio src={lesson.media_url} controls class="w-full"></audio>
 				{:else if lesson.external_url}
 					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
-						<ExternalLink size={16} /> {lesson.external_url}
+						<ExternalLink class="rtl:-scale-x-100" size={16} /> {lesson.external_url}
 					</a>
 				{:else}
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
@@ -667,7 +667,7 @@
 				<!-- Link: external resource card. -->
 				{#if lesson.external_url}
 					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
-						<ExternalLink size={16} /> {lesson.external_url}
+						<ExternalLink class="rtl:-scale-x-100" size={16} /> {lesson.external_url}
 					</a>
 					{#if lesson.content_html}
 						<div class="prose mt-4">{@html sanitizeContentHtml(lesson.content_html)}</div>
@@ -685,7 +685,7 @@
 					href="/tracks/{track.slug}/{lesson.prev_lesson.module_slug}/{lesson.prev_lesson.slug}"
 					class="inline-flex items-center gap-1 text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
 				>
-					<ArrowLeft size={16} /> {t('academy.prev_lesson')}
+					<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('academy.prev_lesson')}
 				</a>
 			{:else}
 				<span></span>
@@ -726,7 +726,7 @@
 					href="/tracks/{track.slug}/{lesson.next_lesson.module_slug}/{lesson.next_lesson.slug}"
 					class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
 				>
-					{t('academy.next_lesson')} <ArrowRight size={16} />
+					{t('academy.next_lesson')} <ArrowRight class="rtl:-scale-x-100" size={16} />
 				</a>
 			{:else}
 				<span></span>

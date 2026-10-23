@@ -116,7 +116,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID pg
 		case "forum_activity":
 			if a.forum != nil {
 				threads, err := a.forum.ListThreadsByAuthorWithDetails(
-					ctx, userID, nil, "", pgtype.Timestamptz{}, pgtype.UUID{}, nil, 20,
+					ctx, userID, userID, nil, "", pgtype.Timestamptz{}, pgtype.UUID{}, nil, 20,
 				)
 				if err != nil {
 					return nil, fmt.Errorf("forum_activity: %w", err)

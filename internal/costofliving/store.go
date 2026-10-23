@@ -131,6 +131,18 @@ func (s *Store) GetCityByID(ctx context.Context, id pgtype.UUID) (gen.GetCOLCity
 	return row, nil
 }
 
+// GetCityIDBySpaceSlug resolves a city's geo-space slug to its
+// cost_of_living comparison item ID — used by the compare endpoint to
+// accept human-readable slugs alongside UUIDs in shareable URLs.
+func (s *Store) GetCityIDBySpaceSlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	id, err := s.queries.GetCOLCityIDBySpaceSlug(ctx, slug)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("costofliving: city id by space slug: %w", err)
+	}
+
+	return id, nil
+}
+
 // GetCitiesByIDs batch-fetches multiple cities by ID. Used by CompareCities
 // to avoid an N+1 (one GetCityByID call per requested city).
 func (s *Store) GetCitiesByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.GetCOLCitiesByIDsRow, error) {

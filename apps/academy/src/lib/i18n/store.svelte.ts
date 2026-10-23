@@ -10,6 +10,31 @@ type Dict = Record<string, string>;
 // runtime fall back to English per Section 18. ADR-013 — runtime i18n.
 const dictionaries: Record<string, Dict> = { en, fr };
 
+// Non-bundled locales are served by the DB pack: the root layout load fetches
+// /i18n/packs/{locale} and returns it as `i18nPack` in page data.
+function runtimePack(): Dict | undefined {
+	const p = (page.data as { i18nPack?: Dict } | undefined)?.i18nPack;
+	return p && typeof p === 'object' ? p : undefined;
+}
+
+// §18 — every locale is layered over English so a missing key in the active
+// dictionary resolves to real English text instead of the raw key. Merged
+// dicts are memoized: bundled per locale, runtime pack per pack reference.
+const mergedBundled: Record<string, Dict> = {};
+let mergedPack: { src: Dict; dict: Dict } | null = null;
+
+function dictFor(locale: string): Dict {
+	if (locale === 'en') return dictionaries.en;
+	const bundled = dictionaries[locale];
+	if (bundled) {
+		return (mergedBundled[locale] ??= { ...dictionaries.en, ...bundled });
+	}
+	const pack = runtimePack();
+	if (!pack) return dictionaries.en;
+	if (mergedPack?.src !== pack) mergedPack = { src: pack, dict: { ...dictionaries.en, ...pack } };
+	return mergedPack.dict;
+}
+
 /**
  * Translator. Flat dotted keys resolved against the active locale's dictionary,
  * falling back to the provided fallback and then the key itself.
@@ -51,7 +76,7 @@ class I18nStore {
 	);
 
 	t = (key: string, fallback?: string): string => {
-		const dict = dictionaries[this.locale] ?? dictionaries.en;
+		const dict = dictFor(this.locale);
 		return substituteSiteName(dict[key] ?? fallback ?? key, this.siteName);
 	};
 }

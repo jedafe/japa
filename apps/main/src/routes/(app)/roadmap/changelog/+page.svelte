@@ -72,7 +72,7 @@
 		href="/roadmap"
 		class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft class="h-4 w-4" />
+		<ArrowLeft class="h-4 w-4 rtl:-scale-x-100" />
 		{t('roadmap.back_to_board', 'Back to roadmap')}
 	</a>
 

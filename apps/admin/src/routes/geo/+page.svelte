@@ -310,30 +310,30 @@
 					{t('geo.countries', 'Countries')}
 				</button>
 				{#if selectedCountry}
-					<ChevronRight class="h-3 w-3" />
+					<ChevronRight class="h-3 w-3 rtl:-scale-x-100" />
 					<button class="hover:text-foreground" onclick={() => { selectedState = null; cities = []; citySearch = ''; }}>
 						{selectedCountry.name}
 					</button>
 				{/if}
 				{#if selectedState}
-					<ChevronRight class="h-3 w-3" />
+					<ChevronRight class="h-3 w-3 rtl:-scale-x-100" />
 					<span style="color: var(--color-foreground)">{selectedState.name}</span>
 				{/if}
 			</div>
 			{#if canManageSpaces}
 				{#if !selectedCountry}
 					<Button onclick={() => goto(createGeoUrl('country'))} size="sm">
-						<Plus class="mr-1 h-3.5 w-3.5" />
+						<Plus class="me-1 h-3.5 w-3.5" />
 						{t('geo.create_country', 'Create Country')}
 					</Button>
 				{:else if !selectedState}
 					<Button onclick={() => goto(createGeoUrl('state', selectedCountry?.id))} size="sm">
-						<Plus class="mr-1 h-3.5 w-3.5" />
+						<Plus class="me-1 h-3.5 w-3.5" />
 						{t('geo.create_state', 'Create State')}
 					</Button>
 				{:else}
 					<Button onclick={() => goto(createGeoUrl('city', selectedState?.id))} size="sm">
-						<Plus class="mr-1 h-3.5 w-3.5" />
+						<Plus class="me-1 h-3.5 w-3.5" />
 						{t('geo.create_city', 'Create City')}
 					</Button>
 				{/if}

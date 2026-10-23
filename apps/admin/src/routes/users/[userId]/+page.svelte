@@ -640,64 +640,64 @@
           <div class="mt-4 flex flex-wrap gap-2">
             {#if canManageUsers}
               <Button variant="outline" size="sm" onclick={() => { warningReason = ""; warningViolationType = violationTypes[0]?.value ?? ''; showWarningModal = true; }}>
-                <AlertTriangle class="h-4 w-4 mr-2" />
+                <AlertTriangle class="h-4 w-4 me-2" />
                 {t('users.detail.warning', 'Warn')}
               </Button>
               {#if user.status === "banned"}
                 <Button variant="outline" size="sm" onclick={() => (showUnbanConfirm = true)}>
-                  <RotateCcw class="h-4 w-4 mr-2" />
+                  <RotateCcw class="h-4 w-4 me-2" />
                   {t('users.detail.unban', 'Unban')}
                 </Button>
               {:else if user.status !== "deleted"}
                 <Button variant="destructive" size="sm" onclick={() => (showBanConfirm = true)}>
-                  <Ban class="h-4 w-4 mr-2" />
+                  <Ban class="h-4 w-4 me-2" />
                   {t('users.detail.ban', 'Ban')}
                 </Button>
               {/if}
               {#if user.status === "active" || user.status === "restricted"}
                 <Button variant="destructive" size="sm" onclick={() => { restrictOperations = []; restrictDuration = "7d"; restrictReason = ""; showRestrictModal = true; }}>
-                  <Ban class="h-4 w-4 mr-2" />
+                  <Ban class="h-4 w-4 me-2" />
                   {t('users.detail.restrict', 'Restrict')}
                 </Button>
                 <Button variant="outline" size="sm" onclick={() => { suspendReason = ""; showSuspendModal = true; }}>
-                  <Shield class="h-4 w-4 mr-2" />
+                  <Shield class="h-4 w-4 me-2" />
                   {t('users.detail.suspend', 'Suspend')}
                 </Button>
                 {#if restrictions.length > 0}
                   <Button variant="outline" size="sm" onclick={liftAllRestrictions}>
-                    <RotateCcw class="h-4 w-4 mr-2" />
+                    <RotateCcw class="h-4 w-4 me-2" />
                     {t('users.detail.lift_all', 'Lift All Restrictions')}
                   </Button>
                 {/if}
               {:else if user.status === "suspended"}
                 <Button variant="outline" size="sm" onclick={handleUnsuspend}>
-                  <RotateCcw class="h-4 w-4 mr-2" />
+                  <RotateCcw class="h-4 w-4 me-2" />
                   {t('users.detail.unsuspend', 'Unsuspend')}
                 </Button>
               {:else if user.status === "deleted"}
                 <Button variant="default" size="sm" onclick={handleRestore}>
-                  <RotateCcw class="h-4 w-4 mr-2" />
+                  <RotateCcw class="h-4 w-4 me-2" />
                   {t('users.restore', 'Restore')}
                 </Button>
               {/if}
               <Button variant="outline" size="sm" onclick={() => { selectedGroups = [...(user!.groups ?? [])]; showGroupModal = true; }}>
-                <Users class="h-4 w-4 mr-2" />
+                <Users class="h-4 w-4 me-2" />
                 {t('users.detail.change_group', 'Change Group')}
               </Button>
               <Button variant="outline" size="sm" onclick={() => { selectedProfileType = user!.profile_type || 'regular'; showProfileTypeModal = true; }}>
-                <Users class="h-4 w-4 mr-2" />
+                <Users class="h-4 w-4 me-2" />
                 {t('users.detail.change_profile_type', 'Change Profile Type')}
               </Button>
               {#if user.status !== "deleted"}
                 <Button variant="destructive" size="sm" onclick={() => (showDeleteConfirm = true)}>
-                  <Trash2 class="h-4 w-4 mr-2" />
+                  <Trash2 class="h-4 w-4 me-2" />
                   {t('users.detail.delete', 'Delete')}
                 </Button>
               {/if}
             {/if}
             {#if canImpersonate && user.status !== "deleted"}
               <Button variant="outline" size="sm" onclick={startImpersonate}>
-                <UserPlus class="h-4 w-4 mr-2" />
+                <UserPlus class="h-4 w-4 me-2" />
                 {t('users.detail.impersonate', 'Impersonate')}
               </Button>
             {/if}
@@ -739,10 +739,10 @@
                 <table class="w-full text-sm">
                   <thead>
                     <tr style="border-color: var(--color-border)">
-                      <th class="h-10 px-4 text-left font-medium" style="color: var(--color-muted)">Operation</th>
-                      <th class="h-10 px-4 text-left font-medium" style="color: var(--color-muted)">Reason</th>
-                      <th class="h-10 px-4 text-left font-medium" style="color: var(--color-muted)">Expires</th>
-                      <th class="h-10 px-4 text-right font-medium" style="color: var(--color-muted)">Action</th>
+                      <th class="h-10 px-4 text-start font-medium" style="color: var(--color-muted)">{t('users.detail.col_operation', 'Operation')}</th>
+                      <th class="h-10 px-4 text-start font-medium" style="color: var(--color-muted)">{t('common.reason', 'Reason')}</th>
+                      <th class="h-10 px-4 text-start font-medium" style="color: var(--color-muted)">{t('users.detail.col_expires', 'Expires')}</th>
+                      <th class="h-10 px-4 text-end font-medium" style="color: var(--color-muted)">{t('common.action', 'Action')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -752,10 +752,10 @@
                           <span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-warning/15 text-warning dark:text-warning">{r.operation}</span>
                         </td>
                         <td class="px-4 py-2 text-xs" style="color: var(--color-muted)">{r.reason ?? '—'}</td>
-                        <td class="px-4 py-2 text-xs" style="color: var(--color-muted)">{r.expires_at ? new Date(r.expires_at).toLocaleString() : 'Permanent'}</td>
-                        <td class="px-4 py-2 text-right">
+                        <td class="px-4 py-2 text-xs" style="color: var(--color-muted)">{r.expires_at ? new Date(r.expires_at).toLocaleString() : t('common.permanent', 'Permanent')}</td>
+                        <td class="px-4 py-2 text-end">
                           <Button variant="ghost" size="sm" onclick={() => liftRestriction(r.operation)}>
-                            <RotateCcw class="h-3 w-3 mr-1" /> Lift
+                            <RotateCcw class="h-3 w-3 me-1" /> Lift
                           </Button>
                         </td>
                       </tr>
@@ -794,19 +794,19 @@
   <div class="space-y-4">
     {#if restrictions.length > 0}
       <div class="rounded-md border p-3" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent)">
-        <p class="text-xs font-medium mb-2" style="color: var(--color-warning)">Currently restricted operations:</p>
+        <p class="text-xs font-medium mb-2" style="color: var(--color-warning)">{t('users.detail.current_restrictions', 'Currently restricted operations:')}</p>
         <div class="flex flex-wrap gap-2">
           {#each restrictions as r (r.id)}
             <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-warning/15 text-warning dark:text-warning">
-              {r.operation} — {r.expires_at ? new Date(r.expires_at).toLocaleDateString() : 'Permanent'}
-              <button type="button" class="ml-1 hover:opacity-70" onclick={() => liftRestriction(r.operation)}>&times;</button>
+              {r.operation} — {r.expires_at ? new Date(r.expires_at).toLocaleDateString() : t('common.permanent', 'Permanent')}
+              <button type="button" class="ms-1 hover:opacity-70" onclick={() => liftRestriction(r.operation)}>&times;</button>
             </span>
           {/each}
         </div>
       </div>
     {/if}
     <div>
-      <p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Operations to restrict</p>
+      <p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.detail.restrict_operations', 'Operations to restrict')}</p>
       <div class="grid grid-cols-2 gap-2">
         {#each restrictionOps as op (op)}
           {@const alreadyRestricted = restrictions.some(r => r.operation === op.value)}
@@ -814,14 +814,14 @@
             <input type="checkbox" value={op.value} bind:group={restrictOperations} class="rounded" disabled={alreadyRestricted} />
             {op.label}
             {#if alreadyRestricted}
-              <span class="text-xs" style="color: var(--color-warning)">(already restricted)</span>
+              <span class="text-xs" style="color: var(--color-warning)">{t('users.detail.already_restricted', '(already restricted)')}</span>
             {/if}
           </label>
         {/each}
       </div>
     </div>
     <div>
-      <label for="restrict-duration" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Duration</label>
+      <label for="restrict-duration" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.duration', 'Duration')}</label>
       <Autocomplete
         id="restrict-duration"
         placeholder={t('users.detail.select_duration', 'Select duration')}
@@ -840,31 +840,31 @@
       />
     </div>
     <div>
-      <label for="restrict-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Reason</label>
+      <label for="restrict-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.reason', 'Reason')}</label>
       <textarea id="restrict-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.ph_reason_for_restriction', 'Reason for restriction...')} bind:value={restrictReason}></textarea>
     </div>
   </div>
   <div class="mt-6 flex justify-end gap-3">
-    <Button variant="outline" onclick={() => (showRestrictModal = false)}>Cancel</Button>
-    <Button variant="destructive" onclick={handleRestrict} disabled={restrictOperations.length === 0}>Restrict User</Button>
+    <Button variant="outline" onclick={() => (showRestrictModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+    <Button variant="destructive" onclick={handleRestrict} disabled={restrictOperations.length === 0}>{t('users.detail.restrict_user', 'Restrict User')}</Button>
   </div>
 </Modal>
 
 <!-- Suspend Modal -->
 <Modal bind:open={showSuspendModal} title={t('users.detail.suspend_user', 'Suspend User')} size="sm">
   <p class="text-sm" style="color: var(--color-foreground)">
-    Suspend <strong>{user?.username}</strong>? This permanently restricts all operations.
+    {t('users.detail.suspend_body', 'Suspend {username}? This permanently restricts all operations.').replace('{username}', user?.username ?? '')}
   </p>
   <p class="mt-2 text-sm" style="color: var(--color-danger)">
-    The user will be unable to perform any action on the platform until unsuspended.
+    {t('users.detail.suspend_effect', 'The user will be unable to perform any action on the platform until unsuspended.')}
   </p>
   <div class="mt-3">
-    <label for="suspend-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Reason</label>
+    <label for="suspend-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.reason', 'Reason')}</label>
     <textarea id="suspend-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.ph_reason_for_suspension', 'Reason for suspension...')} bind:value={suspendReason}></textarea>
   </div>
   <div class="mt-6 flex justify-end gap-3">
-    <Button variant="outline" onclick={() => (showSuspendModal = false)}>Cancel</Button>
-    <Button variant="destructive" onclick={handleSuspendUser}>Suspend User</Button>
+    <Button variant="outline" onclick={() => (showSuspendModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+    <Button variant="destructive" onclick={handleSuspendUser}>{t('users.detail.suspend_user', 'Suspend User')}</Button>
   </div>
 </Modal>
 
@@ -906,7 +906,7 @@
 <Modal bind:open={showWarningModal} title={t('users.detail.warning', 'Issue Warning')} size="sm">
   <div class="space-y-3">
     <div>
-      <label for="warning-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Violation Type</label>
+      <label for="warning-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.detail.violation_type', 'Violation Type')}</label>
       <Autocomplete
         id="warning-violation"
         placeholder={t('users.detail.select_violation', 'Select violation type')}

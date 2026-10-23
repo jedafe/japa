@@ -231,7 +231,7 @@
 				{#snippet bulkActions()}
 					{#if selectedIds.size > 0 && canDeleteConsent}
 						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
-							<Trash2 class="mr-1 h-3.5 w-3.5" />
+							<Trash2 class="me-1 h-3.5 w-3.5" />
 							{t("app.gdpr.consents.delete_selected", "Delete Selected")} ({selectedIds.size})
 						</Button>
 					{/if}

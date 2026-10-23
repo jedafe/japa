@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName, i18n } from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import {
 		Newspaper,
@@ -81,7 +81,7 @@
 
 	const publishedDate = $derived(
 		digest?.published_at
-			? new Date(digest.published_at).toLocaleDateString(undefined, {
+			? new Date(digest.published_at).toLocaleDateString(i18n.locale, {
 					year: 'numeric',
 					month: 'long',
 					day: 'numeric'
@@ -183,7 +183,7 @@
 			href="/digest"
 			class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} /> {t('digest.back', 'Back to digest')}
+			<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('digest.back', 'Back to digest')}
 		</a>
 	{/if}
 
@@ -274,7 +274,7 @@
 								<li class="flex items-center gap-2 text-sm">
 									{#if ev.starts_at}
 										<span class="text-[var(--color-text-subtle)]">
-											{new Date(ev.starts_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+											{new Date(ev.starts_at).toLocaleDateString(i18n.locale, { month: 'short', day: 'numeric' })}
 										</span>
 									{/if}
 									{#if href}

@@ -68,7 +68,7 @@
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<a href="/org/{org.slug}?tab=jobs" class="flex items-center gap-1 text-xs text-[var(--color-muted)] hover:underline">
-			<ArrowLeft size={12} /> {t('jobs.back_to_org_jobs', 'Back to org jobs')}
+			<ArrowLeft class="rtl:-scale-x-100" size={12} /> {t('jobs.back_to_org_jobs', 'Back to org jobs')}
 		</a>
 		<h1 class="mt-2 flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<FileText size={20} />

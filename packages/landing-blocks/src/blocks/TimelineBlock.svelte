@@ -19,7 +19,7 @@
   <div class="mx-auto max-w-4xl">
     {#if props.layout === 'horizontal'}
       <div class="relative">
-        <div class="absolute top-8 left-0 right-0 h-0.5 bg-[var(--color-border)]"></div>
+        <div class="absolute top-8 start-0 end-0 h-0.5 bg-[var(--color-border)]"></div>
         <div class="relative grid gap-4" style={`grid-template-columns: repeat(${props.steps.length}, 1fr)`}>
           {#each props.steps as step, i}
             <div class="flex flex-col items-center text-center">
@@ -44,7 +44,7 @@
     {:else if props.layout === 'zigzag'}
       <div class="space-y-8">
         {#each props.steps as step, i}
-          <div class="flex gap-6 {i % 2 === 0 ? '' : 'flex-row-reverse text-right'}">
+          <div class="flex gap-6 {i % 2 === 0 ? '' : 'flex-row-reverse text-end'}">
             <div class="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] font-bold text-sm">
               {i + 1}
             </div>
@@ -62,12 +62,12 @@
       </div>
     {:else}
       <!-- vertical -->
-      <div class="relative pl-8">
-        <div class="absolute left-4 top-0 bottom-0 w-0.5 bg-[var(--color-border)]"></div>
+      <div class="relative ps-8">
+        <div class="absolute start-4 top-0 bottom-0 w-0.5 bg-[var(--color-border)]"></div>
         <div class="space-y-8">
           {#each props.steps as step, i}
             <div class="relative">
-              <div class="absolute -left-8 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[var(--color-primary)] bg-[var(--color-surface)]">
+              <div class="absolute -start-8 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[var(--color-primary)] bg-[var(--color-surface)]">
                 <span class="text-xs font-bold text-[var(--color-primary)]">{i + 1}</span>
               </div>
               <div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">

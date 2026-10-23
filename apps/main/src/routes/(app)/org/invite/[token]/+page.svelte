@@ -60,7 +60,7 @@
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 					>
 						{t('org_invite.view_org', 'View organization')}
-						<ArrowRight size={15} />
+						<ArrowRight class="rtl:-scale-x-100" size={15} />
 					</a>
 				</div>
 			{:else}

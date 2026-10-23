@@ -157,7 +157,7 @@
 							style="color: var(--color-muted)"
 							disabled={disabled || i === 0}
 							onclick={() => moveSlide(i, -1)}
-							aria-label="Move up"
+							aria-label={t('common.move_up', 'Move up')}
 						>
 							<GripVertical class="h-3.5 w-3.5 rotate-180" />
 						</button>
@@ -167,7 +167,7 @@
 							style="color: var(--color-muted)"
 							disabled={disabled || i === slides.length - 1}
 							onclick={() => moveSlide(i, 1)}
-							aria-label="Move down"
+							aria-label={t('common.move_down', 'Move down')}
 						>
 							<GripVertical class="h-3.5 w-3.5" />
 						</button>
@@ -184,7 +184,7 @@
 							style="color: var(--color-danger, #ef4444)"
 							disabled={disabled}
 							onclick={() => removeSlide(i)}
-							aria-label="Remove slide"
+							aria-label={t('settings.auth_slides_remove', 'Remove slide')}
 						>
 							<Trash2 class="h-4 w-4" />
 						</button>

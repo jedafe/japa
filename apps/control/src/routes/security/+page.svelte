@@ -230,7 +230,7 @@
 			sortable: true,
 			render: (val) => {
 				const label = escapeHtml(blockTypeLabels[String(val)] ?? String(val));
-				return `<span class="bg-destructive/10 text-destructive inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"><span class="mr-1">⚠</span>${label}</span>`;
+				return `<span class="bg-destructive/10 text-destructive inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"><span class="me-1">⚠</span>${label}</span>`;
 			}
 		},
 		{
@@ -643,7 +643,7 @@
 
 	function formatDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleDateString('en-US', {
+			return new Date(iso).toLocaleDateString(document.documentElement.lang || 'en', {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'

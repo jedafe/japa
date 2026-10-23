@@ -658,7 +658,7 @@
 
 			{#if canManageFields}
 				<Button onclick={openAddField} size="sm">
-					<Plus class="mr-1 h-3.5 w-3.5" />
+					<Plus class="me-1 h-3.5 w-3.5" />
 					{t('fieldGroups.add_field', 'Add Field')}
 				</Button>
 			{/if}
@@ -675,10 +675,10 @@
 						<thead>
 							<tr style="border-bottom: 1px solid var(--color-border)">
 								<th class="w-8 px-2 py-2"></th>
-								<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.label', 'Label')}</th>
-								<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.key', 'Key')}</th>
-								<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.field_type', 'Type')}</th>
-								<th class="w-24 px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('common.actions', 'Actions')}</th>
+								<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('fieldGroups.label', 'Label')}</th>
+								<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('fieldGroups.key', 'Key')}</th>
+								<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('fieldGroups.field_type', 'Type')}</th>
+								<th class="w-24 px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('common.actions', 'Actions')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -830,7 +830,7 @@
 						{#each options as opt (opt.value)}
 							<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs" style="background: var(--color-surface)">
 								<span style="color: var(--color-muted)">{opt.value}</span>: {opt.label}
-								<button type="button" class="ml-0.5 opacity-50 hover:opacity-100" onclick={() => removeOption(opt)}>&times;</button>
+								<button type="button" class="ms-0.5 opacity-50 hover:opacity-100" onclick={() => removeOption(opt)}>&times;</button>
 							</span>
 						{/each}
 					</div>
@@ -908,10 +908,10 @@
 				<table class="w-full text-sm">
 					<thead>
 						<tr style="border-bottom: 1px solid var(--color-border)">
-							<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.perm_group', 'Group')}</th>
-							<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.perm_view', 'Can view')}</th>
-							<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.perm_edit', 'Can edit')}</th>
-							<th class="w-24 px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('common.actions', 'Actions')}</th>
+							<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('fieldGroups.perm_group', 'Group')}</th>
+							<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('fieldGroups.perm_view', 'Can view')}</th>
+							<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('fieldGroups.perm_edit', 'Can edit')}</th>
+							<th class="w-24 px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('common.actions', 'Actions')}</th>
 						</tr>
 					</thead>
 					<tbody>

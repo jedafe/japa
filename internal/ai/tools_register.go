@@ -344,4 +344,16 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("wiki_page.read", WikiPageReadHandler(deps))
 	registry.RegisterHandler("wiki_page.revisions.list", WikiPageRevisionsListHandler(deps))
 	registry.RegisterHandler("wiki.entity_fields.get", WikiEntityFieldsHandler(deps))
+
+	// --- Roadmap tools (§113, migration 000928) ---
+	// The public-roadmap admin surface for agent-driven changelog
+	// generation and release automation — also reachable by MCP callers
+	// (§119) on the same executor. Each tool is gated by the same
+	// roadmap.* RBAC node as its /admin/roadmap/* REST counterpart.
+	registry.RegisterHandler("roadmap.categories.list", RoadmapCategoriesListHandler(deps))
+	registry.RegisterHandler("roadmap.items.list", RoadmapItemsListHandler(deps))
+	registry.RegisterHandler("roadmap.item.get", RoadmapItemGetHandler(deps))
+	registry.RegisterHandler("roadmap.item.create", RoadmapItemCreateHandler(deps))
+	registry.RegisterHandler("roadmap.item.update", RoadmapItemUpdateHandler(deps))
+	registry.RegisterHandler("roadmap.item.set_status", RoadmapItemSetStatusHandler(deps))
 }

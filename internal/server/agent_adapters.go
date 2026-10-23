@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/academy"
 	"github.com/jedafe/japa/internal/ai"
@@ -43,6 +44,8 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/docs"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/forum"
 	"github.com/jedafe/japa/internal/fx"
 	"github.com/jedafe/japa/internal/housingguide"
@@ -52,7 +55,9 @@ import (
 	"github.com/jedafe/japa/internal/pofcalculator"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rag"
+	"github.com/jedafe/japa/internal/roadmap"
 	"github.com/jedafe/japa/internal/scholarships"
+	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/story"
 	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/taxcalculator"
@@ -2754,20 +2759,78 @@ func (a *agentForumAdapter) CreateThread(ctx context.Context, authorUserID pgtyp
 	return a.svc.CreateThread(ctx, authorUserID, out)
 }
 
-func (a *agentForumAdapter) GetThread(ctx context.Context, id pgtype.UUID) (gen.ForumThread, error) {
-	return a.svc.GetThread(ctx, id)
+// gateThreadRead enforces the F-009 space-visibility cascade on agent
+// reads: ThreadAccessNone → not_found; ThreadAccessTitleOnly → body masked
+// (title still visible per §05).
+func (a *agentForumAdapter) gateThreadRead(ctx context.Context, viewerID pgtype.UUID, thread gen.ForumThread) (gen.ForumThread, error) {
+	level, err := a.svc.ThreadAccessLevel(ctx, thread.ID, viewerID)
+	if err != nil {
+		return gen.ForumThread{}, err
+	}
+	if level == forum.ThreadAccessNone {
+		return gen.ForumThread{}, fmt.Errorf("%w: thread", errpkg.ErrNotFound)
+	}
+	if level == forum.ThreadAccessTitleOnly {
+		thread.Body = nil
+	}
+	return thread, nil
 }
 
-func (a *agentForumAdapter) GetThreadBySlug(ctx context.Context, slug string) (gen.ForumThread, error) {
-	return a.svc.GetThreadBySlug(ctx, slug)
+func (a *agentForumAdapter) GetThread(ctx context.Context, viewerID, id pgtype.UUID) (gen.ForumThread, error) {
+	thread, err := a.svc.GetThread(ctx, id)
+	if err != nil {
+		return gen.ForumThread{}, err
+	}
+	return a.gateThreadRead(ctx, viewerID, thread)
 }
 
-func (a *agentForumAdapter) ListThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return a.svc.ListThreadsBySpace(ctx, spaceID, cursorCreatedAt, limit)
+func (a *agentForumAdapter) GetThreadBySlug(ctx context.Context, viewerID pgtype.UUID, slug string) (gen.ForumThread, error) {
+	thread, err := a.svc.GetThreadBySlug(ctx, slug)
+	if err != nil {
+		return gen.ForumThread{}, err
+	}
+	return a.gateThreadRead(ctx, viewerID, thread)
 }
 
-func (a *agentForumAdapter) ListThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return a.svc.ListThreadsByPlatform(ctx, cursorCreatedAt, limit)
+func (a *agentForumAdapter) ListThreadsBySpace(ctx context.Context, viewerID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	level, err := a.svc.SpaceAccessLevel(ctx, spaceID, viewerID)
+	if err != nil {
+		return nil, err
+	}
+	if level == forum.ThreadAccessNone {
+		return nil, fmt.Errorf("%w: space", errpkg.ErrNotFound)
+	}
+
+	threads, err := a.svc.ListThreadsBySpace(ctx, spaceID, cursorCreatedAt, limit)
+	if err != nil {
+		return nil, err
+	}
+	if level == forum.ThreadAccessTitleOnly {
+		for i := range threads {
+			threads[i].Body = nil
+		}
+	}
+	return threads, nil
+}
+
+func (a *agentForumAdapter) ListThreadsByPlatform(ctx context.Context, viewerID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	threads, err := a.svc.ListThreadsByPlatform(ctx, cursorCreatedAt, limit)
+	if err != nil {
+		return nil, err
+	}
+	// Per-row cascade: drop private-space threads, mask members-space bodies.
+	out := threads[:0]
+	for i := range threads {
+		level, err := a.svc.ThreadAccessLevel(ctx, threads[i].ID, viewerID)
+		if err != nil || level == forum.ThreadAccessNone {
+			continue
+		}
+		if level == forum.ThreadAccessTitleOnly {
+			threads[i].Body = nil
+		}
+		out = append(out, threads[i])
+	}
+	return out, nil
 }
 
 func (a *agentForumAdapter) UpdateThread(ctx context.Context, id, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error) {
@@ -2794,7 +2857,17 @@ func (a *agentForumAdapter) CreateReply(ctx context.Context, threadID, authorUse
 	})
 }
 
-func (a *agentForumAdapter) ListRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]gen.ForumReply, error) {
+func (a *agentForumAdapter) ListRepliesByThread(ctx context.Context, viewerID, threadID pgtype.UUID) ([]gen.ForumReply, error) {
+	level, err := a.svc.ThreadAccessLevel(ctx, threadID, viewerID)
+	if err != nil {
+		return nil, err
+	}
+	if level == forum.ThreadAccessNone {
+		return nil, fmt.Errorf("%w: thread", errpkg.ErrNotFound)
+	}
+	if level == forum.ThreadAccessTitleOnly {
+		return nil, fmt.Errorf("%w: join the space to read replies", forum.ErrMembersOnly)
+	}
 	return a.svc.ListRepliesByThread(ctx, threadID)
 }
 
@@ -2818,15 +2891,75 @@ func (a *agentForumAdapter) RemoveVote(ctx context.Context, userID pgtype.UUID, 
 // Comments adapter (Section 49).
 // ---------------------------------------------------------------------------
 
-type agentCommentsAdapter struct{ svc *comments.Service }
+type agentCommentsAdapter struct {
+	svc      *comments.Service
+	spam     *spam.SpamPipeline
+	space    comments.SpaceCommentChecker
+	notifier comments.NotificationDispatcher
+	onCreate func(entityType string, entityID pgtype.UUID, engagementType string, delta int)
+}
 
+// CreateComment composes the same abuse controls the session handler and the
+// public-API adapter enforce (C-012): spam pipeline, space commenting/
+// replying permissions, rate-limit recording, notification dispatch, and the
+// engagement-count enqueue. Content visibility is enforced inside
+// comments.Service.CreateComment.
 func (a *agentCommentsAdapter) CreateComment(ctx context.Context, userID pgtype.UUID, in ai.CommentCreateInput) (gen.Comment, error) {
-	return a.svc.CreateComment(ctx, userID, comments.CreateCommentInput{
+	if a.spam != nil {
+		spamResult, err := a.spam.Check(ctx, spam.SpamCheckRequest{
+			Content:    string(in.Body),
+			UserID:     userID,
+			UserType:   "existing",
+			EntityType: "comment",
+		})
+		if err != nil {
+			slog.Warn("agent comment: spam check failed", "error", err)
+		} else if spamResult.Blocked {
+			return gen.Comment{}, fmt.Errorf("%w: content blocked by safety filters", errpkg.ErrForbidden)
+		}
+	}
+
+	if a.space != nil {
+		spaceID, err := a.svc.GetContentSpaceID(ctx, in.ContentID)
+		if err != nil {
+			slog.Warn("agent comment: failed to resolve content space", "content_id", in.ContentID.String(), "error", err)
+		} else if spaceID.Valid {
+			var allowed bool
+			if in.ParentID.Valid {
+				allowed, err = a.space.CanReplyInSpace(ctx, spaceID, userID)
+			} else {
+				allowed, err = a.space.CanCommentInSpace(ctx, spaceID, userID)
+			}
+
+			if err != nil {
+				slog.Warn("agent comment: space perm check failed", "space_id", spaceID.String(), "error", err)
+			} else if !allowed {
+				return gen.Comment{}, fmt.Errorf("%w: space commenting", errpkg.ErrForbidden)
+			}
+		}
+	}
+
+	c, err := a.svc.CreateComment(ctx, userID, comments.CreateCommentInput{
 		ContentID:   in.ContentID,
 		ParentID:    in.ParentID,
 		Body:        in.Body,
 		IsAnonymous: in.IsAnonymous,
 	})
+	if err != nil {
+		return gen.Comment{}, err
+	}
+
+	if a.spam != nil {
+		a.spam.RecordContentCreation(ctx, userID)
+	}
+
+	a.svc.DispatchCommentNotifications(ctx, c, a.notifier)
+
+	if a.onCreate != nil {
+		a.onCreate("content", in.ContentID, "comment", 1)
+	}
+
+	return c, nil
 }
 
 func (a *agentCommentsAdapter) GetComment(ctx context.Context, commentID pgtype.UUID) (gen.GetCommentRow, error) {
@@ -2838,7 +2971,19 @@ func (a *agentCommentsAdapter) ListCommentsByContent(ctx context.Context, conten
 }
 
 func (a *agentCommentsAdapter) ListRepliesByParent(ctx context.Context, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error) {
-	return a.svc.ListRepliesByParent(ctx, parentID, viewerID, limit, offset)
+	// The service scopes replies to their parent content — resolve it here so
+	// the agent interface stays content-agnostic.
+	parent, err := a.svc.GetComment(ctx, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("resolving parent comment: %w", err)
+	}
+
+	replies, _, err := a.svc.ListRepliesByParent(ctx, parent.ContentID, parentID, viewerID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	return replies, nil
 }
 
 func (a *agentCommentsAdapter) UpdateComment(ctx context.Context, commentID, userID pgtype.UUID, body []byte) (gen.Comment, error) {
@@ -3164,4 +3309,264 @@ func wikiRevisionsToAI(dtos []wiki.WikiRevisionDTO) []ai.WikiRevisionInfo {
 	}
 
 	return revs
+}
+
+// ---------------------------------------------------------------------------
+// Roadmap adapter (§113 → §103 tool catalog)
+// ---------------------------------------------------------------------------
+
+// agentRoadmapAdapter bridges ai.RoadmapService (mirror DTOs, no roadmap
+// import) to roadmap.Service. Sentinel errors are mapped onto
+// ai.RoadmapServiceError so tool output carries stable machine codes.
+//
+// checker enforces the same roadmap.enabled gate the REST group carries —
+// §103's contract is that a tool call is authorized exactly as if the
+// principal hit /admin/roadmap/* directly, so flag-off must fail the same
+// way (feature_disabled) instead of silently operating on a dark surface.
+//
+// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
+type agentRoadmapAdapter struct {
+	svc     *roadmap.Service
+	checker *features.Checker // nil → no flag check (tests)
+}
+
+// checkEnabled mirrors the features.Gate middleware on the REST group.
+func (a *agentRoadmapAdapter) checkEnabled(ctx context.Context) error {
+	if a.checker != nil && !a.checker.IsEnabled(ctx, "roadmap.enabled") {
+		return &ai.RoadmapServiceError{Code: "feature_disabled", Message: "roadmap is not available"}
+	}
+
+	return nil
+}
+
+// roadmapErr maps roadmap/errpkg sentinel errors onto ai.RoadmapServiceError
+// codes — the same codes the REST surface emits via handleServiceError.
+func roadmapErr(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	code := "roadmap_error"
+	switch {
+	case errors.Is(err, roadmap.ErrNotFound), errors.Is(err, pgx.ErrNoRows):
+		code = "item_not_found"
+	case errors.Is(err, roadmap.ErrInvalidTransition):
+		code = "invalid_status_transition"
+	case errors.Is(err, roadmap.ErrStatusDerived):
+		code = "status_derived"
+	case errors.Is(err, roadmap.ErrUnknownFlagKey):
+		code = "unknown_feature_flag"
+	case errors.Is(err, roadmap.ErrFlagAlreadyLinked):
+		code = "flag_already_linked"
+	case errors.Is(err, errpkg.ErrDuplicate), errors.Is(err, errpkg.ErrAlreadyExists):
+		code = "duplicate_slug"
+	case errors.Is(err, errpkg.ErrFeatureDisabled):
+		code = "feature_disabled"
+	case errors.Is(err, errpkg.ErrInvalid), errors.Is(err, errpkg.ErrRequired):
+		code = "validation_error"
+	}
+
+	return &ai.RoadmapServiceError{Code: code, Message: err.Error()}
+}
+
+// roadmapItemDTO converts a gen.RoadmapItem row into the agent-facing DTO.
+// categoryName is only populated by the admin list query; other callers
+// pass nil.
+func roadmapItemDTO(item gen.RoadmapItem, categoryName *string) *ai.RoadmapItem {
+	return &ai.RoadmapItem{
+		ID:             item.ID.String(),
+		Title:          item.Title,
+		Slug:           item.Slug,
+		Summary:        item.Summary,
+		Body:           item.Body,
+		CategoryID:     uuidOrEmpty(item.CategoryID),
+		CategoryName:   categoryName,
+		Status:         item.Status,
+		SortOrder:      item.SortOrder,
+		IsFlagship:     item.IsFlagship,
+		TargetWindow:   item.TargetWindow,
+		FeatureFlagKey: item.FeatureFlagKey,
+		VoteCount:      item.VoteCount,
+		ShippedAt:      tsOrNilStr(item.ShippedAt),
+		CreatedAt:      tsOrNilStr(item.CreatedAt),
+		UpdatedAt:      tsOrNilStr(item.UpdatedAt),
+		DeletedAt:      tsOrNilStr(item.DeletedAt),
+	}
+}
+
+// uuidOrEmpty renders a pgtype.UUID as a string, "" when invalid.
+func uuidOrEmpty(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+
+	return u.String()
+}
+
+// tsOrNilStr renders a pgtype.Timestamptz as RFC 3339, nil when invalid.
+func tsOrNilStr(t pgtype.Timestamptz) *string {
+	if !t.Valid {
+		return nil
+	}
+
+	s := t.Time.Format(time.RFC3339)
+	return &s
+}
+
+// roadmapInput converts the agent-facing input into the service-layer type.
+func roadmapInput(in ai.RoadmapItemInput) roadmap.AdminItemInput {
+	return roadmap.AdminItemInput{
+		Title:          in.Title,
+		Slug:           in.Slug,
+		Summary:        in.Summary,
+		Body:           in.Body,
+		CategoryID:     in.CategoryID,
+		Status:         in.Status,
+		SortOrder:      in.SortOrder,
+		IsFlagship:     in.IsFlagship,
+		TargetWindow:   in.TargetWindow,
+		FeatureFlagKey: in.FeatureFlagKey,
+		ActorID:        in.ActorID,
+	}
+}
+
+// ListItems implements ai.RoadmapService.
+func (a *agentRoadmapAdapter) ListItems(ctx context.Context, f ai.RoadmapItemFilter) (*ai.RoadmapItemPage, error) {
+	if err := a.checkEnabled(ctx); err != nil {
+		return nil, err
+	}
+
+
+	res, err := a.svc.AdminListItems(ctx, roadmap.AdminListFilter{
+		Status:         f.Status,
+		Search:         f.Search,
+		Sort:           f.Sort,
+		CategoryID:     f.CategoryID,
+		IncludeDeleted: f.IncludeDeleted,
+		PageSize:       f.PageSize,
+		PageOffset:     f.PageOffset,
+	})
+	if err != nil {
+		return nil, roadmapErr(err)
+	}
+
+	page := &ai.RoadmapItemPage{
+		Items:      make([]ai.RoadmapItem, 0, len(res.Items)),
+		Total:      res.Total,
+		Page:       res.Page,
+		TotalPages: res.TotalPages,
+	}
+	for _, row := range res.Items {
+		dto := roadmapItemDTO(gen.RoadmapItem{
+			ID:             row.ID,
+			Title:          row.Title,
+			Slug:           row.Slug,
+			Summary:        row.Summary,
+			Body:           row.Body,
+			CategoryID:     row.CategoryID,
+			Status:         row.Status,
+			SortOrder:      row.SortOrder,
+			IsFlagship:     row.IsFlagship,
+			TargetWindow:   row.TargetWindow,
+			FeatureFlagKey: row.FeatureFlagKey,
+			ContentID:      row.ContentID,
+			VoteCount:      row.VoteCount,
+			SubmittedBy:    row.SubmittedBy,
+			ApprovedBy:     row.ApprovedBy,
+			ShippedAt:      row.ShippedAt,
+			CreatedAt:      row.CreatedAt,
+			UpdatedAt:      row.UpdatedAt,
+			DeletedAt:      row.DeletedAt,
+		}, row.CategoryName)
+		page.Items = append(page.Items, *dto)
+	}
+
+	return page, nil
+}
+
+// GetItem implements ai.RoadmapService.
+func (a *agentRoadmapAdapter) GetItem(ctx context.Context, id pgtype.UUID) (*ai.RoadmapItem, error) {
+	if err := a.checkEnabled(ctx); err != nil {
+		return nil, err
+	}
+
+
+	item, err := a.svc.AdminGetItem(ctx, id)
+	if err != nil {
+		return nil, roadmapErr(err)
+	}
+
+	return roadmapItemDTO(item, nil), nil
+}
+
+// CreateItem implements ai.RoadmapService.
+func (a *agentRoadmapAdapter) CreateItem(ctx context.Context, in ai.RoadmapItemInput) (*ai.RoadmapItem, error) {
+	if err := a.checkEnabled(ctx); err != nil {
+		return nil, err
+	}
+
+
+	item, err := a.svc.AdminCreateItem(ctx, roadmapInput(in))
+	if err != nil {
+		return nil, roadmapErr(err)
+	}
+
+	return roadmapItemDTO(item, nil), nil
+}
+
+// UpdateItem implements ai.RoadmapService.
+func (a *agentRoadmapAdapter) UpdateItem(ctx context.Context, id pgtype.UUID, in ai.RoadmapItemInput) (*ai.RoadmapItem, error) {
+	if err := a.checkEnabled(ctx); err != nil {
+		return nil, err
+	}
+
+
+	item, err := a.svc.AdminUpdateItem(ctx, id, roadmapInput(in))
+	if err != nil {
+		return nil, roadmapErr(err)
+	}
+
+	return roadmapItemDTO(item, nil), nil
+}
+
+// SetItemStatus implements ai.RoadmapService.
+func (a *agentRoadmapAdapter) SetItemStatus(ctx context.Context, id pgtype.UUID, status string, actorID pgtype.UUID) (*ai.RoadmapItem, error) {
+	if err := a.checkEnabled(ctx); err != nil {
+		return nil, err
+	}
+
+
+	item, err := a.svc.AdminSetStatus(ctx, id, roadmap.ItemStatus(status), actorID)
+	if err != nil {
+		return nil, roadmapErr(err)
+	}
+
+	return roadmapItemDTO(item, nil), nil
+}
+
+// ListCategories implements ai.RoadmapService.
+func (a *agentRoadmapAdapter) ListCategories(ctx context.Context) ([]ai.RoadmapCategory, error) {
+	if err := a.checkEnabled(ctx); err != nil {
+		return nil, err
+	}
+
+
+	cats, err := a.svc.AdminListCategories(ctx)
+	if err != nil {
+		return nil, roadmapErr(err)
+	}
+
+	out := make([]ai.RoadmapCategory, 0, len(cats))
+	for _, c := range cats {
+		out = append(out, ai.RoadmapCategory{
+			ID:          c.ID.String(),
+			Slug:        c.Slug,
+			Name:        c.Name,
+			Description: c.Description,
+			Color:       c.Color,
+			SortOrder:   c.SortOrder,
+		})
+	}
+
+	return out, nil
 }

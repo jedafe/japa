@@ -34,7 +34,8 @@
 		ShieldCheck,
 		Star,
 		Users
-	} from 'lucide-svelte';
+		TriangleAlert,
+} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -759,7 +760,7 @@
 			<a href="/" class="transition-colors hover:text-[var(--color-text)]"
 				>{t('nav.home', 'Home')}</a
 			>
-			<ChevronRight size={12} aria-hidden="true" />
+			<ChevronRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />
 			<a href={breadcrumbMid.href} class="transition-colors hover:text-[var(--color-text)]"
 				>{breadcrumbMid.label}</a
 			>
@@ -767,13 +768,13 @@
 			     category — its crumb would repeat the kind crumb
 			     (Home / Mentorship / Mentorship / Title), so it is suppressed. -->
 			{#if catLabel && !(isMentorship && service.service_category === 'mentorship')}
-				<ChevronRight size={12} aria-hidden="true" />
+				<ChevronRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />
 				<a
 					href="/services?category={service.service_category}"
 					class="transition-colors hover:text-[var(--color-text)]">{catLabel}</a
 				>
 			{/if}
-			<ChevronRight size={12} aria-hidden="true" />
+			<ChevronRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />
 			<span class="truncate font-medium text-[var(--color-text)]" aria-current="page"
 				>{service.title}</span
 			>
@@ -967,7 +968,7 @@
 						     Avatar + name link to /u/{username} via UserHoverCard's
 						     trigger (click navigates, hover shows the user card). -->
 						<div
-							class="absolute bottom-4 left-4 right-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-4 shadow-lg backdrop-blur sm:right-auto sm:min-w-64"
+							class="absolute bottom-4 start-4 end-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-4 shadow-lg backdrop-blur sm:end-auto sm:min-w-64"
 						>
 							<div class="flex items-center gap-3">
 								{#if mentor.username}
@@ -994,7 +995,7 @@
 													<GraduationCap size={20} aria-hidden="true" />
 												</div>
 											{/if}
-											<span class="block min-w-0 text-left">
+											<span class="block min-w-0 text-start">
 												<span
 													class="flex items-center gap-1 truncate text-sm font-bold text-[var(--color-text)]"
 												>
@@ -1223,6 +1224,15 @@
 						<div class="mt-2.5 flex items-center gap-2">
 							<ShareButton contentId={service.id} url={canonical} title={service.title} />
 						</div>
+						{#if page.data.features?.['scam_alert.enabled']}
+							<a
+								href="/scam-alerts/new"
+								class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+							>
+								<TriangleAlert size={14} />
+								{t('scam_alerts.report_button', 'Report a Scam')}
+							</a>
+						{/if}
 					</div>
 					{#if service.org_id}
 						<div class="mt-6">
@@ -1368,7 +1378,7 @@
 									onclick={openCtaDialog}
 									class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 								>
-									<Send size={15} aria-hidden="true" />
+									<Send class="rtl:-scale-x-100" size={15} aria-hidden="true" />
 									{primaryCta.label}
 								</button>
 							{:else}
@@ -1380,7 +1390,7 @@
 								>
 									{primaryCta.label}
 									{#if primaryCta.external}
-										<ExternalLink size={15} aria-hidden="true" />
+										<ExternalLink class="rtl:-scale-x-100" size={15} aria-hidden="true" />
 									{/if}
 								</a>
 							{/if}
@@ -1451,7 +1461,7 @@
 							{/if}
 							{#if service.has_coupon}
 								<span
-									class="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-[var(--color-surface)]/95 px-2.5 py-1 text-xs font-semibold shadow-sm {accent.icon}"
+									class="absolute start-3 top-3 inline-flex items-center gap-1 rounded-full bg-[var(--color-surface)]/95 px-2.5 py-1 text-xs font-semibold shadow-sm {accent.icon}"
 								>
 									{t('services.coupon_badge', 'Deal')}
 								</span>
@@ -1559,9 +1569,9 @@
 								<button
 									type="button"
 									onclick={openBookingDialog}
-									class="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+									class="ms-auto inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 								>
-									<Send size={15} aria-hidden="true" />
+									<Send class="rtl:-scale-x-100" size={15} aria-hidden="true" />
 									{service.purchase_mode === 'paid'
 										? t('services.book_now', 'Book now')
 										: t('services.book_inquiry', 'Send inquiry')}
@@ -1623,7 +1633,7 @@
 								rel="noopener noreferrer"
 								class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 							>
-								<ExternalLink size={16} aria-hidden="true" />
+								<ExternalLink class="rtl:-scale-x-100" size={16} aria-hidden="true" />
 								{t('services.book_now', 'Book now')}
 							</a>
 						{/if}
@@ -1799,7 +1809,7 @@
 									class="mt-auto inline-flex items-center gap-1 pt-2 text-xs font-medium text-[var(--color-primary)]"
 								>
 									{t('services.card_view', 'View')}
-									<ArrowRight size={12} aria-hidden="true" />
+									<ArrowRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />
 								</span>
 							</div>
 						</a>

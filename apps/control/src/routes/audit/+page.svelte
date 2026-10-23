@@ -112,7 +112,7 @@
 				const actor = val as AuditLogEntry['actor'];
 				if (actor) {
 					return `<span class="font-medium">${escapeHtml(actor.username)}</span>
-						<span class="text-muted-foreground ml-1 text-xs">${escapeHtml(actor.id?.slice(0, 8))}...</span>`;
+						<span class="text-muted-foreground ms-1 text-xs">${escapeHtml(actor.id?.slice(0, 8))}...</span>`;
 				}
 				// No actor (e.g. failed login) — fall back to the attempted email
 				// recorded in metadata so the column is not uselessly empty.
@@ -120,7 +120,7 @@
 				const attemptedEmail = meta?.email;
 				if (attemptedEmail) {
 					return `<span class="font-medium">${escapeHtml(String(attemptedEmail))}</span>
-						<span class="text-muted-foreground ml-1 text-xs italic">(attempted)</span>`;
+						<span class="text-muted-foreground ms-1 text-xs italic">(attempted)</span>`;
 				}
 				return `<span class="text-muted-foreground">—</span>`;
 			}

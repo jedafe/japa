@@ -110,7 +110,7 @@
 				<div class="flex items-center justify-between">
 					<h2 class="text-lg font-semibold">{t('impersonate.current_session', 'Current Session')}</h2>
 					<Button variant="outline" size="sm" onclick={loadStatus} disabled={loading}>
-						<RefreshCw class="mr-1.5 h-3.5 w-3.5" />
+						<RefreshCw class="me-1.5 h-3.5 w-3.5" />
 						{t('common.refresh', 'Refresh')}
 					</Button>
 				</div>
@@ -140,7 +140,7 @@
 					</div>
 					<div class="mt-4">
 						<Button variant="destructive" onclick={() => (showEndConfirm = true)} disabled={ending}>
-							<LogOut class="mr-1.5 h-4 w-4" />
+							<LogOut class="me-1.5 h-4 w-4 rtl:-scale-x-100" />
 							{t('impersonate.end', 'End Impersonation')}
 						</Button>
 					</div>
@@ -177,13 +177,13 @@
 						<p>{t('impersonate.step_2', 'Click the "Impersonate" action in the user detail page.')}</p>
 					</div>
 					<div class="flex items-start gap-2.5">
-						<LogOut class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+						<LogOut class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground rtl:-scale-x-100" />
 						<p>{t('impersonate.step_3', 'Return here or use the banner to end the impersonation session when done.')}</p>
 					</div>
 				</div>
 				<div class="mt-4">
 					<Button variant="outline" onclick={() => goto('/users')}>
-						<UserSearch class="mr-1.5 h-4 w-4" />
+						<UserSearch class="me-1.5 h-4 w-4" />
 						{t('impersonate.go_to_users', 'Go to Users')}
 					</Button>
 				</div>
@@ -213,7 +213,7 @@
 			{t('common.cancel', 'Cancel')}
 		</Button>
 		<Button variant="destructive" onclick={endImpersonation} disabled={ending}>
-			<LogOut class="mr-1.5 h-4 w-4" />
+			<LogOut class="me-1.5 h-4 w-4 rtl:-scale-x-100" />
 			{t('impersonate.end', 'End Impersonation')}
 		</Button>
 	</div>

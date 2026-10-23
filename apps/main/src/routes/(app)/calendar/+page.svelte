@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
@@ -235,7 +235,7 @@
 
 	function fmtDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleString(undefined, {
+			return new Date(iso).toLocaleString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric',
@@ -249,7 +249,7 @@
 
 	function fmtDay(iso: string): string {
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				weekday: 'short',
 				year: 'numeric',
 				month: 'short',
@@ -300,7 +300,7 @@
 	// ── Month grid model ────────────────────────────────────────────────────
 	const monthLabel = $derived(
 		focus
-			? new Date(`${focus}-01T00:00:00`).toLocaleDateString(undefined, {
+			? new Date(`${focus}-01T00:00:00`).toLocaleDateString(i18n.locale, {
 					year: 'numeric',
 					month: 'long'
 				})
@@ -346,7 +346,7 @@
 			return {
 				key,
 				day: d.getDate(),
-				name: d.toLocaleDateString(undefined, { weekday: 'short' }),
+				name: d.toLocaleDateString(i18n.locale, { weekday: 'short' }),
 				isToday: key === todayKey
 			};
 		});
@@ -421,7 +421,7 @@
 
 	const dayNames = $derived(
 		Array.from({ length: 7 }, (_, i) =>
-			new Date(Date.UTC(2024, 0, 1 + i)).toLocaleDateString(undefined, { weekday: 'short' })
+			new Date(Date.UTC(2024, 0, 1 + i)).toLocaleDateString(i18n.locale, { weekday: 'short' })
 		)
 	);
 </script>
@@ -568,7 +568,7 @@
 					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
 					aria-label={t('calendar.prev_month', 'Previous month')}
 				>
-					<ChevronLeft size={16} />
+					<ChevronLeft class="rtl:-scale-x-100" size={16} />
 				</button>
 				<h2 class="text-base font-semibold text-[var(--color-text)]">{monthLabel}</h2>
 				<button
@@ -577,7 +577,7 @@
 					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
 					aria-label={t('calendar.next_month', 'Next month')}
 				>
-					<ChevronRight size={16} />
+					<ChevronRight class="rtl:-scale-x-100" size={16} />
 				</button>
 			</div>
 			<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -627,7 +627,7 @@
 					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
 					aria-label={t('calendar.prev_week', 'Previous week')}
 				>
-					<ChevronLeft size={16} />
+					<ChevronLeft class="rtl:-scale-x-100" size={16} />
 				</button>
 				<h2 class="text-base font-semibold text-[var(--color-text)]">{weekLabel}</h2>
 				<button
@@ -636,7 +636,7 @@
 					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
 					aria-label={t('calendar.next_week', 'Next week')}
 				>
-					<ChevronRight size={16} />
+					<ChevronRight class="rtl:-scale-x-100" size={16} />
 				</button>
 			</div>
 			<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -757,7 +757,7 @@
 				class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 				aria-label={t('calendar.source', 'Official source')}
 			>
-				<ExternalLink size={12} /> {t('calendar.source', 'Source')}
+				<ExternalLink class="rtl:-scale-x-100" size={12} /> {t('calendar.source', 'Source')}
 			</a>
 			{#if authed}
 				<button

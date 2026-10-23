@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { persistNavCollapse } from '$lib/nav-collapse';
@@ -150,7 +150,7 @@
 		const at = new Date(key.expires_at);
 		if (Number.isNaN(at.getTime())) return null;
 		return t('api.expires_on', 'Expires {date}', {
-			date: at.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+			date: at.toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' })
 		});
 	}
 
@@ -703,7 +703,7 @@
 		font-size: 0.875rem;
 	}
 	.keys-table th {
-		text-align: left;
+		text-align: start;
 		font-size: 0.75rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
@@ -997,7 +997,7 @@
 		font-size: 0.75rem;
 		color: var(--color-text);
 	}
-	.ip-entry form { margin-left: auto; }
+	.ip-entry form { margin-inline-start: auto; }
 	.ip-desc { font-size: 0.75rem; }
 	.ip-empty { font-size: 0.8125rem; }
 	.ip-add {

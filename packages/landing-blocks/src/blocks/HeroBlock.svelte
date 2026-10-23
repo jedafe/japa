@@ -151,7 +151,7 @@
 
         {#if hasSlider}
           <!-- Prev / Next arrows -->
-          <div class="absolute inset-y-0 left-0 z-20 flex items-center pl-2 sm:pl-4">
+          <div class="absolute inset-y-0 start-0 z-20 flex items-center ps-2 sm:ps-4">
             <button
               type="button"
               onclick={prev}
@@ -159,13 +159,13 @@
               class="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-800 shadow-lg backdrop-blur-sm transition hover:bg-white"
             >
               {#if ChevronLeft}
-                <ChevronLeft size={20} />
+                <ChevronLeft class="rtl:-scale-x-100" size={20} />
               {:else}
                 <span aria-hidden="true">&#10094;</span>
               {/if}
             </button>
           </div>
-          <div class="absolute inset-y-0 right-0 z-20 flex items-center pr-2 sm:pr-4">
+          <div class="absolute inset-y-0 end-0 z-20 flex items-center pe-2 sm:pe-4">
             <button
               type="button"
               onclick={next}
@@ -173,7 +173,7 @@
               class="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-800 shadow-lg backdrop-blur-sm transition hover:bg-white"
             >
               {#if ChevronRight}
-                <ChevronRight size={20} />
+                <ChevronRight class="rtl:-scale-x-100" size={20} />
               {:else}
                 <span aria-hidden="true">&#10095;</span>
               {/if}
@@ -181,7 +181,7 @@
           </div>
 
           <!-- Dots -->
-          <div class="absolute bottom-5 right-4 z-20 flex gap-2 sm:right-6 lg:right-8">
+          <div class="absolute bottom-5 end-4 z-20 flex gap-2 sm:end-6 lg:end-8">
             {#each props.slides ?? [] as _, i}
               <button
                 type="button"

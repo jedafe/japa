@@ -1064,7 +1064,7 @@
 {:else if errorMessage && !pageData}
 	<div class="flex h-[calc(100vh-4rem)] flex-col items-center justify-center gap-4">
 		<p class="text-sm" style="color: var(--color-danger)">{errorMessage}</p>
-		<Button variant="ghost" onclick={() => goto('/page-builder/pages')}><ArrowLeft class="mr-2 h-4 w-4" />{t('common.back', 'Back')}</Button>
+		<Button variant="ghost" onclick={() => goto('/page-builder/pages')}><ArrowLeft class="me-2 h-4 w-4 rtl:-scale-x-100" />{t('common.back', 'Back')}</Button>
 	</div>
 {:else}
 <div class="relative flex h-screen flex-col overflow-hidden">
@@ -1073,10 +1073,10 @@
 		<button
 			type="button"
 			onclick={() => (showHeader = true)}
-			class="absolute left-1/2 top-0 z-50 -translate-x-1/2 rounded-b-md border border-t-0 px-3 py-0.5 text-[10px] font-medium transition-colors hover:bg-[var(--color-surface)]"
+			class="absolute start-1/2 top-0 z-50 -translate-x-1/2 rounded-b-md border border-t-0 px-3 py-0.5 text-[10px] font-medium transition-colors hover:bg-[var(--color-surface)]"
 			style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
-			aria-label="Show top bar"
-		><PanelTop class="inline h-3 w-3" /> Show top bar</button>
+			aria-label={t('landing_editor.show_top_bar', 'Show top bar')}
+		><PanelTop class="inline h-3 w-3" /> {t('landing_editor.show_top_bar', 'Show top bar')}</button>
 	{/if}
 	<!-- Top bar — single row with 3 zones:
 	     Left: back button.
@@ -1085,7 +1085,7 @@
 	{#if showHeader}
 	<header class="flex items-center gap-3 border-b px-4 py-2" style="border-color: var(--color-border); background: var(--color-background)">
 		<!-- Left: back button -->
-		<Button variant="ghost" size="sm" onclick={() => goto('/page-builder/pages')} class="shrink-0"><ArrowLeft class="mr-1 h-4 w-4" />{t('common.back', 'Back')}</Button>
+		<Button variant="ghost" size="sm" onclick={() => goto('/page-builder/pages')} class="shrink-0"><ArrowLeft class="me-1 h-4 w-4 rtl:-scale-x-100" />{t('common.back', 'Back')}</Button>
 
 		<!-- Center: active category controls -->
 		<div class="flex flex-1 items-center justify-center gap-2 overflow-hidden">
@@ -1139,19 +1139,19 @@
 				<!-- Actions: save template + save draft + publish/archive -->
 				{#if canManagePages}
 					<Button variant="outline" size="sm" class="shrink-0" onclick={() => { templateName = `${pageData?.title ?? 'Page'} Template`; showSaveAsTemplate = true; }}>
-						<LayoutTemplate class="mr-1 h-3 w-3" />{t('page_builder.save_as_template', 'Save as Template')}
+						<LayoutTemplate class="me-1 h-3 w-3" />{t('page_builder.save_as_template', 'Save as Template')}
 					</Button>
 				{/if}
 				<Button variant="outline" size="sm" class="shrink-0" onclick={saveDraft} disabled={saving || !unsavedChanges}>
-					<Save class="mr-1 h-3 w-3" />{saving ? t('common.saving', 'Saving...') : t('page_builder.save_draft', 'Save Draft')}
+					<Save class="me-1 h-3 w-3" />{saving ? t('common.saving', 'Saving...') : t('page_builder.save_draft', 'Save Draft')}
 				</Button>
 				{#if pageData?.status === 'published' && canPublishPages}
 					<Button variant="outline" size="sm" class="shrink-0" onclick={archive} disabled={publishing}>
-						<Archive class="mr-1 h-3 w-3" />{t('page_builder.archive', 'Archive')}
+						<Archive class="me-1 h-3 w-3" />{t('page_builder.archive', 'Archive')}
 					</Button>
 				{:else if pageData?.status !== 'published' && canPublishPages}
 					<Button size="sm" class="shrink-0" onclick={() => { publishError = ''; showPublishDialog = true; }} disabled={publishing}>
-						<Rocket class="mr-1 h-3 w-3" />{t('page_builder.publish', 'Publish')}
+						<Rocket class="me-1 h-3 w-3" />{t('page_builder.publish', 'Publish')}
 					</Button>
 				{/if}
 			{/if}
@@ -1165,19 +1165,19 @@
 					onclick={() => (activeHeaderPanel = 'info')}
 					class="rounded px-3 py-1 text-xs font-medium transition-colors"
 					style={activeHeaderPanel === 'info' ? 'background: var(--color-primary); color: white' : 'color: var(--color-muted)'}
-				>Info</button>
+				>{t('landing_editor.tab_info', 'Info')}</button>
 				<button
 					type="button"
 					onclick={() => (activeHeaderPanel = 'preview')}
 					class="rounded px-3 py-1 text-xs font-medium transition-colors"
 					style={activeHeaderPanel === 'preview' ? 'background: var(--color-primary); color: white' : 'color: var(--color-muted)'}
-				>Preview</button>
+				>{t('landing_editor.tab_preview', 'Preview')}</button>
 				<button
 					type="button"
 					onclick={() => (activeHeaderPanel = 'actions')}
 					class="rounded px-3 py-1 text-xs font-medium transition-colors"
 					style={activeHeaderPanel === 'actions' ? 'background: var(--color-primary); color: white' : 'color: var(--color-muted)'}
-				>Actions</button>
+				>{t('landing_editor.tab_actions', 'Actions')}</button>
 			</div>
 			<!-- Section visibility toggles -->
 			<div class="flex gap-0.5 rounded-md border p-0.5" style="border-color: var(--color-border)">
@@ -1187,23 +1187,23 @@
 					class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
 					style={showLeftPane ? 'color: var(--color-foreground)' : 'color: var(--color-muted); opacity: 0.5'}
 					title={showLeftPane ? 'Hide left panel' : 'Show left panel'}
-					aria-label="Toggle left panel"
-				><PanelLeft class="h-4 w-4" /></button>
+					aria-label={t('landing_editor.toggle_left_panel', 'Toggle left panel')}
+				><PanelLeft class="h-4 w-4 rtl:-scale-x-100" /></button>
 				<button
 					type="button"
 					onclick={() => (showRightPane = !showRightPane)}
 					class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
 					style={showRightPane ? 'color: var(--color-foreground)' : 'color: var(--color-muted); opacity: 0.5'}
 					title={showRightPane ? 'Hide right panel' : 'Show right panel'}
-					aria-label="Toggle right panel"
-				><PanelRight class="h-4 w-4" /></button>
+					aria-label={t('landing_editor.toggle_right_panel', 'Toggle right panel')}
+				><PanelRight class="h-4 w-4 rtl:-scale-x-100" /></button>
 				<button
 					type="button"
 					onclick={() => (showHeader = !showHeader)}
 					class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
 					style={showHeader ? 'color: var(--color-foreground)' : 'color: var(--color-muted); opacity: 0.5'}
 					title={showHeader ? 'Hide top bar' : 'Show top bar'}
-					aria-label="Toggle top bar"
+					aria-label={t('landing_editor.toggle_top_bar', 'Toggle top bar')}
 				><PanelTop class="h-4 w-4" /></button>
 			</div>
 			<!-- Distraction-free / full-width editor -->
@@ -1213,7 +1213,7 @@
 				class="rounded-md border p-1.5 transition-colors hover:bg-[var(--color-surface)]"
 				style="border-color: var(--color-border); color: var(--color-foreground)"
 				title={distractionFree ? 'Exit full-width mode' : 'Full-width editor (hide all panels)'}
-				aria-label="Toggle full-width mode"
+				aria-label={t('landing_editor.toggle_full_width', 'Toggle full-width mode')}
 			>
 				{#if distractionFree}
 					<Minimize2 class="h-4 w-4" />
@@ -1235,29 +1235,29 @@
 				<button
 					type="button"
 					onclick={() => (showLeftPane = true)}
-					class="absolute left-0 top-1/2 z-50 -translate-y-1/2 rounded-r-md border border-l-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
+					class="absolute start-0 top-1/2 z-50 -translate-y-1/2 rounded-e-md border border-s-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
 					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
-					aria-label="Show left panel"
-				><PanelLeft class="h-4 w-4" /></button>
+					aria-label={t('landing_editor.show_left_panel', 'Show left panel')}
+				><PanelLeft class="h-4 w-4 rtl:-scale-x-100" /></button>
 			{/if}
 			<!-- Floating restore tab for hidden right pane -->
 			{#if !showRightPane}
 				<button
 					type="button"
 					onclick={() => (showRightPane = true)}
-					class="absolute right-0 top-1/2 z-50 -translate-y-1/2 rounded-l-md border border-r-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
+					class="absolute end-0 top-1/2 z-50 -translate-y-1/2 rounded-s-md border border-e-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
 					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
-					aria-label="Show right panel"
-				><PanelRight class="h-4 w-4" /></button>
+					aria-label={t('landing_editor.show_right_panel', 'Show right panel')}
+				><PanelRight class="h-4 w-4 rtl:-scale-x-100" /></button>
 			{/if}
 			<!-- Floating exit button for distraction-free mode -->
 			{#if distractionFree}
 				<button
 					type="button"
 					onclick={toggleDistractionFree}
-					class="absolute right-3 top-3 z-50 flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium shadow-lg transition-colors hover:bg-[var(--color-surface)]"
+					class="absolute end-3 top-3 z-50 flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium shadow-lg transition-colors hover:bg-[var(--color-surface)]"
 					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
-					aria-label="Exit full-width mode"
+					aria-label={t('landing_editor.exit_full_width', 'Exit full-width mode')}
 				><Minimize2 class="h-3.5 w-3.5" /> Exit full-width</button>
 			{/if}
 
@@ -1268,8 +1268,8 @@
 				<div class="shrink-0 overflow-y-auto p-2" style="height: {paletteHeight}px">
 					<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('pageBuilder.blockTypes', 'Block Types')}</h2>
 					<div class="relative mb-2">
-						<Search class="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
-						<input type="text" bind:value={paletteSearch} placeholder={t('common.search', 'Search')} class="w-full rounded-md border py-1.5 pl-8 pr-2 text-xs" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" />
+						<Search class="absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
+						<input type="text" bind:value={paletteSearch} placeholder={t('common.search', 'Search')} class="w-full rounded-md border py-1.5 ps-8 pe-2 text-xs" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" />
 					</div>
 					{#if paletteMessage}
 						<p class="mb-2 rounded border px-2 py-1.5 text-[11px]" style="border-color: var(--color-warning); color: var(--color-warning)">{paletteMessage}</p>
@@ -1298,7 +1298,7 @@
 							<SortableSection {block} index={i} selected={selectedBlockId === block.id} {meta} {getIcon} onSelect={() => (selectedBlockId = block.id)} onRemove={() => removeBlock(block.id)} />
 							{#if isContainerLike(block)}
 								{@const slots = childSlotsOf(block)}
-								<div class="ml-2">
+								<div class="ms-2">
 									<button
 										type="button"
 										onclick={() => toggleContainerExpand(block.id)}
@@ -1310,7 +1310,7 @@
 								{#if expandedContainers.has(block.id)}
 									{#each slots as slot (slot.key)}
 										{#if slot.label}
-											<div class="ml-6 mt-1 text-[10px] font-medium uppercase tracking-wider" style="color: var(--color-muted)">{slot.label}</div>
+											<div class="ms-6 mt-1 text-[10px] font-medium uppercase tracking-wider" style="color: var(--color-muted)">{slot.label}</div>
 										{/if}
 										<ContainerChildren
 											containerId={block.id}
@@ -1360,7 +1360,7 @@
 			<ResizeHandle paneId="right" size={rightPaneWidth} direction="left" minSize={250} maxSize={700} onResize={handlePaneResize} />
 
 			<!-- Right pane: inspector (resizable) -->
-			<aside class="shrink-0 overflow-y-auto" style="width: {rightPaneWidth}px; border-left: 1px solid var(--color-border); background: var(--color-background)">
+			<aside class="shrink-0 overflow-y-auto" style="width: {rightPaneWidth}px; border-inline-start: 1px solid var(--color-border); background: var(--color-background)">
 				{#if selectedBlock}
 					{@const meta = blockRegistry[selectedBlock.type]}
 					<div class="border-b p-3" style="border-color: var(--color-border)">
@@ -1396,7 +1396,7 @@
 
 								<!-- Per-device visibility -->
 								<div class="space-y-2 rounded border p-3" style="border-color: var(--color-border)">
-									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">Show on device</h4>
+									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">{t('landing_editor.show_on_device', 'Show on device')}</h4>
 									<div class="grid grid-cols-3 gap-2">
 										<label class="flex items-center justify-center gap-1.5 rounded border px-2 py-1.5 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
 											<input

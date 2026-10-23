@@ -201,7 +201,7 @@
 					onclick={handleConfirm}
 				>
 					{#if kind === 'link'}
-						<ExternalLink size={15} />
+						<ExternalLink class="rtl:-scale-x-100" size={15} />
 					{:else if cfg.icon}
 						<cfg.icon size={15} />
 					{/if}
@@ -225,7 +225,7 @@
 		position: fixed;
 		z-index: 201;
 		top: 50%;
-		left: 50%;
+		inset-inline-start: 50%;
 		transform: translate(-50%, -50%);
 		width: 90%;
 		max-width: 460px;
@@ -257,7 +257,7 @@
 	:global(.insert-close) {
 		position: absolute;
 		top: 14px;
-		right: 14px;
+		inset-inline-end: 14px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -365,7 +365,7 @@
 		background: transparent;
 		color: var(--color-text);
 		font-size: 0.875rem;
-		text-align: left;
+		text-align: start;
 		cursor: pointer;
 		transition: background 0.1s, border-color 0.1s;
 	}

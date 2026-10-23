@@ -210,7 +210,7 @@
 							<span class="status-badge status-{item.review_status}">
 								{t(`new_page.status.${item.review_status}`, item.review_status ?? '')}
 							</span>
-							<ArrowRight size={15} class="doc-card-arrow" />
+							<ArrowRight size={15} class="doc-card-arrow rtl:-scale-x-100" />
 						</a>
 					{/each}
 				</div>
@@ -224,14 +224,14 @@
 		<div class="doc-card doc-card-group">
 			<a href="/docs/api/{item.slug}" class="doc-card-head">
 				<span class="doc-card-title">{item.title}</span>
-				<ArrowUpRight size={15} class="doc-card-arrow" />
+				<ArrowUpRight size={15} class="doc-card-arrow rtl:-scale-x-100" />
 			</a>
 			<ul class="doc-card-children">
 				{#each item.children as child (child.id)}
 					<li>
 						<a href="/docs/api/{child.slug}" class="doc-child-link">
 							<span class="doc-child-title">{child.title}</span>
-							<ArrowRight size={13} class="doc-child-arrow" />
+							<ArrowRight size={13} class="doc-child-arrow rtl:-scale-x-100" />
 						</a>
 					</li>
 				{/each}
@@ -241,7 +241,7 @@
 		<a href="/docs/api/{item.slug}" class="doc-card doc-card-link">
 			<FileText size={16} class="doc-link-icon" />
 			<span class="doc-card-title">{item.title}</span>
-			<ArrowRight size={15} class="doc-card-arrow" />
+			<ArrowRight size={15} class="doc-card-arrow rtl:-scale-x-100" />
 		</a>
 	{/if}
 {/snippet}
@@ -362,7 +362,7 @@
 	}
 	.ep-search-wrap :global(.ep-search-icon) {
 		position: absolute;
-		left: 0.625rem;
+		inset-inline-start: 0.625rem;
 		top: 50%;
 		transform: translateY(-50%);
 		color: var(--color-muted);
@@ -437,7 +437,7 @@
 	.endpoint-summary {
 		font-size: 0.8125rem;
 		color: var(--color-muted);
-		margin-left: auto;
+		margin-inline-start: auto;
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;

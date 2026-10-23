@@ -369,7 +369,7 @@
 					<div class="flex items-center gap-2 px-3 py-2">
 						<button
 							type="button"
-							class="flex flex-1 items-center gap-2 text-left text-xs font-medium text-foreground transition-colors disabled:opacity-50"
+							class="flex flex-1 items-center gap-2 text-start text-xs font-medium text-foreground transition-colors disabled:opacity-50"
 							disabled={disabled}
 							aria-expanded={openStates[group.id] ?? false}
 							onclick={() => toggleGroup(group.id)}

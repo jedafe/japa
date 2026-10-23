@@ -261,7 +261,7 @@
 				<p class="text-sm font-semibold" style="color: var(--color-foreground)">{row.name}</p>
 				<p class="text-xs" style="color: var(--color-muted)">{row.component}</p>
 			</div>
-			<div class="ml-auto">
+			<div class="ms-auto">
 				{#if row.is_enabled}
 					<span class="inline-block rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">{t('pageBuilder.enabled', 'Enabled')}</span>
 				{:else}

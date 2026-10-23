@@ -148,7 +148,7 @@
 		<!-- Ribbons — the §114 derived badge leads the cluster. 'best_value'
 		     already implies a live coupon (it requires has_coupon), so the
 		     generic Deal chip is suppressed to keep the ribbon readable. -->
-		<div class="absolute left-3 top-3 flex flex-wrap gap-1.5">
+		<div class="absolute start-3 top-3 flex flex-wrap gap-1.5">
 			{#if listing.badge === 'popular'}
 				<span
 					class="inline-flex items-center gap-1 rounded-full bg-[var(--color-warning)]/95 px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-contrast)] shadow-sm"
@@ -185,7 +185,7 @@
 		{#if bookmarksEnabled}
 			<button
 				type="button"
-				class="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50 {bookmarked
+				class="absolute end-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50 {bookmarked
 					? 'text-[var(--color-primary)]'
 					: 'text-white'}"
 				aria-label={bookmarked
@@ -214,7 +214,7 @@
 				>
 			{/if}
 			{#if listing.destination_space_name || listing.city_space_name}
-				<span class="ml-auto inline-flex shrink-0 items-center gap-0.5">
+				<span class="ms-auto inline-flex shrink-0 items-center gap-0.5">
 					<MapPin size={11} />
 					{listing.city_space_name ?? listing.destination_space_name}
 				</span>
@@ -299,7 +299,7 @@
 				class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)] transition-colors group-hover:bg-[var(--color-primary)] group-hover:text-[var(--color-primary-contrast)]"
 			>
 				{t('services.card_view', 'View')}
-				<ArrowRight size={12} />
+				<ArrowRight class="rtl:-scale-x-100" size={12} />
 			</span>
 		</div>
 	</div>

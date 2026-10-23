@@ -2674,8 +2674,17 @@ export interface ChecklistSelector {
 export interface ChecklistItem {
 	item_key: string;
 	label: string;
+	description?: string;
+	required?: boolean;
+	category?: string;
 	completed: boolean;
 	notes: string;
+}
+
+export interface ChecklistGuide {
+	guide_id: string;
+	title: string;
+	items: ChecklistItem[];
 }
 
 // --- Section 71: Readiness Assessment ---
@@ -3643,6 +3652,7 @@ export type ScamPlatform =
 	| 'linkedin'
 	| 'email'
 	| 'website'
+	| 'japaconnect'
 	| 'other';
 
 export interface ScamReport {

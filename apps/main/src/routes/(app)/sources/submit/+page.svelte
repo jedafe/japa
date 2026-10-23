@@ -14,6 +14,7 @@
 
 <svelte:head>
 	<title>{title}</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="mx-auto max-w-xl p-4">

@@ -405,7 +405,7 @@
 				{#if value.logo_url}
 					<div class="relative">
 						<img src={value.logo_url} alt="" class="h-12 w-12 rounded-lg border object-cover" style="border-color: var(--color-border)" />
-						<button type="button" onclick={() => { value.logo_url = ''; }} class="absolute -right-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label={t("common.remove", "Remove")}>
+						<button type="button" onclick={() => { value.logo_url = ''; }} class="absolute -end-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label={t("common.remove", "Remove")}>
 							<X class="h-3 w-3" />
 						</button>
 					</div>
@@ -415,7 +415,7 @@
 					</div>
 				{/if}
 				<Button type="button" variant="outline" size="sm" onclick={() => (logoPickerOpen = true)}>
-					<ImageIcon class="mr-1 h-4 w-4" />
+					<ImageIcon class="me-1 h-4 w-4" />
 					{t("universities.choose_logo", "Choose Logo")}
 				</Button>
 			</div>

@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
 // Shared display helpers for the /messages/bookings + /messages/mentorship
 // panes — status vocabulary, counterpart resolution, date formatting.
-import { t } from '$lib/i18n';
+import { i18n, t } from '$lib/i18n';
 import type { ServiceBooking } from '$lib/types';
 
 /** Display status — mentorship-kind rows carry the legacy
@@ -71,7 +71,7 @@ export function bookingCounterpart(b: ServiceBooking, role: 'sent' | 'received')
 
 export function formatBookingDate(iso?: string): string {
 	if (!iso) return '';
-	return new Date(iso).toLocaleDateString(undefined, {
+	return new Date(iso).toLocaleDateString(i18n.locale, {
 		year: 'numeric',
 		month: 'short',
 		day: 'numeric'

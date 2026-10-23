@@ -347,7 +347,7 @@
 
   .community-avatars > .community-avatar:not(:first-child),
   .community-avatars > *:not(:first-child) .community-avatar {
-    margin-left: -10px;
+    margin-inline-start: -10px;
   }
 
   .community-avatar-img {
@@ -549,10 +549,10 @@
     background: var(--color-surface-subtle);
   }
   .carousel-arrow-left {
-    left: -1rem;
+    inset-inline-start: -1rem;
   }
   .carousel-arrow-right {
-    right: -1rem;
+    inset-inline-end: -1rem;
   }
   @container (max-width: 768px) {
     .carousel-arrow {
@@ -1155,7 +1155,7 @@
   @container (min-width: 768px) {
     .guest-footer-brand {
       align-items: flex-start;
-      text-align: left;
+      text-align: start;
     }
   }
 
@@ -1251,7 +1251,7 @@
   @container (min-width: 768px) {
     .guest-footer-bottom {
       justify-content: space-between;
-      text-align: left;
+      text-align: start;
     }
   }
 

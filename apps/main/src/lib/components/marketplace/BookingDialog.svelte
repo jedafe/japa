@@ -683,7 +683,7 @@
 							size={16}
 							class="motion-safe:animate-spin"
 							aria-hidden="true"
-						/>{:else}<Send size={16} aria-hidden="true" />{/if}
+						/>{:else}<Send class="rtl:-scale-x-100" size={16} aria-hidden="true" />{/if}
 					{isPaid ? t('services.book_pay_reserve', 'Pay & reserve') : t('services.book_send', 'Send inquiry')}
 				</button>
 				<button

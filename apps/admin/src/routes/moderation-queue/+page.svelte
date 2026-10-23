@@ -469,7 +469,7 @@
 				: 'color: var(--color-muted)'}
 			onclick={() => (activeTab = 'queue')}
 		>
-			<MessageSquare class="mr-2 h-4 w-4" />
+			<MessageSquare class="me-2 h-4 w-4" />
 			{t('moderationQueue.tab_queue', 'Queue')}
 		</button>
 		<button
@@ -479,7 +479,7 @@
 				: 'color: var(--color-muted)'}
 			onclick={() => (activeTab = 'alerts')}
 		>
-			<AlertTriangle class="mr-2 h-4 w-4" />
+			<AlertTriangle class="me-2 h-4 w-4" />
 			{t('moderationQueue.tab_alerts', 'Alerts')}
 		</button>
 	</div>

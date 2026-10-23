@@ -182,7 +182,7 @@
 		href="/mutual-aid"
 		class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft size={16} /> {t('mutual_aid.back', 'Back to mutual aid')}
+		<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('mutual_aid.back', 'Back to mutual aid')}
 	</a>
 
 	<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6">

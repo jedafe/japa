@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -119,7 +119,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (!date) return '—';
 		const d = new Date(date);
 		if (Number.isNaN(d.getTime())) return date;
-		return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+		return d.toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' });
 	}
 
 	let amountError = $state('');
@@ -658,7 +658,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 													class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
 													aria-label={t('scholarships.original_source', 'View original source')}
 												>
-													<ExternalLink size={12} />
+													<ExternalLink class="rtl:-scale-x-100" size={12} />
 												</a>
 											{/if}
 										</span>

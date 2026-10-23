@@ -290,7 +290,7 @@
 										<!-- Card header (click to expand) -->
 										<button
 											onclick={() => toggleExpand(guide.id)}
-											class="w-full flex items-center justify-between p-4 text-left hover:bg-[var(--color-surface-subtle)] transition-colors"
+											class="w-full flex items-center justify-between p-4 text-start hover:bg-[var(--color-surface-subtle)] transition-colors"
 											aria-expanded={expandedId === guide.id}
 										>
 											<div class="min-w-0">
@@ -359,8 +359,8 @@
 																				<span class="text-[var(--color-muted)]">— {item.deadline}</span>
 																			{/if}
 																			{#if item.url}
-																				<a href={item.url} target="_blank" rel="noopener noreferrer" class="ml-1 text-[var(--color-primary)] hover:underline inline-flex items-center gap-0.5">
-																					<ExternalLink size={12} />
+																				<a href={item.url} target="_blank" rel="noopener noreferrer" class="ms-1 text-[var(--color-primary)] hover:underline inline-flex items-center gap-0.5">
+																					<ExternalLink class="rtl:-scale-x-100" size={12} />
 																				</a>
 																			{/if}
 																		</span>
@@ -411,7 +411,7 @@
 										rel="noopener noreferrer"
 										class="mt-3 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
 									>
-										<ExternalLink size={14} />
+										<ExternalLink class="rtl:-scale-x-100" size={14} />
 										{t('tax_calculator.treaty_source', 'Treaty source')}
 									</a>
 								{/if}

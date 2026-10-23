@@ -17,6 +17,9 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.id = @id;
 
 -- name: ListCommentsByContent :many
+-- Soft-deleted comments with live replies are returned as tombstones
+-- (Section 49 — body scrubbed by the handler) so reply trees stay intact.
+-- Leaf soft-deletes stay filtered out.
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
@@ -34,7 +37,8 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.content_id = @content_id AND c.deleted_at IS NULL
+WHERE c.content_id = @content_id
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL)
 ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
@@ -65,13 +69,37 @@ JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 JOIN contents parent ON parent.id = c.content_id
 WHERE c.content_id = @content_id
- AND c.deleted_at IS NULL
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL)
  AND parent.status = 'published'
  AND parent.visibility = 'public'
  AND parent.deleted_at IS NULL
 ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListPublicRepliesByParent :many
+-- Public API parity with ListRepliesByParent: replies for a parent comment,
+-- only when the parent content is public (tombstones included).
+SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+ c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.reply_count,
+ 0::smallint AS user_vote,
+ c.is_anonymous,
+ COALESCE(u.public_username, u.username, '') AS username,
+ COALESCE(up.display_name, '') AS display_name,
+ COALESCE(up.avatar_url, '') AS avatar_url
+FROM comments c
+JOIN users u ON u.id = c.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+JOIN contents parent ON parent.id = c.content_id
+WHERE c.parent_id = @parent_id AND c.content_id = @content_id
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
+ AND c.status = 'published'
+ AND parent.status = 'published'
+ AND parent.visibility = 'public'
+ AND parent.deleted_at IS NULL
+ORDER BY c.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListCommentsByContentNew :many
@@ -93,7 +121,8 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.content_id = @content_id AND c.deleted_at IS NULL
+WHERE c.content_id = @content_id
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL)
 ORDER BY c.is_pinned DESC, c.created_at DESC
@@ -118,7 +147,8 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.content_id = @content_id AND c.deleted_at IS NULL
+WHERE c.content_id = @content_id
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL)
 ORDER BY c.is_pinned DESC, c.created_at ASC
@@ -142,7 +172,8 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.parent_id = @parent_id AND c.deleted_at IS NULL
+WHERE c.parent_id = @parent_id AND c.content_id = @content_id
+ AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
 ORDER BY c.vote_score DESC, c.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
@@ -153,6 +184,7 @@ LIMIT @page_limit OFFSET @page_offset;
 UPDATE comments
 SET body = @body, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = @id AND author_user_id = @author_user_id AND deleted_at IS NULL
+ AND status = 'published'
 RETURNING *;
 
 -- name: UpdateCommentUnmarked :one
@@ -162,11 +194,22 @@ RETURNING *;
 UPDATE comments
 SET body = @body, updated_at = now()
 WHERE id = @id AND author_user_id = @author_user_id AND deleted_at IS NULL
+ AND status = 'published'
+RETURNING *;
+
+-- name: UpdateCommentByID :one
+-- Moderator edit (comments.edit_any) — no author filter; moderators bypass
+-- the author edit window per Section 49.
+UPDATE comments
+SET body = @body, is_edited = true, edited_at = now(), updated_at = now()
+WHERE id = @id AND deleted_at IS NULL
+ AND status = 'published'
 RETURNING *;
 
 -- name: SoftDeleteComment :exec
+-- is_pinned is cleared so a deleted comment can't keep the top slot.
 UPDATE comments
-SET deleted_at = now(), updated_at = now()
+SET deleted_at = now(), is_pinned = false, updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
 -- name: SoftDeleteCommentByID :exec
@@ -178,7 +221,7 @@ WHERE id = @id AND deleted_at IS NULL;
 -- ownership check atomic so a comments.delete_own holder cannot delete
 -- another author's comment (BUG-003).
 UPDATE comments
-SET deleted_at = now(), updated_at = now()
+SET deleted_at = now(), is_pinned = false, updated_at = now()
 WHERE id = @id AND author_user_id = @author_user_id
  AND deleted_at IS NULL;
 
@@ -191,6 +234,7 @@ UPDATE comments
 SET status = 'removed',
  removed_by = @removed_by,
  removed_reason = @removed_reason,
+ is_pinned = false,
  updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
@@ -209,11 +253,13 @@ WHERE id = @parent_id AND deleted_at IS NULL;
 
 -- name: PinComment :exec
 UPDATE comments SET is_pinned = true, updated_at = now()
-WHERE id = @id AND deleted_at IS NULL;
+WHERE id = @id AND deleted_at IS NULL
+ AND status = 'published';
 
 -- name: UnpinComment :exec
 UPDATE comments SET is_pinned = false, updated_at = now()
-WHERE id = @id AND deleted_at IS NULL;
+WHERE id = @id AND deleted_at IS NULL
+ AND status = 'published';
 
 -- =====================
 -- Comment Votes
@@ -265,9 +311,12 @@ WHERE content_id = @content_id AND deleted_at IS NULL
  AND status = 'published';
 
 -- name: CountRepliesByParent :one
+-- Mirrors the ListRepliesByParent predicate (tombstones included,
+-- content-scoped).
 SELECT COUNT(*)::int AS count
 FROM comments
-WHERE parent_id = @parent_id AND deleted_at IS NULL
+WHERE parent_id = @parent_id AND content_id = @content_id
+ AND (deleted_at IS NULL OR reply_count > 0)
  AND status = 'published';
 
 -- =====================
@@ -316,9 +365,53 @@ FROM comments c
 JOIN contents ct ON ct.id = c.content_id
 WHERE c.author_user_id = @author_user_id
  AND c.deleted_at IS NULL
+ AND c.status = 'published'
  AND c.is_anonymous = false
  AND ct.status = 'published'
  AND ct.visibility = 'public';
+
+-- name: CountTopLevelCommentsByContent :one
+-- Top-level published comments only — drives the frontend load-more meta.
+-- Mirrors the list predicate (deleted parents with live replies count as
+-- tombstones).
+SELECT COUNT(*)::int AS count
+FROM comments
+WHERE content_id = @content_id AND parent_id IS NULL
+ AND (deleted_at IS NULL OR reply_count > 0)
+ AND status = 'published';
+
+-- name: CanViewComments :one
+-- Section 49 (C-001): whether the viewer may read/create comments on this
+-- content. Mirrors IsContentVisibleToUser (contents.sql) plus the
+-- members-only-needs-auth nuance — the session list route serves anonymous
+-- guests, for whom 'members' content comments must stay hidden. Private
+-- content comments are author-only (moderators use admin surfaces).
+SELECT EXISTS (
+    SELECT 1
+    FROM contents c
+    LEFT JOIN spaces s ON s.id = c.space_id
+    WHERE c.id = @content_id
+      AND c.status = 'published'
+      AND c.deleted_at IS NULL
+      AND c.auto_hidden = false
+      AND (
+          s.id IS NULL
+          OR (s.deleted_at IS NULL AND (
+              s.visibility = 'public'
+              OR EXISTS (
+                  SELECT 1 FROM space_members sm
+                  WHERE sm.space_id = s.id
+                    AND sm.user_id = @user_id
+                    AND sm.status = 'approved'
+              )
+          ))
+      )
+      AND (
+          c.visibility = 'public'
+          OR (c.visibility = 'members' AND @authed::boolean)
+          OR (c.visibility = 'private' AND c.author_id = @user_id)
+      )
+) AS visible;
 
 -- =====================
 -- Content Thread Links (Section 49 — blog/non-forum ↔ discussion cross-links)

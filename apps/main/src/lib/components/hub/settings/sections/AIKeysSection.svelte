@@ -80,9 +80,9 @@
 	<header class="mb-4 flex items-start justify-between gap-4">
 		<div>
 			{#if !embedded}
-				<h1 class="text-lg font-medium text-[var(--color-text)]">{t('settings.nav.ai_provider_keys')}</h1>
+				<h1 class="text-lg font-medium text-[var(--color-text)]">{t('settings.nav.ai_provider_keys', 'AI provider keys')}</h1>
 			{/if}
-			<p class="text-sm text-[var(--color-muted)]">{t('settings.ai_keys.desc')}</p>
+			<p class="text-sm text-[var(--color-muted)]">{t('settings.ai_keys.desc', 'Connect your own AI provider keys for AI features.')}</p>
 		</div>
 		<button
 			type="button"
@@ -97,7 +97,7 @@
 	{#if error}<p class="mb-3 text-xs text-[var(--color-danger)]" role="alert">{error}</p>{/if}
 
 	{#if keys.length === 0}
-		<EmptyState icon={KeyRound} title={t('settings.ai_keys.empty_title')} body={t('settings.ai_keys.empty_body')} />
+		<EmptyState icon={KeyRound} title={t('settings.ai_keys.empty_title', 'No API keys yet')} body={t('settings.ai_keys.empty_body', 'Add an API key to use AI features with your own provider billing.')} />
 	{:else}
 		<ul class="space-y-2">
 			{#each keys as key (key.id)}
@@ -106,7 +106,7 @@
 						<div class="min-w-0">
 							<p class="truncate text-sm font-medium text-[var(--color-text)]">
 								{key.label || key.provider?.display_name}
-								<span class="ml-2 font-mono text-xs text-[var(--color-muted)]">{key.api_key_masked}</span>
+								<span class="ms-2 font-mono text-xs text-[var(--color-muted)]">{key.api_key_masked}</span>
 							</p>
 							<p class="text-xs text-[var(--color-muted)]">
 								{#if key.label}{key.provider?.display_name} · {/if}

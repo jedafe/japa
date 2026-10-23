@@ -953,7 +953,7 @@
 					{t('app.wiki.categories_hint', 'Editing the category template for this wiki type.')}
 				</p>
 				<Button variant="ghost" onclick={() => { selectedType = null; selectedCategory = null; }}>
-					<X size={14} class="mr-1" />{t('common.close', 'Close')}
+					<X size={14} class="me-1" />{t('common.close', 'Close')}
 				</Button>
 			</div>
 			{#key selectedType.space_type_id}
@@ -969,7 +969,7 @@
 					{t('app.wiki.templates_hint', 'Editing the page templates under this category.')}
 				</p>
 				<Button variant="ghost" onclick={() => (selectedCategory = null)}>
-					<X size={14} class="mr-1" />{t('common.close', 'Close')}
+					<X size={14} class="me-1" />{t('common.close', 'Close')}
 				</Button>
 			</div>
 			{#key selectedCategory.id}
@@ -1068,7 +1068,7 @@
 				{t('app.wiki.seed_preview', 'Preview candidates')}
 			</Button>
 			<Button disabled={!seedWithin || seedBusy} onclick={() => runSeedAttractions(false)}>
-				<Sparkles size={14} class="mr-1" />
+				<Sparkles size={14} class="me-1" />
 				{t('app.wiki.seed_run', 'Seed attractions')}
 			</Button>
 		</div>
@@ -1283,7 +1283,7 @@
 				{t('app.wiki.rollup_enabled', 'Roll up child wikis onto this category’s page')}
 			</label>
 			{#if value.rollup_enabled}
-				<div class="mt-3 space-y-3 pl-6">
+				<div class="mt-3 space-y-3 ps-6">
 					<div>
 						<label for="wc-rollup-mode" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('app.wiki.rollup_mode', 'Mode')}

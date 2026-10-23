@@ -355,7 +355,7 @@
 				</div>
 			{/if}
 
-			<form onsubmit={submit} class="mt-4 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+			<form onsubmit={submit} class="mt-4 max-h-[60vh] space-y-4 overflow-y-auto pe-1">
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="sf-name" class={labelClass}>

@@ -78,7 +78,7 @@
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			data-sveltekit-preload-data="hover"
 		>
-			<ArrowLeft size={16} /> {offering.university.name}
+			<ArrowLeft class="rtl:-scale-x-100" size={16} /> {offering.university.name}
 		</a>
 		<div class="flex items-start justify-between gap-3">
 			<h1 class="text-xl font-bold text-[var(--color-text)]">{offering.course.title}</h1>

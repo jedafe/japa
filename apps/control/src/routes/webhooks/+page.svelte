@@ -85,8 +85,8 @@
 			sortable: true,
 			render: (val) =>
 				val
-					? `<span class="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-5px px-2 py-0.5 text-xs font-medium">Active</span>`
-					: `<span class="bg-muted text-muted-foreground rounded-5px px-2 py-0.5 text-xs font-medium">Inactive</span>`
+					? `<span class="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-5px px-2 py-0.5 text-xs font-medium">${t('common.active', 'Active')}</span>`
+					: `<span class="bg-muted text-muted-foreground rounded-5px px-2 py-0.5 text-xs font-medium">${t('common.inactive', 'Inactive')}</span>`
 		},
 		{
 			key: 'created_at',

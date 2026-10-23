@@ -23,7 +23,7 @@ export const load: LayoutServerLoad = async (event) => {
 	}
 
 	const parent = await event.parent();
-	const siteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
+	const flags = (parent as { features?: Record<string, boolean> }).features ?? {};
 
 	// Moderation tab is visible when the caller has any moderation scope.
 	// Degrade silently to hidden when the scope endpoint is unreachable.
@@ -35,7 +35,7 @@ export const load: LayoutServerLoad = async (event) => {
 	}
 
 	return {
-		videoEnabled: siteSettings['video.enabled'] === true,
+		videoEnabled: flags['video.enabled'] === true,
 		moderationScope
 	};
 };

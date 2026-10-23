@@ -121,7 +121,7 @@
 				disabled={disabled}
 				onchange={(e) => updateKey(i, (e.currentTarget as HTMLInputElement).value)}
 			/>
-			<span class="shrink-0 text-muted-foreground">→</span>
+			<span class="shrink-0 text-muted-foreground"><span class="inline-block rtl:-scale-x-100">→</span></span>
 			<input
 				type="text"
 				value={row.value}

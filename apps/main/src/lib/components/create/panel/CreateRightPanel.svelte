@@ -43,6 +43,12 @@
 		title: string;
 		bodyHtml: string;
 		contentType: string;
+		/** Label of the active content type (e.g. "Story") — names the first
+		 *  panel tab so it reflects what is being composed instead of the
+		 *  generic "Guide". */
+		typeLabel?: string;
+		/** TypeEntry.supportsSeries — false hides the series selector. */
+		supportsSeries?: boolean;
 		onslug: (v: string) => void;
 		onvisibility: (v: Visibility) => void;
 		oncanonical: (v: string) => void;
@@ -98,6 +104,8 @@
 		title,
 		bodyHtml,
 		contentType,
+		typeLabel,
+		supportsSeries = true,
 		onslug,
 		onvisibility,
 		oncanonical,
@@ -121,7 +129,7 @@
 <Tabs.Root value="guide">
 	<Tabs.List class="right-panel-tabs">
 		<Tabs.Trigger value="guide" class="right-panel-tab">
-			{t('create.panel.guide')}
+			{typeLabel ?? t('create.panel.guide')}
 		</Tabs.Trigger>
 		<Tabs.Trigger value="journey" class="right-panel-tab">
 			{t('create.panel.journey')}
@@ -136,6 +144,8 @@
 	<Tabs.Content value="guide" class="pt-2">
 		<CreateGuidePanel
 			{focusedField}
+			panelTitle={typeLabel}
+			{supportsSeries}
 			bind:series
 			{seriesId}
 			bind:spaces

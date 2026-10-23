@@ -98,6 +98,7 @@ export const load: PageServerLoad = async (event) => {
 	]);
 	const comments = commentsRes?.data ?? [];
 	const commentDeletedUserIds = commentsRes?.deleted_user_ids ?? null;
+	const commentsTotal = (commentsRes?.meta as { total?: number } | undefined)?.total ?? null;
 
 	// Merge deleted user IDs from the item and comments so the frontend can
 	// render @[deleted user] for all erased mentions (ADR-029).
@@ -114,6 +115,7 @@ export const load: PageServerLoad = async (event) => {
 		canModerate,
 		comments,
 		commentsLoadError,
+		commentsTotal,
 		deletedUserIds: mergedDeletedUserIds,
 		related
 	};

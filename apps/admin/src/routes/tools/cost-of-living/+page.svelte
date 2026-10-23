@@ -63,7 +63,7 @@
 			render: (value: string, row: ColAdminStatsItem) => {
 				let html = `<span class="text-sm" style="color: var(--color-foreground)">${value}</span>`;
 				if (row.is_baseline) {
-					html += ` <span class="ml-2 text-xs px-1.5 py-0.5 rounded" style="background: var(--color-surface-subtle, #f1f5f9); color: var(--color-muted)">${t('col.baseline_label', 'Baseline')}</span>`;
+					html += ` <span class="ms-2 text-xs px-1.5 py-0.5 rounded" style="background: var(--color-surface-subtle, #f1f5f9); color: var(--color-muted)">${t('col.baseline_label', 'Baseline')}</span>`;
 				}
 				return html;
 			}

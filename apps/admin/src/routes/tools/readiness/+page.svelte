@@ -323,7 +323,7 @@
 										style="width: {Math.min(100, (d.count / Math.max(stats.completion?.total_scored || 1, 1)) * 100)}%; background: var(--color-primary)"
 									></div>
 								</div>
-								<span class="w-16 shrink-0 text-right text-sm" style="color: var(--color-muted)">
+								<span class="w-16 shrink-0 text-end text-sm" style="color: var(--color-muted)">
 									{d.count} ({d.avg_score})
 								</span>
 							</div>
@@ -368,7 +368,7 @@
 			aria-label={t('common.close', 'Close')}
 			onclick={() => (showConfig = false)}
 		></button>
-		<div class="relative h-full w-full max-w-lg overflow-y-auto border-l p-6" style="border-color: var(--color-border); background: var(--color-surface)">
+		<div class="relative h-full w-full max-w-lg overflow-y-auto border-s p-6" style="border-color: var(--color-border); background: var(--color-surface)">
 			<div class="mb-4 flex items-center justify-between">
 				<h2 class="text-base font-semibold" style="color: var(--color-foreground)">
 					{t('app.tools.readiness_form_config', 'Assessment Form Config')}
@@ -448,7 +448,7 @@
 										scoringConfig = { ...scoringConfig!, thresholds };
 									}}
 									class="w-24 rounded border px-2 py-1 text-xs"
-									style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); border-left: 4px solid {resolveThresholdColor(t.color)}"
+									style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); border-inline-start: 4px solid {resolveThresholdColor(t.color)}"
 								/>
 							</div>
 						{/each}

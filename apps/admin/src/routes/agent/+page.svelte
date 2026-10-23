@@ -374,12 +374,12 @@
 					<table class="w-full text-sm">
 						<thead style="background-color: var(--color-muted-15, color-mix(in srgb, var(--color-muted) 15%, transparent))">
 							<tr>
-								<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('admin.agent.col.prompt', 'Prompt')}</th>
-								<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('admin.agent.col.status', 'Status')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tools', 'Tools')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tokens', 'Tokens')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.cost', 'Cost')}</th>
-								<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('admin.agent.col.started', 'Started')}</th>
+								<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('admin.agent.col.prompt', 'Prompt')}</th>
+								<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('admin.agent.col.status', 'Status')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tools', 'Tools')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tokens', 'Tokens')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.cost', 'Cost')}</th>
+								<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('admin.agent.col.started', 'Started')}</th>
 								<th class="px-3 py-2"></th>
 							</tr>
 						</thead>
@@ -395,11 +395,11 @@
 											{s.status}
 										</span>
 									</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{s.tool_call_count}</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{s.total_tokens.toLocaleString()}</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{fmtCost(s.estimated_cost)}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{s.tool_call_count}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{s.total_tokens.toLocaleString()}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{fmtCost(s.estimated_cost)}</td>
 									<td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{fmtDate(s.started_at)}</td>
-									<td class="px-3 py-2 text-right">
+									<td class="px-3 py-2 text-end">
 										<Button variant="ghost" size="sm" onclick={() => loadDetail(s.id)}>
 											<Eye size={14} />
 										</Button>
@@ -424,10 +424,10 @@
 						</div>
 						<div class="flex gap-2">
 							<Button variant="outline" size="sm" disabled={sessionsPage <= 1} onclick={prevPage}>
-								<ChevronLeft size={14} />
+								<ChevronLeft class="rtl:-scale-x-100" size={14} />
 							</Button>
 							<Button variant="outline" size="sm" disabled={sessionsPage >= totalPages} onclick={nextPage}>
-								<ChevronRight size={14} />
+								<ChevronRight class="rtl:-scale-x-100" size={14} />
 							</Button>
 						</div>
 					</div>
@@ -474,33 +474,33 @@
 					<table class="w-full text-sm">
 						<thead style="background-color: var(--color-muted-15, color-mix(in srgb, var(--color-muted) 15%, transparent))">
 							<tr>
-								<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tool', 'Tool')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.calls', 'Calls')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.success_rate', 'Success')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.errors', 'Errors')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.unauthorized', 'Denied')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.privacy_blocked', 'Privacy')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.hitl', 'HITL')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.avg_latency', 'Avg')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.max_latency', 'Max')}</th>
+								<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tool', 'Tool')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.calls', 'Calls')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.success_rate', 'Success')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.errors', 'Errors')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.unauthorized', 'Denied')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.privacy_blocked', 'Privacy')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.hitl', 'HITL')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.avg_latency', 'Avg')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.max_latency', 'Max')}</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each toolStats as stat (stat.tool_name)}
 								<tr class="border-t" style="border-color: var(--color-border)">
 									<td class="px-3 py-2 font-mono text-xs font-medium" style="color: var(--color-foreground)">{stat.tool_name}</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-foreground)">{stat.total_calls}</td>
-									<td class="px-3 py-2 text-right">
+									<td class="px-3 py-2 text-end" style="color: var(--color-foreground)">{stat.total_calls}</td>
+									<td class="px-3 py-2 text-end">
 										<span style="color: {stat.success_rate >= 0.9 ? 'var(--color-success, #16a34a)' : stat.success_rate >= 0.5 ? 'var(--color-warning, #d97706)' : 'var(--color-danger, #dc2626)'}">
 											{(stat.success_rate * 100).toFixed(1)}%
 										</span>
 									</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{stat.error_count}</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{stat.unauthorized_count}</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{stat.privacy_blocked_count}</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{stat.hitl_queued_count}</td>
-									<td class="px-3 py-2 text-right text-xs" style="color: var(--color-muted)">{fmtLatency(stat.avg_latency_ms)}</td>
-									<td class="px-3 py-2 text-right text-xs" style="color: var(--color-muted)">{fmtLatency(stat.max_latency_ms)}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{stat.error_count}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{stat.unauthorized_count}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{stat.privacy_blocked_count}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{stat.hitl_queued_count}</td>
+									<td class="px-3 py-2 text-end text-xs" style="color: var(--color-muted)">{fmtLatency(stat.avg_latency_ms)}</td>
+									<td class="px-3 py-2 text-end text-xs" style="color: var(--color-muted)">{fmtLatency(stat.max_latency_ms)}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -548,11 +548,11 @@
 					<table class="w-full text-sm">
 						<thead style="background-color: var(--color-muted-15, color-mix(in srgb, var(--color-muted) 15%, transparent))">
 							<tr>
-								<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('admin.agent.col.user', 'User')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.sessions', 'Sessions')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tokens', 'Tokens')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tool_calls', 'Tool Calls')}</th>
-								<th class="px-3 py-2 text-right font-medium" style="color: var(--color-muted)">{t('admin.agent.col.total_cost', 'Total Cost')}</th>
+								<th class="px-3 py-2 text-start font-medium" style="color: var(--color-muted)">{t('admin.agent.col.user', 'User')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.sessions', 'Sessions')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tokens', 'Tokens')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.tool_calls', 'Tool Calls')}</th>
+								<th class="px-3 py-2 text-end font-medium" style="color: var(--color-muted)">{t('admin.agent.col.total_cost', 'Total Cost')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -561,10 +561,10 @@
 									<td class="px-3 py-2" style="color: var(--color-foreground)">
 										{row.username ?? row.user_id.slice(0, 8)}
 									</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{row.session_count}</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{row.total_tokens.toLocaleString()}</td>
-									<td class="px-3 py-2 text-right" style="color: var(--color-muted)">{row.total_tool_calls}</td>
-									<td class="px-3 py-2 text-right font-medium" style="color: var(--color-foreground)">{fmtCost(row.total_cost_usd)}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{row.session_count}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{row.total_tokens.toLocaleString()}</td>
+									<td class="px-3 py-2 text-end" style="color: var(--color-muted)">{row.total_tool_calls}</td>
+									<td class="px-3 py-2 text-end font-medium" style="color: var(--color-foreground)">{fmtCost(row.total_cost_usd)}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -587,7 +587,7 @@
 					<div class="mb-2 flex items-center gap-2">
 						<span class="text-xs font-mono" style="color: var(--color-muted)">{detailSession.id}</span>
 						<span
-							class="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+							class="ms-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
 							style="background-color: color-mix(in srgb, {statusColor(detailSession.status)} 12%, transparent); color: {statusColor(detailSession.status)}"
 						>
 							{detailSession.status}
@@ -623,7 +623,7 @@
 										<Wrench size={12} style="color: var(--color-muted)" />
 										<span class="font-mono font-medium">{tc.tool_name}</span>
 										<span
-											class="ml-auto rounded-full px-1.5 py-0.5 text-xs font-medium"
+											class="ms-auto rounded-full px-1.5 py-0.5 text-xs font-medium"
 											style="background-color: color-mix(in srgb, {toolStatusColor(tc.status)} 12%, transparent); color: {toolStatusColor(tc.status)}"
 										>
 											{tc.status}
@@ -632,18 +632,18 @@
 									<div class="mt-1.5 flex flex-wrap items-center gap-2" style="color: var(--color-muted)">
 										<span><Clock size={9} class="inline" /> {fmtLatency(tc.latency_ms)}</span>
 										{#if tc.rbac_checked}<span><Shield size={9} class="inline" /> RBAC</span>{/if}
-										{#if tc.privacy_checked}<span><Lock size={9} class="inline" /> Privacy</span>{/if}
+										{#if tc.privacy_checked}<span><Lock size={9} class="inline" /> {t('common.privacy', 'Privacy')}</span>{/if}
 										{#if tc.hitl_review_id}<span><AlertCircle size={9} class="inline" /> HITL</span>{/if}
 									</div>
 									{#if tc.arguments != null}
 										<details class="mt-1.5">
-											<summary class="cursor-pointer" style="color: var(--color-muted)">Arguments</summary>
+											<summary class="cursor-pointer" style="color: var(--color-muted)">{t('admin.agent.arguments', 'Arguments')}</summary>
 											<pre class="mt-1 max-h-32 overflow-auto rounded p-1.5 font-mono text-xs" style="background-color: var(--color-background)">{jsonPreview(tc.arguments)}</pre>
 										</details>
 									{/if}
 									{#if tc.result != null}
 										<details class="mt-1">
-											<summary class="cursor-pointer" style="color: var(--color-muted)">Result</summary>
+											<summary class="cursor-pointer" style="color: var(--color-muted)">{t('admin.agent.result', 'Result')}</summary>
 											<pre class="mt-1 max-h-40 overflow-auto rounded p-1.5 font-mono text-xs" style="background-color: var(--color-background)">{jsonPreview(tc.result)}</pre>
 										</details>
 									{/if}

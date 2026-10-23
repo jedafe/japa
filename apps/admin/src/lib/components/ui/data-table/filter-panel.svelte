@@ -96,7 +96,7 @@
       <div class="flex gap-2">
         <Button size="sm" onclick={onapply}>{t("common.apply", "Apply")}</Button>
         <Button size="sm" variant="ghost" onclick={onclear}>
-          <X class="mr-1 h-3.5 w-3.5" />{t("common.clear", "Clear")}
+          <X class="me-1 h-3.5 w-3.5" />{t("common.clear", "Clear")}
         </Button>
       </div>
     </Accordion.Content>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -151,7 +151,7 @@
 
 	function formatDate(date: string | null | undefined): string {
 		if (!date) return '—';
-		return new Date(date).toLocaleDateString('en-US', {
+		return new Date(date).toLocaleDateString(i18n.locale, {
 			year: 'numeric',
 			month: 'long',
 			day: 'numeric'
@@ -249,7 +249,7 @@
 				href="/scholarships"
 				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 			>
-				<ArrowLeft size={15} />
+				<ArrowLeft class="rtl:-scale-x-100" size={15} />
 				{t('scholarships.back_to_list', 'Back to scholarships')}
 			</a>
 			<button
@@ -281,7 +281,7 @@
 					</span>
 				{/if}
 				{#if trustTier > 0}
-					<span class="ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {verified ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}">
+					<span class="ms-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {verified ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}">
 						{#if verified}
 							<ShieldCheck size={12} />
 							{t('scholarships.verified', 'Verified')}
@@ -497,7 +497,7 @@
 										class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
 										aria-label={t('scholarships.original_source', 'View original source')}
 									>
-										<ExternalLink size={14} />
+										<ExternalLink class="rtl:-scale-x-100" size={14} />
 									</a>
 								{/if}
 							</div>
@@ -529,7 +529,7 @@
 							class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
 						>
 							{t('scholarships.apply', 'Apply')}
-							<ExternalLink size={15} />
+							<ExternalLink class="rtl:-scale-x-100" size={15} />
 						</a>
 					{/if}
 					<a

@@ -51,10 +51,10 @@
 				'fixed inset-y-0 z-50 flex h-full flex-col border shadow-xl duration-300 data-[state=open]:animate-in data-[state=closed]:animate-out',
 				side === 'right'
 					? clsx(
-							'right-0 data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right'
+							'end-0 data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right'
 						)
 					: clsx(
-							'left-0 data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left'
+							'start-0 data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left'
 						),
 				widths[size],
 				className
@@ -65,7 +65,7 @@
 				class="flex items-start justify-between border-b px-5 py-4"
 				style="border-color: var(--color-border)"
 			>
-				<div class="flex flex-col gap-1 pr-6">
+				<div class="flex flex-col gap-1 pe-6">
 					{#if title}
 						<Dialog.Title
 							class="text-base font-semibold leading-none"
@@ -79,7 +79,7 @@
 					{/if}
 				</div>
 				<Dialog.Close
-					class="absolute right-4 top-4 rounded-lg p-1 opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+					class="absolute end-4 top-4 rounded-lg p-1 opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 					style="color: var(--color-muted)"
 					onclick={handleClose}
 					aria-label={t('lib.components.ui.modal.modal.svelte.close', 'Close')}

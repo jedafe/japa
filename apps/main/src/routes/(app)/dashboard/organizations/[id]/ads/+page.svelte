@@ -224,7 +224,7 @@
 				class="rounded-lg p-2 transition-colors hover:bg-[var(--color-surface)]"
 				title={t('common.back', 'Back')}
 			>
-				<ArrowLeft class="h-5 w-5" />
+				<ArrowLeft class="h-5 w-5 rtl:-scale-x-100" />
 			</a>
 			<div>
 				<h1 class="flex items-center gap-2 text-xl font-semibold text-[var(--color-text)]">
@@ -395,19 +395,19 @@
 			<table class="w-full text-sm">
 				<thead class="bg-[var(--color-surface)]">
 					<tr>
-						<th class="px-4 py-3 text-left font-medium text-[var(--color-text)]">
+						<th class="px-4 py-3 text-start font-medium text-[var(--color-text)]">
 							{t('org_ads.campaign_name', 'Campaign Name')}
 						</th>
-						<th class="px-4 py-3 text-left font-medium text-[var(--color-text)]">
+						<th class="px-4 py-3 text-start font-medium text-[var(--color-text)]">
 							{t('common.status', 'Status')}
 						</th>
-						<th class="px-4 py-3 text-left font-medium text-[var(--color-text)]">
+						<th class="px-4 py-3 text-start font-medium text-[var(--color-text)]">
 							{t('org_ads.budget', 'Budget')}
 						</th>
-						<th class="px-4 py-3 text-left font-medium text-[var(--color-text)]">
+						<th class="px-4 py-3 text-start font-medium text-[var(--color-text)]">
 							{t('org_ads.created', 'Created')}
 						</th>
-						<th class="px-4 py-3 text-right font-medium text-[var(--color-text)]">
+						<th class="px-4 py-3 text-end font-medium text-[var(--color-text)]">
 							{t('common.actions', 'Actions')}
 						</th>
 					</tr>

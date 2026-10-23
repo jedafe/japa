@@ -1,6 +1,7 @@
 <!-- §122 Next-Action rule editor -->
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -134,7 +135,7 @@
 		<label class="mt-6 flex items-center gap-2 text-sm">
 			<input bind:checked={enabled} type="checkbox" /> Enabled
 		</label>
-		<label class="mt-6 flex items-center gap-2 text-sm" title="Counts toward nextactions.max_upsell_per_day">
+		<label class="mt-6 flex items-center gap-2 text-sm" title={t('nextactions.upsell_cap_hint', 'Counts toward nextactions.max_upsell_per_day')}>
 			<input bind:checked={upsell} type="checkbox" /> Upsell
 		</label>
 	</div>
@@ -151,7 +152,7 @@
 	</label>
 
 	<fieldset class="border-border rounded-[var(--radius-card)] border p-3">
-		<legend class="text-muted-foreground px-1 text-xs">Payload</legend>
+		<legend class="text-muted-foreground px-1 text-xs">{t('nextactions.payload', 'Payload')}</legend>
 		<div class="grid grid-cols-2 gap-3">
 			<label class="block text-sm">Title <input bind:value={title} required class="border-border bg-background mt-1 w-full rounded-[var(--radius)] border px-3 py-1.5" /></label>
 			<label class="block text-sm">CTA label <input bind:value={ctaLabel} class="border-border bg-background mt-1 w-full rounded-[var(--radius)] border px-3 py-1.5" /></label>
@@ -162,7 +163,7 @@
 	</fieldset>
 
 	<fieldset class="border-border rounded-[var(--radius-card)] border p-3">
-		<legend class="text-muted-foreground px-1 text-xs">Channels (guests: pull-render only)</legend>
+		<legend class="text-muted-foreground px-1 text-xs">{t('nextactions.channels', 'Channels (guests: pull-render only)')}</legend>
 		<div class="flex flex-wrap gap-3">
 			{#each CHANNELS as ch}
 				<label class="flex items-center gap-1 text-sm">
@@ -176,12 +177,12 @@
 	</fieldset>
 
 	<fieldset class="border-border rounded-[var(--radius-card)] border p-3">
-		<legend class="text-muted-foreground px-1 text-xs">Conditions — who sees the suggestion</legend>
+		<legend class="text-muted-foreground px-1 text-xs">{t('nextactions.conditions', 'Conditions — who sees the suggestion')}</legend>
 		<PredicateGroupEditor bind:value={conditionsObj} />
 	</fieldset>
 
 	<fieldset class="border-border rounded-[var(--radius-card)] border p-3">
-		<legend class="text-muted-foreground px-1 text-xs">Completion signal — auto-complete when true</legend>
+		<legend class="text-muted-foreground px-1 text-xs">{t('nextactions.completion_signal', 'Completion signal — auto-complete when true')}</legend>
 		<label class="mb-2 flex items-center gap-2 text-sm">
 			<input type="checkbox" checked={completionEnabled} onchange={(e) => {
 				completionEnabled = (e.target as HTMLInputElement).checked;
@@ -194,12 +195,12 @@
 	</fieldset>
 
 	<fieldset class="border-border rounded-[var(--radius-card)] border p-3">
-		<legend class="text-muted-foreground px-1 text-xs">Audience</legend>
+		<legend class="text-muted-foreground px-1 text-xs">{t('nextactions.audience', 'Audience')}</legend>
 		<AudienceEditor bind:value={audienceObj} />
 	</fieldset>
 
 	<fieldset class="border-border rounded-[var(--radius-card)] border p-3">
-		<legend class="text-muted-foreground px-1 text-xs">Frequency</legend>
+		<legend class="text-muted-foreground px-1 text-xs">{t('nextactions.frequency', 'Frequency')}</legend>
 		<FrequencyEditor bind:value={frequencyObj} />
 	</fieldset>
 

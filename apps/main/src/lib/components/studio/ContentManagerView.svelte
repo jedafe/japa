@@ -413,16 +413,16 @@
 
 	<div class="mt-2 flex flex-wrap items-center gap-2">
 		<div class="relative">
-			<Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-[var(--color-muted)]" />
+			<Search class="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-[var(--color-muted)]" />
 			<input
 				type="search"
 				placeholder={t('dashboard.content.search_placeholder')}
 				value={qParam}
 				oninput={(e) => onSearchInput(e.currentTarget.value)}
-				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border)] sm:w-56"
+				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-8 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border)] sm:w-56"
 			/>
 		</div>
-		<div class="ml-auto flex flex-wrap items-center gap-2">
+		<div class="ms-auto flex flex-wrap items-center gap-2">
 			<div class="w-40">
 				<Autocomplete
 					placeholder={t('dashboard.content.all_types')}
@@ -469,7 +469,7 @@
 				<span class="text-xs text-[var(--color-muted)]">
 					{t('dashboard.content.selected_count', '{count} selected', { count: selectedIds.size })}
 				</span>
-				<div class="ml-auto flex flex-wrap items-center gap-2">
+				<div class="ms-auto flex flex-wrap items-center gap-2">
 					{#if bulkBusy}
 						<Loader2 class="size-4 animate-spin text-[var(--color-muted)]" />
 					{:else}
@@ -531,7 +531,7 @@
 							{#if item.comment_count !== undefined} · {item.comment_count} {t('dashboard.content.comments')}{/if}
 						</p>
 					</div>
-					<div class="ml-3 flex shrink-0 items-center gap-2">
+					<div class="ms-3 flex shrink-0 items-center gap-2">
 						{#if actingId === item.id || bulkBusy}
 							<Loader2 class="size-4 animate-spin text-[var(--color-muted)]" />
 						{:else}
@@ -594,7 +594,7 @@
 		{#snippet title()}
 			{t('dashboard.content.delete_confirm')}
 			{#if deleteIds && deleteIds.length > 1}
-				<span class="ml-1 text-sm font-normal text-[var(--color-muted)]">({deleteIds.length})</span>
+				<span class="ms-1 text-sm font-normal text-[var(--color-muted)]">({deleteIds.length})</span>
 			{/if}
 		{/snippet}
 		{#snippet children(close)}

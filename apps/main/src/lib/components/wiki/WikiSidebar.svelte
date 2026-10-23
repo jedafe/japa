@@ -151,7 +151,7 @@
 			class="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-success)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
 		>
 			{t('wiki.join_community', 'Join Community')}
-			<ArrowRight size={14} aria-hidden="true" />
+			<ArrowRight class="rtl:-scale-x-100" size={14} aria-hidden="true" />
 		</a>
 	</section>
 {/if}
@@ -180,7 +180,7 @@
 				class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
 			>
 				{t('wiki.view_all_articles', 'View all articles')}
-				<ArrowRight size={14} aria-hidden="true" />
+				<ArrowRight class="rtl:-scale-x-100" size={14} aria-hidden="true" />
 			</a>
 		{/if}
 	</section>
@@ -221,7 +221,7 @@
 				class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
 			>
 				{seeAllLabel}
-				<ArrowRight size={14} aria-hidden="true" />
+				<ArrowRight class="rtl:-scale-x-100" size={14} aria-hidden="true" />
 			</a>
 		{/if}
 	</section>

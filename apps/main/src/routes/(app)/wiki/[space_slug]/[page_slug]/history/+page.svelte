@@ -125,7 +125,7 @@
 			href="/wiki/{data.spaceSlug}/{data.pageSlug}"
 			class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={14} /> {t('wiki.back_to_index', 'Back to page')}
+			<ArrowLeft class="rtl:-scale-x-100" size={14} /> {t('wiki.back_to_index', 'Back to page')}
 		</a>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">
 			{t('wiki.history_title', 'Revision history')}
@@ -171,7 +171,7 @@
 									<Bot size={12} /> {t('wiki.revision_ai_generated', 'AI-generated')}
 								</span>
 							{/if}
-							<span class="ml-auto text-xs text-[var(--color-muted)]">{formatDate(rev.created_at)}</span>
+							<span class="ms-auto text-xs text-[var(--color-muted)]">{formatDate(rev.created_at)}</span>
 						</div>
 
 						{#if rev.summary}
@@ -235,7 +235,7 @@
 								class:opacity-50={currentPage <= 1}
 								tabindex={currentPage <= 1 ? -1 : 0}
 							>
-								<ChevronLeft size={14} /> {t('common.previous', 'Previous')}
+								<ChevronLeft class="rtl:-scale-x-100" size={14} /> {t('common.previous', 'Previous')}
 							</a>
 							<span class="text-sm text-[var(--color-muted)]">
 								{t('wiki.page_x_of_y', 'Page {page} of {total}')
@@ -249,7 +249,7 @@
 								class:opacity-50={currentPage >= totalPages}
 								tabindex={currentPage >= totalPages ? -1 : 0}
 							>
-								{t('common.next', 'Next')} <ChevronRight size={14} />
+								{t('common.next', 'Next')} <ChevronRight class="rtl:-scale-x-100" size={14} />
 							</a>
 						</nav>
 					{:else}

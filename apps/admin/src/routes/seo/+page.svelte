@@ -261,7 +261,7 @@
 			</p>
 			<div class="flex flex-col gap-3 sm:flex-row">
 				<div class="relative flex-1">
-					<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+					<Search class="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
 					<input
 						id="seo-content-id"
 						type="text"
@@ -271,11 +271,11 @@
 						onfocus={() => { if (suggestions.length > 0) showDropdown = true; }}
 						onblur={() => { setTimeout(() => showDropdown = false, 200); }}
 						placeholder={t("seo.content_id_placeholder", "Content ID, URL, or search term...")}
-						class="h-10 w-full rounded-lg border pl-9 pr-3 text-sm"
+						class="h-10 w-full rounded-lg border ps-9 pe-3 text-sm"
 						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
 					/>
 					{#if searching}
-						<RefreshCw class="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin" style="color: var(--color-muted)" />
+						<RefreshCw class="absolute end-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin" style="color: var(--color-muted)" />
 					{/if}
 					{#if showDropdown && suggestions.length > 0}
 						<ul class="absolute z-[60] mt-1 max-h-64 w-full overflow-auto rounded-lg border shadow-lg" style="border-color: var(--color-border); background: var(--color-surface)">
@@ -283,7 +283,7 @@
 								<li>
 									<button
 										type="button"
-										class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+										class="flex w-full items-center gap-2 px-3 py-2 text-start text-sm hover:bg-black/5 dark:hover:bg-white/10"
 										style="color: var(--color-foreground)"
 										onmousedown={() => selectSuggestion(item)}
 									>
@@ -324,7 +324,7 @@
 	{#if loading}
 		<div class="flex items-center justify-center py-12">
 			<RefreshCw class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
-			<span class="ml-2 text-sm" style="color: var(--color-muted)">{t("seo.validating", "Validating...")}</span>
+			<span class="ms-2 text-sm" style="color: var(--color-muted)">{t("seo.validating", "Validating...")}</span>
 		</div>
 	{:else if result}
 		<!-- Score indicator -->

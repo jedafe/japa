@@ -159,7 +159,7 @@
 				key: 'valid_until',
 				label: t('discounts.expires', 'Expires'),
 				sortable: true,
-				render: (v: string) => (v ? `<span class="text-sm">${new Date(v).toLocaleDateString()}</span>` : '<span class="text-sm text-muted">Never</span>')
+				render: (v: string) => (v ? `<span class="text-sm">${new Date(v).toLocaleDateString()}</span>` : `<span class="text-sm text-muted">${t('common.never', 'Never')}</span>`)
 			},
 			{
 				key: 'computed_status',
@@ -284,8 +284,8 @@
 				<table class="w-full text-sm">
 					<thead>
 						<tr class="border-b" style="border-color: var(--color-border); background: var(--color-surface)">
-							<th class="px-4 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('app.discount-codes.user', 'User')}</th>
-							<th class="px-4 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('discounts.used_at', 'Used At')}</th>
+							<th class="px-4 py-2 text-start text-xs font-medium" style="color: var(--color-muted)">{t('app.discount-codes.user', 'User')}</th>
+							<th class="px-4 py-2 text-start text-xs font-medium" style="color: var(--color-muted)">{t('discounts.used_at', 'Used At')}</th>
 						</tr>
 					</thead>
 					<tbody>

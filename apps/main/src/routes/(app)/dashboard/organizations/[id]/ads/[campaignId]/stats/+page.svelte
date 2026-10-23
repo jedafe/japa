@@ -92,7 +92,7 @@
 			class="rounded-lg p-2 transition-colors hover:bg-[var(--color-surface)]"
 			title={t('common.back', 'Back')}
 		>
-			<ArrowLeft class="h-5 w-5" />
+			<ArrowLeft class="h-5 w-5 rtl:-scale-x-100" />
 		</a>
 		<div>
 			<h1 class="flex items-center gap-2 text-xl font-semibold text-[var(--color-text)]">

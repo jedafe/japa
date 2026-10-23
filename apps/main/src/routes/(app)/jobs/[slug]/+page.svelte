@@ -478,11 +478,11 @@
 	{:else}
 		<!-- Breadcrumb + actions -->
 		<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-			<nav class="flex items-center gap-1.5 text-xs text-[var(--color-muted)]" aria-label="Breadcrumb">
+			<nav class="flex items-center gap-1.5 text-xs text-[var(--color-muted)]" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
 				<a href="/" class="hover:text-[var(--color-text)]">{t('nav.home', 'Home')}</a>
-				<ChevronRight size={12} />
+				<ChevronRight class="rtl:-scale-x-100" size={12} />
 				<a href="/jobs" class="hover:text-[var(--color-text)]">{t('jobs.heading', 'Jobs')}</a>
-				<ChevronRight size={12} />
+				<ChevronRight class="rtl:-scale-x-100" size={12} />
 				<span class="max-w-48 truncate text-[var(--color-text)]">{job.title}</span>
 			</nav>
 			<div class="flex items-center gap-2">
@@ -594,7 +594,7 @@
 									class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
 									aria-label={t('jobs.original_source', 'View original source')}
 								>
-									<ExternalLink size={13} />
+									<ExternalLink class="rtl:-scale-x-100" size={13} />
 								</a>
 							{/if}
 						</div>
@@ -619,14 +619,14 @@
 							rel="noopener noreferrer"
 							class="inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 						>
-							{t('jobs.apply_now', 'Apply Now')} <ArrowRight size={15} />
+							{t('jobs.apply_now', 'Apply Now')} <ArrowRight class="rtl:-scale-x-100" size={15} />
 						</a>
 					{:else}
 						<a
 							href="#apply"
 							class="inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 						>
-							{t('jobs.apply_now', 'Apply Now')} <ArrowRight size={15} />
+							{t('jobs.apply_now', 'Apply Now')} <ArrowRight class="rtl:-scale-x-100" size={15} />
 						</a>
 					{/if}
 				</div>
@@ -710,7 +710,7 @@
 							rel="noopener noreferrer"
 							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90"
 						>
-							<ExternalLink size={14} /> {t('jobs.apply_external', 'Apply externally')}
+							<ExternalLink class="rtl:-scale-x-100" size={14} /> {t('jobs.apply_external', 'Apply externally')}
 						</a>
 					{:else if !authed}
 						<p class="text-sm text-[var(--color-muted)]">
@@ -920,11 +920,11 @@
 						{/if}
 						{#if orgHref}
 							<a href={orgHref} class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline">
-								{t('jobs.visit_company', 'Visit company page')} <ChevronRight size={13} />
+								{t('jobs.visit_company', 'Visit company page')} <ChevronRight class="rtl:-scale-x-100" size={13} />
 							</a>
 						{:else if safeHttpUrl(field('company_website'))}
 							<a href={safeHttpUrl(field('company_website'))} target="_blank" rel="noopener noreferrer" class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline">
-								{t('jobs.visit_company', 'Visit company page')} <ExternalLink size={12} />
+								{t('jobs.visit_company', 'Visit company page')} <ExternalLink class="rtl:-scale-x-100" size={12} />
 							</a>
 						{/if}
 					</div>
@@ -950,7 +950,7 @@
 						</ul>
 						{#if orgHref}
 							<a href="{orgHref}?tab=jobs" class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline">
-								{t('jobs.view_all_jobs', 'View all jobs')} <ChevronRight size={13} />
+								{t('jobs.view_all_jobs', 'View all jobs')} <ChevronRight class="rtl:-scale-x-100" size={13} />
 							</a>
 						{/if}
 					</div>

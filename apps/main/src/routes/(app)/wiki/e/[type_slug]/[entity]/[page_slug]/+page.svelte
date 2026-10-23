@@ -27,7 +27,7 @@
 <article class="mx-auto max-w-3xl space-y-4 px-4 py-6">
 	<header class="space-y-1">
 		<nav class="text-xs text-[var(--color-muted)]">
-			<a href="/wiki" class="hover:underline">Wiki</a>
+			<a href="/wiki" class="hover:underline">{t('nav.wiki', 'Wiki')}</a>
 			<span> / </span>
 			<span class="capitalize">{page.type_slug.replaceAll('_', ' ')}</span>
 			<span> / </span>
@@ -37,7 +37,7 @@
 		<p class="text-sm text-[var(--color-muted)]">
 			{page.entity_name} · <span class="capitalize">{page.category.replaceAll('_', ' ')}</span>
 			{#if page.lazy}
-				<span class="ml-2 rounded bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs">not yet written</span>
+				<span class="ms-2 rounded bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs">{t('wiki.not_yet_written', 'not yet written')}</span>
 			{/if}
 		</p>
 	</header>
@@ -45,7 +45,7 @@
 	{#if htmlContent}
 		<div class="prose max-w-none">{@html htmlContent}</div>
 	{:else}
-		<p class="text-sm text-[var(--color-muted)]">This page has no prose yet.</p>
+		<p class="text-sm text-[var(--color-muted)]">{t('wiki.empty_content', 'This page has no content yet.')}</p>
 	{/if}
 
 	{#if page.fields && page.fields.fields.length > 0}

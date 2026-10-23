@@ -54,12 +54,12 @@
 			aria-label={label}
 			aria-invalid={error ? 'true' : undefined}
 			aria-describedby={error ? `${id}-error` : undefined}
-			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 pr-10 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 pe-10 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
 		<button
 			type="button"
 			onclick={() => (visible = !visible)}
-			class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+			class="absolute end-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-text)]"
 			aria-label={visible ? t('auth.fields.password_hide') : t('auth.fields.password_show')}
 			tabindex="-1"
 		>

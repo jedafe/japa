@@ -19,9 +19,9 @@
 		</h1>
 		<p class="mt-1 text-sm text-[var(--color-muted)]">
 			{#if resolvedCountry}
-				Personalized for {resolvedCountry}
+				{t('dashboard.overview.recommendations_personalized_for', 'Personalized for {country}', { country: resolvedCountry })}
 			{:else}
-				Personalized to your location. Add ?geo=XX to preview another country.
+				{t('dashboard.overview.recommendations_personalized_geo', 'Personalized to your location. Add ?geo=XX to preview another country.')}
 			{/if}
 		</p>
 	</header>
@@ -30,7 +30,7 @@
 
 	{#if !data.recommendations}
 		<p class="mt-4 text-sm text-[var(--color-muted)]">
-			Recommendations are unavailable right now. Please check back soon.
+			{t('dashboard.overview.recommendations_unavailable', 'Recommendations are unavailable right now. Please check back soon.')}
 		</p>
 	{/if}
 </div>

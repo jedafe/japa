@@ -653,7 +653,7 @@ const providerPresets: ProviderPreset[] = [
 			<X class="size-4" />
 			{t('ai_providers.test_failed', 'Provider test failed: {message}').replace('{message}', testResult.message)}
 		{/if}
-		<button class="ml-auto text-xs underline" onclick={() => (testResult = null)}>Dismiss</button>
+		<button class="ms-auto text-xs underline" onclick={() => (testResult = null)}>Dismiss</button>
 	</div>
 {/if}
 
@@ -887,7 +887,7 @@ const providerPresets: ProviderPreset[] = [
 						placeholder={t('ai_providers.api_key_placeholder', 'Enter API key (leave empty to keep existing)')}
 					/>
 					{#if editingProvider?.api_key_masked}
-						<p class="text-muted-foreground mt-1 text-[10px]">Current: <span class="font-mono">{editingProvider.api_key_masked}</span></p>
+						<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.current_key', 'Current:')} <span class="font-mono">{editingProvider.api_key_masked}</span></p>
 					{/if}
 				</div>
 

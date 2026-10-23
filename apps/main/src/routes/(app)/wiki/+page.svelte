@@ -208,7 +208,7 @@
 				<div class="mb-3 flex items-center justify-between gap-3">
 					<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
 						{rootType ? typeLabel(rootType) : t('wiki.browse_destinations', 'Browse destinations')}
-						<span class="ml-2 font-normal normal-case tracking-normal">
+						<span class="ms-2 font-normal normal-case tracking-normal">
 							{destinationsCountLabel(total)}
 						</span>
 					</h2>

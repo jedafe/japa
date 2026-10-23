@@ -7,6 +7,7 @@
 	//   'right' — the pane is ABOVE or to the LEFT; dragging down/right grows it.
 	//   'left'  — the pane is BELOW or to the RIGHT; dragging down/right shrinks it.
 	import { GripVertical, GripHorizontal } from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
 		paneId,
@@ -58,7 +59,7 @@
 
 <button
 	type="button"
-	aria-label="Resize panel"
+	aria-label={t('landing_editor.resize_panel', 'Resize panel')}
 	onpointerdown={onPointerDown}
 	onpointermove={onPointerMove}
 	onpointerup={onPointerUp}

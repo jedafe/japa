@@ -168,7 +168,7 @@
 				key: 'name',
 				label: t('plans.name', 'Name'),
 				render: (v: string, row: Plan) => {
-					const star = row.highlighted ? '<span class="ml-1 inline-block text-warning">★</span>' : '';
+					const star = row.highlighted ? '<span class="ms-1 inline-block text-warning">★</span>' : '';
 					return `<span class="font-medium">${v}${star}</span>`;
 				}
 			},
@@ -177,7 +177,7 @@
 				key: 'monthly_amount',
 				label: t('plans.monthly', 'Monthly'),
 				render: (v: number, row: Plan) => {
-					if (v === 0) return '<span class="text-success text-xs">Free</span>';
+					if (v === 0) return `<span class="text-success text-xs">${t('common.free', 'Free')}</span>`;
 					const sym = currencySymbolMap.get(row.currency) ?? row.currency;
 					return `<span class="text-xs">${sym}${(v / 100).toLocaleString()}</span>`;
 				}
@@ -205,8 +205,8 @@
 				label: t('plans.status', 'Status'),
 				render: (v: string) =>
 					v === 'active'
-						? '<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-success/15 text-success">Active</span>'
-						: '<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-muted/15 text-muted">Inactive</span>'
+						? `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-success/15 text-success">${t('common.active', 'Active')}</span>`
+						: `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-muted/15 text-muted">${t('common.inactive', 'Inactive')}</span>`
 			},
 			{
 				key: 'tier',
@@ -384,7 +384,7 @@
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('plans.name', 'Name')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
-				{row.name}{#if row.highlighted}<span class="ml-1 inline-block text-warning">★</span>{/if}
+				{row.name}{#if row.highlighted}<span class="ms-1 inline-block text-warning">★</span>{/if}
 			</p>
 		</div>
 		<div>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 	// /eca-guide — ECA provider + guide management + community update moderation (§109).
 	// Backend: GET/POST/PATCH/DELETE /admin/eca-providers, GET/POST/PATCH/DELETE /admin/eca-guides,
 	//          GET/PATCH /admin/eca-guides/updates.
@@ -379,28 +380,28 @@
 		<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab===tab?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab===tab?'white':'var(--color-foreground)'}" onclick={() => activeTab=tab as any}>{tab}</button>
 	{/each}
 	{#if canManage && activeTab === 'guides'}
-		<button class="ml-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:white" onclick={() => (showGenerateForm = !showGenerateForm)}>Generate AI Draft</button>
+		<button class="ms-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:white" onclick={() => (showGenerateForm = !showGenerateForm)}>Generate AI Draft</button>
 	{/if}
 </div>
 
 {#if canManage && activeTab === 'guides' && showGenerateForm}
 	<div class="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 		<div class="min-w-52 flex-1">
-			<label class="mb-1 block text-xs font-medium" for="gen-dest">Destination</label>
+			<label class="mb-1 block text-xs font-medium" for="gen-dest">{t('eca.destination', 'Destination')}</label>
 			<AutocompleteSelect
 				id="gen-dest"
 				bind:value={genDestId}
 				options={geoOptions.map((g) => ({ value: g.id, label: g.name }))}
-				placeholder="Select destination…"
+				placeholder={t('eca.destination_ph', 'Select destination…')}
 			/>
 		</div>
 		<div class="min-w-52 flex-1">
-			<label class="mb-1 block text-xs font-medium" for="gen-provider">Provider</label>
+			<label class="mb-1 block text-xs font-medium" for="gen-provider">{t('eca.provider', 'Provider')}</label>
 			<AutocompleteSelect
 				id="gen-provider"
 				bind:value={genProviderId}
 				options={providerOptions.map((p) => ({ value: p.id, label: p.name }))}
-				placeholder="Select provider…"
+				placeholder={t('eca.provider_ph', 'Select provider…')}
 			/>
 		</div>
 		<button

@@ -241,7 +241,7 @@
 								{:else}
 								<div class="flex items-baseline justify-between gap-3 py-1.5 text-sm">
 									<dt class="shrink-0 text-[var(--color-muted)]">{f.label}</dt>
-									<dd class="flex min-w-0 items-baseline gap-2 text-right">
+									<dd class="flex min-w-0 items-baseline gap-2 text-end">
 										<span class="truncate text-[var(--color-text)]">{formatValue(f)}</span>
 										{#if f.can_edit}
 											<button
@@ -305,7 +305,7 @@
 													? t('wiki.revision_rejected', 'Rejected')
 													: t('wiki.revision_pending', 'Pending')}
 										</span>
-										<span class="ml-auto text-[var(--color-muted)]">
+										<span class="ms-auto text-[var(--color-muted)]">
 											{new Date(rev.created_at).toLocaleDateString()}
 										</span>
 									</div>

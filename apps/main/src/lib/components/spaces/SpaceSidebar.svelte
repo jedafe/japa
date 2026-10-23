@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Users, FileText, ScrollText, LogIn } from 'lucide-svelte';
+	import { Users, FileText, ScrollText, LogIn, Shield } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import AchievementWidget from '$lib/components/spaces/AchievementWidget.svelte';
@@ -21,6 +21,9 @@
 		 * viewer-scoped is_member flag (audit fix: /me/spaces is capped and
 		 * lists all spaces for super-admins, so it can't be trusted). */
 		initialJoined?: boolean;
+		/** Whether the caller is the space owner — sole owners cannot leave
+		 * (SPACES-017), so the button renders as a disabled "Owned" state. */
+		isOwner?: boolean;
 		/** Whether the caller already has a pending join request (is_pending). */
 		initialPending?: boolean;
 		/** Initial follow state from the server load. */
@@ -34,7 +37,7 @@
 		 * members widget; hidden when empty. */
 		members?: SpaceMember[];
 	}
-	let { space, rules = [], authed, logoUrl = '', initialJoined = false, initialPending = false, following: followingProp = false, onFollowChange, achievements = [], members = [] }: Props = $props();
+	let { space, rules = [], authed, logoUrl = '', initialJoined = false, initialPending = false, isOwner = false, following: followingProp = false, onFollowChange, achievements = [], members = [] }: Props = $props();
 
 	let following = $state(untrack(() => followingProp ?? false));
 
@@ -165,20 +168,15 @@
 			<dd class="text-sm font-medium text-[var(--color-text)]">{space.post_count}</dd>
 			<dt class="text-xs text-[var(--color-muted)]">{t('space.followers', 'Followers')}</dt>
 			<dd class="text-sm font-medium text-[var(--color-text)]">
-				{#if authed}
-					<button
-						type="button"
-						onclick={() => (followersOpen = true)}
-						class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
-					>
-						{space.follower_count}
-					</button>
-				{:else}
-					<!-- GET /spaces/{id}/followers requires auth — render the count
-					     non-interactive for guests instead of opening a modal that
-					     would 401 and show a misleading "No followers yet". -->
+				<!-- GET /spaces/{id}/followers is OptionalAuth — guests can open
+				     the follower list too. -->
+				<button
+					type="button"
+					onclick={() => (followersOpen = true)}
+					class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+				>
 					{space.follower_count}
-				{/if}
+				</button>
 			</dd>
 		</dl>
 
@@ -189,18 +187,21 @@
 			<button
 				type="button"
 				onclick={toggleJoin}
-				disabled={pending}
+				disabled={pending || (joined && isOwner)}
 				aria-busy={pending}
+				title={joined && isOwner ? t('space.owner_cannot_leave', 'The sole owner cannot leave — delete the space or ask a platform admin') : undefined}
 				class="mt-4 flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 {joined
 					? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
 					: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 			>
-				{#if joined}
-					<LogIn size={16} /> {t('space.joined', 'Joined')}
+				{#if joined && isOwner}
+					<Shield size={16} /> {t('space.owned', 'Owned')}
+				{:else if joined}
+					<LogIn class="rtl:-scale-x-100" size={16} /> {t('space.joined', 'Joined')}
 				{:else if pendingJoin}
-					<LogIn size={16} /> {t('space.pending', 'Pending')}
+					<LogIn class="rtl:-scale-x-100" size={16} /> {t('space.pending', 'Pending')}
 				{:else}
-					<LogIn size={16} /> {t('space.join', 'Join')}
+					<LogIn class="rtl:-scale-x-100" size={16} /> {t('space.join', 'Join')}
 				{/if}
 			</button>
 		{:else}
@@ -208,7 +209,7 @@
 				href={loginHref}
 				class="mt-4 flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 			>
-				<LogIn size={16} /> {t('space.join', 'Join')}
+				<LogIn class="rtl:-scale-x-100" size={16} /> {t('space.join', 'Join')}
 			</a>
 		{/if}
 	</section>

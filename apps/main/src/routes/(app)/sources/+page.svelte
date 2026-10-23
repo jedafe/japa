@@ -46,8 +46,13 @@
 		selectedSourceKind = data.sourceKind;
 	});
 
+	// Sort labels are localized via sources.sort.* keys; the backend label is
+	// the fallback for sorts added without an i18n entry yet.
 	const sortTabs = $derived<UrlTab[]>(
-		(data.sourceMeta?.sorts ?? []).map((s) => ({ value: s.value, label: s.label }))
+		(data.sourceMeta?.sorts ?? []).map((s) => ({
+			value: s.value,
+			label: t(`sources.sort.${s.value}`, s.label)
+		}))
 	);
 
 	// Same canonical category set as the propose form (curated catalog ∪
@@ -69,7 +74,10 @@
 
 	const sourceKindSelectOptions = $derived([
 		{ value: '', label: t('sources.source_kind.all', 'All source types') },
-		...sourceKindOptions
+		...sourceKindOptions.map((k) => ({
+			value: k.value,
+			label: t(`sources.kind.${k.value}`, k.label)
+		}))
 	]);
 
 	// Only category / source type are inside the filter panel now.
@@ -122,6 +130,12 @@
 <svelte:head>
 	<title>{title}</title>
 	<meta name="description" content={description} />
+	<!-- Section 26 — self-referencing canonical on the clean path (never the
+	     filtered query-string form) so filter/sort hits consolidate. -->
+	<link rel="canonical" href="{page.url.origin}/sources" />
+	<meta property="og:url" content="{page.url.origin}/sources" />
+	<meta property="og:title" content={title} />
+	<meta property="og:description" content={description} />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">

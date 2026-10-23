@@ -520,7 +520,7 @@
 															<span class="bg-muted rounded-full px-1.5 py-0.5">{et}</span>
 														{/each}
 														{#if ch.confidence != null}
-															<span class="text-muted-foreground ml-auto">{Math.round(ch.confidence * 100)}%</span>
+															<span class="text-muted-foreground ms-auto">{Math.round(ch.confidence * 100)}%</span>
 														{/if}
 													</div>
 													<div class="text-muted-foreground mt-0.5 truncate font-mono" title={ch.entry_url}>{ch.entry_url}</div>

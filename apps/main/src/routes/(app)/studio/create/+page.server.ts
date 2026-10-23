@@ -31,16 +31,12 @@ export const load: PageServerLoad = async (event) => {
 
 	// Shell data (feature flags and public site settings) is fetched by the
 	// root layout and reused here so the composer can gate the §106 video
-	// content type on the public system setting video.enabled (Rule 16).
+	// and list content types (Rule 16). video.enabled and list.enabled are
+	// feature flags (unified rollout) — the deprecated public system_settings
+	// rows are stale mirrors, so the flags map is the source of truth.
 	const parent = await event.parent();
 	const flags = (parent as { features?: Record<string, boolean> }).features ?? {};
-	const rawSiteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
-	// video.enabled defaults to false in the backend catalog; a missing public
-	// setting must be treated as disabled (not "missing = enabled").
-	const siteSettings = { ...rawSiteSettings };
-	if (siteSettings['video.enabled'] !== true) {
-		siteSettings['video.enabled'] = false;
-	}
+	const siteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
 
 	const ctx = apiContext(event);
 	const draftId = event.url.searchParams.get('draft');
@@ -61,7 +57,11 @@ export const load: PageServerLoad = async (event) => {
 		// anyway; the prop only seeds initial suggestions. Uncapped this
 		// returns every platform space (~10k rows / 1.7MB for admins).
 		apiList<MeSpace>(ctx, '/me/spaces?member_only=1&page_size=50'),
-		apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
+		// Server-side entity_type filter + explicit page_size — without them the
+		// endpoint's default page_size=25 returns only the newest groups (currently
+		// all wiki_*), so content-type groups like story_fields/blog_post_fields
+		// silently never reach the composer.
+		apiList<CustomFieldGroup>(ctx, '/custom-field-groups?entity_type=content&page_size=100'),
 		apiList<BlogSeries>(ctx, '/series'),
 		// Post-as-org (ADR-062): the caller's org memberships, used by the
 		// "post on behalf of" selector. Empty list = personal posts only.
@@ -88,8 +88,12 @@ export const load: PageServerLoad = async (event) => {
 	// created in the admin pagebuilder; discussions are created in the forum
 	// composer (ComposeModal -> DiscussionComposer or /forum/[category]/new).
 	// Invalid ?type values are ignored and fall back to the first allowed type.
+	// 'blog' is accepted as an alias for the canonical 'blog_post' — external
+	// links and hand-typed URLs use it even though the public route is /blog.
+	const TYPE_ALIASES: Record<string, string> = { blog: 'blog_post' };
 	const requestedType = event.url.searchParams.get('type') ?? '';
-	const initialType = CREATE_ALLOWED_TYPES.some((t) => t === requestedType) ? requestedType : null;
+	const resolvedType = TYPE_ALIASES[requestedType] ?? requestedType;
+	const initialType = CREATE_ALLOWED_TYPES.some((t) => t === resolvedType) ? resolvedType : null;
 
 	// ?space is a space slug. Resolve it to the user's joined space id so the
 	// composer can pre-select the space. Unknown / non-joined slugs are ignored.

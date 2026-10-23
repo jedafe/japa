@@ -328,7 +328,7 @@
 				{#each guides as guide (guide.id)}
 					<div class="rounded-lg border border-border bg-surface">
 						<button
-							class="w-full text-left p-4 flex items-center justify-between gap-4"
+							class="w-full text-start p-4 flex items-center justify-between gap-4"
 							onclick={() => toggleDetail(guide)}
 						>
 							<div>

@@ -20,9 +20,9 @@
   };
 
   const alignClass: Record<string, string> = {
-    'left': 'text-left items-start',
+    'left': 'text-start items-start',
     'center': 'text-center items-center',
-    'right': 'text-right items-end',
+    'right': 'text-end items-end',
   };
 
   const maxWidthClass: Record<string, string> = {
@@ -50,7 +50,7 @@
 </script>
 
 <section class="px-6 py-12">
-  <div class="mx-auto max-w-6xl flex flex-col {alignClass[props.align ?? 'left'] ?? 'text-left items-start'}">
+  <div class="mx-auto max-w-6xl flex flex-col {alignClass[props.align ?? 'left'] ?? 'text-start items-start'}">
     <div class="{maxWidthClass[props.max_width ?? 'xl'] ?? 'max-w-4xl'} w-full">
       {#if props.eyebrow || Icon}
         <div class="mb-3 flex items-center gap-2 {props.align === 'center' ? 'justify-center' : ''}">

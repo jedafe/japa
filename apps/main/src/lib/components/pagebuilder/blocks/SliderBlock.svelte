@@ -2,6 +2,7 @@
 	import type { SliderProps } from '../types';
 	import { onMount } from 'svelte';
 	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { t } from '$lib/i18n';
 	import { safeHref } from '$lib/utils/safeHtml';
 
 	let { props }: { props: SliderProps } = $props();
@@ -47,7 +48,7 @@
 					<img src={slide.image_url} alt={slide.title ?? ''} class="h-full w-full object-cover" />
 				{/if}
 				<div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-				<div class="absolute bottom-0 left-0 p-6 text-white">
+				<div class="absolute bottom-0 start-0 p-6 text-white">
 					{#if slide.title}<h3 class="text-lg font-semibold">{slide.title}</h3>{/if}
 					{#if slide.subtitle}<p class="mt-1 text-sm opacity-90">{slide.subtitle}</p>{/if}
 					{#if slide.cta_text && slide.cta_url}
@@ -60,15 +61,15 @@
 		{/each}
 
 		{#if safeSlides.length > 1}
-			<button type="button" onclick={prev} class="absolute left-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/20 text-white backdrop-blur hover:bg-white/30" aria-label="Previous">
-				<ChevronLeft size={18} />
+			<button type="button" onclick={prev} class="absolute start-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/20 text-white backdrop-blur hover:bg-white/30" aria-label={t('common.previous', 'Previous')}>
+				<ChevronLeft class="rtl:-scale-x-100" size={18} />
 			</button>
-			<button type="button" onclick={next} class="absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/20 text-white backdrop-blur hover:bg-white/30" aria-label="Next">
-				<ChevronRight size={18} />
+			<button type="button" onclick={next} class="absolute end-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/20 text-white backdrop-blur hover:bg-white/30" aria-label={t('common.next', 'Next')}>
+				<ChevronRight class="rtl:-scale-x-100" size={18} />
 			</button>
-			<div class="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5">
+			<div class="absolute bottom-3 start-1/2 flex -translate-x-1/2 gap-1.5">
 				{#each safeSlides as _, i (i)}
-					<button type="button" onclick={() => (current = i)} class="h-1.5 rounded-full transition-all {i === current ? 'w-6 bg-white' : 'w-1.5 bg-white/50'}" aria-label="Go to slide {i + 1}"></button>
+					<button type="button" onclick={() => (current = i)} class="h-1.5 rounded-full transition-all {i === current ? 'w-6 bg-white' : 'w-1.5 bg-white/50'}" aria-label={t('a11y.go_to_slide', 'Go to slide {n}', { n: i + 1 })}></button>
 				{/each}
 			</div>
 		{/if}

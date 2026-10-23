@@ -122,7 +122,7 @@
 
 		<a
 			href={buildHref({ is_free: !data.isFreeFilter, offset: false })}
-			class="ml-auto rounded-full px-3 py-1 text-sm {data.isFreeFilter ? 'bg-[var(--level-beginner)] text-[var(--level-beginner-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+			class="ms-auto rounded-full px-3 py-1 text-sm {data.isFreeFilter ? 'bg-[var(--level-beginner)] text-[var(--level-beginner-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
 		>
 			{t(data.isFreeFilter ? 'academy.free_only' : 'academy.show_free_only')}
 		</a>
@@ -156,7 +156,7 @@
 			</div>
 		{/if}
 		{#if pageSizeSelectOptions.length > 0}
-			<div class="ml-auto flex items-center gap-2">
+			<div class="ms-auto flex items-center gap-2">
 				<span class="text-xs font-medium text-[var(--color-muted)]">{t('common.per_page', 'Per page')}</span>
 				<AutocompleteSelect
 					options={pageSizeSelectOptions}
@@ -244,7 +244,7 @@
 					class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {canGoPrev ? '' : 'pointer-events-none opacity-40'}"
 					aria-disabled={!canGoPrev}
 				>
-					<ChevronLeft size={16} />
+					<ChevronLeft class="rtl:-scale-x-100" size={16} />
 					{t('common.previous')}
 				</a>
 				<span class="text-sm text-[var(--color-muted)]">
@@ -256,7 +256,7 @@
 					aria-disabled={!canGoNext}
 				>
 					{t('common.next')}
-					<ChevronRight size={16} />
+					<ChevronRight class="rtl:-scale-x-100" size={16} />
 				</a>
 			</div>
 		{/if}

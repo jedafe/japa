@@ -126,25 +126,25 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListMediaByUploader :many
 SELECT * FROM media
-WHERE uploader_user_id = @uploader_user_id AND deleted_at IS NULL
+WHERE uploader_user_id = @uploader_user_id AND deleted_at IS NULL AND missing_at IS NULL
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListMedia :many
 SELECT * FROM media
-WHERE deleted_at IS NULL
+WHERE deleted_at IS NULL AND missing_at IS NULL
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListMediaByType :many
 SELECT * FROM media
-WHERE mime_type LIKE @mime_pattern || '%' AND deleted_at IS NULL
+WHERE mime_type LIKE @mime_pattern || '%' AND deleted_at IS NULL AND missing_at IS NULL
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: SearchMedia :many
 SELECT * FROM media
-WHERE deleted_at IS NULL
+WHERE deleted_at IS NULL AND missing_at IS NULL
  AND (original_filename ILIKE '%' || @query || '%'
  OR alt_text ILIKE '%' || @query || '%'
  OR caption ILIKE '%' || @query || '%')
@@ -157,19 +157,19 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountMediaByUploader :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE uploader_user_id = @uploader_user_id AND deleted_at IS NULL;
+WHERE uploader_user_id = @uploader_user_id AND deleted_at IS NULL AND missing_at IS NULL;
 
 -- name: CountMedia :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE deleted_at IS NULL;
+WHERE deleted_at IS NULL AND missing_at IS NULL;
 
 -- name: CountMediaByType :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE mime_type LIKE @mime_pattern || '%' AND deleted_at IS NULL;
+WHERE mime_type LIKE @mime_pattern || '%' AND deleted_at IS NULL AND missing_at IS NULL;
 
 -- name: CountSearchMedia :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE deleted_at IS NULL
+WHERE deleted_at IS NULL AND missing_at IS NULL
  AND (original_filename ILIKE '%' || @query || '%'
  OR alt_text ILIKE '%' || @query || '%'
  OR caption ILIKE '%' || @query || '%');
@@ -187,6 +187,13 @@ WHERE (
  WHEN 'only' THEN deleted_at IS NOT NULL
  WHEN 'all' THEN TRUE
  ELSE deleted_at IS NULL
+ END
+ )
+ AND (
+ CASE @missing::text
+ WHEN 'only' THEN missing_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE missing_at IS NULL
  END
  )
  AND (@uploader_user_id::uuid IS NULL OR uploader_user_id = @uploader_user_id)
@@ -215,6 +222,13 @@ WHERE (
  ELSE deleted_at IS NULL
  END
  )
+ AND (
+ CASE @missing::text
+ WHEN 'only' THEN missing_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE missing_at IS NULL
+ END
+ )
  AND (@uploader_user_id::uuid IS NULL OR uploader_user_id = @uploader_user_id)
  AND (@mime_pattern::text = '' OR mime_type LIKE @mime_pattern || '%')
  AND (@query::text = ''
@@ -238,6 +252,7 @@ WHERE (
 -- scoped to the author's posts (c.author_id) instead of the org.
 SELECT m.* FROM media m
 WHERE m.deleted_at IS NULL
+ AND m.missing_at IS NULL
  AND m.confirmed = true
  AND m.user_group_id IS NULL
  AND m.uploader_user_id = @author_id
@@ -255,6 +270,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CountMediaFromPublicPostsByUser :one
 SELECT COUNT(*)::int AS count FROM media m
 WHERE m.deleted_at IS NULL
+ AND m.missing_at IS NULL
  AND m.confirmed = true
  AND m.user_group_id IS NULL
  AND m.uploader_user_id = @author_id
@@ -272,6 +288,7 @@ WHERE m.deleted_at IS NULL
 -- PUBLISHED PUBLIC posts. Excludes unconfirmed uploads and group-restricted media.
 SELECT m.* FROM media m
 WHERE m.deleted_at IS NULL
+ AND m.missing_at IS NULL
  AND m.confirmed = true
  AND m.user_group_id IS NULL
  AND EXISTS (
@@ -287,6 +304,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CountMediaFromOrgPublicPosts :one
 SELECT COUNT(*)::int AS count FROM media m
 WHERE m.deleted_at IS NULL
+ AND m.missing_at IS NULL
  AND m.confirmed = true
  AND m.user_group_id IS NULL
  AND EXISTS (
@@ -359,4 +377,40 @@ LIMIT @row_limit;
 SELECT id, storage_bucket, storage_path FROM media
 WHERE deleted_at IS NOT NULL AND deleted_at < now() - make_interval(days => @retention_days)
 ORDER BY deleted_at ASC
+LIMIT @row_limit;
+
+-- =====================
+-- Missing-object tracking (m000924)
+-- A row's storage object can go missing while the row lives (abandoned
+-- two-step uploads, object stores never synced to the environment).
+-- missing_at marks those rows so list endpoints can exclude them;
+-- without it every missing object renders a placeholder tile and the
+-- library fills with noise.
+-- =====================
+
+-- name: MarkMediaMissingByObject :exec
+-- Called when an object lookup comes back definitively absent (e.g. the
+-- serve path stat-misses). Idempotent — already-flagged rows are a no-op.
+UPDATE media SET missing_at = now()
+WHERE storage_bucket = @storage_bucket
+ AND storage_path = @storage_path
+ AND missing_at IS NULL
+ AND deleted_at IS NULL;
+
+-- name: ClearMediaMissingByObject :exec
+-- Called when an object lands or is verified present (SeaweedFS PUT,
+-- ConfirmUpload, StoreFromBytes, reconcile).
+UPDATE media SET missing_at = NULL
+WHERE storage_bucket = @storage_bucket
+ AND storage_path = @storage_path
+ AND missing_at IS NOT NULL;
+
+-- name: ListMediaObjectsForReconcile :many
+-- Storage-object truth pass for POST /admin/media/reconcile-missing:
+-- returns the object coordinates + current flag so the service can stat
+-- each row's object and set/clear missing_at. Keyset-paginated by id.
+SELECT id, storage_bucket, storage_path, (missing_at IS NOT NULL)::bool AS flagged_missing
+FROM media
+WHERE deleted_at IS NULL AND id > @after_id
+ORDER BY id ASC
 LIMIT @row_limit;

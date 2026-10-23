@@ -3,7 +3,7 @@
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -75,7 +75,7 @@
 
 	function formatDate(date: string | null | undefined): string {
 		if (!date) return '—';
-		return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+		return new Date(date).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' });
 	}
 
 	function daysUntilDeadline(deadline: string | null | undefined): number | null {

@@ -185,7 +185,7 @@
 		{:else}
 			<span style="color: var(--color-muted)">{t('menus.pick_icon', 'Pick an icon...')}</span>
 		{/if}
-		<ChevronDown class="ml-auto h-4 w-4 shrink-0 opacity-50" />
+		<ChevronDown class="ms-auto h-4 w-4 shrink-0 opacity-50" />
 	</button>
 
 	<div

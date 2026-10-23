@@ -530,7 +530,7 @@
 	></div>
 	<div
 		bind:this={panelEl}
-		class="fixed right-0 top-0 z-50 h-full w-full max-w-md border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl"
+		class="fixed end-0 top-0 z-50 h-full w-full max-w-md border-s border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl"
 		role="dialog"
 		tabindex="-1"
 		aria-modal="true"

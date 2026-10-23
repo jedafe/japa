@@ -3,7 +3,7 @@
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -85,7 +85,7 @@
 	function fmtDate(iso: string): string {
 		if (!iso) return '';
 		const d = new Date(iso);
-		return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { dateStyle: 'medium' });
+		return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(i18n.locale, { dateStyle: 'medium' });
 	}
 
 	/** Sort a timeline's milestones chronologically. */
@@ -367,7 +367,7 @@
 					<div class="bg-surface border border-border rounded-lg overflow-hidden">
 						<button
 							onclick={() => toggleExpanded(tl.id)}
-							class="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-surface-subtle transition-colors"
+							class="w-full flex items-center justify-between gap-3 p-4 text-start hover:bg-surface-subtle transition-colors"
 						>
 							<div class="min-w-0">
 								<h3 class="text-sm font-semibold text-text truncate">

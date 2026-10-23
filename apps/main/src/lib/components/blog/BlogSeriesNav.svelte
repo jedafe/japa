@@ -57,7 +57,9 @@
 			class="text-sm font-semibold text-[var(--color-primary)] transition-colors hover:underline"
 		>
 			{title}
-			<span class="ml-1 text-xs font-normal text-[var(--color-text-subtle)]">({total} Part Series)</span>
+			<span class="ms-1 text-xs font-normal text-[var(--color-text-subtle)]">
+				({t('blog.series_total', '{total} Part Series').replace('{total}', String(total))})
+			</span>
 		</a>
 		<span class="text-xs text-[var(--color-text-subtle)]">
 			{t('blog.series_part_label', 'Part {part} of {total}')

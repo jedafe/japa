@@ -152,6 +152,8 @@ export interface ListMyMediaParams {
 	q?: string;
 	status?: string;
 	flagged?: boolean;
+	/** 'only' returns rows whose storage object is absent (m000924). */
+	missing?: 'only' | 'all';
 	page_size?: number;
 	page_offset?: number;
 }
@@ -166,6 +168,7 @@ export const listMyMedia = (params: ListMyMediaParams = {}) => {
 	if (params.q) qs.set('q', params.q);
 	if (params.status) qs.set('status', params.status);
 	if (params.flagged === true) qs.set('flagged', 'true');
+	if (params.missing) qs.set('missing', params.missing);
 	if (params.page_size) qs.set('page_size', String(params.page_size));
 	if (params.page_offset) qs.set('page_offset', String(params.page_offset));
 	const suffix = qs.toString() ? `?${qs.toString()}` : '';

@@ -348,12 +348,12 @@
 					<table class="w-full text-[13px]">
 						<thead>
 							<tr class="border-border-card border-b">
-								<th class="text-muted-foreground bg-muted px-3 py-2 text-left font-medium">{t('intel.channel_label', 'Label')}</th>
-								<th class="text-muted-foreground bg-muted px-3 py-2 text-left font-medium">{t('intel.field_crawl_method', 'Method')}</th>
-								<th class="text-muted-foreground bg-muted px-3 py-2 text-left font-medium">{t('intel.channel_pipeline', 'Pipeline')}</th>
-								<th class="text-muted-foreground bg-muted px-3 py-2 text-left font-medium">{t('intel.field_entity_types', 'Entity types')}</th>
-								<th class="text-muted-foreground bg-muted px-3 py-2 text-left font-medium">{t('intel.last_status', 'Last status')}</th>
-								<th class="text-muted-foreground bg-muted px-3 py-2 text-left font-medium">{t('intel.field_enabled', 'Enabled')}</th>
+								<th class="text-muted-foreground bg-muted px-3 py-2 text-start font-medium">{t('intel.channel_label', 'Label')}</th>
+								<th class="text-muted-foreground bg-muted px-3 py-2 text-start font-medium">{t('intel.field_crawl_method', 'Method')}</th>
+								<th class="text-muted-foreground bg-muted px-3 py-2 text-start font-medium">{t('intel.channel_pipeline', 'Pipeline')}</th>
+								<th class="text-muted-foreground bg-muted px-3 py-2 text-start font-medium">{t('intel.field_entity_types', 'Entity types')}</th>
+								<th class="text-muted-foreground bg-muted px-3 py-2 text-start font-medium">{t('intel.last_status', 'Last status')}</th>
+								<th class="text-muted-foreground bg-muted px-3 py-2 text-start font-medium">{t('intel.field_enabled', 'Enabled')}</th>
 								<th class="text-muted-foreground bg-muted w-24 px-3 py-2"></th>
 							</tr>
 						</thead>

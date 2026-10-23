@@ -63,7 +63,7 @@
 		href="/dashboard/instructor"
 		class="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
 	>
-		<ArrowLeft size={16} />
+		<ArrowLeft class="rtl:-scale-x-100" size={16} />
 		{t('common.back')}
 	</a>
 

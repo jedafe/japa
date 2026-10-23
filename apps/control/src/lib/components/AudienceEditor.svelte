@@ -3,6 +3,7 @@
      origin_country}) as typed inputs instead of raw JSON. Bounded
      vocabularies are checkboxes; free-form lists are comma-separated. -->
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	interface Props {
 		value: Record<string, unknown>;
 	}
@@ -14,10 +15,10 @@
 
 	// Free-form audience axes — validated only for shape server-side.
 	const LIST_FIELDS = [
-		{ key: 'archetype', label: 'Archetypes', placeholder: 'aspiring, …' },
-		{ key: 'japa_stage', label: 'Japa stages', placeholder: 'researching, …' },
-		{ key: 'destination_country', label: 'Destination countries', placeholder: 'CA, GB, …' },
-		{ key: 'origin_country', label: 'Origin countries', placeholder: 'NG, GH, …' }
+		{ key: 'archetype', label: t('nextactions.audience_archetypes', 'Archetypes'), placeholder: 'aspiring, …' },
+		{ key: 'japa_stage', label: t('nextactions.audience_japa_stage', 'Japa stages'), placeholder: 'researching, …' },
+		{ key: 'destination_country', label: t('nextactions.audience_destination', 'Destination countries'), placeholder: 'CA, GB, …' },
+		{ key: 'origin_country', label: t('nextactions.audience_origin', 'Origin countries'), placeholder: 'NG, GH, …' }
 	] as const;
 
 	function asList(key: string): string[] {
@@ -50,7 +51,7 @@
 
 <div class="space-y-3">
 	<div>
-		<span class="text-muted-foreground text-xs">User classes</span>
+		<span class="text-muted-foreground text-xs">{t('nextactions.audience_user_classes', 'User classes')}</span>
 		<div class="mt-1 flex flex-wrap gap-3">
 			{#each USER_CLASSES as uc}
 				<label class="flex items-center gap-1 text-sm">
@@ -65,7 +66,7 @@
 		</div>
 	</div>
 	<div>
-		<span class="text-muted-foreground text-xs">Surfaces</span>
+		<span class="text-muted-foreground text-xs">{t('nextactions.audience_surfaces', 'Surfaces')}</span>
 		<div class="mt-1 flex flex-wrap gap-3">
 			{#each SURFACES as sf}
 				<label class="flex items-center gap-1 text-sm">

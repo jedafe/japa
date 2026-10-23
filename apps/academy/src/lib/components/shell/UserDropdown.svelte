@@ -47,9 +47,9 @@
 		<MenuItem href={`${MAIN_ORIGIN}/settings`} icon={Settings}>{t('nav.settings')}</MenuItem>
 		<MenuItem href="/?tour=replay" icon={Compass}>{t('nav.replay_tour')}</MenuItem>
 		<MenuSeparator />
-		<MenuItem href={`${MAIN_ORIGIN}/logout`} icon={LogOut}>{t('nav.logout')}</MenuItem>
+		<MenuItem href={`${MAIN_ORIGIN}/logout`} icon={LogOut} iconClass="rtl:-scale-x-100">{t('nav.logout')}</MenuItem>
 	{:else}
-		<MenuItem href={loginUrl()} icon={LogIn}>{t('nav.login')}</MenuItem>
+		<MenuItem href={loginUrl()} icon={LogIn} iconClass="rtl:-scale-x-100">{t('nav.login')}</MenuItem>
 		<MenuItem href={`${MAIN_ORIGIN}/signup`} icon={User}>{t('nav.signup')}</MenuItem>
 	{/if}
 </Menu>

@@ -223,6 +223,17 @@ export const load: LayoutServerLoad = async (event) => {
 	const onboardingCompleted = tourResult.value.completed;
 	const onboardingStep = tourResult.value.currentStep;
 
+	// §18 / ADR-013 — locales without a bundled dictionary (es, de, …) are
+	// served from the DB pack; the i18n store layers it over English so a
+	// missing key still resolves to English text. /i18n/* GETs are public and
+	// already covered by the 5-minute public GET cache.
+	const locale = event.locals.locale ?? 'en';
+	const i18nPack = ['en', 'fr'].includes(locale)
+		? null
+		: await apiGet<Record<string, string>>(ctx, `/i18n/packs/${encodeURIComponent(locale)}`).catch(
+				() => null
+			);
+
 	return {
 		user,
 		// Dedicated auth flag — page-level load functions may return their own
@@ -236,6 +247,7 @@ export const load: LayoutServerLoad = async (event) => {
 		viewerId: user?.id ?? null,
 		theme: event.locals.theme,
 		locale: event.locals.locale,
+		i18nPack,
 		cspNonce: event.locals.cspNonce,
 		isAcademyHost: event.locals.isAcademyHost,
 		isRoadmapHost: event.locals.isRoadmapHost,

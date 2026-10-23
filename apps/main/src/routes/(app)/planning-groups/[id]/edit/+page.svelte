@@ -91,7 +91,7 @@
 		href="/planning-groups/{group.id}"
 		class="mb-4 inline-flex items-center gap-1 text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft size={14} /> {t('planning_groups.back_to_group', 'Back to group')}
+		<ArrowLeft class="rtl:-scale-x-100" size={14} /> {t('planning_groups.back_to_group', 'Back to group')}
 	</a>
 	<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 		<Users size={20} /> {t('planning_groups.edit_heading', 'Edit Planning Group')}

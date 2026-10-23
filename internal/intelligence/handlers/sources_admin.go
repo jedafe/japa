@@ -1017,6 +1017,10 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Materialize directory tags for the approved source's keywords on the
+	// write path so the public GET stays read-only.
+	h.createSourceTags(r.Context(), src.Keywords)
+
 	// §106 channel-sync amendment: a newly approved video_channel is due
 	// immediately — kick the poller so its first import doesn't wait for the
 	// hourly cron. Fire-and-forget (Rule 8).

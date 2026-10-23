@@ -64,7 +64,7 @@
 		{@attach portal}
 		{href}
 		aria-label={label}
-		class="fixed right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-colors hover:bg-[var(--color-primary-hover)] sm:hidden"
+		class="fixed end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-colors hover:bg-[var(--color-primary-hover)] sm:hidden"
 		style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px) + {fabIndex * 3.5}rem)"
 	>
 		<Icon size={20} />
@@ -76,7 +76,7 @@
 		{onclick}
 		{disabled}
 		aria-label={label}
-		class="fixed right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50 sm:hidden"
+		class="fixed end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50 sm:hidden"
 		style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px) + {fabIndex * 3.5}rem)"
 	>
 		<Icon size={20} />

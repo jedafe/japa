@@ -91,7 +91,7 @@
   }
   .em-select-wrap :global(.em-chevron) {
     position: absolute;
-    right: 0;
+    inset-inline-end: 0;
     pointer-events: none;
     color: var(--color-muted);
   }

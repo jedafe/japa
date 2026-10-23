@@ -216,7 +216,7 @@
 	ariaTitle={t('journey.banner.title', 'Tell us about your journey')}
 	closeLabel={t('common.close', 'Close')}
 	size="max-w-4xl"
-	class="max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:top-auto max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-t-2xl max-sm:rounded-b-none"
+	class="max-sm:bottom-0 max-sm:start-0 max-sm:end-0 max-sm:top-auto max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-t-2xl max-sm:rounded-b-none"
 >
 	{#snippet children(close)}
 		<!-- Header: brand + stepper + close -->
@@ -269,13 +269,13 @@
 				<div class="journey-globe">
 					<Globe size={56} strokeWidth={1.2} class="text-[var(--color-primary)]" />
 				</div>
-				<div class="journey-chip" style="top: 14%; left: 10%;">
+				<div class="journey-chip" style="top: 14%; inset-inline-start: 10%;">
 					<GraduationCap size={18} class="text-[var(--color-primary)]" />
 				</div>
-				<div class="journey-chip" style="top: 44%; left: 6%;">
+				<div class="journey-chip" style="top: 44%; inset-inline-start: 6%;">
 					<Briefcase size={18} class="text-[var(--color-primary)]" />
 				</div>
-				<div class="journey-chip" style="bottom: 16%; right: 12%;">
+				<div class="journey-chip" style="bottom: 16%; inset-inline-end: 12%;">
 					<MapPin size={18} class="text-[var(--color-primary)]" />
 				</div>
 				<div class="journey-plane">
@@ -429,7 +429,7 @@
 						{step === 4
 							? (saving ? t('journey.banner.saving', 'Saving...') : t('journey.banner.submit', 'Show me relevant content'))
 							: t('common.continue', 'Continue')}
-						<ChevronRight size={15} />
+						<ChevronRight class="rtl:-scale-x-100" size={15} />
 					</button>
 				</div>
 			</div>
@@ -452,7 +452,7 @@
 	.journey-globe {
 		position: absolute;
 		top: 50%;
-		left: 50%;
+		inset-inline-start: 50%;
 		translate: -50% -50%;
 		display: grid;
 		place-items: center;
@@ -475,7 +475,7 @@
 	.journey-plane {
 		position: absolute;
 		top: 10%;
-		right: 16%;
+		inset-inline-end: 16%;
 		color: var(--color-primary);
 		opacity: 0.8;
 	}

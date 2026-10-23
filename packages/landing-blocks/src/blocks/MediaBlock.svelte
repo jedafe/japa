@@ -27,7 +27,7 @@
           <Dialog.Overlay class="fixed inset-0 bg-black/80 z-50" />
           <Dialog.Content class="fixed inset-0 z-50 flex items-center justify-center p-6">
             <img src={props.media.url} alt={props.media.alt} class="max-h-full max-w-full rounded-[var(--radius)] object-contain" />
-            <Dialog.Close class="absolute top-4 right-4 rounded-full bg-white/20 p-2 text-white hover:bg-white/30" aria-label="Close">
+            <Dialog.Close class="absolute top-4 end-4 rounded-full bg-white/20 p-2 text-white hover:bg-white/30" aria-label="Close">
               &#10005;
             </Dialog.Close>
           </Dialog.Content>

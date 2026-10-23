@@ -302,7 +302,7 @@ var taskTier = func() map[string]string {
 		TypeMaintenancePruneOAuthRecords,
 		TypeMaintenancePruneOldFeeds, TypeMaintenancePruneAuditLogs,
 		TypeMaintenancePrunePushTokens, TypeModerationAutoHide,
-		TypeMediaCleanupDeleted,
+		TypeMediaCleanupDeleted, TypeMediaReconcileMissing,
 		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents,
 		TypeCouponExpireCheck,
 		TypeSubscriptionExpirySweep, // §17 — webhook-miss safety net
@@ -420,6 +420,7 @@ var taskTypeCatalog = []struct {
 	{TypeLanguagePackAITranslate, "default", "AI-translate language pack"},
 	{TypeMediaScan, "default", "Scan uploaded media for policy violations"},
 	{TypeMediaCleanupDeleted, "low", "Purge soft-deleted media objects and rows past retention"},
+	{TypeMediaReconcileMissing, "low", "Reconcile media.missing_at against object storage (m000924)"},
 	{TypeContentFanOutToFeeds, "default", "Fan out content to follower feeds"},
 	{TypeAIGenerateContentEmbedding, "default", "Generate vector embedding for content"},
 	{TypeRAGReindexSpecs, "default", "Reindex the JEOS spec corpus into content_embeddings (§121)"},

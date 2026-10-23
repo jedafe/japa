@@ -9,13 +9,13 @@ import { contentHref } from '$lib/utils/contentLink';
  * Shares the generic content loader; a non-list slug under /list is
  * redirected to its own canonical route.
  *
- * list.enabled is a PUBLIC system setting (video.enabled pattern) exposed
- * via the root layout's siteSettings — missing = enabled.
+ * list.enabled is a feature flag (unified rollout) exposed via the root
+ * layout's features map — the deprecated public system_settings key is a
+ * stale mirror and must not be read here.
  */
 export const load: PageServerLoad = async (event) => {
-	const parent = await event.parent();
-	const siteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
-	if (siteSettings['list.enabled'] === false) {
+	const { features } = await event.parent();
+	if (features?.['list.enabled'] !== true) {
 		throw error(404, { code: 'feature_disabled', message: 'Lists are not available' });
 	}
 

@@ -421,7 +421,7 @@
 <div class="space-y-6">
 	<!-- Back link -->
 	<a href="/custom-fields" class="inline-flex items-center gap-1.5 text-sm hover:opacity-70" style="color: var(--color-muted)">
-		<ArrowLeft class="h-4 w-4" />
+		<ArrowLeft class="h-4 w-4 rtl:-scale-x-100" />
 		{t('fieldGroups.title', 'Custom Fields')}
 	</a>
 
@@ -436,7 +436,7 @@
 					<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style="background-color: var(--color-primary-muted); color: var(--color-primary)">
 						{entityLabel(group.entity_type)}
 					</span>
-					<span class="ml-2">{fields.length} field{fields.length === 1 ? '' : 's'}</span>
+					<span class="ms-2">{fields.length} field{fields.length === 1 ? '' : 's'}</span>
 				{/if}
 			</p>
 		</div>
@@ -573,7 +573,7 @@
 						{#each options as opt (opt.value)}
 							<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs" style="background-color: var(--color-muted-muted)">
 								<span style="color: var(--color-muted)">{opt.value}</span>: {opt.label}
-								<button type="button" class="ml-0.5 opacity-50 hover:opacity-100" onclick={() => removeOption(opt)}>&times;</button>
+								<button type="button" class="ms-0.5 opacity-50 hover:opacity-100" onclick={() => removeOption(opt)}>&times;</button>
 							</span>
 						{/each}
 					</div>
@@ -620,7 +620,7 @@
 							<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs" style="background-color: var(--color-muted-muted)">
 								<span style="color: var(--color-muted)">{part.key}</span>: {part.label}
 								<span style="color: var(--color-muted)">({part.kind})</span>
-								<button type="button" class="ml-0.5 opacity-50 hover:opacity-100" onclick={() => removePart(part)}>&times;</button>
+								<button type="button" class="ms-0.5 opacity-50 hover:opacity-100" onclick={() => removePart(part)}>&times;</button>
 							</span>
 						{/each}
 					</div>
@@ -665,7 +665,7 @@
 			</label>
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" bind:checked={showInFrontend} class="rounded" />
-				Show in frontend
+				{t('custom_fields.show_in_frontend', 'Show in frontend')}
 			</label>
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" bind:checked={filterable} class="rounded" />

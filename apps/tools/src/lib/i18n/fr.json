@@ -644,5 +644,8 @@
 	"ai.panel.mode": "Mode",
 	"ai.panel.mode_chat": "Discussion",
 	"ai.panel.mode_agent": "Agent",
-	"ai.panel.placeholder_chat": "Envoyer un message à Japa AI…"
+	"ai.panel.placeholder_chat": "Envoyer un message à Japa AI…",
+	"a11y.suggestion": "Suggestion",
+	"crs.spouse_education": "Éducation",
+	"crs.spouse_experience": "Expérience canadienne (ans)"
 }

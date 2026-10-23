@@ -111,10 +111,10 @@
 				<div class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					<table class="w-full text-sm">
 						<thead>
-							<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
+							<tr class="border-b border-[var(--color-border)] text-start text-xs text-[var(--color-muted)]">
 								<th class="px-3 py-2 font-medium">{t('leaderboard.rank', 'Rank')}</th>
 								<th class="px-3 py-2 font-medium">{t('leaderboard.user', 'User')}</th>
-								<th class="px-3 py-2 text-right font-medium">{t('leaderboard.points', 'Points')}</th>
+								<th class="px-3 py-2 text-end font-medium">{t('leaderboard.points', 'Points')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -134,7 +134,7 @@
 											slug={entry.username}
 											name={entry.display_name ?? entry.username}
 											avatar={entry.avatar_url}
-											class="inline-flex w-fit min-w-0 max-w-full items-center gap-2 text-left text-[var(--color-text)] hover:underline"
+											class="inline-flex w-fit min-w-0 max-w-full items-center gap-2 text-start text-[var(--color-text)] hover:underline"
 										>
 											{#snippet trigger()}
 												{#if entry.avatar_url}
@@ -155,7 +155,7 @@
 											{/snippet}
 										</UserHoverCard>
 									</td>
-									<td class="px-3 py-2 text-right font-medium text-[var(--color-text)]">
+									<td class="px-3 py-2 text-end font-medium text-[var(--color-text)]">
 										{entry.points.toLocaleString()}
 									</td>
 								</tr>

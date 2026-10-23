@@ -250,7 +250,7 @@
 					</div>
 					<div class="block-head-actions">
 						<a href="/docs/groups" class="block-link">
-							{t('landing.groups_all', 'See all user groups')} <ArrowRight size={14} />
+							{t('landing.groups_all', 'See all user groups')} <ArrowRight class="rtl:-scale-x-100" size={14} />
 						</a>
 						<div class="slider-nav">
 						<button
@@ -260,7 +260,7 @@
 							onclick={() => slideBy(-1)}
 							aria-label={t('landing.groups_prev', 'Previous groups')}
 						>
-							<ChevronLeft size={16} />
+							<ChevronLeft class="rtl:-scale-x-100" size={16} />
 						</button>
 						<button
 							type="button"
@@ -269,7 +269,7 @@
 							onclick={() => slideBy(1)}
 							aria-label={t('landing.groups_next', 'Next groups')}
 						>
-							<ChevronRight size={16} />
+							<ChevronRight class="rtl:-scale-x-100" size={16} />
 						</button>
 						</div>
 					</div>
@@ -295,7 +295,7 @@
 								{:else}
 									<span class="group-count"></span>
 								{/if}
-								<ArrowRight size={15} class="card-arrow" />
+								<ArrowRight size={15} class="card-arrow rtl:-scale-x-100" />
 							</span>
 						</a>
 					{/each}
@@ -311,7 +311,7 @@
 						<p class="block-sub">{t('landing.categories_sub')}</p>
 					</div>
 					<a href="/docs/categories" class="block-link">
-						{t('categories.view_all', 'View all categories')} <ArrowRight size={14} />
+						{t('categories.view_all', 'View all categories')} <ArrowRight class="rtl:-scale-x-100" size={14} />
 					</a>
 				</div>
 				<div class="cat-grid">
@@ -344,7 +344,7 @@
 							</ul>
 							<a href={categoryHref(cat.name)} class="cat-all">
 								{t('landing.view_all_count', 'View all ({count})', { count: String(cat.items.length) })}
-								<ArrowRight size={13} />
+								<ArrowRight class="rtl:-scale-x-100" size={13} />
 							</a>
 						</div>
 					{/each}
@@ -358,7 +358,7 @@
 					<div class="panel-head">
 						<h2 class="panel-title"><Flame size={17} class="panel-title-icon" />{t('landing.popular_docs')}</h2>
 						<a href="/docs/search" class="block-link sm">
-							{t('landing.popular_all')} <ArrowRight size={13} />
+							{t('landing.popular_all')} <ArrowRight class="rtl:-scale-x-100" size={13} />
 						</a>
 					</div>
 					<ul class="pop-list">
@@ -377,7 +377,7 @@
 										{/if}
 									</span>
 									<span class="pop-badge aud-{p.audience}">{t(AUDIENCE_LABEL_KEY[p.audience], p.audience)}</span>
-									<ChevronRight size={15} class="pop-chevron" />
+									<ChevronRight size={15} class="pop-chevron rtl:-scale-x-100" />
 								</a>
 							</li>
 						{/each}
@@ -388,9 +388,9 @@
 			{#if changelog.length > 0}
 				<section class="panel">
 					<div class="panel-head">
-						<h2 class="panel-title"><Send size={16} class="panel-title-icon" />{t('landing.whats_new')}</h2>
+						<h2 class="panel-title"><Send size={16} class="panel-title-icon rtl:-scale-x-100" />{t('landing.whats_new')}</h2>
 						<a href={updatesHref} class="block-link sm">
-							{t('landing.updates_all')} <ArrowRight size={13} />
+							{t('landing.updates_all')} <ArrowRight class="rtl:-scale-x-100" size={13} />
 						</a>
 					</div>
 					<ul class="news-list">
@@ -428,7 +428,7 @@
 					<div class="mini-actions">
 						{#each helpLinks as link (link.label + link.url)}
 							<a href={link.url} class="mini-btn" target="_blank" rel="noopener noreferrer">
-								{link.label} <ArrowRight size={14} />
+								{link.label} <ArrowRight class="rtl:-scale-x-100" size={14} />
 							</a>
 						{/each}
 					</div>
@@ -446,7 +446,7 @@
 					<div class="mini-actions">
 						{#each contributeLinks as link (link.label + link.url)}
 							<a href={link.url} class="mini-btn" target="_blank" rel="noopener noreferrer">
-								{link.label} <ArrowRight size={14} />
+								{link.label} <ArrowRight class="rtl:-scale-x-100" size={14} />
 							</a>
 						{/each}
 					</div>
@@ -476,7 +476,7 @@
 									<span class="resource-sub">{res.description}</span>
 								{/if}
 							</span>
-							<ArrowUpRight size={14} class="resource-arrow" />
+							<ArrowUpRight size={14} class="resource-arrow rtl:-scale-x-100" />
 						</a>
 					{/each}
 				</div>
@@ -548,7 +548,7 @@
 		color: var(--color-muted);
 		font-size: 0.9375rem;
 		cursor: pointer;
-		text-align: left;
+		text-align: start;
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
 	.hero-search:hover {
@@ -577,7 +577,7 @@
 	.hero-popular-label {
 		font-size: 0.8125rem;
 		color: var(--color-muted);
-		margin-right: 0.125rem;
+		margin-inline-end: 0.125rem;
 	}
 	.chip {
 		padding: 0.375rem 0.75rem;
@@ -965,7 +965,7 @@
 		text-decoration: none;
 		transition: border-color 0.15s, color 0.15s;
 	}
-	.mini-btn :global(svg) { margin-left: auto; }
+	.mini-btn :global(svg) { margin-inline-start: auto; }
 	.mini-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
 
 	/* ---- Developer resources ---- */

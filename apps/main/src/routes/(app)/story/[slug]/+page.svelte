@@ -19,6 +19,7 @@
 	import NextActionInline from '$lib/components/shell/NextActionInline.svelte';
 	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
@@ -82,7 +83,7 @@
 	const canonical = $derived(story ? `${page.url.origin}/story/${story.slug}` : `${page.url.origin}/stories`);
 	const publishedDate = $derived(
 		story
-			? new Date(story.published_at || story.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+			? new Date(story.published_at || story.created_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' })
 			: ''
 	);
 	const allowedIframeHosts = $derived(
@@ -167,6 +168,15 @@
 	{#if jsonLd}
 		{@html safeJsonLdScript(jsonLd)}
 	{/if}
+	{#if story}
+		{@html safeJsonLdScript(
+			breadcrumbJsonLd([
+				{ name: 'Home', path: page.url.origin },
+				{ name: 'Stories', path: `${page.url.origin}/stories` },
+				{ name: story.title, path: canonical }
+			])
+		)}
+	{/if}
 </svelte:head>
 
 {#if data.loadError || !story}
@@ -215,7 +225,7 @@
 		<article class="min-w-0 flex-1 max-w-[41rem]">
 			<div class="mb-8 flex items-center justify-between gap-3">
 				<a href="/stories" class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]">
-					<ArrowLeft size={16} /> {t('stories.back_to_wall', 'Back to stories')}
+					<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('stories.back_to_wall', 'Back to stories')}
 				</a>
 				{#if isAuthor || data.canEdit}
 					<div class="flex shrink-0 items-center gap-1">
@@ -259,7 +269,7 @@
 					aria-label={t('lightbox.view_image', 'View image')}
 				>
 					<img src={story.featured_image_url} alt={story.title} class="aspect-[16/9] w-full object-cover" />
-					<span class="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100">
+					<span class="absolute end-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100">
 						<Maximize2 size={15} />
 					</span>
 				</button>
@@ -344,7 +354,7 @@
 											class="inline-flex items-center gap-1.5 text-[var(--color-primary)] transition-colors hover:underline"
 										>
 											{resource.name}
-											<ExternalLink size={12} />
+											<ExternalLink class="rtl:-scale-x-100" size={12} />
 										</a>
 									{:else}
 										<span class="text-[var(--color-text-subtle)]">{resource.name}</span>
@@ -379,7 +389,7 @@
 								href={tool.href}
 								class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
 							>
-								<ExternalLink size={12} /> {tool.label}
+								<ExternalLink class="rtl:-scale-x-100" size={12} /> {tool.label}
 							</a>
 						{/each}
 					</div>
@@ -422,6 +432,7 @@
 			<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
 			<CommentThread
 				comments={data.comments}
+				commentsTotal={data.commentsTotal}
 				totalCount={story.comment_count}
 				contentId={story.id}
 				contentType="story"

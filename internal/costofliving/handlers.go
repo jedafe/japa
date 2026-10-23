@@ -20,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
@@ -78,19 +77,11 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 	return u, true
 }
 
-func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
-		return pgtype.UUID{}, false
-	}
-
-	return id, true
-}
-
 // parseCityIDs parses the comma-separated city_ids query parameter into a
-// slice of pgtype.UUID. Returns the parsed IDs and whether parsing succeeded.
-func parseCityIDs(w http.ResponseWriter, r *http.Request) ([]pgtype.UUID, bool) {
+// slice of pgtype.UUID. Each entry may be a UUID or a city geo-space slug
+// (e.g. ?city_ids=lagos,abuja — the same slug the wiki links use), so share
+// URLs stay human-readable. Returns false when a token resolves to nothing.
+func (h *Handlers) parseCityIDs(w http.ResponseWriter, r *http.Request) ([]pgtype.UUID, bool) {
 	raw := strings.TrimSpace(r.URL.Query().Get("city_ids"))
 	if raw == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_city_ids", "city_ids query parameter is required")
@@ -106,8 +97,8 @@ func parseCityIDs(w http.ResponseWriter, r *http.Request) ([]pgtype.UUID, bool) 
 			continue
 		}
 
-		var id pgtype.UUID
-		if err := id.Scan(p); err != nil {
+		id, err := h.service.ResolveCityRef(r.Context(), p)
+		if err != nil || !id.Valid {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_city_id", "Invalid city ID: "+p)
 			return nil, false
 		}
@@ -187,26 +178,30 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 
 // HandleCompare handles GET /api/v1/calculator/cost-of-living/compare —
 // returns the comparison matrix with raw values + ratios vs the baseline.
-// Public route. Query params: city_ids (comma-separated UUIDs, required),
-// baseline_id (optional UUID — picks the ratio reference city; falls back
-// to the seeded is_baseline city when absent or not a cost_of_living item).
+// Public route. Query params: city_ids (comma-separated UUIDs or city
+// geo-space slugs, required), baseline_id (optional UUID or slug — picks
+// the ratio reference city; falls back to the seeded is_baseline city
+// when absent or not a cost_of_living item).
 func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
 		return
 	}
 
-	cityIDs, ok := parseCityIDs(w, r)
+	cityIDs, ok := h.parseCityIDs(w, r)
 	if !ok {
 		return
 	}
 
 	var baselineID pgtype.UUID
 	if raw := strings.TrimSpace(r.URL.Query().Get("baseline_id")); raw != "" {
-		if err := baselineID.Scan(raw); err != nil {
+		id, err := h.service.ResolveCityRef(r.Context(), raw)
+		if err != nil || !id.Valid {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_baseline_id", "Invalid baseline_id")
 			return
 		}
+
+		baselineID = id
 	}
 
 	matrix, err := h.service.CompareCities(r.Context(), cityIDs, baselineID)

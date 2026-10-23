@@ -110,22 +110,22 @@
 	{:else}
 		<table class="w-full text-sm">
 			<thead>
-				<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
-					<th class="py-2 pr-4">{t('settings.payments.provider')}</th>
-					<th class="py-2 pr-4">{t('settings.payments.amount')}</th>
-					<th class="py-2 pr-4">{t('settings.payments.status')}</th>
-					<th class="py-2 pr-4">{t('settings.payments.date')}</th>
+				<tr class="border-b border-[var(--color-border)] text-start text-xs text-[var(--color-muted)]">
+					<th class="py-2 pe-4">{t('settings.payments.provider')}</th>
+					<th class="py-2 pe-4">{t('settings.payments.amount')}</th>
+					<th class="py-2 pe-4">{t('settings.payments.status')}</th>
+					<th class="py-2 pe-4">{t('settings.payments.date')}</th>
 					<th class="py-2"></th>
 				</tr>
 			</thead>
 			<tbody>
 				{#each payments as p (p.id)}
 					<tr class="border-b border-[var(--color-border)]">
-						<td class="py-2 pr-4 text-[var(--color-text)]">{p.provider}</td>
-						<td class="py-2 pr-4 text-[var(--color-text)]">{formatCurrency(p.amount, p.currency)}</td>
-						<td class="py-2 pr-4 capitalize text-[var(--color-muted)]">{statusLabel(p.status)}</td>
-						<td class="py-2 pr-4 text-[var(--color-muted)]">{formatDate(p.created_at)}</td>
-						<td class="py-2 text-right">
+						<td class="py-2 pe-4 text-[var(--color-text)]">{p.provider}</td>
+						<td class="py-2 pe-4 text-[var(--color-text)]">{formatCurrency(p.amount, p.currency)}</td>
+						<td class="py-2 pe-4 capitalize text-[var(--color-muted)]">{statusLabel(p.status)}</td>
+						<td class="py-2 pe-4 text-[var(--color-muted)]">{formatDate(p.created_at)}</td>
+						<td class="py-2 text-end">
 							<button
 								type="button"
 								onclick={() => viewDetail(p)}

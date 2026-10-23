@@ -89,7 +89,7 @@
 			<span>{t('create.editor.link_preview.error', 'Could not load link preview')}</span>
 			<a href={safeHref(url)} target="_blank" rel="noopener noreferrer" class="lp-open-external">
 				{displayUrl(url)}
-				<ExternalLink size={12} />
+				<ExternalLink class="rtl:-scale-x-100" size={12} />
 			</a>
 		</div>
 	{:else if preview}
@@ -111,7 +111,7 @@
 					<span class="lp-site">{preview.site_name || displayUrl(url)}</span>
 				</div>
 			</div>
-			<ExternalLink size={14} style="flex-shrink:0;color:var(--text-muted,#cbd5e1);align-self:center;" />
+			<ExternalLink class="rtl:-scale-x-100" size={14} style="flex-shrink:0;color:var(--text-muted,#cbd5e1);align-self:center;" />
 		</a>
 	{/if}
 
@@ -236,7 +236,7 @@
 	.lp-close {
 		position: absolute;
 		top: 0.5rem;
-		right: 0.5rem;
+		inset-inline-end: 0.5rem;
 		display: flex;
 		align-items: center;
 		justify-content: center;

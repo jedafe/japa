@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { afterNavigate, invalidate } from '$app/navigation';
-	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe } from 'lucide-svelte';
+	import { afterNavigate, goto, invalidate } from '$app/navigation';
+	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe, TriangleAlert } from 'lucide-svelte';
 	import { MenuItem } from '$lib/components/ui';
 	import { Chart, Bars, LineChart, Tooltip } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -301,7 +301,7 @@
 		rows.push({
 			icon: Calendar,
 			label: t('profile.joined', 'Joined'),
-			value: new Date(user.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
+			value: new Date(user.created_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long' })
 		});
 		rows.push({ icon: Users, label: t('profile.followers_label', 'Followers'), value: `${user.follower_count}` });
 		rows.push({ icon: Users, label: t('profile.following_label', 'Following'), value: `${user.following_count}` });
@@ -803,6 +803,11 @@
 			<MenuItem icon={Flag} onSelect={() => (reportOpen = true)}>
 				{t('profile.report', 'Report')}
 			</MenuItem>
+			{#if data.features?.['scam_alert.enabled']}
+				<MenuItem icon={TriangleAlert} onSelect={() => goto('/scam-alerts/new')}>
+					{t('scam_alerts.report_button', 'Report a Scam')}
+				</MenuItem>
+			{/if}
 		{/if}
 	{/snippet}
 </ProfileHeader>
@@ -953,7 +958,7 @@ profile is private, or no stage is set. -->
 								layout="stream"
 							/>
 							{#if post.is_pinned}
-								<span class="pointer-events-none absolute left-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+								<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
 									<Pin size={10} /> {t('profile.pinned', 'Pinned')}
 								</span>
 							{/if}
@@ -1314,7 +1319,7 @@ profile is private, or no stage is set. -->
 										<span class="min-w-0 flex-1">
 											<span class="block truncate text-xs font-medium text-[var(--color-text)]">{badge.name}</span>
 											<span class="block text-[10px] text-[var(--color-muted)]">
-												{t('profile.earned', 'Earned')} {new Date(badge.awarded_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })}
+												{t('profile.earned', 'Earned')} {new Date(badge.awarded_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short' })}
 											</span>
 										</span>
 									</div>
@@ -1438,7 +1443,7 @@ profile is private, or no stage is set. -->
 										{:else}
 											<span class="truncate" title={point.title}>{point.label}</span>
 										{/if}
-										<span class="shrink-0 pl-2">{formatMetric(point.y)} {t('profile.views', 'views')}</span>
+										<span class="shrink-0 ps-2">{formatMetric(point.y)} {t('profile.views', 'views')}</span>
 									</div>
 								{/each}
 							</div>

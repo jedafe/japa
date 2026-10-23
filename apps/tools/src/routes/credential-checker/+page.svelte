@@ -3,7 +3,7 @@
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -163,7 +163,7 @@
 
 	function fmtDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -333,7 +333,7 @@
 							<button
 								type="button"
 								onclick={() => toggleDetail(pathway)}
-								class="w-full text-left p-4 hover:bg-surface-subtle transition-colors"
+								class="w-full text-start p-4 hover:bg-surface-subtle transition-colors"
 								aria-expanded={expandedId === pathway.id}
 							>
 								<div class="flex items-start justify-between gap-3">

@@ -870,6 +870,39 @@ func (q *Queries) GetForumThreadBySlugWithDetails(ctx context.Context, slug stri
 	return i, err
 }
 
+const getForumThreadSpaceAccess = `-- name: GetForumThreadSpaceAccess :one
+SELECT COALESCE(s.visibility, 'public') AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = $1
+ ) AS is_member
+FROM forum_threads ft
+LEFT JOIN spaces s ON s.id = ft.space_id
+WHERE ft.id = $2
+`
+
+type GetForumThreadSpaceAccessParams struct {
+	ViewerID pgtype.UUID `json:"viewer_id"`
+	ThreadID pgtype.UUID `json:"thread_id"`
+}
+
+type GetForumThreadSpaceAccessRow struct {
+	SpaceVisibility string `json:"space_visibility"`
+	IsMember        bool   `json:"is_member"`
+}
+
+// Resolves the containing space's visibility + the viewer's membership for
+// the forum space-visibility cascade (§05): 'public'→full, 'members'→title
+// only for non-members, 'private'→404. Space-less threads default to
+// 'public' (COALESCE) — they carry no space gate.
+func (q *Queries) GetForumThreadSpaceAccess(ctx context.Context, arg GetForumThreadSpaceAccessParams) (GetForumThreadSpaceAccessRow, error) {
+	row := q.db.QueryRow(ctx, getForumThreadSpaceAccess, arg.ViewerID, arg.ThreadID)
+	var i GetForumThreadSpaceAccessRow
+	err := row.Scan(&i.SpaceVisibility, &i.IsMember)
+	return i, err
+}
+
 const getForumThreadSpaceIDByID = `-- name: GetForumThreadSpaceIDByID :one
 
 SELECT space_id FROM forum_threads WHERE id = $1 AND deleted_at IS NULL
@@ -939,6 +972,35 @@ func (q *Queries) GetReplyViewCount(ctx context.Context, replyID pgtype.UUID) (i
 	var view_count int32
 	err := row.Scan(&view_count)
 	return view_count, err
+}
+
+const getSpaceAccess = `-- name: GetSpaceAccess :one
+SELECT s.visibility AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = s.id AND sm.user_id = $1
+ ) AS is_member
+FROM spaces s
+WHERE s.id = $2
+`
+
+type GetSpaceAccessParams struct {
+	ViewerID pgtype.UUID `json:"viewer_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+}
+
+type GetSpaceAccessRow struct {
+	SpaceVisibility string `json:"space_visibility"`
+	IsMember        bool   `json:"is_member"`
+}
+
+// Same cascade for space-scoped listings (ListThreadsBySpace).
+func (q *Queries) GetSpaceAccess(ctx context.Context, arg GetSpaceAccessParams) (GetSpaceAccessRow, error) {
+	row := q.db.QueryRow(ctx, getSpaceAccess, arg.ViewerID, arg.SpaceID)
+	var i GetSpaceAccessRow
+	err := row.Scan(&i.SpaceVisibility, &i.IsMember)
+	return i, err
 }
 
 const getTopReplyForThread = `-- name: GetTopReplyForThread :one
@@ -1180,15 +1242,21 @@ func (q *Queries) ListForumPollUserVotes(ctx context.Context, arg ListForumPollU
 }
 
 const listForumRepliesByThread = `-- name: ListForumRepliesByThread :many
-SELECT id, thread_id, parent_reply_id, author_user_id,
- body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
-FROM forum_replies
-WHERE thread_id = $1
- AND deleted_at IS NULL
-ORDER BY created_at ASC
+SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
+FROM forum_replies fr
+WHERE fr.thread_id = $1
+ AND (fr.deleted_at IS NULL OR EXISTS (
+ SELECT 1 FROM forum_replies child
+ WHERE child.parent_reply_id = fr.id
+ AND child.deleted_at IS NULL
+ ))
+ORDER BY fr.created_at ASC
 `
 
+// Tombstones (§49 parity): a deleted reply that still has live children is
+// returned so the tree stays navigable — its body is scrubbed by the caller.
 func (q *Queries) ListForumRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]ForumReply, error) {
 	rows, err := q.db.Query(ctx, listForumRepliesByThread, threadID)
 	if err != nil {
@@ -1235,7 +1303,11 @@ FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
 WHERE fr.thread_id = $1
- AND fr.deleted_at IS NULL
+ AND (fr.deleted_at IS NULL OR EXISTS (
+ SELECT 1 FROM forum_replies child
+ WHERE child.parent_reply_id = fr.id
+ AND child.deleted_at IS NULL
+ ))
 ORDER BY fr.created_at ASC
 `
 
@@ -1580,37 +1652,50 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  s.name AS space_name,
  s.slug AS space_slug,
- s.level AS space_level
+ s.level AS space_level,
+ COALESCE(s.visibility, 'public') AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = $1
+ ) AS space_is_member
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ft.author_user_id = $1
+WHERE ft.author_user_id = $2
  AND ft.deleted_at IS NULL
- AND ft.solved = COALESCE($2::bool, ft.solved)
+ AND ft.solved = COALESCE($3::bool, ft.solved)
+ AND (s.visibility IS NULL OR s.visibility <> 'private'
+ OR EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = $1
+ ))
  AND (
- ($3 = 'top' AND (
- $4::int IS NULL
- OR ft.vote_score < $4::int
- OR (ft.vote_score = $4::int AND (
- ft.created_at < $5
- OR (ft.created_at = $5 AND ft.id < $6::uuid)
- OR $5 IS NULL
+ ($4 = 'top' AND (
+ $5::int IS NULL
+ OR ft.vote_score < $5::int
+ OR (ft.vote_score = $5::int AND (
+ ft.created_at < $6
+ OR (ft.created_at = $6 AND ft.id < $7::uuid)
+ OR $6 IS NULL
  ))
  ))
  OR
- ($3 != 'top' AND (
- $5 IS NULL
- OR ft.created_at < $5
- OR (ft.created_at = $5 AND ft.id < $6::uuid)
+ ($4 != 'top' AND (
+ $6 IS NULL
+ OR ft.created_at < $6
+ OR (ft.created_at = $6 AND ft.id < $7::uuid)
  ))
  )
-ORDER BY CASE WHEN $3 = 'top' THEN ft.vote_score END DESC,
+ORDER BY CASE WHEN $4 = 'top' THEN ft.vote_score END DESC,
  ft.created_at DESC, ft.id DESC
-LIMIT $7
+LIMIT $8
 `
 
 type ListForumThreadsByAuthorWithDetailsParams struct {
+	ViewerID        pgtype.UUID        `json:"viewer_id"`
 	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
 	Solved          *bool              `json:"solved"`
 	SortBy          interface{}        `json:"sort_by"`
@@ -1648,10 +1733,13 @@ type ListForumThreadsByAuthorWithDetailsRow struct {
 	SpaceName         *string            `json:"space_name"`
 	SpaceSlug         *string            `json:"space_slug"`
 	SpaceLevel        *string            `json:"space_level"`
+	SpaceVisibility   string             `json:"space_visibility"`
+	SpaceIsMember     bool               `json:"space_is_member"`
 }
 
 func (q *Queries) ListForumThreadsByAuthorWithDetails(ctx context.Context, arg ListForumThreadsByAuthorWithDetailsParams) ([]ListForumThreadsByAuthorWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsByAuthorWithDetails,
+		arg.ViewerID,
 		arg.AuthorUserID,
 		arg.Solved,
 		arg.SortBy,
@@ -1695,6 +1783,8 @@ func (q *Queries) ListForumThreadsByAuthorWithDetails(ctx context.Context, arg L
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.SpaceLevel,
+			&i.SpaceVisibility,
+			&i.SpaceIsMember,
 		); err != nil {
 			return nil, err
 		}
@@ -2025,38 +2115,51 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  s.name AS space_name,
  s.slug AS space_slug,
- s.level AS space_level
+ s.level AS space_level,
+ COALESCE(s.visibility, 'public') AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = $1
+ ) AS space_is_member
 FROM forum_threads ft
 JOIN content_tags ct ON ct.content_id = ft.content_id
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ct.tag_id = $1
+WHERE ct.tag_id = $2
  AND ft.deleted_at IS NULL
- AND ft.solved = COALESCE($2::bool, ft.solved)
+ AND ft.solved = COALESCE($3::bool, ft.solved)
+ AND (s.visibility IS NULL OR s.visibility <> 'private'
+ OR EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = $1
+ ))
  AND (
- ($3 = 'top' AND (
- $4::int IS NULL
- OR ft.vote_score < $4::int
- OR (ft.vote_score = $4::int AND (
- ft.created_at < $5
- OR (ft.created_at = $5 AND ft.id < $6::uuid)
- OR $5 IS NULL
+ ($4 = 'top' AND (
+ $5::int IS NULL
+ OR ft.vote_score < $5::int
+ OR (ft.vote_score = $5::int AND (
+ ft.created_at < $6
+ OR (ft.created_at = $6 AND ft.id < $7::uuid)
+ OR $6 IS NULL
  ))
  ))
  OR
- ($3 != 'top' AND (
- $5 IS NULL
- OR ft.created_at < $5
- OR (ft.created_at = $5 AND ft.id < $6::uuid)
+ ($4 != 'top' AND (
+ $6 IS NULL
+ OR ft.created_at < $6
+ OR (ft.created_at = $6 AND ft.id < $7::uuid)
  ))
  )
-ORDER BY CASE WHEN $3 = 'top' THEN ft.vote_score END DESC,
+ORDER BY CASE WHEN $4 = 'top' THEN ft.vote_score END DESC,
  ft.created_at DESC, ft.id DESC
-LIMIT $7
+LIMIT $8
 `
 
 type ListForumThreadsByTagWithDetailsParams struct {
+	ViewerID        pgtype.UUID        `json:"viewer_id"`
 	TagID           pgtype.UUID        `json:"tag_id"`
 	Solved          *bool              `json:"solved"`
 	SortBy          interface{}        `json:"sort_by"`
@@ -2094,10 +2197,13 @@ type ListForumThreadsByTagWithDetailsRow struct {
 	SpaceName         *string            `json:"space_name"`
 	SpaceSlug         *string            `json:"space_slug"`
 	SpaceLevel        *string            `json:"space_level"`
+	SpaceVisibility   string             `json:"space_visibility"`
+	SpaceIsMember     bool               `json:"space_is_member"`
 }
 
 func (q *Queries) ListForumThreadsByTagWithDetails(ctx context.Context, arg ListForumThreadsByTagWithDetailsParams) ([]ListForumThreadsByTagWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsByTagWithDetails,
+		arg.ViewerID,
 		arg.TagID,
 		arg.Solved,
 		arg.SortBy,
@@ -2141,6 +2247,8 @@ func (q *Queries) ListForumThreadsByTagWithDetails(ctx context.Context, arg List
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.SpaceLevel,
+			&i.SpaceVisibility,
+			&i.SpaceIsMember,
 		); err != nil {
 			return nil, err
 		}
@@ -2163,36 +2271,52 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  s.name AS space_name,
  s.slug AS space_slug,
- s.level AS space_level
+ s.level AS space_level,
+ COALESCE(s.visibility, 'public') AS space_visibility,
+ EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = $1
+ ) AS space_is_member
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.deleted_at IS NULL
- AND ft.solved = COALESCE($1::bool, ft.solved)
+ AND ft.solved = COALESCE($2::bool, ft.solved)
+ -- §05 space-visibility: 'private'-space threads are invisible to
+ -- non-members; 'members'-space threads stay in the list (title visible)
+ -- but their bodies are masked by the handler.
+ AND (s.visibility IS NULL OR s.visibility <> 'private'
+ OR EXISTS (
+ SELECT 1
+ FROM space_members sm
+ WHERE sm.space_id = ft.space_id AND sm.user_id = $1
+ ))
  AND (
- ($2 = 'top' AND (
- $3::int IS NULL
- OR ft.vote_score < $3::int
- OR (ft.vote_score = $3::int AND (
- ft.created_at < $4
- OR (ft.created_at = $4 AND ft.id < $5::uuid)
- OR $4 IS NULL
+ ($3 = 'top' AND (
+ $4::int IS NULL
+ OR ft.vote_score < $4::int
+ OR (ft.vote_score = $4::int AND (
+ ft.created_at < $5
+ OR (ft.created_at = $5 AND ft.id < $6::uuid)
+ OR $5 IS NULL
  ))
  ))
  OR
- ($2 != 'top' AND (
- $4 IS NULL
- OR ft.created_at < $4
- OR (ft.created_at = $4 AND ft.id < $5::uuid)
+ ($3 != 'top' AND (
+ $5 IS NULL
+ OR ft.created_at < $5
+ OR (ft.created_at = $5 AND ft.id < $6::uuid)
  ))
  )
-ORDER BY CASE WHEN $2 = 'top' THEN ft.vote_score END DESC,
+ORDER BY CASE WHEN $3 = 'top' THEN ft.vote_score END DESC,
  ft.created_at DESC, ft.id DESC
-LIMIT $6
+LIMIT $7
 `
 
 type ListForumThreadsWithDetailsParams struct {
+	ViewerID        pgtype.UUID        `json:"viewer_id"`
 	Solved          *bool              `json:"solved"`
 	SortBy          interface{}        `json:"sort_by"`
 	CursorVoteScore *int32             `json:"cursor_vote_score"`
@@ -2229,10 +2353,13 @@ type ListForumThreadsWithDetailsRow struct {
 	SpaceName         *string            `json:"space_name"`
 	SpaceSlug         *string            `json:"space_slug"`
 	SpaceLevel        *string            `json:"space_level"`
+	SpaceVisibility   string             `json:"space_visibility"`
+	SpaceIsMember     bool               `json:"space_is_member"`
 }
 
 func (q *Queries) ListForumThreadsWithDetails(ctx context.Context, arg ListForumThreadsWithDetailsParams) ([]ListForumThreadsWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsWithDetails,
+		arg.ViewerID,
 		arg.Solved,
 		arg.SortBy,
 		arg.CursorVoteScore,
@@ -2275,6 +2402,8 @@ func (q *Queries) ListForumThreadsWithDetails(ctx context.Context, arg ListForum
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.SpaceLevel,
+			&i.SpaceVisibility,
+			&i.SpaceIsMember,
 		); err != nil {
 			return nil, err
 		}
@@ -2381,9 +2510,11 @@ func (q *Queries) RetractForumPollVote(ctx context.Context, arg RetractForumPoll
 const softDeleteForumReply = `-- name: SoftDeleteForumReply :exec
 UPDATE forum_replies
 SET deleted_at = now(), updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND deleted_at IS NULL
 `
 
+// deleted_at IS NULL keeps the write idempotent — a second delete is a no-op
+// instead of restamping the timestamp.
 func (q *Queries) SoftDeleteForumReply(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteForumReply, id)
 	return err

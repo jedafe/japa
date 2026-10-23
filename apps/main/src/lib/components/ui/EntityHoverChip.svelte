@@ -8,7 +8,7 @@
 	import { LinkPreview } from 'bits-ui';
 	import type { Snippet } from 'svelte';
 	import { BadgeCheck, Calendar, Globe, MapPin } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { safeHttpUrl } from '$lib/utils/safeUrl';
@@ -90,7 +90,7 @@
 
 	const joinedDate = $derived(
 		detailCreatedAt
-			? new Date(detailCreatedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+			? new Date(detailCreatedAt).toLocaleDateString(i18n.locale, { month: 'short', year: 'numeric' })
 			: null
 	);
 	const websiteHref = $derived(
@@ -294,7 +294,7 @@
 	const triggerClass = $derived(
 		classProp ??
 			(variant === 'row'
-				? 'inline-flex w-fit min-w-0 max-w-full items-center gap-3 text-left'
+				? 'inline-flex w-fit min-w-0 max-w-full items-center gap-3 text-start'
 				: 'inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]')
 	);
 </script>

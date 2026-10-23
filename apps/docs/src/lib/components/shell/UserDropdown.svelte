@@ -63,9 +63,9 @@
 			<!-- Section 09 Product Tour: replay the docs walkthrough. -->
 			<MenuItem href="/docs?tour=replay" icon={Compass}>{t('nav.replay_tour', 'Replay tour')}</MenuItem>
 			<MenuSeparator />
-			<MenuItem href={`${mainOrigin}/logout`} icon={LogOut}>{t('nav.logout', 'Logout')}</MenuItem>
+			<MenuItem href={`${mainOrigin}/logout`} icon={LogOut} iconClass="rtl:-scale-x-100">{t('nav.logout', 'Logout')}</MenuItem>
 		{:else}
-			<MenuItem href={`${mainOrigin}/login?redirect=${returnTo}`} icon={LogIn}>{t('auth.login')}</MenuItem>
+			<MenuItem href={`${mainOrigin}/login?redirect=${returnTo}`} icon={LogIn} iconClass="rtl:-scale-x-100">{t('auth.login')}</MenuItem>
 			<MenuItem href={`${mainOrigin}/signup?redirect=${returnTo}`} icon={User}>{t('auth.signup')}</MenuItem>
 		{/if}
 	</Menu>

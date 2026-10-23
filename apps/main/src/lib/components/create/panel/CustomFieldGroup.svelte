@@ -562,7 +562,7 @@
 				id={field.key}
 				type="text"
 				class="cf-input"
-				placeholder="e.g. 2 weeks, 3 months, 30 days"
+				placeholder={t('create.custom_fields.duration_placeholder', 'e.g. 2 weeks, 3 months, 30 days')}
 				value={values[field.key] ?? ''}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
@@ -638,10 +638,10 @@
 								oninput={(e) => repeaterSet(field.key, idx, e.currentTarget.value)}
 							/>
 						{/if}
-						<button type="button" class="cf-repeater-remove" onclick={() => repeaterRemove(field.key, idx)} aria-label="Remove">×</button>
+						<button type="button" class="cf-repeater-remove" onclick={() => repeaterRemove(field.key, idx)} aria-label={t('common.remove', 'Remove')}>×</button>
 					</div>
 				{/each}
-				<button type="button" class="cf-repeater-add" onclick={() => repeaterAdd(field.key, itemFields)}>+ Add</button>
+				<button type="button" class="cf-repeater-add" onclick={() => repeaterAdd(field.key, itemFields)}>+ {t('common.add', 'Add')}</button>
 			</div>
 		{:else if field.field_type === 'group'}
 			<!-- Group: a labelled container for sub-fields. The sub-fields are
@@ -732,7 +732,7 @@
 	}
 	.cf-required {
 		color: var(--destructive, #dc2626);
-		margin-left: 2px;
+		margin-inline-start: 2px;
 	}
 	.cf-input {
 		width: 100%;
@@ -757,7 +757,7 @@
 		position: relative;
 	}
 	.cf-money-active .cf-input {
-		padding-right: 2.25rem;
+		padding-inline-end: 2.25rem;
 	}
 	.cf-price-currency {
 		font-weight: 400;
@@ -765,7 +765,7 @@
 	}
 	.cf-money-symbol {
 		position: absolute;
-		right: 12px;
+		inset-inline-end: 12px;
 		top: 50%;
 		transform: translateY(-50%);
 		font-size: 0.875rem;
@@ -916,7 +916,7 @@
 	.cf-media-remove {
 		position: absolute;
 		top: 2px;
-		right: 2px;
+		inset-inline-end: 2px;
 		width: 18px;
 		height: 18px;
 		border: none;

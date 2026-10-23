@@ -27,7 +27,7 @@
 					<!-- dashed connector — spans the gap to the previous step's
 					     icon on lg+, hidden while the rail stacks. -->
 					<span
-						class="absolute right-[calc(50%+2.75rem)] top-8 hidden w-[calc(100%-5.5rem)] border-t-2 border-dashed border-[var(--color-border)] lg:block"
+						class="absolute end-[calc(50%+2.75rem)] top-8 hidden w-[calc(100%-5.5rem)] border-t-2 border-dashed border-[var(--color-border)] lg:block"
 						aria-hidden="true"
 					></span>
 				{/if}

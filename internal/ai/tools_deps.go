@@ -743,6 +743,11 @@ type ToolDeps struct {
 	PersonaVoices  PersonaVoicesService  // nil → persona_voices.* tools return "not configured"
 	PersonaCatalog PersonaCatalogService // nil → personas.list/read return "not configured"
 
+	// Roadmap admin surface (§113) for agent-driven roadmap/changelog
+	// management — list/get/create/update/set_status + categories.
+	// nil → the roadmap.* tools return "not configured".
+	Roadmap RoadmapService
+
 	// Community discussion tools (§08 forum Q&A, §49 comments). nil →
 	// forum.*/comments.* tools return "not configured".
 	Forum    ForumService
@@ -823,16 +828,16 @@ type ForumReplyInput struct {
 // tool's required_permission node.
 type ForumService interface {
 	CreateThread(ctx context.Context, authorUserID pgtype.UUID, input ForumThreadInput) (gen.ForumThread, error)
-	GetThread(ctx context.Context, id pgtype.UUID) (gen.ForumThread, error)
-	GetThreadBySlug(ctx context.Context, slug string) (gen.ForumThread, error)
-	ListThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error)
-	ListThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error)
+	GetThread(ctx context.Context, viewerID, id pgtype.UUID) (gen.ForumThread, error)
+	GetThreadBySlug(ctx context.Context, viewerID pgtype.UUID, slug string) (gen.ForumThread, error)
+	ListThreadsBySpace(ctx context.Context, viewerID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error)
+	ListThreadsByPlatform(ctx context.Context, viewerID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error)
 	UpdateThread(ctx context.Context, id, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error)
 	DeleteThread(ctx context.Context, id, userID pgtype.UUID) error
 	SolveThread(ctx context.Context, id, solverUserID, acceptedReplyID pgtype.UUID) error
 	UnsolveThread(ctx context.Context, id, userID pgtype.UUID) error
 	CreateReply(ctx context.Context, threadID, authorUserID pgtype.UUID, input ForumReplyInput) (gen.ForumReply, error)
-	ListRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]gen.ForumReply, error)
+	ListRepliesByThread(ctx context.Context, viewerID, threadID pgtype.UUID) ([]gen.ForumReply, error)
 	UpdateReply(ctx context.Context, id, userID pgtype.UUID, body []byte) (gen.ForumReply, error)
 	DeleteReply(ctx context.Context, id, userID pgtype.UUID) error
 	Vote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, value int16) (gen.ForumVote, error)
@@ -1331,6 +1336,114 @@ type ScholarshipSearcher interface {
 	FindScholarships(ctx context.Context, filters ScholarshipSearchFilters) ([]ScholarshipSearchResult, int64, error)
 }
 
+// ---------------------------------------------------------------------------
+// Roadmap service (§113 — public product roadmap)
+// ---------------------------------------------------------------------------
+
+// RoadmapItemFilter mirrors roadmap.AdminListFilter for the agent-facing
+// list tool — the ai package cannot import the roadmap package (adapters
+// live in internal/server), so the DTOs below carry a stable, flat shape.
+//
+// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
+type RoadmapItemFilter struct {
+	Status         string
+	Search         string
+	Sort           string // recent | votes | title
+	CategoryID     pgtype.UUID
+	IncludeDeleted bool
+	PageSize       int32
+	PageOffset     int32
+}
+
+// RoadmapItemInput mirrors roadmap.AdminItemInput — pointer fields
+// distinguish "absent" (keep current / default) from "set".
+type RoadmapItemInput struct {
+	Title          string
+	Slug           string
+	Summary        *string
+	Body           *string
+	CategoryID     *pgtype.UUID
+	Status         string
+	SortOrder      *int32
+	IsFlagship     *bool
+	TargetWindow   *string
+	FeatureFlagKey *string
+	ActorID        pgtype.UUID
+}
+
+// RoadmapItem is the flat agent-facing view of a roadmap_items row.
+// Pointer-free fields render as empty strings in JSON — nilability is
+// preserved only where the wire contract needs it (summary/body are
+// nullable text columns; timestamps render RFC 3339 or null).
+type RoadmapItem struct {
+	ID             string  `json:"id"`
+	Title          string  `json:"title"`
+	Slug           string  `json:"slug"`
+	Summary        *string `json:"summary"`
+	Body           *string `json:"body"`
+	CategoryID     string  `json:"category_id"`
+	CategoryName   *string `json:"category_name"`
+	Status         string  `json:"status"`
+	SortOrder      int32   `json:"sort_order"`
+	IsFlagship     bool    `json:"is_flagship"`
+	TargetWindow   *string `json:"target_window"`
+	FeatureFlagKey *string `json:"feature_flag_key"`
+	VoteCount      int32   `json:"vote_count"`
+	ShippedAt      *string `json:"shipped_at"`
+	CreatedAt      *string `json:"created_at"`
+	UpdatedAt      *string `json:"updated_at"`
+	DeletedAt      *string `json:"deleted_at"`
+}
+
+// RoadmapItemPage is the paginated list payload for roadmap.items.list.
+type RoadmapItemPage struct {
+	Items      []RoadmapItem `json:"items"`
+	Total      int64         `json:"total"`
+	Page       int32         `json:"page"`
+	TotalPages int32         `json:"total_pages"`
+}
+
+// RoadmapCategory is the flat agent-facing view of a roadmap_categories row.
+type RoadmapCategory struct {
+	ID          string  `json:"id"`
+	Slug        string  `json:"slug"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	Color       *string `json:"color"`
+	SortOrder   int32   `json:"sort_order"`
+}
+
+// RoadmapServiceError carries a stable machine code + message across the
+// server-side adapter boundary so tool handlers can emit consistent error
+// codes (item_not_found, invalid_transition, status_derived, …) without
+// importing the roadmap package.
+type RoadmapServiceError struct {
+	Code    string
+	Message string
+}
+
+// Error implements the error interface.
+func (e *RoadmapServiceError) Error() string { return e.Message }
+
+// RoadmapService is the subset of internal/roadmap.Service the roadmap
+// agent tools call. Implemented by agentRoadmapAdapter in package server —
+// the adapter converts gen.RoadmapItem/AdminListResponse into the mirror
+// DTOs above and maps roadmap sentinel errors onto RoadmapServiceError.
+type RoadmapService interface {
+	// ListItems is the admin DataTable list — any status, optional deleted.
+	ListItems(ctx context.Context, f RoadmapItemFilter) (*RoadmapItemPage, error)
+	// GetItem returns one item by ID, including soft-deleted rows.
+	GetItem(ctx context.Context, id pgtype.UUID) (*RoadmapItem, error)
+	// CreateItem creates an item; in.ActorID is the acting principal.
+	CreateItem(ctx context.Context, in RoadmapItemInput) (*RoadmapItem, error)
+	// UpdateItem patches an item — nil/absent fields keep current values.
+	UpdateItem(ctx context.Context, id pgtype.UUID, in RoadmapItemInput) (*RoadmapItem, error)
+	// SetItemStatus drives the §113 lifecycle state machine as actorID.
+	SetItemStatus(ctx context.Context, id pgtype.UUID, status string, actorID pgtype.UUID) (*RoadmapItem, error)
+	// ListCategories returns the roadmap category catalog.
+	ListCategories(ctx context.Context) ([]RoadmapCategory, error)
+}
+
 // AgentDataReader is the subset of the public API moat facade the agent
 // data tools need. Results are opaque any payloads — the domain DTOs
 // carry json tags and serialize verbatim into tool output. The ai package
@@ -1512,6 +1625,14 @@ func (d *ToolDeps) WithPersonaVoices(s PersonaVoicesService) *ToolDeps {
 // personas.list / personas.read agent tools.
 func (d *ToolDeps) WithPersonaCatalog(s PersonaCatalogService) *ToolDeps {
 	d.PersonaCatalog = s
+	return d
+}
+
+// WithRoadmap injects the roadmap admin service (§113) used by the
+// roadmap.* agent tools — changelog generation and release automation
+// reach it through the agent catalog and the §119 MCP bridge.
+func (d *ToolDeps) WithRoadmap(s RoadmapService) *ToolDeps {
+	d.Roadmap = s
 	return d
 }
 

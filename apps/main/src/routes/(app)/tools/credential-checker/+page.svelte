@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import {
 		BadgeCheck,
@@ -156,7 +156,7 @@
 
 	function fmtDate(iso: string): string {
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -309,7 +309,7 @@
 							<button
 								type="button"
 								onclick={() => toggleDetail(pathway)}
-								class="w-full p-4 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+								class="w-full p-4 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 								aria-expanded={expandedId === pathway.id}
 							>
 								<div class="flex items-start justify-between gap-3">
@@ -380,7 +380,7 @@
 													rel="noopener noreferrer"
 													class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
 												>
-													<ExternalLink size={14} />
+													<ExternalLink class="rtl:-scale-x-100" size={14} />
 													{t('credential_checker.official_application', 'Official application')}
 												</a>
 											{/if}
@@ -391,7 +391,7 @@
 													rel="noopener noreferrer"
 													class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
 												>
-													<ExternalLink size={14} />
+													<ExternalLink class="rtl:-scale-x-100" size={14} />
 													{t('credential_checker.regulatory_body', 'Regulatory body')}
 												</a>
 											{/if}

@@ -168,7 +168,7 @@
 					disabled={posting || !replyBody.trim()}
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
 				>
-					<Send class="h-4 w-4" />
+					<Send class="h-4 w-4 rtl:-scale-x-100" />
 					{posting ? t('common.loading') : t('tickets.reply_submit')}
 				</button>
 			</div>

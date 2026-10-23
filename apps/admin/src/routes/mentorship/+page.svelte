@@ -3,7 +3,7 @@
 	// Two tabs: Programs (full CRUD) and Matches (view + status update).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { mentorshipAdminApiExtended as mentorshipApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { Trash2, CheckCircle, XCircle, RotateCcw } from 'lucide-svelte';
@@ -131,7 +131,7 @@
 				key: 'created_at',
 				label: t('app.mentorship.columns.created', 'Created'),
 				sortable: true,
-				render: (v: string) => new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+				render: (v: string) => new Date(v).toLocaleDateString(locale.current, { year: 'numeric', month: 'short', day: 'numeric' })
 			}
 		],
 		filters: [
@@ -286,7 +286,7 @@
 				key: 'created_at',
 				label: t('app.mentorship.columns.created', 'Created'),
 				sortable: true,
-				render: (v: string) => new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+				render: (v: string) => new Date(v).toLocaleDateString(locale.current, { year: 'numeric', month: 'short', day: 'numeric' })
 			}
 		],
 		filters: [

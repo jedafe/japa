@@ -97,7 +97,7 @@
 					{t('digest.widget_title', 'Community Digest')}
 				</span>
 			</div>
-			<ChevronRight size={16} class="text-[var(--color-muted)]" />
+			<ChevronRight size={16} class="text-[var(--color-muted)] rtl:-scale-x-100" />
 		</div>
 		<p class="mt-2 text-xs text-[var(--color-text-subtle)]">
 			{digest.cadence === 'weekly'

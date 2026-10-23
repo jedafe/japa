@@ -114,7 +114,7 @@
 				description={description}
 				count={entityCount}
 				isFollowing={entityIsFollowing}
-				class="flex min-w-0 flex-1 items-center gap-3 text-left"
+				class="flex min-w-0 flex-1 items-center gap-3 text-start"
 			>
 				{#snippet trigger()}
 					{@render headerBody()}
@@ -126,7 +126,7 @@
 			</a>
 		{/if}
 		{#if headerAction}
-			<div class="ml-auto flex items-start">
+			<div class="ms-auto flex items-start">
 				{@render headerAction()}
 			</div>
 		{/if}

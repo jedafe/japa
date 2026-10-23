@@ -302,7 +302,7 @@
 							{/if}
 						</p>
 					</div>
-					<div class="ml-3 flex shrink-0 gap-2">
+					<div class="ms-3 flex shrink-0 gap-2">
 						<button
 							type="button"
 							class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"

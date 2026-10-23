@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { page } from '$app/state';
-	import { ArrowLeft, Pin, Bell, BellOff, TriangleAlert, ShieldCheck } from 'lucide-svelte';
+	import { ArrowLeft, Pin, Bell, BellOff, TriangleAlert, ShieldCheck, Pencil } from 'lucide-svelte';
 	import { t, siteName} from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
@@ -12,6 +12,7 @@
 	import type { ScamReport, ScamStatus, ScamType } from '$lib/types';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 
 	let { data }: { data: PageData } = $props();
 
@@ -83,15 +84,34 @@
 	{#if scamJsonLd}
 		{@html safeJsonLdScript(scamJsonLd)}
 	{/if}
+	{#if alert}
+		{@html safeJsonLdScript(
+			breadcrumbJsonLd([
+				{ name: 'Home', path: page.url.origin },
+				{ name: t('scam_alerts.heading', 'Scam Alerts'), path: `${page.url.origin}/scam-alerts` },
+				{ name: title, path: canonical }
+			])
+		)}
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">
-	<a
-		href="/scam-alerts"
-		class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
-	>
-		<ArrowLeft size={16} /> {t('scam_alerts.back', 'Back to scam alerts')}
-	</a>
+	<div class="mb-5 flex items-center justify-between gap-3">
+		<a
+			href="/scam-alerts"
+			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+		>
+			<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('scam_alerts.back', 'Back to scam alerts')}
+		</a>
+		{#if data.canEdit && alert}
+			<a
+				href="/scam-alerts/{alert.id}/edit"
+				class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+			>
+				<Pencil size={14} /> {t('common.edit', 'Edit')}
+			</a>
+		{/if}
+	</div>
 
 	{#if data.loadError || !alert}
 		<EmptyState
@@ -114,7 +134,7 @@
 				<span class={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClass(alert.status as ScamStatus)}`}>
 					{statusLabel(alert.status as ScamStatus)}
 				</span>
-				<span class="ml-auto text-xs text-[var(--color-muted)]">
+				<span class="ms-auto text-xs text-[var(--color-muted)]">
 					{relativeTime(alert.created_at, new Date(), i18n.locale)}
 				</span>
 			</div>

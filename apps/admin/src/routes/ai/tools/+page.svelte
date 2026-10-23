@@ -258,7 +258,7 @@
 				></textarea>
 			</div>
 			<div>
-				<label for="tool-perm" class="mb-1 block text-sm font-medium">{t('ai.required_permission') ?? 'Required permission'}</label>
+				<label for="tool-perm" class="mb-1 block text-sm font-medium">{t('ai.required_permission', 'Required permission')}</label>
 				<input
 					id="tool-perm"
 					type="text"

@@ -5,6 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { searchSpaces } from '$lib/api/create';
+	import { encodeTiptapDoc, type TipTapDoc } from '$lib/tiptap/serialize';
 	import { suggestSlug } from '$lib/components/create/slug';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -45,8 +46,8 @@
 	let isQuestion = $state(untrack(() => initialIsQuestion));
 
 	// Tag chips (slugs). Attached after the thread is created via
-	// POST /forum/{id}/tags (bulk, tag_ids). Slugs are resolved to IDs via
-	// GET /forum/tags/{slug}; missing tags are created via POST /forum/tags.
+	// POST /content/{content_id}/tags {tag_slugs} — the universal content
+	// endpoint get-or-creates missing slugs server-side (BUG-006).
 	let tags = $state<string[]>([]);
 
 	// Poll builder state.
@@ -120,7 +121,9 @@
 					? {
 							question: pollQuestion.trim(),
 							is_multi_select: pollAllowMultiple,
-							close_at: pollExpiresAt || null,
+							// datetime-local has no timezone — send RFC3339 so the
+							// backend parse actually applies the close date.
+							close_at: pollExpiresAt ? new Date(pollExpiresAt).toISOString() : null,
 							options: pollOptions
 								.filter((o) => o.trim())
 								.map((label, i) => ({ label: label.trim(), position: i }))
@@ -130,7 +133,7 @@
 			const res = await api.post<ForumThread>('/forum', {
 				title: title.trim(),
 				slug,
-				body: btoa(JSON.stringify(bodyJson)),
+				body: encodeTiptapDoc(bodyJson as unknown as TipTapDoc),
 				space_id: spaceId,
 				is_anonymous: isAnonymous,
 				poll
@@ -178,7 +181,7 @@
 			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 			aria-label={t('common.back', 'Back')}
 		>
-			<ArrowLeft size={18} />
+			<ArrowLeft class="rtl:-scale-x-100" size={18} />
 		</button>
 		<h2 class="text-base font-semibold text-[var(--color-text)]">
 			{isQuestion ? t('forum.new.heading_question', 'New question') : t('forum.new.heading', 'New discussion')}
@@ -329,6 +332,15 @@
 					<input type="checkbox" bind:checked={pollAllowMultiple} class="h-4 w-4 accent-[var(--color-primary)]" />
 					{t('forum.new.poll_multiple', 'Allow multiple selections')}
 				</label>
+
+				<label class="mt-2 block">
+					<span class="mb-1 block text-xs text-[var(--color-muted)]">{t('forum.new.poll_expires', 'Expires at (optional)')}</span>
+					<input
+						type="datetime-local"
+						bind:value={pollExpiresAt}
+						class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+					/>
+				</label>
 			</div>
 		{/if}
 
@@ -347,7 +359,7 @@
 				disabled={!canSubmit}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 			>
-				<Send size={16} /> {isQuestion ? t('forum.new.submit_question', 'Post question') : t('forum.new.submit', 'Post discussion')}
+				<Send class="rtl:-scale-x-100" size={16} /> {isQuestion ? t('forum.new.submit_question', 'Post question') : t('forum.new.submit', 'Post discussion')}
 			</button>
 		</div>
 	{/if}

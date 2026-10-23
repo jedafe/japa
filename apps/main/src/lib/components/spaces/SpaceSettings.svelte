@@ -473,9 +473,9 @@
 					<button
 						type="button"
 						disabled={logoSaving}
-						class="absolute -bottom-1 -right-1 grid h-6 w-6 cursor-pointer place-items-center rounded-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+						class="absolute -bottom-1 -end-1 grid h-6 w-6 cursor-pointer place-items-center rounded-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 						onclick={() => (logoPickerOpen = true)}
-						aria-label="Upload logo"
+						aria-label={t('spaces.settings_logo_upload', 'Upload logo')}
 					>
 						<Camera size={12} />
 					</button>
@@ -492,13 +492,13 @@
 				<p class="mb-2 text-xs text-[var(--color-muted)]">{t('spaces.settings_header_hint', 'A banner image shown at the top of the space page')}</p>
 				<div class="relative overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-subtle)]">
 					{#if headerUrl}
-						<img src={headerUrl} alt="Header" class="h-32 w-full object-cover" />
+						<img src={headerUrl} alt={t('spaces.settings_header', 'Header image')} class="h-32 w-full object-cover" />
 						{#if headerSaving}
 							<div class="absolute inset-0 grid place-items-center bg-[var(--color-surface)]/60">
 								<Loader2 size={20} class="animate-spin text-[var(--color-primary)]" />
 							</div>
 						{/if}
-						<div class="absolute bottom-2 right-2 flex gap-2">
+						<div class="absolute bottom-2 end-2 flex gap-2">
 							<button
 								type="button"
 								disabled={headerSaving}
@@ -588,7 +588,7 @@
 							type="button"
 							disabled={applyingPreset !== null}
 							onclick={() => applyPreset(preset)}
-							class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:border-[var(--color-primary)]/40 disabled:opacity-50"
+							class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:border-[var(--color-primary)]/40 disabled:opacity-50"
 						>
 							<div class="flex items-center justify-between">
 								<span class="text-sm font-medium text-[var(--color-text)]">{preset.name}</span>
@@ -638,11 +638,11 @@
 				{t('spaces.settings_replying', 'Who can reply and comment')}
 			</legend>
 			<div class="mb-3">
-				<label for="replying-perm" class="mb-1 block text-xs text-[var(--color-muted)]">Replying</label>
+				<label for="replying-perm" class="mb-1 block text-xs text-[var(--color-muted)]">{t('spaces.settings_replying_label', 'Replying')}</label>
 				<AutocompleteSelect id="replying-perm" bind:value={replyingPerm} options={permOptions} />
 			</div>
 			<div>
-				<label for="commenting-perm" class="mb-1 block text-xs text-[var(--color-muted)]">Commenting</label>
+				<label for="commenting-perm" class="mb-1 block text-xs text-[var(--color-muted)]">{t('spaces.settings_commenting_label', 'Commenting')}</label>
 				<AutocompleteSelect id="commenting-perm" bind:value={commentingPerm} options={permOptions} />
 			</div>
 		</fieldset>
@@ -653,7 +653,7 @@
 				{t('spaces.settings_joining', 'Who can join')}
 			</legend>
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				Controls how users become members of this space.
+				{t('spaces.settings_joining_hint', 'Controls how users become members of this space.')}
 			</p>
 			<AutocompleteSelect bind:value={joiningPerm} options={joiningOptions} />
 		</fieldset>
@@ -734,14 +734,14 @@
 
 				<div class="flex items-center gap-2">
 					<div class="relative flex-1">
-						<UserPlus size={15} class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+						<UserPlus size={15} class="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 						<input
 							type="text"
 							bind:value={modUsername}
 							placeholder={t('space.moderators.username_placeholder', 'username to add…')}
 							disabled={modAdding}
 							onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addModerator(); } }}
-							class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-8 pr-3 text-sm text-[var(--color-text)] disabled:opacity-50"
+							class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-8 pe-3 text-sm text-[var(--color-text)] disabled:opacity-50"
 						/>
 					</div>
 					<button
@@ -826,7 +826,7 @@
 												disabled={ruleSavingId === rule.id}
 												onclick={() => moveRule(rule.id, 'up')}
 												class="grid h-6 w-6 place-items-center rounded text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-30"
-												aria-label="Move up"
+												aria-label={t('common.move_up', 'Move up')}
 											>
 												<ArrowUp size={13} />
 											</button>
@@ -835,7 +835,7 @@
 												disabled={ruleSavingId === rule.id}
 												onclick={() => moveRule(rule.id, 'down')}
 												class="grid h-6 w-6 place-items-center rounded text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-30"
-												aria-label="Move down"
+												aria-label={t('common.move_down', 'Move down')}
 											>
 												<ArrowDown size={13} />
 											</button>
@@ -843,7 +843,7 @@
 												type="button"
 												onclick={() => startEdit(rule)}
 												class="grid h-6 w-6 place-items-center rounded text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-												aria-label="Edit rule"
+												aria-label={t('spaces.settings_edit_rule', 'Edit rule')}
 											>
 												<Pencil size={13} />
 											</button>
@@ -852,7 +852,7 @@
 												disabled={ruleDeletingId === rule.id}
 												onclick={() => deleteRule(rule.id)}
 												class="grid h-6 w-6 place-items-center rounded text-[var(--color-muted)] hover:bg-red-50 hover:text-red-600 disabled:opacity-30 dark:hover:bg-red-950/30"
-												aria-label="Delete rule"
+												aria-label={t('spaces.settings_delete_rule', 'Delete rule')}
 											>
 												{#if ruleDeletingId === rule.id}<Loader2 size={13} class="animate-spin" />{:else}<Trash2 size={13} />{/if}
 											</button>

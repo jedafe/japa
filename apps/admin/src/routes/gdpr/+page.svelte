@@ -176,7 +176,7 @@
 			{t('common.cancel', 'Cancel')}
 		</Button>
 		<Button variant="destructive" onclick={confirmExecuteDeletion} disabled={executing}>
-			<Play class="mr-2 h-4 w-4" />
+			<Play class="me-2 h-4 w-4" />
 			{executing ? t('common.processing', 'Processing...') : t('app.gdpr.erasure.execute', 'Execute')}
 		</Button>
 	</div>

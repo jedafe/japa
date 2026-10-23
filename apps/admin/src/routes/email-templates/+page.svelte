@@ -363,7 +363,7 @@
 				<iframe
 					srcdoc={renderPreview(row.html_body)}
 					sandbox=""
-					title="Email body preview"
+					title={t('email_templates.body_preview', 'Email body preview')}
 					class="mt-1 w-full rounded-lg border"
 					style="border-color: var(--color-border); min-height: 300px;"
 				></iframe>
@@ -432,7 +432,7 @@
 						<iframe
 							srcdoc={renderPreview(value.html_body ?? '')}
 							sandbox=""
-							title="Email body preview"
+							title={t('email_templates.body_preview', 'Email body preview')}
 							class="w-full rounded-lg border"
 							style="border-color: var(--color-border); min-height: 300px;"
 						></iframe>
@@ -473,14 +473,14 @@
 					variant="outline"
 					onclick={() => openReset(editing as EmailTemplate)}
 				>
-					<RotateCcw class="mr-1 h-4 w-4" />
+					<RotateCcw class="me-1 h-4 w-4" />
 					{t('email_templates.reset', 'Reset to Default')}
 				</Button>
 				<Button
 					variant="outline"
 					onclick={() => openTest(editing as EmailTemplate)}
 				>
-					<Send class="mr-1 h-4 w-4" />
+					<Send class="me-1 h-4 w-4 rtl:-scale-x-100" />
 					{t('email_templates.send_test', 'Send Test')}
 				</Button>
 			</div>

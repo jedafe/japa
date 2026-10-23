@@ -4,7 +4,7 @@
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -87,7 +87,7 @@
 	function formatDate(iso?: string | null): string {
 		if (!iso) return '';
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -197,7 +197,7 @@
 						<!-- Card header (click to expand) -->
 						<button
 							onclick={() => toggleExpand(guide.id)}
-							class="w-full flex items-center justify-between p-4 text-left hover:bg-surface-subtle transition-colors"
+							class="w-full flex items-center justify-between p-4 text-start hover:bg-surface-subtle transition-colors"
 							aria-expanded={expandedId === guide.id}
 						>
 							<div class="min-w-0">

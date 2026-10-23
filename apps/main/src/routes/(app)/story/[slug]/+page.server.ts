@@ -17,6 +17,11 @@ import type { ContentAnalytics, ContentArticle, SeriesPost } from '$lib/types/co
  * erroring out.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (features?.['story.enabled'] !== true) {
+		throw error(404, { code: 'feature_disabled', message: 'Community Stories are not available' });
+	}
+
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 	const authed = !!event.locals.user;
@@ -84,9 +89,10 @@ export const load: PageServerLoad = async (event) => {
 		(envelope) => ({
 			comments: envelope.data ?? [],
 			deletedUserIds: envelope.deleted_user_ids ?? null,
+			commentsTotal: (envelope.meta as { total?: number } | undefined)?.total ?? null,
 			loadError: false
 		}),
-		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, loadError: true })
+		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, commentsTotal: null as number | null, loadError: true })
 	);
 
 	// Related content (Section 14 — GET /content/{id}/related). Best-effort.
@@ -139,7 +145,7 @@ export const load: PageServerLoad = async (event) => {
 	const canEditAny = perms.includes('story.edit_any') || perms.includes('content.edit_any');
 	const canModerate = isOwner || isSuperAdmin || hasCommentsPinPermission;
 	const canEdit = isOwner || isSuperAdmin || canEditAny;
-	const { comments, deletedUserIds: commentDeletedUserIds, loadError: commentsLoadError } =
+	const { comments, deletedUserIds: commentDeletedUserIds, commentsTotal, loadError: commentsLoadError } =
 		commentsResult;
 
 	return {
@@ -150,6 +156,7 @@ export const load: PageServerLoad = async (event) => {
 		canModerate,
 		comments,
 		commentsLoadError,
+		commentsTotal,
 		relatedContent,
 		recommendedContent,
 		analytics,

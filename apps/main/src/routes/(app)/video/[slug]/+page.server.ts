@@ -19,6 +19,13 @@ import type { VideoSource } from '$lib/types';
  *    still resolves, then 301s to the canonical slug.
  */
 export const load: PageServerLoad = async (event) => {
+	// video.enabled is a feature flag (unified rollout) — gate the page like
+	// /stories does for story.enabled, not the deprecated public setting.
+	const { features } = await event.parent();
+	if (features?.['video.enabled'] !== true) {
+		throw error(404, { code: 'feature_disabled', message: 'Videos are not available' });
+	}
+
 	const ctx = apiContext(event);
 
 	try {

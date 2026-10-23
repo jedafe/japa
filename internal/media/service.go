@@ -245,6 +245,13 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 			errUploadInvalid, CanonicalMIMEType(m.MimeType), detected)
 	}
 
+	// The object verified present — clear any stale missing flag so the
+	// row re-appears in listings (best-effort; a failed clear still
+	// confirms, the reconcile sweep fixes it).
+	if err := s.store.ClearMediaMissingByObject(ctx, m.StorageBucket, m.StoragePath); err != nil {
+		slog.Warn("media: clear missing flag failed", "media_id", mediaID.String(), "error", err)
+	}
+
 	return s.store.ConfirmMedia(ctx, mediaID)
 }
 
@@ -585,10 +592,12 @@ func (s *Service) DeleteMediaOwn(ctx context.Context, uploaderID, mediaID pgtype
 }
 
 // ListMedia returns paginated media, optionally filtered by uploader, type,
-// search query, status, and flagged state, along with the total count matching
-// the filter. The total is used by callers to compute total_pages. Empty/zero
-// filter values mean "no filter on this field".
-func (s *Service) ListMedia(ctx context.Context, uploaderID *pgtype.UUID, mimeType, query, status, flagged *string, deleted string, limit, offset int32) ([]gen.Medium, int32, error) {
+// search query, status, flagged state, and missing-object flag, along with
+// the total count matching the filter. The total is used by callers to
+// compute total_pages. Empty/zero filter values mean "no filter on this
+// field"; `missing` mirrors `deleted` ('' excludes missing, 'only' returns
+// only missing, 'all' includes both).
+func (s *Service) ListMedia(ctx context.Context, uploaderID *pgtype.UUID, mimeType, query, status, flagged *string, deleted, missing string, limit, offset int32) ([]gen.Medium, int32, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -622,17 +631,114 @@ func (s *Service) ListMedia(ctx context.Context, uploaderID *pgtype.UUID, mimeTy
 		flaggedFilter = *flagged
 	}
 
-	items, err := s.store.ListMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, deleted, limit, offset)
+	items, err := s.store.ListMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, deleted, missing, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, deleted)
+	total, err := s.store.CountMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, deleted, missing)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	return items, total, nil
+}
+
+// MarkObjectMissing flags the media row at bucket/path as missing its
+// storage object. Called by the serve path when a lookup stat-misses —
+// best-effort, so callers should log-and-continue on error. Idempotent.
+// No-op when S3/SeaweedFS is configured: a local stat-miss only proves
+// "missing" when the local filesystem is the object store.
+func (s *Service) MarkObjectMissing(ctx context.Context, bucket, storagePath string) error {
+	if s.s3 != nil {
+		return nil
+	}
+
+	return s.store.MarkMediaMissingByObject(ctx, bucket, storagePath)
+}
+
+// ClearObjectMissing clears the missing flag on the row at bucket/path.
+// Called when an object lands (SeaweedFS PUT, StoreFromBytes) or verifies
+// present (ConfirmUpload, reconcile).
+func (s *Service) ClearObjectMissing(ctx context.Context, bucket, storagePath string) error {
+	return s.store.ClearMediaMissingByObject(ctx, bucket, storagePath)
+}
+
+// ReconcileMissingObjects stats each media row's storage object and
+// sets/clears missing_at to match reality — the backfill for rows whose
+// objects went missing before the flag existed (e.g. an object store that
+// was never synced to the environment). Processes rows in keyset order up
+// to maxRows total; callers repeat the call until exhausted. S3-backed
+// deployments pay a HEAD request per row, so batches stay bounded.
+//
+// Returns (checked, marked, cleared, exhausted, err). Also the
+// media:reconcile_missing sweep entry point — the worker adapter calls
+// this signature (media:reconcile_missing is registered for periodic
+// runs in worker/server.go).
+func (s *Service) ReconcileMissingObjects(ctx context.Context, maxRows int32) (checked, marked, cleared int, exhausted bool, err error) {
+	if maxRows <= 0 {
+		maxRows = 500
+	}
+	if maxRows > 5000 {
+		maxRows = 5000
+	}
+
+	const batchSize = 500
+
+	var afterID pgtype.UUID
+
+	for checked < int(maxRows) {
+		limit := int32(batchSize)
+		if remaining := maxRows - int32(checked); remaining < limit {
+			limit = remaining
+		}
+
+		rows, qerr := s.store.ListMediaObjectsForReconcile(ctx, afterID, limit)
+		if qerr != nil {
+			return checked, marked, cleared, exhausted, fmt.Errorf("listing media for reconcile: %w", qerr)
+		}
+		if len(rows) == 0 {
+			exhausted = true
+			break
+		}
+
+		for _, row := range rows {
+			checked++
+			afterID = row.ID
+
+			_, serr := s.objectSizeBytes(ctx, row.StorageBucket, row.StoragePath)
+
+			switch {
+			case errors.Is(serr, errObjectMissing):
+				if row.FlaggedMissing {
+					continue
+				}
+				if werr := s.store.MarkMediaMissingByObject(ctx, row.StorageBucket, row.StoragePath); werr != nil {
+					slog.Warn("media reconcile: mark missing failed", "media_id", row.ID.String(), "error", werr)
+					continue
+				}
+				marked++
+			case serr != nil:
+				// Indeterminate (storage unreachable) — leave the flag alone.
+			default:
+				if !row.FlaggedMissing {
+					continue
+				}
+				if werr := s.store.ClearMediaMissingByObject(ctx, row.StorageBucket, row.StoragePath); werr != nil {
+					slog.Warn("media reconcile: clear missing failed", "media_id", row.ID.String(), "error", werr)
+					continue
+				}
+				cleared++
+			}
+		}
+
+		if int32(len(rows)) < limit {
+			exhausted = true
+			break
+		}
+	}
+
+	return checked, marked, cleared, exhausted, nil
 }
 
 // ListByUser returns the media on the user's published public posts (featured/

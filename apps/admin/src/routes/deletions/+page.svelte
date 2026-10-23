@@ -40,7 +40,7 @@
 				key: 'title',
 				label: t('deletions.title_col', 'Title'),
 				render: (v: string) =>
-					`<span class="text-sm">${v || '<em>untitled</em>'}</span>`
+					`<span class="text-sm">${v || `<em>${t('common.untitled', 'untitled')}</em>`}</span>`
 			},
 			{
 				key: 'content_type',
@@ -126,11 +126,11 @@
 				{t('deletions.title_col', 'Title')}
 			</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
-				{row.title || '<em>untitled</em>'}
+				{row.title || `<em>${t('common.untitled', 'untitled')}</em>`}
 			</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Content ID</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('deletions.content_id_col', 'Content ID')}</p>
 			<p class="mt-1 break-all text-sm font-mono" style="color: var(--color-foreground)">{row.id}</p>
 		</div>
 		<div>
@@ -148,7 +148,7 @@
 			</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Author ID</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('deletions.author_id_col', 'Author ID')}</p>
 			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.author_id}</p>
 		</div>
 		<div>
@@ -166,7 +166,7 @@
 			</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Created At</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('deletions.created_at_col', 'Created At')}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleString()}</p>
 		</div>
 	</div>

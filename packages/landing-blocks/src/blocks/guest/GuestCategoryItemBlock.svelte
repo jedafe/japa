@@ -39,6 +39,6 @@
   <p class="category-description">{props.description ?? ''}</p>
   <span class="category-link">
     Explore {title}
-    <ArrowRight size={16} />
+    <ArrowRight class="rtl:-scale-x-100" size={16} />
   </span>
 </a>

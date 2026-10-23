@@ -131,13 +131,13 @@
 		{#if joinPending}
 			<Loader2 size={iconSize} class="animate-spin" />
 		{:else if joined}
-			<LogOut size={iconSize} />
+			<LogOut class="rtl:-scale-x-100" size={iconSize} />
 			{t('spaces.joined_label', 'Joined')}
 		{:else if requestPending}
-			<LogIn size={iconSize} />
+			<LogIn class="rtl:-scale-x-100" size={iconSize} />
 			{t('spaces.pending_label', 'Pending')}
 		{:else}
-			<LogIn size={iconSize} />
+			<LogIn class="rtl:-scale-x-100" size={iconSize} />
 			{t('spaces.join', 'Join')}
 		{/if}
 	</button>

@@ -346,7 +346,7 @@ SELECT COUNT(*) FROM scam_reports sr WHERE %s
 // Subscribe inserts a scam-alert subscription for a user + destination space.
 func (s *Store) Subscribe(ctx context.Context, userID, destSpaceID pgtype.UUID) error {
 	_, err := s.pool.Writer.Exec(ctx, `
-INSERT INTO scam_alert_subscriptions (user_id, destination_space_id) VALUES ($1, $2, $3)
+INSERT INTO scam_alert_subscriptions (user_id, destination_space_id) VALUES ($1, $2)
 ON CONFLICT (user_id, destination_space_id) DO NOTHING
 `, userID, destSpaceID)
 	if err != nil {
@@ -354,6 +354,26 @@ ON CONFLICT (user_id, destination_space_id) DO NOTHING
 	}
 
 	return nil
+}
+
+// CountrySpaceExists reports whether the given id resolves to a live
+// country-level space — the geo-aware pattern (§§79–101) makes destination
+// country the primary data axis, so a space at any other level (state, city,
+// custom) is rejected as a report destination/origin.
+func (s *Store) CountrySpaceExists(ctx context.Context, spaceID pgtype.UUID) (bool, error) {
+	var exists bool
+
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1 FROM spaces
+    WHERE id = $1 AND level = 'country' AND deleted_at IS NULL
+)
+`, spaceID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("scamalert: country space exists: %w", err)
+	}
+
+	return exists, nil
 }
 
 // IsSubscribed returns true if the user is subscribed to scam alerts for the

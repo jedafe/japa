@@ -8,7 +8,7 @@
 	// their forms use rich inputs (HTML textarea / bulk paste) that EntityForm
 	// does not support; they are triggered via EntityPage `headerActions`.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
@@ -185,7 +185,7 @@
 			{
 				key: 'subscribedAt',
 				label: t('app.newsletter.col_subscribed', 'Subscribed'),
-				render: (v: string, row: any) => new Date(v || row.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+				render: (v: string, row: any) => new Date(v || row.created_at).toLocaleDateString(locale.current, { year: 'numeric', month: 'short', day: 'numeric' })
 			}
 		],
 		filters: subscriberFilters,
@@ -264,7 +264,7 @@
 				label: t('app.newsletter.col_sent', 'Sent'),
 				render: (v: string, row: any) => {
 					const date = v || row.sent_at;
-					return date ? new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '<span class="text-muted">—</span>';
+					return date ? new Date(date).toLocaleDateString(locale.current, { year: 'numeric', month: 'short', day: 'numeric' }) : '<span class="text-muted">—</span>';
 				}
 			},
 			{

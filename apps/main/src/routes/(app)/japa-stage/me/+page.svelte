@@ -140,7 +140,7 @@
 		href="/japa-stage"
 		class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft size={14} /> {t('japa_stage.back_to_directory', 'Back to directory')}
+		<ArrowLeft class="rtl:-scale-x-100" size={14} /> {t('japa_stage.back_to_directory', 'Back to directory')}
 	</a>
 
 	<header class="flex items-center gap-3">
@@ -185,7 +185,7 @@
 						{opt.label}
 					</div>
 					{#if i < stageOpts.length - 1}
-						<span class="text-[var(--color-muted)]" aria-hidden="true">→</span>
+						<span class="text-[var(--color-muted)]" aria-hidden="true"><span class="inline-block rtl:-scale-x-100">→</span></span>
 					{/if}
 				</li>
 			{/each}
@@ -304,7 +304,7 @@
 						{#if entry.dest_space_id}
 							<span class="text-[var(--color-text-subtle)]">→ {destName(entry.dest_space_id) || t('japa_stage.dest_set', 'Destination set')}</span>
 						{/if}
-						<span class="ml-auto text-xs text-[var(--color-text-subtle)]">
+						<span class="ms-auto text-xs text-[var(--color-text-subtle)]">
 							<RelativeTime iso={entry.set_at} />
 						</span>
 					</li>

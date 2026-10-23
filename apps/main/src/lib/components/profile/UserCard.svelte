@@ -50,20 +50,20 @@
 			<div class="absolute inset-0" style={tintStyle}></div>
 		{/if}
 		<div
-			class="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-[var(--color-surface)]/25"
+			class="pointer-events-none absolute -end-6 -top-8 h-24 w-24 rounded-full bg-[var(--color-surface)]/25"
 		></div>
 		<div
-			class="pointer-events-none absolute -left-8 bottom-0 h-20 w-20 rounded-full bg-[var(--color-surface)]/15"
+			class="pointer-events-none absolute -start-8 bottom-0 h-20 w-20 rounded-full bg-[var(--color-surface)]/15"
 		></div>
 
 		{#if !isOwn}
-			<div class="absolute left-3 top-3">
+			<div class="absolute start-3 top-3">
 				<FollowButton entityType="user" entityId={user.id} compact />
 			</div>
 		{/if}
 		{#if verified}
 			<span
-				class="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)]"
+				class="absolute end-3 top-3 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)]"
 				title={tierLabel}
 			>
 				<BadgeCheck size={16} />
@@ -148,7 +148,7 @@
 		>
 			{t('entity.view_profile', 'View profile')}
 			<span class="grid h-6 w-6 place-items-center rounded-full bg-white/20">
-				<ArrowRight size={14} />
+				<ArrowRight class="rtl:-scale-x-100" size={14} />
 			</span>
 		</a>
 	</div>

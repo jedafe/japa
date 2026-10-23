@@ -4,7 +4,7 @@
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -224,7 +224,7 @@
 	function formatDate(iso?: string | null): string {
 		if (!iso) return '';
 		try {
-			return new Date(iso).toLocaleDateString(undefined, {
+			return new Date(iso).toLocaleDateString(i18n.locale, {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -574,7 +574,7 @@
 							<div class="min-w-0">
 								<button
 									onclick={() => selectTest(req.test_slug)}
-									class="text-sm font-semibold text-text hover:text-primary transition-colors text-left"
+									class="text-sm font-semibold text-text hover:text-primary transition-colors text-start"
 								>
 									{req.test_name}
 								</button>

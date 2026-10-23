@@ -161,7 +161,7 @@
 						<a href={contentUrl(item)} class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] hover:underline">
 							{item.title ?? t('dashboard.overview.untitled')}
 						</a>
-						<span class="ml-3 shrink-0 text-xs text-[var(--color-muted)]">{formatDate(item.created_at)}</span>
+						<span class="ms-3 shrink-0 text-xs text-[var(--color-muted)]">{formatDate(item.created_at)}</span>
 					</li>
 				{/each}
 			</ul>

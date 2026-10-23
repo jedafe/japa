@@ -345,9 +345,9 @@
 						<div class="flex items-center justify-between rounded-md border px-4 py-3" style="border-color: var(--color-border); background-color: var(--color-background)">
 							<div>
 								<span class="text-sm font-medium">{field.label}</span>
-								<span class="ml-2 inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-surface/10">{field.type}</span>
+								<span class="ms-2 inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-surface/10">{field.type}</span>
 								{#if field.required}
-									<span class="ml-1 text-xs" style="color: var(--color-danger)">{t('space_forms.required_indicator')}</span>
+									<span class="ms-1 text-xs" style="color: var(--color-danger)">{t('space_forms.required_indicator')}</span>
 								{/if}
 							</div>
 							{#if field.options && field.options.length > 0}

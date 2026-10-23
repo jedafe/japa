@@ -144,10 +144,21 @@ export const load: LayoutServerLoad = async (event) => {
 		// sidebar endpoint not available — keep defaults
 	}
 
+	// §18 / ADR-013 — locales without a bundled dictionary are served from the
+	// DB pack; the i18n store layers it over English so a missing key still
+	// resolves to English text.
+	const locale = event.locals.locale ?? 'en';
+	const i18nPack = ['en', 'fr'].includes(locale)
+		? null
+		: await apiGet<Record<string, string>>(ctx, `/i18n/packs/${encodeURIComponent(locale)}`).catch(
+				() => null
+			);
+
 	return {
 		user,
 		theme: event.locals.theme,
 		locale: event.locals.locale,
+		i18nPack,
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,
 		features,

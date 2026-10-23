@@ -22,7 +22,7 @@
 	import Autocomplete, { type AutocompleteItem } from '../Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import { resolveVideo } from '$lib/api/videos';
-	import { displayNumber, serializeListBodyHtml } from './listSerialize';
+	import { displayNumber, isEmptyHtml, serializeListBodyHtml } from './listSerialize';
 	import type { ListFieldValues, ListItem, ListMode, MediaAsset } from '$lib/types';
 	import type { ContentArticle, GuideListItem } from '$lib/types/content';
 
@@ -64,9 +64,12 @@
 		oncounts: (n: number) => void;
 		/** Marks the composer dirty (drives autosave). */
 		onedit: () => void;
+		/** Feature flags — the video embed tab is hidden when video.enabled
+		 *  is off (the resolver endpoint is gated the same way). */
+		features?: Record<string, boolean>;
 	}
 
-	let { initial, defaultEditor, onvalues, onhtml, oncounts, onedit }: Props = $props();
+	let { initial, defaultEditor, onvalues, onhtml, oncounts, onedit, features = {} }: Props = $props();
 
 	function toRow(item: ListItem): Row {
 		const tab: VisualTab = item.media_id
@@ -101,8 +104,13 @@
 	let contentPicks = new Map<string, GuideListItem>();
 
 	function emit(markDirty = true) {
-		const items = rows.map((r) => r.item);
-		onvalues({ list_mode: mode, intro_html: introHtml, items });
+		// Untouched TipTap editors serialize as '<p></p>' — strip markup-free
+		// HTML so field_values and body_html never store empty paragraphs.
+		const items = rows.map((r) => ({
+			...r.item,
+			body_html: isEmptyHtml(r.item.body_html) ? undefined : r.item.body_html
+		}));
+		onvalues({ list_mode: mode, intro_html: isEmptyHtml(introHtml) ? '' : introHtml, items });
 		onhtml(serializeListBodyHtml(mode, introHtml, items, mediaUrls));
 		oncounts(items.length);
 		if (markDirty) onedit();
@@ -266,12 +274,20 @@
 	}
 
 	const MODE_OPTIONS: ListMode[] = ['numbered', 'countdown', 'unnumbered'];
-	const VISUAL_TABS: { value: VisualTab; labelKey: string }[] = [
-		{ value: 'image', labelKey: 'create.list.embed.image' },
-		{ value: 'content', labelKey: 'create.list.embed.content' },
-		{ value: 'link', labelKey: 'create.list.embed.link' },
-		{ value: 'video', labelKey: 'create.list.embed.video' }
-	];
+	const VISUAL_TABS = $derived.by(() => {
+		const tabs: { value: VisualTab; labelKey: string }[] = [
+			{ value: 'image', labelKey: 'create.list.embed.image' },
+			{ value: 'content', labelKey: 'create.list.embed.content' },
+			{ value: 'link', labelKey: 'create.list.embed.link' }
+		];
+		// video.enabled gates both the resolver endpoint and the Videos
+		// studio tab — hide the embed tab to match rather than offer a
+		// picker that can only fail.
+		if (features['video.enabled'] !== false) {
+			tabs.push({ value: 'video', labelKey: 'create.list.embed.video' });
+		}
+		return tabs;
+	});
 
 	/** Short label for the current visual chip. */
 	function visualLabel(row: Row): string {

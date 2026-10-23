@@ -128,12 +128,12 @@
 							type="search"
 							bind:value={q}
 							placeholder={t('series.search_placeholder', 'Search series...')}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 pl-9 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 ps-9 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 							onkeydown={(e) => e.key === 'Enter' && applySearch()}
 						/>
 						<Search
 							size={16}
-							class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+							class="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
 						/>
 					</div>
 					<AutocompleteSelect
@@ -230,7 +230,7 @@
 						{/if}
 						<div class="mt-3 flex items-center justify-end text-xs text-[var(--color-text-subtle)]">
 							<span class="flex items-center gap-1 group-hover:text-[var(--color-primary)]">
-								{t('series.view', 'View series')} <ArrowRight size={14} />
+								{t('series.view', 'View series')} <ArrowRight class="rtl:-scale-x-100" size={14} />
 							</span>
 						</div>
 					</a>

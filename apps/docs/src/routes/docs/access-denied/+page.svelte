@@ -43,7 +43,7 @@
 		<div class="denied-actions">
 			{#if !data.user}
 				<a href={data.loginUrl} class="btn primary">
-					<LogIn size={16} />
+					<LogIn class="rtl:-scale-x-100" size={16} />
 					{t('audience.no_access_signin')}
 				</a>
 			{/if}
@@ -123,7 +123,7 @@
 	.btn.primary:hover { background: var(--color-primary-hover); }
 	.accessible {
 		margin-top: 2.5rem;
-		text-align: left;
+		text-align: start;
 	}
 	.accessible h2 {
 		font-size: 0.75rem;

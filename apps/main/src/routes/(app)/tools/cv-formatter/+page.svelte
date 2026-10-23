@@ -376,7 +376,7 @@
 								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
 								: 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]'}"
 						>
-							<Upload size={14} class="inline mr-1" />
+							<Upload size={14} class="inline me-1" />
 							{t('cv_formatter.mode_file', 'Upload File')}
 						</button>
 					</div>
@@ -406,7 +406,7 @@
 							/>
 							{#if uploadedFile}
 								<p class="mt-2 text-sm text-[var(--color-text)]">
-									<FileText size={14} class="inline mr-1" />
+									<FileText size={14} class="inline me-1" />
 									{uploadedFile.name}
 									<span class="text-[var(--color-muted)]">
 										({(uploadedFile.size / 1024).toFixed(0)} KB)

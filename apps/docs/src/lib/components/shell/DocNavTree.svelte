@@ -158,9 +158,9 @@
 			title={collapsed ? t('a11y.expand_nav') : t('a11y.collapse_nav')}
 		>
 			{#if collapsed}
-				<PanelLeft size={18} />
+				<PanelLeft class="rtl:-scale-x-100" size={18} />
 			{:else}
-				<PanelLeftClose size={18} />
+				<PanelLeftClose class="rtl:-scale-x-100" size={18} />
 			{/if}
 		</button>
 	</div>
@@ -368,7 +368,7 @@
 				<span class="new-card-body">{t('nav.new_to_body')}</span>
 				<a href={quickstartHref} class="new-card-cta">
 					{t('nav.new_to_cta')}
-					<ArrowRight size={14} />
+					<ArrowRight class="rtl:-scale-x-100" size={14} />
 				</a>
 			</div>
 		</div>
@@ -408,7 +408,7 @@
 		flex-direction: column;
 		height: 100%;
 		background: var(--color-surface);
-		border-right: 1px solid var(--color-border);
+		border-inline-end: 1px solid var(--color-border);
 		overflow: hidden;
 	}
 	.nav-toolbar {
@@ -473,7 +473,7 @@
 	.home-link:hover { color: var(--color-text); background: var(--color-surface-subtle); }
 	.home-link.active {
 		color: var(--color-primary);
-		border-left: 2px solid var(--color-primary);
+		border-inline-start: 2px solid var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 6%, transparent);
 	}
 
@@ -528,7 +528,7 @@
 		place-items: center;
 		height: 1.5rem;
 		width: 1.5rem;
-		margin-right: 0.5rem;
+		margin-inline-end: 0.5rem;
 		border-radius: var(--radius);
 		color: var(--color-muted);
 		flex-shrink: 0;
@@ -583,33 +583,33 @@
 		font-weight: 500;
 		color: var(--color-text-subtle);
 	}
-	.cat-group > .page-list > li > .page-link { padding-left: 1.75rem; }
-	.subcat-group .page-list .page-link { padding-left: 2.5rem; }
-	.subcat-group .page-list .page-link.sub { padding-left: 3rem; }
+	.cat-group > .page-list > li > .page-link { padding-inline-start: 1.75rem; }
+	.subcat-group .page-list .page-link { padding-inline-start: 2.5rem; }
+	.subcat-group .page-list .page-link.sub { padding-inline-start: 3rem; }
 
 	.page-list, .sub-list {
 		list-style: none;
 		padding: 0 0 0.25rem;
 		margin: 0;
 	}
-	.sub-list { padding-left: 0.75rem; }
+	.sub-list { padding-inline-start: 0.75rem; }
 	.page-link {
 		display: block;
 		padding: 0.375rem 0.75rem 0.375rem 1.75rem;
 		font-size: 0.8125rem;
 		color: var(--color-text-subtle);
 		text-decoration: none;
-		border-left: 2px solid transparent;
+		border-inline-start: 2px solid transparent;
 		line-height: 1.4;
 	}
 	.page-link:hover { color: var(--color-text); background: var(--color-surface-subtle); }
 	.page-link.active {
 		color: var(--color-primary);
-		border-left-color: var(--color-primary);
+		border-inline-start-color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 6%, transparent);
 		font-weight: 500;
 	}
-	.page-link.sub { padding-left: 2rem; }
+	.page-link.sub { padding-inline-start: 2rem; }
 	.page-link.view-all {
 		color: var(--color-primary);
 		font-weight: 500;
@@ -619,7 +619,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.625rem;
-		padding-left: 0.75rem;
+		padding-inline-start: 0.75rem;
 	}
 	.pin-link :global(.pin-icon) { color: var(--color-muted); flex-shrink: 0; }
 	.pin-link:hover :global(.pin-icon), .pin-link.active :global(.pin-icon) {
@@ -651,7 +651,7 @@
 	.new-card-dismiss {
 		position: absolute;
 		top: 0.5rem;
-		right: 0.5rem;
+		inset-inline-end: 0.5rem;
 		display: grid;
 		place-items: center;
 		height: 1.5rem;

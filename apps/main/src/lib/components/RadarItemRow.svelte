@@ -9,7 +9,7 @@
 	 * Ref: Japa Intelligence System spec §7 (RadarItemRow)
 	 *      ADR-058 (renders inside the unified app shell)
 	 */
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { GraduationCap, ExternalLink, Clock, ShieldCheck, ShieldAlert } from 'lucide-svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 	import type { RadarItem } from '$lib/types';
@@ -66,7 +66,7 @@
 	const deadline = $derived(item.deadline ? String(item.deadline).slice(0, 10) : '');
 	const deadlineLabel = $derived(
 		deadline
-			? new Date(deadline + 'T00:00:00').toLocaleDateString(undefined, {
+			? new Date(deadline + 'T00:00:00').toLocaleDateString(i18n.locale, {
 					year: 'numeric',
 					month: 'short',
 					day: 'numeric'
@@ -115,7 +115,7 @@
 		{#if item.application_url}
 			<ExternalLink
 				size={14}
-				class="shrink-0 text-[var(--color-muted)] opacity-0 transition-opacity group-hover:opacity-100"
+				class="shrink-0 text-[var(--color-muted)] opacity-0 transition-opacity group-hover:opacity-100 rtl:-scale-x-100"
 				aria-hidden="true"
 			/>
 		{/if}

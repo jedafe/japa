@@ -100,7 +100,7 @@
 						{t('services.mentorship_details', 'Mentorship details')}
 					</h3>
 					{#if price}
-						<p class="text-right">
+						<p class="text-end">
 							<span class="text-lg font-bold text-[var(--color-text)]">{price}</span>
 							<span class="text-xs text-[var(--color-muted)]">{perLabel}</span>
 						</p>
@@ -117,7 +117,7 @@
 								<span class="truncate">{row.label}</span>
 							</dt>
 							<dd
-								class="min-w-0 text-right text-xs font-semibold break-words text-[var(--color-text)]"
+								class="min-w-0 text-end text-xs font-semibold break-words text-[var(--color-text)]"
 							>
 								{#if 'href' in row && row.href}
 									<a

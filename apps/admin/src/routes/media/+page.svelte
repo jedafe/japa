@@ -8,7 +8,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { mediaAdminApi, api, apiFetch, apiRaw, stockAdminApi, adminCatalogApi, type StockPhoto, type StockProviderAdmin, type CatalogOption } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image as ImageIcon, FileText, Film, Music, Search, Download, Loader2, Check, RefreshCw, ZoomIn, ZoomOut, Maximize, Pencil, Save, X } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
@@ -402,7 +402,7 @@
 				label: t('app.media.col_uploaded', 'Uploaded'),
 				sortable: true,
 				render: (v: string) =>
-					new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+					new Date(v).toLocaleDateString(locale.current, { year: 'numeric', month: 'short', day: 'numeric' })
 			}
 		],
 		filters: [
@@ -422,6 +422,16 @@
 				options: [
 					{ value: 'true', label: t('app.media.flagged_yes', 'Flagged') },
 					{ value: 'false', label: t('app.media.flagged_no', 'Not Flagged') }
+				]
+			},
+			// Rows whose storage object is absent are hidden by default
+			// (m000924 missing_at) — this filter surfaces them for audit.
+			{
+				key: 'missing',
+				label: t('app.media.filter_missing', 'Missing Object'),
+				options: [
+					{ value: 'only', label: t('app.media.missing_only', 'Missing only') },
+					{ value: 'all', label: t('app.media.missing_all', 'Include missing') }
 				]
 			},
 			// Soft-deleted media is hidden by default — this filter surfaces it
@@ -473,6 +483,7 @@
 			if (filter.mime_type) params.set('type', filter.mime_type);
 			if (filter.flagged) params.set('flagged', filter.flagged);
 			if (filter.deleted) params.set('deleted', filter.deleted);
+			if (filter.missing) params.set('missing', filter.missing);
 			// Use apiRaw to access top-level total/total_pages alongside data.
 			const result = await apiRaw<{ data?: MediaItem[]; items?: MediaItem[]; total?: number; total_pages?: number }>(`/admin/media?${params.toString()}`);
 			if (result.ok) {
@@ -970,7 +981,7 @@
 			: 'color: var(--color-muted)'}
 		onclick={() => (activeTab = 'media')}
 	>
-		<ImageIcon class="mr-2 h-4 w-4" />
+		<ImageIcon class="me-2 h-4 w-4" />
 		{t('app.media.tab_all', 'All Media')}
 	</button>
 	<button
@@ -981,7 +992,7 @@
 			: 'color: var(--color-muted)'}
 		onclick={() => (activeTab = 'stock-providers')}
 	>
-		<Search class="mr-2 h-4 w-4" />
+		<Search class="me-2 h-4 w-4" />
 		{t('app.media.tab_stock_providers', 'Stock Providers')}
 	</button>
 </div>
@@ -995,7 +1006,7 @@
 			{#if stockProvidersLoading}
 				<div class="flex items-center justify-center py-12">
 					<RefreshCw class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
-					<span class="ml-2 text-sm" style="color: var(--color-muted)">Loading...</span>
+					<span class="ms-2 text-sm" style="color: var(--color-muted)">Loading...</span>
 				</div>
 			{:else if stockProvidersError}
 				<div class="rounded-lg border px-4 py-3 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
@@ -1004,7 +1015,7 @@
 			{:else}
 				<div class="overflow-x-auto">
 					<table class="w-full text-sm">
-						<thead class="border-b bg-surface text-left text-xs uppercase" style="color: var(--color-muted)">
+						<thead class="border-b bg-surface text-start text-xs uppercase" style="color: var(--color-muted)">
 							<tr>
 								<th class="px-4 py-3 font-medium">{t('app.media.provider', 'Provider')}</th>
 								<th class="px-4 py-3 font-medium">{t('app.media.enabled', 'Enabled')}</th>
@@ -1130,7 +1141,7 @@
 				: 'color: var(--color-muted)'}
 			onclick={() => (uploadModalTab = 'upload')}
 		>
-			<Upload class="mr-2 h-4 w-4" />
+			<Upload class="me-2 h-4 w-4" />
 			Upload
 		</button>
 		<button
@@ -1141,7 +1152,7 @@
 				: 'color: var(--color-muted)'}
 			onclick={() => (uploadModalTab = 'stock')}
 		>
-			<Search class="mr-2 h-4 w-4" />
+			<Search class="me-2 h-4 w-4" />
 			Stock Photos
 		</button>
 	</div>
@@ -1159,7 +1170,7 @@
 						const files = e.currentTarget.files;
 						if (files) uploadFiles = [...uploadFiles, ...Array.from(files)];
 					}}
-					class="block w-full text-sm text-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary/80"
+					class="block w-full text-sm text-foreground file:me-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary/80"
 				/>
 			</div>
 			{#if uploadFiles.length > 0}
@@ -1167,10 +1178,10 @@
 					{#each uploadFiles as file, i (i)}
 						<div class="flex items-center justify-between rounded-lg bg-surface px-3 py-1.5 text-sm">
 							<span class="truncate text-foreground">{file.name}</span>
-							<span class="ml-2 shrink-0 text-xs text-muted">{formatFileSize(file.size)}</span>
+							<span class="ms-2 shrink-0 text-xs text-muted">{formatFileSize(file.size)}</span>
 							<button
 								type="button"
-								class="ml-2 shrink-0 text-muted hover:text-danger"
+								class="ms-2 shrink-0 text-muted hover:text-danger"
 								onclick={() => { uploadFiles = uploadFiles.filter((_, j) => j !== i); }}
 							>
 								✕
@@ -1219,20 +1230,20 @@
 			{#if !stockModalProvidersLoaded}
 				<div class="flex items-center justify-center py-8">
 					<Loader2 class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
-					<span class="ml-2 text-sm" style="color: var(--color-muted)">Loading providers...</span>
+					<span class="ms-2 text-sm" style="color: var(--color-muted)">{t('app.media.loading_providers', 'Loading providers...')}</span>
 				</div>
 			{:else if stockModalProviders.length === 0}
 				<div class="py-8 text-center text-sm" style="color: var(--color-muted)">
-					No stock providers available. Enable providers in the Stock Providers admin tab.
+					{t('app.media.stock_providers_empty', 'No stock providers available. Enable providers in the Stock Providers admin tab.')}
 				</div>
 			{:else}
 				<!-- Search bar -->
 				<div class="relative">
-					<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+					<Search class="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
 					<input
 						type="text"
 						placeholder={t('media.ph_search_stock_photos', 'Search stock photos...')}
-						class="w-full rounded-lg border py-2 pl-9 pr-3 text-sm"
+						class="w-full rounded-lg border py-2 ps-9 pe-3 text-sm"
 						style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 						value={stockModalQuery}
 						oninput={(e) => runStockModalSearch(e.currentTarget.value)}
@@ -1248,7 +1259,7 @@
 							? 'background-color: var(--color-primary); color: var(--color-primary-contrast, white)'
 							: 'background-color: var(--color-surface); color: var(--color-muted); border: 1px solid var(--color-border)'}
 						onclick={() => setStockModalProvider('')}
-					>All</button>
+					>{t('common.all', 'All')}</button>
 					{#each stockModalProviders as p (p.name)}
 						<button
 							type="button"
@@ -1272,7 +1283,7 @@
 					{#if stockModalLoading && stockModalResults.length === 0}
 						<div class="flex items-center justify-center py-8">
 							<Loader2 class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
-							<span class="ml-2 text-sm" style="color: var(--color-muted)">Searching...</span>
+							<span class="ms-2 text-sm" style="color: var(--color-muted)">Searching...</span>
 						</div>
 					{:else if stockModalResults.length === 0 && stockModalQuery}
 						<div class="py-8 text-center text-sm" style="color: var(--color-muted)">
@@ -1372,9 +1383,9 @@
 			<Button variant="ghost" onclick={() => (showEditModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 			<Button variant="default" onclick={saveEdit} disabled={editSaving}>
 				{#if editSaving}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					<Loader2 class="me-2 h-4 w-4 animate-spin" />
 				{:else}
-					<Save class="mr-2 h-4 w-4" />
+					<Save class="me-2 h-4 w-4" />
 				{/if}
 				{editSaving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 			</Button>
@@ -1396,7 +1407,7 @@
 		onwheel={onViewerWheel}
 	>
 		<!-- Toolbar -->
-		<div class="absolute top-0 left-0 right-0 flex items-center justify-between p-4 text-white" onclick={(e) => e.stopPropagation()}>
+		<div class="absolute top-0 start-0 end-0 flex items-center justify-between p-4 text-white" onclick={(e) => e.stopPropagation()}>
 			<div class="flex items-center gap-2">
 				<Button variant="ghost" size="sm" class="text-white hover:bg-white/10" onclick={closeViewer}>
 					<X class="h-5 w-5" />
@@ -1527,7 +1538,7 @@
 				<div>
 					<p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted">{t('app.media.preview', 'Preview')}</p>
 					<div class="flex max-h-48 items-center justify-center overflow-hidden rounded-lg border" style="border-color: var(--color-border); background: var(--color-surface)">
-						<img src={resizerPreviewUrl} alt="Resize preview" class="max-h-48 object-contain" />
+						<img src={resizerPreviewUrl} alt={t('app.media.resize_preview_alt', 'Resize preview')} class="max-h-48 object-contain" />
 					</div>
 					<p class="mt-1 text-xs text-muted">
 						{resizerWidth} × {resizerHeight}px
@@ -1536,7 +1547,7 @@
 			{:else if !resizerError}
 				<div class="flex items-center justify-center py-8">
 					<Loader2 class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
-					<span class="ml-2 text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</span>
+					<span class="ms-2 text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</span>
 				</div>
 			{/if}
 		</div>
@@ -1544,7 +1555,7 @@
 		<div class="mt-4 flex justify-end gap-2">
 			<Button variant="ghost" onclick={closeResizer}>{t('common.cancel', 'Cancel')}</Button>
 			<Button variant="default" onclick={downloadResized} disabled={!resizerCanvas}>
-				<Download class="mr-2 h-4 w-4" />
+				<Download class="me-2 h-4 w-4" />
 				{t('app.media.download_resized', 'Download Resized')}
 			</Button>
 		</div>
@@ -1662,7 +1673,7 @@
 				<!-- Fullscreen viewer button overlay -->
 				<button
 					type="button"
-					class="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white opacity-0 transition-opacity hover:bg-black/70 focus:opacity-100"
+					class="absolute end-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white opacity-0 transition-opacity hover:bg-black/70 focus:opacity-100"
 					onclick={() => openViewer(row)}
 					title={t('app.media.view_full', 'View full image')}
 					aria-label={t('app.media.view_full', 'View full image')}
@@ -1683,26 +1694,26 @@
 		<div class="flex flex-wrap gap-2">
 			{#if row.mime_type?.startsWith('image/') || row.mime_type?.startsWith('video/')}
 				<Button variant="secondary" size="sm" onclick={() => openViewer(row)}>
-					<Maximize class="mr-2 h-4 w-4" />
+					<Maximize class="me-2 h-4 w-4" />
 					{t('app.media.view_full', 'View Full')}
 				</Button>
 			{/if}
 			{#if row.mime_type?.startsWith('image/')}
 				<Button variant="secondary" size="sm" onclick={() => openResizer(row)}>
-					<Maximize class="mr-2 h-4 w-4" />
+					<Maximize class="me-2 h-4 w-4" />
 					{t('app.media.resize', 'Resize')}
 				</Button>
 			{/if}
 			{#if canEditMedia}
 				<Button variant="secondary" size="sm" onclick={() => openEditModal(row)}>
-					<Pencil class="mr-2 h-4 w-4" />
+					<Pencil class="me-2 h-4 w-4" />
 					{t('common.edit', 'Edit')}
 				</Button>
 			{/if}
 			{#if row.url}
 				<a href={row.url} download={row.filename} target="_blank" rel="noopener">
 					<Button variant="secondary" size="sm">
-						<Download class="mr-2 h-4 w-4" />
+						<Download class="me-2 h-4 w-4" />
 						{t('common.download', 'Download')}
 					</Button>
 				</a>

@@ -118,7 +118,7 @@
 			disabled={submitting}
 			class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
 		>
-			<Send size={16} />
+			<Send class="rtl:-scale-x-100" size={16} />
 			{submitting ? t('common.loading') : t('academy.submit_application')}
 		</button>
 	</form>

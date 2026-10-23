@@ -164,10 +164,10 @@
 				ariaLabel={t('spaces.page_size', 'Rows per page')}
 				onValueChange={(v) => goto(buildURL({ page_size: v, page: null }))}
 			/>
-			<div class="relative min-w-40 flex-1 sm:ml-auto sm:max-w-xs">
+			<div class="relative min-w-40 flex-1 sm:ms-auto sm:max-w-xs">
 				<Search
 					size={16}
-					class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+					class="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
 				/>
 				<input
 					type="search"
@@ -176,7 +176,7 @@
 					oninput={onSearchInput}
 					placeholder={t('spaces.search_placeholder', 'Search spaces…')}
 					aria-label={t('spaces.search_placeholder', 'Search spaces…')}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-9 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 			</div>
 		</div>

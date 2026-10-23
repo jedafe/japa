@@ -171,7 +171,10 @@
 			if (list?.length) {
 				groups.push({
 					stage,
-					label: t(`guides.journey_stage.${stage}`, humanizeKey(stage)),
+					// The canonical stage labels live under japa_stage.* (§87) —
+					// translated in both locales; guides.journey_stage.* was
+					// never seeded and leaked the English fallback into FR.
+					label: t(`japa_stage.${stage}`, humanizeKey(stage)),
 					items: list.map(toFeedItem)
 				});
 				byStage.delete(stage);
@@ -236,13 +239,13 @@
 			{/if}
 			{#if data.authed}
 				<PageAction
-					href="/create?type=guide"
+					href="/studio/create?type=guide"
 					icon={PenSquare}
 					label={t('guides.new_guide', 'New guide')}
 				/>
 			{:else}
 				<PageAction
-					href="/login?redirect=/create?type=guide"
+					href="/login?redirect=/studio%2Fcreate%3Ftype%3Dguide"
 					icon={PenSquare}
 					label={t('guides.new_guide', 'New guide')}
 				/>
@@ -326,7 +329,7 @@
 							{/if}
 							<div class="mt-3 flex items-center justify-end text-xs text-[var(--color-text-subtle)]">
 								<span class="flex items-center gap-1 group-hover:text-[var(--color-primary)]">
-									{t('blog_series.view', 'View series')} <ArrowRight size={14} />
+									{t('blog_series.view', 'View series')} <ArrowRight class="rtl:-scale-x-100" size={14} />
 								</span>
 							</div>
 						</a>

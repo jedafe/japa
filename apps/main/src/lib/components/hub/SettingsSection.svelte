@@ -46,10 +46,10 @@
 			class="sticky bottom-0 mt-6 flex items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] py-3"
 		>
 			{#if form.error}
-				<span class="mr-auto text-xs text-[var(--color-danger,#dc2626)]">{form.error.message}</span>
+				<span class="me-auto text-xs text-[var(--color-danger,#dc2626)]">{form.error.message}</span>
 			{/if}
 			{#if saved}
-				<span class="mr-auto text-xs" style="color: var(--color-success, #16a34a);">{t('settings.action.saved', 'Saved ✓')}</span>
+				<span class="me-auto text-xs" style="color: var(--color-success, #16a34a);">{t('settings.action.saved', 'Saved ✓')}</span>
 			{/if}
 			{#if form.dirty}
 				<button

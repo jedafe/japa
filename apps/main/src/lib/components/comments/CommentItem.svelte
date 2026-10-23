@@ -10,7 +10,8 @@
 		Plus,
 		Share2,
 		MoreHorizontal,
-		Check
+		Check,
+		Flag
 	} from 'lucide-svelte';
 	import { Menu, MenuItem } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
@@ -19,6 +20,7 @@
 	import type { Comment } from '$lib/types';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
+	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import CommentItem from './CommentItem.svelte';
 	import CommentEditor from './CommentEditor.svelte';
 
@@ -73,6 +75,13 @@
 		!!currentUserId && !!comment.author_user_id && currentUserId === comment.author_user_id
 	);
 	const beyondMaxDepth = $derived(depth >= MAX_DEPTH);
+	// Local delete flag — folded into isTombstone so own deletes render the
+	// same placeholder as server-returned tombstones.
+	let deleted = $state(false);
+	// Tombstone (Section 49, C-009): soft-deleted comments returned by the API
+	// keep their place in the thread so live replies stay reachable — render
+	// a "[deleted]" placeholder instead of the body and hide all actions.
+	const isTombstone = $derived(deleted || !!comment.deleted_at);
 	const bodyHtml = $derived(
 		tiptapBodyToHtml(comment.body, {
 			deletedUserIds,
@@ -166,6 +175,7 @@
 	let collapsed = $state(false);
 	let composing = $state(false);
 	let replyBody = $state<string>('');
+	let replyAnonymous = $state(false);
 	let submitting = $state(false);
 	let localReplies = $state<Comment[]>([]);
 
@@ -173,8 +183,11 @@
 	let loadedReplies = $state<Comment[]>([]);
 	let repliesLoading = $state(false);
 	let repliesLoaded = $state(false);
+	// Server-side reply total from the list meta — drives "Load more replies".
+	let repliesTotal = $state(0);
 
 	const allReplies = $derived([...loadedReplies, ...localReplies]);
+	const hasMoreReplies = $derived(repliesLoaded && loadedReplies.length < repliesTotal);
 
 	// Whether this comment has (or may have) nested replies. Controls the
 	// vertical thread rail and the collapse/expand affordances.
@@ -191,23 +204,45 @@
 	const viewRepliesLabel = $derived(viewRepliesText(comment.reply_count));
 	const collapsedLabel = $derived(viewRepliesText(allReplies.length));
 
+	const REPLY_PAGE_SIZE = 20;
+
+	async function fetchReplies(offset: number): Promise<Comment[] | null> {
+		repliesError = null;
+		const res = await api.getEnvelope<Comment[]>(
+			`/content/${contentId}/comments?parent_id=${encodeURIComponent(comment.id)}&page_size=${REPLY_PAGE_SIZE}&page_offset=${offset}`
+		);
+		if (res.error || !res.data) {
+			repliesError = res.error?.message ?? t('comments.load_error');
+			return null;
+		}
+		const env = res.envelope as Record<string, unknown> | null;
+		// Merge any new deleted_user_ids from the reply envelope into the set.
+		const replyDeletedIds = env?.deleted_user_ids;
+		if (Array.isArray(replyDeletedIds) && deletedUserIds) {
+			for (const id of replyDeletedIds as string[]) deletedUserIds.add(id);
+		}
+		const meta = env?.meta as { total?: number } | undefined;
+		if (typeof meta?.total === 'number') repliesTotal = meta.total;
+		return res.data;
+	}
+
 	async function loadReplies() {
 		if (repliesLoading || repliesLoaded) return;
 		repliesLoading = true;
-		repliesError = null;
-		// BUG-005: use getEnvelope to extract deleted_user_ids for GDPR redaction.
-		const res = await api.getEnvelope<Comment[]>(`/content/${contentId}/comments?parent_id=${encodeURIComponent(comment.id)}`);
+		const data = await fetchReplies(0);
 		repliesLoading = false;
 		repliesLoaded = true;
-		if (res.error || !res.data) {
-			repliesError = res.error?.message ?? t('comments.load_error');
-			return;
-		}
-		loadedReplies = res.data;
-		// Merge any new deleted_user_ids from the reply envelope into the set.
-		const replyDeletedIds = (res.envelope as Record<string, unknown> | null)?.deleted_user_ids;
-		if (Array.isArray(replyDeletedIds) && deletedUserIds) {
-			for (const id of replyDeletedIds as string[]) deletedUserIds.add(id);
+		if (data) loadedReplies = data;
+	}
+
+	async function loadMoreReplies() {
+		if (repliesLoading || !hasMoreReplies) return;
+		repliesLoading = true;
+		const data = await fetchReplies(loadedReplies.length);
+		repliesLoading = false;
+		if (data) {
+			const existing = new Set(loadedReplies.map((c) => c.id));
+			loadedReplies = [...loadedReplies, ...data.filter((c) => !existing.has(c.id))];
 		}
 	}
 
@@ -217,7 +252,8 @@
 		replyError = null;
 		const res = await api.post<Comment>(`/content/${contentId}/comments`, {
 			parent_id: comment.id,
-			body: replyBody
+			body: replyBody,
+			is_anonymous: replyAnonymous
 		});
 		submitting = false;
 		if (res.error || !res.data) {
@@ -226,6 +262,7 @@
 		}
 		localReplies = [...localReplies, res.data];
 		replyBody = '';
+		replyAnonymous = false;
 		composing = false;
 		collapsed = false;
 		onReply();
@@ -235,13 +272,13 @@
 	let editing = $state(false);
 	let editBody = $state<string>('');
 	let editPending = $state(false);
-	let deleted = $state(false);
 	let deletePending = $state(false);
 	let repliesError = $state<string | null>(null);
 	let replyError = $state<string | null>(null);
 	let editError = $state<string | null>(null);
 	let deleteError = $state<string | null>(null);
 	let copied = $state(false);
+	let reportOpen = $state(false);
 
 	async function startEdit() {
 		// Fetch the raw (unresolved) body so hand-typed {{...}} literals survive
@@ -343,7 +380,7 @@
 	{#if hasChildren}
 		<!-- Vertical thread rail: runs from the commenter avatar down through descendants. -->
 		<div
-			class="thread-rail absolute left-9 top-9 -z-10 w-px bg-[var(--color-border)]"
+			class="thread-rail absolute start-9 top-9 -z-10 w-px bg-[var(--color-border)]"
 			style="bottom: {railBottom}px"
 		></div>
 	{/if}
@@ -436,8 +473,8 @@
 		{/if}
 	</header>
 
-	<div class="break-words z-[1] mt-1 ml-[52px]">
-		{#if deleted}
+	<div class="break-words z-[1] mt-1 ms-[52px]">
+		{#if isTombstone}
 			<p class="text-sm italic text-[var(--color-muted)]">{t('comments.deleted')}</p>
 		{:else}
 			{#if editing}
@@ -470,14 +507,15 @@
 				</div>
 			{/if}
 
-			<!-- Actions -->
-			{#if !editing}
+			<!-- Actions — hidden on tombstones (deleted comments keep their place
+			in the thread but are no longer interactive). -->
+			{#if !editing && !isTombstone}
 				<div class="relative mt-2 flex flex-row items-center gap-3">
 					{#if allReplies.length > 0 && !collapsed}
 						<button
 							type="button"
 							onclick={() => (collapsed = true)}
-							class="{iconBtn} absolute -left-12 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							class="{iconBtn} absolute -start-12 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
 							aria-label={t('comments.collapse')}
 							title={t('comments.collapse')}
 						>
@@ -506,7 +544,7 @@
 						<ArrowBigDown size={18} fill={userVote === -1 ? 'currentColor' : 'none'} />
 					</button>
 
-					{#if authed}
+					{#if authed && !beyondMaxDepth}
 						<button
 							type="button"
 							onclick={() => (composing = !composing)}
@@ -514,7 +552,7 @@
 							aria-label={t('comments.reply')}
 							title={t('comments.reply')}
 						>
-							<Reply size={18} />
+							<Reply class="rtl:-scale-x-100" size={18} />
 						</button>
 					{/if}
 
@@ -540,16 +578,19 @@
 								<MoreHorizontal size={18} />
 							</button>
 						{/snippet}
-						{#if isAuthor && !deleted}
+						{#if isAuthor && !isTombstone}
 							<MenuItem icon={Pencil} onSelect={startEdit}>{t('comments.edit')}</MenuItem>
 							<MenuItem icon={Trash2} onSelect={deleteComment} disabled={deletePending}>{t('comments.delete')}</MenuItem>
 						{/if}
-						{#if canModerate && !deleted}
+						{#if canModerate && !isTombstone}
 							<MenuItem icon={Pin} onSelect={togglePin} disabled={pinPending}>{pinned ? t('comments.unpin') : t('comments.pin')}</MenuItem>
+						{/if}
+						{#if authed && !isAuthor}
+							<MenuItem icon={Flag} onSelect={() => (reportOpen = true)}>{t('comments.report', 'Report')}</MenuItem>
 						{/if}
 					</Menu>
 
-					<span class="ml-auto text-xs text-[var(--color-muted)]" title={t('comments.see_upvoters', 'See who upvoted')}>
+					<span class="ms-auto text-xs text-[var(--color-muted)]" title={t('comments.see_upvoters', 'See who upvoted')}>
 						{upvotes === 1 ? '1 upvote' : t('comments.upvote_count', '{count} upvotes').replace('{count}', String(upvotes))}
 					</span>
 				</div>
@@ -569,14 +610,19 @@
 			{#if composing && authed}
 				<div class="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5">
 					<CommentEditor placeholder={t('comments.reply_placeholder')} oninput={(b) => (replyBody = b)} />
-					<div class="mt-2 flex items-center justify-end gap-2">
-						<button
-							type="button"
-							onclick={() => { composing = false; replyBody = ''; }}
-							class="rounded-[var(--radius)] px-2.5 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-						>
-							{t('comments.cancel')}
-						</button>
+					<div class="mt-2 flex items-center justify-between gap-2">
+						<label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+							<input type="checkbox" bind:checked={replyAnonymous} class="h-3.5 w-3.5 accent-[var(--color-primary)]" />
+							{t('comments.post_anonymously', 'Post anonymously')}
+						</label>
+						<div class="flex items-center gap-2">
+							<button
+								type="button"
+								onclick={() => { composing = false; replyBody = ''; replyAnonymous = false; }}
+								class="rounded-[var(--radius)] px-2.5 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							>
+								{t('comments.cancel')}
+							</button>
 						<button
 							type="button"
 							onclick={submitReply}
@@ -585,6 +631,7 @@
 						>
 							{submitting ? t('common.loading') : t('comments.post_reply')}
 						</button>
+						</div>
 					</div>
 					{#if replyError}
 						<p class="mt-1.5 text-xs text-[var(--color-danger)]">{replyError}</p>
@@ -598,7 +645,7 @@
 					type="button"
 					bind:this={railEndEl}
 					onclick={() => (collapsed = false)}
-					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]"
+					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]"
 				>
 					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
 						<Plus size={14} />
@@ -607,7 +654,7 @@
 				</button>
 			{:else if !collapsed && !beyondMaxDepth}
 				{#if allReplies.length > 0}
-					<div class="relative -left-8 mt-3 pl-5" bind:this={childrenWrap}>
+					<div class="relative -start-8 mt-3 ps-5" bind:this={childrenWrap}>
 						<div class="space-y-3">
 							{#each allReplies as child (child.id)}
 								<CommentItem
@@ -620,7 +667,11 @@
 									{canModerate}
 									{deletedUserIds}
 									onReply={() => onReply()}
-									onDelete={() => onDelete()}
+									onDelete={() => {
+										// Keep the direct-child count honest without a refetch.
+										comment = { ...comment, reply_count: Math.max(0, comment.reply_count - 1) };
+										onDelete();
+									}}
 								/>
 							{/each}
 						</div>
@@ -632,19 +683,31 @@
 						bind:this={railEndEl}
 						onclick={loadReplies}
 						disabled={repliesLoading}
-						class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
+						class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
 					>
 						<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
 							<Plus size={14} />
 						</span>
 						{repliesLoading ? t('common.loading') : viewRepliesLabel}
 					</button>
+				{:else if hasMoreReplies}
+					<button
+						type="button"
+						onclick={loadMoreReplies}
+						disabled={repliesLoading}
+						class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
+					>
+						<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+							<Plus size={14} />
+						</span>
+						{repliesLoading ? t('common.loading') : t('comments.load_more_replies', 'Load more replies')}
+					</button>
 				{/if}
 			{:else if !collapsed && allReplies.length > 0}
 				<a
 					href={`#comment-${allReplies[0].id}`}
 					bind:this={railEndEl}
-					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
+					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
 				>
 					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
 						<Plus size={14} />
@@ -655,6 +718,8 @@
 		{/if}
 	</div>
 </article>
+
+<ReportDialog bind:open={reportOpen} entityType="comment" entityId={comment.id} entityName={t('comments.report_entity', 'comment')} />
 
 <style>
 	:global(.prose-comment p) {
@@ -675,19 +740,19 @@
 		color: var(--color-primary-hover);
 	}
 
-	/* Curved thread branch (╰ elbow): the parent's rail (left-9 / avatar center)
+	/* Curved thread branch (╰ elbow): the parent's rail (start-9 / avatar center)
 	 * bends right into the child reply avatar. Paired with the .thread-rail
 	 * vertical line, which terminates at the last child's junction. */
 	.comment-reply::before {
 		content: '';
 		position: absolute;
-		left: -20px;
+		inset-inline-start: -20px;
 		top: 20px;
 		width: 36px;
 		height: 15px;
-		border-left: 1px solid var(--color-border);
+		border-inline-start: 1px solid var(--color-border);
 		border-bottom: 1px solid var(--color-border);
-		border-bottom-left-radius: 12px;
+		border-end-start-radius: 12px;
 		z-index: -10;
 	}
 </style>

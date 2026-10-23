@@ -73,7 +73,7 @@
 				{#if sending}
 					<Loader2 size={15} class="motion-safe:animate-spin" aria-hidden="true" />
 				{:else}
-					<Send size={15} aria-hidden="true" />
+					<Send class="rtl:-scale-x-100" size={15} aria-hidden="true" />
 				{/if}
 				{t('services.message_send', 'Send message')}
 			</button>

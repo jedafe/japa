@@ -131,8 +131,8 @@
 			sortable: true,
 			render: (val) =>
 				val === 'system'
-					? `<span class="text-muted-foreground text-xs">System</span>`
-					: `<span class="text-accent-foreground text-xs font-medium">Custom</span>`
+					? `<span class="text-muted-foreground text-xs">${t('common.system', 'System')}</span>`
+					: `<span class="text-accent-foreground text-xs font-medium">${t('common.custom', 'Custom')}</span>`
 		},
 		{
 			key: 'prev_run_at',

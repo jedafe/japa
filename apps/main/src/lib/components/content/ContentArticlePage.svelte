@@ -2,7 +2,7 @@
 	// Shared content single-page layout — used by /content/[slug] (fallback
 	// family) and /guide/[slug]. Ref: §14, §49, ADR-058 Exception #1.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
@@ -20,6 +20,7 @@
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import { hydrateContentEmbeds } from '$lib/tiptap/hydrateContentEmbeds';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import { contentHref } from '$lib/utils/contentLink';
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '$lib/types/content';
 	import type { Comment, SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '$lib/types';
@@ -124,7 +125,9 @@
 				: (article.target_country ?? null)
 		].filter(Boolean) as string[]
 	);
-	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }));
+	// Render dates in the app-selected locale — `undefined` (server/client
+	// default locale) diverges between SSR and hydration for non-en users.
+	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' }));
 	const title = $derived(`${article.title} — ${t('app.name')}`);
 	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
 	// Section 26 — self-referencing canonical on the clean content URL (never
@@ -140,6 +143,30 @@
 	const seriesBasePath = $derived(
 		contentHref(article).split('/').slice(0, -1).join('/') || '/content'
 	);
+
+	// BreadcrumbList JSON-LD (Section 26 — all pages with hierarchy). The
+	// middle crumb is the content type's public index when one exists.
+	const TYPE_HUBS: Record<string, { name: string; path: string }> = {
+		guide: { name: 'Guides', path: '/guides' },
+		list: { name: 'Lists', path: '/lists' },
+		blog_post: { name: 'Blog', path: '/blog' },
+		story: { name: 'Stories', path: '/stories' },
+		comparison: { name: 'Comparisons', path: '/comparisons' },
+		news: { name: 'Explore', path: '/explore' },
+		video: { name: 'Explore', path: '/explore' }
+	};
+	// The visible back link and the BreadcrumbList share the same hub so the
+	// on-page affordance and the JSON-LD never disagree (e.g. a guide used to
+	// breadcrumb to /guides but link "Back to explore" → /explore).
+	const typeHub = $derived(TYPE_HUBS[article.content_type ?? ''] ?? { name: 'Explore', path: '/explore' });
+	const breadcrumbLd = $derived.by(() => {
+		const hub = typeHub;
+		return breadcrumbJsonLd([
+			{ name: 'Home', path: page.url.origin },
+			{ name: hub.name, path: `${page.url.origin}${hub.path}` },
+			{ name: article.title, path: canonical }
+		]);
+	});
 
 	// JSON-LD structured data (Section 14, Section 26 — SEO). The backend
 	// resolves the admin-managed template (matching the content's
@@ -178,6 +205,7 @@
 	<meta name="twitter:title" content={article.title} />
 	<meta name="twitter:description" content={description} />
 	{@html safeJsonLdScript(jsonLd)}
+	{@html safeJsonLdScript(breadcrumbLd)}
 </svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout (same as blog singles). -->
@@ -215,8 +243,8 @@
 	<!-- Center: article -->
 	<article class="min-w-0 flex-1 max-w-[41rem]">
 		<div class="mb-8 flex items-center justify-between gap-3">
-			<a href="/explore" class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]">
-				<ArrowLeft size={16} /> {t('content.back', 'Back to explore')}
+			<a href={typeHub.path} class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]">
+				<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('content.back_to', 'Back to {hub}', { hub: typeHub.name })}
 			</a>
 			{#if data.canEdit}
 				<a
@@ -242,7 +270,7 @@
 				aria-label={t('lightbox.view_image', 'View image')}
 			>
 				<img src={article.featured_image_url} alt={article.title} class="aspect-[16/9] w-full object-cover" />
-				<span class="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100">
+				<span class="absolute end-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100">
 					<Maximize2 size={15} />
 				</span>
 			</button>
@@ -327,7 +355,7 @@
 							class="inline-flex items-center gap-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
 							aria-label={t('content.original_source', 'View original source')}
 						>
-							<ExternalLink size={12} />
+							<ExternalLink class="rtl:-scale-x-100" size={12} />
 						</a>
 					{/if}
 				</span>

@@ -345,8 +345,8 @@
 				<div class="headers">
 					{#each headers as h, i (i)}
 						<div class="header-row">
-							<input bind:value={h.key} placeholder="Key" class="hkey" />
-							<input bind:value={h.value} placeholder="Value" class="hval" />
+							<input bind:value={h.key} placeholder={t('api.playground_key', 'Key')} class="hkey" />
+							<input bind:value={h.value} placeholder={t('api.playground_value', 'Value')} class="hval" />
 							<button type="button" class="remove" onclick={() => removeHeader(i)} aria-label={t('api.remove_header')}>
 								<X size={14} />
 							</button>
@@ -377,7 +377,7 @@
 				{/if}
 
 				<button type="button" class="send-btn" onclick={send} disabled={sending}>
-					<Send size={14} />
+					<Send class="rtl:-scale-x-100" size={14} />
 					{sending ? t('api.sending') : t('api.send')}
 				</button>
 			</section>
@@ -645,7 +645,7 @@
 		background: var(--color-bg);
 		cursor: pointer;
 		font-size: 0.75rem;
-		text-align: left;
+		text-align: start;
 	}
 	.history-item:hover { border-color: var(--color-primary); }
 	.history-url {

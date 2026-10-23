@@ -71,7 +71,7 @@
 				>
 					{#if tier.is_featured}
 						<span
-							class="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[var(--color-primary)] px-3 py-1 text-[11px] font-semibold text-[var(--color-primary-contrast)]"
+							class="absolute -top-3 start-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[var(--color-primary)] px-3 py-1 text-[11px] font-semibold text-[var(--color-primary-contrast)]"
 						>
 							{t('services.tier_popular', 'Most popular')}
 						</span>

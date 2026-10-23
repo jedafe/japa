@@ -316,7 +316,7 @@
 						rel="noopener noreferrer nofollow"
 						class="mt-5 inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 					>
-						<ExternalLink size={16} />
+						<ExternalLink class="rtl:-scale-x-100" size={16} />
 						{t('coupon.cta', 'Get this deal')}
 					</a>
 				{/if}
@@ -340,7 +340,7 @@
 							rel="nofollow noopener"
 							class="mt-3 inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
-							<ExternalLink size={14} />
+							<ExternalLink class="rtl:-scale-x-100" size={14} />
 							{t('deal.trial_cta', 'Try it now')}
 						</a>
 					{/if}
@@ -353,7 +353,7 @@
 					{t('deal.why', 'Why {provider}').replace('{provider}', providerLabel)}
 				</h2>
 				{#if sections.length}
-					<ol class="mt-3 list-decimal space-y-3 pl-5">
+					<ol class="mt-3 list-decimal space-y-3 ps-5">
 						{#each sections as section, i (i)}
 							<li class="text-sm text-[var(--color-text)]">
 								{#if section.title}
@@ -369,7 +369,7 @@
 					<h3 class="mt-3 text-sm font-semibold text-[var(--color-text)]">
 						{t('deal.how_to_redeem', 'How to redeem')}
 					</h3>
-					<ol class="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-[var(--color-text-subtle)]">
+					<ol class="mt-2 list-decimal space-y-1.5 ps-5 text-sm text-[var(--color-text-subtle)]">
 						<li>{t('deal.redeem_step_1', "Follow the deal link to open the offer on the provider's site.")}</li>
 						<li>{t('deal.redeem_step_2', 'Copy the coupon code if one is shown.')}</li>
 						<li>{t('deal.redeem_step_3', 'The discount applies at checkout.')}</li>
@@ -407,7 +407,7 @@
 								</div>
 								<ChevronRight
 									size={16}
-									class="shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5"
+									class="shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5 rtl:-scale-x-100"
 								/>
 							</a>
 						{/each}
@@ -432,7 +432,7 @@
 									{f.q}
 									<ChevronRight
 										size={16}
-										class="shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-90"
+										class="shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-90 rtl:-scale-x-100"
 									/>
 								</summary>
 								<p class="px-4 pb-4 text-sm text-[var(--color-text-subtle)]">{f.a}</p>

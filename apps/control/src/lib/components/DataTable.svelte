@@ -191,7 +191,7 @@
 				{#each columns as col}
 					<th
 						scope="col"
-						class="text-muted-foreground bg-muted px-4 py-2.5 text-left font-medium {col.class ?? ''}"
+						class="text-muted-foreground bg-muted px-4 py-2.5 text-start font-medium {col.class ?? ''}"
 					>
 						{#if col.sortable}
 							<button
@@ -310,7 +310,7 @@
 												type="button"
 												{...props}
 												class="text-muted-foreground hover:bg-dark-04 flex h-7 w-7 items-center justify-center rounded-lg transition-colors outline-none"
-												aria-label="Row actions"
+												aria-label={t('common.row_actions', 'Row actions')}
 											>
 												<Ellipsis class="size-4" />
 											</button>
@@ -364,7 +364,7 @@
 					onclick={() => goTo(0)}
 					aria-label={t('lib.components.DataTable.first_page', 'First page')}
 				>
-					<ChevronsLeft class="size-4" />
+					<ChevronsLeft class="size-4 rtl:-scale-x-100" />
 				</button>
 				<button
 					class="text-foreground hover:bg-dark-04 flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
@@ -372,7 +372,7 @@
 					onclick={() => goTo(page - 1)}
 					aria-label={t('lib.components.DataTable.prev_page', 'Previous page')}
 				>
-					<ChevronLeft class="size-4" />
+					<ChevronLeft class="size-4 rtl:-scale-x-100" />
 				</button>
 				<span class="text-foreground px-2 text-xs font-medium">
 					{t('lib.components.DataTable.page_of', 'Page {p} of {t}').replace('{p}', String(page + 1)).replace('{t}', String(totalPages))}
@@ -383,7 +383,7 @@
 					onclick={() => goTo(page + 1)}
 					aria-label={t('lib.components.DataTable.next_page', 'Next page')}
 				>
-					<ChevronRight class="size-4" />
+					<ChevronRight class="size-4 rtl:-scale-x-100" />
 				</button>
 				<button
 					class="text-foreground hover:bg-dark-04 flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
@@ -391,7 +391,7 @@
 					onclick={() => goTo(totalPages - 1)}
 					aria-label={t('lib.components.DataTable.last_page', 'Last page')}
 				>
-					<ChevronsRight class="size-4" />
+					<ChevronsRight class="size-4 rtl:-scale-x-100" />
 				</button>
 			</div>
 		</div>

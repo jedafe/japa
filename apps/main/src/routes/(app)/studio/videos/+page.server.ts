@@ -12,14 +12,18 @@ const STUDIO_CACHE_TAG = 'app:studio';
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw redirect(307, '/login?redirect=/studio/videos');
+		throw redirect(
+			307,
+			`/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`
+		);
 	}
 
-	// The video.enabled gate covers this subroute only — the rest of the
-	// /studio surface is available regardless (Rule 16).
+	// The video.enabled feature flag covers this subroute only — the rest
+	// of the /studio surface is available regardless (Rule 16). Read the
+	// flags map (unified rollout), not the deprecated public setting.
 	const parent = await event.parent();
-	const siteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
-	if (siteSettings['video.enabled'] !== true) {
+	const flags = (parent as { features?: Record<string, boolean> }).features ?? {};
+	if (flags['video.enabled'] !== true) {
 		throw redirect(307, '/studio/create');
 	}
 

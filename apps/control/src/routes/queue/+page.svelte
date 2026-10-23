@@ -355,7 +355,7 @@
 	<div class="flex items-center gap-3">
 		<p class="text-muted-foreground text-xs">
 			{t('queue.last_updated').replace('{time}', lastRefresh.toLocaleTimeString())}
-			<span class="ml-2">({t('queue.seconds_ago').replace('{seconds}', String(secondsAgo))})</span>
+			<span class="ms-2">({t('queue.seconds_ago').replace('{seconds}', String(secondsAgo))})</span>
 		</p>
 		<span class="bg-accent text-accent-foreground rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
 			{t('queue.auto_refresh')}
@@ -458,12 +458,12 @@
 				<table class="w-full text-sm">
 					<thead>
 						<tr class="border-border-card border-b">
-							<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('queue.name')}</th>
-							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.pending_count')}</th>
-							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.active_count')}</th>
-							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.completed_24h')}</th>
-							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.failed_24h')}</th>
-							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.latency')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-start font-medium">{t('queue.name')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('queue.pending_count')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('queue.active_count')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('queue.completed_24h')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('queue.failed_24h')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-end font-medium">{t('queue.latency')}</th>
 							<th class="text-muted-foreground px-4 py-3 text-center font-medium">{t('queue.status')}</th>
 						</tr>
 					</thead>
@@ -484,19 +484,19 @@
 											{q.name}
 										</div>
 									</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">
+									<td class="px-4 py-3 text-end font-mono text-xs">
 										<span class:text-tertiary={q.pending > 200} class:text-destructive={q.pending > 1000}>
 											{formatNumber(q.pending)}
 										</span>
 									</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">{formatNumber(q.active)}</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">{formatNumber(q.completed_24h)}</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">
+									<td class="px-4 py-3 text-end font-mono text-xs">{formatNumber(q.active)}</td>
+									<td class="px-4 py-3 text-end font-mono text-xs">{formatNumber(q.completed_24h)}</td>
+									<td class="px-4 py-3 text-end font-mono text-xs">
 										<span class:text-destructive={q.failed_24h > 0}>
 											{formatNumber(q.failed_24h)}
 										</span>
 									</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">
+									<td class="px-4 py-3 text-end font-mono text-xs">
 										<span class:text-tertiary={q.latency_ms > 5000}>
 											{formatLatency(q.latency_ms)}
 										</span>
@@ -575,21 +575,21 @@
 							<table class="w-full text-xs">
 								<thead>
 									<tr class="border-b border-border-card">
-										<th class="text-muted-foreground px-3 py-2 text-left font-medium">{t('queue.task_type', 'Type')}</th>
-										<th class="text-muted-foreground px-3 py-2 text-left font-medium">{t('queue.task_id', 'ID')}</th>
-										<th class="text-muted-foreground px-3 py-2 text-left font-medium">{t('queue.payload', 'Payload')}</th>
+										<th class="text-muted-foreground px-3 py-2 text-start font-medium">{t('queue.task_type', 'Type')}</th>
+										<th class="text-muted-foreground px-3 py-2 text-start font-medium">{t('queue.task_id', 'ID')}</th>
+										<th class="text-muted-foreground px-3 py-2 text-start font-medium">{t('queue.payload', 'Payload')}</th>
 										{#if taskTab === 'retry' || taskTab === 'archived'}
-											<th class="text-muted-foreground px-3 py-2 text-left font-medium">{t('queue.error', 'Error')}</th>
-											<th class="text-muted-foreground px-3 py-2 text-left font-medium">{t('queue.last_failed', 'Last Failed')}</th>
+											<th class="text-muted-foreground px-3 py-2 text-start font-medium">{t('queue.error', 'Error')}</th>
+											<th class="text-muted-foreground px-3 py-2 text-start font-medium">{t('queue.last_failed', 'Last Failed')}</th>
 										{/if}
 										{#if taskTab === 'scheduled'}
-											<th class="text-muted-foreground px-3 py-2 text-left font-medium">{t('queue.next_run', 'Next Run')}</th>
+											<th class="text-muted-foreground px-3 py-2 text-start font-medium">{t('queue.next_run', 'Next Run')}</th>
 										{/if}
 										{#if taskTab === 'retry' || taskTab === 'archived'}
-											<th class="text-muted-foreground px-3 py-2 text-right font-medium">{t('queue.retries', 'Retries')}</th>
+											<th class="text-muted-foreground px-3 py-2 text-end font-medium">{t('queue.retries', 'Retries')}</th>
 										{/if}
 										{#if taskActions(taskTab).length}
-											<th class="text-muted-foreground px-3 py-2 text-right font-medium">{t('queue.action', 'Action')}</th>
+											<th class="text-muted-foreground px-3 py-2 text-end font-medium">{t('queue.action', 'Action')}</th>
 										{/if}
 									</tr>
 								</thead>
@@ -599,7 +599,7 @@
 											<td class="max-w-[140px] truncate px-3 py-2 font-mono">
 												{task.type || '—'}
 												{#if task.is_orphaned}
-													<span class="bg-tertiary/12 text-tertiary rounded-5px ml-1 px-1.5 py-0.5 text-[10px] font-medium">{t('queue.orphaned', 'Orphaned')}</span>
+													<span class="bg-tertiary/12 text-tertiary rounded-5px ms-1 px-1.5 py-0.5 text-[10px] font-medium">{t('queue.orphaned', 'Orphaned')}</span>
 												{/if}
 											</td>
 											<td class="text-muted-foreground max-w-[120px] truncate px-3 py-2 font-mono">{task.id || '—'}</td>
@@ -612,10 +612,10 @@
 												<td class="text-muted-foreground px-3 py-2 whitespace-nowrap">{formatTaskTime(task.next_process_at)}</td>
 											{/if}
 											{#if taskTab === 'retry' || taskTab === 'archived'}
-												<td class="text-muted-foreground px-3 py-2 text-right whitespace-nowrap">{task.retry_count}/{task.max_retry}</td>
+												<td class="text-muted-foreground px-3 py-2 text-end whitespace-nowrap">{task.retry_count}/{task.max_retry}</td>
 											{/if}
 											{#if taskActions(taskTab).length}
-												<td class="px-3 py-2 text-right">
+												<td class="px-3 py-2 text-end">
 													<div class="flex items-center justify-end gap-1">
 														{#each taskActions(taskTab) as action (action)}
 															<button

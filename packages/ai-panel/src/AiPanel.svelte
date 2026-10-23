@@ -381,7 +381,7 @@
 					aria-label={pt('ai.panel.open_full', 'Open in Japa AI')}
 					title={pt('ai.panel.open_full', 'Open in Japa AI')}
 				>
-					<ExternalLink size={15} />
+					<ExternalLink class="rtl:-scale-x-100" size={15} />
 				</a>
 			{/if}
 			<button
@@ -549,14 +549,14 @@
 	.ai-panel {
 		position: fixed;
 		top: 0;
-		right: 0;
+		inset-inline-end: 0;
 		bottom: 0;
 		width: 400px;
 		max-width: 100vw;
 		display: flex;
 		flex-direction: column;
 		background: var(--color-surface);
-		border-left: 1px solid var(--color-border);
+		border-inline-start: 1px solid var(--color-border);
 		box-shadow: -8px 0 24px rgb(0 0 0 / 0.18);
 		z-index: 60;
 		animation: ai-panel-in 0.18s ease-out;
@@ -574,7 +574,7 @@
 	@media (max-width: 640px) {
 		.ai-panel {
 			width: 100vw;
-			border-left: none;
+			border-inline-start: none;
 		}
 	}
 	.ai-panel-head {
@@ -786,7 +786,7 @@
 		line-height: 1.5;
 		padding: 0.75rem 0.875rem;
 		/* Room for the in-field send/stop button. */
-		padding-right: 3.25rem;
+		padding-inline-end: 3.25rem;
 		max-height: 9rem;
 	}
 	.ai-panel-composer textarea:focus {
@@ -795,7 +795,7 @@
 	}
 	.ai-panel-send {
 		position: absolute;
-		right: 0.5625rem;
+		inset-inline-end: 0.5625rem;
 		top: 0.6875rem;
 		display: grid;
 		place-items: center;

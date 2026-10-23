@@ -703,6 +703,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
  c.publish_at, c.published_at, c.created_at, c.updated_at,
  COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(LEFT(c.body, 200), '') AS excerpt
 FROM contents c
@@ -754,6 +755,7 @@ type ListAdminBlogPostsRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	AuthorName      string             `json:"author_name"`
+	AuthorUsername  string             `json:"author_username"`
 	AuthorAvatarUrl string             `json:"author_avatar_url"`
 	Excerpt         interface{}        `json:"excerpt"`
 }
@@ -806,6 +808,7 @@ func (q *Queries) ListAdminBlogPosts(ctx context.Context, arg ListAdminBlogPosts
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AuthorName,
+			&i.AuthorUsername,
 			&i.AuthorAvatarUrl,
 			&i.Excerpt,
 		); err != nil {
@@ -1054,6 +1057,7 @@ SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until
  (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
  c.author_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -1100,6 +1104,7 @@ type ListFeaturedBlogPostCardsRow struct {
 	ReshareCount          int64              `json:"reshare_count"`
 	AuthorID              pgtype.UUID        `json:"author_id"`
 	AuthorName            string             `json:"author_name"`
+	AuthorUsername        string             `json:"author_username"`
 	AuthorAvatarUrl       string             `json:"author_avatar_url"`
 	SpaceName             string             `json:"space_name"`
 	SpaceSlug             string             `json:"space_slug"`
@@ -1136,6 +1141,7 @@ func (q *Queries) ListFeaturedBlogPostCards(ctx context.Context, arg ListFeature
 			&i.ReshareCount,
 			&i.AuthorID,
 			&i.AuthorName,
+			&i.AuthorUsername,
 			&i.AuthorAvatarUrl,
 			&i.SpaceName,
 			&i.SpaceSlug,
@@ -1253,6 +1259,7 @@ SELECT cr.id, cr.content_id, cr.status, cr.created_at AS submitted_at,
  cr.feedback,
  c.title, c.slug, c.author_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(LEFT(c.body, 200), '') AS excerpt
 FROM content_reviews cr
@@ -1282,6 +1289,7 @@ type ListPendingReviewSummariesRow struct {
 	Slug            string             `json:"slug"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	AuthorName      string             `json:"author_name"`
+	AuthorUsername  string             `json:"author_username"`
 	AuthorAvatarUrl string             `json:"author_avatar_url"`
 	Excerpt         interface{}        `json:"excerpt"`
 }
@@ -1307,6 +1315,7 @@ func (q *Queries) ListPendingReviewSummaries(ctx context.Context, arg ListPendin
 			&i.Slug,
 			&i.AuthorID,
 			&i.AuthorName,
+			&i.AuthorUsername,
 			&i.AuthorAvatarUrl,
 			&i.Excerpt,
 		); err != nil {
@@ -1393,6 +1402,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
  c.publish_at, c.published_at, c.created_at, c.updated_at,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -1473,6 +1483,7 @@ type ListPublishedBlogPostsRow struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 	AuthorName            string             `json:"author_name"`
+	AuthorUsername        string             `json:"author_username"`
 	AuthorAvatarUrl       string             `json:"author_avatar_url"`
 	SpaceName             string             `json:"space_name"`
 	SpaceSlug             string             `json:"space_slug"`
@@ -1540,6 +1551,7 @@ func (q *Queries) ListPublishedBlogPosts(ctx context.Context, arg ListPublishedB
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AuthorName,
+			&i.AuthorUsername,
 			&i.AuthorAvatarUrl,
 			&i.SpaceName,
 			&i.SpaceSlug,

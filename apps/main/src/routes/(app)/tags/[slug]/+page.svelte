@@ -406,7 +406,7 @@
 			href="/discover?tab=tags"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} /> {t('tag.back', 'All tags')}
+			<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('tag.back', 'All tags')}
 		</a>
 		<div class="flex items-center gap-3">
 			{#if tag.logo_url}
@@ -461,7 +461,7 @@
 								class="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
 							>
 								{String(fieldValues[field.key])}
-								<ExternalLink size={12} />
+								<ExternalLink class="rtl:-scale-x-100" size={12} />
 							</a>
 						{:else if field.field_type === 'rich_text'}
 							<div class="prose prose-sm max-w-none text-sm text-[var(--color-text-subtle)]">
@@ -483,10 +483,10 @@
 			<!-- Search within this tag (auth required by the backend). -->
 			<form class="mb-4 flex gap-2" onsubmit={(e) => { e.preventDefault(); runSearch(); }}>
 				<div class="relative flex-1">
-					<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+					<Search size={16} class="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 					<input
 						type="search"
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)]"
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-9 pe-3 text-sm text-[var(--color-text)]"
 						placeholder={t('tag.search_placeholder', 'Search posts in this tag…')}
 						bind:value={searchInput}
 						disabled={!authed}
@@ -541,7 +541,7 @@
 								slug={f.username}
 								name={f.display_name}
 								avatar={f.avatar_url}
-								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] p-2 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] p-2 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
 									{#if f.avatar_url}
@@ -573,7 +573,7 @@
 								slug={m.username}
 								name={m.display_name || m.username}
 								avatar={m.avatar_url}
-								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] p-2 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] p-2 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
 									{#if m.avatar_url}
@@ -668,7 +668,7 @@
 						{#if editCoverUrl}
 							<div class="relative">
 								<img src={editCoverUrl} alt={tag.name} class="h-12 w-20 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
-								<button type="button" onclick={() => { editCoverMediaId = ''; editCoverUrl = ''; }} class="absolute -right-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label="Remove">
+								<button type="button" onclick={() => { editCoverMediaId = ''; editCoverUrl = ''; }} class="absolute -end-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label={t('common.remove', 'Remove')}>
 									<X size={12} />
 								</button>
 							</div>
@@ -691,7 +691,7 @@
 						{#if editLogoUrl}
 							<div class="relative">
 								<img src={editLogoUrl} alt={tag.name} class="h-12 w-12 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
-								<button type="button" onclick={() => { editLogoMediaId = ''; editLogoUrl = ''; }} class="absolute -right-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label="Remove">
+								<button type="button" onclick={() => { editLogoMediaId = ''; editLogoUrl = ''; }} class="absolute -end-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label={t('common.remove', 'Remove')}>
 									<X size={12} />
 								</button>
 							</div>

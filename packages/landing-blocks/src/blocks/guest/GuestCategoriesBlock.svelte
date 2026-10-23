@@ -94,7 +94,7 @@
       <p class="category-description">{cat.description}</p>
       <span class="category-link">
         Explore {cat.title}
-        <ArrowRight size={16} />
+        <ArrowRight class="rtl:-scale-x-100" size={16} />
       </span>
     </a>
   {/snippet}

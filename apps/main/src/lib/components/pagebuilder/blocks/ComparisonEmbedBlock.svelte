@@ -14,6 +14,6 @@
 		<span class="text-sm font-medium text-[var(--color-text)]">
 			{t('pagebuilder.view_comparison', 'View comparison')}
 		</span>
-		<ArrowRight size={18} class="text-[var(--color-text-subtle)]" />
+		<ArrowRight size={18} class="text-[var(--color-text-subtle)] rtl:-scale-x-100" />
 	</a>
 </div>

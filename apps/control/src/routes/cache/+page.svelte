@@ -100,15 +100,15 @@
 			key: 'key_count',
 			label: t('cache.keys', 'Keys'),
 			sortable: true,
-			class: 'text-right',
-			render: (val: unknown) => `<span class="font-mono text-xs text-right block">${Number(val).toLocaleString()}</span>`
+			class: 'text-end',
+			render: (val: unknown) => `<span class="font-mono text-xs text-end block">${Number(val).toLocaleString()}</span>`
 		},
 		{
 			key: 'memory_estimate_mb',
 			label: t('cache.memory', 'Memory'),
 			sortable: true,
-			class: 'text-right',
-			render: (val: unknown) => `<span class="font-mono text-xs text-right block">${formatMemory(Number(val))}</span>`
+			class: 'text-end',
+			render: (val: unknown) => `<span class="font-mono text-xs text-end block">${formatMemory(Number(val))}</span>`
 		},
 		{
 			key: 'memory_estimate_mb',

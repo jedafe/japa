@@ -223,7 +223,7 @@
 				<li role="option" aria-selected={i === activeIndex}>
 					<button
 						type="button"
-						class="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors"
+						class="flex w-full items-center justify-between px-3 py-2 text-start text-sm transition-colors"
 						style={i === activeIndex
 							? 'background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-foreground)'
 							: 'color: var(--color-foreground)'}

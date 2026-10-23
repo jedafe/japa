@@ -154,7 +154,7 @@
 	.video-embed-duration {
 		position: absolute;
 		bottom: 0.5rem;
-		right: 0.5rem;
+		inset-inline-end: 0.5rem;
 		border-radius: var(--radius, 6px);
 		background: rgba(0, 0, 0, 0.75);
 		padding: 2px 6px;

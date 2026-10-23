@@ -311,7 +311,7 @@
 				<div class="space-y-2 rounded-lg border border-[var(--color-border)] p-3 text-sm">
 					<div>
 						<span class="font-medium" style="color: var(--color-foreground)">{reviewTarget.scam_type}</span>
-						<span class="ml-2 text-[var(--color-muted)]">· {reviewTarget.status}</span>
+						<span class="ms-2 text-[var(--color-muted)]">· {reviewTarget.status}</span>
 					</div>
 					{#if reviewTarget.destination_space_name}
 						<div class="text-[var(--color-muted)]">

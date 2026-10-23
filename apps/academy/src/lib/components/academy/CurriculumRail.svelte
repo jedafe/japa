@@ -64,7 +64,7 @@
 </script>
 
 <aside
-	class="curriculum-rail sticky top-0 h-screen overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-surface)] {drawerOpen ? 'drawer-open' : ''}"
+	class="curriculum-rail sticky top-0 h-screen overflow-y-auto border-e border-[var(--color-border)] bg-[var(--color-surface)] {drawerOpen ? 'drawer-open' : ''}"
 >
 	<div class="px-4 py-4">
 		<a

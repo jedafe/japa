@@ -191,7 +191,7 @@
 				href="/planning-groups"
 				class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			>
-				<ArrowLeft size={14} /> {t('planning_groups.back', 'All planning groups')}
+				<ArrowLeft class="rtl:-scale-x-100" size={14} /> {t('planning_groups.back', 'All planning groups')}
 			</a>
 			<div class="flex items-start justify-between gap-3">
 				<div class="min-w-0 flex-1">
@@ -256,7 +256,7 @@
 							disabled={joinLoading}
 							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 						>
-							<LogOut size={14} /> {joinLoading ? '...' : t('planning_groups.leave', 'Leave')}
+							<LogOut class="rtl:-scale-x-100" size={14} /> {joinLoading ? '...' : t('planning_groups.leave', 'Leave')}
 						</button>
 					{:else}
 						<button
@@ -265,7 +265,7 @@
 							disabled={joinLoading || memberCount >= (group.max_members ?? 0)}
 							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 						>
-							<LogIn size={14} /> {joinLoading ? '...' : t('planning_groups.join', 'Join')}
+							<LogIn class="rtl:-scale-x-100" size={14} /> {joinLoading ? '...' : t('planning_groups.join', 'Join')}
 						</button>
 					{/if}
 				{:else}
@@ -273,7 +273,7 @@
 						href="/login?redirect=/planning-groups/{group.id}"
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 					>
-						<LogIn size={14} /> {t('planning_groups.join', 'Join')}
+						<LogIn class="rtl:-scale-x-100" size={14} /> {t('planning_groups.join', 'Join')}
 					</a>
 				{/if}
 			</div>

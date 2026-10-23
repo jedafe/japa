@@ -146,6 +146,6 @@
   </ul>
   <a href={href} class="destination-all">
     See all countries
-    <ArrowRight size={14} />
+    <ArrowRight class="rtl:-scale-x-100" size={14} />
   </a>
 </div>

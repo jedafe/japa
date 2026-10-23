@@ -179,9 +179,9 @@
 
 	<article class="doc-article">
 		<header class="doc-header">
-			<nav class="breadcrumb" aria-label="Breadcrumb">
+			<nav class="breadcrumb" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
 				<a href="/docs" class="crumb">{t('audience.overview')}</a>
-				<ChevronRight size={12} class="crumb-sep" />
+				<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 				<a href="/docs/api" class="crumb">{t('audience.api')}</a>
 			</nav>
 			<h1>{data.page.title}</h1>
@@ -316,7 +316,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
-		margin-left: auto;
+		margin-inline-start: auto;
 		font-size: 0.8125rem;
 		font-weight: 500;
 		color: var(--color-primary);
@@ -407,7 +407,7 @@
 			text-decoration: none;
 		}
 		.mobile-toc a:hover { color: var(--color-primary); }
-		.mobile-toc li.level-3 a { padding-left: 1rem; font-size: 0.8125rem; }
+		.mobile-toc li.level-3 a { padding-inline-start: 1rem; font-size: 0.8125rem; }
 	}
 	.op-line {
 		display: flex;

@@ -122,6 +122,9 @@
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
+		// Let Enter on inner links/buttons run their native behavior.
+		const target = e.target as HTMLElement | null;
+		if (target && (target.closest('a') || target.closest('button'))) return;
 		if (e.key === 'Enter') goto(canonicalHref);
 	}
 </script>
@@ -151,12 +154,12 @@
 		{#if isVideo}
 			<span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/25">
 				<span class="grid h-11 w-11 place-items-center rounded-full bg-black/60 text-white">
-					<Play size={20} class="ml-0.5" />
+					<Play size={20} class="ms-0.5" />
 				</span>
 			</span>
 			{#if duration}
 				<span
-					class="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[10.5px] font-semibold text-white [font-variant-numeric:tabular-nums]"
+					class="absolute bottom-1.5 end-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[10.5px] font-semibold text-white [font-variant-numeric:tabular-nums]"
 				>
 					{duration}
 				</span>
@@ -165,7 +168,7 @@
 
 		<!-- Overlay tags -->
 		{#if overlayTags.length}
-			<div class="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
+			<div class="absolute bottom-3 start-3 flex flex-wrap gap-1.5">
 				{#each overlayTags as tag (tag)}
 					<span
 						class="rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm"
@@ -179,7 +182,7 @@
 		<!-- Bookmark button -->
 		<button
 			type="button"
-			class="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+			class="absolute end-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
 			class:text-[var(--color-primary)]={bookmarked}
 			aria-label={bookmarked ? t('feed.card.bookmarked', 'Bookmarked') : t('feed.card.bookmark', 'Bookmark')}
 			aria-pressed={bookmarked}
@@ -192,8 +195,12 @@
 
 	<!-- Body -->
 	<div class="flex flex-1 flex-col gap-3 p-5">
+		<!-- The title is a real anchor so the card is crawlable and supports
+		     open-in-new-tab/copy-link — the card div's role="link" + goto()
+		     gave none of that (SEO/a11y). navigate() ignores clicks that
+		     land on an <a>, so no double navigation. -->
 		<h2 class="line-clamp-2 text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
-			{item.title}
+			<a href={canonicalHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
 		</h2>
 
 		{#if item.excerpt}

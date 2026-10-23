@@ -3,6 +3,7 @@
      /admin/next-actions/predicates. Emits the JSON object the API expects. -->
 <script lang="ts">
 	import { getPredicateSpecs, type PredicateSpec } from '$lib/api/nextactions';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Plus, X } from 'lucide-svelte';
 
 	interface Props {
@@ -115,8 +116,8 @@
 						{/if}
 					</label>
 				{/each}
-				<button type="button" onclick={() => removePred(group, i)} aria-label="Remove predicate"
-					class="text-muted-foreground hover:text-destructive ml-auto p-0.5">
+				<button type="button" onclick={() => removePred(group, i)} aria-label={t('nextactions.remove_predicate', 'Remove predicate')}
+					class="text-muted-foreground hover:text-destructive ms-auto p-0.5">
 					<X size={13} />
 				</button>
 			</div>

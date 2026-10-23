@@ -60,7 +60,7 @@
 			onclick={onCollapseToggle}
 			aria-label={t('lib.components.layout.TopBar.svelte.toggle_sidebar', 'Toggle sidebar')}
 		>
-			<PanelLeft class="h-5 w-5" />
+			<PanelLeft class="h-5 w-5 rtl:-scale-x-100" />
 		</button>
 		<a href="/" class="text-sm font-semibold" style="color: var(--color-foreground)">{t('lib.components.layout.TopBar.svelte.japaconnect_admin')}</a>
 		{#if PUBLIC_JC_ENV === 'production'}
@@ -80,14 +80,14 @@
 			>
 				<Bell class="h-4 w-4" />
 				{#if getUnreadCount() > 0}
-					<span class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+					<span class="absolute -end-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
 						{getUnreadCount()}
 					</span>
 				{/if}
 			</button>
 
 			{#if showNotifications}
-				<div class="absolute right-0 top-full z-50 mt-1 w-80 rounded-md border shadow-lg" style="border-color: var(--color-border); background-color: var(--color-surface)">
+				<div class="absolute end-0 top-full z-50 mt-1 w-80 rounded-md border shadow-lg" style="border-color: var(--color-border); background-color: var(--color-surface)">
 					<div class="flex items-center justify-between border-b px-3 py-2" style="border-color: var(--color-border)">
 						<span class="text-sm font-medium" style="color: var(--color-foreground)">{t('lib.components.layout.TopBar.svelte.notifications')}</span>
 						<button
@@ -106,7 +106,7 @@
 							{#each getNotifications() as notif (notif.id)}
 								<button
 									type="button"
-									class="w-full px-3 py-2 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.05] {notif.read ? 'opacity-60' : ''}"
+									class="w-full px-3 py-2 text-start hover:bg-black/[0.02] dark:hover:bg-white/[0.05] {notif.read ? 'opacity-60' : ''}"
 									onclick={() => {
 										markRead(notif.id);
 										// action_url values are in-app paths; goto() throws on
@@ -149,10 +149,10 @@
 				</button>
 
 				{#if showDropdown}
-					<div class="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border shadow-lg" style="border-color: var(--color-border); background-color: var(--color-surface)">
+					<div class="absolute end-0 top-full z-50 mt-1 w-48 rounded-md border shadow-lg" style="border-color: var(--color-border); background-color: var(--color-surface)">
 						<button
 							type="button"
-							class="w-full px-4 py-2 text-left text-sm hover:bg-black/[0.02] dark:hover:bg-white/[0.05]"
+							class="w-full px-4 py-2 text-start text-sm hover:bg-black/[0.02] dark:hover:bg-white/[0.05]"
 							style="color: var(--color-foreground)"
 							onclick={logout}
 						>
@@ -164,7 +164,7 @@
 		{/if}
 		
 		<!-- Logo -->
-		<a href="/" class="flex items-center gap-2 ml-2">
+		<a href="/" class="flex items-center gap-2 ms-2">
 			<div class="flex h-8 w-8 items-center justify-center rounded-lg" style="background-color: var(--color-primary)">
 				<span class="text-sm font-bold text-white">JC</span>
 			</div>

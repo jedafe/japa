@@ -87,10 +87,12 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 	let comments: Comment[] = [];
 	let commentsLoadError = false;
 	let commentDeletedUserIds: string[] | null = null;
+	let commentsTotal: number | null = null;
 	try {
 		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${article.id}/comments?page_size=50`);
 		comments = envelope.data ?? [];
 		commentDeletedUserIds = envelope.deleted_user_ids ?? null;
+		commentsTotal = (envelope.meta as { total?: number } | undefined)?.total ?? null;
 	} catch {
 		commentsLoadError = true;
 	}
@@ -106,8 +108,15 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 	// these below the CreatorCard in the right <aside>. The (app) layout already
 	// resolves /sidebars/resolve for this exact pathname — reuse its result
 	// instead of issuing a second identical request.
-	const parentData = (await event.parent()) as { rightSidebarWidgets?: unknown[] };
+	const parentData = (await event.parent()) as {
+		rightSidebarWidgets?: unknown[];
+		siteSettings?: Record<string, unknown>;
+	};
 	const rightSidebarWidgets = parentData.rightSidebarWidgets ?? [];
+	// The article component reads siteSettings['content.sanitization.allowed_iframe_hosts']
+	// to keep admin-allowed iframe embeds — it was previously never returned,
+	// so the configured hosts were silently ignored on every article page.
+	const siteSettings = parentData.siteSettings ?? {};
 
 	// Related content (Section 14 — GET /content/{id}/related). Best-effort.
 	// NB: the endpoint reads `page_size`, not `limit`.
@@ -172,6 +181,7 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 		canEdit,
 		comments,
 		commentsLoadError,
+		commentsTotal,
 		rightSidebarWidgets,
 		relatedContent,
 		recommendedContent,
@@ -179,6 +189,7 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 		seriesPosts,
 		jsonLd,
 		deletedUserIds: mergedDeletedUserIds,
-		initiallyFollowing: isFollowing
+		initiallyFollowing: isFollowing,
+		siteSettings
 	};
 }

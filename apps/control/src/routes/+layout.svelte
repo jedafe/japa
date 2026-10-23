@@ -308,7 +308,7 @@
 {:else}
 	<div class="bg-background text-foreground flex h-screen overflow-hidden">
 		<button
-			class="bg-background-alt border-border fixed left-4 top-4 z-50 rounded-lg border p-2 shadow-mini md:hidden"
+			class="bg-background-alt border-border fixed start-4 top-4 z-50 rounded-lg border p-2 shadow-mini md:hidden"
 			aria-label={t('common.toggle_menu')}
 			onclick={() => (sidebarOpen = !sidebarOpen)}
 		>
@@ -320,7 +320,7 @@
 		</button>
 
 		<aside
-			class="border-border-card bg-background-alt fixed inset-y-0 left-0 z-40 flex w-60 flex-shrink-0 flex-col transition-transform md:static md:translate-x-0"
+			class="border-border-card bg-background-alt fixed inset-y-0 start-0 z-40 flex w-60 flex-shrink-0 flex-col transition-transform md:static md:translate-x-0"
 			class:translate-x-0={sidebarOpen}
 			class:-translate-x-full={!sidebarOpen}
 		>
@@ -347,7 +347,7 @@
 		{#if sidebarOpen}
 			<button
 				class="fixed inset-0 z-30 bg-black/50 md:hidden"
-				aria-label="Close sidebar"
+				aria-label={t('common.close_sidebar', 'Close sidebar')}
 				onclick={() => (sidebarOpen = false)}
 			></button>
 		{/if}

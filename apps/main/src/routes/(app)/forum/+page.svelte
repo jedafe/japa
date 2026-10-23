@@ -10,14 +10,12 @@
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import { compose } from '$lib/components/shell/compose.svelte';
 	import { t } from '$lib/i18n';
-	import type { CardStyleConfig } from '$lib/feed/cardStyle';
 	import { tiptapJsonFirstImageSrc } from '$lib/tiptap/serialize';
 	import type { FeedItem } from '$lib/types';
 	import type { GuideListItem } from '$lib/types/content';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? undefined);
 
 	const title = $derived(t('forum.list_title', 'Forum — {site}'));
 	const description = $derived(
@@ -186,7 +184,6 @@
 				threads={data.threads}
 				pageSize={data.pageSize}
 				loadError={data.loadError}
-				config={cardStyleConfig}
 				adSlot="native_forum"
 			/>
 		{/if}

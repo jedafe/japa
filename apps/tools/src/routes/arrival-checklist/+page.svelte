@@ -294,7 +294,7 @@
 						{#each myChecklists as cl (cl.guide_id)}
 							<button
 								onclick={() => openChecklist(cl)}
-								class="px-3 py-2 bg-surface border border-border rounded-lg text-sm text-left hover:border-[var(--tool-accent)] transition-colors {activeGuideId === cl.guide_id ? 'border-[var(--tool-accent)]' : ''}"
+								class="px-3 py-2 bg-surface border border-border rounded-lg text-sm text-start hover:border-[var(--tool-accent)] transition-colors {activeGuideId === cl.guide_id ? 'border-[var(--tool-accent)]' : ''}"
 							>
 								<span class="block font-medium text-text">
 									{cl.destination_space_name ?? cl.destination_space_code ?? ''}{#if cl.visa_category}

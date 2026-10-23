@@ -3,7 +3,7 @@
 	// /academy/revenue-splits — read-only audit viewer migrated to EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
 	import { academyAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '$lib/stores/i18n.svelte';
 	import { Eye } from 'lucide-svelte';
 
 	type RevenueSplit = {
@@ -39,7 +39,7 @@
 
 	function formatKobo(kobo: number): string {
 		const major = kobo / 100;
-		return `₦ ${major.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+		return `₦ ${major.toLocaleString(locale.current, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
 	function applyDateFilter() {

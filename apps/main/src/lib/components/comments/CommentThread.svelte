@@ -21,6 +21,8 @@
 		comments: Comment[];
 		/** Total published comment count (top-level + replies). Falls back to the length of `comments` when omitted. */
 		totalCount?: number;
+		/** Server-side total of top-level comments (list meta) — drives load-more. */
+		commentsTotal?: number | null;
 		/** Content id — used for POST /content/{id}/comments and reply fetches. */
 		contentId: string;
 		/** Parent content type — retained for backwards compatibility; no longer gates voting. */
@@ -36,7 +38,7 @@
 		/** Erased-user IDs for GDPR/ADR-029 mention redaction (Section 15). */
 		deletedUserIds?: Set<string>;
 	}
-	let { comments: initial, totalCount, contentId, contentType, authed, currentUserId, canModerate, loadError = false, deletedUserIds }: Props = $props();
+	let { comments: initial, totalCount, commentsTotal, contentId, contentType, authed, currentUserId, canModerate, loadError = false, deletedUserIds }: Props = $props();
 
 	let comments = $state<Comment[]>(untrack(() => initial));
 
@@ -58,26 +60,62 @@
 	let sortLoading = $state(false);
 	let sortError = $state<string | null>(null);
 
+	const PAGE_SIZE = 50;
+
+	// Load-more: the list endpoint now returns meta.total for top-level
+	// comments; older servers without meta fall back to hiding the button.
+	let moreLoading = $state(false);
+	let moreError = $state<string | null>(null);
+
+	const hasMore = $derived(commentsTotal != null && comments.length < commentsTotal);
+
+	async function loadMore() {
+		if (moreLoading || !hasMore) return;
+		moreLoading = true;
+		moreError = null;
+		const res = await api.getEnvelope<Comment[]>(
+			`/content/${contentId}/comments?sort=${encodeURIComponent(sort)}&page_size=${PAGE_SIZE}&page_offset=${comments.length}`
+		);
+		moreLoading = false;
+		if (res.error || !res.data) {
+			moreError = res.error?.message ?? t('comments.load_error');
+			return;
+		}
+		const existing = new Set(comments.map((c) => c.id));
+		comments = [...comments, ...res.data.filter((c) => !existing.has(c.id))];
+		const env = res.envelope as Record<string, unknown> | null;
+		const ids = env?.deleted_user_ids;
+		if (Array.isArray(ids) && deletedUserIds) {
+			for (const id of ids as string[]) deletedUserIds.add(id);
+		}
+		const meta = env?.meta as { total?: number } | undefined;
+		if (typeof meta?.total === 'number') commentsTotal = meta.total;
+	}
+
 	async function changeSort(value: 'top' | 'new' | 'oldest') {
 		if (value === sort || sortLoading) return;
 		sort = value;
 		sortLoading = true;
 		sortError = null;
-		const res = await api.getEnvelope<Comment[]>(`/content/${contentId}/comments?sort=${encodeURIComponent(value)}&page_size=50`);
+		const res = await api.getEnvelope<Comment[]>(`/content/${contentId}/comments?sort=${encodeURIComponent(value)}&page_size=${PAGE_SIZE}`);
 		sortLoading = false;
 		if (res.error || !res.data) {
 			sortError = res.error?.message ?? t('comments.load_error');
 			return;
 		}
 		comments = res.data;
-		const ids = (res.envelope as Record<string, unknown> | null)?.deleted_user_ids;
+		const env = res.envelope as Record<string, unknown> | null;
+		const ids = env?.deleted_user_ids;
 		if (Array.isArray(ids) && deletedUserIds) {
 			for (const id of ids as string[]) deletedUserIds.add(id);
 		}
+		const meta = env?.meta as { total?: number } | undefined;
+		if (typeof meta?.total === 'number') commentsTotal = meta.total;
 	}
 
 	// Top-level composer state — body is base64 TipTap JSON.
 	let draftBody = $state<string>('');
+	let draftAnonymous = $state(false);
 	let submitting = $state(false);
 	let composeError = $state<string | null>(null);
 
@@ -85,16 +123,24 @@
 		if (!draftBody || submitting || !authed) return;
 		submitting = true;
 		composeError = null;
-		const res = await api.post<Comment>(`/content/${contentId}/comments`, { body: draftBody });
+		const res = await api.post<Comment>(`/content/${contentId}/comments`, {
+			body: draftBody,
+			is_anonymous: draftAnonymous
+		});
 		submitting = false;
 		if (res.error || !res.data) {
 			composeError = res.error?.message ?? t('comments.load_error');
 			return;
 		}
-		comments = [res.data, ...comments];
+		// 'oldest' sort appends at the end; top/new prepend (FE-5).
+		comments = sort === 'oldest' ? [...comments, res.data] : [res.data, ...comments];
 		draftBody = '';
+		draftAnonymous = false;
 		if (totalCount != null) {
 			localDelta++;
+		}
+		if (commentsTotal != null) {
+			commentsTotal++;
 		}
 	}
 
@@ -138,7 +184,11 @@
 	{#if authed}
 		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<CommentEditor placeholder={t('comments.placeholder')} oninput={(b) => (draftBody = b)} />
-			<div class="mt-3 flex items-center justify-end">
+			<div class="mt-3 flex items-center justify-between">
+				<label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+					<input type="checkbox" bind:checked={draftAnonymous} class="h-3.5 w-3.5 accent-[var(--color-primary)]" />
+					{t('comments.post_anonymously', 'Post anonymously')}
+				</label>
 				<button
 					type="button"
 					onclick={submitComment}
@@ -184,5 +234,18 @@
 				</div>
 			{/each}
 		</section>
+		{#if hasMore}
+			<button
+				type="button"
+				onclick={loadMore}
+				disabled={moreLoading}
+				class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
+			>
+				{moreLoading ? t('common.loading') : t('comments.load_more', 'Load more comments')}
+			</button>
+			{#if moreError}
+				<p class="mt-1 text-xs text-[var(--color-danger)]">{moreError}</p>
+			{/if}
+		{/if}
 	{/if}
 </div>

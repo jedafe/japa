@@ -94,7 +94,7 @@
 			render: (v: string, row: PendingClaim) =>
 				`<span class="text-sm font-medium">${v}</span>` +
 				(row.org_slug
-					? `<span class="ml-2 font-mono text-xs" style="color: var(--color-muted)">${row.org_slug}</span>`
+					? `<span class="ms-2 font-mono text-xs" style="color: var(--color-muted)">${row.org_slug}</span>`
 					: "")
 		},
 		{

@@ -250,8 +250,13 @@ SELECT
  (SELECT COUNT(*) FROM content_spaces cs
  JOIN contents c ON c.id = cs.content_id
  WHERE cs.space_id = @space_id AND c.deleted_at IS NULL AND c.status = 'published')::int AS content_count,
- (SELECT COUNT(*) FROM content_views
- WHERE content_views.space_id = @space_id)::int AS view_count,
+ -- View count reads user_content_views (the table view tracking actually
+ -- writes per Section 14) joined through the space's published content;
+ -- content_views has no writers and would report a permanent 0.
+ (SELECT COUNT(*) FROM user_content_views ucv
+ JOIN content_spaces cs ON cs.content_id = ucv.content_id
+ JOIN contents c ON c.id = cs.content_id
+ WHERE cs.space_id = @space_id AND c.deleted_at IS NULL AND c.status = 'published')::int AS view_count,
  (SELECT COUNT(*) FROM follows f
  WHERE f.entity_type = 'space' AND f.entity_id = @space_id)::int AS follower_count,
  (SELECT COUNT(*) FROM content_spaces cs

@@ -43,5 +43,5 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	throw redirect(307, `/create?draft=${story.id}&type=story`);
+	throw redirect(307, `/studio/create?draft=${story.id}&type=story`);
 };

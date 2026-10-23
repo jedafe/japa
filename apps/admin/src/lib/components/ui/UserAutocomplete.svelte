@@ -97,7 +97,7 @@
 				<li>
 					<button
 						type="button"
-						class="w-full px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+						class="w-full px-3 py-2 text-start text-sm hover:bg-black/5 dark:hover:bg-white/10"
 						style="color: var(--color-foreground)"
 						onmousedown={() => selectUser(user.username)}
 					>

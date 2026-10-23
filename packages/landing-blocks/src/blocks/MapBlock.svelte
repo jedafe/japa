@@ -99,7 +99,7 @@
       {:then pins}
         {#each pins as pin}
           {@const { isVisitor } = pinFlags(pin)}
-          <div class="absolute flex flex-col items-center" style="top: {pin.y}%; left: {pin.x}%; transform: translate(-50%, -50%)">
+          <div class="absolute flex flex-col items-center" style="top: {pin.y}%; inset-inline-start: {pin.x}%; transform: translate(-50%, -50%)">
             {#if pin.href}
               <a href={pin.href} class="flex flex-col items-center">
                 <div class="rounded-full {isVisitor ? 'h-5 w-5 ring-4 ring-[var(--color-primary)] ring-opacity-30' : 'h-3 w-3'} bg-[var(--color-primary)] animate-pulse"></div>

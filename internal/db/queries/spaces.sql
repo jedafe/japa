@@ -1088,6 +1088,13 @@ INSERT INTO space_members (space_id, user_id, role, status) VALUES (@space_id, @
 
 ON CONFLICT (space_id, user_id) DO NOTHING;
 
+-- name: CountSpaceOwners :one
+-- SPACES-017: count approved owners so the sole owner cannot orphan the
+-- space by leaving (moderator assignment and deletion are owner-gated).
+SELECT COUNT(*) AS count
+FROM space_members
+WHERE space_id = @space_id AND role = 'owner' AND status = 'approved';
+
 -- name: RemoveSpaceMember :exec
 DELETE FROM space_members
 WHERE space_id = @space_id AND user_id = @user_id;

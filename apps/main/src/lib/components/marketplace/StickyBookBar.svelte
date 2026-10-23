@@ -75,7 +75,7 @@
 			>
 				{ctaLabel}
 				{#if external}
-					<ExternalLink size={14} aria-hidden="true" />
+					<ExternalLink class="rtl:-scale-x-100" size={14} aria-hidden="true" />
 				{/if}
 			</a>
 		{/if}
