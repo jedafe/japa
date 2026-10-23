@@ -1,5 +1,14 @@
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import en from './src/lib/locales/en.json';
+
+// Bits UI's body scroll lock schedules a ~24ms setTimeout cleanup when a
+// modal unmounts. If that timer outlives the test file's jsdom teardown it
+// throws "document is not defined" as an uncaught exception and fails the
+// run. Wait a tick after each test so pending timers fire while the
+// environment still exists.
+afterEach(async () => {
+	await new Promise((r) => setTimeout(r, 30));
+});
 
 // jsdom doesn't implement matchMedia; third-party UI (LayerChart/Bits UI) calls
 // it during render, so polyfill it to keep component tests from throwing.

@@ -95,6 +95,7 @@
 		goto('/scam-alerts');
 	}
 
+	const activeTab = $derived(data.filters.scam_type || 'all');
 	const hasFilters = $derived(!!data.filters.dest);
 	const hasActiveFilters = $derived(!!data.filters.dest || activeTab !== 'all');
 
@@ -102,7 +103,6 @@
 		{ value: 'all', label: t('scam_alerts.filter_all_types', 'All types') },
 		...(data.scamTypes ?? []).map((v) => ({ value: v, label: scamTypeLabel(t, v) }))
 	]);
-	const activeTab = $derived(data.filters.scam_type || 'all');
 
 	let showFilters = $state(false);
 	let submittedDismissed = $state(false);

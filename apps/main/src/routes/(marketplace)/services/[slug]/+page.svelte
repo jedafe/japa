@@ -33,8 +33,8 @@
 		Send,
 		ShieldCheck,
 		Star,
-		Users
 		TriangleAlert,
+		Users
 } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';

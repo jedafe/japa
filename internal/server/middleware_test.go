@@ -92,7 +92,9 @@ func TestRequestIDMiddleware(t *testing.T) {
 // 204 No Content response with the correct CORS headers so browsers can
 // proceed with the actual cross-origin request.
 func TestCORSMiddleware_Preflight(t *testing.T) {
-	t.Parallel()
+	// Not parallel: t.Setenv mutates process-global env vars. JC_ENV is
+	// pinned to a dev-like value so localhost origins are allowed.
+	t.Setenv("JC_ENV", "test")
 
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
@@ -253,7 +255,9 @@ func TestCORSMiddleware_PreflightDisallowedNoRoute(t *testing.T) {
 // an Origin header receives the CORS headers and passes through to the
 // handler.
 func TestCORSMiddleware_ActualRequest(t *testing.T) {
-	t.Parallel()
+	// Not parallel: t.Setenv mutates process-global env vars. JC_ENV is
+	// pinned to a dev-like value so localhost origins are allowed.
+	t.Setenv("JC_ENV", "test")
 
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
