@@ -1,13 +1,14 @@
 import { afterEach, vi } from 'vitest';
+import { cleanup } from '@testing-library/svelte';
 import en from './src/lib/locales/en.json';
 
-// Bits UI's body scroll lock schedules a ~24ms setTimeout cleanup when a
-// modal unmounts. If that timer outlives the test file's jsdom teardown it
-// throws "document is not defined" as an uncaught exception and fails the
-// run. Wait a tick after each test so pending timers fire while the
-// environment still exists.
+// bits-ui's body-scroll-lock schedules a setTimeout cleanup that can fire
+// after jsdom is torn down, causing "document is not defined" errors. Unmount
+// all rendered components and wait for the ~24ms cleanup to finish before
+// the next test/file runs.
 afterEach(async () => {
-	await new Promise((r) => setTimeout(r, 30));
+	cleanup();
+	await new Promise((resolve) => setTimeout(resolve, 50));
 });
 
 // jsdom doesn't implement matchMedia; third-party UI (LayerChart/Bits UI) calls
