@@ -99,7 +99,7 @@
 	{/if}
 
 	<div class="flex flex-col gap-1.5">
-		<label for="signup-email" class="text-sm font-medium text-[var(--color-text)]">{t('auth.fields.email')}</label>
+		<label for="signup-email" class="sr-only">{t('auth.fields.email')}</label>
 		<input
 			id="signup-email"
 			type="email"
@@ -115,7 +115,7 @@
 	</div>
 
 	<div class="flex flex-col gap-1.5">
-		<label for="signup-username" class="text-sm font-medium text-[var(--color-text)]">{t('auth.fields.username')}</label>
+		<label for="signup-username" class="sr-only">{t('auth.fields.username')}</label>
 		<input
 			id="signup-username"
 			type="text"
@@ -137,6 +137,7 @@
 		showStrength
 		error={errors.password ?? ''}
 		autocomplete="new-password"
+		hideLabel
 	/>
 
 	<div class="flex flex-col gap-1.5">

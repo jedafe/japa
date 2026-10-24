@@ -12,7 +12,8 @@
 		showStrength = false,
 		error = '',
 		autocomplete = 'current-password',
-		placeholder = ''
+		placeholder = '',
+		hideLabel = false
 	}: {
 		value: string;
 		id: string;
@@ -21,6 +22,9 @@
 		error?: string;
 		autocomplete?: HTMLInputElement['autocomplete'];
 		placeholder?: string;
+		/** Visually hides the label (kept for screen readers) — the
+		 *  placeholder alone conveys the field, e.g. on auth pages. */
+		hideLabel?: boolean;
 	} = $props();
 
 	let visible = $state(false);
@@ -43,7 +47,7 @@
 </script>
 
 <div class="flex flex-col gap-1.5">
-	<label for={id} class="text-sm font-medium text-[var(--color-text)]">{label}</label>
+	<label for={id} class={hideLabel ? 'sr-only' : 'text-sm font-medium text-[var(--color-text)]'}>{label}</label>
 	<div class="relative">
 		<input
 			{id}

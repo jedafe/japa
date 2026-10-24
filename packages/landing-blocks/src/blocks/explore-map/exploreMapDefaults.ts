@@ -32,8 +32,8 @@ export const EXPLORE_MAP_DEFAULTS: ExploreMapProps = {
 	stats: [
 		{ icon: 'Globe', label: 'Countries', source: 'countries' },
 		{ icon: 'Building2', label: 'Cities', source: 'col_cities', suffix: '+' },
-		{ icon: 'BookOpen', label: 'Guides & Resources', source: 'blog', suffix: '+' },
-		{ icon: 'Handshake', label: 'Partner Services', source: 'services', suffix: '+' },
+		{ icon: 'BookOpen', label: 'Guides', source: 'blog', suffix: '+' },
+		{ icon: 'Handshake', label: 'Services', source: 'services', suffix: '+' },
 	],
 	col_bands: [
 		{ key: 'very_affordable', label: 'Very Affordable', min: 0, max: 1000, color: '#6abf69' },

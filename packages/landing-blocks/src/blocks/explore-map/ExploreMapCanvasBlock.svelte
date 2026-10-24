@@ -131,22 +131,22 @@
       </div>
     {/if}
 
-    <!-- Quick stats — floating card at the map's bottom-left on overlay
-         placement (bottom-aside mode always forces overlay; mirrors the
-         zoom controls on the right). -->
+    <!-- Quick stats — floating strip pinned bottom-left inside the map on
+         every breakpoint (bottom-aside mode always forces overlay).
+         The `max-w` cap keeps it clear of the zoom controls on the right. -->
     {#if (ctx.P.aside_position === 'bottom' || ctx.P.stats_position === 'overlay') && ctx.P.show_stats && (ctx.P.stats?.length ?? 0) > 0}
-      <div class="absolute bottom-4 start-4 hidden w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-3 shadow-sm backdrop-blur-sm lg:block">
-        <h3 class="mb-2.5 text-[11px] font-semibold tracking-wide text-[var(--color-muted)]">Quick stats</h3>
-        <ul class="space-y-2.5">
+      <div class="absolute bottom-4 start-4 w-fit max-w-[calc(100%-6rem)] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 px-3 py-2 shadow-sm backdrop-blur-sm">
+        <h3 class="sr-only">Quick stats</h3>
+        <ul class="flex items-center gap-4 overflow-x-auto">
           {#each ctx.P.stats ?? [] as stat (stat.label)}
             {@const Icon = ctx.iconFor(stat.icon)}
-            <li class="flex items-center gap-2.5">
-              <span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-                {#if Icon}<Icon size={14} />{/if}
+            <li class="flex shrink-0 items-center gap-2">
+              <span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                {#if Icon}<Icon size={13} />{/if}
               </span>
               <span class="min-w-0">
-                <span class="block text-sm font-bold leading-tight text-[var(--color-text)]">{ctx.statValue(stat.source, stat.value, stat.suffix)}</span>
-                <span class="block truncate text-[11px] text-[var(--color-muted)]">{stat.label}</span>
+                <span class="block text-xs font-bold leading-tight text-[var(--color-text)]">{ctx.statValue(stat.source, stat.value, stat.suffix)}</span>
+                <span class="block truncate text-[10px] text-[var(--color-muted)]">{stat.label}</span>
               </span>
             </li>
           {/each}

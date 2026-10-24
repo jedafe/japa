@@ -100,7 +100,7 @@
 	{/if}
 
 	<div class="flex flex-col gap-1.5">
-		<label for="login-email" class="text-sm font-medium text-[var(--color-text)]">{t('auth.fields.email')}</label>
+		<label for="login-email" class="sr-only">{t('auth.fields.email')}</label>
 		<input
 			id="login-email"
 			type="email"
@@ -120,6 +120,7 @@
 		label={t('auth.fields.password')}
 		bind:value={password}
 		error={errors.password ?? ''}
+		hideLabel
 	/>
 
 	<div class="flex justify-end">

@@ -139,7 +139,9 @@
 	<link rel="canonical" href={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl px-4 pt-3 sm:px-6">
+<!-- The map leads on every device — the title/description block stays
+     hidden (the route's <svelte:head> still carries the page title). -->
+<div class="mx-auto hidden w-full max-w-4xl px-4 pt-3 sm:px-6">
 	<ListPageBar title={t('wiki.heading', 'Wiki')} />
 	<p class="text-sm text-[var(--color-muted)]">
 		{t('wiki.landing_description', 'Choose a destination to explore community-maintained guides.')}
@@ -154,7 +156,7 @@
 
 <!-- §16/§80 — hero shares the same 4xl column width as the body below;
      the shell's right rail is still suppressed on this route. -->
-<div class="mx-auto w-full max-w-4xl pt-3">
+<div class="wiki-hero mx-auto w-full max-w-4xl pt-1">
 	{#if data.builderBlocks?.length}
 		<!-- Builder-managed hero: a published Page Builder page with slug
 		     "wiki" takes over this slot; else the built-in explorer map. -->
@@ -179,7 +181,7 @@
 		     with ≤12 destinations every item is already visible. -->
 		{#if total > 12}
 			<div class="mt-8 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-				<div class="mb-4 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<div class="mb-4 flex items-center gap-2 text-xs font-medium text-[var(--color-text)] sm:text-sm">
 					<Globe size={16} />
 					{t('wiki.destination_label', 'Destination')}
 				</div>
@@ -206,9 +208,12 @@
 				</div>
 			{:else}
 				<div class="mb-3 flex items-center justify-between gap-3">
-					<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-						{rootType ? typeLabel(rootType) : t('wiki.browse_destinations', 'Browse destinations')}
-						<span class="ms-2 font-normal normal-case tracking-normal">
+					<h2 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)] sm:text-sm">
+						<!-- Mobile shows only the count, e.g. "250 destinations". -->
+						<span class="hidden sm:inline">
+							{rootType ? typeLabel(rootType) : t('wiki.browse_destinations', 'Browse destinations')}
+						</span>
+						<span class="font-normal normal-case tracking-normal sm:ms-2">
 							{destinationsCountLabel(total)}
 						</span>
 					</h2>
@@ -225,7 +230,8 @@
 				<!-- Flag gallery cards — same pattern as the radar country
 				     gallery: bundled flag as the card background, name overlaid
 				     on a gradient. -->
-				<div class="grid grid-cols-3 gap-2">
+				<!-- 2 columns mobile, 3 on pad (md) and desktop. -->
+				<div class="grid grid-cols-2 gap-2 md:grid-cols-3">
 					{#each destinations as dest (dest.slug)}
 						{@const bg = flagUrl(dest.geo_code)}
 						<a
@@ -282,10 +288,10 @@
 
 		<div class="mt-6 flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<div>
-				<p class="text-sm font-medium text-[var(--color-text)]">
+				<p class="text-xs font-medium text-[var(--color-text)] sm:text-sm">
 					{t('wiki.request_guide_title', "Can't find what you need?")}
 				</p>
-				<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+				<p class="mt-0.5 text-[11px] text-[var(--color-muted)] sm:text-xs">
 					{t('wiki.request_guide_body', 'Tell us which destination or topic to cover next.')}
 				</p>
 			</div>
@@ -300,3 +306,12 @@
 	{/if}
 	</div>
 </div>
+
+<style>
+	/* Tighten the gap above the map — the block's default section padding
+	   (py-10) is meant for standalone landing sections, not an in-app page. */
+	.wiki-hero :global(.explore-map) {
+		padding-top: 0.5rem;
+		padding-bottom: 1rem;
+	}
+</style>
