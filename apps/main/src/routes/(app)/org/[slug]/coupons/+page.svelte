@@ -272,7 +272,7 @@
 					</button>
 				</div>
 
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div>
 						<label for="cp-title" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_title', 'Title')} <span class="text-red-500">*</span></label>
 						<input id="cp-title" type="text" bind:value={draft.title} placeholder={t('coupons.f_title_ph', 'e.g. Early-bird 15% off')} class={inputClass} />

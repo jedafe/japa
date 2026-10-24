@@ -249,7 +249,7 @@
 				<p class="mb-3 text-xs text-[var(--color-muted)]">
 					{data.total} {t('organizations.results', 'organizations')}
 				</p>
-				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each data.orgs as org (org.id)}
 						<DirectoryCard
 							href="/org/{org.slug}"

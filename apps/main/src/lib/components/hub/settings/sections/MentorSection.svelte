@@ -471,7 +471,7 @@
 					)}
 				</p>
 
-				<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div class="flex flex-col gap-1">
 						<label for="mentor-title" class="text-sm font-medium text-[var(--color-text)]">
 							{t('mentors.settings_title_label', 'Title')}
@@ -547,7 +547,7 @@
 					</div>
 				</div>
 
-				<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div class="flex flex-col gap-1">
 						<label for="mentor-languages" class="text-sm font-medium text-[var(--color-text)]">
 							{t('mentors.settings_languages', 'Languages')}

@@ -533,7 +533,7 @@
 							</span>
 						{/if}
 						{#if data.page.updated_at}
-							<span aria-hidden="true">·</span>
+							{#if data.page.submitted_by}<span aria-hidden="true">·</span>{/if}
 							<span>
 								{t('wiki.updated_on', 'Updated {date}').replace(
 									'{date}',
@@ -546,7 +546,7 @@
 							</span>
 						{/if}
 						{#if readMinutes > 0}
-							<span aria-hidden="true">·</span>
+							{#if data.page.submitted_by || data.page.updated_at}<span aria-hidden="true">·</span>{/if}
 							<span>{t('wiki.read_time', '{min} min read').replace('{min}', String(readMinutes))}</span>
 						{/if}
 					</div>

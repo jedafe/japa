@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -166,7 +167,7 @@ func RoadmapItemsListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		if f.PageSize <= 0 {
-			f.PageSize = 25
+			f.PageSize = 20 // REST admin default (roadmap.DefaultPageSize)
 		}
 
 		if f.PageSize > roadmapListLimitCap {
@@ -174,7 +175,14 @@ func RoadmapItemsListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		if a.Page > 1 {
-			f.PageOffset = (a.Page - 1) * f.PageSize
+			// int64 math — page*size must not wrap int32 into a negative
+			// OFFSET (the REST parser clamps the same bound).
+			off := int64(a.Page-1) * int64(f.PageSize)
+			if off > math.MaxInt32 {
+				off = math.MaxInt32
+			}
+
+			f.PageOffset = int32(off)
 		}
 
 		if a.CategoryID != "" {

@@ -35,7 +35,7 @@
 	{#if data.plans.length === 0}
 		<p class="text-center text-sm text-[var(--color-muted)]">{t('pricing.unavailable', 'Plans are temporarily unavailable. Please try again later.')}</p>
 	{:else}
-		<div class="grid gap-4 sm:grid-cols-3">
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 			{#each data.plans as plan (plan.id)}
 				<div
 					class="flex flex-col rounded-[var(--radius)] border p-6 {plan.highlighted

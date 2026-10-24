@@ -111,7 +111,7 @@
 
 		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-3">
 			<h2 class="text-sm font-semibold text-[var(--color-text)]">{t('visa_routes.overview', 'Route overview')}</h2>
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				<div class="flex items-start gap-2">
 					<DollarSign size={16} class="mt-0.5 text-[var(--color-muted)]" />
 					<div>

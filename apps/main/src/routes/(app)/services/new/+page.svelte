@@ -425,7 +425,7 @@
 			</div>
 
 			<!-- Destination + City -->
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
 					<label for="dest" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('services.field_destination', 'Destination country')} <span class="text-red-500">*</span>
@@ -527,7 +527,7 @@
 			</div>
 
 			<!-- Website + Booking -->
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
 					<label for="website" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('services.field_website', 'Website URL')}
@@ -610,7 +610,7 @@
 					</h2>
 
 					<!-- Purchase mode + price -->
-					<div class="grid gap-4 sm:grid-cols-2">
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div>
 							<label for="pkg-mode" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 								{t('services.pkg_purchase_mode', 'Purchase mode')}

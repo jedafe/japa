@@ -34,7 +34,7 @@ INSERT INTO ai_tools (name, description, category, config, is_enabled, required_
  true, 'roadmap.view'),
 
 ('roadmap.items.list',
- 'List roadmap items with optional status, search, and category filters (paginated). Use this to dedupe before creating a changelog entry.',
+ 'List roadmap items with optional status, search, and category filters (paginated; bodies omitted — call roadmap.item.get). Use this to dedupe before creating a changelog entry.',
  'agent_roadmap',
  '{
     "function_name": "roadmap.items.list",
@@ -43,7 +43,7 @@ INSERT INTO ai_tools (name, description, category, config, is_enabled, required_
         "type": "object",
         "properties": {
             "status":      { "type": "string", "description": "Optional status filter (pending, under_review, planned, in_progress, testing, shipped, declined, archived)" },
-            "q":           { "type": "string", "description": "Optional title/slug search" },
+            "q":           { "type": "string", "description": "Optional search over title + summary (substring match)" },
             "category_id": { "type": "string", "description": "Optional category UUID filter" },
             "sort":        { "type": "string", "enum": ["recent", "votes", "title"], "description": "Sort order (default recent)" },
             "page":        { "type": "integer", "description": "Page number, 1-based (default 1)" },

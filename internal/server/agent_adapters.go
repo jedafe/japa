@@ -3478,6 +3478,9 @@ func (a *agentRoadmapAdapter) ListItems(ctx context.Context, f ai.RoadmapItemFil
 			UpdatedAt:      row.UpdatedAt,
 			DeletedAt:      row.DeletedAt,
 		}, row.CategoryName)
+		// List is the dedupe browse — the markdown body is a heavy payload
+		// agents don't need here (intel.record.list precedent); get returns it.
+		dto.Body = nil
 		page.Items = append(page.Items, *dto)
 	}
 

@@ -646,7 +646,7 @@
 			{/each}
 		</nav>
 
-		<div class="mt-5 grid gap-6 lg:grid-cols-[1fr_300px]">
+		<div class="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
 			<!-- Main column -->
 			<div class="min-w-0">
 				<section id="overview" class="scroll-mt-24">

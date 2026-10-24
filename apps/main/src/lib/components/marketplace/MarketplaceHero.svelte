@@ -46,7 +46,7 @@
 	class="border-b border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary)]/10 via-[var(--color-surface)] to-[var(--color-surface)]"
 >
 	<div
-		class="mx-auto grid w-full max-w-[1400px] items-center gap-8 px-4 py-10 sm:py-12 lg:grid-cols-[1.15fr_1fr] lg:gap-12"
+		class="mx-auto grid grid-cols-1 w-full max-w-[1400px] items-center gap-8 px-4 py-10 sm:py-12 lg:grid-cols-[1.15fr_1fr] lg:gap-12"
 	>
 		<div>
 			<span

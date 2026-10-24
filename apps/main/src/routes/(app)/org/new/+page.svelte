@@ -187,7 +187,7 @@
 					></textarea>
 				</div>
 
-				<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div>
 						<label for="website_url" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 							{t('organizations.new.field_website', 'Website URL')}

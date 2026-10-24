@@ -161,7 +161,7 @@
 	>
 		<!-- Geo-aware tool pattern: destination country selector is the first
 		     input (§89 Geo Awareness, geo-aware-tool-pattern.md). -->
-		<div class="grid gap-4 sm:grid-cols-2">
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<div class="flex flex-col gap-1.5">
 				<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
 					{t('achievements.field_destination', 'Destination country')}

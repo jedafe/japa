@@ -755,7 +755,7 @@
 					</button>
 				</EmptyState>
 			{:else}
-				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 					{#each myComparisons as item (item.id)}
 						<article
 							class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
@@ -826,7 +826,7 @@
 						{t('jce.compare.landing.see_all')}
 					</a>
 				</div>
-				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each popularComparisons as item (item.id)}
 						<a
 							href="/comparisons/{item.slug}"

@@ -18,7 +18,7 @@ Migration `000928` seeds six tools into the `ai_tools` catalog
 | Tool | RBAC gate | Purpose |
 |---|---|---|
 | `roadmap.categories.list` | `roadmap.view` | category slugs/ids for mapping |
-| `roadmap.items.list` | `roadmap.view` | dedupe read — filter by status/q/category, paginated |
+| `roadmap.items.list` | `roadmap.view` | dedupe read — filter by status/q/category, paginated; bodies omitted, use `item.get` |
 | `roadmap.item.get` | `roadmap.view` | full item incl. body + deleted_at |
 | `roadmap.item.create` | `roadmap.create` | new item; `status:"shipped"` lands on the changelog directly |
 | `roadmap.item.update` | `roadmap.edit` | patch title/slug/summary/body/category/flag/window — `status` is rejected, use `set_status` |

@@ -594,7 +594,7 @@
 
 		<div class="p-4">
 			{#if tab === 'flights'}
-				<form onsubmit={(e) => { e.preventDefault(); searchFlights(); }} class="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+				<form onsubmit={(e) => { e.preventDefault(); searchFlights(); }} class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
 					<div>
 						<label for="flight-origin" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.origin', 'Origin (IATA)')}</label>
 						<Autocomplete
@@ -718,7 +718,7 @@
 					/>
 				{/if}
 			{:else if tab === 'hotels'}
-				<form onsubmit={(e) => { e.preventDefault(); searchHotels(); }} class="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+				<form onsubmit={(e) => { e.preventDefault(); searchHotels(); }} class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
 					<div class="sm:col-span-2 lg:col-span-1">
 						<label for="hotel-dest" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.destination', 'Destination')}</label>
 						<Autocomplete
@@ -825,7 +825,7 @@
 				{/if}
 			{:else if tab === 'directory'}
 				<!-- Ref: .jeos/sections/67-travel-search.md (hotel directory, ADR-124) -->
-				<form onsubmit={(e) => { e.preventDefault(); dirSearch(); }} class="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+				<form onsubmit={(e) => { e.preventDefault(); dirSearch(); }} class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
 					<div class="sm:col-span-2 lg:col-span-1">
 						<label for="dir-city" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.destination', 'Destination')}</label>
 						<Autocomplete
@@ -906,7 +906,7 @@
 				{/if}
 			{:else if tab === 'airlines'}
 				<!-- Ref: .jeos/sections/67-travel-search.md (airline directory, ADR-124) -->
-				<form onsubmit={(e) => { e.preventDefault(); alSearch(); }} class="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+				<form onsubmit={(e) => { e.preventDefault(); alSearch(); }} class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
 					<div class="sm:col-span-2 lg:col-span-3">
 						<label for="al-q" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.airline_name', 'Airline')}</label>
 						<input id="al-q" type="search" bind:value={alQuery} placeholder={t('travel.airline_hint', 'Name, IATA code or country…')} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />

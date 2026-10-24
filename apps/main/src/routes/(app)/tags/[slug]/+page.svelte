@@ -482,7 +482,7 @@
 		{#if tab === 'search'}
 			<!-- Search within this tag (auth required by the backend). -->
 			<form class="mb-4 flex gap-2" onsubmit={(e) => { e.preventDefault(); runSearch(); }}>
-				<div class="relative flex-1">
+				<div class="relative min-w-0 flex-1">
 					<Search size={16} class="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 					<input
 						type="search"

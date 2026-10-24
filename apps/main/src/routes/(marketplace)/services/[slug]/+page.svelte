@@ -784,7 +784,7 @@
 			<!-- ================================================
 			     MENTORSHIP LAYOUT (mockup 02)
 			     ================================================ -->
-			<section class="grid gap-8 lg:grid-cols-2 lg:items-center">
+			<section class="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:items-center">
 				<!-- Left: pill / title / excerpt / rating / selling points / CTAs -->
 				<div>
 					<div class="flex flex-wrap items-center gap-2">
@@ -1069,7 +1069,7 @@
 			</section>
 
 			<!-- Main 2-col: content (left ~2/3) + mentor sidebar (right ~1/3) -->
-			<div class="mt-12 grid gap-10 lg:grid-cols-[1fr_320px]">
+			<div class="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_320px]">
 				<div class="min-w-0 space-y-12">
 					<!-- About Your Mentor — body + quick-stats row -->
 					{#if service.body || mentor}
@@ -1196,7 +1196,7 @@
 							<h2 id="coupons-heading" class="text-xl font-bold text-[var(--color-text)]">
 								{t('services.coupons_heading', 'Offers & coupons')}
 							</h2>
-							<div class="mt-4 grid gap-3 sm:grid-cols-2">
+							<div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
 								{#each (service.coupons ?? []) as coupon (coupon.id)}
 									<CouponCard {coupon} {currencies} />
 								{/each}
@@ -1244,7 +1244,7 @@
 
 			<!-- Bottom 2-col: What Mentees Say | Frequently asked questions
 			     (FAQs take the cell How it works vacated). -->
-			<div class="mt-12 grid gap-12 lg:grid-cols-2">
+			<div class="mt-12 grid grid-cols-1 gap-12 lg:grid-cols-2">
 				<div id="reviews" class="scroll-mt-20">
 					{#if hasReviews}
 						<ServiceReviews
@@ -1266,7 +1266,7 @@
 			<!-- ================================================
 			     SERVICE / PACKAGE LAYOUT (mockups 01 + 03)
 			     ================================================ -->
-			<section class="grid gap-10 lg:grid-cols-2 lg:items-start">
+			<section class="grid grid-cols-1 gap-10 lg:grid-cols-2 lg:items-start">
 				<!-- Left: pill / title / excerpt / rating / selling points / CTAs -->
 				<div class="lg:pt-2">
 					<div class="flex flex-wrap items-center gap-2">
@@ -1604,7 +1604,7 @@
 						<h2 id="coupons-heading" class="text-xl font-bold text-[var(--color-text)]">
 							{t('services.coupons_heading', 'Offers & coupons')}
 						</h2>
-						<div class="mt-4 grid gap-3 sm:grid-cols-2">
+						<div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
 							{#each (service.coupons ?? []) as coupon (coupon.id)}
 								<CouponCard {coupon} {currencies} />
 							{/each}
@@ -1648,7 +1648,7 @@
 				<!-- Reviews | FAQs side by side (the mockup's bottom split row);
 				     the reviews cell always renders — a zero-review listing gets
 				     the first-review CTA so the write path stays discoverable. -->
-				<div class="grid gap-12 lg:grid-cols-2">
+				<div class="grid grid-cols-1 gap-12 lg:grid-cols-2">
 					<div id="reviews" class="scroll-mt-20">
 						{#if hasReviews}
 							<ServiceReviews
@@ -1687,6 +1687,18 @@
 				secondaryHref={isMentorship || secondaryCta?.dialog ? '' : (secondaryCta?.href ?? '')}
 			/>
 		</div>
+
+		{#if !isMentorship && page.data.features?.['scam_alert.enabled']}
+			<div class="mt-10 border-t border-[var(--color-border)] pt-6">
+				<a
+					href="/scam-alerts/new"
+					class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+				>
+					<TriangleAlert size={14} />
+					{t('scam_alerts.report_button', 'Report a Scam')}
+				</a>
+			</div>
+		{/if}
 
 		<!-- Owner actions: edit + claim + appeal -->
 		{#if data.authed}
@@ -1778,7 +1790,7 @@
 				<h2 id="related-heading" class="text-xl font-bold text-[var(--color-text)]">
 					{t('services.related_heading', 'You might also like')}
 				</h2>
-				<div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 					{#each (data.recommendedContent ?? []) as item (item.id)}
 						<a
 							href={contentHref(item)}

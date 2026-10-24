@@ -19,7 +19,7 @@
 	<h2 id="howitworks-heading" class="text-xl font-bold text-[var(--color-text)]">
 		{t('services.steps_heading', 'How it works')}
 	</h2>
-	<ol class="mt-6 grid gap-8 sm:grid-cols-2 lg:flex lg:items-start lg:gap-4">
+	<ol class="mt-6 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:flex lg:items-start lg:gap-4">
 		{#each steps as step, i (i)}
 			{@const Icon = marketplaceIcon(step.icon)}
 			<li class="relative flex min-w-0 flex-1 flex-col items-center text-center">

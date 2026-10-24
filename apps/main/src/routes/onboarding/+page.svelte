@@ -305,7 +305,7 @@
 </svelte:head>
 
 <div class="min-h-screen bg-[var(--color-bg)] px-4 py-6 sm:px-6 sm:py-10">
-	<div class="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl lg:grid-cols-[360px_1fr]">
+	<div class="mx-auto grid grid-cols-1 w-full max-w-5xl overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl lg:grid-cols-[360px_1fr]">
 		<!-- Brand panel — decorative illustration + privacy note. -->
 		<aside aria-hidden="true" class="onb-side relative hidden flex-col gap-4 overflow-hidden p-8 lg:flex xl:p-10">
 			<ThemeLogo alt={t('app.name', '{site}')} class="h-7 w-auto self-start" />
@@ -513,7 +513,7 @@
 			{#if currentStep === 4}
 				<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step4_title', 'People to follow')}</h1>
 				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step4_subtitle', 'Follow at least {n} people to start your journey.').replace('{n}', String(minUsers))}</p>
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each userRecs as rec (rec.id)}
 						<button
 							type="button"
@@ -544,7 +544,7 @@
 			{#if currentStep === 5}
 				<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step5_title', 'Spaces to join')}</h1>
 				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step5_subtitle', 'Join at least {n} spaces to start your journey.').replace('{n}', String(minSpaces))}</p>
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each spaceRecs as rec (rec.id)}
 						<button
 							type="button"
@@ -575,7 +575,7 @@
 			{#if currentStep === 6}
 				<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step6_title', 'Sources to follow')}</h1>
 				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step6_subtitle', 'Follow publications and channels to fill your feed. This step is optional.')}</p>
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each data.sources as source (source.id)}
 						<button
 							type="button"
@@ -622,7 +622,7 @@
 							<Trophy size={16} class="text-[var(--color-primary)]" />
 							{t('onboarding.achievements_preview_heading', 'Recent wins from the community')}
 						</h2>
-						<div class="grid gap-3 sm:grid-cols-2">
+						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 							{#each data.achievements as a (a.id)}
 								<a
 									href={`/achievements/${a.slug}`}

@@ -234,7 +234,7 @@
 		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('wallet.withdraw.title', 'Withdraw Credits')}</h2>
 
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
 					<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="withdraw-amount">
 						{t('wallet.withdraw.credit_amount', 'Credits to withdraw')}
@@ -368,7 +368,7 @@
 			<p class="mb-4 text-sm text-[var(--color-muted)]">{t('wallet.withdraw.no_methods', 'Add a payout method before withdrawing.')}</p>
 		{/if}
 
-		<div class="grid gap-3 sm:grid-cols-2">
+		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="method-provider">{t('wallet.withdraw.method_provider', 'Provider')}</label>
 				<AutocompleteSelect

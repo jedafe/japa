@@ -19,11 +19,16 @@
 		/** Bordered secondary style for the desktop button (FAB stays primary). */
 		secondary?: boolean;
 		/**
-		 * Stack order for pages with more than one PageAction — 0 (default)
-		 * sits nearest the bottom nav; each step lifts the FAB 3.5rem.
+		 * Stack order for pages with more than one PageAction — each step
+		 * lifts the FAB 3.5rem. Omit to auto-claim the lowest free slot above
+		 * slot 0 (the global Japa AI FAB); pass an explicit index to pin the
+		 * FAB to that slot.
 		 */
 		fabIndex?: number;
 	}
+
+	import { onMount } from 'svelte';
+	import { claimFabSlot, releaseFabSlot } from './fab-stack';
 
 	let {
 		href,
@@ -32,8 +37,17 @@
 		label,
 		disabled = false,
 		secondary = false,
-		fabIndex = 0
+		fabIndex
 	}: Props = $props();
+
+	// SSR renders the FAB at slot 1 (the usual auto claim); the claim itself
+	// happens client-side only — the slot registry is per-page-mount state
+	// and must never leak across SSR requests.
+	let resolvedFabIndex = $state(fabIndex ?? 1);
+	onMount(() => {
+		resolvedFabIndex = claimFabSlot(fabIndex);
+		return () => releaseFabSlot(resolvedFabIndex);
+	});
 
 	const desktopClass = $derived(
 		secondary
@@ -65,7 +79,7 @@
 		{href}
 		aria-label={label}
 		class="fixed end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-colors hover:bg-[var(--color-primary-hover)] sm:hidden"
-		style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px) + {fabIndex * 3.5}rem)"
+		style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px) + {resolvedFabIndex * 3.5}rem)"
 	>
 		<Icon size={20} />
 	</a>
@@ -77,7 +91,7 @@
 		{disabled}
 		aria-label={label}
 		class="fixed end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50 sm:hidden"
-		style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px) + {fabIndex * 3.5}rem)"
+		style="bottom: calc(5rem + env(safe-area-inset-bottom, 0px) + {resolvedFabIndex * 3.5}rem)"
 	>
 		<Icon size={20} />
 	</button>

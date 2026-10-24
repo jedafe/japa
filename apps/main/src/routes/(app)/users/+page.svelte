@@ -158,7 +158,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		/>
 		{#snippet actions()}
 			<div class="flex items-center gap-2">
-				<div class="w-32 sm:w-40">
+				<div class="w-28 sm:w-40">
 					<Autocomplete
 						placeholder={t('users.sort.label', 'Sort')}
 						ariaLabel={t('users.sort.label', 'Sort')}
@@ -177,7 +177,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						}}
 					/>
 				</div>
-				<div class="w-20 sm:w-24">
+				<div class="w-16 sm:w-24">
 					<Autocomplete
 						placeholder={t('users.per_page', 'Per page')}
 						ariaLabel={t('users.per_page', 'Per page')}
@@ -196,7 +196,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						}}
 					/>
 				</div>
-				<form action="/users" method="get" role="search" class="w-36 sm:w-56">
+				<form action="/users" method="get" role="search" class="w-28 sm:w-56">
 					<SearchInput
 						bind:value={query}
 						placeholder={searchPlaceholder}
@@ -236,7 +236,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
 				{data.total} {data.total === 1 ? t('users.results_one', 'person') : t('users.results', 'people')}
 			</p>
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				{#each data.users as user (user.id)}
 					<UserCard {user} />
 				{/each}

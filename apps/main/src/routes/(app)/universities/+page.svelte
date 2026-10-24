@@ -443,7 +443,7 @@
 			</p>
 
 			{#if viewMode === 'grid'}
-				<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
 					{#each paged as uni (uni.id)}
 						{@const cardMeta: CardMetaItem[] = [
 							{ icon: FileText, text: t('discover.posts', '{n} posts').replace('{n}', String(uni.post_count)) },
@@ -475,7 +475,7 @@
 					{/each}
 				</div>
 			{:else}
-				<div class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]">
+				<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)]">
 					<table class="w-full text-start text-sm">
 						<thead class="bg-[var(--color-surface-subtle)] text-xs uppercase text-[var(--color-muted)]">
 							<tr>

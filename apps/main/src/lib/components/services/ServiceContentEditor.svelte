@@ -180,7 +180,7 @@
 						<div class="flex items-start gap-2">
 							<div class="flex-1 space-y-2">
 								{@render iconSelect(fact.icon, (v) => (fact.icon = v), t('services.icon_pick', 'Icon'))}
-								<div class="grid gap-2 sm:grid-cols-2">
+								<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 									<input
 										type="text"
 										bind:value={fact.label}

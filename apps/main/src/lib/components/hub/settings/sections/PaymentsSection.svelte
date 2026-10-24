@@ -108,6 +108,7 @@
 	{#if payments.length === 0}
 		<EmptyState icon={Receipt} title={t('settings.payments.empty_title')} body={t('settings.payments.empty_body')} />
 	{:else}
+		<div class="overflow-x-auto">
 		<table class="w-full text-sm">
 			<thead>
 				<tr class="border-b border-[var(--color-border)] text-start text-xs text-[var(--color-muted)]">
@@ -138,6 +139,7 @@
 				{/each}
 			</tbody>
 		</table>
+		</div>
 		{#if currentPage > 0}
 			<p class="pt-2 text-xs text-[var(--color-muted)]">
 				{t('settings.common.page', 'Page {n}').replace('{n}', String(currentPage))} · {payments.length}

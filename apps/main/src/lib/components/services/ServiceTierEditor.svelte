@@ -101,7 +101,7 @@
 						</button>
 					</div>
 					<div class="flex-1 space-y-2">
-						<div class="grid gap-2 sm:grid-cols-2">
+						<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 							<input
 								type="text"
 								bind:value={tier.name}

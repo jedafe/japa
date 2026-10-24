@@ -232,7 +232,7 @@
 {#if rollup.fields.length > 0 || rollup.rows.length > 0}
 	<section id="wiki-rollup" class="mt-6 scroll-mt-24 space-y-4">
 		{#if summaryFields.length > 0}
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each summaryFields as f (f.key)}
 					{@const Icon = cardIcon(f)}
 					{@const tint = cardTint(f)}

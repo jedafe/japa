@@ -367,7 +367,7 @@
 			{:else if data.series.length === 0}
 				<EmptyState icon={BookOpen} title={t('blog_series.empty', 'No series yet')} />
 			{:else}
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each data.series as series (series.id)}
 						<a
 							href="/series/{series.slug}"
@@ -437,7 +437,7 @@
 			{:else if data.items.length === 0}
 				<p class="py-12 text-center text-[var(--color-text-subtle)]">{t('blog.empty', 'No posts yet. Check back soon.')}</p>
 			{:else}
-				<div class="grid gap-3.5 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
 					{#each feedItems as item (item.id)}
 						<ContentGridCard {item} />
 					{/each}

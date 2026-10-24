@@ -132,7 +132,7 @@
 		{#if sortedPacks.length > 0}
 			<div class="space-y-3">
 				<h2 class="text-sm font-medium text-[var(--color-text)]">{t('wallet.purchase.credit_packs', 'Credit Packs')}</h2>
-				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each sortedPacks as pack (pack.id)}
 						<button
 							type="button"

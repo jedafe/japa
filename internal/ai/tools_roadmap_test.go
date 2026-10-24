@@ -203,6 +203,14 @@ func TestRoadmapItemsList_DefaultsAndCap(t *testing.T) {
 	if svc.gotFilter.PageSize != roadmapListLimitCap {
 		t.Fatalf("expected cap %d, got %d", roadmapListLimitCap, svc.gotFilter.PageSize)
 	}
+
+	svc.gotFilter = nil
+	if _, err := RoadmapItemsListHandler(roadmapDeps(svc))(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if svc.gotFilter.PageSize != 20 {
+		t.Fatalf("expected REST default 20, got %d", svc.gotFilter.PageSize)
+	}
 }
 
 func TestRoadmapItemsList_InvalidCategoryID(t *testing.T) {

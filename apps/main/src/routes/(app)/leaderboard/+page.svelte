@@ -108,7 +108,7 @@
 			</div>
 		{:else}
 			<div class="p-4">
-				<div class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="border-b border-[var(--color-border)] text-start text-xs text-[var(--color-muted)]">

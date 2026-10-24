@@ -203,7 +203,7 @@
 			<!-- BUG-004: Destination / Origin FIRST per geo-aware tool pattern
 			     (§86 Geo Awareness — destination country is the primary data
 			     axis and must be the first UI input). -->
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
 					<label for="destination_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_destination', 'Destination country')} <span class="text-red-500" aria-hidden="true">*</span>
@@ -280,7 +280,7 @@
 			/>
 
 			<!-- Dates -->
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
 					<label for="occurs_at" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_occurs_at', 'Starts')} <span class="text-red-500" aria-hidden="true">*</span>

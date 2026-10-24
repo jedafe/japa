@@ -584,7 +584,7 @@
 			{/each}
 		</ul>
 	{:else}
-		<div class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+		<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 			<table class="w-full text-sm">
 				<thead class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-start text-xs text-[var(--color-muted)]">
 					<tr>

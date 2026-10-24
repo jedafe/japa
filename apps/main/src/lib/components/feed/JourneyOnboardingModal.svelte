@@ -258,7 +258,7 @@
 			</button>
 		</div>
 
-		<div class="grid sm:grid-cols-[230px_1fr]">
+		<div class="grid grid-cols-1 sm:grid-cols-[230px_1fr]">
 			<!-- Decorative panel — CSS illustration: flight route + floating chips. -->
 			<aside aria-hidden="true" class="journey-scene relative hidden overflow-hidden sm:block">
 				<svg class="journey-arc" viewBox="0 0 200 220" fill="none">
@@ -289,7 +289,7 @@
 					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.banner.title', 'Tell us about your journey')}</h2>
 					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.banner.subtitle', "We'll show content that matches where you're coming from and where you're going.")}</p>
 
-					<div class="mt-6 grid gap-4 sm:grid-cols-2">
+					<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="field-row">
 							<label class="field-label" for="journey-origin">{t('journey.banner.origin_country', 'Where are you now?')}</label>
 							<Autocomplete
@@ -321,7 +321,7 @@
 					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.step2_title', 'What are your goals?')}</h2>
 					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.step2_subtitle', 'Tell us why you are moving so we can surface the right opportunities.')}</p>
 
-					<div class="mt-6 grid gap-4 sm:grid-cols-2">
+					<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="field-row">
 							<label class="field-label" for="journey-purpose">{t('journey.banner.purpose', 'Why are you traveling?')}</label>
 							{#if hasOptions(options?.purposes)}
@@ -363,7 +363,7 @@
 					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.step3_title', 'A few more details')}</h2>
 					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.step3_subtitle', 'Optional — helps us time the content we show you.')}</p>
 
-					<div class="mt-6 grid gap-4 sm:grid-cols-2">
+					<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="field-row">
 							<label class="field-label" for="journey-stage">{t('journey.banner.stage', 'Where are you in the journey?')}</label>
 							{#if hasOptions(options?.stages)}
@@ -390,7 +390,7 @@
 					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.step4_title', "You're all set!")}</h2>
 					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.step4_subtitle', 'Review your journey details — you can change them anytime in your profile.')}</p>
 
-					<dl class="mt-6 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+					<dl class="mt-6 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
 						<div class="summary-row"><dt>{t('journey.banner.origin_country', 'Where are you now?')}</dt><dd>{countryLabel(origin)}</dd></div>
 						<div class="summary-row"><dt>{t('journey.banner.destination_country', 'Where do you want to go?')}</dt><dd>{countryLabel(destination)}</dd></div>
 						{#if purpose}<div class="summary-row"><dt>{t('journey.banner.purpose', 'Why are you traveling?')}</dt><dd>{optionLabel(options?.purposes ?? [], purpose)}</dd></div>{/if}

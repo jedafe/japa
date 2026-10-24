@@ -187,7 +187,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
 				{data.total} {t('tags.results', 'tags')}
 			</p>
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each data.tags as tag (tag.id)}
 					<DirectoryCard
 						href="/tags/{tag.slug}"

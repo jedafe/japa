@@ -362,7 +362,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		     same pattern as /sources and /blog. Type+level are merged into a
 		     single picker; ?subregion= stays URL-only (no dedicated control). -->
 		<div id="spaces-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
-			<div class="grid gap-3 sm:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
 				{#if kindOptions.length > 1}
 					<div>
 						<label for="spaces-filter-type" class="sr-only">{t('spaces.type_label', 'Type')}</label>
@@ -458,7 +458,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{:else if visibleSpaces.length === 0}
 			<EmptyState icon={Layers} title={t('spaces.empty', 'No spaces yet.')} />
 		{:else}
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each visibleSpaces as space (space.id)}
 					{@const cardMeta: CardMetaItem[] = [
 						{ icon: Users, text: t('meta.members', '{n} members').replace('{n}', String(space.member_count)) },

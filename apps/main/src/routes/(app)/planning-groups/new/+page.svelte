@@ -141,7 +141,7 @@
 				rows={4}
 			/>
 
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div class="flex flex-col gap-1.5">
 					<label for="pg-dest" class="text-sm font-medium text-[var(--color-text)]">
 						{t('planning_groups.field_destination', 'Destination country')} <span class="text-red-500">*</span>
@@ -173,7 +173,7 @@
 				</div>
 			</div>
 
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div class="flex flex-col gap-1.5">
 					<label for="pg-window" class="text-sm font-medium text-[var(--color-text)]">
 						{t('planning_groups.field_window', 'Target departure window')}

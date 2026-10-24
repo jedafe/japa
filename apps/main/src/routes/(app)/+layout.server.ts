@@ -1,5 +1,5 @@
 import type { LayoutServerLoad } from './$types';
-import { redirect } from '@sveltejs/kit';
+import { isRedirect, redirect } from '@sveltejs/kit';
 import { apiContext, apiGet } from '$lib/server/api';
 import { academyUrl } from '$lib/appOrigins';
 
@@ -79,7 +79,12 @@ export const load: LayoutServerLoad = async (event) => {
 					ctx,
 					`/sidebars/resolve?app=main&position=right&path=${sidebarPath}`
 				).catch((err) => {
-					console.error('sidebar: right sidebar resolution failed', { path: event.url.pathname, err });
+					// A thrown redirect (e.g. banned session → /dashboard/appeals)
+					// is not a sidebar failure — degrade quietly so the appeals
+					// page still renders; the page's own load throws it.
+					if (!isRedirect(err)) {
+						console.error('sidebar: right sidebar resolution failed', { path: event.url.pathname, err });
+					}
 					return null;
 				}),
 		hideLeft
@@ -88,7 +93,9 @@ export const load: LayoutServerLoad = async (event) => {
 					ctx,
 					`/sidebars/resolve?app=main&position=left&path=${sidebarPath}`
 				).catch((err) => {
-					console.error('sidebar: left sidebar resolution failed', { path: event.url.pathname, err });
+					if (!isRedirect(err)) {
+						console.error('sidebar: left sidebar resolution failed', { path: event.url.pathname, err });
+					}
 					return null;
 				})
 	]);

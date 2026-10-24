@@ -372,7 +372,7 @@
 
 		<!-- §14 guide amendment: category-specific custom fields at a glance. -->
 		{#if guideDetails.length > 0}
-			<dl class="mt-6 grid gap-x-6 gap-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:grid-cols-2">
+			<dl class="mt-6 grid grid-cols-1 gap-x-6 gap-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:grid-cols-2">
 				{#each guideDetails as field (field.key)}
 					<div class="min-w-0">
 						<dt class="text-xs font-medium uppercase text-[var(--color-muted)]">{field.label}</dt>
@@ -443,7 +443,7 @@
 		{#if data.relatedContent && data.relatedContent.length > 0}
 			<section class="mt-8">
 				<h2 class="mb-4 text-lg font-semibold text-[var(--color-text)]">{t('content.related', 'Related')}</h2>
-				<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					{#each data.relatedContent as rel (rel.id)}
 						<a
 							href={contentHref(rel)}

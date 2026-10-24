@@ -213,7 +213,7 @@
 		{#if showFilters}
 			<div
 				id="comparisons-filter-panel"
-				class="grid gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:grid-cols-[auto_auto]"
+				class="grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:grid-cols-[auto_auto]"
 			>
 				<JceSelect
 					options={sortOptions}
@@ -239,7 +239,7 @@
 					: { label: t('jce.comparisons.create_one'), href: '/compare' }}
 			/>
 		{:else}
-			<div class="grid gap-3.5 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
 				{#each items as item (item.id)}
 					<article
 						class="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"

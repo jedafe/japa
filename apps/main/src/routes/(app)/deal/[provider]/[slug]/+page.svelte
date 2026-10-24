@@ -386,7 +386,7 @@
 							coupon.provider_name ?? t('deals.internal', '{site}')
 						)}
 					</h2>
-					<div class="mt-3 grid gap-2 sm:grid-cols-2">
+					<div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
 						{#each data.related as rel (rel.id)}
 							{@const relLabel = discountLabelFor(rel)}
 							<a

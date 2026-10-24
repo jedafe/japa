@@ -223,7 +223,7 @@
 			</div>
 
 			<!-- Destination + Origin -->
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
 					<label for="dest" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_destination', 'Destination country')}
@@ -257,7 +257,7 @@
 			</div>
 
 			<!-- Start + End -->
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
 					<label for="occurs_at" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_occurs_at', 'Starts')} <span class="text-red-500">*</span>

@@ -381,7 +381,7 @@
 			id="services-filter-panel"
 			class="mb-5 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
 		>
-			<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="search">
+			<form onsubmit={applyFilters} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4" role="search">
 				<Autocomplete
 					placeholder={t('services.filter_dest', 'All countries')}
 					ariaLabel={t('services.filter_dest', 'All countries')}
@@ -519,7 +519,7 @@
 		/>
 	{:else}
 		<div
-			class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+			class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
 			aria-busy={!!navigating.to}
 			class:opacity-60={!!navigating.to}
 			class:pointer-events-none={!!navigating.to}
@@ -550,7 +550,7 @@
 
 	<!-- Trust strip -->
 	<section
-		class="mt-10 grid gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:grid-cols-3"
+		class="mt-10 grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:grid-cols-3"
 		aria-label={t('services.trust_aria', 'Why book with {site}')}
 	>
 		{#each trustItems as item (item.title)}

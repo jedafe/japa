@@ -737,7 +737,7 @@ import { contentHref } from '$lib/utils/contentLink';
 							<p class="block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_options', 'Options')}</p>
 							{#each pollOptions as label, i (i)}
 								<div class="flex gap-2">
-									<input type="text" bind:value={pollOptions[i]} class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" placeholder={`${t('forum.poll_option', 'Option')} ${i + 1}`} />
+									<input type="text" bind:value={pollOptions[i]} class="min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" placeholder={`${t('forum.poll_option', 'Option')} ${i + 1}`} />
 									{#if pollOptions.length > 2}
 										<button type="button" onclick={() => pollOptions = pollOptions.filter((_, idx) => idx !== i)} class="text-[var(--color-error)]"><X size={18} /></button>
 									{/if}

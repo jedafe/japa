@@ -279,7 +279,7 @@
 			</div>
 		</div>
 
-		<div class="grid gap-4 p-4 lg:grid-cols-2">
+		<div class="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
 			<!-- Milestones -->
 			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">

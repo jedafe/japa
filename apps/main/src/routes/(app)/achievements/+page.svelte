@@ -245,7 +245,7 @@
 					: { label: t('achievements.login_to_share', 'Log in to share'), href: '/login?redirect=/achievements' }}
 			/>
 		{:else}
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each data.achievements as item (item.id)}
 					{@const Icon = milestoneIcon(item.milestone_type as AchievementMilestoneType)}
 					{@const isAnon = item.is_anonymous}

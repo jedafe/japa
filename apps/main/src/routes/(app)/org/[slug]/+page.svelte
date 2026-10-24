@@ -139,18 +139,18 @@
 <div class="mx-auto w-full max-w-3xl">
 <OrgHeader {org} {canManage}>
 	{#snippet children()}
+		{#if page.data.features?.['scam_alert.enabled']}
+			<a
+				href="/scam-alerts/new"
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				title={t('scam_alerts.report_button', 'Report a Scam')}
+			>
+				<TriangleAlert size={15} />
+				{t('scam_alerts.report_button', 'Report a Scam')}
+			</a>
+		{/if}
 		{#if page.data.user}
 			<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} {initiallyFollowing} />
-			{#if page.data.features?.['scam_alert.enabled']}
-				<a
-					href="/scam-alerts/new"
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					title={t('scam_alerts.report_button', 'Report a Scam')}
-				>
-					<TriangleAlert size={15} />
-					{t('scam_alerts.report_button', 'Report a Scam')}
-				</a>
-			{/if}
 			{#if !org.verified}
 				<a
 					href="/claim-ownership?org={org.slug}"

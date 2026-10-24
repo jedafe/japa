@@ -187,7 +187,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					{t('planning_groups.empty_filtered', 'No groups match this tab.')}
 				</p>
 			{/if}
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each visibleGroups as group (group.id)}
 					<a
 						href="/planning-groups/{group.id}"

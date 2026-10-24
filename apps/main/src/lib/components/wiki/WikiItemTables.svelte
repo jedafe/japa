@@ -162,6 +162,7 @@
 					</div>
 				{/if}
 				{#if isPriceTable(section.fields)}
+					<div class="overflow-x-auto">
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="border-b border-[var(--color-border)] text-start text-xs uppercase tracking-wide text-[var(--color-muted)]">
@@ -182,9 +183,11 @@
 							{/each}
 						</tbody>
 					</table>
+					</div>
 				{:else if isPartsTable(section.fields)}
 					<!-- §80 Wiki Topic Pages — heterogeneous item table: one field
 					     is one row, columns are the declared options.parts. -->
+					<div class="overflow-x-auto">
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="border-b border-[var(--color-border)] text-start text-xs uppercase tracking-wide text-[var(--color-muted)]">
@@ -207,6 +210,7 @@
 							{/each}
 						</tbody>
 					</table>
+					</div>
 				{:else}
 					<dl class="divide-y divide-[var(--color-border)]">
 						{#each section.fields as f (f.id)}

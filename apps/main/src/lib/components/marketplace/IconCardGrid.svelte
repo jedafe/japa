@@ -38,7 +38,7 @@
 		<h2 id="included-cards-heading" class="text-xl font-bold text-[var(--color-text)]">
 			{heading}
 		</h2>
-		<ul class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+		<ul class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each visible as card, i (i)}
 				{@const Icon = marketplaceIcon(card.icon)}
 				<li

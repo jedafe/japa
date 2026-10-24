@@ -170,7 +170,7 @@
 	Content single pages render the unified shell's left ad rail (Section 59) instead of a
 	page-owned left reaction rail. The action bar is now a horizontal rail under the body.
 -->
-<div class="mx-auto grid max-w-[65rem] gap-8 px-4 py-8 pb-24 sm:px-6 lg:pb-8 lg:grid-cols-1 xl:grid-cols-[1fr_22rem]">
+<div class="mx-auto grid grid-cols-1 max-w-[65rem] gap-8 px-4 py-8 pb-24 sm:px-6 lg:pb-8 lg:grid-cols-1 xl:grid-cols-[1fr_22rem]">
 	<!-- Center: article -->
 	<article class="min-w-0 max-w-[41rem]">
 		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
@@ -343,7 +343,7 @@
 		{#if data.relatedContent && data.relatedContent.length > 0}
 			<section class="mt-8">
 				<h2 class="mb-4 text-lg font-semibold text-[var(--color-text)]">{t('blog.related', 'Related')}</h2>
-				<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					{#each data.relatedContent as rel (rel.id)}
 						<a
 							href={contentHref(rel)}

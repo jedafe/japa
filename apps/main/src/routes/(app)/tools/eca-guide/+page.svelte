@@ -209,7 +209,7 @@
 
 	<!-- Selector bar -->
 	<form onsubmit={onSearch} class="{cardCls} p-4">
-		<div class="grid gap-4 sm:grid-cols-3">
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="dest">
 					{t('eca_guide.destination', 'Destination')}
@@ -253,7 +253,7 @@
 			<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
 				{t('eca_guide.providers', 'ECA providers')}
 			</h2>
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				{#each providers as provider (provider.id)}
 					<div class="{cardCls} p-3">
 						<div class="font-medium text-[var(--color-text)]">{provider.name}</div>
@@ -394,7 +394,7 @@
 											<div class="mb-2 text-xs font-semibold uppercase text-[var(--color-muted)]">
 												{t('eca_guide.share', 'Share your experience')}
 											</div>
-											<div class="grid gap-2 sm:grid-cols-3">
+											<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
 												<input type="text" bind:value={updateFee} placeholder={t('eca_guide.fee_placeholder', 'Fee paid (e.g. $230 CAD)')} class="{inputCls} text-sm" />
 												<input type="number" bind:value={updateDays} placeholder={t('eca_guide.days_placeholder', 'Turnaround (days)')} class="{inputCls} text-sm" min="0" />
 												<input type="text" bind:value={updateNote} placeholder={t('eca_guide.note_placeholder', 'Short note (optional)')} class="{inputCls} text-sm" />

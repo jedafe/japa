@@ -1,6 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { buildApiUrl } from '@japaconnect/api-url';
-import type { RequestEvent } from '@sveltejs/kit';
+import { redirect, type RequestEvent } from '@sveltejs/kit';
 import type { ApiErr, ApiOk, ListMeta } from '$lib/types';
 
 /** Server-only base URL for the Go backend (no /api/v1 suffix). */
@@ -215,6 +215,22 @@ async function requestUncached<T>(
 
 	if (!res.ok || isErrorEnvelope) {
 		const err = (payload as ApiErr | null)?.error;
+		// §22: a banned/suspended session is confined to the appeal channel.
+		// BanEnforcement 403s every non-exempt endpoint, so without a global
+		// mapping every SSR page load would surface a generic 500. Redirect
+		// the page to /dashboard/appeals instead — its data calls all hit the
+		// exempt prefix, so it renders fully for banned users.
+		// GET-only: mutations via /api/* server routes keep the raw 403 so
+		// client code sees the real error. Skipped on the roadmap host where
+		// the appeals surface doesn't exist (avoids a redirect loop).
+		if (
+			method === 'GET' &&
+			res.status === 403 &&
+			err?.code === 'account_banned' &&
+			!ctx.host.startsWith('roadmap.')
+		) {
+			throw redirect(303, '/dashboard/appeals');
+		}
 		throw new ApiError(res.status, err?.code ?? 'api_error', err?.message ?? res.statusText);
 	}
 

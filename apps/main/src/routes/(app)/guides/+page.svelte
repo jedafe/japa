@@ -291,7 +291,7 @@
 			{#if data.series.length === 0}
 				<EmptyState icon={BookOpen} title={t('blog_series.empty', 'No series yet')} />
 			{:else}
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each data.series as series (series.id)}
 						<a
 							href="/series/{series.slug}"
@@ -383,7 +383,7 @@
 								<h2 class="text-sm font-semibold text-[var(--color-text)]">{group.label}</h2>
 								<span class="text-xs text-[var(--color-muted)]">{group.items.length}</span>
 							</div>
-							<div class="grid gap-3.5 sm:grid-cols-2">
+							<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
 								{#each group.items as item (item.id)}
 									<ContentGridCard {item} />
 								{/each}
@@ -400,7 +400,7 @@
 		{:else if feedItems.length === 0}
 			<EmptyState icon={BookOpen} title={t('guides.empty', 'No guides yet. Check back soon.')} />
 		{:else}
-			<div class="grid gap-3.5 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
 				{#each feedItems as item (item.id)}
 					<ContentGridCard {item} />
 				{/each}

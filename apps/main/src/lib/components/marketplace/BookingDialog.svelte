@@ -480,7 +480,7 @@
 			{/if}
 
 			{#if openDepartures.length === 0 || !bookingDepartureId}
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div>
 						<label
 							for="bk-from"
@@ -628,7 +628,7 @@
 			</div>
 
 			{#if isPaid}
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div>
 						<label
 							for="bk-prov"

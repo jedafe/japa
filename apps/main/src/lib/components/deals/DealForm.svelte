@@ -272,7 +272,7 @@
 				<p class="text-sm font-medium text-[var(--color-text)]">
 					{t('deal.form.provider_new_heading', 'New provider')}
 				</p>
-				<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div>
 						<label for="np-name" class={labelClass}>
 							{t('deal.form.provider_name', 'Provider name')} <span class="text-red-500">*</span>
@@ -348,7 +348,7 @@
 	{/if}
 
 	<!-- Title + slug -->
-	<div class="grid gap-4 sm:grid-cols-2">
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 		<div class="sm:col-span-2">
 			<label for="deal-title" class={labelClass}>
 				{t('deal.form.title', 'Title')} <span class="text-red-500">*</span>
@@ -385,7 +385,7 @@
 	</div>
 
 	<!-- Discount -->
-	<div class="grid gap-4 sm:grid-cols-3">
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 		<div>
 			<label for="deal-discount-type" class={labelClass}>
 				{t('deal.form.discount_type', 'Discount type')}
@@ -437,7 +437,7 @@
 	</div>
 
 	<!-- URLs -->
-	<div class="grid gap-4 sm:grid-cols-2">
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 		<div>
 			<label for="deal-referral-url" class={labelClass}>
 				{t('deal.form.referral_url', 'Referral / claim URL')}
@@ -479,7 +479,7 @@
 	</div>
 
 	<!-- Validity -->
-	<div class="grid gap-4 sm:grid-cols-2">
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 		<div>
 			<label for="deal-valid-from" class={labelClass}>
 				{t('deal.form.valid_from', 'Valid from')}
@@ -496,7 +496,7 @@
 
 	<!-- Staff-only moderation controls -->
 	{#if audience === 'staff'}
-		<div class="grid gap-4 sm:grid-cols-2">
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<div>
 				<label for="deal-status" class={labelClass}>{t('deal.form.status', 'Status')}</label>
 				<AutocompleteSelect
@@ -627,7 +627,7 @@
 		<div>
 			<span class={labelClass}>{t('deal.form.trial_heading', 'Trial / onboarding')}</span>
 			<div class="space-y-2">
-				<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<input
 						type="text"
 						bind:value={v.details.trial.title}

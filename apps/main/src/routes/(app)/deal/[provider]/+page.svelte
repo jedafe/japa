@@ -320,7 +320,7 @@
 				novalidate
 				class="mt-4 space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4"
 			>
-				<div class="grid gap-4 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div>
 						<label for="pf-name" class={labelClass}>
 							{t('deal.form.provider_name', 'Provider name')}
@@ -426,7 +426,7 @@
 					<AlertCircle size={16} /> {copyError}
 				</div>
 			{/if}
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				{#each coupons as coupon (coupon.id)}
 					<div
 						class="group flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"

@@ -156,7 +156,7 @@
 		{:else if feedItems.length === 0}
 			<EmptyState icon={ListOrdered} title={t('lists.empty', 'No lists yet')} />
 		{:else}
-			<div class="grid gap-3.5 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
 				{#each feedItems as item (item.id)}
 					<ContentGridCard {item} />
 				{/each}

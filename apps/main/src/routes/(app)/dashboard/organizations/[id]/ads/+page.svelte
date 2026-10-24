@@ -391,7 +391,7 @@
 			body={t('org_ads.no_campaigns_desc', 'Create your first ad campaign to get started.')}
 		/>
 	{:else}
-		<div class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+		<div class="overflow-x-auto rounded-lg border border-[var(--color-border)]">
 			<table class="w-full text-sm">
 				<thead class="bg-[var(--color-surface)]">
 					<tr>

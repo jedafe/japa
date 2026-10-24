@@ -304,7 +304,7 @@
 		<p class="text-sm text-[var(--color-muted)]">{t('bookmarks.subtitle', 'Organize your saved items into folders')}</p>
 	</header>
 
-	<div class="grid gap-4 sm:grid-cols-[200px_1fr]">
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-[200px_1fr]">
 		<!-- Folder sidebar -->
 		<aside class="space-y-2">
 			{#if folderError}

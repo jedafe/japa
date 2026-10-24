@@ -349,7 +349,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Breadcrumb + actions -->
-	<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-2.5 sm:px-6" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
+	<div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-2.5 sm:px-6" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<nav aria-label={t('a11y.breadcrumb', 'Breadcrumb')} class="min-w-0 text-xs text-[var(--color-muted)]">
 			<ol class="flex items-center gap-1.5">
 				<li>

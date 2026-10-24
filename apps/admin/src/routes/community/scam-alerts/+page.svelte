@@ -64,6 +64,9 @@
 	let pageError = $state('');
 	let acting = $state(false);
 
+	const scamTypeLabel = (v?: string) => (v ? t(`app.scam_alert.type_${v}`, v) : '—');
+	const platformLabel = (v?: string) => (v ? t(`app.scam_alert.platform_${v}`, v) : '—');
+
 	// Review slide-over state
 	let reviewOpen = $state(false);
 	let reviewTarget = $state<ScamAlertItem | undefined>(undefined);
@@ -213,7 +216,7 @@
 				key: 'scam_type',
 				label: t('app.scam_alert.col_scam_type', 'Scam Type'),
 				sortable: true,
-				render: (value: string) => value || '—'
+				render: (value: string) => scamTypeLabel(value)
 			},
 			{
 				key: 'status',
@@ -310,7 +313,7 @@
 				<!-- Report summary -->
 				<div class="space-y-2 rounded-lg border border-[var(--color-border)] p-3 text-sm">
 					<div>
-						<span class="font-medium" style="color: var(--color-foreground)">{reviewTarget.scam_type}</span>
+						<span class="font-medium" style="color: var(--color-foreground)">{scamTypeLabel(reviewTarget.scam_type)}</span>
 						<span class="ms-2 text-[var(--color-muted)]">· {reviewTarget.status}</span>
 					</div>
 					{#if reviewTarget.destination_space_name}
@@ -391,7 +394,7 @@
 	<div class="space-y-4">
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_scam_type', 'Scam Type')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.scam_type || '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{scamTypeLabel(row.scam_type)}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_status', 'Status')}</p>
@@ -418,7 +421,7 @@
 		{#if row.platform_used}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_platform', 'Platform')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.platform_used}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{platformLabel(row.platform_used)}</p>
 			</div>
 		{/if}
 		{#if row.amount_range}

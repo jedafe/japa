@@ -489,7 +489,7 @@
 		{#if showFilters}
 			<!-- Filter panel -->
 			<div id="calendar-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+		<form onsubmit={applyFilters} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
 			<Autocomplete
 				placeholder={t('calendar.filter_dest_all', 'All countries')}
 				ariaLabel={t('calendar.filter_dest_all', 'All countries')}

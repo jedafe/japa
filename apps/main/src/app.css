@@ -191,6 +191,12 @@ body {
 	text-rendering: optimizeLegibility;
 }
 
+/* Fieldsets default to min-width: min-content, which refuses to shrink
+   below their widest control and overflows narrow mobile containers. */
+fieldset {
+	min-width: 0;
+}
+
 /* Hide scrollbars globally while keeping scroll behavior intact.
    Firefox: scrollbar-width: none; Chrome/Safari/Edge: ::-webkit-scrollbar { display: none } */
 * {

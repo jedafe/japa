@@ -295,7 +295,7 @@
 
 	<!-- Latest draw cut-offs -->
 	{#if latestDraws.length > 0}
-		<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 			{#each latestDraws as draw (draw.id)}
 				<div class="{cardCls} p-3">
 					<div class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{categoryLabel(draw.category)}</div>
@@ -312,7 +312,7 @@
 	<form onsubmit={calculate} class="{cardCls} p-4">
 		<h2 class="mb-4 text-base font-semibold text-[var(--color-text)]">{t('crs_calculator.form_title', 'Your profile')}</h2>
 
-		<div class="grid gap-4 sm:grid-cols-2">
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<!-- Marital status -->
 			<div>
 				<label class={labelCls} for="marital">{t('crs_calculator.marital', 'Marital status')}</label>
@@ -425,7 +425,7 @@
 		{#if maritalStatus === 'married'}
 			<fieldset class="mt-5 rounded-[var(--radius)] border border-[var(--color-border)] p-4">
 				<legend class="px-1 text-sm font-medium text-[var(--color-text)]">{t('crs_calculator.spouse', 'Spouse')}</legend>
-				<div class="grid gap-4 sm:grid-cols-3">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 					<div>
 						<label class={subLabelCls} for="spouseEdu">{t('crs_calculator.spouse_education', 'Education')}</label>
 						<AutocompleteSelect
@@ -467,7 +467,7 @@
 		<!-- Additional factors -->
 		<fieldset class="mt-5">
 			<legend class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('crs_calculator.additional', 'Additional factors')}</legend>
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				<label class="inline-flex items-center gap-2 text-sm text-[var(--color-text)]">
 					<input type="checkbox" bind:checked={provincialNomination} class="rounded" />
 					{t('crs_calculator.pnp', 'Provincial nomination (+600)')}

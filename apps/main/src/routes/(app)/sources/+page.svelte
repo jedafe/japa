@@ -173,7 +173,7 @@
 
 	{#if showFilters}
 		<div id="sources-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
-			<div class="grid gap-3 sm:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
 				<form
 					class="w-full"
 					role="search"

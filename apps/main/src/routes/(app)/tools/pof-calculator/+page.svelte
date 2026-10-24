@@ -227,7 +227,7 @@
 		{/if}
 
 		<!-- Household -->
-		<div class="mb-5 grid gap-4 sm:grid-cols-2">
+		<div class="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="members">
 					{t('pof_calculator.members', 'Family members (you + spouse/partner)')}
@@ -287,7 +287,7 @@
 			</div>
 
 			{#if result.ngn_equivalent || result.usd_equivalent}
-				<div class="mt-4 grid gap-3 sm:grid-cols-2">
+				<div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#if result.ngn_equivalent}
 						<div class="rounded-[var(--radius)] border border-[var(--color-border)] p-3">
 							<div class="text-xs text-[var(--color-muted)]">NGN</div>

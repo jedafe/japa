@@ -121,7 +121,7 @@
 				id="series-filter-panel"
 				class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
 			>
-				<div class="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto]">
 					<div class="relative min-w-0">
 						<input
 							id="series-search"
@@ -192,7 +192,7 @@
 					: t('series.empty', 'No series yet')}
 			/>
 		{:else}
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				{#each data.series as series (series.id)}
 					<a
 						href="/series/{series.slug}"

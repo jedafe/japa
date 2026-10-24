@@ -189,7 +189,6 @@
 				href="/scam-alerts/new"
 				icon={Plus}
 				label={t('scam_alerts.report_button', 'Report a Scam')}
-				fabIndex={1}
 			/>
 		{/snippet}
 	</ListPageBar>

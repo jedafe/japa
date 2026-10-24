@@ -33,7 +33,7 @@
 	{#if pages.length === 0}
 		<EmptyState icon={FileText} title={t('pages_list.empty')} />
 	{:else}
-		<ul class="grid gap-3 sm:grid-cols-2">
+		<ul class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 			{#each pages as p (p.id)}
 				<li>
 					<a

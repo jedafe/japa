@@ -135,7 +135,7 @@
 					{typeLabel(typeKey)}
 				</h2>
 			{/if}
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each children as child (child.slug)}
 					<!-- §80 rich cards — an image_url child renders as an
 					     image-first card; others keep the text card. -->

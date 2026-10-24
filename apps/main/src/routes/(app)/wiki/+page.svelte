@@ -145,9 +145,9 @@
 		{t('wiki.landing_description', 'Choose a destination to explore community-maintained guides.')}
 	</p>
 	{#if structuredEditsOn}
-		<p class="mt-2 flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
-			<Table2 size={13} />
-			{t('wiki.community_data_note', 'Guides and destination data are community-maintained — suggest edits on any wiki page.')}
+		<p class="mt-2 flex items-start gap-1.5 text-xs text-[var(--color-muted)]">
+			<Table2 size={13} class="mt-0.5 shrink-0" />
+			<span>{t('wiki.community_data_note', 'Guides and destination data are community-maintained — suggest edits on any wiki page.')}</span>
 		</p>
 	{/if}
 </div>

@@ -271,7 +271,7 @@
 		<!-- Filter panel -->
 		{#if showFilters}
 		<div id="jobs-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
-			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
 				<SearchInput
 					bind:value={q}
 					placeholder={t('jobs.search', 'Search jobs…')}

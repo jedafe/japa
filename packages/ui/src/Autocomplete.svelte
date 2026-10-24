@@ -600,6 +600,9 @@
 <style>
 	.autocomplete-field {
 		position: relative;
+		/* Flex/grid item must be allowed to shrink below the input's
+		   intrinsic ~20ch width or narrow mobile rows overflow. */
+		min-width: 0;
 	}
 
 	.autocomplete-input-wrapper {

@@ -400,7 +400,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{#if amountError}
 				<p class="mb-2 text-xs text-[var(--color-danger)]" role="alert">{amountError}</p>
 				{/if}
-			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
 				<input
 					type="number"
 					min="0"

@@ -182,7 +182,7 @@
 			{/if}
 
 			<!-- Meta grid -->
-			<dl class="mt-6 grid gap-3 sm:grid-cols-2">
+			<dl class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
 				<div class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2">
 					<CalendarDays size={16} class="shrink-0 text-[var(--color-muted)]" />
 					<div class="min-w-0">

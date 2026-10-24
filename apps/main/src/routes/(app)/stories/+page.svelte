@@ -290,7 +290,7 @@
 		{#if showFilters && data.tab !== 'featured' && data.tab !== 'series'}
 			<!-- Filters (autocomplete for all four: origin, dest, visa, profession) -->
 			<div id="stories-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+		<form onsubmit={applyFilters} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
 			<Autocomplete
 				placeholder={t('stories.filter_origin_all', 'All origins')}
 				emptyMessage={t('common.no_results', 'No results found')}
@@ -353,7 +353,7 @@
 			{#if data.series.length === 0}
 				<EmptyState icon={BookOpen} title={t('blog_series.empty', 'No series yet')} />
 			{:else}
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each data.series as series (series.id)}
 						<a
 							href="/series/{series.slug}"
@@ -412,7 +412,7 @@
 					body={t('stories.featured_empty_body', 'Curators have not featured any stories yet.')}
 				/>
 			{:else}
-				<div class="grid gap-3.5 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
 					{#each featuredItems as item (item.id)}
 						<ContentGridCard {item} />
 					{/each}
@@ -434,7 +434,7 @@
 					: { label: t('stories.share', 'Share Your Story'), href: '/login?redirect=/studio%2Fcreate%3Ftype%3Dstory' }}
 			/>
 		{:else}
-			<div class="grid gap-3.5 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
 				{#each feedItems as item (item.id)}
 					<ContentGridCard {item} />
 				{/each}

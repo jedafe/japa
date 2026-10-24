@@ -17,7 +17,33 @@ SELECT DISTINCT ON (u.id)
  up.gender,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
- u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
+ u.email, u.username, u.profile_type,
+ -- Effective standing: user_moderation_actions / user_operation_bans rows are
+ -- enforced by BanEnforcement regardless of the users.status column, so /me
+ -- must report the same standing or restricted sessions render 'active'.
+ -- 'deleted'/'pending' always win over moderation state.
+ (CASE
+ WHEN u.status IN ('deleted', 'pending') THEN u.status
+ WHEN EXISTS (
+ SELECT 1 FROM user_moderation_actions uma
+ WHERE uma.user_id = u.id AND uma.action = 'ban'
+ AND uma.deleted_at IS NULL
+ AND (uma.expires_at IS NULL OR uma.expires_at > now())
+ ) THEN 'banned'
+ WHEN EXISTS (
+ SELECT 1 FROM user_moderation_actions uma
+ WHERE uma.user_id = u.id AND uma.action = 'suspension'
+ AND uma.deleted_at IS NULL
+ AND (uma.expires_at IS NULL OR uma.expires_at > now())
+ ) THEN 'suspended'
+ WHEN EXISTS (
+ SELECT 1 FROM user_operation_bans uob
+ WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+ AND (uob.expires_at IS NULL OR uob.expires_at > now())
+ ) AND u.status = 'active' THEN 'restricted'
+ ELSE u.status
+ END)::text AS status,
+ u.follower_count, u.last_login_at,
  u.public_username, u.public_group_id,
  ug.slug AS user_group_name,
  pg.name AS public_group_name
@@ -62,7 +88,31 @@ SELECT DISTINCT ON (u.id)
  up.website_url,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
- u.email, u.username, u.profile_type, u.status, u.follower_count,
+ u.email, u.username, u.profile_type,
+ -- Same effective-standing derivation as GetUserProfile — moderation rows
+ -- are enforced regardless of a stale users.status column.
+ (CASE
+ WHEN u.status IN ('deleted', 'pending') THEN u.status
+ WHEN EXISTS (
+ SELECT 1 FROM user_moderation_actions uma
+ WHERE uma.user_id = u.id AND uma.action = 'ban'
+ AND uma.deleted_at IS NULL
+ AND (uma.expires_at IS NULL OR uma.expires_at > now())
+ ) THEN 'banned'
+ WHEN EXISTS (
+ SELECT 1 FROM user_moderation_actions uma
+ WHERE uma.user_id = u.id AND uma.action = 'suspension'
+ AND uma.deleted_at IS NULL
+ AND (uma.expires_at IS NULL OR uma.expires_at > now())
+ ) THEN 'suspended'
+ WHEN EXISTS (
+ SELECT 1 FROM user_operation_bans uob
+ WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+ AND (uob.expires_at IS NULL OR uob.expires_at > now())
+ ) AND u.status = 'active' THEN 'restricted'
+ ELSE u.status
+ END)::text AS status,
+ u.follower_count,
  ug.slug AS user_group_name
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id

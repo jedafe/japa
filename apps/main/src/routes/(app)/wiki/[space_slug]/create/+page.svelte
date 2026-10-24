@@ -306,7 +306,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl p-4">
-	<div class="mb-6 flex items-center gap-3">
+	<div class="mb-6 flex flex-col items-start gap-1">
 		<a
 			href="/wiki/{data.spaceSlug}"
 			class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
@@ -383,7 +383,7 @@
 							<p class="text-xs text-[var(--color-muted)]">
 								{t('wiki.new_template_hint', 'Adds a predefined page under this category for every wiki of this type. Use {name} for the space name — e.g. "Prices in {name}".')}
 							</p>
-							<div class="grid gap-2 sm:grid-cols-2">
+							<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 								<input
 									type="text"
 									bind:value={tplLabel}
