@@ -189,7 +189,24 @@
 			<h3 class="mt-4 text-sm font-semibold">{t("vreq.submission", "Form submission")}</h3>
 			<dl class="mt-2 space-y-1 text-sm">
 				{#each Object.entries(submission.field_values) as [k, v]}
-					<div><dt class="font-medium">{k}</dt><dd class="whitespace-pre-wrap">{String(v)}</dd></div>
+					<div>
+						<dt class="font-medium">{k}</dt>
+						<dd class="whitespace-pre-wrap">
+							{#if Array.isArray(v)}
+								{#each v as item}
+									{#if item && typeof item === "object" && (item.url || item.id)}
+										<a class="block text-[var(--color-primary)] hover:underline" href={item.url ?? `#media-${item.id}`} target="_blank" rel="noopener noreferrer">{item.url ?? item.id}</a>
+									{:else}
+										{String(item)}
+									{/if}
+								{/each}
+							{:else if v && typeof v === "object" && ((v as Record<string, unknown>).url || (v as Record<string, unknown>).id)}
+								<a class="text-[var(--color-primary)] hover:underline" href={String((v as Record<string, unknown>).url ?? (v as Record<string, unknown>).id)} target="_blank" rel="noopener noreferrer">{String((v as Record<string, unknown>).url ?? (v as Record<string, unknown>).id)}</a>
+							{:else}
+								{String(v)}
+							{/if}
+						</dd>
+					</div>
 				{/each}
 			</dl>
 		{/if}

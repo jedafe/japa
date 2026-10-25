@@ -1,0 +1,21 @@
+-- 000934_verification_request_evidence_fields.down.sql
+-- Revert to the 000933 default field set.
+DELETE FROM custom_fields
+WHERE id IN (
+  '00000000-0000-0000-0000-00000000d015',
+  '00000000-0000-0000-0000-00000000d016',
+  '00000000-0000-0000-0000-00000000d017',
+  '00000000-0000-0000-0000-00000000d018',
+  '00000000-0000-0000-0000-00000000d019',
+  '00000000-0000-0000-0000-00000000d020',
+  '00000000-0000-0000-0000-00000000d021'
+);
+
+UPDATE custom_fields
+SET is_required = true,
+    position = 1,
+    label = 'Evidence URL'
+WHERE id = '00000000-0000-0000-0000-00000000d023';
+
+UPDATE custom_fields SET position = 2 WHERE id = '00000000-0000-0000-0000-00000000d024';
+UPDATE custom_fields SET position = 3 WHERE id = '00000000-0000-0000-0000-00000000d014';

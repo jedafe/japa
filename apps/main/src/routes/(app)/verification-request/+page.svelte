@@ -7,11 +7,12 @@
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { BadgeCheck, Loader2, Send, CreditCard, Wallet, FileCheck, Trash2 } from 'lucide-svelte';
-	import type { FormSubmissionResponse } from '$lib/types';
+	import { BadgeCheck, Loader2, Send, CreditCard, Wallet, FileCheck, Trash2, Upload } from 'lucide-svelte';
+	import type { FormSubmissionResponse, MediaAsset } from '$lib/types';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
+	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 
 	let { data } = $props();
 
@@ -24,7 +25,8 @@
 
 	let withdrawing = $state('');
 	let listError = $state('');
-	let values = $state<Record<string, string>>({});
+	let values = $state<Record<string, unknown>>({});
+	let mediaField = $state<{ id: string; label: string; type: string } | null>(null);
 	let requestedType = $state('');
 	let paymentMethod = $state<'credit' | 'paystack' | 'stripe'>('credit');
 	let loading = $state(false);
@@ -54,15 +56,45 @@
 		withdrawing = '';
 	}
 
+	const MEDIA_TYPES = new Set(['media', 'image_single', 'image_multi']);
+
+	function mediaItems(label: string): { id: string; url?: string; alt?: string }[] {
+		const v = values[label];
+		return Array.isArray(v) ? v : [];
+	}
+
+	function mediaSingle(label: string): { id: string; url?: string; alt?: string } | null {
+		const v = values[label];
+		return v && typeof v === 'object' && !Array.isArray(v) ? (v as { id: string; url?: string; alt?: string }) : null;
+	}
+
+	function isValueEmpty(v: unknown): boolean {
+		if (v == null) return true;
+		if (typeof v === 'string') return v.trim() === '';
+		if (Array.isArray(v)) return v.length === 0;
+		return false;
+	}
+
 	function validate(): boolean {
 		if (!form) return false;
 		for (const f of sortedFields) {
-			if (f.required && !values[f.label]?.trim()) {
+			if (f.required && isValueEmpty(values[f.label])) {
 				errorKey = 'verification_request.errors.field_required';
 				return false;
 			}
 		}
 		return true;
+	}
+
+	function onMediaSelect(asset: MediaAsset) {
+		if (!mediaField) return;
+		const item = { id: asset.id, url: asset.url, alt: asset.alt_text ?? undefined };
+		if (mediaField.type === 'image_single') {
+			values = { ...values, [mediaField.label]: item };
+		} else {
+			values = { ...values, [mediaField.label]: [...mediaItems(mediaField.label), item] };
+		}
+		mediaField = null;
 	}
 
 	async function submit(e: SubmitEvent) {
@@ -264,21 +296,48 @@
 							{#if field.required}<span class="text-red-500" aria-hidden="true">*</span>{/if}
 						</label>
 						{#if field.type === 'textarea' || field.type === 'long_text'}
-							<textarea id="field-{field.id}" rows="4" value={values[field.label] ?? ''} oninput={(e) => (values = { ...values, [field.label]: e.currentTarget.value })} class={inputClass}></textarea>
+							<textarea id="field-{field.id}" rows="4" value={String(values[field.label] ?? '')} oninput={(e) => (values = { ...values, [field.label]: e.currentTarget.value })} class={inputClass}></textarea>
 						{:else if field.type === 'select' && field.options && field.options.length > 0}
 							<AutocompleteSelect
 								id="field-{field.id}"
-								value={values[field.label] ?? ''}
+								value={String(values[field.label] ?? '')}
 								options={[{ value: '', label: t('verification_request.select_placeholder', 'Select an option') }, ...field.options.map((opt) => ({ value: opt, label: opt }))]}
 								onValueChange={(v) => (values = { ...values, [field.label]: v })}
 							/>
+						{:else if MEDIA_TYPES.has(field.type)}
+							{@const single = mediaSingle(field.label)}
+							{@const items = mediaItems(field.label)}
+							<div class="space-y-2">
+								{#if single}
+									<div class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm">
+										{#if single.url}<img src={single.url} alt={single.alt ?? ''} class="h-10 w-10 rounded object-cover" />{/if}
+										<span class="min-w-0 flex-1 truncate text-[var(--color-muted)]">{single.url ?? single.id}</span>
+										<button type="button" onclick={() => (values = { ...values, [field.label]: '' })} class="text-[var(--color-danger)]"><Trash2 size={14} /></button>
+									</div>
+								{/if}
+								{#each items as item, i (item.id)}
+									<div class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm">
+										{#if item.url}<img src={item.url} alt={item.alt ?? ''} class="h-10 w-10 rounded object-cover" />{/if}
+										<span class="min-w-0 flex-1 truncate text-[var(--color-muted)]">{item.url ?? item.id}</span>
+										<button type="button" onclick={() => (values = { ...values, [field.label]: items.filter((_, j) => j !== i) })} class="text-[var(--color-danger)]"><Trash2 size={14} /></button>
+									</div>
+								{/each}
+								<button
+									type="button"
+									onclick={() => (mediaField = { id: field.id, label: field.label, type: field.type })}
+									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+								>
+									<Upload size={14} />
+									{field.type === 'image_single' && single ? t('verification_request.media_replace', 'Replace image') : field.type === 'image_single' ? t('verification_request.media_pick_image', 'Upload image') : t('verification_request.media_add', 'Upload file')}
+								</button>
+							</div>
 						{:else if field.type === 'checkbox'}
 							<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 								<input type="checkbox" id="field-{field.id}" checked={values[field.label] === 'true'} onchange={(e) => (values = { ...values, [field.label]: e.currentTarget.checked ? 'true' : '' })} class="h-4 w-4 rounded border-[var(--color-border)]" />
 								{field.label}
 							</label>
 						{:else}
-							<input id="field-{field.id}" type={field.type === 'email' ? 'email' : field.type === 'number' ? 'number' : field.type === 'url' ? 'url' : 'text'} value={values[field.label] ?? ''} oninput={(e) => (values = { ...values, [field.label]: e.currentTarget.value })} class={inputClass} />
+							<input id="field-{field.id}" type={field.type === 'email' ? 'email' : field.type === 'number' ? 'number' : field.type === 'url' ? 'url' : 'text'} value={String(values[field.label] ?? '')} oninput={(e) => (values = { ...values, [field.label]: e.currentTarget.value })} class={inputClass} />
 						{/if}
 					</div>
 				{/each}
@@ -323,3 +382,12 @@
 	</div>
 	{/if}
 </div>
+
+{#if mediaField}
+	<MediaLibraryModal
+		allowedType={mediaField.type === 'media' ? '' : 'image'}
+		uploadContext="document"
+		onSelect={onMediaSelect}
+		onClose={() => (mediaField = null)}
+	/>
+{/if}

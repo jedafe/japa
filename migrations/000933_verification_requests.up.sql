@@ -91,11 +91,13 @@ VALUES ('00000000-0000-0000-0000-00000000d001', 'form', '00000000-0000-0000-0000
 ON CONFLICT (group_id, entity_class, entity_id) DO NOTHING;
 
 INSERT INTO custom_fields (id, group_id, label, key, field_type, placeholder, is_required, is_system, show_in_frontend, position) VALUES
-  ('00000000-0000-0000-0000-00000000d011', '00000000-0000-0000-0000-00000000d001',
+  -- Note: ids d011-d013 were already claimed by migration 000896
+  -- (readiness assessment fields) — this seed uses the d022+ range.
+  ('00000000-0000-0000-0000-00000000d022', '00000000-0000-0000-0000-00000000d001',
    'Legal / Registered Name', 'legal_name', 'text', 'Name as it appears on official documents', true, true, true, 0),
-  ('00000000-0000-0000-0000-00000000d012', '00000000-0000-0000-0000-00000000d001',
+  ('00000000-0000-0000-0000-00000000d023', '00000000-0000-0000-0000-00000000d001',
    'Evidence URL', 'evidence_url', 'url', 'https://example.com/proof', true, true, true, 1),
-  ('00000000-0000-0000-0000-00000000d013', '00000000-0000-0000-0000-00000000d001',
+  ('00000000-0000-0000-0000-00000000d024', '00000000-0000-0000-0000-00000000d001',
    'Registration / ID Number', 'registration_id', 'text', 'e.g. RC123456, bar admission no., passport no.', false, true, true, 2),
   ('00000000-0000-0000-0000-00000000d014', '00000000-0000-0000-0000-00000000d001',
    'Additional Notes', 'notes', 'textarea', 'Anything else reviewers should know…', false, true, true, 3)
