@@ -6,11 +6,28 @@
 //
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
 import type { RequestHandler } from './$types';
+import { env } from '$env/dynamic/private';
 import { API_BASE, JC_SURFACE } from '$lib/server/api';
 
-const FALLBACK = 'User-agent: *\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: /sitemap.xml\n';
+// Fails open: only explicitly non-production environments are blocked, so a
+// misconfigured production deploy cannot accidentally deindex itself.
+const NON_PROD_ENVS = new Set(['development', 'dev', 'staging', 'stage', 'test', 'preview', 'local']);
+const blocksIndexing = NON_PROD_ENVS.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase());
+
+const DISALLOW_ALL = 'User-agent: *\nDisallow: /\n';
+
+const fallback = (origin: string) =>
+	`User-agent: *\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: ${origin}/sitemap.xml\n`;
 
 export const GET: RequestHandler = async ({ request, url, getClientAddress }) => {
+	// Non-production deployments are never crawlable, even if the backend is
+	// unreachable — stage/dev must not leak into search indexes.
+	if (blocksIndexing) {
+		return new Response(DISALLOW_ALL, {
+			headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=300' }
+		});
+	}
+
 	try {
 		const backendURL = `${API_BASE}/robots.txt`;
 		const headers: Record<string, string> = {
@@ -42,7 +59,7 @@ export const GET: RequestHandler = async ({ request, url, getClientAddress }) =>
 		// Backend unreachable — fall through to the permissive default.
 	}
 
-	return new Response(FALLBACK, {
+	return new Response(fallback(url.origin), {
 		headers: {
 			'Content-Type': 'text/plain',
 			'Cache-Control': 'public, max-age=3600'

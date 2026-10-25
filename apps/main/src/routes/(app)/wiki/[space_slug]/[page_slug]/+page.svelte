@@ -354,6 +354,9 @@
 		<meta name="twitter:card" content="summary_large_image" />
 	{/if}
 	<link rel="canonical" href={canonicalUrl} />
+	{#if data.page && !data.page.indexable}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 	{#if wikiArticleJsonLd}
 		{@html safeJsonLdScript(wikiArticleJsonLd)}
 	{/if}

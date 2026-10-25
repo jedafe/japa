@@ -69,7 +69,7 @@
 <svelte:head>
 	<title>{title}</title>
 	<meta name="description" content={description} />
-	<link rel="canonical" href={canonical} />
+	<link rel="canonical" href={page.url.href} />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:url" content={canonical} />
@@ -77,6 +77,7 @@
 	{#if visaJsonLd}
 		{@html safeJsonLdScript(visaJsonLd)}
 	{/if}
+	<meta name="robots" content="noindex,follow" />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">

@@ -147,7 +147,7 @@
 				</div>
 				<div>
 					<p class="text-sm font-semibold text-[var(--color-text)]">{t('academy.become_instructor_title', 'Become an Instructor')}</p>
-					<p class="text-xs text-[var(--color-muted)]">{t('academy.become_instructor_desc', 'Share your expertise and earn revenue teaching what you know.')}</p>
+					<p class="text-xs text-[var(--color-text-subtle)]">{t('academy.become_instructor_desc', 'Share your expertise and earn revenue teaching what you know.')}</p>
 				</div>
 			</div>
 			<a

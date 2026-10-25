@@ -1,13 +1,13 @@
 package media
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
 	"io"
 	"log/slog"
 	"mime"
@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -45,10 +46,10 @@ type MediaResponse struct {
 	Flagged      bool     `json:"flagged"`
 	// Missing is true when the row's storage object is absent (m000924) —
 	// surfaced so ?missing=only admin audits can distinguish flagged rows.
-	Missing      bool     `json:"missing"`
-	CreatedAt    string   `json:"created_at"`
-	URL          string   `json:"url"`
-	UserGroupID  *string  `json:"user_group_id"`
+	Missing     bool    `json:"missing"`
+	CreatedAt   string  `json:"created_at"`
+	URL         string  `json:"url"`
+	UserGroupID *string `json:"user_group_id"`
 	// Stock attribution (present when media was imported from a stock provider).
 	SourcePlatform        *string `json:"source_platform,omitempty"`
 	SourcePhotographer    *string `json:"source_photographer,omitempty"`
@@ -1073,23 +1074,27 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 
 	bucket := h.service.storageBucket(r.Context())
 
-	localPath := filepath.Join(mediaRoot, bucket, storagePath)
-	// #nosec G703 // path is scoped to mediaRoot/{bucket}; file extension is sanitized elsewhere.
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o750); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
-		return
-	}
+	localPath := ""
+	if h.service.s3 != nil {
+		// S3-backed deployments: the object store is the single source of
+		// truth — nothing lands on the container's ephemeral disk.
+		if err := h.service.s3.putObject(r.Context(), bucket, storagePath, contentType, body); err != nil {
+			slog.Warn("admin upload: s3 put failed", "path", storagePath, "error", err)
+			errpkg.WriteError(w, http.StatusBadGateway, "storage_error", "Failed to store upload")
+			return
+		}
+	} else {
+		localPath = filepath.Join(mediaRoot, bucket, storagePath)
+		// #nosec G703 // path is scoped to mediaRoot/{bucket}; file extension is sanitized elsewhere.
+		if err := os.MkdirAll(filepath.Dir(localPath), 0o750); err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
+			return
+		}
 
-	dst, err := os.Create(localPath) // #nosec
-	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
-		return
-	}
-	defer dst.Close()
-
-	if _, err := dst.Write(body); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
-		return
+		if err := os.WriteFile(localPath, body, 0o644); err != nil { // #nosec G306,G703 // media payload; perms mirror prior os.Create usage
+			errpkg.WriteError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
+			return
+		}
 	}
 
 	mediaID, err := h.service.DirectUpload(r.Context(), user.UserID, header.Filename, contentType, int64(len(body)), localPath, storagePath)
@@ -1293,8 +1298,10 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeMedia handles GET /api/v1/media/serve/{bucket}/{path}.
-// Serves media files from the local filesystem for development environments
-// where imgproxy and S3/SeaweedFS are not configured.
+// Serves media files from the local filesystem (dev storage) or, when the S3
+// client is configured and the local stat misses, streams the object from
+// S3/SeaweedFS — the only read path for media that bypasses imgproxy (videos,
+// audio, PDFs) and the fallback for images when imgproxy is not configured.
 func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	bucket := chi.URLParam(r, "bucket")
 	storagePath := chi.URLParam(r, "*") // catch-all for path
@@ -1312,6 +1319,11 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 
 	info, err := os.Stat(localPath)
 	if err != nil || info.IsDir() {
+		// Objects written through the S3 backend never land on the API's
+		// local disk — consult the object store before declaring absence.
+		if h.service.s3 != nil && h.serveObjectFromS3(w, r, bucket, storagePath) {
+			return
+		}
 		// Flag the row as missing its object so list endpoints can drop
 		// the placeholder noise (m000924). Best-effort — a failed mark
 		// still serves the placeholder; the reconcile sweep is the backstop.
@@ -1383,6 +1395,85 @@ func sniffStoredContentType(localPath string) (string, error) {
 	}
 
 	return http.DetectContentType(head[:n]), nil
+}
+
+// serveObjectFromS3 streams a media object from S3/SeaweedFS when the local
+// filesystem misses — the production read path for media that bypasses
+// imgproxy (videos, audio, PDFs, and every image while imgproxy is
+// unconfigured). Returns true only when the object was actually served; a
+// definitive upstream 404 flags the row missing (the local stat-miss cannot
+// prove absence under S3, but an object-store 404 can). Range requests are
+// forwarded so video/audio seeking keeps working through the proxy.
+func (h *Handlers) serveObjectFromS3(w http.ResponseWriter, r *http.Request, bucket, storagePath string) bool {
+	objectURL := fmt.Sprintf("%s/%s/%s", h.service.s3.endpoint, bucket, storagePath)
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, objectURL, nil)
+	if err != nil {
+		return false
+	}
+
+	if rng := r.Header.Get("Range"); rng != "" {
+		req.Header.Set("Range", rng)
+	}
+
+	h.service.s3.signRequest(req, emptyPayloadHash, time.Now())
+
+	resp, err := h.service.s3.httpClient.Do(req)
+	if err != nil {
+		slog.Warn("media serve: s3 get failed", "bucket", bucket, "path", storagePath, "error", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		if markErr := h.service.store.MarkMediaMissingByObject(r.Context(), bucket, storagePath); markErr != nil {
+			slog.Warn("media serve: mark missing failed", "bucket", bucket, "path", storagePath, "error", markErr)
+		}
+		return false
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		slog.Warn("media serve: s3 get returned non-2xx", "bucket", bucket, "path", storagePath, "status", resp.StatusCode)
+		return false
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/octet-stream" {
+		if extType := mime.TypeByExtension(strings.ToLower(filepath.Ext(storagePath))); extType != "" {
+			contentType = extType
+		} else {
+			contentType = "application/octet-stream"
+		}
+	}
+
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+
+	// Same rule as the local path: never let stored SVG execute inline on
+	// the API origin — force a download with a sandboxed CSP.
+	if CanonicalMIMEType(contentType) == "image/svg+xml" {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Content-Disposition", `attachment; filename="media.svg"`)
+	} else {
+		if isActiveContentType(contentType) {
+			contentType = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", contentType)
+	}
+
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Accept-Ranges", "bytes")
+
+	for _, hdr := range []string{"Content-Length", "Content-Range"} {
+		if v := resp.Header.Get(hdr); v != "" {
+			w.Header().Set(hdr, v)
+		}
+	}
+
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+
+	return true
 }
 
 // mediaRoot is the base directory for locally stored media files. It is
@@ -1464,9 +1555,12 @@ func isActiveContentType(contentType string) bool {
 }
 
 // SeaweedFSUpload handles PUT /seaweedfs/upload/{bucket}/*.
-// This is the dev-only fallback for presigned URL uploads when S3/SeaweedFS is
-// not configured. The client PUTs raw file bytes to the presigned URL; this
-// handler writes them to the local filesystem so ServeMedia can retrieve them.
+// This is the same-origin upload endpoint for the two-step flow: the client
+// PUTs raw file bytes to the URL emitted by InitiateUpload, and this handler
+// stores them on the configured backend — S3/SeaweedFS when the S3 client is
+// configured, the local filesystem otherwise (dev). Routing bytes through the
+// API keeps the object store unreachable from browsers: its endpoint is a
+// Docker-internal hostname that only containers can resolve.
 //
 // Auth note: the route is gated by auth.RequireAuth (server.go) — only an
 // authenticated session holder reaches this handler. The PUT must correspond
@@ -1484,19 +1578,13 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	localPath, err := resolveMediaPath(bucket, storagePath)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_path", "Invalid upload path")
-		return
-	}
-
 	// Require the Initiate→Confirm flow: look up the pending row by storage
 	// path so owner binding, claimed MIME/size, and expiry (presigned URL
 	// ttl) are enforced by lookup. When the store is unavailable we fail
 	// closed — without a row the write cannot be attributed to an owner.
 	pending, err := h.service.store.GetMediaByStoragePath(r.Context(), storagePath)
 	if err != nil || pending.UploaderUserID == (pgtype.UUID{}) {
-		slog.Warn("seaweedfs upload: no pending upload row for path", "path", localPath)
+		slog.Warn("seaweedfs upload: no pending upload row for path", "path", storagePath)
 		errpkg.WriteError(w, http.StatusNotFound, "upload_not_initiated", "No pending upload found for this path — initiate the upload first")
 
 		return
@@ -1504,15 +1592,8 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Owner binding: the authenticated caller must be the row's uploader.
 	if user := auth.FromContext(r.Context()); user == nil || user.UserID != pending.UploaderUserID {
-		slog.Warn("seaweedfs upload: owner mismatch", "path", localPath)
+		slog.Warn("seaweedfs upload: owner mismatch", "path", storagePath)
 		errpkg.WriteError(w, http.StatusNotFound, "upload_not_initiated", "No pending upload found for this path — initiate the upload first")
-
-		return
-	}
-
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec G301,G703 // bounded; pending path validation
-		slog.Warn("seaweedfs upload: failed to create directory", "path", localPath, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
 
 		return
 	}
@@ -1520,19 +1601,15 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	// Enforce 50MB body limit.
 	r.Body = http.MaxBytesReader(w, r.Body, MaxFileSizeBytes)
 
-	dst, err := os.Create(localPath) // #nosec
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		slog.Warn("seaweedfs upload: failed to create file", "path", localPath, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
-
-		return
-	}
-	defer dst.Close()
-
-	written, err := io.Copy(dst, r.Body)
-	if err != nil {
-		slog.Warn("seaweedfs upload: failed to write file", "path", localPath, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds the upload size limit")
+			return
+		}
+		slog.Warn("seaweedfs upload: failed to read body", "path", storagePath, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "read_error", "Failed to read upload")
 
 		return
 	}
@@ -1541,48 +1618,74 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	// (DetectStorageMIME — never a client header), run content inspection
 	// (VerifyMIMEType against the row's declared type), and enforce the
 	// media-context allowlist. A mismatch is removed without confirmation.
-	if sniffErr := h.verifyPendingUploadBytes(localPath, pending.OriginalFilename, pending.MimeType); sniffErr != nil {
-		slog.Warn("seaweedfs upload: content failed MIME gates", "path", localPath, "error", sniffErr)
-		_ = os.Remove(localPath)
-
+	if sniffErr := h.verifyPendingUploadBytes(body, pending.OriginalFilename, pending.MimeType); sniffErr != nil {
+		slog.Warn("seaweedfs upload: content failed MIME gates", "path", storagePath, "error", sniffErr)
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_media_type", "Uploaded content failed file-type validation")
 
 		return
 	}
 
+	if h.service.s3 != nil {
+		// Object store is the single source of truth — nothing touches the
+		// container's ephemeral disk, so ServeMedia's S3 fallback finds it.
+		if putErr := h.service.s3.putObject(r.Context(), pending.StorageBucket, storagePath, pending.MimeType, body); putErr != nil {
+			slog.Warn("seaweedfs upload: s3 put failed", "path", storagePath, "error", putErr)
+			errpkg.WriteError(w, http.StatusBadGateway, "storage_error", "Failed to store upload")
+
+			return
+		}
+		slog.Info("seaweedfs upload: file stored in object storage", "bucket", pending.StorageBucket, "path", storagePath, "bytes", len(body))
+	} else {
+		localPath, err := resolveMediaPath(bucket, storagePath)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_path", "Invalid upload path")
+			return
+		}
+
+		if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec G301,G703 // bounded; pending path validation
+			slog.Warn("seaweedfs upload: failed to create directory", "path", localPath, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
+
+			return
+		}
+
+		if err := os.WriteFile(localPath, body, 0o644); err != nil { // #nosec G306,G703 // media payload; perms mirror prior os.Create usage
+			slog.Warn("seaweedfs upload: failed to write file", "path", localPath, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
+
+			return
+		}
+		slog.Info("seaweedfs upload: file stored locally", "path", localPath, "bytes", len(body))
+	}
+
 	// The object now exists — clear any missing flag so the row re-appears
 	// in listings (best-effort; a failed clear is fixed by reconcile).
 	if err := h.service.ClearObjectMissing(r.Context(), bucket, storagePath); err != nil {
-		slog.Warn("seaweedfs upload: clear missing flag failed", "path", localPath, "error", err)
+		slog.Warn("seaweedfs upload: clear missing flag failed", "path", storagePath, "error", err)
 	}
 
 	// Enqueue the virus scan for the pending row now that bytes have landed
 	// (ConfirmUpload enqueues again; the task is idempotent on media id).
 	h.enqueueMediaTasks(r.Context(), pending.ID)
 
-	slog.Info("seaweedfs upload: file stored locally", "path", localPath, "bytes", written)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
-// verifyPendingUploadBytes applies the InitiateUpload MIME gates to bytes
-// already written by SeaweedFSUpload: DetectStorageMIME sniffing, the
+// verifyPendingUploadBytes applies the InitiateUpload MIME gates to the
+// uploaded body received by SeaweedFSUpload: DetectStorageMIME sniffing, the
 // service allowlist for the upload context the row was initiated with, and
 // VerifyMIMEType content inspection against the row's declared MIME. The
 // pending row does not record the context, so it is recovered from the
 // declared MIME — any context whose gates would have accepted the declared
 // type is a candidate (the sniffed type must pass the same gates; a context
 // mismatch is still caught by VerifyMIMEType).
-func (h *Handlers) verifyPendingUploadBytes(localPath, filename, declaredMIME string) error {
-	f, err := os.Open(localPath) // #nosec G304 -- path resolved via resolveMediaPath
-	if err != nil {
-		return err
+func (h *Handlers) verifyPendingUploadBytes(body []byte, filename, declaredMIME string) error {
+	head := body
+	if len(head) > 512 {
+		head = head[:512]
 	}
-	defer f.Close()
-
-	head := make([]byte, 512)
-	n, _ := io.ReadFull(f, head)
-	sniffed := DetectStorageMIME(head[:n], filename)
+	sniffed := DetectStorageMIME(head, filename)
 	allowed := false
 
 	for _, ctx := range []UploadContext{UploadContextMedia, UploadContextAvatar, UploadContextDocument} {
@@ -1597,7 +1700,7 @@ func (h *Handlers) verifyPendingUploadBytes(localPath, filename, declaredMIME st
 		return errors.New("media: sniffed type not allowed for upload")
 	}
 
-	if _, matches, verr := VerifyMIMEType(head[:n], declaredMIME); verr != nil || !matches {
+	if _, matches, verr := VerifyMIMEType(head, declaredMIME); verr != nil || !matches {
 		return errors.New("media: content does not match declared MIME type")
 	}
 

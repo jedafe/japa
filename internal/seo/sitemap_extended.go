@@ -219,8 +219,8 @@ func (h *SitemapHandler) ServeJobsSitemap(w http.ResponseWriter, r *http.Request
 			ReactionCount: int(c.ReactionCount),
 			ReplyCount:    int(c.ReplyCount),
 			IsQuestion:    isQuestion,
-			Solved:        c.Solved,
-			SeoIndexable:  c.SeoIndexable,
+			SkipWordGate:  c.ContentType == "forum_thread" || c.ContentType == "discussion", Solved: c.Solved,
+			SeoIndexable: c.SeoIndexable,
 		}, cfg) {
 			continue
 		}
@@ -348,8 +348,8 @@ func (h *SitemapHandler) ServeServicesSitemap(w http.ResponseWriter, r *http.Req
 			ReactionCount: int(c.ReactionCount),
 			ReplyCount:    int(c.ReplyCount),
 			IsQuestion:    isQuestion,
-			Solved:        c.Solved,
-			SeoIndexable:  c.SeoIndexable,
+			SkipWordGate:  c.ContentType == "forum_thread" || c.ContentType == "discussion", Solved: c.Solved,
+			SeoIndexable: c.SeoIndexable,
 		}, cfg) {
 			continue
 		}
@@ -391,10 +391,19 @@ func (h *SitemapHandler) ServeWikiSitemap(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Only pages with an approved prose revision are indexable — stubs
+	// (seeded pages still awaiting first content) return 200 but carry no
+	// content, so listing them would push thin pages at crawlers.
+	// kind='fields' revisions hold field ops only, never page prose (§80).
 	rows, err := h.reader.Query(r.Context(), `SELECT sp.slug, wp.slug, wp.updated_at
 		 FROM wiki_pages wp
 		 JOIN spaces sp ON sp.id = wp.space_id AND sp.deleted_at IS NULL
 		 WHERE wp.is_active = true AND wp.deleted_at IS NULL
+		   AND EXISTS (
+		       SELECT 1 FROM wiki_revisions wr
+		       WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
+		         AND wr.kind <> 'fields' AND wr.deleted_at IS NULL
+		   )
 		 ORDER BY wp.updated_at DESC`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
@@ -594,24 +603,22 @@ func (h *SitemapHandler) ServeComparisonsSitemap(w http.ResponseWriter, r *http.
 			ReactionCount: int(c.ReactionCount),
 			ReplyCount:    int(c.ReplyCount),
 			IsQuestion:    isQuestion,
-			Solved:        c.Solved,
-			SeoIndexable:  c.SeoIndexable,
+			SkipWordGate:  c.ContentType == "forum_thread" || c.ContentType == "discussion", Solved: c.Solved,
+			SeoIndexable: c.SeoIndexable,
 		}, cfg) {
 			continue
 		}
 
 		lastMod := c.UpdatedAt.Time.Format(time.RFC3339)
+		// Only the canonical /comparisons/{slug} route is listed — the
+		// /compare/{slug} JCE workspace renders the same backing slug and is
+		// noindexed + canonicalized to /comparisons/{slug}, so emitting both
+		// would be a sitemap-level duplicate.
 		entries = append(entries, urlEntry{
 			Loc:        fmt.Sprintf("%s/comparisons/%s", base, c.Slug),
 			LastMod:    lastMod,
 			ChangeFreq: "weekly",
 			Priority:   "0.6",
-		})
-		entries = append(entries, urlEntry{
-			Loc:        fmt.Sprintf("%s/compare/%s", base, c.Slug),
-			LastMod:    lastMod,
-			ChangeFreq: "weekly",
-			Priority:   "0.5",
 		})
 	}
 

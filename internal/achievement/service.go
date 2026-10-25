@@ -15,11 +15,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -66,6 +68,9 @@ type AchievementDTO struct {
 	AuthorName       string         `json:"author_name,omitempty"`
 	AuthorAvatar     string         `json:"author_avatar,omitempty"`
 	AllowedReactions []ReactionItem `json:"allowed_reactions,omitempty"`
+	// §43 indexability — the detail page emits noindex when Indexable is false.
+	SeoIndexable bool `json:"seo_indexable"`
+	Indexable    bool `json:"indexable"`
 }
 
 // ReactionItem is a single curated reaction for achievement posts (§89).
@@ -319,6 +324,16 @@ func (s *Service) Submit(ctx context.Context, authorID pgtype.UUID, input Submit
 	return s.getAchievementDTOByID(ctx, contentRow.ID, authorID)
 }
 
+// sitemapCfg resolves §43 quality thresholds from system_settings
+// (seo.sitemap.*), falling back to spec defaults — matching the sitemap gate.
+func (s *Service) sitemapCfg(ctx context.Context) bots.SitemapQualityConfig {
+	cfg := bots.DefaultSitemapQualityConfig()
+	if s.settings != nil {
+		cfg.MinWords = s.settings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
+	}
+	return cfg
+}
+
 // GetBySlug returns a single achievement by its slug. Only published
 // achievements are visible to anonymous viewers; an unpublished achievement
 // (e.g. admin-moderated) is visible only to its own author. Pass a zero
@@ -333,7 +348,20 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, viewerID pgtype.UU
 		return AchievementDTO{}, fmt.Errorf("achievement: get by slug: %w", err)
 	}
 
-	return rowToDTO(row, viewerID), nil
+	dto := rowToDTO(row, viewerID)
+	// §43 quality gate — achievement uses the generic min-words threshold
+	// (seo.sitemap.content_min_words); no engagement gate for this type.
+	dto.SeoIndexable = row.SeoIndexable
+	dto.Indexable = bots.IsContentIndexableByType(bots.ContentIndexableInput{
+		ContentType:   "achievement",
+		Status:        row.Status,
+		Visibility:    row.Visibility,
+		WordCount:     len(strings.Fields(row.Body)),
+		CommentCount:  int(row.CommentCount),
+		ReactionCount: int(row.ReactionCount),
+		SeoIndexable:  row.SeoIndexable,
+	}, s.sitemapCfg(ctx))
+	return dto, nil
 }
 
 // GetBySlugWithReactions returns a single achievement by slug, populated

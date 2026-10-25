@@ -30,6 +30,8 @@ export const load: PageServerLoad = async (event) => {
 	let bookmarkId = '';
 	let deletedUserIds: string[] | null = null;
 	let userVotes: Record<string, number> = {};
+	let indexable = true;
+	let seoIndexable = true;
 	try {
 		// BUG-013/BUG-014: use the full envelope to capture the backend-provided
 		// json_ld (QAPage structured data with acceptedAnswer text) and the
@@ -37,6 +39,8 @@ export const load: PageServerLoad = async (event) => {
 		// the author). Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
 		const envelope = await apiGetEnvelope<ForumThread>(ctx, `/forum/${slug}`);
 		thread = envelope.data;
+		indexable = envelope.indexable ?? thread.indexable ?? true;
+		seoIndexable = envelope.seo_indexable ?? thread.seo_indexable ?? true;
 		jsonLd = envelope.json_ld ?? null;
 		backendCanSolve = envelope.can_solve ?? false;
 		canEdit = envelope.can_edit ?? false;
@@ -126,6 +130,8 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		thread,
+		indexable,
+		seoIndexable,
 		replies,
 		tags,
 		poll,

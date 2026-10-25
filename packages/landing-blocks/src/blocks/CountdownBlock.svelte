@@ -43,10 +43,12 @@
     { key: 'seconds', label: 'Sec', value: timeLeft.seconds, show: props.show_seconds },
   ].filter(u => u.show));
 
+  // Mobile: inline wraps and the grid drops to 2 columns so the unit cards
+  // never overflow a 320px viewport.
   const layoutClass = $derived(
-    props.layout === 'inline' ? 'flex flex-row gap-4' :
+    props.layout === 'inline' ? 'flex flex-row flex-wrap justify-center gap-4' :
     props.layout === 'stacked' ? 'flex flex-col gap-2' :
-    'grid grid-cols-4 gap-4'
+    'grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4'
   );
 </script>
 

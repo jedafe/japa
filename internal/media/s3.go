@@ -70,7 +70,10 @@ func NewS3ClientFromConfig(c S3Config) *S3Client {
 		secretKey:  c.SecretKey,
 		region:     region,
 		bucket:     bucket,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		// No total Timeout — ResponseHeaderTimeout bounds the connect+headers
+		// phase while body streaming (media serve/uploads) can run as long as
+		// the payload needs.
+		httpClient: &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: 30 * time.Second}},
 	}
 }
 
@@ -146,6 +149,57 @@ func (c *S3Client) getSigningKey(date string) []byte {
 	return kSigning
 }
 
+// emptyPayloadHash is the SHA-256 of the empty body — the SigV4 payload hash
+// for bodiless requests (GET, HEAD, DELETE).
+const emptyPayloadHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+// signRequest applies AWS Signature Version 4 header authentication to req.
+// SeaweedFS deployments with an s3.config identity file reject unsigned
+// requests with 403, so every direct client call (HEAD/GET/PUT/DELETE) must
+// be signed — presigned-URL signing alone only covers the browser PUT path.
+// Content-Type joins the signed headers when set so its value is covered by
+// the signature.
+func (c *S3Client) signRequest(req *http.Request, payloadHash string, now time.Time) {
+	dateStr := now.UTC().Format("20060102")
+	datetimeStr := now.UTC().Format("20060102T150405Z")
+
+	req.Header.Set("x-amz-date", datetimeStr)
+	req.Header.Set("x-amz-content-sha256", payloadHash)
+
+	canonicalURI := req.URL.EscapedPath()
+	if canonicalURI == "" {
+		canonicalURI = "/"
+	}
+
+	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+	canonicalHeaders := fmt.Sprintf("host:%s\nx-amz-content-sha256:%s\nx-amz-date:%s\n",
+		req.URL.Host, payloadHash, datetimeStr)
+
+	if ct := req.Header.Get("Content-Type"); ct != "" {
+		signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date"
+		canonicalHeaders = fmt.Sprintf("content-type:%s\nhost:%s\nx-amz-content-sha256:%s\nx-amz-date:%s\n",
+			ct, req.URL.Host, payloadHash, datetimeStr)
+	}
+
+	canonicalRequest := strings.Join([]string{
+		req.Method,
+		canonicalURI,
+		req.URL.Query().Encode(),
+		canonicalHeaders,
+		signedHeaders,
+		payloadHash,
+	}, "\n")
+
+	scope := fmt.Sprintf("%s/%s/s3/aws4_request", dateStr, c.region)
+	crHash := sha256.Sum256([]byte(canonicalRequest))
+	stringToSign := "AWS4-HMAC-SHA256\n" + datetimeStr + "\n" + scope + "\n" + hex.EncodeToString(crHash[:])
+
+	sig := hex.EncodeToString(c.hmacSHA256(c.getSigningKey(dateStr), []byte(stringToSign)))
+	req.Header.Set("Authorization", fmt.Sprintf(
+		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
+		c.accessKey, scope, signedHeaders, sig))
+}
+
 // hmacSHA256 computes HMAC-SHA256.
 func (c *S3Client) hmacSHA256(key, data []byte) []byte {
 	mac := hmac.New(sha256.New, key)
@@ -192,6 +246,9 @@ func (c *S3Client) putObject(ctx context.Context, bucket, storagePath, mimeType 
 
 	req.Header.Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
 
+	bodyHash := sha256.Sum256(body)
+	c.signRequest(req, hex.EncodeToString(bodyHash[:]), time.Now())
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing s3 put: %w", err)
@@ -219,6 +276,8 @@ func (c *S3Client) DeleteObject(ctx context.Context, bucket, storagePath string)
 	if err != nil {
 		return fmt.Errorf("creating s3 delete request: %w", err)
 	}
+
+	c.signRequest(req, emptyPayloadHash, time.Now())
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -94,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [main, admin, control, academy, docs, tools]
+        app: [main, admin, control, academy, docs]
     env:
       IMAGE: ${{ vars.REGISTRY_HOST }}/japa-${{ matrix.app }}
     steps:
@@ -158,6 +158,3 @@ jobs:
 
       - name: Deploy docs
         run: 'curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_DOCS }}"'
-
-      - name: Deploy tools
-        run: 'curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_TOOLS }}"'

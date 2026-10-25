@@ -590,6 +590,9 @@ import { flagUrl } from '$lib/utils/flags';
 	<meta property="og:type" content="website" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	{#if data.seoIndexable === false}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 	{@html safeJsonLdScript(breadcrumbLd)}
 </svelte:head>
 

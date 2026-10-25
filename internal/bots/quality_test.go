@@ -99,7 +99,7 @@ func TestIsContentIndexableByType(t *testing.T) {
 		// Blog posts — word count + engagement gate.
 		{
 			"blog post meets defaults",
-			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 150, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 650, SeoIndexable: true},
 			def,
 			true,
 		},
@@ -111,26 +111,26 @@ func TestIsContentIndexableByType(t *testing.T) {
 		},
 		{
 			"blog post engagement gate pass (default 0)",
-			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 150, CommentCount: 0, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 650, CommentCount: 0, SeoIndexable: true},
 			def,
 			true,
 		},
 		{
 			"blog post engagement gate fail",
-			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 150, CommentCount: 0, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 650, CommentCount: 0, SeoIndexable: true},
 			SitemapQualityConfig{BlogMinWords: 100, BlogMinEngagement: 5},
 			false,
 		},
 		{
 			"blog post engagement gate pass with reactions",
-			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 150, CommentCount: 2, ShareCount: 1, ReactionCount: 2, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 650, CommentCount: 2, ShareCount: 1, ReactionCount: 2, SeoIndexable: true},
 			SitemapQualityConfig{BlogMinWords: 100, BlogMinEngagement: 5},
 			true,
 		},
 		// Forum threads — word count + reply gate + question/answer gate.
 		{
 			"forum thread meets defaults with replies",
-			ContentIndexableInput{ContentType: "forum_thread", Status: "published", Visibility: "public", WordCount: 50, ReplyCount: 1, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "forum_thread", Status: "published", Visibility: "public", WordCount: 50, ReplyCount: 2, SeoIndexable: true},
 			def,
 			true,
 		},
@@ -148,7 +148,7 @@ func TestIsContentIndexableByType(t *testing.T) {
 		},
 		{
 			"question solved passes answer gate",
-			ContentIndexableInput{ContentType: "forum_thread", Status: "published", Visibility: "public", WordCount: 50, ReplyCount: 1, IsQuestion: true, Solved: true, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "forum_thread", Status: "published", Visibility: "public", WordCount: 50, ReplyCount: 2, IsQuestion: true, Solved: true, SeoIndexable: true},
 			def,
 			true,
 		},
@@ -192,20 +192,20 @@ func TestIsContentIndexableByType(t *testing.T) {
 		// Guides — higher word count threshold.
 		{
 			"guide meets default 200 words",
-			ContentIndexableInput{ContentType: "guide", Status: "published", Visibility: "public", WordCount: 250, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "guide", Status: "published", Visibility: "public", WordCount: 1050, SeoIndexable: true},
 			def,
 			true,
 		},
 		{
 			"guide below default 200 words",
-			ContentIndexableInput{ContentType: "guide", Status: "published", Visibility: "public", WordCount: 150, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "guide", Status: "published", Visibility: "public", WordCount: 300, SeoIndexable: true},
 			def,
 			false,
 		},
 		// Comparison — lower word count threshold.
 		{
 			"comparison meets default 50 words",
-			ContentIndexableInput{ContentType: "comparison", Status: "published", Visibility: "public", WordCount: 60, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "comparison", Status: "published", Visibility: "public", WordCount: 550, SeoIndexable: true},
 			def,
 			true,
 		},
@@ -236,7 +236,7 @@ func TestIsContentIndexableByType(t *testing.T) {
 		},
 		{
 			"empty cfg uses all defaults",
-			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 100, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "blog_post", Status: "published", Visibility: "public", WordCount: 650, SeoIndexable: true},
 			SitemapQualityConfig{},
 			true,
 		},
@@ -278,8 +278,14 @@ func TestDefaultSitemapQualityConfig(t *testing.T) {
 		t.Errorf("expected MinWords 100, got %d", cfg.MinWords)
 	}
 
-	if cfg.BlogMinWords != 100 {
-		t.Errorf("expected BlogMinWords 100, got %d", cfg.BlogMinWords)
+	if cfg.BlogMinWords != 600 {
+		t.Errorf("expected BlogMinWords 600, got %d", cfg.BlogMinWords)
+	}
+	if cfg.StoryMinWords != 600 {
+		t.Errorf("expected StoryMinWords 600, got %d", cfg.StoryMinWords)
+	}
+	if cfg.ListMinWords != 500 {
+		t.Errorf("expected ListMinWords 500, got %d", cfg.ListMinWords)
 	}
 
 	if cfg.ForumMinWords != 30 {
@@ -290,24 +296,24 @@ func TestDefaultSitemapQualityConfig(t *testing.T) {
 		t.Errorf("expected DiscussionMinWords 50, got %d", cfg.DiscussionMinWords)
 	}
 
-	if cfg.GuideMinWords != 200 {
-		t.Errorf("expected GuideMinWords 200, got %d", cfg.GuideMinWords)
+	if cfg.GuideMinWords != 1000 {
+		t.Errorf("expected GuideMinWords 1000, got %d", cfg.GuideMinWords)
 	}
 
-	if cfg.ComparisonMinWords != 50 {
-		t.Errorf("expected ComparisonMinWords 50, got %d", cfg.ComparisonMinWords)
+	if cfg.ComparisonMinWords != 500 {
+		t.Errorf("expected ComparisonMinWords 500, got %d", cfg.ComparisonMinWords)
 	}
 
 	if cfg.BlogMinEngagement != 0 {
 		t.Errorf("expected BlogMinEngagement 0, got %d", cfg.BlogMinEngagement)
 	}
 
-	if cfg.ForumMinReplies != 1 {
-		t.Errorf("expected ForumMinReplies 1, got %d", cfg.ForumMinReplies)
+	if cfg.ForumMinReplies != 2 {
+		t.Errorf("expected ForumMinReplies 2, got %d", cfg.ForumMinReplies)
 	}
 
-	if cfg.QuestionMinAnswers != 1 {
-		t.Errorf("expected QuestionMinAnswers 1, got %d", cfg.QuestionMinAnswers)
+	if cfg.QuestionMinAnswers != 2 {
+		t.Errorf("expected QuestionMinAnswers 2, got %d", cfg.QuestionMinAnswers)
 	}
 
 	if cfg.DiscussionMinComments != 0 {

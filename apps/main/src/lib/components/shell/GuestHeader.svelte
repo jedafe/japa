@@ -5,12 +5,16 @@
 	// Notifications, left nav) to a logged-out user is incoherent.
 	import { t } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
+	import { createScrollHide } from '$lib/stores/scrollDirection.svelte';
 	import { Sun, Moon, LogIn, UserPlus, Menu as MenuIcon, X } from 'lucide-svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import type { Menu, MenuItem } from '$lib/types';
 
 	let mobileMenuOpen = $state(false);
+	// Same scroll-hide behavior as AppShell's mobile topbar — slides away
+	// on scroll down, returns on scroll up (mobile only).
+	const topbar = createScrollHide();
 
 	interface Props {
 		/** Platform logo URL from appearance.logo_url (control panel). */
@@ -31,7 +35,7 @@
 	);
 </script>
 
-<header class="guest-header">
+<header class="guest-header" class:topbar-hidden={topbar.hidden}>
 	<div class="guest-header-inner">
 		<!-- Logo + brand -->
 		<a href="/" class="guest-brand" aria-label={t('app.name')}>
@@ -85,7 +89,7 @@
 		aria-label={t('a11y.close_menu', 'Close menu')}
 		onclick={() => (mobileMenuOpen = false)}
 	></button>
-	<div class="fixed start-0 top-0 z-50 h-screen w-[min(80vw,18rem)] border-e border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
+	<div class="fixed start-0 top-0 z-50 h-dvh w-[min(80vw,18rem)] overflow-y-auto border-e border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
 		<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
 			<span class="font-semibold text-[var(--color-text)]">{t('nav.menu', 'Menu')}</span>
 			<button
@@ -128,6 +132,13 @@
 		z-index: 50;
 		border-bottom: 1px solid var(--color-border);
 		background: var(--color-surface);
+		transition: transform 0.25s ease;
+		will-change: transform;
+	}
+	@media (max-width: 767px) {
+		.guest-header.topbar-hidden {
+			transform: translateY(-100%);
+		}
 	}
 	.guest-header-inner {
 		display: flex;

@@ -16,6 +16,8 @@ type SitemapQualityConfig struct {
 	MinWords int
 	// Per content-type word count thresholds.
 	BlogMinWords       int
+	StoryMinWords      int
+	ListMinWords       int
 	ForumMinWords      int
 	DiscussionMinWords int
 	GuideMinWords      int
@@ -52,14 +54,16 @@ func DefaultSitemapQualityConfig() SitemapQualityConfig {
 		MinForums:             1,
 		MinQuestions:          1,
 		MinWords:              100,
-		BlogMinWords:          100,
+		BlogMinWords:          600,
+		StoryMinWords:         600,
+		ListMinWords:          500,
 		ForumMinWords:         30,
 		DiscussionMinWords:    50,
-		GuideMinWords:         200,
-		ComparisonMinWords:    50,
+		GuideMinWords:         1000,
+		ComparisonMinWords:    500,
 		BlogMinEngagement:     0,
-		ForumMinReplies:       1,
-		QuestionMinAnswers:    1,
+		ForumMinReplies:       2,
+		QuestionMinAnswers:    2,
 		DiscussionMinComments: 0,
 	}
 }
@@ -136,6 +140,9 @@ type ContentIndexableInput struct {
 	IsQuestion    bool // true for forum threads that are questions
 	Solved        bool // true if the question has been answered
 	SeoIndexable  bool // per-content seo_indexable flag
+	// SkipWordGate exempts the row from the min-words check — forums host
+	// legitimately short questions; the reply/solved gates still apply.
+	SkipWordGate bool
 }
 
 // IsContentIndexableByType applies the full Section 43 quality gate with
@@ -178,6 +185,18 @@ func IsContentIndexableByType(in ContentIndexableInput, cfg SitemapQualityConfig
 		} else if def.BlogMinWords > 0 {
 			minWords = def.BlogMinWords
 		}
+	case "story":
+		if cfg.StoryMinWords > 0 {
+			minWords = cfg.StoryMinWords
+		} else if def.StoryMinWords > 0 {
+			minWords = def.StoryMinWords
+		}
+	case "list":
+		if cfg.ListMinWords > 0 {
+			minWords = cfg.ListMinWords
+		} else if def.ListMinWords > 0 {
+			minWords = def.ListMinWords
+		}
 	case "forum_thread":
 		if cfg.ForumMinWords > 0 {
 			minWords = cfg.ForumMinWords
@@ -204,7 +223,7 @@ func IsContentIndexableByType(in ContentIndexableInput, cfg SitemapQualityConfig
 		}
 	}
 
-	if in.WordCount < minWords {
+	if !in.SkipWordGate && in.WordCount < minWords {
 		return false
 	}
 

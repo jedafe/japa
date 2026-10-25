@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -139,12 +140,12 @@ type JobPoster struct {
 // Source is a pointer so listings without intel provenance serialize
 // `"source": null` instead of an empty attribution object (JOBS-016).
 type JobResult struct {
-	ID          string             `json:"id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Summary     string             `json:"summary"`
-	FieldValues map[string]string  `json:"field_values"`
-	PublishedAt string             `json:"published_at"`
+	ID          string            `json:"id"`
+	Title       string            `json:"title"`
+	Slug        string            `json:"slug"`
+	Summary     string            `json:"summary"`
+	FieldValues map[string]string `json:"field_values"`
+	PublishedAt string            `json:"published_at"`
 	// ApplicantCount is the live application count (withdrawn excluded) —
 	// powers the "{count} applicants" card badge. Not a custom field.
 	ApplicantCount int64              `json:"applicant_count"`
@@ -170,6 +171,9 @@ type JobDetail struct {
 	Poster         *JobPoster         `json:"poster"`
 	// ApplicantCount is the live application count (withdrawn excluded).
 	ApplicantCount int64 `json:"applicant_count"`
+	// §43 indexability — the detail page emits noindex when Indexable is false.
+	SeoIndexable bool `json:"seo_indexable"`
+	Indexable    bool `json:"indexable"`
 	// MyApplication is the authenticated viewer's own application to this
 	// listing, or null when the viewer is a guest or has not applied. Lets
 	// the detail page render an "Applied" state instead of the form.
@@ -248,6 +252,16 @@ type Service struct {
 }
 
 // NewService creates a Jobs service.
+// sitemapCfg resolves §43 quality thresholds from system_settings
+// (seo.sitemap.*), falling back to spec defaults — matching the sitemap gate.
+func (s *Service) sitemapCfg(ctx context.Context) bots.SitemapQualityConfig {
+	cfg := bots.DefaultSitemapQualityConfig()
+	if s.settings != nil {
+		cfg.MinWords = s.settings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
+	}
+	return cfg
+}
+
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{
 		store:    store,
@@ -679,8 +693,8 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 			FieldValues:    fvMap,
 			PublishedAt:    publishedStr,
 			ApplicantCount: appCount,
-			Poster:        jobPosterFromRow(orgID, authorID, orgSlug, orgName, orgVerified, orgWebsite, logoBucket, logoPath, username, displayName, avatarURL),
-			intelRecordID: intelRecordID,
+			Poster:         jobPosterFromRow(orgID, authorID, orgSlug, orgName, orgVerified, orgWebsite, logoBucket, logoPath, username, displayName, avatarURL),
+			intelRecordID:  intelRecordID,
 		})
 	}
 
@@ -786,6 +800,7 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 				'{}'::json
 			) AS field_values,
 			c.published_at,
+			c.seo_indexable, c.visibility,
 			c.author_id,
 			o.slug, o.name, o.verified, o.website_url,
 			om.storage_bucket, om.storage_path,
@@ -811,6 +826,8 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 		intelRecordID pgtype.UUID
 		fieldValues   []byte
 		publishedAt   pgtype.Timestamptz
+		seoIndexable  bool
+		visibility    string
 		orgID         pgtype.UUID
 		authorID      pgtype.UUID
 		orgSlug       *string
@@ -827,6 +844,7 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 
 	err := s.store.pool.Reader.QueryRow(ctx, query, slug).Scan(
 		&id, &title, &slugOut, &body, &orgID, &intelRecordID, &fieldValues, &publishedAt,
+		&seoIndexable, &visibility,
 		&authorID,
 		&orgSlug, &orgName, &orgVerified, &orgWebsite,
 		&logoBucket, &logoPath,
@@ -865,6 +883,18 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 		FieldValues:    fvMap,
 		PublishedAt:    publishedStr,
 		ApplicantCount: appCount,
+		SeoIndexable:   seoIndexable,
+		// §43 quality gate — job_listing uses the generic min-words threshold
+		// (seo.sitemap.content_min_words); the query already enforces
+		// status='published' so only visibility + word count + seo_indexable
+		// can disqualify the page.
+		Indexable: bots.IsContentIndexableByType(bots.ContentIndexableInput{
+			ContentType:  "job_listing",
+			Status:       "published",
+			Visibility:   visibility,
+			WordCount:    len(strings.Fields(bodyStr)),
+			SeoIndexable: seoIndexable,
+		}, s.sitemapCfg(ctx)),
 	}
 	if orgID.Valid {
 		detail.OrganizationID = orgID.String()

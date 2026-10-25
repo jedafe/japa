@@ -83,11 +83,15 @@ type AdminWikiPageDTO struct {
 // //nolint:revive // exported: stutter naming is intentional.
 type WikiPageDetailDTO struct {
 	WikiPageDTO
-	SpaceSlug       string          `json:"space_slug"`
-	SpaceName       string          `json:"space_name"`
-	CurrentContent  json.RawMessage `json:"current_content"`
-	RevisionSummary string          `json:"revision_summary,omitempty"`
-	SubmittedBy     string          `json:"submitted_by,omitempty"`
+	SpaceSlug      string          `json:"space_slug"`
+	SpaceName      string          `json:"space_name"`
+	CurrentContent json.RawMessage `json:"current_content"`
+	// Indexable is true when the page has an approved prose revision; stub
+	// pages (seeded, awaiting first content) are false and get noindexed —
+	// matches the sitemap-wiki inclusion rule.
+	Indexable       bool   `json:"indexable"`
+	RevisionSummary string `json:"revision_summary,omitempty"`
+	SubmittedBy     string `json:"submitted_by,omitempty"`
 	// §80 Reader UX — the approved submitter's avatar for the byline;
 	// empty for AI/system-generated pages or users without one.
 	SubmittedByAvatarURL string `json:"submitted_by_avatar_url,omitempty"`
@@ -691,6 +695,10 @@ type WikiIndexDTO struct {
 	Pages        []WikiPageDTO     `json:"pages"`
 	Ancestors    []WikiSpaceRefDTO `json:"ancestors,omitempty"`
 	AncestorsAlt []WikiSpaceRefDTO `json:"ancestors_alt,omitempty"`
+	// Indexable is false when the space has no wiki page with approved
+	// prose — an all-stub index is thin content and should be noindexed
+	// (matches the sitemap-wiki inclusion rule).
+	Indexable bool `json:"indexable"`
 	// §80 attractions — the space's `kind` select value (e.g. "waterfall")
 	// for the index hero chip; empty for spaces without the field.
 	Kind string `json:"kind,omitempty"`
@@ -728,7 +736,7 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiInde
 		dtos = append(dtos, pageToDTO(p))
 	}
 
-	out := &WikiIndexDTO{Pages: dtos}
+	out := &WikiIndexDTO{Pages: dtos, Indexable: s.store.HasApprovedPage(ctx, spaceID, s.wikiMinWords(ctx))}
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 		out.EntityChildren = s.entityChildren(ctx, spaceID, spaceTypeID)
@@ -802,7 +810,7 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 		dtos = append(dtos, pageToDTO(p))
 	}
 
-	out := &WikiIndexDTO{Pages: dtos}
+	out := &WikiIndexDTO{Pages: dtos, Indexable: s.store.HasApprovedPage(ctx, spaceID, s.wikiMinWords(ctx))}
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 		out.EntityChildren = s.entityChildren(ctx, spaceID, spaceTypeID)
@@ -881,6 +889,9 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 	rev, err := s.store.GetApprovedRevision(ctx, page.ID)
 	if err == nil {
 		dto.CurrentContent = json.RawMessage(rev.Content)
+		// §43 word floor — approved prose must still meet min-words so
+		// near-empty approved pages don't index.
+		dto.Indexable = len(strings.Fields(wikiText(rev.Content))) >= s.wikiMinWords(ctx)
 		if rev.Summary != nil {
 			dto.RevisionSummary = *rev.Summary
 		}
@@ -2309,4 +2320,45 @@ func sanitizeTipTapNodes(node map[string]any) {
 			}
 		}
 	}
+}
+
+// wikiMinWords resolves the §43 wiki word floor from system_settings
+// (seo.sitemap.wiki_min_words), default 500.
+func (s *Service) wikiMinWords(ctx context.Context) int {
+	if s.settings == nil {
+		return 500
+	}
+	return s.settings.GetIntOr(ctx, "seo.sitemap.wiki_min_words", 500)
+}
+
+// wikiText extracts plain text from a TipTap JSON doc for word counting —
+// walks the content tree and joins every text node. A bare JSON string
+// (plain-text fallback, see normalizeWikiContent) is used as-is.
+func wikiText(raw []byte) string {
+	var v any
+	if json.Unmarshal(raw, &v) != nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	var sb strings.Builder
+	var walk func(n any)
+	walk = func(n any) {
+		m, ok := n.(map[string]any)
+		if !ok {
+			return
+		}
+		if t, ok := m["text"].(string); ok {
+			sb.WriteString(t)
+			sb.WriteByte(' ')
+		}
+		if kids, ok := m["content"].([]any); ok {
+			for _, k := range kids {
+				walk(k)
+			}
+		}
+	}
+	walk(v)
+	return sb.String()
 }

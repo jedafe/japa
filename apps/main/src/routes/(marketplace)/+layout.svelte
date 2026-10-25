@@ -113,6 +113,10 @@
 			pinned={!collapsed}
 			userSpaces={data.userSpaces}
 			logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+					logoWidth={Number(data.siteSettings?.['appearance.logo_width']) || 0}
+					logoHeight={Number(data.siteSettings?.['appearance.logo_height']) || 0}
+					logoDarkWidth={Number(data.siteSettings?.['appearance.logo_dark_width']) || 0}
+					logoDarkHeight={Number(data.siteSettings?.['appearance.logo_dark_height']) || 0}
 			logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 			features={data.features}
 			onToggle={toggleCollapse}
@@ -129,6 +133,10 @@
 				pinned={false}
 				userSpaces={data.userSpaces}
 				logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+					logoWidth={Number(data.siteSettings?.['appearance.logo_width']) || 0}
+					logoHeight={Number(data.siteSettings?.['appearance.logo_height']) || 0}
+					logoDarkWidth={Number(data.siteSettings?.['appearance.logo_dark_width']) || 0}
+					logoDarkHeight={Number(data.siteSettings?.['appearance.logo_dark_height']) || 0}
 				logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 				features={data.features}
 				onToggle={toggleCollapse}

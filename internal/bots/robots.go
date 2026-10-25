@@ -19,7 +19,9 @@ const (
 // GenerateRobotsTxt builds a robots.txt directive string from the bot registry.
 // Blocked bots get a full disallow, limited bots get a crawl-delay, and
 // allowed bots get a permissive directive with optional crawl-delay.
-func GenerateRobotsTxt(bots []KnownBot) string {
+// siteURL is the absolute site origin (e.g. https://japa.to) used for the
+// Sitemap directive, which RFC 9309 requires to be an absolute URI.
+func GenerateRobotsTxt(bots []KnownBot, siteURL string) string {
 	var sb strings.Builder
 
 	// Group bots by policy
@@ -79,16 +81,31 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 	sb.WriteString("Disallow: /admin/\n")
 	sb.WriteString("Disallow: /api/\n\n")
 
-	// Sitemap reference
-	sb.WriteString("Sitemap: /sitemap.xml\n")
+	// Sitemap reference (absolute URI per RFC 9309)
+	sb.WriteString("Sitemap: ")
+	sb.WriteString(strings.TrimRight(siteURL, "/"))
+	sb.WriteString("/sitemap.xml\n")
 
 	return sb.String()
 }
 
 // RobotsHandler serves dynamically generated robots.txt. The output is
 // cached in Valkey with a 24-hour TTL to avoid regenerating on every request.
-func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
+// siteURL is the configured site origin for the absolute Sitemap URI; when
+// empty it falls back to https://r.Host (same convention as SitemapHandler).
+// indexable should be !cfg.BlocksIndexing(): on explicitly non-production
+// deployments the handler returns a blanket Disallow: / (never cached) so
+// stage/dev environments are never crawlable regardless of the bot registry.
+func RobotsHandler(store *Store, rdb *valkey.Client, siteURL string, indexable bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !indexable {
+			w.Header().Set("Content-Type", "text/plain")
+			w.Header().Set("Cache-Control", "public, max-age=300")
+			_, _ = w.Write([]byte("User-agent: *\nDisallow: /\n"))
+
+			return
+		}
+
 		// Try cache first
 		cacheKey := robotsCacheKey
 		if rdb != nil {
@@ -108,12 +125,17 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 			slog.Error("robots: failed to load bots", "error", err)
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
-			_, _ = w.Write([]byte("User-agent: *\nAllow: /\n"))
+			_, _ = w.Write([]byte("User-agent: *\nDisallow: /admin/\nDisallow: /api/\n\n"))
 
 			return
 		}
 
-		txt := GenerateRobotsTxt(bots)
+		base := siteURL
+		if base == "" {
+			base = "https://" + r.Host
+		}
+
+		txt := GenerateRobotsTxt(bots, base)
 
 		// Cache in Valkey
 		if rdb != nil {
@@ -135,8 +157,7 @@ func InvalidateRobotsCache(ctx context.Context, rdb *valkey.Client) {
 		return
 	}
 
-	cacheKey := robotsCacheKey + ":" + ""
-	if err := rdb.Redis().Del(ctx, cacheKey).Err(); err != nil {
+	if err := rdb.Redis().Del(ctx, robotsCacheKey).Err(); err != nil {
 		slog.Warn("robots: failed to invalidate cache", "error", err)
 	}
 }
@@ -148,8 +169,8 @@ func InvalidateLLMsCache(ctx context.Context, rdb *valkey.Client) {
 	}
 
 	keys := []string{
-		llmsCacheKey + ":" + "",
-		llmsFullCacheKey + ":" + "",
+		llmsCacheKey,
+		llmsFullCacheKey,
 	}
 	for _, key := range keys {
 		if err := rdb.Redis().Del(ctx, key).Err(); err != nil {

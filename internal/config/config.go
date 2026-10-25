@@ -51,6 +51,7 @@ type Config struct {
 	S3Bucket                 string // JC_S3_BUCKET — S3 bucket name for media storage
 	S3Region                 string // JC_S3_REGION — S3 region (placeholder; SeaweedFS ignores this)
 	MediaRoot                string // JC_MEDIA_ROOT — local media storage root (default "data/media"; absolute paths recommended)
+	APIPublicURL             string // JC_API_PUBLIC_URL — public API base (e.g. https://api.japa.to); emitted into media serve/upload URLs for cross-origin frontends
 	VAPIDPublicKey           string // JC_VAPID_PUBLIC_KEY — VAPID public key for WebPush notifications
 	VAPIDPrivateKey          string // JC_VAPID_PRIVATE_KEY — VAPID private key for WebPush notifications
 	VAPIDSubject             string // JC_VAPID_SUBJECT — VAPID subject (mailto: or https: URL) for WebPush
@@ -147,6 +148,7 @@ func Load() (Config, error) {
 		S3Bucket:                 os.Getenv("JC_S3_BUCKET"),
 		S3Region:                 os.Getenv("JC_S3_REGION"),
 		MediaRoot:                os.Getenv("JC_MEDIA_ROOT"),
+		APIPublicURL:             os.Getenv("JC_API_PUBLIC_URL"),
 		VAPIDPublicKey:           os.Getenv("JC_VAPID_PUBLIC_KEY"),
 		VAPIDPrivateKey:          os.Getenv("JC_VAPID_PRIVATE_KEY"),
 		VAPIDSubject:             os.Getenv("JC_VAPID_SUBJECT"),
@@ -333,6 +335,20 @@ func (c Config) IsProduction() bool {
 // call sites that check for development-specific behavior.
 func (c Config) IsDevelopment() bool {
 	return !c.IsProduction()
+}
+
+// BlocksIndexing reports whether the deployment should serve Disallow: /
+// robots.txt and X-Robots-Tag: noindex headers. It is true only for
+// explicitly non-production environments; an unset or unrecognized JC_ENV
+// fails open so a misconfigured production deploy cannot accidentally
+// deindex itself.
+func (c Config) BlocksIndexing() bool {
+	switch strings.ToLower(c.Env) {
+	case "development", "dev", "staging", "stage", "test", "preview", "local":
+		return true
+	}
+
+	return false
 }
 
 // getEnvWithFallback returns the value of the first env var that is set.

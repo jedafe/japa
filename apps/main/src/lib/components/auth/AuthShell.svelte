@@ -9,17 +9,26 @@
 	import { t } from '$lib/i18n/store.svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import type { BrandSlide } from '$lib/auth/brandSlides';
+	import authSideImage from '$lib/assets/branding/auth-side.webp';
 
 	let {
 		children,
 		brandSlides = [],
 		logoUrl = '',
-		logoDarkUrl = ''
+		logoDarkUrl = '',
+		logoWidth = 0,
+		logoHeight = 0,
+		logoDarkWidth = 0,
+		logoDarkHeight = 0
 	}: {
 		children: Snippet;
 		brandSlides?: BrandSlide[];
 		logoUrl?: string;
 		logoDarkUrl?: string;
+		logoWidth?: number;
+		logoHeight?: number;
+		logoDarkWidth?: number;
+		logoDarkHeight?: number;
 	} = $props();
 
 	const wordmark = $derived(t('app.name'));
@@ -30,7 +39,7 @@
 
 	// Minimal fallback in case the API is unreachable on first render.
 	const fallbackSlide: BrandSlide = {
-		image: '/brand/kigali-airplane-window.jpg',
+		image: authSideImage,
 		headline: t('auth.brand.slide1_headline'),
 		subheading: t('auth.brand.slide1_subheading')
 	};
@@ -103,7 +112,7 @@
 					href="/"
 					class="flex items-center gap-2 text-base font-semibold tracking-tight text-white no-underline"
 				>
-					<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] object-contain" />
+					<ThemeLogo {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} alt={t('app.name')} class="h-8 w-auto max-w-[140px] object-contain" />
 				</a>
 				<a
 					href="/"
@@ -160,7 +169,7 @@
 					href="/"
 					class="flex items-center gap-2 text-base font-semibold text-[var(--color-primary)] no-underline"
 				>
-					<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] object-contain" />
+					<ThemeLogo {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} alt={t('app.name')} class="h-8 w-auto max-w-[140px] object-contain" />
 				</a>
 			</div>
 

@@ -133,6 +133,9 @@
 	<meta name="twitter:description" content={description} />
 	{@html safeJsonLdScript(jsonLd)}
 	{@html safeJsonLdScript(breadcrumbLd)}
+	{#if article?.seo_indexable === false || article?.indexable === false}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 </svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout.

@@ -73,6 +73,7 @@ type StoryRow struct {
 	Visibility         string
 	ViewCount          int32
 	CommentCount       int32
+	SeoIndexable       bool
 	PublishedAt        pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
@@ -512,7 +513,8 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        bsp.position AS series_part,
        (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
        c.featured_image_id, fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
-       c.header_image_id, hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
+       c.header_image_id, hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path,
+       c.seo_indexable
 FROM contents c
 JOIN story_meta sm ON sm.content_id = c.id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
@@ -543,6 +545,7 @@ LIMIT 1
 		&r.SeriesID, &r.SeriesTitle, &r.SeriesSlug, &r.SeriesPart, &r.SeriesTotal,
 		&r.FeaturedImageID, &r.FeaturedStorageBucket, &r.FeaturedStoragePath,
 		&r.HeaderImageID, &r.HeaderStorageBucket, &r.HeaderStoragePath,
+		&r.SeoIndexable,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -573,7 +576,8 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        bsp.position AS series_part,
        (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
        c.featured_image_id, fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
-       c.header_image_id, hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
+       c.header_image_id, hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path,
+       c.seo_indexable
 FROM contents c
 JOIN story_meta sm ON sm.content_id = c.id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
@@ -604,6 +608,7 @@ LIMIT 1
 		&r.SeriesID, &r.SeriesTitle, &r.SeriesSlug, &r.SeriesPart, &r.SeriesTotal,
 		&r.FeaturedImageID, &r.FeaturedStorageBucket, &r.FeaturedStoragePath,
 		&r.HeaderImageID, &r.HeaderStorageBucket, &r.HeaderStoragePath,
+		&r.SeoIndexable,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

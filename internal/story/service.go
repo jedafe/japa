@@ -14,12 +14,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/ai"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -88,6 +90,9 @@ type StoryDTO struct {
 	// §34 cover/hero media — resolved from joined media storage refs.
 	FeaturedImageURL string `json:"featured_image_url,omitempty"`
 	HeaderImageURL   string `json:"header_image_url,omitempty"`
+	// §43 indexability — the detail page emits noindex when Indexable is false.
+	SeoIndexable bool `json:"seo_indexable"`
+	Indexable    bool `json:"indexable"`
 }
 
 // SubmitStoryInput is the request body for POST /stories.
@@ -296,6 +301,16 @@ func (s *Service) Submit(ctx context.Context, authorID pgtype.UUID, input Submit
 }
 
 // GetBySlug returns a single published story by its slug. Anonymous-accessible.
+// sitemapCfg resolves §43 quality thresholds from system_settings
+// (seo.sitemap.*), falling back to spec defaults — matching the sitemap gate.
+func (s *Service) sitemapCfg(ctx context.Context) bots.SitemapQualityConfig {
+	cfg := bots.DefaultSitemapQualityConfig()
+	if s.settings != nil {
+		cfg.StoryMinWords = s.settings.GetIntOr(ctx, "seo.sitemap.story_min_words", cfg.StoryMinWords)
+	}
+	return cfg
+}
+
 func (s *Service) GetBySlug(ctx context.Context, slug string) (StoryDTO, error) {
 	row, err := s.store.GetStoryBySlug(ctx, slug)
 	if err != nil {
@@ -306,7 +321,19 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (StoryDTO, error) 
 		return StoryDTO{}, fmt.Errorf("story: get by slug: %w", err)
 	}
 
-	return rowToDTO(row), nil
+	dto := rowToDTO(row)
+	// §43 quality gate — story uses the generic min-words threshold
+	// (seo.sitemap.content_min_words); no engagement gate for this type.
+	dto.SeoIndexable = row.SeoIndexable
+	dto.Indexable = bots.IsContentIndexableByType(bots.ContentIndexableInput{
+		ContentType:  "story",
+		Status:       row.Status,
+		Visibility:   row.Visibility,
+		WordCount:    len(strings.Fields(row.Body)),
+		CommentCount: int(row.CommentCount),
+		SeoIndexable: row.SeoIndexable,
+	}, s.sitemapCfg(ctx))
+	return dto, nil
 }
 
 // List returns a paginated, filtered list of published stories.
@@ -643,7 +670,17 @@ func (s *Service) getStoryDTOByID(ctx context.Context, contentID pgtype.UUID) (S
 		return StoryDTO{}, fmt.Errorf("story: get by id: %w", err)
 	}
 
-	return rowToDTO(row), nil
+	dto := rowToDTO(row)
+	dto.SeoIndexable = row.SeoIndexable
+	dto.Indexable = bots.IsContentIndexableByType(bots.ContentIndexableInput{
+		ContentType:  "story",
+		Status:       row.Status,
+		Visibility:   row.Visibility,
+		WordCount:    len(strings.Fields(row.Body)),
+		CommentCount: int(row.CommentCount),
+		SeoIndexable: row.SeoIndexable,
+	}, s.sitemapCfg(ctx))
+	return dto, nil
 }
 
 // ErrValidation is returned for client-side validation failures (missing or

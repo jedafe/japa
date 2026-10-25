@@ -8,6 +8,7 @@
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
   import { responsiveVisibilityCss } from '../../shell/styleToCss';
   import ScopedCss from '../../shell/ScopedCss.svelte';
+  import defaultSlideUrl from '../../assets/hero-community.webp';
 
   interface Props {
     props: GuestHeroImageProps;
@@ -18,8 +19,10 @@
 
   let { props, fetchCtx, geoCountry, id = 'guest-hero-image' }: Props = $props();
 
+  // Bundled default slide — content-hashed into /_app/immutable so it is
+  // served immutable-cached (the /brand/*.jpg static path had no cache TTL).
   const defaultSlides: MediaRef[] = [
-    { media_id: 'diaspora-community', url: '/brand/diaspora-community.jpg', alt: 'A confident traveler at the airport' },
+    { media_id: 'diaspora-community', url: defaultSlideUrl, alt: 'A confident traveler at the airport' },
   ];
 
   const defaultChildren: Block[] = $derived([
@@ -122,6 +125,9 @@
         alt={slide.alt}
         class="hero-image"
         loading={i === 0 ? 'eager' : 'lazy'}
+        fetchpriority={i === 0 ? 'high' : undefined}
+        width="800"
+        height="534"
         decoding="async"
       />
     {/if}

@@ -147,7 +147,7 @@
 			cover_image_url: post.featured_image_url,
 			reaction_count: post.reaction_count,
 			bookmark_count: post.bookmark_count,
-			vote_score: post.reshare_count ?? post.share_count ?? 0,
+			vote_score: post.reaction_count ?? post.share_count ?? 0,
 			tags: post.tags
 		};
 	}

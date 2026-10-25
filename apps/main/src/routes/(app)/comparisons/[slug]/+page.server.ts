@@ -28,13 +28,16 @@ export const load: PageServerLoad = async (event) => {
 	// the backend doesn't fetch the same items/dimensions rows twice.
 	let comparison: JCEComparisonDetail | null = null;
 	let matrix: MatrixItem[] = [];
+	let indexable = true;
 	try {
-		const page = await apiGet<{ comparison: JCEComparisonDetail; matrix: MatrixItem[] }>(
-			ctx,
-			`/jce/comparisons/${slug}/page`
-		);
+		const page = await apiGet<{
+			comparison: JCEComparisonDetail;
+			matrix: MatrixItem[];
+			indexable?: boolean;
+		}>(ctx, `/jce/comparisons/${slug}/page`);
 		comparison = page?.comparison ?? null;
 		matrix = page?.matrix ?? [];
+		indexable = page?.indexable ?? true;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			if (err.code === 'feature_disabled') {
@@ -116,6 +119,7 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		comparison,
+		indexable,
 		matrix,
 		resolvedItems: resolvedItems(comparison),
 		canEdit,

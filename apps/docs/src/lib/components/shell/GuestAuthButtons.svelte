@@ -15,11 +15,11 @@
 </script>
 
 <div class="guest-auth" class:compact>
-	<a href={`${mainOrigin}/login?redirect=${returnTo}`} class="guest-auth-login">
+	<a href={`${mainOrigin}/login?redirect=${returnTo}`} class="guest-auth-login" aria-label={t('auth.login')}>
 		<LogIn class="rtl:-scale-x-100" size={16} />
 		{#if !compact}<span>{t('auth.login')}</span>{/if}
 	</a>
-	<a href={`${mainOrigin}/signup?redirect=${returnTo}`} class="guest-auth-signup">
+	<a href={`${mainOrigin}/signup?redirect=${returnTo}`} class="guest-auth-signup" aria-label={t('auth.signup')}>
 		<UserPlus size={16} />
 		{#if !compact}<span>{t('auth.signup')}</span>{/if}
 	</a>

@@ -25,18 +25,17 @@
   const responsiveCss = $derived.by(() => {
     const rc = props.responsive_columns;
     const tabletCols = rc?.tablet !== undefined ? Math.max(1, Math.min(6, rc.tablet)) : null;
-    const mobileCols = rc?.mobile !== undefined ? Math.max(1, Math.min(6, rc.mobile)) : null;
-    if (tabletCols === null && mobileCols === null) return null;
+    // Mobile defaults to 2 columns when the block sets no explicit override —
+    // desktop column counts would otherwise squeeze onto phone viewports.
+    const mobileCols = rc?.mobile !== undefined ? Math.max(1, Math.min(6, rc.mobile)) : Math.min(desktopCols, 2);
 
     const parts: string[] = [];
     const scope = `[data-cg="${gridId}"]`;
     if (tabletCols !== null) {
       parts.push(`@container (max-width: 1024px) { ${scope} { grid-template-columns: repeat(${tabletCols}, minmax(0, 1fr)) !important; } }`);
     }
-    if (mobileCols !== null) {
-      parts.push(`@container (max-width: 768px) { ${scope} { grid-template-columns: repeat(${mobileCols}, minmax(0, 1fr)) !important; } }`);
-    }
-    return parts.length > 0 ? parts.join('\n') : null;
+    parts.push(`@container (max-width: 768px) { ${scope} { grid-template-columns: repeat(${mobileCols}, minmax(0, 1fr)) !important; } }`);
+    return parts.join('\n');
   });
 
   // Resolve Lucide icon by name.

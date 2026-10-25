@@ -12,7 +12,8 @@
     "test:e2e:admin": "playwright test --project=admin",
     "test:e2e:control": "playwright test --project=control",
     "test:e2e:docs": "playwright test --project=docs",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "pagespeed": "bun scripts/pagespeed.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1"

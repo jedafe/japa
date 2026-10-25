@@ -100,7 +100,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [main, admin, control, academy, docs, tools, studio-desktop]
+        app: [main, admin, control, academy, docs, studio-desktop]
     defaults:
       run:
         working-directory: apps/${{ matrix.app }}

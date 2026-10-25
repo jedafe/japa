@@ -85,7 +85,7 @@ export interface JCEComparisonContent {
 	view_count?: number;
 	comment_count?: number;
 	share_count?: number;
-	reshare_count?: number;
+	reaction_count?: number;
 	/** §34 cover/hero media — resolved by the JCE detail endpoint. */
 	featured_image_url?: string | null;
 	header_image_url?: string | null;

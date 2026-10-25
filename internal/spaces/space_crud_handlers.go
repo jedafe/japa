@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
@@ -703,6 +704,27 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	// a country, else its country ancestor's. Best-effort; "" when none.
 	countryCurrency := h.Service.ResolveCountryCurrencyCode(r.Context(), space.ID, space.GeoCode)
 
+	// §43 quality gate — same rule the spaces sitemap applies: public spaces
+	// below the member/post/forum/question thresholds are thin pages and get
+	// noindexed by the frontend (sitemap exclusion alone doesn't stop indexing).
+	seoIndexable := space.Visibility == VisibilityPublic
+	if seoIndexable {
+		if members, posts, forums, questions, serr := h.Service.SpaceIndexSignals(r.Context(), space.ID); serr == nil {
+			cfg := bots.DefaultSitemapQualityConfig()
+			if h.settings != nil {
+				cfg.MinMembers = h.settings.GetIntOr(r.Context(), "seo.sitemap.space_min_members", cfg.MinMembers)
+				cfg.MinPosts = h.settings.GetIntOr(r.Context(), "seo.sitemap.space_min_posts", cfg.MinPosts)
+				cfg.MinForums = h.settings.GetIntOr(r.Context(), "seo.sitemap.space_min_forums", cfg.MinForums)
+				cfg.MinQuestions = h.settings.GetIntOr(r.Context(), "seo.sitemap.space_min_questions", cfg.MinQuestions)
+			}
+			seoIndexable = bots.IsSpaceIndexable(members, posts, forums, questions,
+				cfg.MinMembers, cfg.MinPosts, cfg.MinForums, cfg.MinQuestions)
+		} else {
+			slog.Warn("spaces: index signals failed", "space_id", space.ID.String(), "error", serr)
+			seoIndexable = false
+		}
+	}
+
 	// §80 wiki-only space types — top-level flag on the detail envelope so
 	// /spaces/{slug} can redirect to /wiki/{slug} and suppress community UI.
 	wikiOnly := h.Service.IsWikiOnlyType(r.Context(), space.SpaceTypeID)
@@ -710,6 +732,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"space":                 space,
+			"seo_indexable":         seoIndexable,
 			"rules":                 rules,
 			"keywords":              keywords,
 			"logo_url":              logoURL,

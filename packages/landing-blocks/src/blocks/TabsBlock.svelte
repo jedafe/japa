@@ -33,11 +33,12 @@
 <section class="px-6 py-16">
   <div class="mx-auto max-w-5xl">
     <Tabs.Root value={String(props.initial_tab ?? 0)} orientation={props.orientation}>
-      <Tabs.List class={props.orientation === 'vertical' ? 'flex flex-col gap-1 w-48' : 'flex gap-1 ' + (props.layout === 'underline' ? 'border-b border-[var(--color-border)]' : '')}>
+      <!-- Mobile: the trigger row scrolls horizontally instead of overflowing the page. -->
+      <Tabs.List class={props.orientation === 'vertical' ? 'flex flex-col gap-1 w-full sm:w-48' : 'flex gap-1 overflow-x-auto ' + (props.layout === 'underline' ? 'border-b border-[var(--color-border)]' : '')}>
         {#each props.tabs as tab, i}
           <Tabs.Trigger
             value={String(i)}
-            class="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors
+            class="flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 text-sm font-medium transition-colors
               {props.layout === 'underline'
                 ? 'border-b-2 border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)] data-[state=active]:border-[var(--color-primary)] data-[state=active]:text-[var(--color-primary)]'
                 : props.layout === 'pills'

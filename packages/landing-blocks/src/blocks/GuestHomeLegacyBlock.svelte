@@ -13,6 +13,7 @@
   } from '../types';
   import type { FetchContext } from '../data/types';
   import { resolveAssetUrl } from '../assetBase';
+  import defaultHeroImageUrl from '../assets/hero-community.webp';
     import {
       Briefcase,
       GraduationCap,
@@ -163,7 +164,7 @@
     function categoryColorClass(color: string): string {
       switch (color) {
         case 'green':
-          return 'text-[#16a34a] bg-[#dcfce7]';
+          return 'text-[#166534] bg-[#dcfce7]';
         case 'blue':
           return 'text-[#2563eb] bg-[#dbeafe]';
         case 'purple':
@@ -180,7 +181,7 @@
     function opportunityTagClasses(type: string): string {
       switch (type) {
         case 'job':
-          return 'bg-[#dcfce7] text-[#16a34a]';
+          return 'bg-[#dcfce7] text-[#166534]';
         case 'scholarship':
           return 'bg-[#dbeafe] text-[#2563eb]';
         case 'visa':
@@ -238,7 +239,7 @@
         case 'visa':
           return 'bg-[#fff7ed] text-[#ea580c]';
         case 'business':
-          return 'bg-[#f0fdf4] text-[#16a34a]';
+          return 'bg-[#f0fdf4] text-[#166534]';
         case 'internship':
           return 'bg-[#faf5ff] text-[#9333ea]';
         default:
@@ -300,15 +301,18 @@
     <div class="hero-visual">
       <div class="hero-image-wrap">
         <img
-          src={resolveAssetUrl(props.hero_image ?? '/brand/diaspora-community.jpg')}
+          src={resolveAssetUrl(props.hero_image ?? defaultHeroImageUrl)}
           alt={c('hero_image_alt', 'A confident traveler at the airport')}
           class="hero-image"
           loading="eager"
+          fetchpriority="high"
+          width="800"
+          height="534"
           decoding="async"
         />
 
         <div class="floating-card floating-card-destinations">
-          <h3 class="floating-card-title">{c('top_destinations', 'Top Destinations')}</h3>
+          <h2 class="floating-card-title">{c('top_destinations', 'Top Destinations')}</h2>
           <ul class="destination-list">
             {#each destinations as dest (dest.id)}
               <li class="destination-item">
@@ -338,9 +342,9 @@
             {/each}
           </div>
           <div class="community-body">
-            <h3 class="community-title">
+            <h2 class="community-title">
               {c('join_title', 'Join {count} members worldwide', { count: communityStat?.value ?? '500K+' })}
-            </h3>
+            </h2>
             <p class="community-subtitle">
               {c('join_subtitle', 'Your future starts with the right information.')}
             </p>
@@ -643,7 +647,7 @@
     padding: 0.375rem 0.875rem;
     border-radius: 9999px;
     background: #dcfce7;
-    color: #16a34a;
+    color: #166534;
     font-size: 0.875rem;
     font-weight: 500;
   }
@@ -704,11 +708,11 @@
     white-space: nowrap;
   }
   .hero-btn-primary {
-    background: #16a34a;
+    background: #15803d;
     color: white;
   }
   .hero-btn-primary:hover {
-    background: #15803d;
+    background: #166534;
   }
   .hero-btn-secondary {
     background: white;
@@ -1179,7 +1183,7 @@
     padding: 0.25rem 0.5rem;
     border-radius: 9999px;
     background: #dcfce7;
-    color: #16a34a;
+    color: #166534;
   }
 
   .opportunity-logo {
@@ -1235,7 +1239,7 @@
 
   .opportunity-value {
     font-weight: 600;
-    color: #16a34a;
+    color: #15803d;
   }
 
   .opportunity-footer {
@@ -1301,7 +1305,7 @@
     gap: 0.5rem;
     padding: 0.75rem 1.25rem;
     border-radius: var(--radius);
-    background: #16a34a;
+    background: #15803d;
     color: white;
     font-weight: 600;
     font-size: 0.9375rem;
@@ -1570,7 +1574,7 @@
     gap: 0.5rem;
     padding: 0.875rem 1.5rem;
     border-radius: var(--radius);
-    background: #16a34a;
+    background: #15803d;
     color: white;
     font-weight: 600;
     font-size: 0.9375rem;
@@ -1594,7 +1598,7 @@
     margin-top: 0.75rem;
   }
   .newsletter-status-success {
-    color: #16a34a;
+    color: #15803d;
   }
   .newsletter-status-error {
     color: #dc2626;

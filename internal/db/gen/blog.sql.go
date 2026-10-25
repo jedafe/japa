@@ -358,7 +358,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  AND deleted_at IS NULL
  AND status = 'published') AS comment_count,
  c.share_count,
- (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.publish_at, c.published_at, c.created_at, c.updated_at,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
@@ -449,7 +449,7 @@ type GetBlogPostDetailRow struct {
 	TargetCountry         *string            `json:"target_country"`
 	CommentCount          int64              `json:"comment_count"`
 	ShareCount            int32              `json:"share_count"`
-	ReshareCount          int64              `json:"reshare_count"`
+	ReactionCount         int64              `json:"reaction_count"`
 	PublishAt             pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt           pgtype.Timestamptz `json:"published_at"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
@@ -508,7 +508,7 @@ func (q *Queries) GetBlogPostDetail(ctx context.Context, arg GetBlogPostDetailPa
 		&i.TargetCountry,
 		&i.CommentCount,
 		&i.ShareCount,
-		&i.ReshareCount,
+		&i.ReactionCount,
 		&i.PublishAt,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -700,7 +700,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  c.source_country, c.target_country,
  (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
  c.share_count,
- (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.publish_at, c.published_at, c.created_at, c.updated_at,
  COALESCE(up.display_name, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
@@ -749,7 +749,7 @@ type ListAdminBlogPostsRow struct {
 	TargetCountry   *string            `json:"target_country"`
 	CommentCount    int64              `json:"comment_count"`
 	ShareCount      int32              `json:"share_count"`
-	ReshareCount    int64              `json:"reshare_count"`
+	ReactionCount   int64              `json:"reaction_count"`
 	PublishAt       pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
@@ -802,7 +802,7 @@ func (q *Queries) ListAdminBlogPosts(ctx context.Context, arg ListAdminBlogPosts
 			&i.TargetCountry,
 			&i.CommentCount,
 			&i.ShareCount,
-			&i.ReshareCount,
+			&i.ReactionCount,
 			&i.PublishAt,
 			&i.PublishedAt,
 			&i.CreatedAt,
@@ -1054,7 +1054,7 @@ SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until
  WHERE content_id = c.id
  AND deleted_at IS NULL
  AND status = 'published') AS comment_count,
- (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.author_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
@@ -1101,7 +1101,7 @@ type ListFeaturedBlogPostCardsRow struct {
 	TargetCountry         *string            `json:"target_country"`
 	ViewCount             int32              `json:"view_count"`
 	CommentCount          int64              `json:"comment_count"`
-	ReshareCount          int64              `json:"reshare_count"`
+	ReactionCount         int64              `json:"reaction_count"`
 	AuthorID              pgtype.UUID        `json:"author_id"`
 	AuthorName            string             `json:"author_name"`
 	AuthorUsername        string             `json:"author_username"`
@@ -1138,7 +1138,7 @@ func (q *Queries) ListFeaturedBlogPostCards(ctx context.Context, arg ListFeature
 			&i.TargetCountry,
 			&i.ViewCount,
 			&i.CommentCount,
-			&i.ReshareCount,
+			&i.ReactionCount,
 			&i.AuthorID,
 			&i.AuthorName,
 			&i.AuthorUsername,
@@ -1399,7 +1399,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  AND deleted_at IS NULL
  AND status = 'published') AS comment_count,
  c.share_count,
- (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.publish_at, c.published_at, c.created_at, c.updated_at,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
@@ -1477,7 +1477,7 @@ type ListPublishedBlogPostsRow struct {
 	TargetCountry         *string            `json:"target_country"`
 	CommentCount          int64              `json:"comment_count"`
 	ShareCount            int32              `json:"share_count"`
-	ReshareCount          int64              `json:"reshare_count"`
+	ReactionCount         int64              `json:"reaction_count"`
 	PublishAt             pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt           pgtype.Timestamptz `json:"published_at"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
@@ -1545,7 +1545,7 @@ func (q *Queries) ListPublishedBlogPosts(ctx context.Context, arg ListPublishedB
 			&i.TargetCountry,
 			&i.CommentCount,
 			&i.ShareCount,
-			&i.ReshareCount,
+			&i.ReactionCount,
 			&i.PublishAt,
 			&i.PublishedAt,
 			&i.CreatedAt,

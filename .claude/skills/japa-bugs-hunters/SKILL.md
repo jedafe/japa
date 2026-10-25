@@ -102,9 +102,9 @@ options:
       Audit + fix apps/docs (port 3004, SSR) against the Guide.
   - label: "Learn platform"           (option 8)
       Audit + fix apps/academy (port 3003, SSR) against the Guide.
-  - label: "Tools web surface"        (option 9)
-      Audit + fix apps/tools (port 3005, SSR, tools.japa.to) against the Guide — the sixth
-      SvelteKit app with host-detection hub/single-tool shell modes (ADR-086, §78).
+  - label: "Tools pages"                (option 9)
+      Audit + fix the in-app tool pages on apps/main (/tools/{tool}) — the former
+      apps/tools surface was consolidated into main (ADR-086 superseded).
   - label: "Feature name (from ./internal)"  (option 10)
       A specific feature in the ./internal folder (e.g. forum, like, bookmark, ai, affiliate,
       persona, rag, remittance, studio, newsletter, gamification, story_wall, wiki, scam_alert,
@@ -162,7 +162,7 @@ fix-only); for every other target both verbs trigger that target's combined audi
    identifier like `forum.CreatePost`) → **Option 2 — Backend API / Route**.
 3. **Frontend URL / page** — `/japa-bugs-hunters "audit <url-or-path>"` or
    `/japa-bugs-hunters "fix <url-or-path>"` where the target is a URL
-   (`http://localhost:3000/...`, `https://admin.japa.to/...`, `https://tools.japa.to/...`)
+   (`http://localhost:3000/...`, `https://admin.japa.to/...`)
    or a frontend path (`/dashboard/overview`, `/forum/threads`, `/settings/profile`) →
    **Option 1 — Frontend URL / Page**. Resolve the app from the URL/path per Option 1's
    app-resolution rules.
@@ -174,7 +174,7 @@ fix-only); for every other target both verbs trigger that target's combined audi
    - `admin`    → **Option 6 — Admin panel**
    - `docs`     → **Option 7 — Docs site**
    - `learn`    → **Option 8 — Learn platform**
-   - `tools`    → **Option 9 — Tools web surface**
+   - `tools`    → **Option 9 — Tools pages (apps/main /tools/*)**
 
 **Ambiguity fallback:** if a target could match multiple rules (e.g. a single word that is neither a
 known `./internal/` feature nor a surface keyword), ask the user to clarify with the menu. When the
@@ -467,7 +467,7 @@ Map the surface to its bug sections, then audit file-by-file and fix:
   Verify OpenAPI spec currency against the ~819-route catalog (§47).
 - **Option 8 — Learn (apps/academy):** §1, §2, §3, §6, §7, §16 (SSR, ADR-060 lesson-player exception),
   §18, §21, §27, §36 (learning routes). No new v2 learn pages per ADR-060.
-- **Option 9 — Tools (apps/tools):** §1, §2, §3, §6, §7, §16 (SSR), §18, §21, §27, §78 (host-detection
+- **Option 9 — Tools pages (apps/main `/tools/*`):** §1, §2, §3, §6, §7, §16 (SSR), §18, §21, §27, §78 (host-detection
   hub/single-tool shell, ADR-086). Verify `hooks.server.ts` host detection reads per-tool
   `system_settings` domain keys (14 tool-domain settings for §§79–101 functional tools); verify hub
   shell renders all tools and single-tool shell renders tool-specific branding with NO cross-tool
@@ -529,7 +529,7 @@ Run the following prompt against the supplied `[feature_name]`, then save the ou
    features, also check the geo-aware tool pattern conformance (`?dest=` filter, no hardcoded
    nationality, destination_country_id in schema) and ADR-088 AI generation column conformance.
 4. **(b) Map frontend** — for each of the 6 SvelteKit apps (`apps/main`, `apps/admin`,
-   `apps/control`, `apps/academy`, `apps/docs`, `apps/tools`) plus the Flutter `apps/mobile` where
+   `apps/control`, `apps/academy`, `apps/docs`) plus the Flutter `apps/mobile` where
    relevant, list components/screens, pages/routes, API calls (`/api/v1/<feature>/*`), UI/UX flows,
    and i18n keys referencing the feature. For `apps/mobile/`, map:
    - Feature module under `lib/features/<feature_name>/`
@@ -579,8 +579,6 @@ Run the following prompt against the supplied `[feature_name]`, then save the ou
 ### apps/academy
 - ...
 ### apps/docs
-- ...
-### apps/tools
 - ...
 ### apps/mobile (Flutter, if relevant)
 - Feature module: `lib/features/<feature_name>/`
@@ -664,7 +662,7 @@ page/route scan.
      the v2 community/tool patterns (Cross-Cutting Fix Rules, v2 community/tool patterns section).
    - `ui-ux` → use the **Option 1 (Frontend URL / Page)** workflow against the bug's `file:line`
      (resolve the app from the path: `apps/main`→main, `apps/admin`→admin, `apps/control`→control,
-     `apps/academy`→learn, `apps/docs`→docs, `apps/tools`→tools, `apps/mobile`→mobile). For SvelteKit
+     `apps/academy`→learn, `apps/docs`→docs, `apps/mobile`→mobile). For SvelteKit
      apps, launch Playwright to verify the fix when the bug is visual/interactive. For `apps/mobile/`,
      verify with `flutter analyze` + `flutter test`; run on an emulator/simulator if the visual fix
      must be validated. Use `jc-mobile-debug` / `jc-mobile-refactor` as the implementation guide.

@@ -1,5 +1,6 @@
 import { error, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
+import { env } from '$env/dynamic/private';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
 import { isRtl } from '$lib/i18n/rtl';
@@ -46,6 +47,10 @@ function resolveAudiences(
 		return !required || wildcard || permissions.has(required);
 	});
 }
+
+// Environments that must never be indexed (fail-open: unset/unrecognized
+// env is treated as indexable so misconfigured prod can't deindex itself).
+const BLOCKS_INDEXING = new Set(['development', 'dev', 'staging', 'stage', 'test', 'preview', 'local']);
 
 export const handle: Handle = async ({ event, resolve }) => {
 	// Hostname excludes the port; forwarded to the backend for host-based routing.
@@ -251,6 +256,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+	if (BLOCKS_INDEXING.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase())) {
+		response.headers.set('X-Robots-Tag', 'noindex');
+	}
 	if (response.headers.get('content-type')?.startsWith('text/html')) {
 		response.headers.set('X-Accel-Buffering', 'no');
 	}

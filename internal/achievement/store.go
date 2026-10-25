@@ -62,6 +62,7 @@ type AchievementRow struct {
 	ViewCount       int32
 	CommentCount    int32
 	ReactionCount   int32
+	SeoIndexable    bool
 	PublishedAt     pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
@@ -249,7 +250,8 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        am.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
        am.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        am.is_anonymous,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       c.seo_indexable
 FROM contents c
 JOIN achievement_meta am ON am.content_id = c.id
 LEFT JOIN spaces os ON os.id = am.origin_space_id
@@ -338,7 +340,8 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 func scanAchievementRow(row pgx.Row) (AchievementRow, error) {
 	var r AchievementRow
 	if err := row.Scan(
-		&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+		&r.ID,
+		&r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount, &r.ReactionCount,
 		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 		&r.MilestoneType,
@@ -346,6 +349,7 @@ func scanAchievementRow(row pgx.Row) (AchievementRow, error) {
 		&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 		&r.IsAnonymous,
 		&r.AuthorName, &r.AuthorAvatar,
+		&r.SeoIndexable,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementRow{}, pgx.ErrNoRows

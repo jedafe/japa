@@ -57,6 +57,9 @@ data.ms/
 .playwright-mcp/
 test-results/
 
+# PageSpeed / Lighthouse audit output (bun run pagespeed)
+/reports/
+
 # sqlc generated files are committed, so they are NOT ignored.
 # Uncomment the line below if you prefer to generate at build time instead:
 # internal/db/generated/

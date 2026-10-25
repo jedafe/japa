@@ -44,6 +44,9 @@
 		<meta property="og:url" content={videoCanonical} />
 		<meta property="og:type" content="video.other" />
 	{/if}
+	{#if data.sourceOnly}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 </svelte:head>
 
 {#if data.sourceOnly}

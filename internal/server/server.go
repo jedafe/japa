@@ -40,6 +40,7 @@ import (
 	"github.com/jedafe/japa/internal/blog"
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/bots"
+	"github.com/jedafe/japa/internal/pagespeed"
 	"github.com/jedafe/japa/internal/calendar"
 	"github.com/jedafe/japa/internal/campaign"
 	"github.com/jedafe/japa/internal/catalog"
@@ -231,6 +232,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	r := chi.NewRouter()
 	RegisterMiddleware(r)
+
+	// Explicitly non-production deployments are never indexed: robots.txt
+	// serves a blanket Disallow: / (see RobotsHandler) and every response
+	// carries X-Robots-Tag: noindex so stage/dev content cannot leak into
+	// search indexes even when linked externally. Fails open — an unset or
+	// unrecognized JC_ENV is treated as indexable.
+	if cfg.BlocksIndexing() {
+		r.Use(noindexMiddleware)
+	}
 
 	// Open GeoIP database (graceful if missing - server still works).
 	// The middleware runs on every request so downstream handlers can
@@ -774,6 +784,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Blog Extension subsystem (Section 24 — Blog Extension).
 	blogService := blog.NewService(database)
 	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL, cfg.SiteName)
+	// §43 indexability thresholds — honor seo.sitemap.* Control → Settings.
+	blogHandlers.SetSettings(settingsService)
 	// Wire mention notification dispatch for blog posts (Section 15 / ADR-029).
 	// Fire-and-forget per Rule 8.
 	blogHandlers.SetMentionNotifier(commentNotificationAdapter{svc: notificationService})
@@ -3188,7 +3200,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// §14 literal safety net — resolves {{...}} in JSON responses
 		// (public settings, OpenAPI). XML/images pass through untouched.
 		r.Use(literals.Middleware(literalsCatalog))
-		r.Get("/robots.txt", bots.RobotsHandler(botStore, vkClient))
+		r.Get("/robots.txt", bots.RobotsHandler(botStore, vkClient, cfg.SiteURL, !cfg.BlocksIndexing()))
 		r.Get("/llms.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
 		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
 		r.Get("/sitemap.xml", sitemapHandler.ServeSitemap)
@@ -5238,6 +5250,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/analytics/security/{id}", analyticsHandlers.DeleteSecurityScanResult)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
 				Post("/admin/analytics/refresh", analyticsHandlers.RefreshViews)
+			// Admin PageSpeed dashboard — PSI proxy (key stays server-side, report cached 30m)
+			pagespeedHandlers := pagespeed.NewHandlers(vkClient)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Get("/admin/pagespeed", pagespeedHandlers.GetReport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Post("/admin/pagespeed/run", pagespeedHandlers.RunAudit)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Post("/admin/pagespeed/scan", pagespeedHandlers.Scan)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
 				Post("/admin/analytics/security/scan", analyticsHandlers.RunSecurityScan)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.cache.flush")).

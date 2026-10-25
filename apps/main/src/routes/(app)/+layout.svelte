@@ -6,6 +6,8 @@
 	import GuestFooter from '$lib/components/shell/GuestFooter.svelte';
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
+	import wordmarkLight from '$lib/assets/branding/wordmark-light.webp';
+	import wordmarkDark from '$lib/assets/branding/wordmark-dark.webp';
 	import { isExceptionRoute, isNoTabBarRoute } from '$lib/components/create/gate';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
@@ -234,6 +236,10 @@
 			<a href="/roadmap" class="roadmap-brand" aria-label={t('roadmap.title', 'Product Roadmap')}>
 				<ThemeLogo
 					logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+					logoWidth={Number(data.siteSettings?.['appearance.logo_width']) || 0}
+					logoHeight={Number(data.siteSettings?.['appearance.logo_height']) || 0}
+					logoDarkWidth={Number(data.siteSettings?.['appearance.logo_dark_width']) || 0}
+					logoDarkHeight={Number(data.siteSettings?.['appearance.logo_dark_height']) || 0}
 					logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 					alt={t('app.name')}
 					class="h-7 w-auto max-w-[120px] object-contain"
@@ -260,14 +266,14 @@
 	<!-- ADR-058 §5 Exception #3: guest landing page — GuestHeader + content + GuestFooter -->
 	<GuestHeader
 		logoUrl={page.data.guestHome
-			? '/logos/homepage-logo-light.png'
+			? wordmarkLight
 			: (data.siteSettings?.['appearance.logo_url'] as string | undefined)}
 		logoDarkUrl={page.data.guestHome
-			? '/logos/homepage-logo-dark.png'
+			? wordmarkDark
 			: (data.siteSettings?.['appearance.logo_url_dark'] as string | undefined)}
 		menu={data.menu}
 	/>
-	{@render children()}
+	<main>{@render children()}</main>
 	{#if !page.data.guestHome && !page.data.hasGuestHomeBlock}
 		<GuestFooter menu={data.footerMenu} />
 	{/if}
@@ -289,6 +295,10 @@
 		suggestedSpaces={data.suggestedSpaces}
 		userSpaces={data.userSpaces}
 		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+					logoWidth={Number(data.siteSettings?.['appearance.logo_width']) || 0}
+					logoHeight={Number(data.siteSettings?.['appearance.logo_height']) || 0}
+					logoDarkWidth={Number(data.siteSettings?.['appearance.logo_dark_width']) || 0}
+					logoDarkHeight={Number(data.siteSettings?.['appearance.logo_dark_height']) || 0}
 		logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception || aiRailOpen || !data.rightSidebarEnabled}
@@ -308,6 +318,10 @@
 		<StickyAnchorAd />
 	{/if}
 	{#if !exception && !noTabBar}
+		<!-- Mobile: the fixed tab bar covers the last ~4rem of the page without
+		     this spacer — it reserves scroll clearance so bottom content
+		     (footers, CTAs) is never hidden behind it. -->
+		<div class="hidden h-[calc(4rem+env(safe-area-inset-bottom))] max-sm:block" aria-hidden="true"></div>
 		<MobileBottomTabBar user={data.user} features={data.features} menu={data.mobileMenu} />
 	{/if}
 	{#if showChatFab}

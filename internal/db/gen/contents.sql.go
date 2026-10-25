@@ -924,7 +924,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  AND deleted_at IS NULL
  AND status = 'published') AS comment_count,
  c.share_count,
- (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id
 FROM contents c
@@ -958,7 +958,7 @@ type GetContentBySlugRow struct {
 	ViewCount       int32              `json:"view_count"`
 	CommentCount    int64              `json:"comment_count"`
 	ShareCount      int32              `json:"share_count"`
-	ReshareCount    int64              `json:"reshare_count"`
+	ReactionCount   int64              `json:"reaction_count"`
 	PublishAt       pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
@@ -1001,7 +1001,7 @@ func (q *Queries) GetContentBySlug(ctx context.Context, slug string) (GetContent
 		&i.ViewCount,
 		&i.CommentCount,
 		&i.ShareCount,
-		&i.ReshareCount,
+		&i.ReactionCount,
 		&i.PublishAt,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -1029,7 +1029,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  AND deleted_at IS NULL
  AND status = 'published') AS comment_count,
  c.share_count,
- (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
@@ -1126,8 +1126,8 @@ type GetContentDetailBySlugRow struct {
 	ViewCount                     int32              `json:"view_count"`
 	CommentCount                  int64              `json:"comment_count"`
 	ShareCount                    int32              `json:"share_count"`
-	ReshareCount                  int64              `json:"reshare_count"`
-	ReactionCount                 int32              `json:"reaction_count"`
+	ReactionCount                 int64              `json:"reaction_count"`
+	ReactionCount_2               int32              `json:"reaction_count_2"`
 	PublishAt                     pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt                   pgtype.Timestamptz `json:"published_at"`
 	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
@@ -1207,8 +1207,8 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, slug string) (GetC
 		&i.ViewCount,
 		&i.CommentCount,
 		&i.ShareCount,
-		&i.ReshareCount,
 		&i.ReactionCount,
+		&i.ReactionCount_2,
 		&i.PublishAt,
 		&i.PublishedAt,
 		&i.CreatedAt,

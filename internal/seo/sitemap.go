@@ -155,6 +155,8 @@ func (h *SitemapHandler) sitemapQualityConfig(ctx context.Context) bots.SitemapQ
 	cfg.MinQuestions = h.settings.GetIntOr(ctx, "seo.sitemap.space_min_questions", cfg.MinQuestions)
 	cfg.MinWords = h.settings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
 	cfg.BlogMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
+	cfg.StoryMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.story_min_words", cfg.StoryMinWords)
+	cfg.ListMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.list_min_words", cfg.ListMinWords)
 	cfg.ForumMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
 	cfg.DiscussionMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
 	cfg.GuideMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
@@ -346,8 +348,8 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 			ReactionCount: int(c.ReactionCount),
 			ReplyCount:    int(c.ReplyCount),
 			IsQuestion:    isQuestion,
-			Solved:        c.Solved,
-			SeoIndexable:  c.SeoIndexable,
+			SkipWordGate:  c.ContentType == "forum_thread" || c.ContentType == "discussion", Solved: c.Solved,
+			SeoIndexable: c.SeoIndexable,
 		}, cfg) {
 			continue
 		}
@@ -397,7 +399,7 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 		       AND ft.solved = true
 		     GROUP BY c.space_id
 		 ) qc ON qc.space_id = s.id
-		 WHERE s.status = 'active' AND s.deleted_at IS NULL
+		 WHERE s.status = 'active' AND s.deleted_at IS NULL AND s.visibility = 'public'
 		 ORDER BY s.updated_at DESC`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")

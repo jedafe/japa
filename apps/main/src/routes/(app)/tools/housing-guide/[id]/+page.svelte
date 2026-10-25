@@ -54,6 +54,7 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:url" content={page.url.href} />
 	<meta property="og:type" content="website" />
+	<meta name="robots" content="noindex,follow" />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">

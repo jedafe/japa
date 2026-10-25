@@ -6,10 +6,15 @@
 	import RightSidebar from './RightSidebar.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import { routeSidebar } from './routeSidebar.svelte';
-	import ComposeModal from './ComposeModal.svelte';
+	// ComposeModal is only mounted for signed-in users; keeping it a dynamic
+	// import keeps the tiptap/prosemirror stack (~240KB) out of the guest
+	// landing bundle (PageSpeed TBT).
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	const loadComposeModal = () => import('./ComposeModal.svelte');
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import { t } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
+	import { createScrollHide } from '$lib/stores/scrollDirection.svelte';
 	import type { Menu, SessionUser, TrendingTag, SpaceSuggestion, UserSpaceRef } from '$lib/types';
 
 	interface Props {
@@ -24,6 +29,10 @@
 		logoUrl?: string;
 		/** Platform dark-theme logo URL from appearance.logo_url_dark (control panel). */
 		logoDarkUrl?: string;
+		logoWidth?: number;
+		logoHeight?: number;
+		logoDarkWidth?: number;
+		logoDarkHeight?: number;
 		/** Comma-separated enabled languages from i18n.enabled_languages. */
 		enabledLanguages?: string;
 		children: Snippet;
@@ -51,6 +60,10 @@
 		userSpaces = [],
 		logoUrl = '',
 	logoDarkUrl = '',
+		logoWidth = 0,
+		logoHeight = 0,
+		logoDarkWidth = 0,
+		logoDarkHeight = 0,
 		enabledLanguages = 'en,fr',
 		children,
 		hideRightSidebar = false,
@@ -61,6 +74,10 @@
 	}: Props = $props();
 
 	let mobileNavOpen = $state(false);
+	// Mobile top bar slides away while scrolling down so page-level sticky
+	// bars (filter chips, sort bars) own the top edge; it slides back on
+	// scroll up. See lib/stores/scrollDirection.svelte.ts.
+	const topbar = createScrollHide();
 	// Hover behavior on the collapsed rail: default = expand in place
 	// (grid column grows, content shifts — same as clicking expand). On the
 	// excepted utility surfaces it renders an overlay peek instead — no
@@ -117,14 +134,14 @@
 		}}
 		onmouseleave={() => (navHoverExpand = false)}
 	>
-		<LeftNav {menu} {user} collapsed={effectiveCollapsed} pinned={!collapsed} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={onToggleCollapse} />
+		<LeftNav {menu} {user} collapsed={effectiveCollapsed} pinned={!collapsed} {userSpaces} {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} {features} onToggle={onToggleCollapse} />
 	</div>
 
 	{#if collapsed && navHoverPeek && overlayAllowed}
 		<!-- Expanded overlay nav — covers the rail; closes on mouseleave. The
 		     LeftNav toggle inside calls onToggleCollapse, pinning it open. -->
 		<div class="nav-hover-peek" role="presentation" onmouseleave={() => (navHoverPeek = false)}>
-			<LeftNav {menu} {user} collapsed={false} pinned={false} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={onToggleCollapse} />
+			<LeftNav {menu} {user} collapsed={false} pinned={false} {userSpaces} {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} {features} onToggle={onToggleCollapse} />
 		</div>
 	{/if}
 
@@ -133,9 +150,9 @@
 	{/if}
 
 	<main class="shell-center">
-		<div class="mobile-topbar">
+		<div class="mobile-topbar" class:topbar-hidden={topbar.hidden}>
 			<a href="/" class="flex min-h-11 min-w-11 items-center justify-center gap-2 font-medium text-[var(--color-text)]">
-				<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-9 w-auto max-w-[120px] object-contain" />
+				<ThemeLogo {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} alt={t('app.name')} class="h-9 w-auto max-w-[120px] object-contain" />
 			<span class="hidden">{t('app.name')}</span>
 			</a>
 			<div class="flex items-center gap-1">
@@ -159,7 +176,9 @@
 	</div>
 		{@render children()}
 		{#if composeEnabled && user}
-			<ComposeModal />
+			{#await loadComposeModal() then { default: ComposeModal }}
+				<ComposeModal />
+			{/await}
 		{/if}
 	</main>
 
@@ -182,7 +201,7 @@
 	<div class="drawer">
 		<!-- Drawer nav is transient (dismissed via backdrop/button), so the
 		     toggle shows the unpinned outline state. -->
-		<LeftNav {menu} {user} collapsed={false} pinned={false} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={() => (mobileNavOpen = false)} />
+		<LeftNav {menu} {user} collapsed={false} pinned={false} {userSpaces} {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} {features} onToggle={() => (mobileNavOpen = false)} />
 	</div>
 {/if}
 
@@ -244,6 +263,11 @@
 		padding: env(safe-area-inset-top) 0.75rem 0.5rem;
 		border-bottom: 1px solid var(--color-border);
 		background-color: var(--color-surface);
+		transition: transform 0.25s ease;
+		will-change: transform;
+	}
+	.mobile-topbar.topbar-hidden {
+		transform: translateY(-100%);
 	}
 
 

@@ -1,4 +1,6 @@
+import { untrack } from 'svelte';
 import { api } from '$lib/api/client';
+import { getAccessToken } from '$lib/api/token.svelte';
 import { localDateTimeToIso } from '$lib/utils/datetime';
 import type { ContentRecord, MediaAsset, MeSpace, SaveErrorClass, SearchHit, BlogSeries, SpaceType, Space } from '$lib/types';
 import { searchPath, mapUserHits, mapContentHits, mapTagHits, mapCouponHits, mapLiteralHits } from '$lib/tiptap/search';
@@ -126,13 +128,21 @@ export interface InitiateUploadResult {
 export const initiateUpload = (input: InitiateUploadInput) =>
 	api.post<InitiateUploadResult>('/media/upload', input);
 
-/** PUT the raw file bytes to the presigned URL returned by initiateUpload. */
+/** PUT the raw file bytes to the presigned URL returned by initiateUpload.
+ * The API-side upload endpoint requires the session Bearer — in dev the vite
+ * proxy injects it from the jc_token cookie; in production the absolute
+ * api.<domain> URL is cross-origin, so the in-memory token must be attached. */
 export async function uploadToPresigned(
 	presignedUrl: string,
 	file: File
 ): Promise<{ ok: boolean; status: number }> {
 	try {
-		const res = await fetch(presignedUrl, { method: 'PUT', body: file });
+		const accessToken = untrack(getAccessToken);
+		const res = await fetch(presignedUrl, {
+			method: 'PUT',
+			body: file,
+			...(accessToken ? { headers: { authorization: `Bearer ${accessToken}` } } : {})
+		});
 		return { ok: res.ok, status: res.status };
 	} catch {
 		return { ok: false, status: 0 };

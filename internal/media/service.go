@@ -136,20 +136,12 @@ func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, fi
 		return UploadResult{}, fmt.Errorf("initiating upload: %w", err)
 	}
 
-	// Generate presigned URL for client upload.
-	// Uses S3 client if configured, otherwise falls back to local path.
+	// The client PUTs raw bytes to the API-side upload endpoint —
+	// SeaweedFSUpload streams them to S3 when configured or writes local
+	// disk otherwise. Emitting the object store's presigned URL directly
+	// would hand browsers a Docker-internal hostname they cannot resolve.
 	expiresAt := time.Now().Add(15 * time.Minute)
-	presignedURL := "/seaweedfs/upload/" + bucket + "/" + storagePath // fallback
-
-	if s.s3 != nil {
-		url, err := s.s3.PresignPut(ctx, storagePath, 15*time.Minute)
-		if err != nil {
-			slog.Warn("s3 presign failed, using fallback path",
-				"storage_path", storagePath, "error", err)
-		} else {
-			presignedURL = url
-		}
-	}
+	presignedURL := UploadURL(bucket, storagePath)
 
 	return UploadResult{
 		MediaID:      m.ID.String(),
@@ -300,6 +292,7 @@ func (s *Service) fetchFromS3(ctx context.Context, bucket, path string, n int64)
 	}
 
 	req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", n-1))
+	s.s3.signRequest(req, emptyPayloadHash, time.Now())
 
 	resp, err := s.s3.httpClient.Do(req)
 	if err != nil {
@@ -338,6 +331,8 @@ func (s *Service) objectSizeBytes(ctx context.Context, bucket, path string) (int
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, objectURL, nil)
 		if err == nil {
+			s.s3.signRequest(req, emptyPayloadHash, time.Now())
+
 			resp, err := s.s3.httpClient.Do(req)
 			if err == nil {
 				_ = resp.Body.Close()
@@ -595,7 +590,7 @@ func (s *Service) DeleteMediaOwn(ctx context.Context, uploaderID, mediaID pgtype
 // search query, status, flagged state, and missing-object flag, along with
 // the total count matching the filter. The total is used by callers to
 // compute total_pages. Empty/zero filter values mean "no filter on this
-// field"; `missing` mirrors `deleted` ('' excludes missing, 'only' returns
+// field"; `missing` mirrors `deleted` (” excludes missing, 'only' returns
 // only missing, 'all' includes both).
 func (s *Service) ListMedia(ctx context.Context, uploaderID *pgtype.UUID, mimeType, query, status, flagged *string, deleted, missing string, limit, offset int32) ([]gen.Medium, int32, error) {
 	if limit <= 0 || limit > MaxPageSize {

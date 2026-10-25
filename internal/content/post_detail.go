@@ -7,10 +7,10 @@
 package content
 
 import (
-	"strconv"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jedafe/japa/internal/auth"
@@ -122,6 +122,17 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"meta_description":  content.MetaDescription,
 		"og_image_url":      content.OgImageUrl,
 		"seo_indexable":     content.SeoIndexable,
+		"indexable": h.contentIndexable(r.Context(), indexableContentInput{
+			ID:            content.ID,
+			ContentType:   content.ContentType,
+			Status:        content.Status,
+			Visibility:    content.Visibility,
+			Body:          content.Body,
+			CommentCount:  int(content.CommentCount),
+			ShareCount:    int(content.ShareCount),
+			ReactionCount: int(content.ReactionCount),
+			SeoIndexable:  content.SeoIndexable,
+		}),
 		"status":            content.Status,
 		"visibility":        content.Visibility,
 		"is_locked":         content.IsLocked,
@@ -130,7 +141,6 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"view_count":        content.ViewCount,
 		"comment_count":     content.CommentCount,
 		"share_count":       content.ShareCount,
-		"reshare_count":     content.ReshareCount,
 		"reaction_count":    content.ReactionCount,
 		"publish_at":        content.PublishAt,
 		"published_at":      content.PublishedAt,

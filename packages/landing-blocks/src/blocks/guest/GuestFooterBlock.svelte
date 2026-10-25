@@ -6,6 +6,8 @@
   import { resolveAssetUrl } from '../../assetBase';
   import SocialIcon from './SocialIcon.svelte';
   import GuestChildren from './GuestChildren.svelte';
+  import defaultLogoLight from '../../assets/wordmark-light.webp';
+  import defaultLogoDark from '../../assets/wordmark-dark.webp';
 
   interface Props {
     props: GuestFooterProps;
@@ -22,10 +24,12 @@
   const columnChildren = $derived((props.children ?? []).filter((b) => b.type === 'guest_footer_column'));
   const bottomChildren = $derived((props.children ?? []).filter((b) => b.type === 'guest_footer_link'));
 
+  // Bundled defaults: emitted to /_app/immutable with content hashes, so they
+  // get immutable cache headers — the multi-MB /logos PNGs did not.
   const logo = $derived(
     props.logo ?? {
-      light: '/logos/homepage-logo-light.png',
-      dark: '/logos/homepage-logo-dark.png'
+      light: defaultLogoLight,
+      dark: defaultLogoDark
     }
   );
 
@@ -121,7 +125,7 @@
   <h2 id="guest-footer-heading-{id}" class="sr-only">Footer</h2>
   <div class="guest-footer-inner">
     <div class="guest-footer-brand">
-      <img src={logoSrc} alt=siteName() class="footer-logo footer-logo-dark" />
+      <img src={logoSrc} alt={siteName()} width="794" height="384" class="footer-logo footer-logo-dark" />
       <p class="footer-tagline">{tagline}</p>
       {#if socialChildren.length > 0}
         <div class="footer-socials">

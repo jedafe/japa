@@ -128,7 +128,9 @@
 			.trim()
 			.slice(0, 160) || comparison.content.title
 	);
-	const canonical = $derived(`${page.url.origin}/compare/${comparison.content.slug}`);
+	// The JCE workspace is a tool view, not content — consolidate ranking on
+	// the canonical /comparisons/{slug} route and stay out of the index.
+	const canonical = $derived(`${page.url.origin}/comparisons/${comparison.content.slug}`);
 
 	function cellFor(item: MatrixItem, dim: JCEDimension): MatrixDimension | undefined {
 		return item.dimensions.find((d: MatrixDimension) => d.dimension_id === dim.id);
@@ -154,6 +156,7 @@
 	<title>{headTitle}</title>
 	<meta name="description" content={headDescription} />
 	<link rel="canonical" href={canonical} />
+	<meta name="robots" content="noindex,follow" />
 	<meta property="og:title" content={comparison.content.title} />
 	<meta property="og:description" content={headDescription} />
 	<meta property="og:type" content="article" />

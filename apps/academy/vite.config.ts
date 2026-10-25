@@ -22,7 +22,7 @@ function apiHeadersPlugin(): Plugin {
 			server.middlewares.use(
 				(req: Connect.IncomingMessage, _res, next: Connect.NextFunction) => {
 					const url = req.url ?? '';
-					if (url.startsWith('/api/v1/') || url.startsWith('/ws')) {
+					if (url.startsWith('/api/v1/') || url.startsWith('/ws') || url.startsWith('/seaweedfs')) {
 						const cookie = req.headers.cookie ?? '';
 						const match = /jc_token=([^;]+)/.exec(cookie);
 						if (match) req.headers.authorization = `Bearer ${match[1]}`;
@@ -42,7 +42,8 @@ export default defineConfig({
 		proxy: {
 			'/api/v1/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
 			'/api/v1': { target: API_TARGET, changeOrigin: true },
-			'/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true }
+			'/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
+			'/seaweedfs': { target: API_TARGET, changeOrigin: true }
 		}
 	},
 	test: {

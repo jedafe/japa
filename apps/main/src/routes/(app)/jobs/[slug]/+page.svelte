@@ -470,6 +470,9 @@
 	{#if jsonLd}
 		{@html safeJsonLdScript(jsonLd)}
 	{/if}
+	{#if job?.seo_indexable === false || job?.indexable === false}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl px-4 py-4">

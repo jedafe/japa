@@ -332,6 +332,9 @@
 		<meta name="twitter:card" content="summary_large_image" />
 	{/if}
 	<link rel="canonical" href={canonicalUrl} />
+	{#if data.indexable === false}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 	{@html safeJsonLdScript(wikiIndexJsonLd)}
 	{@html safeJsonLdScript(wikiIndexBreadcrumbJsonLd)}
 </svelte:head>

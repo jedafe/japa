@@ -39,7 +39,7 @@ jobs:
               with urllib.request.urlopen(r) as resp:
                   return resp.read(), resp.headers
 
-          apps = ['api','main','admin','control','academy','docs','tools']
+          apps = ['api','main','admin','control','academy','docs']
           MANIFEST = ('application/vnd.docker.distribution.manifest.v2+json,'
                       'application/vnd.oci.image.manifest.v1+json')
           for app in apps:

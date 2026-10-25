@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "golang.org/x/image/webp" // register webp decoder for image.Decode
 	_ "image/gif"               // register gif decoder for image.Decode
@@ -203,6 +204,8 @@ func (s *Service) fetchObjectBytes(ctx context.Context, bucket, path string, lim
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, objectURL, nil)
 		if err == nil {
+			s.s3.signRequest(req, emptyPayloadHash, time.Now())
+
 			resp, err := s.s3.httpClient.Do(req)
 			if err == nil {
 				defer resp.Body.Close()

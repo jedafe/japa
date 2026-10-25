@@ -1,12 +1,12 @@
 package media
 
 import (
-	"errors"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -33,7 +33,7 @@ import (
 // else falls through to the placeholder in the handler.
 //
 // Ref: conventions/api-routes-catalog.md (media), conventions/valkey-keys-catalog.md
-// (jc:media:proxy:{sha256(url)}).
+// (jc:media:proxy:v2:{sha256(url)}).
 
 // ProxyResult is a fetched remote image payload.
 type ProxyResult struct {
@@ -41,14 +41,14 @@ type ProxyResult struct {
 	ContentType string
 }
 
-// proxyCacheEntry is the JSON payload cached under jc:media:proxy:{sha256(url)}.
+// proxyCacheEntry is the JSON payload cached under jc:media:proxy:v2:{sha256(url)}.
 type proxyCacheEntry struct {
 	ContentType string `json:"ct"`
 	BodyB64     string `json:"body_b64"`
 }
 
 // SetValkey injects the Valkey client for remote-image proxy caching
-// (jc:media:proxy:{sha256(url)}, TTL from media.proxy.ttl_secs).
+// (jc:media:proxy:v2:{sha256(url)}, TTL from media.proxy.ttl_secs).
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) {
 	s.vk = vk
 }
@@ -209,6 +209,12 @@ func (s *Service) ProxyRemote(ctx context.Context, rawURL string) (ProxyResult, 
 		return ProxyResult{}, fmt.Errorf("media proxy: upstream body exceeds %d bytes", maxBytes)
 	}
 
+	// Re-encode to WebP before caching/serving — remote images get the same
+	// compression pass as local uploads. optimizeImage returns the original
+	// bytes when the body isn't a decodable raster (e.g. SVG), so it's safe
+	// to call unconditionally on image/* responses.
+	body, ct = optimizeImage(body, ct)
+
 	if s.vk != nil && ttlSecs > 0 {
 		ent, _ := json.Marshal(proxyCacheEntry{
 			ContentType: ct,
@@ -221,8 +227,10 @@ func (s *Service) ProxyRemote(ctx context.Context, rawURL string) (ProxyResult, 
 }
 
 // proxyCacheKey builds the Valkey key for a proxied URL
-// (jc:media:proxy:{sha256(url)} — conventions/valkey-keys-catalog.md).
+// (jc:media:proxy:v2:{sha256(url)} — conventions/valkey-keys-catalog.md).
 func proxyCacheKey(rawURL string) string {
 	sum := sha256.Sum256([]byte(rawURL))
-	return "jc:media:proxy:" + hex.EncodeToString(sum[:])
+	// v2 suffix: entries written before the WebP re-encode was added hold
+	// original bytes — they orphan on the new namespace and expire naturally.
+	return "jc:media:proxy:v2:" + hex.EncodeToString(sum[:])
 }

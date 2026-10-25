@@ -26,6 +26,10 @@ export interface ApiOk<T> {
 	json_ld?: unknown;
 	/** Optional capability flag emitted by some GET endpoints (e.g. forum can_solve). */
 	can_solve?: boolean;
+	/** §43 indexability flags emitted as envelope siblings on the forum thread
+	 * detail — seo_indexable is the editorial flag, indexable the full quality gate. */
+	indexable?: boolean;
+	seo_indexable?: boolean;
 	/** Optional capability flag emitted by forum thread detail (can_edit). */
 	can_edit?: boolean;
 	/** Optional scope discriminator (e.g. /wiki/categories: 'geo' | 'university'). */
@@ -734,6 +738,8 @@ export interface OnboardingOptions {
 
 /** A forum discussion thread (GET /forum, GET /forum/{slug}). */
 export interface ForumThread {
+	seo_indexable?: boolean;
+	indexable?: boolean;
 	id: string;
 
 	content_id: string | null;
@@ -1399,6 +1405,9 @@ export interface Space {
 /** GET /spaces/{slug} response — `{ space, rules, keywords, logo_url }` bundle. */
 export interface SpaceDetail {
 	space: Space;
+	/** §43 — false when the space is below the sitemap quality thresholds
+	 *  or non-public; the page emits noindex,follow. */
+	seo_indexable?: boolean;
 	rules: SpaceRule[];
 	keywords?: string[];
 	logo_url?: string;
@@ -2222,7 +2231,7 @@ export interface ComparisonListItem {
 	view_count: number;
 	comment_count: number;
 	share_count: number;
-	reshare_count: number;
+	reaction_count: number;
 	published_at: string | null;
 	created_at: string;
 }
@@ -3032,6 +3041,8 @@ export interface JobListing {
 }
 
 export interface JobDetail {
+	seo_indexable?: boolean;
+	indexable?: boolean;
 	id: string;
 	title: string;
 	slug: string;
@@ -3308,6 +3319,8 @@ export interface TravelSearchResponse {
 
 // --- Section 79: Community Story Wall ---
 export interface Story {
+	seo_indexable?: boolean;
+	indexable?: boolean;
 	id: string;
 	author_id?: string;
 	title: string;
@@ -3534,6 +3547,9 @@ export interface WikiPage extends WikiPageIndex {
 	space_slug: string;
 	space_name: string;
 	current_content: unknown;
+	/** §43 — false on stub pages (no approved prose revision); the page
+	 *  emits noindex,follow. */
+	indexable?: boolean;
 	revision_summary?: string;
 	submitted_by?: string;
 	/** §80 Reader UX: byline avatar for the approved submitter. */
@@ -4049,6 +4065,8 @@ export type AchievementMilestoneType =
 	| 'other';
 
 export interface Achievement {
+	seo_indexable?: boolean;
+	indexable?: boolean;
 	id: string;
 	title: string;
 	slug: string;
@@ -4559,8 +4577,7 @@ export interface MentorshipConnection {
 
 /* ================================================================== *
  * V2 functional tools (§§90–97, §§99–101) — geo-aware tool pattern.
- * Mirrors the apps/tools types so the main-app tool pages share the
- * same backend contract. Ref: ADR-086, ADR-088.
+ * Ref: ADR-086 (superseded — tools live in the main app), ADR-088.
  * ================================================================== */
 
 /** Common AI generation metadata (ADR-088). Present on all admin-managed content. */

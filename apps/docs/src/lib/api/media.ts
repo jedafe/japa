@@ -70,7 +70,12 @@ export async function uploadMediaImage(
 	});
 	if (!init.ok) throw new Error(init.error);
 
-	const put = await fetch(init.data.presigned_url, { method: 'PUT', body: file });
+	const put = await fetch(init.data.presigned_url, {
+		method: 'PUT',
+		body: file,
+		credentials: 'include',
+		headers: authHeaders()
+	});
 	if (!put.ok) throw new Error('File transfer failed');
 
 	const conf = await apiPost<{ confirmed: boolean }>(`/media/confirm/${init.data.media_id}`);

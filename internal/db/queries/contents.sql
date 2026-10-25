@@ -55,7 +55,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  AND deleted_at IS NULL
  AND status = 'published') AS comment_count,
  c.share_count,
- (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id
 FROM contents c
@@ -79,7 +79,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  AND deleted_at IS NULL
  AND status = 'published') AS comment_count,
  c.share_count,
- (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,

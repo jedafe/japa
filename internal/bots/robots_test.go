@@ -12,7 +12,7 @@ func TestGenerateRobotsTxt_BlockedBots(t *testing.T) {
 		{Name: "BadBot", UserAgentPattern: "BadBot", BotType: BotTypeScraper, Policy: PolicyBlock},
 	}
 
-	txt := GenerateRobotsTxt(bots)
+	txt := GenerateRobotsTxt(bots, "https://japa.to")
 
 	if !strings.Contains(txt, "User-agent: BadBot") {
 		t.Error("expected User-agent directive for BadBot")
@@ -30,7 +30,7 @@ func TestGenerateRobotsTxt_AllowedBots(t *testing.T) {
 		{Name: "Googlebot", UserAgentPattern: "Googlebot", BotType: BotTypeSearchEngine, Policy: PolicyAllow},
 	}
 
-	txt := GenerateRobotsTxt(bots)
+	txt := GenerateRobotsTxt(bots, "https://japa.to")
 
 	if !strings.Contains(txt, "User-agent: Googlebot") {
 		t.Error("expected User-agent directive for Googlebot")
@@ -48,7 +48,7 @@ func TestGenerateRobotsTxt_LimitedBots(t *testing.T) {
 		{Name: "SlowBot", UserAgentPattern: "SlowBot", BotType: BotTypeMonitoring, Policy: PolicyLimit, CrawlDelay: 10},
 	}
 
-	txt := GenerateRobotsTxt(bots)
+	txt := GenerateRobotsTxt(bots, "https://japa.to")
 
 	if !strings.Contains(txt, "User-agent: SlowBot") {
 		t.Error("expected User-agent directive for SlowBot")
@@ -70,13 +70,13 @@ func TestGenerateRobotsTxt_DefaultPolicy(t *testing.T) {
 		{Name: "Googlebot", UserAgentPattern: "Googlebot", BotType: BotTypeSearchEngine, Policy: PolicyAllow},
 	}
 
-	txt := GenerateRobotsTxt(bots)
+	txt := GenerateRobotsTxt(bots, "https://japa.to")
 
 	if !strings.Contains(txt, "User-agent: *") {
 		t.Error("expected default User-agent: * directive")
 	}
 
-	if !strings.Contains(txt, "Sitemap: /sitemap.xml") {
+	if !strings.Contains(txt, "Sitemap: https://japa.to/sitemap.xml") {
 		t.Error("expected Sitemap directive")
 	}
 }
@@ -84,14 +84,14 @@ func TestGenerateRobotsTxt_DefaultPolicy(t *testing.T) {
 func TestGenerateRobotsTxt_EmptyRegistry(t *testing.T) {
 	t.Parallel()
 
-	txt := GenerateRobotsTxt(nil)
+	txt := GenerateRobotsTxt(nil, "https://japa.to")
 
 	// Should still have default policy and sitemap
 	if !strings.Contains(txt, "User-agent: *") {
 		t.Error("expected default User-agent: * even with empty registry")
 	}
 
-	if !strings.Contains(txt, "Sitemap: /sitemap.xml") {
+	if !strings.Contains(txt, "Sitemap: https://japa.to/sitemap.xml") {
 		t.Error("expected Sitemap directive even with empty registry")
 	}
 }
@@ -105,7 +105,7 @@ func TestGenerateRobotsTxt_MixedPolicies(t *testing.T) {
 		{Name: "SlowBot", UserAgentPattern: "SlowBot", BotType: BotTypeMonitoring, Policy: PolicyLimit, CrawlDelay: 5},
 	}
 
-	txt := GenerateRobotsTxt(bots)
+	txt := GenerateRobotsTxt(bots, "https://japa.to")
 
 	// All three should appear
 	if !strings.Contains(txt, "User-agent: BadBot") {
@@ -136,7 +136,7 @@ func TestGenerateRobotsTxt_CrawlDelayFormat(t *testing.T) {
 		{Name: "DelayedBot", UserAgentPattern: "DelayedBot", BotType: BotTypeMonitoring, Policy: PolicyLimit, CrawlDelay: 30},
 	}
 
-	txt := GenerateRobotsTxt(bots)
+	txt := GenerateRobotsTxt(bots, "https://japa.to")
 
 	if !strings.Contains(txt, "Crawl-delay: 30") {
 		t.Errorf("expected Crawl-delay: 30 in output, got:\n%s", txt)

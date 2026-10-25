@@ -313,24 +313,6 @@ services:
       - PUBLIC_JC_UMAMI_SITE_ID_DOCS=${PUBLIC_JC_UMAMI_SITE_ID_DOCS}
     restart: unless-stopped
 
-  # Tools — SvelteKit SSR identity tools surface, port 3005.
-  # Canonical host: tools.japa.to (per-tool subdomains and custom
-  # domains render the single-tool shell — ADR-086, §78).
-  tools:
-    build:
-      context: .
-      dockerfile: apps/tools/Dockerfile
-      args:
-        PUBLIC_JC_API_URL: http://localhost:8080/api/v1
-        PUBLIC_MAIN_ORIGIN: http://localhost:3000
-    ports:
-      - "127.0.0.1:3005:3005"
-    environment:
-      - PRIVATE_API_BASE_URL=http://go-api:8080
-      - PUBLIC_JC_UMAMI_URL=${PUBLIC_JC_UMAMI_URL}
-      - PUBLIC_JC_UMAMI_SITE_ID_TOOLS=${PUBLIC_JC_UMAMI_SITE_ID_TOOLS}
-    restart: unless-stopped
-
 volumes:
   postgres-data:
   postgres-replica-data:

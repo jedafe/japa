@@ -1797,3 +1797,22 @@ func (s *Service) GetSpaceAnalyticsSummary(ctx context.Context, spaceID pgtype.U
 		PostsLast30d:  int(row.PostsLast30d),
 	}, nil
 }
+
+// SpaceIndexSignals returns the §43 sitemap quality counters for one space:
+// member/post counts from the denormalized columns (same source the spaces
+// sitemap uses) plus forum and solved-question counts from published public
+// content joined to forum_threads.
+func (s *Service) SpaceIndexSignals(ctx context.Context, spaceID pgtype.UUID) (members, posts, forums, questions int, err error) {
+	err = s.db.Reader.QueryRow(ctx,
+		`SELECT s.member_count, s.post_count,
+		        (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+		          WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'),
+		        (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+		          WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public' AND ft.solved = true)
+		 FROM spaces s WHERE s.id = $1`, spaceID).Scan(&members, &posts, &forums, &questions)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("spaces: index signals: %w", err)
+	}
+
+	return members, posts, forums, questions, nil
+}

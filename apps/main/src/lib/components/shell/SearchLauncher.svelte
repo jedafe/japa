@@ -35,11 +35,10 @@
 	type="button"
 	class="launcher"
 	onclick={() => (open = true)}
-	aria-label={t('a11y.open_search', 'Open search')}
 >
 	<Search size={16} />
 	<span class="label">{t('search.heading', 'Search')}</span>
-	<span class="kbd">⌘K</span>
+	<span class="kbd" aria-hidden="true">⌘K</span>
 </button>
 
 {#if open}

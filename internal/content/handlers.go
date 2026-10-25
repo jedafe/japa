@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content/visibility"
@@ -1364,7 +1365,6 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"view_count":        content.ViewCount,
 		"comment_count":     content.CommentCount,
 		"share_count":       content.ShareCount,
-		"reshare_count":     content.ReshareCount,
 		"reaction_count":    content.ReactionCount,
 		"publish_at":        content.PublishAt,
 		"published_at":      content.PublishedAt,
@@ -1384,6 +1384,20 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"space_avatar_url":  mediaURL(content.SpaceAvatarStorageBucket, content.SpaceAvatarStoragePath),
 		"organization":      orgRefFrom(content.OrganizationID, content.OrganizationName, content.OrganizationSlug, content.OrganizationLogoStorageBucket, content.OrganizationLogoStoragePath),
 		"excerpt":           ExcerptFromBody(content.Body, content.BodyHtml, 160),
+		// §43 page-level gate — the frontend emits noindex when false so
+		// thin/unpublished content can't be indexed via discovered URLs;
+		// sitemap exclusion alone is only a discovery hint.
+		"indexable": h.contentIndexable(r.Context(), indexableContentInput{
+			ID:            content.ID,
+			ContentType:   content.ContentType,
+			Status:        content.Status,
+			Visibility:    content.Visibility,
+			Body:          content.Body,
+			CommentCount:  int(content.CommentCount),
+			ShareCount:    int(content.ShareCount),
+			ReactionCount: int(content.ReactionCount),
+			SeoIndexable:  content.SeoIndexable,
+		}),
 	}
 
 	// field_values is stored as JSONB — emit the decoded object, not the
@@ -3566,4 +3580,57 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"updated": true},
 	})
+}
+
+// indexableContentInput carries the row fields the §43 gate needs —
+// decoupled from the sqlc row type so every detail handler sharing the
+// query shape (GetContent, GetPost) can reuse it.
+type indexableContentInput struct {
+	ID            pgtype.UUID
+	ContentType   string
+	Status        string
+	Visibility    string
+	Body          string
+	CommentCount  int
+	ShareCount    int
+	ReactionCount int
+	SeoIndexable  bool
+}
+
+// contentIndexable applies the §43 sitemap quality gate to a single content
+// detail row. Thresholds come from system_settings (seo.sitemap.*) with spec
+// defaults when settings are unavailable — mirroring sitemapQualityConfig so
+// the page-level flag and the sitemap agree.
+func (h *Handlers) contentIndexable(ctx context.Context, c indexableContentInput) bool {
+	cfg := bots.DefaultSitemapQualityConfig()
+	if h.settings != nil {
+		cfg.MinWords = h.settings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
+		cfg.BlogMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
+	cfg.StoryMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.story_min_words", cfg.StoryMinWords)
+	cfg.ListMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.list_min_words", cfg.ListMinWords)
+		cfg.ForumMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
+		cfg.DiscussionMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
+		cfg.GuideMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
+		cfg.ComparisonMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
+		cfg.BlogMinEngagement = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
+		cfg.ForumMinReplies = h.settings.GetIntOr(ctx, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
+		cfg.QuestionMinAnswers = h.settings.GetIntOr(ctx, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
+		cfg.DiscussionMinComments = h.settings.GetIntOr(ctx, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
+	}
+
+	replies, solved, isThread := h.Service.forumThreadIndexStats(ctx, c.ID)
+
+	return bots.IsContentIndexableByType(bots.ContentIndexableInput{
+		ContentType:   c.ContentType,
+		Status:        c.Status,
+		Visibility:    c.Visibility,
+		WordCount:     len(strings.Fields(c.Body)),
+		CommentCount:  int(c.CommentCount),
+		ShareCount:    int(c.ShareCount),
+		ReactionCount: int(c.ReactionCount),
+		ReplyCount:    replies,
+		IsQuestion:    isThread && !solved,
+		SkipWordGate:  c.ContentType == "forum_thread" || c.ContentType == "discussion", Solved: solved,
+		SeoIndexable: c.SeoIndexable,
+	}, cfg)
 }

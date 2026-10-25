@@ -3,6 +3,7 @@
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
+	import heroCommunity from '$lib/assets/branding/hero-community.webp';
 	import type {
 		GuestHomeData,
 		GuestHomeOpportunity,
@@ -280,15 +281,18 @@
 		<div class="hero-visual">
 			<div class="hero-image-wrap">
 				<img
-					src="/brand/diaspora-community.jpg"
+					src={heroCommunity}
 					alt={t('landing.home.hero_image_alt', 'A confident traveler at the airport')}
 					class="hero-image"
 					loading="eager"
+					fetchpriority="high"
+					width="800"
+					height="534"
 					decoding="async"
 				/>
 
 				<div class="floating-card floating-card-destinations">
-					<h3 class="floating-card-title">{t('landing.home.top_destinations', 'Top Destinations')}</h3>
+					<h2 class="floating-card-title">{t('landing.home.top_destinations', 'Top Destinations')}</h2>
 					<ul class="destination-list">
 						{#each destinations as dest (dest.id)}
 							<li class="destination-item">
@@ -318,9 +322,9 @@
 						{/each}
 					</div>
 					<div class="community-body">
-						<h3 class="community-title">
+						<h2 class="community-title">
 							{t('landing.home.join_title', 'Join {count} members worldwide', { count: communityStat?.value ?? '500K+' })}
-						</h3>
+						</h2>
 						<p class="community-subtitle">
 							{t('landing.home.join_subtitle', 'Your future starts with the right information.')}
 						</p>
@@ -577,8 +581,6 @@
 	<div class="footer-inner">
 		<div class="footer-brand">
 			<ThemeLogo
-				logoUrl="/logos/homepage-logo-light.png"
-				logoDarkUrl="/logos/homepage-logo-dark.png"
 				alt={t('app.name')}
 				class="h-8 w-auto"
 			/>

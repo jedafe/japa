@@ -123,6 +123,9 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
+	{#if achievement?.seo_indexable === false || achievement?.indexable === false}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">

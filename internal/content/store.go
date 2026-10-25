@@ -2707,3 +2707,18 @@ func (s *Service) SetContentSpaceID(ctx context.Context, contentID, spaceID pgty
 		SpaceID:   spaceID,
 	})
 }
+
+// forumThreadIndexStats returns the forum-thread signals the §43 sitemap
+// quality gate needs for a content row: reply count and solved state.
+// isThread is false when no forum_threads row backs the content.
+func (s *Service) forumThreadIndexStats(ctx context.Context, contentID pgtype.UUID) (replies int, solved, isThread bool) {
+	var rc int32
+	err := s.db.Reader.QueryRow(ctx,
+		`SELECT reply_count, solved FROM forum_threads
+		  WHERE content_id = $1 AND deleted_at IS NULL`, contentID).Scan(&rc, &solved)
+	if err != nil {
+		return 0, false, false
+	}
+
+	return int(rc), solved, true
+}

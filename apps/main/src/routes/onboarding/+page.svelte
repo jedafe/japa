@@ -63,6 +63,11 @@
 	const destPins = $derived(destinationMarkets(data.siteSettings));
 	const locationPins = $derived(servedMarkets(data.siteSettings));
 
+	// Same brand logo as the app shell: appearance.logo_url(_dark) with the
+	// ThemeLogo wordmark fallback — never the square icon mark.
+	const logoUrl = $derived((data.siteSettings as Record<string, string> | undefined)?.['appearance.logo_url'] ?? '');
+	const logoDarkUrl = $derived((data.siteSettings as Record<string, string> | undefined)?.['appearance.logo_url_dark'] ?? '');
+
 	// Destination country autocomplete — filters the SSR-loaded country
 	// spaces client-side (same pattern as LocationSection.svelte).
 	function destCountryFetcher(q: string): Promise<AutocompleteItem[]> {
@@ -308,7 +313,7 @@
 	<div class="mx-auto grid grid-cols-1 w-full max-w-5xl overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl lg:grid-cols-[360px_1fr]">
 		<!-- Brand panel — decorative illustration + privacy note. -->
 		<aside aria-hidden="true" class="onb-side relative hidden flex-col gap-4 overflow-hidden p-8 lg:flex xl:p-10">
-			<ThemeLogo alt={t('app.name', '{site}')} class="h-7 w-auto self-start" />
+			<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name', '{site}')} class="h-7 w-auto self-start" />
 			<h2 class="text-[1.4rem] leading-snug font-bold text-[var(--color-text)]">
 				{t('onboarding.side_title', "Let's personalize your Japa journey")} <span aria-hidden="true">👋</span>
 			</h2>

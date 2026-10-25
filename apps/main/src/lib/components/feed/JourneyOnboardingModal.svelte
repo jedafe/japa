@@ -105,6 +105,11 @@
 	const originPins = $derived(originMarkets(page.data.siteSettings));
 	const destinationPins = $derived(destinationMarkets(page.data.siteSettings));
 
+	// Same brand logo as the app shell: appearance.logo_url(_dark) with the
+	// ThemeLogo wordmark fallback — never the square icon mark.
+	const logoUrl = $derived((page.data.siteSettings as Record<string, string> | undefined)?.['appearance.logo_url'] ?? '');
+	const logoDarkUrl = $derived((page.data.siteSettings as Record<string, string> | undefined)?.['appearance.logo_url_dark'] ?? '');
+
 	function countryItems(list: GeoCountry[] = countryList): AutocompleteItem[] {
 		return list.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));
 	}
@@ -221,7 +226,7 @@
 	{#snippet children(close)}
 		<!-- Header: brand + stepper + close -->
 		<div class="flex items-center gap-4 border-b border-[var(--color-border)] px-5 py-4 sm:px-7">
-			<ThemeLogo alt={t('app.name', '{site}')} class="h-6 w-auto shrink-0" />
+			<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name', '{site}')} class="h-6 w-auto shrink-0" />
 			<nav aria-label={t('journey.steps_label', 'Journey setup steps')} class="mx-auto flex items-center">
 				{#each steps as s, i (i)}
 					{@const n = i + 1}

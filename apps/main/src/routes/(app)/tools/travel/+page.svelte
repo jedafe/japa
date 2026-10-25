@@ -565,7 +565,7 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<link rel="canonical" href={canonical} />
+	<link rel="canonical" href={page.url.href} />
 	<meta property="og:url" content={canonical} />
 	{@html safeJsonLdScript(travelJsonLd)}
 </svelte:head>

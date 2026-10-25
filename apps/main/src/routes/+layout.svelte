@@ -77,16 +77,14 @@
 		}
 	});
 
-	// Canonical URLs for hreflang — pathname only, host is implicit.
-	// Languages are read from i18n.enabled_languages (system_settings catalog,
-	// Public: true) so the hreflang set matches the active language selector
-	// rather than a hardcoded en/fr list. Falls back to en,fr when the
-	// setting is absent (Rule 3 — no hardcoded config in the steady state).
-	// The default language gets the unprefixed URL (e.g. /blog); all others
-	// get the prefixed URL (e.g. /fr/blog). Ref: §18 (English unprefixed).
-	// Ref: japaconnect-engineering/sections/26-seo-performance.md
+	// hreflang alternates are injected server-side by hooks.server.ts with
+	// absolute URLs (PageSpeed/Google require absolute hreflang hrefs).
+	// enabledLanguages is read from i18n.enabled_languages (system_settings
+	// catalog, Public: true) so the og:locale:alternate set matches the active
+	// language selector rather than a hardcoded en/fr list. Falls back to
+	// en,fr when the setting is absent (Rule 3 — no hardcoded config in the
+	// steady state). Ref: japaconnect-engineering/sections/26-seo-performance.md
 	//      conventions/system-settings-catalog.md (i18n.enabled_languages)
-	let pathname = $derived(page.url.pathname);
 	let enabledLanguages = $derived(
 		((data.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
 			.split(',')
@@ -97,29 +95,8 @@
 		(data.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
 	);
 	// og:locale mirrors the active locale; alternates cover the other enabled
-	// languages (same source as hreflang so the sets never drift).
+	// languages (same source as the server-side hreflang set so they never drift).
 	let ogLocale = $derived((data.locale as string | undefined) ?? defaultLanguage);
-	// Strip the active locale prefix — canonical URLs are always unprefixed.
-	// With `reroute` the browser URL keeps /fr/... on both SSR and client,
-	// so this must be removed explicitly (prevents /fr/fr/... alternates and
-	// hydration_attribute_changed warnings).
-	let unprefixedPath = $derived.by(() => {
-		const loc = (data.locale as string | undefined) ?? defaultLanguage;
-		return loc !== defaultLanguage && pathname.startsWith(`/${loc}`)
-			? pathname.slice(loc.length + 1) || '/'
-			: pathname;
-	});
-	let hreflangLinks = $derived(
-		enabledLanguages.map((lang) => ({
-			lang,
-			href: lang === defaultLanguage
-				? (unprefixedPath === '/' ? '/' : unprefixedPath)
-				: `/${lang}${unprefixedPath === '/' ? '' : unprefixedPath}`
-		}))
-	);
-	let xDefaultHref = $derived(
-		unprefixedPath === '/' ? '/' : unprefixedPath
-	);
 
 	// Site-level settings from GET /site/settings/public (general.*).
 	// Used for SEO meta tags and the maintenance banner.
@@ -166,8 +143,6 @@
 </script>
 
 <svelte:head>
-	{#each hreflangLinks as link}<link rel="alternate" hreflang={link.lang} href={link.href} />{/each}
-	<link rel="alternate" hreflang="x-default" href={xDefaultHref} />
 	<meta property="og:locale" content={ogLocale} />
 	{#each enabledLanguages.filter((l) => l !== ogLocale) as alt}<meta property="og:locale:alternate" content={alt} />{/each}
 	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', '{site} Blog')} href="/blog/rss.xml" />

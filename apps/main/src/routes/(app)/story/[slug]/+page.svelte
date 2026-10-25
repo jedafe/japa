@@ -177,6 +177,9 @@
 			])
 		)}
 	{/if}
+	{#if story?.seo_indexable === false || story?.indexable === false}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 </svelte:head>
 
 {#if data.loadError || !story}

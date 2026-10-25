@@ -31,6 +31,9 @@ type WikiApiCategory = {
  *  multi-parent nodes. */
 type WikiIndexEnvelope = {
 	data: WikiPageIndex[] | null;
+	/** §43 — false when every page in the index is a stub (no approved
+	 *  prose revision); the index page emits noindex,follow. */
+	indexable?: boolean;
 	ancestors?: WikiSpaceRef[];
 	ancestors_alt?: WikiSpaceRef[];
 	/** Entity-bound wiki children keyed by type slug (JCE ↔ wiki mapping) —
@@ -110,6 +113,7 @@ export const load: PageServerLoad = async (event) => {
 		return {
 			spaceSlug,
 			index: items,
+			indexable: indexEnvelope.indexable ?? true,
 			ancestors: indexEnvelope.ancestors ?? [],
 			ancestorsAlt: indexEnvelope.ancestors_alt ?? [],
 			entityChildren: indexEnvelope.entity_children ?? {},

@@ -482,6 +482,9 @@ import { contentHref } from '$lib/utils/contentLink';
 	<meta property="og:url" content={canonical} />
 	{@html safeJsonLdScript(jsonLd)}
 	{@html safeJsonLdScript(breadcrumbLd)}
+	{#if data.indexable === false || data.seoIndexable === false || thread?.seo_indexable === false || thread?.indexable === false}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6 pb-20 sm:pb-6">

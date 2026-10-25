@@ -84,6 +84,18 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// noindexMiddleware marks every API response as non-indexable. Wired only on
+// non-production deployments so stage/dev environments cannot be indexed even
+// when a page is linked from a public site — robots.txt Disallow prevents
+// crawling but not URL-only indexing.
+func noindexMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Robots-Tag", "noindex")
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // corsMiddleware sets the headers that allow the SvelteKit frontends to make
 // cross-origin requests to this API. In production the AllowedOrigins list
 // should be restricted to the known frontend domains; in development it

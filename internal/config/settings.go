@@ -5,7 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	_ "golang.org/x/image/webp"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -407,9 +416,150 @@ func (s *Settings) SetSetting(ctx context.Context, key, value string) error {
 		return fmt.Errorf("upserting setting %q: %w", key, err)
 	}
 
+	s.resolveLogoDims(ctx, key, value)
 	s.InvalidateSettings(ctx)
 
 	return nil
+}
+
+// logoDimKeys maps a logo URL setting to its dimension siblings — resolved
+// from the media row when the URL points at a stored media object.
+var logoDimKeys = map[string][2]string{
+	"appearance.logo_url":      {"appearance.logo_width", "appearance.logo_height"},
+	"appearance.logo_url_dark": {"appearance.logo_dark_width", "appearance.logo_dark_height"},
+}
+
+// resolveLogoDims fills the appearance.logo_*_width/height siblings after a
+// logo URL write. The URL may be a raw storage path or an absolute URL whose
+// path is the storage path — both resolve through GetMediaByStoragePath.
+// Best-effort: unresolvable URLs leave the dims untouched.
+func (s *Settings) resolveLogoDims(ctx context.Context, key, logoURL string) {
+	dims, ok := logoDimKeys[key]
+	if !ok {
+		return
+	}
+	// URL cleared or unresolvable → write 0 so stale dims never attribute the
+	// previous logo's aspect to a different image (ThemeLogo ignores 0).
+	clearDims := func() {
+		for _, k := range dims {
+			_ = s.qWriter.UpsertSystemSetting(ctx, gen.UpsertSystemSettingParams{
+				Key: k, Value: []byte("0"), IsPublic: true,
+			})
+		}
+	}
+	if strings.TrimSpace(logoURL) == "" {
+		clearDims()
+		return
+	}
+	// value arrives JSON-serialized — string settings carry literal quotes;
+	// unwrap so the path lookup sees the bare URL.
+	var unquoted string
+	if err := json.Unmarshal([]byte(logoURL), &unquoted); err == nil && unquoted != "" {
+		logoURL = unquoted
+	}
+	// Try the raw value, then the URL path, then known storage prefixes —
+	// covers raw storage paths, absolute URLs, and CDN/imgproxy URLs.
+	candidates := []string{logoURL}
+	if u, err := url.Parse(logoURL); err == nil && u.Path != "" {
+		candidates = append(candidates, strings.TrimPrefix(u.Path, "/"))
+	}
+	for _, prefix := range []string{"/uploads/", "/media/"} {
+		if idx := strings.Index(logoURL, prefix); idx >= 0 {
+			candidates = append(candidates, logoURL[idx+1:])
+		}
+	}
+	var row gen.Medium
+	var err error
+	for _, c := range candidates {
+		if c == "" {
+			continue
+		}
+		row, err = s.q.GetMediaByStoragePath(ctx, c)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		// Not a platform media object — try fetching dims directly off the
+		// external URL (SSRF-bounded); only clear when that fails too.
+		if w, h, ok := fetchExternalLogoDims(logoURL); ok {
+			for i, v := range []int{w, h} {
+				_ = s.qWriter.UpsertSystemSetting(ctx, gen.UpsertSystemSettingParams{
+					Key: dims[i], Value: []byte(fmt.Sprintf("%d", v)), IsPublic: true,
+				})
+			}
+			return
+		}
+		clearDims()
+		return
+	}
+	if row.WidthPx == nil || row.HeightPx == nil || *row.WidthPx <= 0 || *row.HeightPx <= 0 {
+		clearDims()
+		return
+	}
+	for i, v := range []int{int(*row.WidthPx), int(*row.HeightPx)} {
+		_ = s.qWriter.UpsertSystemSetting(ctx, gen.UpsertSystemSettingParams{
+			Key: dims[i], Value: []byte(fmt.Sprintf("%d", v)), IsPublic: true,
+		})
+	}
+}
+
+// externalLogoHTTPClient fetches logo headers off admin-supplied external
+// URLs — every dial is IP-validated so the fetch can't reach private ranges
+// (SSRF). Same pattern as the media remote proxy; kept local because
+// internal/media already imports this package.
+var externalLogoHTTPClient = &http.Client{
+	Timeout: 5 * time.Second,
+	Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, fmt.Errorf("logo dims: split host: %w", err)
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, fmt.Errorf("logo dims: resolving %s: %w", host, err)
+			}
+			for _, ip := range ips {
+				if !isPublicIP(ip.IP) {
+					return nil, fmt.Errorf("logo dims: %s resolves to non-public IP %s", host, ip)
+				}
+			}
+			var d net.Dialer
+			return d.DialContext(ctx, network, addr)
+		},
+	},
+}
+
+// isPublicIP returns false for loopback, private, link-local, unspecified,
+// and multicast addresses — every dial above is guarded by it.
+func isPublicIP(ip net.IP) bool {
+	return ip.IsGlobalUnicast() && !ip.IsLoopback() && !ip.IsPrivate() &&
+		!ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() && !ip.IsUnspecified()
+}
+
+// fetchExternalLogoDims reads a logo image's intrinsic dims via
+// image.DecodeConfig — headers only, body bounded at 512KB.
+func fetchExternalLogoDims(rawURL string) (w, h int, ok bool) {
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil) // #nosec G704 -- every dial is IP-validated above
+	if err != nil {
+		return 0, 0, false
+	}
+	req.Header.Set("User-Agent", "JapaConnect-LogoDims/1.0")
+	req.Header.Set("Accept", "image/*")
+	resp, err := externalLogoHTTPClient.Do(req)
+	if err != nil {
+		return 0, 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, false
+	}
+	cfg, _, err := image.DecodeConfig(io.LimitReader(resp.Body, 512*1024))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0, false
+	}
+	return cfg.Width, cfg.Height, true
 }
 
 // UpdateSettingsBatch atomically upserts multiple settings in a
@@ -434,6 +584,9 @@ func (s *Settings) UpdateSettingsBatch(ctx context.Context, settings map[string]
 		return err
 	}
 
+	for key, valueJSON := range settings {
+		s.resolveLogoDims(ctx, key, string(valueJSON))
+	}
 	s.InvalidateSettings(ctx)
 
 	return nil
@@ -462,6 +615,9 @@ func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, settings m
 		return err
 	}
 
+	for key, valueJSON := range settings {
+		s.resolveLogoDims(ctx, key, string(valueJSON))
+	}
 	s.InvalidateSettings(ctx)
 
 	return nil
@@ -486,6 +642,10 @@ func (s *Settings) DeleteSettingsBatch(ctx context.Context, keys []string) error
 		return err
 	}
 
+	// Deleting a logo URL clears its dimension siblings (empty URL → clearDims).
+	for _, key := range keys {
+		s.resolveLogoDims(ctx, key, "")
+	}
 	s.InvalidateSettings(ctx)
 
 	return nil

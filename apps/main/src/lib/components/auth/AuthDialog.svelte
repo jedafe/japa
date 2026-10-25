@@ -9,6 +9,8 @@
 	import { t } from '$lib/i18n/store.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import LoginForm from './LoginForm.svelte';
 	import SignupForm from './SignupForm.svelte';
 
@@ -23,6 +25,11 @@
 	} = $props();
 
 	let mode = $state<'login' | 'signup'>(untrack(() => initialMode));
+
+	// Same brand logo as the app shell: appearance.logo_url(_dark) with the
+	// ThemeLogo wordmark fallback — never the square icon mark.
+	const logoUrl = $derived((page.data.siteSettings as Record<string, string> | undefined)?.['appearance.logo_url'] ?? '');
+	const logoDarkUrl = $derived((page.data.siteSettings as Record<string, string> | undefined)?.['appearance.logo_url_dark'] ?? '');
 
 	async function onSuccess(target: string) {
 		open = false;
@@ -44,6 +51,9 @@
 			<X size={20} />
 		</button>
 	{/snippet}
+			<a href="/" class="mx-auto mb-5 flex w-fit items-center" aria-label={t('app.name')}>
+				<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[160px] object-contain" />
+			</a>
 			<div class="mb-4 flex gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-1">
 				<button
 					type="button"

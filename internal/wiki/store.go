@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -1686,4 +1687,29 @@ func (s *Store) ListTypeParentIDs(ctx context.Context, spaceTypeID pgtype.UUID) 
 	}
 
 	return ids, nil
+}
+
+// HasApprovedPage reports whether the space has at least one active page with
+// an approved non-fields revision meeting the §43 min-words threshold.
+// Content is JSONB: TipTap docs count words across all text nodes; a bare
+// JSON string (plain-text fallback) is counted as a single blob.
+func (s *Store) HasApprovedPage(ctx context.Context, spaceID pgtype.UUID, minWords int) bool {
+	var ok bool
+	err := s.pool.Reader.QueryRow(ctx,
+		`SELECT EXISTS (
+		     SELECT 1 FROM wiki_pages wp
+		     JOIN wiki_revisions wr ON wr.wiki_page_id = wp.id
+		      AND wr.status = 'approved' AND wr.kind <> 'fields' AND wr.deleted_at IS NULL
+		     WHERE wp.space_id = $1 AND wp.is_active = true AND wp.deleted_at IS NULL
+		       AND CASE WHEN jsonb_typeof(wr.content) = 'string'
+		           THEN array_length(string_to_array(trim(wr.content #>> '{}'), ' '), 1)
+		           ELSE (SELECT COALESCE(SUM(array_length(string_to_array(trim(t #>> '{}'), ' '), 1)), 0)
+		                 FROM jsonb_path_query(wr.content, 'lax $**.text') AS x(t))
+		           END >= $2
+		 )`, spaceID, minWords).Scan(&ok)
+	if err != nil {
+		slog.Warn("wiki: approved-page check failed", "space_id", spaceID.String(), "error", err)
+	}
+
+	return ok
 }

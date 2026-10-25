@@ -30,6 +30,10 @@
 		/** Platform dark-theme logo URL from appearance.logo_url_dark (control panel). */
 		logoUrl?: string;
 		logoDarkUrl?: string;
+		logoWidth?: number;
+		logoHeight?: number;
+		logoDarkWidth?: number;
+		logoDarkHeight?: number;
 		/** Feature flags from /feature-flags — used to hide nav items for
 		 *  disabled features so no trace of a toggled-off feature leaks. */
 		features?: Record<string, boolean>;
@@ -43,7 +47,7 @@
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', features = {}, showBrand = true, pinned = true, onToggle }: Props = $props();
+	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', logoWidth = 0, logoHeight = 0, logoDarkWidth = 0, logoDarkHeight = 0, features = {}, showBrand = true, pinned = true, onToggle }: Props = $props();
 
 	// Collapsed rail shows the theme-aware favicon icon (appearance.favicon_url_*),
 	// falling back to the bundled favicon.
@@ -188,7 +192,7 @@
 					{#if collapsed}
 						<img src={collapsedFavicon} alt={t('app.name')} class="h-8 w-8 shrink-0 object-contain" />
 					{:else}
-						<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
+						<ThemeLogo {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
 					{/if}
 				</a>
 			{/if}

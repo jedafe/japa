@@ -784,8 +784,12 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE sup.display_name END AS solved_by_display_name,
  s.name AS space_name,
  s.slug AS space_slug,
- s.level AS space_level
+ s.level AS space_level,
+ c.status AS content_status,
+ c.visibility AS content_visibility,
+ c.seo_indexable
 FROM forum_threads ft
+LEFT JOIN contents c ON c.id = ft.content_id AND c.deleted_at IS NULL
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN users su ON su.id = ft.solved_by_user_id
@@ -824,6 +828,9 @@ type GetForumThreadBySlugWithDetailsRow struct {
 	SpaceName           *string            `json:"space_name"`
 	SpaceSlug           *string            `json:"space_slug"`
 	SpaceLevel          *string            `json:"space_level"`
+	ContentStatus       *string            `json:"content_status"`
+	ContentVisibility   *string            `json:"content_visibility"`
+	SeoIndexable        *bool              `json:"seo_indexable"`
 }
 
 // =====================
@@ -866,6 +873,9 @@ func (q *Queries) GetForumThreadBySlugWithDetails(ctx context.Context, slug stri
 		&i.SpaceName,
 		&i.SpaceSlug,
 		&i.SpaceLevel,
+		&i.ContentStatus,
+		&i.ContentVisibility,
+		&i.SeoIndexable,
 	)
 	return i, err
 }

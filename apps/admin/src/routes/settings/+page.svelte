@@ -11,6 +11,7 @@
 	import { RefreshCw, Save, Check, Upload, RotateCcw, ListRestart, Undo2, AlertTriangle, ArrowRight, Image as ImageIcon } from 'lucide-svelte';
 	import { Switch } from "bits-ui";
 	import { settingsAdminApi, api } from '$lib/api';
+	import { getAccessToken } from '$lib/api/token';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import AuthBrandSlidesEditor from '$lib/components/settings/AuthBrandSlidesEditor.svelte';
 	import PinnedPagesEditor from '$lib/components/settings/PinnedPagesEditor.svelte';
@@ -523,7 +524,10 @@
 			const { media_id, presigned_url } = initiateRes.data;
 			const putRes = await fetch(presigned_url, {
 				method: 'PUT',
-				headers: { 'Content-Type': convertedFile.type },
+				headers: {
+					'Content-Type': convertedFile.type,
+					...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {})
+				},
 				body: convertedFile
 			});
 			if (!putRes.ok) {

@@ -134,7 +134,7 @@
     {/if}
   </div>
   <div class="community-body">
-    <h3 class="community-title">{fmt(title, { value, label })}</h3>
+    <h2 class="community-title">{fmt(title, { value, label })}</h2>
     <p class="community-subtitle">{subtitle}</p>
   </div>
   <a href={cta?.href ?? '/explore'} class="community-cta" aria-label={cta?.label ?? 'Join the community'}>

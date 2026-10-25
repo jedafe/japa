@@ -425,7 +425,7 @@ func (q *Queries) GetMediaByIDs(ctx context.Context, ids []pgtype.UUID) ([]Mediu
 }
 
 const getMediaByStoragePath = `-- name: GetMediaByStoragePath :one
-SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged, missing_at FROM media WHERE storage_path = $1
+SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged, missing_at FROM media WHERE storage_path = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetMediaByStoragePath(ctx context.Context, storagePath string) (Medium, error) {

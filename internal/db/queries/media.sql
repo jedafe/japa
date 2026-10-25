@@ -31,7 +31,7 @@ SELECT * FROM media WHERE id = ANY(@ids::uuid[]) AND deleted_at IS NULL;
 DELETE FROM media WHERE id = @id AND deleted_at IS NOT NULL;
 
 -- name: GetMediaByStoragePath :one
-SELECT * FROM media WHERE storage_path = @storage_path;
+SELECT * FROM media WHERE storage_path = @storage_path AND deleted_at IS NULL;
 
 -- =====================
 -- Update

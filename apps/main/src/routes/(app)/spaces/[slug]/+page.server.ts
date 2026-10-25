@@ -246,6 +246,7 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		space,
+		seoIndexable: detail.seo_indexable ?? true,
 		rules: detail.rules,
 		keywords: detail.keywords ?? [],
 		logoUrl: detail.logo_url ?? '',

@@ -15,7 +15,6 @@ shared project network (reachable by service name).
 | `control` | `apps/control/Dockerfile` | |
 | `academy` | `apps/academy/Dockerfile` | |
 | `docs` | `apps/docs/Dockerfile` | |
-| `tools` | `apps/tools/Dockerfile` | |
 
 There is no `cmd/worker` binary — the worker shares `cmd/api`, gated by env flags.
 
@@ -58,10 +57,15 @@ these hostnames:
 ```
 JC_DATABASE_URL=postgres://japa:<pw>@postgres:5432/japaconnect
 JC_VALKEY_ADDR=valkey:6379
-JC_MEILI_HOST=http://meilisearch:7700
-JC_MEILI_API_KEY=<master key>
-JC_SEAWEEDFS_S3_ENDPOINT=http://seaweedfs:8333
-JC_IMGPROXY_URL=http://imgproxy:8080
+JC_MEILISEARCH_URL=http://meilisearch:7700
+JC_MEILISEARCH_KEY=<master key>
+JC_S3_ENDPOINT=http://seaweedfs:8333
+JC_S3_BUCKET=japaconnect
+JC_S3_ACCESS_KEY=<key from seaweedfs s3.json identity>
+JC_S3_SECRET_KEY=<secret from seaweedfs s3.json identity>
+JC_API_PUBLIC_URL=https://api.<domain>        # public API host — media serve/upload URLs
+JC_IMGPROXY_KEY / JC_IMGPROXY_SALT            # must match IMGPROXY_KEY/SALT on the imgproxy service
+JC_IMGPROXY_BASE_URL=https://img.<domain>     # public imgproxy FQDN — browsers fetch these URLs
 JC_GLITCHTIP_DSN=https://<key>@glitchtip.<domain>/<id>
 JC_SMTP_HOST=<real SMTP — mailpit is dev-only>
 JC_HONCHO_URL=                    # leave unset unless you deploy Honcho
@@ -161,7 +165,7 @@ automatically. One hostname per app:
 
 `staging.japa.to`, `api.staging.japa.to`,
 `admin.staging.`, `control.staging.`, `academy.staging.`, `docs.staging.`,
-`tools.staging.japa.to`
+tools host removed — tools surface consolidated into main (ADR-086 superseded)
 
 ### Infra in staging
 
@@ -208,7 +212,7 @@ PORT=3000                                        # runtime env, EVERY frontend a
 ```
 
 **`PORT=3000` is required on every SvelteKit frontend** (main/admin/control/
-academy/docs/tools). Coolify generates Traefik loadbalancer labels pointing at
+academy/docs). Coolify generates Traefik loadbalancer labels pointing at
 port 3000 regardless of `ports_exposes` or the Dockerfile `EXPOSE`/`ENV PORT`
 — adapter-node honors the runtime `PORT` env, so the container must listen
 where Traefik routes. Verified on Coolify v4.4.6; `domain_port_overrides`,
@@ -242,9 +246,10 @@ layers fail with HTTP 499/transport errors around the 60s mark.
 Host detection (runtime env on the SvelteKit apps):
 
 ```
-# apps/main + apps/tools — one var moves every canonical surface host:
-# tools.<domain>, academy.<domain>, roadmap.<domain>, and per-tool
+# apps/main — one var moves every canonical surface host:
+# academy.<domain>, roadmap.<domain>, and per-tool
 # {sub}.<domain> subdomains all resolve under the staging domain.
+# (apps/tools removed — ADR-086 superseded; tool hosts 301 to main.)
 JC_BASE_DOMAIN=staging.japa.to
 # api — only needed if sharing one Meilisearch instance with prod:
 JC_MEILI_INDEX_PREFIX=staging_

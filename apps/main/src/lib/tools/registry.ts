@@ -170,8 +170,8 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 		sections: ['finance', 'settlement']
 	},
 	// --- §§107–110 functional tools — in-app routes like the tools above.
-	// The same tools are mirrored on the dedicated Tools surface
-	// (tools.japa.to) for standalone use. ---
+	// The dedicated Tools surface was removed (ADR-086 superseded);
+	// japa.to/tools/{tool} is the only canonical host. ---
 	{
 		href: '/tools/crs-calculator',
 		labelKey: 'tools.crs_calculator',

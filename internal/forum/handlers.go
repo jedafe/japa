@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -100,6 +101,7 @@ type RAGEntityIndexer interface {
 // RAG indexing). Nil falls back to compiled-in defaults.
 type settingsReader interface {
 	GetStringOr(ctx context.Context, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // ContentStore is the subset of the content service the forum handlers need
@@ -162,6 +164,17 @@ func (h *Handlers) SetRAGIndexer(r RAGEntityIndexer) { h.ragIndexer = r }
 // system_settings (e.g. i18n.default_language for RAG indexing). nil falls
 // back to compiled-in defaults.
 func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
+
+// sitemapCfg resolves §43 quality thresholds from system_settings
+// (seo.sitemap.*), falling back to spec defaults — matching the sitemap gate.
+func (h *Handlers) sitemapCfg(ctx context.Context) bots.SitemapQualityConfig {
+	cfg := bots.DefaultSitemapQualityConfig()
+	if h.settings != nil {
+		cfg.ForumMinReplies = h.settings.GetIntOr(ctx, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
+		cfg.QuestionMinAnswers = h.settings.GetIntOr(ctx, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
+	}
+	return cfg
+}
 
 // SetAsynqClient injects the Asynq client so thread/tag CRUD can enqueue
 // search:index_entity tasks (§12 stale-index fix). nil disables enqueue
@@ -959,7 +972,36 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// reply referenced by forum_threads.parent_reply_id; we fall back to the
 	// top-voted reply for legacy threads without an explicit accepted reply.
 	// For unsolved threads we emit a QAPage with answerCount=0.
-	response := map[string]any{"data": thread}
+	// §43 indexability — sibling keys alongside data so the detail page can
+	// emit noindex for thin/unpublished threads. Word gate skipped
+	// (SkipWordGate): short questions are legitimate forum content; the
+	// reply/solved gates still apply. A thread with no backing contents row
+	// (NULL joins) fails closed → not indexable.
+	contentStatus, contentVisibility, seoIndexable := "published", "public", false
+	if thread.ContentStatus != nil {
+		contentStatus = *thread.ContentStatus
+	}
+	if thread.ContentVisibility != nil {
+		contentVisibility = *thread.ContentVisibility
+	}
+	if thread.SeoIndexable != nil {
+		seoIndexable = *thread.SeoIndexable
+	}
+	response := map[string]any{
+		"data":          thread,
+		"seo_indexable": seoIndexable,
+		"indexable": bots.IsContentIndexableByType(bots.ContentIndexableInput{
+			ContentType:  "forum_thread",
+			Status:       contentStatus,
+			Visibility:   contentVisibility,
+			WordCount:    len(strings.Fields(forumBodyText(thread.Body))),
+			ReplyCount:   int(thread.ReplyCount),
+			IsQuestion:   !thread.Solved,
+			Solved:       thread.Solved,
+			SeoIndexable: seoIndexable,
+			SkipWordGate: true,
+		}, h.sitemapCfg(r.Context())),
+	}
 	authorName := ""
 
 	if thread.AuthorUsername != nil {

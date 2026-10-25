@@ -37,10 +37,26 @@ export const initiateUpload = (input: InitiateUploadInput) =>
 export const confirmMedia = (id: string) =>
 	api.post<{ confirmed: boolean }>(`/media/confirm/${id}`);
 
+/** Bearer headers for the cross-origin upload PUT — the API-side upload
+ * endpoint is auth-gated; in dev the vite proxy injects this from the
+ * jc_token cookie, in production the in-memory cookie value must attach. */
+function bearerHeaders(): Record<string, string> {
+	if (typeof document === 'undefined') return {};
+	const match = document.cookie
+		.split(';')
+		.map((c) => c.trim())
+		.find((c) => c.startsWith('jc_token='));
+	return match ? { authorization: `Bearer ${match.slice('jc_token='.length)}` } : {};
+}
+
 /** PUT the raw file bytes to the presigned URL (outside the api client). */
 async function uploadToPresigned(presignedUrl: string, file: File): Promise<boolean> {
 	try {
-		const res = await fetch(presignedUrl, { method: 'PUT', body: file });
+		const res = await fetch(presignedUrl, {
+			method: 'PUT',
+			body: file,
+			headers: bearerHeaders()
+		});
 		return res.ok;
 	} catch {
 		return false;

@@ -199,6 +199,9 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
+	{#if article?.seo_indexable === false || article?.indexable === false}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
 	<meta property="og:url" content={canonical} />
 	{#if article.featured_image_url}<meta property="og:image" content={article.featured_image_url} />{/if}
 	<meta name="twitter:card" content="summary_large_image" />

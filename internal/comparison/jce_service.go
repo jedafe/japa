@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
@@ -1069,6 +1071,10 @@ func (s *Service) GetJCEComparisonMatrix(ctx context.Context, id pgtype.UUID) ([
 type JCEComparisonPage struct {
 	Comparison JCEComparison
 	Matrix     []ComparisonMatrixItem
+	// Indexable is the §43 verdict — detailed depth plus the published/
+	// public/seo_indexable/word-count gate. The frontend noindexes pages
+	// that fail it; sitemap exclusion alone doesn't stop indexing.
+	Indexable bool `json:"indexable"`
 }
 
 // GetJCEComparisonPage resolves a comparison by ID or slug and returns the
@@ -1169,7 +1175,32 @@ func (s *Service) GetJCEComparisonPage(ctx context.Context, idOrSlug string) (JC
 		return JCEComparisonPage{}, err
 	}
 
-	return JCEComparisonPage{Comparison: cmp, Matrix: matrix}, nil
+	return JCEComparisonPage{Comparison: cmp, Matrix: matrix, Indexable: s.comparisonIndexable(ctx, contentRow, metadata)}, nil
+}
+
+// comparisonIndexable applies the §43 quality gate to a resolved comparison:
+// only promoted/detailed comparisons with published+public status,
+// seo_indexable=true, and enough body words qualify. Quick comparisons are
+// private drafts by construction and never pass.
+func (s *Service) comparisonIndexable(ctx context.Context, c gen.GetComparisonBySlugOrIDRow, m gen.ComparisonContentMetadatum) bool {
+	if m.Depth != DepthDetailed {
+		return false
+	}
+
+	cfg := bots.DefaultSitemapQualityConfig()
+	if s.settingsSvc != nil {
+		cfg.ComparisonMinWords = s.settingsSvc.GetIntOr(ctx, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
+	}
+
+	return bots.IsContentIndexableByType(bots.ContentIndexableInput{
+		ContentType:  "comparison",
+		Status:       c.Status,
+		Visibility:   c.Visibility,
+		WordCount:    len(strings.Fields(c.Body)),
+		CommentCount: int(c.CommentCount),
+		ShareCount:   int(c.ShareCount),
+		SeoIndexable: c.SeoIndexable,
+	}, cfg)
 }
 
 // defaultSelectionTokenTTL is the fallback lifetime of a guest comparison selection token (15 minutes).

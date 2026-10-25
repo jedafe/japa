@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/content/visibility"
@@ -123,6 +124,29 @@ type Handlers struct {
 	mentionCheckers *mentions.DBCheckers    // nil disables erased-mention redaction
 	spamRecorder    ContentCreationRecorder // nil disables spam rate-limit recording (test-only)
 	lit             literalCatalog          // nil disables literal resolution (§14)
+	settings        settingsReader          // nil falls back to spec defaults
+}
+
+// settingsReader is the subset of config.Settings needed to resolve
+// hot-reloadable system_settings (seo.sitemap.* quality-gate thresholds).
+type settingsReader interface {
+	GetIntOr(ctx context.Context, key string, fallback int) int
+}
+
+// SetSettings injects the hot-reloadable settings reader so §43 indexability
+// thresholds honor Control → Settings overrides instead of spec defaults.
+func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
+
+// sitemapCfg resolves the §43 quality thresholds from system_settings
+// (seo.sitemap.*), falling back to spec defaults when settings are absent —
+// mirroring seo.sitemapQualityConfig so page-level and sitemap gates agree.
+func (h *Handlers) sitemapCfg(ctx context.Context) bots.SitemapQualityConfig {
+	cfg := bots.DefaultSitemapQualityConfig()
+	if h.settings != nil {
+		cfg.BlogMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
+		cfg.BlogMinEngagement = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
+	}
+	return cfg
 }
 
 // TaskEnqueueClient is the subset of asynq.Client used by blog handlers.
@@ -1215,7 +1239,7 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 			"read_time_minutes": c.ReadTimeMinutes,
 			"view_count":        c.ViewCount,
 			"comment_count":     c.CommentCount,
-			"reshare_count":     c.ReshareCount,
+			"reaction_count":    c.ReactionCount,
 			"author_id":         c.AuthorID,
 			"author_name":       c.AuthorName,
 			"author_username":   c.AuthorUsername,
@@ -1420,6 +1444,18 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"meta_description":  post.MetaDescription,
 		"og_image_url":      post.OgImageUrl,
 		"seo_indexable":     post.SeoIndexable,
+		// §43 page-level quality gate — frontend emits noindex when false.
+		// Spec defaults: blog handlers have no settings reader.
+		"indexable": bots.IsContentIndexableByType(bots.ContentIndexableInput{
+			ContentType:   post.ContentType,
+			Status:        post.Status,
+			Visibility:    post.Visibility,
+			WordCount:     len(strings.Fields(post.Body)),
+			CommentCount:  int(post.CommentCount),
+			ShareCount:    int(post.ShareCount),
+			ReactionCount: int(post.ReactionCount),
+			SeoIndexable:  post.SeoIndexable,
+		}, h.sitemapCfg(r.Context())),
 		"status":            post.Status,
 		"visibility":        post.Visibility,
 		"is_locked":         post.IsLocked,
@@ -1428,7 +1464,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"view_count":        post.ViewCount,
 		"comment_count":     post.CommentCount,
 		"share_count":       post.ShareCount,
-		"reshare_count":     post.ReshareCount,
+		"reaction_count":    post.ReactionCount,
 		"publish_at":        post.PublishAt,
 		"published_at":      post.PublishedAt,
 		"created_at":        post.CreatedAt,
@@ -1668,7 +1704,7 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 			"view_count":        p.ViewCount,
 			"comment_count":     p.CommentCount,
 			"share_count":       p.ShareCount,
-			"reshare_count":     p.ReshareCount,
+			"reaction_count":    p.ReactionCount,
 			"publish_at":        p.PublishAt,
 			"published_at":      p.PublishedAt,
 			"created_at":        p.CreatedAt,

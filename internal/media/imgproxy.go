@@ -189,6 +189,19 @@ func ServeURL(storageBucket, storagePath string) string {
 	return base + "/api/v1/media/serve/" + storageBucket + "/" + storagePath
 }
 
+// UploadURL returns the API-side upload endpoint for a pending media object
+// (PUT /seaweedfs/upload/{bucket}/{path}). The client always PUTs raw bytes
+// to this same-origin path — SeaweedFSUpload then streams them to S3 when
+// configured or writes local disk otherwise. Emitting the object-store
+// endpoint directly would hand browsers a Docker-internal hostname they
+// cannot resolve; the API proxy keeps uploads working in every deployment.
+// JC_API_PUBLIC_URL makes the URL absolute for cross-origin frontends;
+// empty keeps dev's relative same-origin path.
+func UploadURL(storageBucket, storagePath string) string {
+	base := strings.TrimRight(os.Getenv("JC_API_PUBLIC_URL"), "/")
+	return base + "/seaweedfs/upload/" + storageBucket + "/" + storagePath
+}
+
 // URLFromParts resolves a displayable URL from a nullable storage bucket/path
 // pair (typically the right side of a LEFT JOIN to media). Returns nil when
 // either part is absent so consumers serialize the field as omitted.

@@ -76,6 +76,7 @@ type RAGEntityIndexer interface {
 // i18n.default_language for RAG indexing). Nil falls back to defaults.
 type settingsReader interface {
 	GetStringOr(ctx context.Context, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // Handlers is an exported type.

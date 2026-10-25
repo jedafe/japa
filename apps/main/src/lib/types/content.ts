@@ -12,6 +12,8 @@ export interface ContentAttribution {
 }
 
 export interface ContentArticle {
+	seo_indexable?: boolean;
+	indexable?: boolean;
 	id: string;
 	title: string;
 	slug: string;
@@ -25,7 +27,7 @@ export interface ContentArticle {
 	view_count: number;
 	comment_count: number;
 	share_count: number;
-	reshare_count: number;
+	reaction_count: number;
 	published_at: string;
 	created_at: string;
 	updated_at: string;
@@ -47,7 +49,6 @@ export interface ContentArticle {
 	visa_route?: string | null;
 	source_country?: string | null;
 	target_country?: string | null;
-	reaction_count?: number;
 	bookmark_count?: number;
 	header_image_url?: string | null;
 	featured_image_url?: string | null;
@@ -105,7 +106,6 @@ export interface GuideListItem {
 	view_count?: number;
 	comment_count?: number;
 	share_count?: number;
-	reshare_count?: number;
 	reaction_count?: number;
 	bookmark_count?: number;
 	vote_score?: number;
@@ -145,7 +145,6 @@ export interface PostDetail extends ContentArticle {
 	meta_description?: string | null;
 	og_image_url?: string | null;
 	seo_indexable?: boolean;
-	reaction_count?: number;
 	bookmark_count?: number;
 	space_avatar_url?: string | null;
 	organization?: PostOrganization | null;

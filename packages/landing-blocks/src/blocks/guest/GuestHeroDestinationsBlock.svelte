@@ -86,7 +86,7 @@
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
 <div class="floating-card floating-card-destinations">
-  <h3 class="floating-card-title">{title}</h3>
+  <h2 class="floating-card-title">{title}</h2>
   <ul class="destination-list">
     {#if manualChildren}
       {#each manualChildren as block (block.id)}

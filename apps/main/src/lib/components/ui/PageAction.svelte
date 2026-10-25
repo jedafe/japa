@@ -42,7 +42,9 @@
 
 	// SSR renders the FAB at slot 1 (the usual auto claim); the claim itself
 	// happens client-side only — the slot registry is per-page-mount state
-	// and must never leak across SSR requests.
+	// and must never leak across SSR requests. The prop capture below is
+	// intentional: onMount takes over with the registry claim.
+	// svelte-ignore state_referenced_locally
 	let resolvedFabIndex = $state(fabIndex ?? 1);
 	onMount(() => {
 		resolvedFabIndex = claimFabSlot(fabIndex);
