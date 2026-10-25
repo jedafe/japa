@@ -11,7 +11,7 @@ permissions:
 jobs:
   lint-pr:
     name: PR Title & Lint
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 

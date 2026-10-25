@@ -14,8 +14,8 @@ on:
 
 jobs:
   prune:
-    # self-hosted: hosted runners are billing-blocked on this repo
-    runs-on: vps
+    # hosted: registry is reachable over public HTTPS; only HTTP calls
+    runs-on: ubuntu-latest
     env:
       REGISTRY_HOST: ${{ vars.REGISTRY_HOST }}
       REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
