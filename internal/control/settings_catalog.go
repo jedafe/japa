@@ -651,6 +651,8 @@ var settingsCatalog = map[string]settingMeta{
 
 	// Claim Ownership (§07)
 	"claim_ownership.form_slug":   {Type: "string", DefaultValue: "claim-ownership", Description: "Slug of the Form Builder form used for ownership claims (§07).", Panel: "control"},
+	"verification.form_slug":      {Type: "string", DefaultValue: "verification-request", Description: "Slug of the Form Builder form used for verification badge requests (§07).", Panel: "control"},
+	"verification.fee_credits":    {Type: "number", DefaultValue: "0", Description: "Optional submission fee (credits) charged on verification requests via the Form Builder (§07).", Panel: "control"},
 	"claim_ownership.fee_credits": {Type: "int", DefaultValue: "0", Min: 0, Description: "Override fee for claim submissions in credits; 0 = use form's submission_fee_credits (§07).", Panel: "control"},
 
 	// Webhooks (§12)
