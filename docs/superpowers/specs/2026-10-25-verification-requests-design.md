@@ -90,6 +90,13 @@ grant set as `organizations.claim`). Review and both grant routes reuse
    `POST /forms/{id}/submissions` (paid `submission_fee_credits` supported —
    credits or Paystack/Stripe gateway redirect, same as claim-ownership), then
    `POST /verification-requests` linking the `form_submission_id`.
+   The migration seeds the `verification-request` system form following the
+   claim-ownership precedent: a `custom_field_groups` row, a `forms` row
+   (published, `system` type) with default evidence fields, and the
+   `verification.form_slug` (+ optional `verification.fee_credits`)
+   `system_settings` keys, all registered in the control settings catalog. If
+   the form is missing the page degrades to the same `form_unavailable` empty
+   state the claim page uses.
 3. **Eligibility (server-enforced on POST):**
    - `entity_type=organization`: `organization_id` required; requester is
      `owner_user_id` or an `organization_members` row with role `owner|admin`;
@@ -126,13 +133,17 @@ grant set as `organizations.claim`). Review and both grant routes reuse
 4. Notifications: review outcome enqueues `email:send` (BUG-018 pattern) and
    emits `verification_request.approved` / `verification_request.rejected`
    webhook events. Badge grants emit `organization.verified` (existing) and new
-   `user.verified` (§12 catalog addition).
+   `user.verified` (§12 catalog addition), and the requester is notified by
+   email on grant as well — the grant is the terminal "scrutiny passed"
+   outcome, not just the request approval.
 
 ## Badge display
 
-`verified` + `verification_type` added to the public user profile DTO so
-`/u/[username]` can render the badge (orgs already render theirs). Admin
-`/users` page gains verify/unverify row actions matching the orgs page.
+`verified` + `verification_type` added to both the public user profile DTO
+(so `/u/[username]` can render the badge — orgs already render theirs) and the
+`/me` response (so user settings can gate the "Request verification" action on
+`me.verified`). Admin `/users` page gains verify/unverify row actions
+matching the orgs page.
 
 ## JEOS updates (spec before code — repo rule)
 
