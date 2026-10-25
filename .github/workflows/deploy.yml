@@ -18,7 +18,8 @@ on:
 #
 # Change detection: 'changed' (default) diffs against `base` input, or
 # the commit recorded by the last successful staging deploy
-# (LAST_DEPLOYED_SHA repo variable, updated on success).
+# (`staging-deployed` git tag, updated on success). Repo variables are
+# not used — GITHUB_TOKEN cannot write them (403).
 #
 # Registry config (repo/environment vars + secrets):
 #   vars.REGISTRY_HOST          — e.g. registry.japa.to
@@ -32,7 +33,7 @@ on:
 # Production is a separate manual workflow (deploy-production.yml).
 
 permissions:
-  contents: read
+  contents: write # needed to update the staging-deployed tag
   actions: write
 
 jobs:
@@ -50,7 +51,7 @@ jobs:
         run: |
           B="${{ inputs.base }}"
           if [ -z "$B" ]; then
-            B=$(gh variable get LAST_DEPLOYED_SHA 2>/dev/null || git rev-parse HEAD~1)
+            B=$(git rev-parse staging-deployed 2>/dev/null || git rev-parse HEAD~1)
           fi
           echo "base=$B" >> "$GITHUB_OUTPUT"
           echo "diff base: $B"
@@ -183,7 +184,13 @@ jobs:
         if: contains(needs.filter.outputs.apps, 'docs')
         run: 'curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_DOCS_STAGING }}"'
       - name: Record deployed SHA
-        run: gh variable set LAST_DEPLOYED_SHA --body "${{ github.sha }}"
+        # Move the staging-deployed tag to this SHA. PATCH updates an
+        # existing ref; if the tag doesn't exist yet, create it.
+        run: |
+          gh api "repos/$GH_REPO/git/refs/tags/staging-deployed" -X PATCH \
+            -f sha="${{ github.sha }}" -F force=true \
+          || gh api "repos/$GH_REPO/git/refs" \
+            -f ref="refs/tags/staging-deployed" -f sha="${{ github.sha }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
