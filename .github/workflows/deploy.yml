@@ -51,7 +51,9 @@ jobs:
         run: |
           B="${{ inputs.base }}"
           if [ -z "$B" ]; then
-            B=$(git rev-parse staging-deployed 2>/dev/null || git rev-parse HEAD~1)
+            # --verify --quiet: bare rev-parse echoes the arg to stdout on a
+            # missing ref, which would smuggle a second line into the output.
+            B=$(git rev-parse --verify --quiet staging-deployed || git rev-parse HEAD~1)
           fi
           echo "base=$B" >> "$GITHUB_OUTPUT"
           echo "diff base: $B"
