@@ -22,7 +22,7 @@
     {/if}
   </a>
 {:else}
-  <div {id} class="community-avatar" aria-label={props.name || 'Community member'}>
+  <div {id} class="community-avatar" role="img" aria-label={props.name || 'Community member'}>
     {#if imageUrl}
       <img src={imageUrl} alt={props.name ?? ''} class="community-avatar-img" />
     {:else}

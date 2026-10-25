@@ -1,13 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import { UrlTabs, type UrlTab } from '$lib/components/ui';
-	import FeedGeoControl from '$lib/components/feed/FeedGeoControl.svelte';
-	import FeedSortBar from '$lib/components/feed/FeedSortBar.svelte';
-	import FeedList from '$lib/components/feed/FeedList.svelte';
-	import FeedUpdatePill from '$lib/components/feed/FeedUpdatePill.svelte';
-	import OnboardingSetupCard from '$lib/components/onboarding/OnboardingSetupCard.svelte';
+	import type { UrlTab } from '$lib/components/ui';
 	import { LandingRenderer, type Block } from '@japaconnect/landing-blocks';
 	import { t } from '$lib/i18n';
 	import type { CardStyleConfig } from '$lib/feed/cardStyle';
@@ -102,46 +96,9 @@
 	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page (or default seed) -->
 	<LandingRenderer blocks={data.landing.blocks} {fetchCtx} geoCountry={data.contentCountry} guestHome={data.home} />
 {:else}
-	<!-- Authenticated home timeline in the app shell -->
-	<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
-		<div
-			class="sticky top-0 z-10 flex items-center border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
-			style="margin-inline: max(1rem, calc((100% - 48rem)/2)); min-height: var(--nav-height)"
-		>
-			<UrlTabs
-				{tabs}
-				value={data.tab}
-				onValueChange={(v) => {
-					// Preserve non-tab query params (especially ?geo=) while switching tabs.
-					const url = new URL(page.url);
-					url.searchParams.set('tab', v);
-					url.searchParams.set('sort', data.sort);
-					goto(`${url.pathname}${url.search}`, { keepFocus: true });
-				}}
-				class="border-b-0"
-			/>
-			{#if data.authed}
-				<div class="ms-auto pe-1">
-					<FeedGeoControl />
-				</div>
-			{/if}
-		</div>
-		<FeedSortBar tab={data.tab} sort={data.sort} stickyTop="var(--nav-height)" />
-		<!-- Phase 23 — live feed update pill (driven by WS feed_update events) -->
-		<FeedUpdatePill />
-		<div class="mx-auto w-full max-w-3xl p-4">
-			<!-- §09: finish-setup reminder — self-gating on page.data.onboardingCompleted -->
-			<OnboardingSetupCard />
-			<FeedList
-				items={data.items}
-				tab={data.tab}
-				sort={data.sort}
-				pageSize={data.pageSize}
-				{config}
-				loadError={data.loadError}
-				hasMore={data.hasMore}
-				adSlot="native_feed"
-			/>
-		</div>
-	</div>
+	<!-- Authenticated home timeline — dynamic import keeps the feed stack out
+	     of the guest landing bundle (PageSpeed). SSR still renders it. -->
+	{#await import('$lib/components/home/AuthedHomeView.svelte') then { default: AuthedHomeView }}
+		<AuthedHomeView {data} {tabs} {config} />
+	{/await}
 {/if}

@@ -127,7 +127,7 @@
       {/each}
     {:else}
       {#each legacyItems ?? [] as url, i (url + i)}
-        <div class="community-avatar" style="z-index: {4 - i}; margin-inline-start: {i === 0 ? 0 : '-10px'}">
+        <div class="community-avatar" role="img" aria-label="Community member" style="z-index: {4 - i}; margin-inline-start: {i === 0 ? 0 : '-10px'}">
           <img src={url} alt="" class="community-avatar-img" />
         </div>
       {/each}
@@ -137,7 +137,7 @@
     <h2 class="community-title">{fmt(title, { value, label })}</h2>
     <p class="community-subtitle">{subtitle}</p>
   </div>
-  <a href={cta?.href ?? '/explore'} class="community-cta" aria-label={cta?.label ?? 'Join the community'}>
+  <a href={cta?.href ?? '/explore'} class="community-cta" aria-label={cta?.label || 'Join the community'}>
     <ArrowRight class="rtl:-scale-x-100" size={18} />
   </a>
 </div>

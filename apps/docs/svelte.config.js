@@ -37,7 +37,15 @@ const config = {
 						mode: 'nonce',
 						directives: {
 							'default-src': ['self'],
-							'script-src': ['self', ...(umamiOrigin ? [umamiOrigin] : [])],
+							// 'unsafe-hashes' + the sha256 allow exactly one inline
+							// handler: `this.__e=event`, emitted by Svelte 5.56+ SSR as
+							// onload/onerror on <img> for hydration event replay.
+							'script-src': [
+								'self',
+								'unsafe-hashes',
+								'sha256-7dQwUgLau1NFCCGjfn9FsYptB6ZtWxJin6VohGIu20I=',
+								...(umamiOrigin ? [umamiOrigin] : [])
+							],
 							'style-src': ['self', 'unsafe-inline'],
 							'img-src': ['self', 'data:', 'blob:', 'https:'],
 							'font-src': ['self', 'data:'],

@@ -877,14 +877,25 @@
   }
 
   .story-dot {
+    /* 24px minimum touch target (WCAG 2.5.8); the visible dot is the ::before */
+    display: grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+  }
+  .story-dot::before {
+    content: '';
     width: 0.5rem;
     height: 0.5rem;
     border-radius: 9999px;
     background: #475569;
-    border: none;
-    cursor: pointer;
+    transition: width 0.2s ease, background 0.2s ease;
   }
-  .story-dot-active {
+  .story-dot-active::before {
     background: #16a34a;
     width: 1.25rem;
   }

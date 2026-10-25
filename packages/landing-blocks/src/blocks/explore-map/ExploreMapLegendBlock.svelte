@@ -19,7 +19,7 @@
 
 {#if ctx && exploreMapChildVisible(ctx.P, 'explore_map_legend')}
   <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-    <h3 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Map legend</h3>
+    <p class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Map legend</p>
     <ul class="space-y-2.5">
       {#each ctx.P.categories ?? [] as cat (cat.key)}
         {@const Icon = ctx.iconFor(cat.icon)}

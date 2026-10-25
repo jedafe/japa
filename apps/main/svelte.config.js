@@ -53,7 +53,17 @@ const config = {
 						mode: 'nonce',
 						directives: {
 							'default-src': ['self'],
-							'script-src': ['self', ...(umamiOrigin ? [umamiOrigin] : [])],
+							// 'unsafe-hashes' + the sha256 below allow exactly one inline
+							// handler: `this.__e=event`, which Svelte 5.56+ SSR emits as
+							// onload/onerror on every <img> for hydration event replay.
+							// Nonces can't authorize event-handler attributes, and without
+							// this the handler is blocked → console errors (best-practices).
+							'script-src': [
+								'self',
+								'unsafe-hashes',
+								'sha256-7dQwUgLau1NFCCGjfn9FsYptB6ZtWxJin6VohGIu20I=',
+								...(umamiOrigin ? [umamiOrigin] : [])
+							],
 							'style-src': ['self', 'unsafe-inline'],
 							'img-src': ['self', 'data:', 'blob:', 'https:'],
 							'font-src': ['self', 'data:'],

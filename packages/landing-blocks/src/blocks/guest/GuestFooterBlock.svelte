@@ -35,6 +35,17 @@
 
   const logoSrc = $derived(resolveAssetUrl(logo.dark ?? logo.light ?? ''));
 
+  // Emit intrinsic dims only when they're actually known — the bundled default
+  // (794x384) or explicit width/height on a custom logo. Emitting the
+  // default's dims for a different image misstates the aspect ratio.
+  const logoDims = $derived(
+    props.logo
+      ? props.logo.width && props.logo.height
+        ? { width: props.logo.width, height: props.logo.height }
+        : {}
+      : { width: 794, height: 384 }
+  );
+
   const tagline = $derived(
     props.tagline ??
       'Your trusted partner in navigating global opportunities and building a better future.'
@@ -125,7 +136,7 @@
   <h2 id="guest-footer-heading-{id}" class="sr-only">Footer</h2>
   <div class="guest-footer-inner">
     <div class="guest-footer-brand">
-      <img src={logoSrc} alt={siteName()} width="794" height="384" class="footer-logo footer-logo-dark" />
+      <img src={logoSrc} alt={siteName()} {...logoDims} class="footer-logo footer-logo-dark" />
       <p class="footer-tagline">{tagline}</p>
       {#if socialChildren.length > 0}
         <div class="footer-socials">

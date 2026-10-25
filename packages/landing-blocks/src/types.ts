@@ -852,7 +852,7 @@ export interface GuestHomeProps {
   /** Hero image URL. */
   hero_image?: string;
   /** Light and dark logo URLs for the footer. */
-  logo?: { light?: string; dark?: string };
+  logo?: GuestFooterLogo;
   /** Newsletter subscription endpoint. */
   newsletter_endpoint?: string;
 }
@@ -879,7 +879,7 @@ export interface GuestHomeContainerProps {
   /** Legacy hero image URL. */
   hero_image?: string;
   /** Legacy light/dark logo URLs for the footer. */
-  logo?: { light?: string; dark?: string };
+  logo?: GuestFooterLogo;
   /** Legacy newsletter subscription endpoint. */
   newsletter_endpoint?: string;
 }
@@ -1096,9 +1096,19 @@ export interface GuestNewsletterProps {
   children?: Block[];
 }
 
+/** Footer logo config. `width`/`height` are the intrinsic pixel dims of the
+ * selected image — emitted as img attrs so layout is reserved correctly.
+ * Optional; only needed for custom (non-bundled) logos. */
+export interface GuestFooterLogo {
+  light?: string;
+  dark?: string;
+  width?: number;
+  height?: number;
+}
+
 /** Props for `guest_footer`. */
 export interface GuestFooterProps {
-  logo?: { light?: string; dark?: string };
+  logo?: GuestFooterLogo;
   tagline?: string;
   /** Legacy socials array; superseded by `guest_footer_social` children. */
   socials?: Array<{ id?: string; icon: string; url: string; label: string }>;
