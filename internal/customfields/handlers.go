@@ -2260,6 +2260,13 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			feeCredits = int64(override)
 		}
 	}
+	// §07 Verification Requests: same override for the verification form.
+	if h.settings != nil && form.Slug == "verification-request" {
+		override := h.settings.GetIntOr(r.Context(), "verification.fee_credits", 0)
+		if override > 0 {
+			feeCredits = int64(override)
+		}
+	}
 
 	// Free submission — no payment needed.
 	if feeCredits <= 0 {

@@ -74,3 +74,11 @@ WHERE id = $1 AND requester_user_id = $2 AND status = 'pending';
 UPDATE verification_requests
 SET status = 'pending', reviewed_by = NULL, reviewed_at = NULL
 WHERE id = $1 AND status = 'rejected';
+
+-- name: GetVerificationRequestSubmission :one
+-- Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md (Verification Requests)
+-- Admin evidence view — resolves the form submission linked to a request.
+SELECT fs.id, fs.form_id, fs.user_id, fs.field_values, fs.status, fs.created_at
+FROM form_submissions fs
+JOIN verification_requests vr ON vr.form_submission_id = fs.id
+WHERE vr.id = @id;

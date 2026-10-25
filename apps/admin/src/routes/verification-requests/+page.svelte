@@ -68,7 +68,7 @@
 		target = row;
 		submission = null;
 		showViewModal = true;
-		organisationsAdminApi.claimSubmission(row.id)
+		verificationAdminApi.requestSubmission(row.id)
 			.then((res) => { submission = res.ok ? res.data : null; })
 			.catch(() => { submission = null; });
 	}
@@ -98,7 +98,7 @@
 		if (!target) return;
 		busy = true;
 		const res = target.entity_type === "organization" && target.organization_id
-			? await organisationsAdminApi.verify(target.organization_id, { verification_type: grantType || undefined } as never)
+			? await organisationsAdminApi.verify(target.organization_id, { verification_type: grantType || undefined })
 			: await verificationAdminApi.verifyUser(target.requester_user_id, { verification_type: grantType || undefined });
 		busy = false;
 		showGrantModal = false;

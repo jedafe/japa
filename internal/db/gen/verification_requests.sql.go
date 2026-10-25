@@ -148,6 +148,38 @@ func (q *Queries) GetVerificationRequestByID(ctx context.Context, id pgtype.UUID
 	return i, err
 }
 
+const getVerificationRequestSubmission = `-- name: GetVerificationRequestSubmission :one
+SELECT fs.id, fs.form_id, fs.user_id, fs.field_values, fs.status, fs.created_at
+FROM form_submissions fs
+JOIN verification_requests vr ON vr.form_submission_id = fs.id
+WHERE vr.id = $1
+`
+
+type GetVerificationRequestSubmissionRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	FormID      pgtype.UUID        `json:"form_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	FieldValues []byte             `json:"field_values"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md (Verification Requests)
+// Admin evidence view — resolves the form submission linked to a request.
+func (q *Queries) GetVerificationRequestSubmission(ctx context.Context, id pgtype.UUID) (GetVerificationRequestSubmissionRow, error) {
+	row := q.db.QueryRow(ctx, getVerificationRequestSubmission, id)
+	var i GetVerificationRequestSubmissionRow
+	err := row.Scan(
+		&i.ID,
+		&i.FormID,
+		&i.UserID,
+		&i.FieldValues,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listVerificationRequests = `-- name: ListVerificationRequests :many
 SELECT vr.id, vr.requester_user_id, vr.entity_type, vr.organization_id, vr.requested_type, vr.form_submission_id, vr.status, vr.reviewed_by, vr.resolution_note, vr.created_at, vr.reviewed_at, u.username AS requester_username, u.email AS requester_email,
        o.name AS org_name, o.slug AS org_slug, rv.username AS reviewed_by_username

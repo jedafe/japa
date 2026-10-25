@@ -10,6 +10,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -164,13 +165,23 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		return gen.VerificationRequest{}, fmt.Errorf("%w: form submission belongs to another user", errpkg.ErrForbidden)
 	}
 
-	return s.store.CreateVerificationRequest(ctx, gen.CreateVerificationRequestParams{
+	req, err := s.store.CreateVerificationRequest(ctx, gen.CreateVerificationRequestParams{
 		RequesterUserID:  requesterID,
 		EntityType:       input.EntityType,
 		OrganizationID:   orgID,
 		RequestedType:    strPtr(input.RequestedType),
 		FormSubmissionID: submissionID,
 	})
+	if err != nil {
+		// A pending-check/insert race lands on the partial unique index —
+		// surface it as a conflict, not a 500.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: a pending verification request already exists", errpkg.ErrDuplicate)
+		}
+		return gen.VerificationRequest{}, fmt.Errorf("creating request: %w", err)
+	}
+	return req, nil
 }
 
 func strPtr(t *string) *string {
@@ -267,11 +278,7 @@ func (s *Service) ReviewRequest(ctx context.Context, id, reviewerID pgtype.UUID,
 		return fmt.Errorf("%w: only pending requests can be reviewed", errpkg.ErrInvalidStatusTransition)
 	}
 
-	eventType := "verification_request." + input.Status + "d"
-	if input.Status == StatusRejected {
-		eventType = "verification_request.rejected"
-	}
-	s.emitWebhook(ctx, eventType, map[string]any{
+	s.emitWebhook(ctx, "verification_request."+input.Status, map[string]any{
 		"request_id":  id,
 		"entity_type": row.EntityType,
 		"entity_id":   entityID(row),

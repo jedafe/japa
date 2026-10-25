@@ -801,7 +801,7 @@ export const organisationsAdminApi = {
 		api(`/admin/organizations/${id}?force=true`, { method: 'DELETE' }),
 	listMembers: (id: string) => api<unknown>(`/admin/organizations/${id}/members`),
 	listInvitations: (id: string) => api<unknown>(`/admin/organizations/${id}/invitations`),
-	verify: (id: string, body: { verified: boolean }) =>
+	verify: (id: string, body: { verified?: boolean; verification_type?: string }) =>
 		api(`/admin/organizations/${id}/verify`, { method: 'POST', body }),
 	unverify: (id: string) =>
 		api(`/admin/organizations/${id}/verify`, { method: 'DELETE' }),
@@ -2655,4 +2655,13 @@ export const verificationAdminApi = {
 		api<unknown>(`/admin/users/${id}/verify`, { method: 'POST', body }),
 	unverifyUser: (id: string) =>
 		api<unknown>(`/admin/users/${id}/verify`, { method: 'DELETE' }),
+	requestSubmission: (requestId: string) =>
+		api<{
+			id: string;
+			form_id: string;
+			field_values: Record<string, unknown> | null;
+			status: string;
+			created_at: string;
+			request_id: string;
+		}>(`/admin/verification-requests/${requestId}/submission`),
 };

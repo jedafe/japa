@@ -323,3 +323,46 @@ func (h *Handlers) GetClaimFormSubmission(w http.ResponseWriter, r *http.Request
 		},
 	})
 }
+
+// GetVerificationRequestSubmission handles GET
+// /admin/verification-requests/{id}/submission — returns the form submission
+// linked to a §07 verification request so the reviewer can inspect the
+// submitted evidence (documents, live photo, social handles).
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests).
+func (h *Handlers) GetVerificationRequestSubmission(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	requestID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid request ID")
+		return
+	}
+
+	submission, err := h.Queries.GetVerificationRequestSubmission(r.Context(),
+		pgtype.UUID{Bytes: requestID, Valid: true},
+	)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "submission_not_found", "Verification request or submission not found")
+		return
+	}
+
+	var fieldValues any
+	if len(submission.FieldValues) > 0 {
+		_ = json.Unmarshal(submission.FieldValues, &fieldValues)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"id":           uuid.UUID(submission.ID.Bytes).String(),
+			"form_id":      uuid.UUID(submission.FormID.Bytes).String(),
+			"field_values": fieldValues,
+			"status":       submission.Status,
+			"created_at":   submission.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			"request_id":   requestID.String(),
+		},
+	})
+}

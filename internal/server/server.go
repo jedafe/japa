@@ -4775,6 +4775,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public badge-type vocabulary — frontends fetch it (Rule 16).
 			r.Get("/verification-requests/types", verificationHandlers.ListTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/admin/verification-requests", verificationHandlers.AdminListRequests)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/admin/verification-requests/{id}/submission", adminHandlers.GetVerificationRequestSubmission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Patch("/admin/verification-requests/{id}", verificationHandlers.ReviewRequest)
 
 			// Payment Core routes (Section 17 — Payment Core)
