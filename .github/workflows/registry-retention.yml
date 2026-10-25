@@ -14,7 +14,8 @@ on:
 
 jobs:
   prune:
-    runs-on: ubuntu-latest
+    # self-hosted: hosted runners are billing-blocked on this repo
+    runs-on: vps
     env:
       REGISTRY_HOST: ${{ vars.REGISTRY_HOST }}
       REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
