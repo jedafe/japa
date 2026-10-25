@@ -66,7 +66,7 @@ CREATE TABLE verification_requests (
   reviewed_by        uuid REFERENCES users(id),
   resolution_note    text,
   created_at         timestamptz NOT NULL DEFAULT now(),
-  resolved_at        timestamptz,
+  reviewed_at        timestamptz,
   CONSTRAINT vreq_org_entity CHECK (
     (entity_type = 'organization' AND organization_id IS NOT NULL) OR
     (entity_type = 'user' AND organization_id IS NULL)
@@ -100,24 +100,25 @@ JOIN permissions p ON p.key = 'verification.request'
 WHERE r.slug = 'super_admin_role'
 ON CONFLICT DO NOTHING;
 
--- 4. Seed the verification-request system form (mirror claim-ownership seed).
-DO $do$ DECLARE tid uuid := '00000000-0000-0000-0000-000000000001'; BEGIN
-
-INSERT INTO custom_field_groups (id, tenant_id, name, slug, description, is_system)
+-- 4. Seed the verification-request system form.
+-- VERIFIED against migrations/000735_baseline_schema.up.sql: none of these
+-- tables have tenant_id (the tenant refactor removed it — the archive 000385
+-- seed that used a `tid` variable is stale). forms has no tenant_id either.
+-- Embed handler gates on status='published' (migration 000919 / CF13).
+INSERT INTO custom_field_groups (id, name, slug, description, is_system)
 VALUES (
-  '00000000-0000-0000-0000-00000000d001', tid,
+  '00000000-0000-0000-0000-00000000d001',
   'Verification Request Fields', 'verification_request_fields',
   'Fields for the verification badge request form (§07). Admins can add/remove fields via the Form Builder.',
   true
 ) ON CONFLICT (id) DO NOTHING;
 
--- Embed handler gates on status='published' (migration 000919 / CF13).
 INSERT INTO forms (
-  id, tenant_id, name, slug, description,
+  id, name, slug, description,
   is_multi_step, submit_label, success_message, status, is_system,
   form_type, submission_fee_credits
 ) VALUES (
-  '00000000-0000-0000-0000-00000000d002', tid,
+  '00000000-0000-0000-0000-00000000d002',
   'Request Verification Badge', 'verification-request',
   'Submit evidence to request a verification badge for your profile or organization.',
   false, 'Submit Request',
@@ -129,23 +130,21 @@ INSERT INTO custom_field_group_assignments (group_id, entity_class, entity_id, p
 VALUES ('00000000-0000-0000-0000-00000000d001', 'form', '00000000-0000-0000-0000-00000000d002', 0)
 ON CONFLICT (group_id, entity_class, entity_id) DO NOTHING;
 
-INSERT INTO custom_fields (id, group_id, tenant_id, label, key, field_type, placeholder, is_required, is_system, show_in_frontend, position) VALUES
-  ('00000000-0000-0000-0000-00000000d011', '00000000-0000-0000-0000-00000000d001', tid,
+INSERT INTO custom_fields (id, group_id, label, key, field_type, placeholder, is_required, is_system, show_in_frontend, position) VALUES
+  ('00000000-0000-0000-0000-00000000d011', '00000000-0000-0000-0000-00000000d001',
    'Legal / Registered Name', 'legal_name', 'text', 'Name as it appears on official documents', true, true, true, 0),
-  ('00000000-0000-0000-0000-00000000d012', '00000000-0000-0000-0000-00000000d001', tid,
+  ('00000000-0000-0000-0000-00000000d012', '00000000-0000-0000-0000-00000000d001',
    'Evidence URL', 'evidence_url', 'url', 'https://example.com/proof', true, true, true, 1),
-  ('00000000-0000-0000-0000-00000000d013', '00000000-0000-0000-0000-00000000d001', tid,
+  ('00000000-0000-0000-0000-00000000d013', '00000000-0000-0000-0000-00000000d001',
    'Registration / ID Number', 'registration_id', 'text', 'e.g. RC123456, bar admission no., passport no.', false, true, true, 2),
-  ('00000000-0000-0000-0000-00000000d014', '00000000-0000-0000-0000-00000000d001', tid,
+  ('00000000-0000-0000-0000-00000000d014', '00000000-0000-0000-0000-00000000d001',
    'Additional Notes', 'notes', 'textarea', 'Anything else reviewers should know…', false, true, true, 3)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO system_settings (tenant_id, key, value, is_public) VALUES
-  (tid, 'verification.form_slug', '"verification-request"'::jsonb, false),
-  (tid, 'verification.fee_credits', '0', false)
+INSERT INTO system_settings (key, value, is_public) VALUES
+  ('verification.form_slug', '"verification-request"'::jsonb, false),
+  ('verification.fee_credits', '0', false)
 ON CONFLICT DO NOTHING;
-
-END $do$;
 
 COMMIT;
 ```
@@ -170,10 +169,9 @@ ALTER TABLE users DROP COLUMN IF EXISTS verified;
 COMMIT;
 ```
 
-- [ ] **Step 3: Check exact table/column names against schema**
+- [ ] **Step 3: Sanity-check column lists (already verified)**
 
-Run: `grep -n "CREATE TABLE public.permissions\|CREATE TABLE public.user_roles\|CREATE TABLE public.role_permissions\|CREATE TABLE public.system_settings\|CREATE TABLE public.custom_fields\b" migrations/000735_baseline_schema.up.sql`
-Expected: confirm column lists (`permissions(key,description)`, `role_permissions(role_id,permission_id)`, `system_settings(tenant_id,key,value,is_public)`, `custom_fields` column names incl. `key`/`field_type`/`position`) and adjust the INSERT column lists to match — do NOT guess.
+The column lists above were verified against `migrations/000735_baseline_schema.up.sql`: `permissions(id,key,description)`, `role_permissions(role_id,permission_id)`, `system_settings(id,key,value,created_at,updated_at,is_public)` — **no `tenant_id` on any of them** (post-tenant-refactor). `custom_fields` uses columns `label/key/field_type/position`. `ownership_claims` precedent confirmed `reviewed_at` naming. If a newer schema file supersedes 000735, re-verify before applying.
 
 - [ ] **Step 4: Apply + verify**
 
@@ -197,7 +195,7 @@ git commit -m "feat(db): verification_requests table, user badge columns, seeded
 - Regenerate: `internal/db/gen/*` via `make sqlc-gen`
 
 **Interfaces:**
-- Produces (gen methods used by Task 3): `CreateVerificationRequest`, `GetVerificationRequestByID`, `GetPendingVerificationRequestForOrg`, `GetPendingVerificationRequestForUser`, `ListVerificationRequestsByRequester`, `ListVerificationRequests` (+ `CountVerificationRequests`), `ReviewVerificationRequest`, `WithdrawVerificationRequest`, `VerifyUser`, `UnverifyUser`, `GetUserByID` (email for notify — reuse existing), `GetMemberRole` (exists in `db/queries/organizations.sql`), `GetFormSubmissionByID` (exists in `db/queries/forms.sql`).
+- Produces (gen methods used by Task 3): `CreateVerificationRequest`, `GetVerificationRequestByID`, `GetPendingVerificationRequestForOrg`, `GetPendingVerificationRequestForUser`, `ListVerificationRequestsByRequester`, `ListVerificationRequests` (+ `CountVerificationRequests`), `ReviewVerificationRequest`, `WithdrawVerificationRequest`, `VerifyUser`, `UnverifyUser`. Reused existing gen queries (verified): `GetOrganizationMemberRole` (`db/queries/organizations.sql:270`), `ActiveOrgExistsByID` (`organizations.sql:280`), `GetOrganizationByIDOnly` (`organizations.sql:10`), `GetFormSubmissionByID` (`db/queries/forms.sql:113` — returns `user_id`), `GetUserEmail` (`db/queries/users.sql:63`).
 
 - [ ] **Step 1: Write `db/queries/verification_requests.sql`**
 
@@ -225,7 +223,7 @@ WHERE requester_user_id = $1 AND status = 'pending' AND entity_type = 'user';
 
 -- name: ListVerificationRequestsByRequester :many
 SELECT vr.id, vr.entity_type, vr.organization_id, vr.requested_type, vr.status,
-       vr.resolution_note, vr.created_at, vr.resolved_at,
+       vr.resolution_note, vr.created_at, vr.reviewed_at,
        o.name AS org_name, o.slug AS org_slug
 FROM verification_requests vr
 LEFT JOIN organizations o ON o.id = vr.organization_id
@@ -251,13 +249,19 @@ WHERE ($1::text = '' OR vr.status = $1)
 
 -- name: ReviewVerificationRequest :exec
 UPDATE verification_requests
-SET status = $2, reviewed_by = $3, resolution_note = sqlc.narg(resolution_note), resolved_at = now()
+SET status = $2, reviewed_by = $3, resolution_note = sqlc.narg(resolution_note), reviewed_at = now()
 WHERE id = $1 AND status = 'pending';
 
 -- name: WithdrawVerificationRequest :execrows
 UPDATE verification_requests
-SET status = 'withdrawn', resolved_at = now()
+SET status = 'withdrawn', reviewed_at = now()
 WHERE id = $1 AND requester_user_id = $2 AND status = 'pending';
+
+-- name: ReopenVerificationRequest :exec
+-- §22 appeal overturn: a rejected request goes back to pending.
+UPDATE verification_requests
+SET status = 'pending', reviewed_by = NULL, reviewed_at = NULL
+WHERE id = $1 AND status = 'rejected';
 ```
 
 In `db/queries/users.sql` append:
@@ -270,6 +274,10 @@ WHERE id = $1;
 -- name: UnverifyUser :exec
 UPDATE users SET verified = false, verification_type = NULL, updated_at = now()
 WHERE id = $1;
+
+-- name: GetUserVerified :one
+-- Eligibility probe for POST /verification-requests (entity_type='user').
+SELECT verified FROM users WHERE id = $1;
 ```
 
 And add `verified, verification_type` to the SELECT column lists of `GetPublicProfileByUsername` and the `/me` profile query (find its name: `grep -rn "GetMyProfile\|my.*profile" internal/users/service.go | head`).
@@ -298,7 +306,7 @@ git commit -m "feat(db): sqlc queries for verification requests and user badge g
 - Test: `internal/verification/handlers_test.go`
 
 **Interfaces:**
-- Consumes: gen methods from Task 2; `errpkg`; `auth.GetUserFromContext` (same helper the org handlers use — check its name in `internal/organizations/handlers.go:709`); `worker.TypeEmailSend`, `worker.QueueForTask`, `asynq.NewTask` (pattern: `internal/organizations/organizations.go:182`).
+- Consumes: gen methods from Task 2; `errpkg` (= `github.com/jedafe/japa/internal/errors`); the local `requireAuth` helper pattern — `auth.FromContext(r.Context())` returns `*auth.AuthenticatedUser` with `.UserID` (`internal/organizations/handlers.go:171`); `worker.TypeEmailSend`, `worker.QueueForTask`, `asynq.NewTask` (pattern: `internal/organizations/organizations.go:182`).
 - Produces: `type Service` with `NewService(*db.DB) *Service`, `SetSettings(SettingsReader)`, `SetWebhooks(WebhookEmitter)`, `SetAsynq(*asynq.Client)`; `type Handlers` with `NewHandlers(*Service) *Handlers` exposing `SubmitRequest`, `ListMyRequests`, `GetRequest`, `WithdrawRequest`, `ListTypes`, `AdminListRequests`, `ReviewRequest`.
 
 - [ ] **Step 1: Write the failing test**
@@ -375,12 +383,13 @@ type WebhookEmitter interface {
 }
 
 // SettingsReader supplies verification.form_slug / verification.fee_credits.
+// Matches config.Settings.GetSetting (internal/config/settings.go:212).
 type SettingsReader interface {
 	GetSetting(ctx context.Context, key string) (string, error)
 }
 ```
 
-`store.go`: thin wrapper over `gen.Queries` (mirror `internal/organizations/store.go` — `write`/`read` split if that package uses it; keep simple single `*gen.Queries` pair if not). Methods: `Create`, `GetByID`, `GetPendingForOrg`, `GetPendingForUser`, `ListByRequester`, `List` (+`Count`), `Review`, `Withdraw`, plus pass-throughs to existing `GetMemberRole`, `GetOrganizationByIDOnly`/`ActiveOrgExistsByID`, `GetFormSubmissionByID`, and user fetch (`GetUserByID` or equivalent for email lookup — find in `db/queries/users.sql`).
+`store.go`: thin wrapper over `gen.Queries` (mirror `internal/organizations/store.go` — `write`/`read` split if that package uses it; keep simple single `*gen.Queries` pair if not). Methods: `Create`, `GetByID`, `GetPendingForOrg`, `GetPendingForUser`, `ListByRequester`, `List` (+`Count`), `Review`, `Withdraw`, plus pass-throughs to existing gen queries `GetOrganizationMemberRole`, `ActiveOrgExistsByID`, `GetOrganizationByIDOnly`, `GetFormSubmissionByID`, `GetUserEmail`.
 
 - [ ] **Step 3: Write `service.go`**
 
@@ -389,8 +398,8 @@ Mirror `ClaimOwnership`/`ReviewOwnershipClaim` (`internal/organizations/service.
 - `SubmitRequest(ctx, requesterID pgtype.UUID, in SubmitInput) (gen.VerificationRequest, error)`:
   - validate `in.EntityType` (else `ErrInvalid: invalid_entity_type`)
   - `in.RequestedType != nil` → `IsValidType` else `invalid_requested_type`
-  - org path: org exists+active (`errpkg.ErrNotFound`), not `org.Verified` (`already_verified`), requester role via `GetMemberRole` is `owner|admin` or `owner_user_id == requester` (`not_org_admin`), `GetPendingForOrg` no rows (`pending_request_exists`)
-  - user path: `organization_id` must be nil; caller not already `verified` (add tiny gen query `GetUserVerified` or reuse a user fetch — choose whatever exists); `GetPendingForUser` no rows
+  - org path: org exists+active via `ActiveOrgExistsByID` (`errpkg.ErrNotFound`), org row not `Verified` via `GetOrganizationByIDOnly` (`already_verified`), requester role via `GetOrganizationMemberRole` is `owner|admin` or `owner_user_id == requester` (`not_org_admin`), `GetPendingForOrg` no rows (`pending_request_exists`)
+  - user path: `organization_id` must be nil; caller not already `verified` via `GetUserVerified` (added to `users.sql` in Task 2); `GetPendingForUser` no rows
   - form submission: fetch `GetFormSubmissionByID`; require `Status == 'new'` and submission's `user_id == requesterID` (don't link another user's submission)
   - create row; return it
 - `ListMyRequests`, `GetRequest` (requester-scoped → `request_not_found`), `WithdrawRequest` (`execrows` 0 → `request_not_pending`), `AdminList` (`status`, `entityType`, page/pageSize clamps), `ReviewRequest`:
@@ -457,13 +466,26 @@ func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype
 // UnverifyUser mirrors with "user.unverified" (+ revoke email, type "verification_revoked").
 ```
 
-If `users.Service` has no store-level `VerifyUser`, call the gen queries via its existing write handle (check how other user updates run). For `enqueueGrantEmail`, copy the `email:send` asynq pattern from `enqueueInvitationEmail` (`internal/organizations/organizations.go:182`) — payload `{to, subject, body, type: "verification_granted"}`; fetch the recipient email via the existing user-fetch gen query; best-effort, never fail the grant.
+If `users.Service` has no store-level `VerifyUser`, call the gen queries via its existing write handle (check how other user updates run). For `enqueueGrantEmail`: `users.Service` already has `enqueuer userEnqueuer` (`service.go:41`, signature `Enqueue(taskType string, payload []byte, opts ...interface{})` — `worker.Enqueuer` routes the queue internally) — marshal `{to, subject, body, type: "verification_granted"}`, fetch the recipient via `gen.GetUserEmail` (`db/queries/users.sql:63`), call `s.enqueuer.Enqueue(worker.TypeEmailSend, payload)`; nil-safe (enqueuer is optional), best-effort, never fail the grant.
 
 Apply the same grant email inside `organizations.Service.VerifyOrganization` (~line 990): after the `organization.verified` emit, enqueue `email:send` to the org owner's address (type `verification_granted`), using the already-wired `s.asynq` — the org's claimant/requester may differ from its owner but the owner is who the spec's "requester is notified on grant" resolves to at grant time.
 
 - [ ] **Step 2: admin handlers**
 
-In `internal/admin/moderation.go`, clone `VerifyOrganization`/`UnverifyOrganization` into `VerifyUser`/`UnverifyUser` using `h.Users` (check the field name — `h.Orgs` precedent; find the users service field on admin `Handlers`), ID param `id`, body `{verification_type}`. Reuse `isValidOrgVerificationType` (rename-free — same vocabulary) or swap to `verification.IsValidType` and update the org call sites too.
+In `internal/admin/moderation.go`, clone `VerifyOrganization`/`UnverifyOrganization` into `VerifyUser`/`UnverifyUser`, ID param `id`, body `{verification_type}`. The admin `Handlers` struct has no users field — add one in `internal/admin/settings.go` following the `Orgs OrgVerifier` precedent (settings.go:75 + the `h.Orgs = o` setter at :194):
+
+```go
+// UserVerifier is the subset of the users service the admin verify
+// handlers need — grants/revokes the profile badge and emits the
+// user.verified / user.unverified webhook events (Section 12).
+// Local interface so admin does not import users (cycle-safe).
+type UserVerifier interface {
+	VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype *string) error
+	UnverifyUser(ctx context.Context, id, adminID pgtype.UUID) error
+}
+```
+
+plus field `Users UserVerifier` on `Handlers` and `SetUserVerifier(u UserVerifier)`. Reuse `isValidOrgVerificationType` (rename-free — same vocabulary) or swap to `verification.IsValidType` and update the org call sites too.
 
 - [ ] **Step 3: server wiring**
 
@@ -472,12 +494,13 @@ In `internal/server/server.go`:
 ```go
 // near orgService construction (~line 828)
 verificationService := verification.NewService(database)
-verificationService.SetSettings(settingsService /* adapter matching SettingsReader */)
-verificationService.SetWebhooks(<same emitter wired into orgService>)
-verificationService.SetAsynq(asynqClient /* the *asynq.Client used elsewhere */)
-verificationService.SetSiteURL(cfg.SiteURL /* check the config field name */)
+verificationService.SetSettings(settingsService)      // implements GetSetting(ctx, key) (string, error)
+verificationService.SetAsynqClient(asynqClient)       // same *asynq.Client as orgService:831
+verificationService.SetSiteURL(cfg.SiteURL)           // same as orgService:832
 verificationHandlers := verification.NewHandlers(verificationService)
 ```
+
+Inside the route group where `orgService.SetWebhookEmitter(webhookService)` runs (~line 4360), add `verificationService.SetWebhooks(webhookService)` and `usersService.SetWebhookEmitter(webhookService)` (new setter on users.Service added in Step 1). After `usersService` is constructed (~line 2880), call `adminHandlers.SetUserVerifier(usersService)` (adminHandlers is created at :1208 — calling the setter later is fine, it's just field assignment).
 
 Then mount (next to the claim-ownership block ~line 4737 and admin blocks):
 
@@ -524,7 +547,7 @@ git commit -m "feat(verification): wire request routes + admin user badge grant"
 
 - [ ] **Step 1: Appeals subject**
 
-In `internal/appeals/service.go`: add `SubjectVerificationRequest = "verification_request"` to the subject const block, then mirror `s.orgClaimSubject()` (find it — it's a method returning hooks with `ListEligible`/`OnOverturn` etc.) into `s.verificationRequestSubject()` whose eligible-subject fetch reads a `verification_requests` row by id via the service's store/gen access (check how `orgClaimSubject` fetches claims — same pattern), and register `s.subjects[SubjectVerificationRequest] = s.verificationRequestSubject()` in the registry block (~line 646). Eligibility rule: only `rejected` requests are appealable (mirror org_claim's rule). OnOverturn: set the request back to `pending` (new gen query `-- name: ReopenVerificationRequest :exec UPDATE verification_requests SET status='pending', reviewed_by=NULL, resolved_at=NULL WHERE id=$1 AND status='rejected'`) — add it to `db/queries/verification_requests.sql` and re-run `make sqlc-gen`.
+In `internal/appeals/service.go`: add `SubjectVerificationRequest = "verification_request"` to the subject const block, then mirror `s.orgClaimSubject()` (find it — it's a method returning hooks with `ListEligible`/`OnOverturn` etc.) into `s.verificationRequestSubject()` whose eligible-subject fetch reads a `verification_requests` row by id via the service's store/gen access (check how `orgClaimSubject` fetches claims — same pattern), and register `s.subjects[SubjectVerificationRequest] = s.verificationRequestSubject()` in the registry block (~line 646). Eligibility rule: only `rejected` requests are appealable (mirror org_claim's rule). OnOverturn: set the request back to `pending` (new gen query `-- name: ReopenVerificationRequest :exec UPDATE verification_requests SET status='pending', reviewed_by=NULL, reviewed_at=NULL WHERE id=$1 AND status='rejected'`) — add it to `db/queries/verification_requests.sql` and re-run `make sqlc-gen`.
 
 - [ ] **Step 2: DTO fields**
 
@@ -571,10 +594,10 @@ Clone `(app)/claim-ownership/+page.server.ts` and adapt:
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md (Verification Requests)
 // Modes: ?org={slug} → org request form; ?self=1 → profile request form;
 // none → "My verification requests" (GET /me/verification-requests).
-// Dynamic form via GET /forms/{slug}/embed where slug comes from the backend
-// config endpoint — the form slug is read server-side from the backend's
-// public settings or falls back to 'verification-request' (system_settings
-// 'verification.form_slug').
+// Dynamic form via GET /forms/verification-request/embed — the claim page
+// hardcodes '/forms/claim-ownership/embed' the same way; system_settings
+// 'verification.form_slug' exists for admin reference (same role as
+// 'claim_ownership.form_slug', which no backend code reads either).
 ```
 
 Load `form` from `/forms/verification-request/embed` (catch → null), `org` from `/organizations/{slug}` when `?org=`, `types` from `/verification-requests/types`, `requests` from `/me/verification-requests` when no params. Auth redirect same as claim page.
@@ -586,7 +609,7 @@ Clone `(app)/claim-ownership/+page.svelte`, rename i18n namespace to `verificati
 - Header copy: "Request verification" / "My verification requests".
 - Above the dynamic fields, render a `requested_type` select fed by `data.types` (the `/types` response), optional.
 - Submit: same two-call flow — `POST /forms/{id}/submissions` `{field_values, payment_method?}` then `POST /verification-requests` `{entity_type: org ? 'organization' : 'user', organization_id: org?.id, requested_type, form_submission_id}`.
-- My-requests list: status chips + withdraw (`DELETE /verification-requests/{id}`) + `AppealButton` `entityType="verification_request"` on rejected — copy the claims list block verbatim, fields `entity_type/org_name/resolution_note/created_at/reviewed_at` → use `resolved_at` per our schema (check the ListVerificationRequestsByRequester columns — resolved_at, not reviewed_at; align the template).
+- My-requests list: status chips + withdraw (`DELETE /verification-requests/{id}`) + `AppealButton` `entityType="verification_request"` on rejected — copy the claims list block verbatim; the request row exposes `reviewed_at` (matching `ownership_claims`) for the "Reviewed {date}" line.
 
 - [ ] **Step 3: Typecheck**
 
