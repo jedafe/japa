@@ -6,12 +6,6 @@ on:
       sha:
         description: 'Commit SHA to promote (blank = last staging build)'
         required: false
-      runner:
-        description: "Build runner: auto probes github, falls back to vps"
-        type: choice
-        options: [auto, github, vps]
-        default: auto
-        required: true
 
 # Manual production deploy — the dispatch click is the promotion gate.
 #
@@ -31,48 +25,8 @@ permissions:
   contents: read
 
 jobs:
-  probe:
-    # Billing-blocked hosted runners fail fast here; a long queue times
-    # out after 5 min. continue-on-error keeps the run green; the `up`
-    # output is only written when a hosted runner actually picked the
-    # job up, which is the real signal decide reads.
-    if: inputs.runner == 'auto'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    continue-on-error: true
-    outputs:
-      up: ${{ steps.up.outputs.up }}
-    steps:
-      - id: up
-        run: echo "up=1" >> "$GITHUB_OUTPUT"
-
-  decide:
-    # Pinned to the vps runner so it always executes even when hosted
-    # runners are unavailable; every real job routes through its output.
-    needs: probe
-    if: always()
-    runs-on: vps
-    timeout-minutes: 10
-    outputs:
-      runner: ${{ steps.decide.outputs.runner }}
-    steps:
-      - id: decide
-        env:
-          CHOICE: ${{ inputs.runner }}
-          PROBE: ${{ needs.probe.outputs.up }}
-        run: |
-          case "$CHOICE" in
-            github) R=ubuntu-latest ;;
-            vps) R=vps ;;
-            *) [ "$PROBE" = "1" ] && R=ubuntu-latest || R=vps ;;
-          esac
-          echo "runner=$R" >> "$GITHUB_OUTPUT"
-          echo "Selected runner: $R (choice=$CHOICE probe=$PROBE)"
-
   promote-api:
-    needs: decide
-    if: needs.decide.result == 'success'
-    runs-on: ${{ needs.decide.outputs.runner }}
+    runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Log in to the private registry
@@ -87,9 +41,7 @@ jobs:
             ${{ vars.REGISTRY_HOST }}/japa-api:${{ inputs.sha || 'staging' }}
 
   build-frontends:
-    needs: decide
-    if: needs.decide.result == 'success'
-    runs-on: ${{ needs.decide.outputs.runner }}
+    runs-on: ubuntu-latest
     environment: production
     strategy:
       fail-fast: false
@@ -136,9 +88,9 @@ jobs:
             --push $ARGS .
 
   deploy-production:
-    needs: [decide, promote-api, build-frontends]
-    if: needs.decide.result == 'success' && needs.promote-api.result == 'success' && needs.build-frontends.result == 'success'
-    runs-on: ${{ needs.decide.outputs.runner }}
+    needs: [promote-api, build-frontends]
+    if: needs.promote-api.result == 'success' && needs.build-frontends.result == 'success'
+    runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Deploy api

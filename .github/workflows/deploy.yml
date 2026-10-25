@@ -10,18 +10,11 @@ on:
       base:
         description: "Base ref for change detection (default: last deployed commit)"
         required: false
-      runner:
-        description: "Build runner: auto probes github, falls back to vps"
-        type: choice
-        options: [auto, github, vps]
-        default: auto
-        required: true
 
-# Manual staging deploy. Builds each app image on the selected runner
-# (auto: GitHub-hosted when reachable, else the Coolify host's `vps`
-# runner — see probe/decide jobs) and pushes to the private registry
-# on the Coolify host; the deploy job then calls each app's Coolify
-# webhook which pulls + redeploys the :staging tag.
+# Manual staging deploy. Builds each app image on a hosted runner and
+# pushes to the private registry on the Coolify host; the deploy job
+# then calls each app's Coolify webhook which pulls + redeploys the
+# :staging tag.
 #
 # Change detection: 'changed' (default) diffs against `base` input, or
 # the commit recorded by the last successful staging deploy
@@ -43,48 +36,8 @@ permissions:
   actions: write
 
 jobs:
-  probe:
-    # Billing-blocked hosted runners fail fast here; a long queue times
-    # out after 5 min. continue-on-error keeps the run green; the `up`
-    # output is only written when a hosted runner actually picked the
-    # job up, which is the real signal decide reads.
-    if: inputs.runner == 'auto'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    continue-on-error: true
-    outputs:
-      up: ${{ steps.up.outputs.up }}
-    steps:
-      - id: up
-        run: echo "up=1" >> "$GITHUB_OUTPUT"
-
-  decide:
-    # Pinned to the vps runner so it always executes even when hosted
-    # runners are unavailable; every real job routes through its output.
-    needs: probe
-    if: always()
-    runs-on: vps
-    timeout-minutes: 10
-    outputs:
-      runner: ${{ steps.decide.outputs.runner }}
-    steps:
-      - id: decide
-        env:
-          CHOICE: ${{ inputs.runner }}
-          PROBE: ${{ needs.probe.outputs.up }}
-        run: |
-          case "$CHOICE" in
-            github) R=ubuntu-latest ;;
-            vps) R=vps ;;
-            *) [ "$PROBE" = "1" ] && R=ubuntu-latest || R=vps ;;
-          esac
-          echo "runner=$R" >> "$GITHUB_OUTPUT"
-          echo "Selected runner: $R (choice=$CHOICE probe=$PROBE)"
-
   filter:
-    needs: decide
-    if: needs.decide.result == 'success'
-    runs-on: ${{ needs.decide.outputs.runner }}
+    runs-on: ubuntu-latest
     outputs:
       apps: ${{ steps.pick.outputs.apps }}
       changed: ${{ steps.filter.outputs.changes }}
@@ -153,9 +106,9 @@ jobs:
           esac
 
   build-images:
-    needs: [decide, filter]
-    if: needs.decide.result == 'success' && needs.filter.outputs.apps != '[]'
-    runs-on: ${{ needs.decide.outputs.runner }}
+    needs: filter
+    if: needs.filter.outputs.apps != '[]'
+    runs-on: ubuntu-latest
     environment: staging
     strategy:
       fail-fast: false
@@ -206,9 +159,9 @@ jobs:
             --push ${{ steps.args.outputs.args }} .
 
   deploy-staging:
-    needs: [decide, filter, build-images]
-    if: needs.decide.result == 'success' && needs.build-images.result == 'success'
-    runs-on: ${{ needs.decide.outputs.runner }}
+    needs: [filter, build-images]
+    if: needs.build-images.result == 'success'
+    runs-on: ubuntu-latest
     environment: staging
     steps:
       - name: Deploy api
