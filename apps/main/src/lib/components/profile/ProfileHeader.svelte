@@ -74,34 +74,41 @@
 		<!-- relative + z-10: the cover wrapper above is position:relative, so
 		     without its own stacking position this row (and the avatar it
 		     overlaps upward via -mt-12/-mt-16) would paint under the cover. -->
-		<div class="relative z-10 -mt-12 flex flex-col gap-3 sm:-mt-16 sm:flex-row sm:items-end sm:gap-4">
-			{#if user.avatar_url}
-				<img
-					src={user.avatar_url}
-					alt={user.display_name ?? user.username}
-					class="h-24 w-24 rounded-full border-4 border-[var(--color-surface)] object-cover sm:h-32 sm:w-32"
-				/>
-			{:else}
-				<span
-					class="grid h-24 w-24 place-items-center rounded-full border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-3xl font-bold text-[var(--color-primary)] sm:h-32 sm:w-32"
-				>
-					{initials}
-				</span>
-			{/if}
+		<div class="relative z-10 -mt-12 sm:-mt-16">
+			<!-- Actions (e.g. Follow) share the avatar's row on the right instead
+			     of dropping under the handle, so they never span full width on
+			     mobile. -->
+			<div class="flex items-end justify-between gap-3">
+				{#if user.avatar_url}
+					<img
+						src={user.avatar_url}
+						alt={user.display_name ?? user.username}
+						class="h-24 w-24 rounded-full border-4 border-[var(--color-surface)] object-cover sm:h-32 sm:w-32"
+					/>
+				{:else}
+					<span
+						class="grid h-24 w-24 place-items-center rounded-full border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-3xl font-bold text-[var(--color-primary)] sm:h-32 sm:w-32"
+					>
+						{initials}
+					</span>
+				{/if}
 
-			<div class="flex-1 pb-1">
+				{#if children}
+					<div class="flex items-center gap-2 pb-1">
+						{@render children()}
+					</div>
+				{/if}
+			</div>
+
+			<div class="mt-3">
 				<div class="flex items-center gap-2">
 					<h1 class="text-xl font-semibold text-[var(--color-text)]">{user.display_name ?? user.username}</h1>
-					{#if user.profile_type === 'business'}
+					{#if user.verified}
 						<BadgeCheck size={18} class="text-[var(--color-primary)]" />
 					{/if}
 				</div>
 				<p class="text-sm text-[var(--color-muted)]">@{user.username}</p>
 			</div>
-
-			{#if children}
-				{@render children()}
-			{/if}
 		</div>
 
 		{#if user.bio}

@@ -8,7 +8,7 @@
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { UrlTabs, type UrlTab, AutocompleteSelect } from '$lib/components/ui';
-	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, UserCheck, Megaphone, Image } from 'lucide-svelte';
+	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, UserCheck, Megaphone, Image, BadgeCheck } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { invalidateAll, goto } from '$app/navigation';
@@ -310,6 +310,16 @@
 				<h1 class="text-lg font-medium text-[var(--color-text)]">{org?.name}</h1>
 				<p class="text-xs text-[var(--color-muted)]">/{org?.slug} · {t(`org_admin.status.${org?.status ?? 'active'}`)}</p>
 			</div>
+			<!-- §07 Verification Requests: owner/admin members request the badge -->
+			{#if org && !org.verified}
+				<a
+					href="/verification-request?org={org.slug}"
+					class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface)]"
+				>
+					<BadgeCheck class="h-4 w-4" />
+					{t('org_admin.request_verification', 'Request verification')}
+				</a>
+			{/if}
 			<!-- §61: Link to self-serve ads dashboard -->
 			<a
 				href="/dashboard/organizations/{org?.id}/ads"

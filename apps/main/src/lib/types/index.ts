@@ -572,6 +572,9 @@ export interface MeProfile {
 	origin_city_id?: string | null;
 	/** ADR-064a: ISO 3166-1 alpha-2 destination country code (custom field). */
 	destination_country?: string | null;
+	/** §07 verification badge (ADR-029) — gates the request-verification action. */
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 /** GET/PATCH /me/privacy — a map of privacy toggles. */
@@ -922,6 +925,9 @@ export interface PublicUser {
 	website_url?: string | null;
 	/** Unified user tier (regular / pro / business). */
 	profile_type: 'regular' | 'pro' | 'business';
+	/** §07 verification badge (ADR-029). */
+	verified?: boolean;
+	verification_type?: string | null;
 	follower_count: number;
 	following_count: number;
 	created_at: string;
@@ -5500,4 +5506,19 @@ export interface NextAction {
 	channels: string[];
 	priority: number;
 	snooze_default_hours: number;
+}
+
+/** GET /me/verification-requests row (§07 Verification Requests). */
+export interface MyVerificationRequest {
+	id: string;
+	entity_type: 'organization' | 'user' | string;
+	organization_id?: string | null;
+	requested_type?: string | null;
+	status: 'pending' | 'approved' | 'rejected' | 'withdrawn' | string;
+	resolution_note?: string | null;
+	form_submission_id?: string | null;
+	org_name?: string | null;
+	org_slug?: string | null;
+	created_at: string;
+	reviewed_at?: string | null;
 }

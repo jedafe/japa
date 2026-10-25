@@ -95,6 +95,25 @@
 		/>
 	</div>
 
+	<!-- §07 Verification Requests: profile verification entry point. -->
+	<div class="mt-6 border-t border-[var(--color-border)] pt-4">
+		{#if profile?.verified}
+			<p class="text-sm font-medium text-[var(--color-success)]">
+				{t('settings.account.verified', 'Your profile is verified.')}
+			</p>
+		{:else}
+			<a href="/verification-request?self=1" class="text-sm font-medium text-[var(--color-primary)] hover:underline">
+				{t('settings.account.request_verification', 'Request verification')}
+			</a>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">
+				{t('settings.account.request_verification_desc', 'Submit evidence to request a verification badge for your profile.')}
+			</p>
+		{/if}
+		<a href="/verification-request" class="mt-2 inline-block text-xs text-[var(--color-muted)] hover:underline">
+			{t('settings.account.my_verification_requests', 'Track my verification requests')}
+		</a>
+	</div>
+
 	<!-- Section 09 Product Tour: "Replay tour" link for users who want to
 	     see the contextual walkthrough again. Navigates to home with ?tour=1. -->
 	<div class="mt-6 border-t border-[var(--color-border)] pt-4">

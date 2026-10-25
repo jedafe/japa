@@ -2624,3 +2624,35 @@ export const roadmapCategoriesAdminApi = {
 	delete: (id: string) =>
 		api(`/admin/roadmap/categories/${id}`, { method: 'DELETE' }),
 };
+
+// §07 Verification Requests — admin review queue + profile badge grant.
+export const verificationAdminApi = {
+	list: (params?: string) =>
+		api<{
+			data: {
+				id: string;
+				requester_user_id: string;
+				entity_type: string;
+				organization_id?: string | null;
+				requested_type?: string | null;
+				form_submission_id: string;
+				status: string;
+				resolution_note?: string | null;
+				created_at: string;
+				reviewed_at?: string | null;
+				requester_username?: string;
+				requester_email?: string;
+				org_name?: string | null;
+				org_slug?: string | null;
+				reviewed_by_username?: string | null;
+			}[];
+			meta: { total: number; page: number; page_size: number; page_count: number };
+		}>(`/admin/verification-requests${params ? `?${params}` : ''}`),
+	review: (id: string, body: { status: 'approved' | 'rejected'; resolution_note?: string }) =>
+		api<unknown>(`/admin/verification-requests/${id}`, { method: 'PATCH', body }),
+	types: () => api<{ data: { types: string[] } }>('/verification-requests/types'),
+	verifyUser: (id: string, body: { verification_type?: string }) =>
+		api<unknown>(`/admin/users/${id}/verify`, { method: 'POST', body }),
+	unverifyUser: (id: string) =>
+		api<unknown>(`/admin/users/${id}/verify`, { method: 'DELETE' }),
+};
