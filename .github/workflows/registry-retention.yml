@@ -41,12 +41,17 @@ jobs:
                   return resp.read(), resp.headers
 
           apps = ['api','main','admin','control','academy','docs']
+          # buildx pushes OCI image indexes (provenance attestations), so
+          # the Accept list must include index + manifest-list media types
+          # or the manifest GET 404s.
           MANIFEST = ('application/vnd.docker.distribution.manifest.v2+json,'
-                      'application/vnd.oci.image.manifest.v1+json')
+                      'application/vnd.docker.distribution.manifest.list.v2+json,'
+                      'application/vnd.oci.image.manifest.v1+json,'
+                      'application/vnd.oci.image.index.v1+json')
           for app in apps:
               body, _ = req('GET', f'/v2/japa-{app}/tags/list')
               tags = [t for t in json.loads(body).get('tags') or []
-                      if t not in ('staging','production')]
+                      if t not in ('staging','production','buildcache')]
               if len(tags) <= keep: continue
               for tag in sorted(tags)[:-keep]:
                   _, h = req('GET', f'/v2/japa-{app}/manifests/{tag}', MANIFEST)
