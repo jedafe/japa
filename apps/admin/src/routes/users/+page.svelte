@@ -64,6 +64,8 @@
 				if (cfg?.violation_types?.length) {
 					violationTypeOptions = cfg.violation_types.map((v) => ({ value: v.value, label: v.label }));
 				}
+				// §07 badge-type vocabulary for the verify picker (Rule 16).
+				verificationAdminApi.types().then((r) => { if (r.ok) verificationTypes = r.data.data.types; }).catch(() => {});
 			}
 
 			let groupOptions: Array<{ value: string; label: string }> | undefined;
@@ -149,6 +151,10 @@
 	let showBanConfirm = $state(false);
 	let showSuspendConfirm = $state(false);
 	let showWarnModal = $state(false);
+	// §07 Verification Requests — badge grant with type picker.
+	let showVerifyModal = $state(false);
+	let verifyType = $state("");
+	let verificationTypes = $state<string[]>([]);
 	let showHardDeleteConfirm = $state(false);
 	let showRestoreConfirm = $state(false);
 	let showDeleteConfirm = $state(false);
@@ -165,6 +171,14 @@
 	function openBan(user: User) { actionTarget = user; showBanConfirm = true; }
 	function openSuspend(user: User) { actionTarget = user; suspendReason = ""; showSuspendConfirm = true; }
 	function openWarn(user: User) { actionTarget = user; warnReason = ""; warnViolationType = violationTypeOptions[0]?.value ?? ""; showWarnModal = true; }
+	function openVerify(user: User) { actionTarget = user; verifyType = ""; showVerifyModal = true; }
+
+	async function confirmVerify() {
+		if (!actionTarget) return;
+		const res = await verificationAdminApi.verifyUser(actionTarget.id, { verification_type: verifyType || undefined });
+		if (!res.ok) { pageError = res.error; } else { showVerifyModal = false; }
+		entityController?.reload();
+	}
 	function openHardDelete(user: User) { actionTarget = user; showHardDeleteConfirm = true; }
 	function openRestore(user: User) { actionTarget = user; showRestoreConfirm = true; }
 	function openDelete(user: User) { actionTarget = user; showDeleteConfirm = true; }
@@ -350,10 +364,7 @@
 			acts.push({
 				label: t("users.verify", "Verify"),
 				icon: BadgeCheck,
-				onclick: async (row: User, ctx?: ActionContext) => {
-					await verificationAdminApi.verifyUser(row.id, {});
-					ctx?.reload();
-				},
+				onclick: openVerify,
 				show: (row: User) => row.status !== "deleted" && !row.verified
 			});
 			acts.push({
@@ -645,6 +656,24 @@
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showRestoreConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
 		<Button variant="default" onclick={confirmRestore} disabled={acting}>{t("users.restore", "Restore")}</Button>
+	</div>
+</Modal>
+
+<!-- Verify (§07 — grant badge with optional type) -->
+<Modal bind:open={showVerifyModal} title={t("users.verify_user", "Verify User")}>
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t("users.verify_confirm", "Grant a verification badge to")} <strong>{actionTarget?.username}</strong>?
+	</p>
+	<label class="mt-3 block text-sm">
+		{t("users.verify_type", "Badge type")}
+		<select bind:value={verifyType} class="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+			<option value="">{t("users.verify_type_none", "— none —")}</option>
+			{#each verificationTypes as ty}<option value={ty}>{ty.replaceAll("_", " ")}</option>{/each}
+		</select>
+	</label>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showVerifyModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="default" onclick={confirmVerify} disabled={acting}>{t("users.verify", "Verify")}</Button>
 	</div>
 </Modal>
 

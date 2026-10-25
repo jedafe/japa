@@ -1047,6 +1047,7 @@ func (s *Service) ListPublicUsers(ctx context.Context, search, profileType, sort
 			CoverURL:        u.CoverUrl,
 			Bio:             u.Bio,
 			ProfileType:     u.ProfileType,
+			Verified:        u.Verified,
 			FollowerCount:   u.FollowerCount,
 			FollowingCount:  u.FollowingCount,
 			CreatedAt:       u.CreatedAt.Time.Format(time.RFC3339),

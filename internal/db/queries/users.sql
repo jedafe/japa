@@ -565,6 +565,7 @@ LIMIT 1;
 SELECT u.id AS user_id,
  COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
+ u.verified,
  u.follower_count,
  u.is_synthetic,
  u.synthetic_source,

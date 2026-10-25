@@ -30,7 +30,9 @@
 		new Date(user.created_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short' })
 	);
 	const tierLabel = $derived(t(`users.profile_type_${user.profile_type}`, user.profile_type));
-	const verified = $derived(user.profile_type === 'business' || user.profile_type === 'pro');
+	// §07 verification badge — the badge reflects the granted flag, not the
+	// tier (a business/pro account is not automatically verified).
+	const verified = $derived(Boolean(user.verified));
 	const isOwn = $derived(page.data.user?.id === user.id);
 </script>
 

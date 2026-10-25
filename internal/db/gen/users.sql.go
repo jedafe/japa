@@ -2005,6 +2005,7 @@ const listPublicUsers = `-- name: ListPublicUsers :many
 SELECT u.id AS user_id,
  COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
+ u.verified,
  u.follower_count,
  u.is_synthetic,
  u.synthetic_source,
@@ -2047,6 +2048,7 @@ type ListPublicUsersRow struct {
 	UserID          pgtype.UUID        `json:"user_id"`
 	Username        string             `json:"username"`
 	ProfileType     string             `json:"profile_type"`
+	Verified        bool               `json:"verified"`
 	FollowerCount   int32              `json:"follower_count"`
 	IsSynthetic     bool               `json:"is_synthetic"`
 	SyntheticSource *string            `json:"synthetic_source"`
@@ -2088,6 +2090,7 @@ func (q *Queries) ListPublicUsers(ctx context.Context, arg ListPublicUsersParams
 			&i.UserID,
 			&i.Username,
 			&i.ProfileType,
+			&i.Verified,
 			&i.FollowerCount,
 			&i.IsSynthetic,
 			&i.SyntheticSource,
