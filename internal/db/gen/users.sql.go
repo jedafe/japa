@@ -2406,7 +2406,7 @@ func (q *Queries) ListUserSessions(ctx context.Context, userID pgtype.UUID) ([]L
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT u.id, u.email, u.username, u.profile_type,
+SELECT u.id, u.email, u.username, u.profile_type, u.verified,
  CASE
  WHEN EXISTS (
  SELECT 1 FROM user_operation_bans uob
@@ -2465,6 +2465,7 @@ type ListUsersRow struct {
 	Email         string             `json:"email"`
 	Username      string             `json:"username"`
 	ProfileType   string             `json:"profile_type"`
+	Verified      bool               `json:"verified"`
 	Status        interface{}        `json:"status"`
 	FollowerCount int32              `json:"follower_count"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
@@ -2494,6 +2495,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 			&i.Email,
 			&i.Username,
 			&i.ProfileType,
+			&i.Verified,
 			&i.Status,
 			&i.FollowerCount,
 			&i.CreatedAt,

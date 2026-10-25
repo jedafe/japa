@@ -5,13 +5,13 @@
 	import { Button } from "$lib/components/ui/button";
 	import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
 	import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
-	import { userManagementApi, impersonationApi } from "$lib/api";
+	import { userManagementApi, impersonationApi, verificationAdminApi } from "$lib/api";
 	import type { ModerationConfig } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { goto, invalidateAll } from "$app/navigation";
 	import {
-		Eye, Pencil, Trash2, Ban, AlertTriangle, RotateCcw, Trash, UserPlus
+		Eye, Pencil, Trash2, Ban, AlertTriangle, RotateCcw, Trash, UserPlus, BadgeCheck
 	} from "lucide-svelte";
 	import type { ActionItem, ActionContext, FilterDef } from "$lib/components/ui/data-table";
 
@@ -20,6 +20,7 @@
 		username: string;
 		email: string;
 		profile_type: string;
+		verified?: boolean;
 		status: string;
 		follower_count: number;
 		groups: string[];
@@ -343,6 +344,27 @@
 				icon: RotateCcw,
 				onclick: openSuspend,
 				show: (row: User) => row.status === "suspended"
+			});
+			// §07 Verification Requests — profile badge grant/revoke (two-step;
+			// approval lives on the /verification-requests queue).
+			acts.push({
+				label: t("users.verify", "Verify"),
+				icon: BadgeCheck,
+				onclick: async (row: User, ctx?: ActionContext) => {
+					await verificationAdminApi.verifyUser(row.id, {});
+					ctx?.reload();
+				},
+				show: (row: User) => row.status !== "deleted" && !row.verified
+			});
+			acts.push({
+				label: t("users.unverify", "Unverify"),
+				icon: BadgeCheck,
+				variant: "destructive",
+				onclick: async (row: User, ctx?: ActionContext) => {
+					await verificationAdminApi.unverifyUser(row.id);
+					ctx?.reload();
+				},
+				show: (row: User) => row.status !== "deleted" && !!row.verified
 			});
 			acts.push({
 				label: t("common.delete", "Delete"),

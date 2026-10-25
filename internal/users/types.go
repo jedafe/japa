@@ -187,6 +187,7 @@ type UserListItem struct {
 	Username      string   `json:"username"`
 	ProfileType   string   `json:"profile_type"`
 	Status        string   `json:"status"`
+	Verified      bool     `json:"verified"`
 	FollowerCount int32    `json:"follower_count"`
 	Groups        []string `json:"groups"`
 	IsOwner       bool     `json:"is_owner"`
