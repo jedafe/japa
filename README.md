@@ -1,6 +1,5 @@
 # japa
-The Repo that powers Japaconnect
-
+The Repo that powers Japa.to
 ## License
 
 This repository is published under the **Business Source License 1.1**
@@ -15,7 +14,7 @@ In short:
 - Each version converts to the **Apache License 2.0** four years after
   it is first publicly released.
 
-JapaConnect is a trademark of the Licensor. This license does not grant
+Japa.to is a trademark of the Licensor. This license does not grant
 any right to use the name or logo.
 
 We are not accepting external contributions at this time.
