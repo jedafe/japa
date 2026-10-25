@@ -837,6 +837,35 @@ func (q *Queries) GetTicketTypeIDBySlug(ctx context.Context, slug string) (pgtyp
 	return id, err
 }
 
+const getVerificationRequestForAppeal = `-- name: GetVerificationRequestForAppeal :one
+SELECT vr.id, vr.requester_user_id, vr.status, vr.entity_type, o.name AS organization_name
+FROM verification_requests vr
+LEFT JOIN organizations o ON o.id = vr.organization_id
+WHERE vr.id = $1
+`
+
+type GetVerificationRequestForAppealRow struct {
+	ID               pgtype.UUID `json:"id"`
+	RequesterUserID  pgtype.UUID `json:"requester_user_id"`
+	Status           string      `json:"status"`
+	EntityType       string      `json:"entity_type"`
+	OrganizationName *string     `json:"organization_name"`
+}
+
+// §07 verification requests: only the requester can appeal, only while rejected.
+func (q *Queries) GetVerificationRequestForAppeal(ctx context.Context, id pgtype.UUID) (GetVerificationRequestForAppealRow, error) {
+	row := q.db.QueryRow(ctx, getVerificationRequestForAppeal, id)
+	var i GetVerificationRequestForAppealRow
+	err := row.Scan(
+		&i.ID,
+		&i.RequesterUserID,
+		&i.Status,
+		&i.EntityType,
+		&i.OrganizationName,
+	)
+	return i, err
+}
+
 const getVideoChannelClaimForAppeal = `-- name: GetVideoChannelClaimForAppeal :one
 SELECT vc.id, vc.claimant_user_id, vc.status, vs.title AS video_title
 FROM video_channel_claims vc
@@ -1741,6 +1770,39 @@ func (q *Queries) ListAppealableSpaces(ctx context.Context, userID pgtype.UUID) 
 	for rows.Next() {
 		var i ListAppealableSpacesRow
 		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAppealableVerificationRequests = `-- name: ListAppealableVerificationRequests :many
+SELECT vr.id, vr.entity_type, o.name AS organization_name
+FROM verification_requests vr
+LEFT JOIN organizations o ON o.id = vr.organization_id
+WHERE vr.requester_user_id = $1 AND vr.status = 'rejected'
+`
+
+type ListAppealableVerificationRequestsRow struct {
+	ID               pgtype.UUID `json:"id"`
+	EntityType       string      `json:"entity_type"`
+	OrganizationName *string     `json:"organization_name"`
+}
+
+func (q *Queries) ListAppealableVerificationRequests(ctx context.Context, userID pgtype.UUID) ([]ListAppealableVerificationRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listAppealableVerificationRequests, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAppealableVerificationRequestsRow
+	for rows.Next() {
+		var i ListAppealableVerificationRequestsRow
+		if err := rows.Scan(&i.ID, &i.EntityType, &i.OrganizationName); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

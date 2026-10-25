@@ -298,6 +298,8 @@ func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProf
 		HeaderMediaID:            headerMediaID,
 		Bio:                      p.Bio,
 		Timezone:                 p.Timezone,
+		Verified:                 p.Verified,
+		VerificationType:         p.VerificationType,
 		WebsiteURL:               p.WebsiteUrl,
 		Education:                p.Education,
 		Profession:               p.Profession,
@@ -385,6 +387,9 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, username strin
 		Location:        p.Location,
 		Role:            p.PublicRole,
 	}
+
+	resp.Verified = p.Verified
+	resp.VerificationType = p.VerificationType
 
 	// §106 video channels: resolve the channel banner from
 	// user_profiles.banner_media_id via the media resolver. Best-effort — a

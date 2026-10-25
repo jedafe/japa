@@ -104,3 +104,8 @@ func (s *Store) GetUserVerified(ctx context.Context, userID pgtype.UUID) (bool, 
 func (s *Store) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
 	return s.read.GetUserEmail(ctx, userID)
 }
+
+// Reopen flips a rejected request back to pending (§22 appeal overturn).
+func (s *Store) Reopen(ctx context.Context, id pgtype.UUID) error {
+	return s.write.ReopenVerificationRequest(ctx, id)
+}

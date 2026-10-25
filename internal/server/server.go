@@ -3001,6 +3001,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			ResolutionNote: "Appeal overturned — claim approved",
 		})
 	})
+	// verification_request overturn → §07 reopen: rejected goes back to pending
+	// so the review queue picks it up again (badge grant stays separate).
+	appealsService.RegisterOverturn(appeals.SubjectVerificationRequest, func(ctx context.Context, a appeals.Appeal, _ pgtype.UUID) error {
+		var requestID pgtype.UUID
+		if err := requestID.Scan(a.EntityID); err != nil {
+			return err
+		}
+
+		return verificationService.ReopenRequest(ctx, requestID)
+	})
 	// video_channel_claim overturn → §106 approve path (rejected→approved is
 	// a legal transition; side-effects run inside the same tx).
 	appealsService.RegisterOverturn(appeals.SubjectVideoClaim, func(ctx context.Context, a appeals.Appeal, reviewedBy pgtype.UUID) error {

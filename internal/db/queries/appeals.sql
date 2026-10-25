@@ -325,6 +325,19 @@ FROM ownership_claims oc
 LEFT JOIN organizations o ON o.id = oc.organization_id
 WHERE oc.claimant_user_id = @user_id AND oc.status = 'rejected';
 
+-- name: GetVerificationRequestForAppeal :one
+-- §07 verification requests: only the requester can appeal, only while rejected.
+SELECT vr.id, vr.requester_user_id, vr.status, vr.entity_type, o.name AS organization_name
+FROM verification_requests vr
+LEFT JOIN organizations o ON o.id = vr.organization_id
+WHERE vr.id = @id;
+
+-- name: ListAppealableVerificationRequests :many
+SELECT vr.id, vr.entity_type, o.name AS organization_name
+FROM verification_requests vr
+LEFT JOIN organizations o ON o.id = vr.organization_id
+WHERE vr.requester_user_id = @user_id AND vr.status = 'rejected';
+
 -- name: ListAppealableVideoClaims :many
 SELECT vc.id, vc.video_source_id, vs.title AS video_title
 FROM video_channel_claims vc

@@ -341,3 +341,9 @@ func (s *Service) enqueueReviewEmail(ctx context.Context, row gen.GetVerificatio
 		slog.Error("verification: enqueue review email", "to", email, "error", err)
 	}
 }
+
+// ReopenRequest flips a rejected request back to pending — the §22 appeal
+// overturn path registered by the server.
+func (s *Service) ReopenRequest(ctx context.Context, id pgtype.UUID) error {
+	return s.store.Reopen(ctx, id)
+}

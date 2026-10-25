@@ -136,6 +136,10 @@ type UserProfileResponse struct {
 	PublicRole     *string `json:"public_role"`
 	// IsOwner marks the JC_OWNER_EMAIL platform owner account.
 	IsOwner bool `json:"is_owner"`
+	// §07 verification badge (ADR-029) — surfaced on /me so account settings
+	// can gate the "Request verification" action.
+	Verified         bool    `json:"verified"`
+	VerificationType *string `json:"verification_type"`
 }
 
 // UserPreferencesResponse is the API response for user preferences.
@@ -224,6 +228,9 @@ type PublicProfileResponse struct {
 	// (users.public_group_id → user_groups.name). Null when unset.
 	// Ref: §03 alias amendment — super_admin public role.
 	Role *string `json:"role"`
+	// §07 verification badge (ADR-029): verified flag + badge type.
+	Verified         bool    `json:"verified"`
+	VerificationType *string `json:"verification_type"`
 }
 
 // DraftResponse is the API response for GET /api/v1/me/drafts/{id}, used by

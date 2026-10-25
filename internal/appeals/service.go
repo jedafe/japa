@@ -84,6 +84,7 @@ const (
 	SubjectContentReview     = "content_review"
 	SubjectCommunityOrg      = "community_org"
 	SubjectCommunityOrgClaim = "community_org_claim"
+	SubjectVerificationRequest = "verification_request"
 )
 
 // AppealTicketTypeSlug is the system ticket type under which appeal
@@ -644,6 +645,7 @@ func (s *Service) registerBuiltins() {
 	s.subjects[SubjectOperationBan] = s.operationBanSubject()
 	s.subjects[SubjectServiceClaim] = s.serviceClaimSubject()
 	s.subjects[SubjectOrgClaim] = s.orgClaimSubject()
+	s.subjects[SubjectVerificationRequest] = s.verificationRequestSubject()
 	s.subjects[SubjectVideoClaim] = s.videoClaimSubject()
 	s.subjects[SubjectMedia] = s.mediaSubject()
 	s.subjects[SubjectWikiRevision] = s.wikiRevisionSubject()
@@ -955,6 +957,42 @@ func (s *Service) orgClaimSubject() SubjectHooks {
 				label := "Rejected organization claim"
 				if r.OrganizationName != nil && *r.OrganizationName != "" {
 					label = "Rejected organization claim — " + *r.OrganizationName
+				}
+				out = append(out, EligibleItem{EntityID: uuidStr(r.ID), Label: label})
+			}
+			return out, nil
+		},
+	}
+}
+
+// verificationRequestSubject covers §07 verification_requests: only the
+// requester can appeal, and only while the request is rejected. The overturn
+// is registered by the server — it reopens the request back to pending.
+func (s *Service) verificationRequestSubject() SubjectHooks {
+	return SubjectHooks{
+		CanAppeal: func(ctx context.Context, userID, entityID pgtype.UUID) (string, error) {
+			req, err := s.read.GetVerificationRequestForAppeal(ctx, entityID)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return "", ErrNotEligible
+				}
+				return "", fmt.Errorf("fetching verification request: %w", err)
+			}
+			if req.Status != "rejected" || req.RequesterUserID != userID {
+				return "", ErrNotEligible
+			}
+			return namedLabelPtr("Rejected verification request", req.OrganizationName), nil
+		},
+		ListEligible: func(ctx context.Context, userID pgtype.UUID) ([]EligibleItem, error) {
+			rows, err := s.read.ListAppealableVerificationRequests(ctx, userID)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]EligibleItem, 0, len(rows))
+			for _, r := range rows {
+				label := "Rejected verification request"
+				if r.OrganizationName != nil && *r.OrganizationName != "" {
+					label = "Rejected verification request — " + *r.OrganizationName
 				}
 				out = append(out, EligibleItem{EntityID: uuidStr(r.ID), Label: label})
 			}
