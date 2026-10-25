@@ -227,7 +227,8 @@ jobs:
         run: 'curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_ACADEMY_STAGING }}"'
       - name: Deploy docs
         if: contains(needs.filter.outputs.apps, 'docs')
-        run: 'curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_DOCS_STAGING }}"'      - name: Record deployed SHA
+        run: 'curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" "${{ secrets.COOLIFY_WEBHOOK_DOCS_STAGING }}"'
+      - name: Record deployed SHA
         run: gh variable set LAST_DEPLOYED_SHA --body "${{ github.sha }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
