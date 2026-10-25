@@ -1,15 +1,19 @@
 package media
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ImageProxyOpts controls how imgproxy resizes and formats the image.
@@ -228,4 +232,53 @@ func ServeURLFromParts(storageBucket, storagePath *string) *string {
 	u := ServeURL(*storageBucket, *storagePath)
 
 	return &u
+}
+
+// warmWidths are the derivative widths pre-fetched after an image upload so
+// the first visitor never pays imgproxy's cold source-fetch + resize latency
+// (the featured-image LCP regression seen in PageSpeed traces — ~2s for a
+// 28KB derivative on a cold cache). 640 is the emitted default; 1280 covers
+// hi-dpi cards and full-width heroes.
+var warmWidths = []int{640, 1280}
+
+// WarmImageDerivatives fires a best-effort background fetch of the standard
+// derivative URLs for a freshly uploaded image. Fire-and-forget: imgproxy's
+// own cache (or the CDN in front of it) absorbs the warm request; failures
+// are debug-logged only. No-op when imgproxy is not configured.
+func WarmImageDerivatives(storageBucket, storagePath string) {
+	cfg := loadMediaURLConfig()
+	if !cfg.valid || cfg.baseURL == "" {
+		return
+	}
+
+	urls := make([]string, 0, len(warmWidths))
+	for _, w := range warmWidths {
+		urls = append(urls, mediaURLWithConfig(storageBucket, storagePath, ImageProxyOpts{Width: w}, cfg))
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+
+		client := &http.Client{Timeout: 20 * time.Second}
+		for _, u := range urls {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+			if err != nil {
+				return
+			}
+
+			resp, err := client.Do(req)
+			if err != nil {
+				slog.Debug("imgproxy warm: request failed", "error", err)
+				return
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				slog.Debug("imgproxy warm: non-200", "status", resp.StatusCode)
+				return
+			}
+		}
+	}()
 }

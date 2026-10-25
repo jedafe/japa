@@ -1417,6 +1417,85 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": false}})
 }
 
+// VerifyUser handles POST /admin/users/:id/verify — grants the §07 profile
+// verification badge. Routed through the users service so the user.verified
+// webhook event is emitted (Section 12) and the grant email is enqueued.
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests).
+func (h *Handlers) VerifyUser(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+
+	var uid pgtype.UUID
+
+	if err := uid.Scan(userID); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		VerificationType *string `json:"verification_type"`
+	}
+
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+			return
+		}
+	}
+
+	if body.VerificationType != nil && !isValidOrgVerificationType(*body.VerificationType) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_verification_type",
+			"verification_type must be one of business|embassy|notable|immigration_lawyer|professional_body")
+		return
+	}
+
+	if h.Users == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Verification service unavailable")
+		return
+	}
+
+	if err := h.Users.VerifyUser(r.Context(), uid, user.UserID, body.VerificationType); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": userID, "verified": true}})
+}
+
+// UnverifyUser handles DELETE /admin/users/:id/verify — revokes the profile
+// verification badge and emits user.unverified (Section 12).
+func (h *Handlers) UnverifyUser(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+
+	var uid pgtype.UUID
+
+	if err := uid.Scan(userID); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	if h.Users == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Verification service unavailable")
+		return
+	}
+
+	if err := h.Users.UnverifyUser(r.Context(), uid, user.UserID); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": userID, "verified": false}})
+}
+
 // ─── Appeals ──────────────────────────────────────────────────────────────
 
 // ListAppeals handles GET /admin/appeals.

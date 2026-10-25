@@ -18,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tiers"
+	"github.com/jedafe/japa/internal/verification"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 	"golang.org/x/sync/errgroup"
@@ -64,6 +65,9 @@ type Service struct {
 	// amendment). Used to flag is_owner on responses and to enforce
 	// owner-protected paths. Empty = ownership disabled.
 	ownerEmail string
+	// webhooks fans user.verified / user.unverified events out to subscribed
+	// endpoints (Section 12). Optional — nil-safe.
+	webhooks userWebhookEmitter
 }
 
 // SetOwnerEmail wires the JC_OWNER_EMAIL designation. Called once during
@@ -80,6 +84,25 @@ func (s *Service) IsOwnerEmail(email string) bool {
 // GetUserEmail resolves a user's email for owner/super_admin checks.
 func (s *Service) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
 	return s.store.read.GetUserEmailByID(ctx, userID)
+}
+
+// userWebhookEmitter fans user.* events out to subscribed webhook endpoints
+// (fire-and-forget, Section 12).
+type userWebhookEmitter interface {
+	EmitEvent(ctx context.Context, eventType string, payload any)
+}
+
+// SetWebhookEmitter injects the Section 12 event fan-out for user.verified /
+// user.unverified. Nil-safe — a nil emitter disables delivery.
+func (s *Service) SetWebhookEmitter(w userWebhookEmitter) { s.webhooks = w }
+
+// emitWebhook fires a user.* event fire-and-forget (Rule 8). Errors are
+// logged inside the emitter, never returned to the caller.
+func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any) {
+	if s.webhooks == nil {
+		return
+	}
+	s.webhooks.EmitEvent(ctx, eventType, payload)
 }
 
 // userEnqueuer is the subset of worker.Enqueuer that users needs.
@@ -2216,4 +2239,82 @@ func stringOrNil(s string) *string {
 	}
 
 	return &s
+}
+
+// VerifyUser grants the §07 profile verification badge and emits the
+// user.verified webhook event (Section 12). adminID is the administrator who
+// performed the verification (for the webhook payload). vtype is the badge
+// type (business|embassy|notable|immigration_lawyer|professional_body); nil
+// preserves any existing value.
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
+func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype *string) error {
+	if vtype != nil && *vtype != "" && !verification.IsValidType(*vtype) {
+		return fmt.Errorf("%w: verification_type must be one of business|embassy|notable|immigration_lawyer|professional_body", errpkg.ErrInvalid)
+	}
+
+	if err := s.store.VerifyUser(ctx, id, vtype); err != nil {
+		return fmt.Errorf("verifying user: %w", err)
+	}
+
+	s.emitWebhook(ctx, "user.verified", map[string]any{
+		"user_id":           id,
+		"verification_type": vtype,
+		"verified_by":       adminID,
+	})
+
+	s.enqueueVerificationEmail(ctx, id, "verification_granted",
+		"Your profile has been verified",
+		"Your JapaConnect profile has been verified — the badge is now shown publicly on your profile.\n")
+
+	return nil
+}
+
+// UnverifyUser revokes the profile verification badge, clears its type, and
+// emits the user.unverified webhook event (Section 12).
+func (s *Service) UnverifyUser(ctx context.Context, id, adminID pgtype.UUID) error {
+	if err := s.store.UnverifyUser(ctx, id); err != nil {
+		return fmt.Errorf("unverifying user: %w", err)
+	}
+
+	s.emitWebhook(ctx, "user.unverified", map[string]any{
+		"user_id":       id,
+		"unverified_by": adminID,
+	})
+
+	s.enqueueVerificationEmail(ctx, id, "verification_revoked",
+		"Your profile verification was removed",
+		"Your JapaConnect profile verification badge has been removed.\n")
+
+	return nil
+}
+
+// enqueueVerificationEmail notifies the user of a badge grant/revocation via
+// an email:send task through the shared enqueuer. Best-effort — the badge
+// state change is already persisted, so delivery failures are only logged.
+func (s *Service) enqueueVerificationEmail(ctx context.Context, userID pgtype.UUID, kind, subject, body string) {
+	if s.enqueuer == nil {
+		return
+	}
+
+	email, err := s.GetUserEmail(ctx, userID)
+	if err != nil || email == "" {
+		slog.Warn("users: fetch email for verification notify",
+			"user_id", userID.String(), "error", err)
+		return
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"to":      email,
+		"subject": subject,
+		"body":    body,
+		"type":    kind,
+	})
+	if err != nil {
+		slog.Error("users: marshal verification email payload", "error", err)
+		return
+	}
+
+	if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {
+		slog.Error("users: enqueue verification email", "to", email, "error", err)
+	}
 }

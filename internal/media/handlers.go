@@ -476,6 +476,9 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, mediaID pgtype.UUID) {
 		); err != nil {
 			slog.Warn("media: failed to enqueue image processing", "media_id", mediaIDStr, "error", err)
 		}
+		// Pre-warm the standard imgproxy derivatives so the first reader
+		// gets a cached resize instead of the cold S3-fetch + transcode.
+		WarmImageDerivatives(m.StorageBucket, m.StoragePath)
 	case strings.HasPrefix(CanonicalMIMEType(mimeType), "video/"):
 		processPayload, _ := json.Marshal(map[string]string{
 			"media_id": mediaIDStr,
@@ -1372,7 +1375,11 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", ctype)
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	// Media objects are keyed by upload UUID, so the content at a path is
+	// effectively immutable. A day-long TTL keeps repeat views (logos,
+	// avatars, featured images) out of the network path while still
+	// bounding how long a deleted object can linger in caches.
+	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	http.ServeFile(w, r, localPath)
 }
@@ -1461,7 +1468,7 @@ func (h *Handlers) serveObjectFromS3(w http.ResponseWriter, r *http.Request, buc
 		w.Header().Set("Content-Type", contentType)
 	}
 
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	for _, hdr := range []string{"Content-Length", "Content-Range"} {

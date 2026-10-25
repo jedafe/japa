@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,13 +12,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/brand"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // validOrgTypes is the allow-list enforced by the organizations.org_type
@@ -1006,6 +1010,10 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, adminID pgtype.UUI
 		"verified_by":     adminID,
 	})
 
+	// Notify the org owner that the badge was granted — the terminal outcome
+	// of the §07 verification-request scrutiny (fire-and-forget, Rule 8).
+	s.enqueueVerifyGrantEmail(ctx, org)
+
 	return nil
 }
 
@@ -1026,6 +1034,41 @@ func (s *Service) UnverifyOrganization(ctx context.Context, id, adminID pgtype.U
 	})
 
 	return nil
+}
+
+// enqueueVerifyGrantEmail notifies the org owner that the verification badge
+// was granted. Best-effort — the grant is already persisted; failures log only.
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests).
+func (s *Service) enqueueVerifyGrantEmail(ctx context.Context, org gen.Organization) {
+	if s.asynq == nil || !org.OwnerUserID.Valid {
+		return
+	}
+
+	email, err := s.store.read.GetUserEmailByID(ctx, org.OwnerUserID)
+	if err != nil || email == "" {
+		slog.Warn("organizations: fetch owner email for verify-grant notify",
+			"org_id", org.ID.String(), "error", err)
+		return
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"to":      email,
+		"subject": fmt.Sprintf("%s has been verified on %s", org.Name, brand.Get()),
+		"body": fmt.Sprintf(
+			"Your organization %s has been verified — the badge is now shown publicly on its profile.\n",
+			org.Name,
+		),
+		"type": "verification_granted",
+	})
+	if err != nil {
+		slog.Error("organizations: marshal verify-grant email payload", "error", err)
+		return
+	}
+
+	task := asynq.NewTask(worker.TypeEmailSend, payload)
+	if _, err := s.asynq.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend))); err != nil {
+		slog.Error("organizations: enqueue verify-grant email", "to", email, "error", err)
+	}
 }
 
 // ActiveOrgExists reports whether an ACTIVE, non-deleted org with this id

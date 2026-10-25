@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -140,4 +141,47 @@ func TestSettingsCloseNilStopCh(t *testing.T) {
 
 	s := &Settings{cache: make(map[string]cachedSetting)}
 	s.Close() // must not panic
+}
+
+// TestAbsolutizeAPIPaths verifies relative /api/v1/... values are prefixed
+// with the API origin (JC_API_PUBLIC_URL) at read time, including values
+// nested inside arrays and objects (e.g. auth brand-slide image fields).
+func TestAbsolutizeAPIPaths(t *testing.T) {
+	t.Parallel()
+
+	const base = "https://api.staging.example.com"
+
+	tests := []struct {
+		name  string
+		input any
+		want  any
+	}{
+		{"relative serve path", "/api/v1/media/serve/media/x.webp", base + "/api/v1/media/serve/media/x.webp"},
+		{"absolute https untouched", "https://cdn.example.com/logo.png", "https://cdn.example.com/logo.png"},
+		{"non-path string untouched", "JapaConnect", "JapaConnect"},
+		{"bare slash untouched", "/", "/"},
+		{"api prefix without v1 untouched", "/api/media/x", "/api/media/x"},
+		{"non-string untouched", float64(42), float64(42)},
+		{
+			"nested slide object",
+			map[string]any{"image": "/api/v1/media/serve/media/a.png", "headline": "Welcome"},
+			map[string]any{"image": base + "/api/v1/media/serve/media/a.png", "headline": "Welcome"},
+		},
+		{
+			"nested array",
+			[]any{"/api/v1/media/serve/media/b.png", "plain", map[string]any{"img": "/api/v1/media/serve/media/c.png"}},
+			[]any{base + "/api/v1/media/serve/media/b.png", "plain", map[string]any{"img": base + "/api/v1/media/serve/media/c.png"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := absolutizeAPIPaths(tt.input, base)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("absolutizeAPIPaths(%v) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
 }

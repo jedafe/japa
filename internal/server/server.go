@@ -154,6 +154,7 @@ import (
 	"github.com/jedafe/japa/internal/universities"
 	"github.com/jedafe/japa/internal/university_courses"
 	"github.com/jedafe/japa/internal/users"
+	"github.com/jedafe/japa/internal/verification"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/video"
 	"github.com/jedafe/japa/internal/visaroutes"
@@ -834,6 +835,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	orgHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in org responses
 	orgHandlers.SetCustomFieldLookup(cfService)     // org_type options from custom_fields (Section 07 + 08)
 	orgHandlers.SetAsynqClient(asynqClient)         // §12 stale-index fix: org CRUD enqueues search:index_entity
+
+	// Verification requests (Section 07 — Verification Requests). Webhook
+	// emitter is wired inside the route group below alongside the other
+	// services (orgService.SetWebhookEmitter call site).
+	verificationService := verification.NewService(database)
+	verificationService.SetAsynqClient(asynqClient) // review-outcome email:send tasks
+	verificationService.SetSiteURL(cfg.SiteURL)     // absolute links in notify emails
+	verificationHandlers := verification.NewHandlers(verificationService)
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
@@ -2877,6 +2886,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// opt-out) trigger a search:index_entity task to sync the user's
 	// document in the Meilisearch users index (§13/§19).
 	usersService.SetEnqueuer(taskEnqueuer)
+	adminHandlers.SetUserVerifier(usersService) // §07 profile badge grant
 	usersService.SetFolderResolver(defaultFolderResolver)
 	// Wire auth settings so UpdateAccount reads the username change cooldown
 	// (users.username_cooldown_days) from system_settings instead of a
@@ -4358,6 +4368,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			reviewService.SetWebhookEmitter(webhookService)
 			paymentService.SetWebhookEmitter(webhookService)
 			orgService.SetWebhookEmitter(webhookService)
+			verificationService.SetWebhooks(webhookService)
+			usersService.SetWebhookEmitter(webhookService)
 			forumService.SetSpaceBroadcaster(&forumSpaceBroadcaster{hub: wsHub})
 			// BUG-009/010: wire Valkey for distributed JSON-LD cache and
 			// view-count counters with periodic flush. Ref: valkey-keys-catalog.md.
@@ -4742,6 +4754,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Get("/claim-ownership/{id}", orgHandlers.GetClaim)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Delete("/claim-ownership/{id}", orgHandlers.WithdrawClaim)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Patch("/claim-ownership/{id}", orgHandlers.ReviewClaim)
+
+			// Verification requests (Section 07 — Verification Requests).
+			// Requester-scoped list — the only way a requester can discover
+			// their request IDs for GET/DELETE /verification-requests/{id}.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.request")).Post("/verification-requests", verificationHandlers.SubmitRequest)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.request")).Get("/me/verification-requests", verificationHandlers.ListMyRequests)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.request")).Get("/verification-requests/{id}", verificationHandlers.GetRequest)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.request")).Delete("/verification-requests/{id}", verificationHandlers.WithdrawRequest)
+			// Public badge-type vocabulary — frontends fetch it (Rule 16).
+			r.Get("/verification-requests/types", verificationHandlers.ListTypes)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/admin/verification-requests", verificationHandlers.AdminListRequests)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Patch("/admin/verification-requests/{id}", verificationHandlers.ReviewRequest)
 
 			// Payment Core routes (Section 17 — Payment Core)
 			// Payment initiation — idempotency middleware prevents duplicate charges
@@ -6663,6 +6687,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/organizations/{id}/verify", adminHandlers.VerifyOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Delete("/admin/organizations/{id}/verify", adminHandlers.UnverifyOrganization)
+
+			// §07 Verification Requests — profile badge grant/revoke (two-step:
+			// the verification-request review only approves; these grant).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/users/{id}/verify", adminHandlers.VerifyUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Delete("/admin/users/{id}/verify", adminHandlers.UnverifyUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Post("/admin/organizations/{id}/claim", adminHandlers.ClaimOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).

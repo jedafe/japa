@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -468,6 +469,16 @@ func (s *Settings) resolveLogoDims(ctx context.Context, key, logoURL string) {
 			candidates = append(candidates, logoURL[idx+1:])
 		}
 	}
+	// Serve-path values (/api/v1/media/serve/{bucket}/{path}) embed the raw
+	// storage path after the bucket segment — strip both so the lookup can
+	// match the media row directly.
+	if idx := strings.Index(logoURL, "/api/v1/media/serve/"); idx >= 0 {
+		if rest := logoURL[idx+len("/api/v1/media/serve/"):]; rest != "" {
+			if slash := strings.Index(rest, "/"); slash >= 0 {
+				candidates = append(candidates, rest[slash+1:])
+			}
+		}
+	}
 	var row gen.Medium
 	var err error
 	for _, c := range candidates {
@@ -660,6 +671,12 @@ func (s *Settings) GetPublicSettings(ctx context.Context) (map[string]any, error
 
 	settings := make(map[string]any, len(rows))
 
+	// JC_API_PUBLIC_URL rewrites relative /api/v1/... values to absolute so
+	// cross-origin frontends (admin/control/academy on separate hosts, which
+	// don't proxy /api) resolve stored media paths on the API host. Empty
+	// keeps dev's same-origin relative paths. Mirrors media.ServeURL.
+	apiBase := strings.TrimRight(os.Getenv("JC_API_PUBLIC_URL"), "/")
+
 	for _, row := range rows {
 		var parsed any
 		if json.Unmarshal(row.Value, &parsed) == nil {
@@ -667,9 +684,40 @@ func (s *Settings) GetPublicSettings(ctx context.Context) (map[string]any, error
 		} else {
 			settings[row.Key] = string(row.Value)
 		}
+		if apiBase != "" {
+			settings[row.Key] = absolutizeAPIPaths(settings[row.Key], apiBase)
+		}
 	}
 
 	return settings, nil
+}
+
+// absolutizeAPIPaths prefixes relative /api/v1/... string values with the
+// API origin, recursing into arrays and objects so nested values (e.g.
+// auth brand-slide image URLs) are rewritten too. Non-path strings and
+// already-absolute URLs pass through unchanged.
+func absolutizeAPIPaths(v any, base string) any {
+	switch t := v.(type) {
+	case string:
+		if strings.HasPrefix(t, "/api/v1/") {
+			return base + t
+		}
+		return t
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = absolutizeAPIPaths(item, base)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, item := range t {
+			out[k] = absolutizeAPIPaths(item, base)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // cleanupLoop periodically evicts expired L1 cache entries to prevent memory leaks.

@@ -914,3 +914,14 @@ func (s *Store) countUserPointsEarned(ctx context.Context, userID pgtype.UUID, f
 		UserID: userID, Column2: from, Column3: to,
 	})
 }
+
+// VerifyUser grants the §07 profile verification badge.
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
+func (s *Store) VerifyUser(ctx context.Context, id pgtype.UUID, vtype *string) error {
+	return s.write.VerifyUser(ctx, gen.VerifyUserParams{ID: id, VerificationType: vtype})
+}
+
+// UnverifyUser revokes the profile verification badge and clears its type.
+func (s *Store) UnverifyUser(ctx context.Context, id pgtype.UUID) error {
+	return s.write.UnverifyUser(ctx, id)
+}
