@@ -393,6 +393,8 @@ SELECT
  u.id AS user_id,
  COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
+ u.verified,
+ u.verification_type,
  u.follower_count,
  u.is_synthetic,
  u.synthetic_source,
@@ -423,6 +425,8 @@ type GetPublicProfileByUsernameRow struct {
 	UserID             pgtype.UUID        `json:"user_id"`
 	Username           string             `json:"username"`
 	ProfileType        string             `json:"profile_type"`
+	Verified           bool               `json:"verified"`
+	VerificationType   *string            `json:"verification_type"`
 	FollowerCount      int32              `json:"follower_count"`
 	IsSynthetic        bool               `json:"is_synthetic"`
 	SyntheticSource    *string            `json:"synthetic_source"`
@@ -453,6 +457,8 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, username strin
 		&i.UserID,
 		&i.Username,
 		&i.ProfileType,
+		&i.Verified,
+		&i.VerificationType,
 		&i.FollowerCount,
 		&i.IsSynthetic,
 		&i.SyntheticSource,
@@ -1574,7 +1580,7 @@ SELECT DISTINCT ON (u.id)
  up.gender,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
- u.email, u.username, u.profile_type,
+ u.email, u.username, u.profile_type, u.verified, u.verification_type,
  -- Effective standing: user_moderation_actions / user_operation_bans rows are
  -- enforced by BanEnforcement regardless of the users.status column, so /me
  -- must report the same standing or restricted sessions render 'active'.
@@ -1614,33 +1620,35 @@ ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END
 `
 
 type GetUserProfileRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	DisplayName     *string            `json:"display_name"`
-	AvatarUrl       *string            `json:"avatar_url"`
-	AvatarMediaID   pgtype.UUID        `json:"avatar_media_id"`
-	HeaderMediaID   pgtype.UUID        `json:"header_media_id"`
-	Bio             *string            `json:"bio"`
-	Timezone        *string            `json:"timezone"`
-	CoverUrl        *string            `json:"cover_url"`
-	WebsiteUrl      *string            `json:"website_url"`
-	Education       *string            `json:"education"`
-	Profession      *string            `json:"profession"`
-	MaritalStatus   *string            `json:"marital_status"`
-	DateOfBirth     pgtype.Date        `json:"date_of_birth"`
-	Gender          *string            `json:"gender"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	Email           string             `json:"email"`
-	Username        string             `json:"username"`
-	ProfileType     string             `json:"profile_type"`
-	Status          string             `json:"status"`
-	FollowerCount   int32              `json:"follower_count"`
-	LastLoginAt     pgtype.Timestamptz `json:"last_login_at"`
-	PublicUsername  *string            `json:"public_username"`
-	PublicGroupID   pgtype.UUID        `json:"public_group_id"`
-	UserGroupName   *string            `json:"user_group_name"`
-	PublicGroupName *string            `json:"public_group_name"`
+	ID               pgtype.UUID        `json:"id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	DisplayName      *string            `json:"display_name"`
+	AvatarUrl        *string            `json:"avatar_url"`
+	AvatarMediaID    pgtype.UUID        `json:"avatar_media_id"`
+	HeaderMediaID    pgtype.UUID        `json:"header_media_id"`
+	Bio              *string            `json:"bio"`
+	Timezone         *string            `json:"timezone"`
+	CoverUrl         *string            `json:"cover_url"`
+	WebsiteUrl       *string            `json:"website_url"`
+	Education        *string            `json:"education"`
+	Profession       *string            `json:"profession"`
+	MaritalStatus    *string            `json:"marital_status"`
+	DateOfBirth      pgtype.Date        `json:"date_of_birth"`
+	Gender           *string            `json:"gender"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Email            string             `json:"email"`
+	Username         string             `json:"username"`
+	ProfileType      string             `json:"profile_type"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	Status           string             `json:"status"`
+	FollowerCount    int32              `json:"follower_count"`
+	LastLoginAt      pgtype.Timestamptz `json:"last_login_at"`
+	PublicUsername   *string            `json:"public_username"`
+	PublicGroupID    pgtype.UUID        `json:"public_group_id"`
+	UserGroupName    *string            `json:"user_group_name"`
+	PublicGroupName  *string            `json:"public_group_name"`
 }
 
 func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUserProfileRow, error) {
@@ -1667,6 +1675,8 @@ func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUs
 		&i.Email,
 		&i.Username,
 		&i.ProfileType,
+		&i.Verified,
+		&i.VerificationType,
 		&i.Status,
 		&i.FollowerCount,
 		&i.LastLoginAt,
@@ -1901,6 +1911,18 @@ func (q *Queries) GetUserTopContentByPeriod(ctx context.Context, arg GetUserTopC
 		return nil, err
 	}
 	return items, nil
+}
+
+const getUserVerified = `-- name: GetUserVerified :one
+SELECT verified FROM users WHERE id = $1
+`
+
+// Eligibility probe for POST /verification-requests (entity_type='user').
+func (q *Queries) GetUserVerified(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getUserVerified, id)
+	var verified bool
+	err := row.Scan(&verified)
+	return verified, err
 }
 
 const listActiveUsersForDigest = `-- name: ListActiveUsersForDigest :many
@@ -2587,6 +2609,17 @@ func (q *Queries) SoftDeleteUser(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const unverifyUser = `-- name: UnverifyUser :exec
+UPDATE users SET verified = false, verification_type = NULL, updated_at = now()
+WHERE id = $1
+`
+
+// Revokes the profile verification badge and clears verification_type.
+func (q *Queries) UnverifyUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, unverifyUser, id)
+	return err
+}
+
 const updateLastLoginAt = `-- name: UpdateLastLoginAt :exec
 UPDATE users SET last_login_at = now() WHERE id = $1
 `
@@ -2861,4 +2894,22 @@ func (q *Queries) UsernameExists(ctx context.Context, arg UsernameExistsParams) 
 	var count int32
 	err := row.Scan(&count)
 	return count, err
+}
+
+const verifyUser = `-- name: VerifyUser :exec
+UPDATE users SET verified = true, verification_type = $2, updated_at = now()
+WHERE id = $1
+`
+
+type VerifyUserParams struct {
+	ID               pgtype.UUID `json:"id"`
+	VerificationType *string     `json:"verification_type"`
+}
+
+// Admin grant of the §07 profile verification badge. verification_type is
+// optional; nil preserves any existing value (same contract as orgs).
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
+func (q *Queries) VerifyUser(ctx context.Context, arg VerifyUserParams) error {
+	_, err := q.db.Exec(ctx, verifyUser, arg.ID, arg.VerificationType)
+	return err
 }

@@ -17,7 +17,7 @@ SELECT DISTINCT ON (u.id)
  up.gender,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
- u.email, u.username, u.profile_type,
+ u.email, u.username, u.profile_type, u.verified, u.verification_type,
  -- Effective standing: user_moderation_actions / user_operation_bans rows are
  -- enforced by BanEnforcement regardless of the users.status column, so /me
  -- must report the same standing or restricted sessions render 'active'.
@@ -524,6 +524,8 @@ SELECT
  u.id AS user_id,
  COALESCE(u.public_username, u.username, '') AS username,
  u.profile_type,
+ u.verified,
+ u.verification_type,
  u.follower_count,
  u.is_synthetic,
  u.synthetic_source,
@@ -1012,3 +1014,19 @@ WHERE (username = @handle OR lower(public_username) = lower(@handle))
 -- Owner-amendment helper: resolves a user's email so callers can compare it
 -- against JC_OWNER_EMAIL for owner-protected paths.
 SELECT email FROM users WHERE id = @user_id;
+
+-- name: VerifyUser :exec
+-- Admin grant of the §07 profile verification badge. verification_type is
+-- optional; nil preserves any existing value (same contract as orgs).
+-- Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
+UPDATE users SET verified = true, verification_type = sqlc.narg(verification_type), updated_at = now()
+WHERE id = $1;
+
+-- name: UnverifyUser :exec
+-- Revokes the profile verification badge and clears verification_type.
+UPDATE users SET verified = false, verification_type = NULL, updated_at = now()
+WHERE id = $1;
+
+-- name: GetUserVerified :one
+-- Eligibility probe for POST /verification-requests (entity_type='user').
+SELECT verified FROM users WHERE id = $1;

@@ -4428,6 +4428,9 @@ type User struct {
 	SourceID            pgtype.UUID        `json:"source_id"`
 	PublicUsername      *string            `json:"public_username"`
 	PublicGroupID       pgtype.UUID        `json:"public_group_id"`
+	Verified            bool               `json:"verified"`
+	// business|embassy|notable|immigration_lawyer|professional_body — set via POST /admin/users/{id}/verify
+	VerificationType *string `json:"verification_type"`
 }
 
 type UserAffiliateLink struct {
@@ -4677,6 +4680,20 @@ type UserSourceBlock struct {
 	BlockerID pgtype.UUID        `json:"blocker_id"`
 	SourceID  pgtype.UUID        `json:"source_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type VerificationRequest struct {
+	ID               pgtype.UUID        `json:"id"`
+	RequesterUserID  pgtype.UUID        `json:"requester_user_id"`
+	EntityType       string             `json:"entity_type"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	RequestedType    *string            `json:"requested_type"`
+	FormSubmissionID pgtype.UUID        `json:"form_submission_id"`
+	Status           string             `json:"status"`
+	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote   *string            `json:"resolution_note"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
 }
 
 type VideoChannelClaim struct {
