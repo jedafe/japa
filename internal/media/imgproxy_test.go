@@ -48,7 +48,7 @@ func TestMediaURLWithConfig_SignedURL(t *testing.T) {
 	}, cfg)
 
 	srcB64 := base64.RawURLEncoding.EncodeToString([]byte("s3://avatars/u/42.jpg"))
-	wantPath := "/rs:fill:300:300/plain/" + srcB64 + "@webp"
+	wantPath := "/rs:fill:300:300/" + srcB64 + ".webp"
 	want := cfg.baseURL + "/" + expectedSig(t, cfg, wantPath) + wantPath
 
 	if got != want {
@@ -66,9 +66,9 @@ func TestMediaURLWithConfig_OptionDefaults(t *testing.T) {
 		opts     ImageProxyOpts
 		wantOpts string
 	}{
-		{"all empty", ImageProxyOpts{}, "/rs:auto:640:0/plain/"},
-		{"size only", ImageProxyOpts{Width: 200, Height: 100}, "/rs:fill:200:100/plain/"},
-		{"format passthrough", ImageProxyOpts{Width: 64, Height: 64, Format: "png"}, "/rs:fill:64:64/plain/"},
+		{"all empty", ImageProxyOpts{}, "/rs:auto:640:0/"},
+		{"size only", ImageProxyOpts{Width: 200, Height: 100}, "/rs:fill:200:100/"},
+		{"format passthrough", ImageProxyOpts{Width: 64, Height: 64, Format: "png"}, "/rs:fill:64:64/"},
 	}
 	for _, tc := range cases {
 		got := mediaURLWithConfig("b", "p.png", tc.opts, cfg)
@@ -78,7 +78,7 @@ func TestMediaURLWithConfig_OptionDefaults(t *testing.T) {
 	}
 	// Height 0 flips resizing type to auto; explicit format applies.
 	got := mediaURLWithConfig("b", "p.png", ImageProxyOpts{Width: 200, Height: 0, Format: "jpg"}, cfg)
-	if !strings.Contains(got, "/rs:auto:200:0/plain/") || !strings.HasSuffix(got, "@jpg") {
+	if !strings.Contains(got, "/rs:auto:200:0/") || !strings.HasSuffix(got, ".jpg") {
 		t.Fatalf("auto/jpg URL wrong: %s", got)
 	}
 }

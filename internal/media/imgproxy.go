@@ -159,7 +159,10 @@ func mediaURLWithConfig(storageBucket, storagePath string, opts ImageProxyOpts, 
 		format = "webp"
 	}
 
-	path := fmt.Sprintf("/rs:%s:%d:%d/plain/%s@%s",
+	// Base64 source form: /{opts}/{base64url}.{ext} — the "plain/" prefix
+	// takes a percent-escaped URL, not base64, so wrapping base64 in
+	// plain/ makes imgproxy parse a schemeless URL ("unknown scheme").
+	path := fmt.Sprintf("/rs:%s:%d:%d/%s.%s",
 		resizingType, width, height, encoded, format)
 
 	mac := hmac.New(sha256.New, cfg.keyBytes)

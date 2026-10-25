@@ -79,32 +79,29 @@
 	});
 
 	// fixMediaUrl — the backend returns imgproxy URLs (e.g.
-	// http://imgproxy:8080/{sig}/{opts}/{base64_source}@{format}) which
+	// http://imgproxy:8080/{sig}/{opts}/{base64_source}.{format}) which
 	// don't resolve in dev. Decode the base64 source segment to recover
 	// the s3:// path and construct a direct /api/v1/media/serve/ URL.
 	function fixMediaUrl(url: string): string {
 		if (!url) return '';
 		// Already a relative serve URL — use as-is.
 		if (url.startsWith('/api/v1/media/serve/')) return url;
-		// Not an imgproxy URL — return as-is (data: URIs, external URLs, etc.)
-		if (!url.includes('/plain/')) return url;
 		try {
-			// Format: {base}/{sig}/{opts}/plain/{base64_source}@{format}
-			// or:     {base}/{sig}/{opts}/{base64_source}@{format}
+			// Format:        {base}/{sig}/{opts}/{base64_source}.{format}
+			// legacy:        {base}/{sig}/{opts}/plain/{base64_source}@{format}
 			const parts = url.split('/');
-			// Find the base64-encoded source segment — it's the part after
-			// "plain" (or the segment containing @ if no plain prefix).
+			// Find the base64-encoded source segment — after "plain"
+			// (legacy), or the last segment carrying an @ext/.ext suffix.
 			let encoded: string | undefined;
 			const plainIdx = parts.indexOf('plain');
 			if (plainIdx >= 0 && parts[plainIdx + 1]) {
 				encoded = parts[plainIdx + 1].split('@')[0];
 			} else {
-				// No "plain" — look for a segment with @ in it
-				for (let i = parts.length - 1; i >= 0; i--) {
-					if (parts[i].includes('@')) {
-						encoded = parts[i].split('@')[0];
-						break;
-					}
+				const last = parts[parts.length - 1] ?? '';
+				if (last.includes('@')) {
+					encoded = last.split('@')[0];
+				} else if (/^[A-Za-z0-9_-]+\.[a-z0-9]+$/i.test(last)) {
+					encoded = last.slice(0, last.lastIndexOf('.'));
 				}
 			}
 			if (!encoded) return url;
