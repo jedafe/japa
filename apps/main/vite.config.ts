@@ -50,41 +50,8 @@ function apiHeadersPlugin(): Plugin {
 	};
 }
 
-/**
- * One app CSS file instead of per-component splits — the guest landing page
- * linked 8 stylesheets, all render-blocking (~2s est. on mobile PageSpeed).
- * SvelteKit forces cssCodeSplit=true in its own config hook, so this plugin is
- * registered after sveltekit() to win the merge order.
- */
-function mergedCssPlugin(): Plugin {
-	return {
-		name: 'jc-merged-css',
-		config: () => ({ build: { cssCodeSplit: false } })
-	};
-}
-
 export default defineConfig({
-	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting(), mergedCssPlugin()],
-	build: {
-		rollupOptions: {
-			output: {
-				codeSplitting: {
-					groups: [
-						{
-							// The tiptap/prosemirror composer stack (~250KB transfer)
-							// was being merged into shared vendor chunks that the (app)
-							// layout pulls — shipping it to guests who never render an
-							// editor. Force it into its own chunk so only routes that
-							// statically import the editor pay for it.
-							name: 'editor',
-							test: /node_modules[\\/](@tiptap|prosemirror)/,
-							priority: 10
-						}
-					]
-				}
-			}
-		}
-	},
+	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting()],
 	// $lib/appOrigins reads PUBLIC_* origins from import.meta.env, which Vite
 	// only populates for envPrefix-matched keys (default: VITE_ only).
 	envPrefix: ['VITE_', 'PUBLIC_'],
