@@ -186,3 +186,4 @@ jobs:
         run: gh variable set LAST_DEPLOYED_SHA --body "${{ github.sha }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
