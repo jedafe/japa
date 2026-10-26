@@ -193,6 +193,14 @@ func (s *Store) RemoveUserFromGroup(ctx context.Context, userID, groupID pgtype.
 		return fmt.Errorf("clearing public role: %w", err)
 	}
 
+	// §102/000824: if this removal stripped mentorship.become_mentor, retire
+	// the mentor profile + shadow listing — a published shadow whose mentor
+	// can no longer respond must not keep minting bookings. No-op when the
+	// node survives on another group.
+	if err := s.write.RetireMentorWithoutBecomeMentorPerm(ctx, userID); err != nil {
+		return fmt.Errorf("retiring mentor shadow after group removal: %w", err)
+	}
+
 	s.invalidateUserCache(ctx, userID)
 
 	return nil
@@ -613,6 +621,12 @@ func (s *Store) RemoveRoleFromGroup(ctx context.Context, groupID, roleID pgtype.
 		return fmt.Errorf("removing role from group: %w", err)
 	}
 
+	// §102/000824: members who lost mentorship.become_mentor with this
+	// detach get their shadow retired (no-op for unaffected members).
+	if err := s.write.RetireGroupMentorsWithoutBecomeMentorPerm(ctx, groupID); err != nil {
+		return fmt.Errorf("retiring mentors after role detach: %w", err)
+	}
+
 	s.invalidateGroupCache(ctx, groupID)
 
 	return nil
@@ -626,6 +640,15 @@ func (s *Store) RemovePermissionFromRole(ctx context.Context, roleID pgtype.UUID
 		PermKey: permKey,
 	}); err != nil {
 		return fmt.Errorf("removing permission from role: %w", err)
+	}
+
+	// §102/000824: same demotion sweep for every group that held the role.
+	if groupIDs, gerr := s.read.ListGroupsByRoleID(ctx, roleID); gerr == nil {
+		for _, gid := range groupIDs {
+			if rerr := s.write.RetireGroupMentorsWithoutBecomeMentorPerm(ctx, gid); rerr != nil {
+				slog.Warn("rbac: mentor retire sweep failed", "group_id", gid, "error", rerr)
+			}
+		}
 	}
 
 	// Invalidate cache for all groups that hold this role.

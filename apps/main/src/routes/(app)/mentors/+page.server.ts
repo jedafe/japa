@@ -13,9 +13,10 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Preserve the legacy filters that map onto the services directory
-	// (dest, sort, page). `areas` has no services-side equivalent.
+	// (dest, areas, include_unavailable, sort, page) — the mentorship-kind
+	// branch of /services honours all of them (§102 discovery contract).
 	const target = new URLSearchParams({ kind: 'mentorship' });
-	for (const key of ['dest', 'sort', 'page'] as const) {
+	for (const key of ['dest', 'areas', 'include_unavailable', 'sort', 'page'] as const) {
 		const value = event.url.searchParams.get(key)?.trim();
 		if (value) target.set(key, value);
 	}

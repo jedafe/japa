@@ -62,7 +62,26 @@ interface ManifestShortcut {
 	icons?: ManifestIcon[];
 }
 
+/** Same-origin root-relative path — rejects '//host' protocol-relative escapes. */
+const ROOT_PATH = /^\/(?!\/)/;
+
+/** Infer the manifest icon MIME from its URL so uploaded webp/svg icons aren't mislabeled as png. */
+function iconType(src: string): string {
+	const ext = src.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
+	if (ext === 'svg') return 'image/svg+xml';
+	if (ext === 'webp') return 'image/webp';
+	if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+	if (ext === 'ico') return 'image/x-icon';
+	return 'image/png';
+}
+
+// Manifest `dir` mirrors the site default language (i18n.default_language),
+// not the per-request locale — the manifest describes the installed app, not
+// one page render.
+const RTL_LANGS = new Set(['ar', 'he', 'iw', 'fa', 'ur', 'ps', 'sd', 'ug', 'yi', 'dv', 'ku', 'ckb']);
+
 export interface WebManifest {
+	id: string;
 	name: string;
 	short_name: string;
 	description: string;
@@ -119,10 +138,11 @@ export function buildWebManifest(settings: Settings, app: ManifestAppOptions): W
 
 	const rawDisplay = str(settings, 'pwa.display');
 	const display = VALID_DISPLAY.has(rawDisplay) ? rawDisplay : 'standalone';
-	// start_url must be a same-origin path — an absolute URL would take the
-	// installed app's launch out of its own scope.
+	// start_url must be a same-origin root path — an absolute URL (or a
+	// '//host' protocol-relative escape) would take the installed app's
+	// launch out of its own scope.
 	const rawStartUrl = str(settings, 'pwa.start_url');
-	const startUrl = rawStartUrl.startsWith('/') ? rawStartUrl : app.defaultStartUrl;
+	const startUrl = ROOT_PATH.test(rawStartUrl) ? rawStartUrl : app.defaultStartUrl;
 
 	const categories = (str(settings, 'pwa.categories') || 'social')
 		.split(',')
@@ -134,11 +154,20 @@ export function buildWebManifest(settings: Settings, app: ManifestAppOptions): W
 		.map((s) => ({
 			// link-list editors emit {label, url}; the manifest field is `name`.
 			name: (typeof s.name === 'string' && s.name) || (typeof s.label === 'string' && s.label) || '',
-			url: typeof s.url === 'string' && s.url.startsWith('/') ? s.url : '/'
+			url: typeof s.url === 'string' && ROOT_PATH.test(s.url) ? s.url : '/'
 		}))
-		.filter((s) => s.name !== '');
+		.filter((s) => s.name !== '')
+		// Launchers display at most ~4 shortcuts — cap here too, not only in
+		// the admin editor (rows written before the cap could exceed it).
+		.slice(0, 4);
+
+	const lang = str(settings, 'i18n.default_language') || 'en';
 
 	const manifest: WebManifest = {
+		// Explicit id keeps the installed app's identity stable when an admin
+		// changes pwa.start_url — without it Chromium derives id from
+		// start_url and every edit silently mints a "new" app.
+		id: '/',
 		name,
 		short_name: shortName,
 		description,
@@ -148,13 +177,13 @@ export function buildWebManifest(settings: Settings, app: ManifestAppOptions): W
 		orientation: 'any',
 		background_color: hexColor(settings, 'pwa.background_color') || '#ffffff',
 		theme_color: themeColor,
-		lang: str(settings, 'i18n.default_language') || 'en',
-		dir: 'ltr',
+		lang,
+		dir: RTL_LANGS.has(lang.split('-')[0]) ? 'rtl' : 'ltr',
 		categories,
 		icons: [
-			{ src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
-			{ src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
-			{ src: maskable, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+			{ src: icon192, sizes: '192x192', type: iconType(icon192), purpose: 'any' },
+			{ src: icon512, sizes: '512x512', type: iconType(icon512), purpose: 'any' },
+			{ src: maskable, sizes: '512x512', type: iconType(maskable), purpose: 'maskable' }
 		]
 	};
 
@@ -196,6 +225,15 @@ export interface ServiceWorkerInit {
 let pwaConfigCheckedAt = 0;
 let offlineEnabled = true;
 const CONFIG_REFRESH_MS = 5 * 60_000;
+// A failed settings fetch retries on this shorter window instead of
+// waiting the full refresh period — the worker may be offline, in which
+// case the failure is cheap and the toggle applies as soon as it returns.
+const CONFIG_RETRY_MS = 30_000;
+
+// Bounds on the guest page/runtime caches — without a cap every same-origin
+// GET ever fetched accumulates for the worker's lifetime.
+const PAGES_MAX_ENTRIES = 60;
+const RUNTIME_MAX_ENTRIES = 150;
 
 // Authenticated navigations are never written to the page cache — a stale
 // personalized page must not outlive its session on shared devices. The SW
@@ -209,21 +247,55 @@ async function purgeAllPwaCaches(): Promise<void> {
 	await Promise.all(names.filter((n) => n.startsWith('jc-')).map((n) => caches.delete(n)));
 }
 
+// Set by initPwaServiceWorker — lets a false→true offline_enabled flip
+// backfill the precache it skipped at install time.
+let precacheStore: { name: string; urls: string[] } | null = null;
+
+async function fillPrecache(store: { name: string; urls: string[] }): Promise<void> {
+	const cache = await caches.open(store.name);
+	// Per-URL adds: one missing precache asset must not fail the whole
+	// install — a failing addAll would brick the worker (and, on the
+	// main app, take push notifications down with it).
+	await Promise.allSettled(store.urls.map((url) => cache.add(url)));
+	// The manifest endpoint is itself precached — pull the resolved icon
+	// list from it so admin-uploaded icons (pwa.icon_*) are cached too,
+	// not just the bundled defaults.
+	try {
+		const res = await cache.match('/manifest.json');
+		const manifest = (await res?.json()) as { icons?: { src?: string }[] } | undefined;
+		const iconUrls = (manifest?.icons ?? [])
+			.map((i) => i?.src)
+			.filter((s): s is string => typeof s === 'string' && s.startsWith('/'));
+		await Promise.allSettled(iconUrls.map((url) => cache.add(url)));
+	} catch {
+		// Manifest unreadable — bundled icons still precached via urls.
+	}
+}
+
 async function refreshPwaConfig(settingsUrl: string | undefined): Promise<void> {
 	if (!settingsUrl) return;
-	pwaConfigCheckedAt = Date.now();
 	try {
 		const res = await fetch(settingsUrl);
-		if (!res.ok) return;
+		if (!res.ok) {
+			pwaConfigCheckedAt = Date.now() - CONFIG_REFRESH_MS + CONFIG_RETRY_MS;
+			return;
+		}
 		const body = await res.json();
 		const data = body?.data ?? body;
 		const wasEnabled = offlineEnabled;
 		offlineEnabled = !(data && data['pwa.offline_enabled'] === false);
+		pwaConfigCheckedAt = Date.now();
 		// A flag flip to disabled purges everything — "off" means no cached
 		// residue either, not just "stop serving from cache".
 		if (wasEnabled && !offlineEnabled) await purgeAllPwaCaches();
+		// A flip back to enabled backfills the precache — install skipped it
+		// while the toggle was off and the fallback page would otherwise be
+		// missing until the next deploy.
+		if (!wasEnabled && offlineEnabled && precacheStore) await fillPrecache(precacheStore);
 	} catch {
-		// Offline or transient failure — keep the enabled default.
+		// Offline or transient failure — keep the enabled default and retry
+		// on the shorter backoff window.
+		pwaConfigCheckedAt = Date.now() - CONFIG_REFRESH_MS + CONFIG_RETRY_MS;
 	}
 }
 
@@ -249,6 +321,13 @@ async function cacheFirst(event: FetchEvent, cacheName: string): Promise<Respons
 	return res;
 }
 
+async function trimCache(cacheName: string, max: number): Promise<void> {
+	const cache = await caches.open(cacheName);
+	const keys = await cache.keys();
+	if (keys.length <= max) return;
+	await Promise.all(keys.slice(0, keys.length - max).map((k) => cache.delete(k)));
+}
+
 async function networkFirstNavigation(
 	event: FetchEvent,
 	pagesCache: string,
@@ -257,9 +336,21 @@ async function networkFirstNavigation(
 ): Promise<Response> {
 	const { request } = event;
 	const cache = await caches.open(pagesCache);
+	// Navigation preload (enabled in activate) races the network fetch — it
+	// starts the request at navigation time instead of at SW dispatch.
+	let res: Response | undefined;
 	try {
-		const res = await fetch(request);
-		if (isCacheable(res) && !authed) event.waitUntil(cache.put(request, res.clone()));
+		res = (await event.preloadResponse) ?? undefined;
+	} catch {
+		res = undefined;
+	}
+	try {
+		res ??= await fetch(request);
+		if (isCacheable(res) && !authed) {
+			event.waitUntil(
+				cache.put(request, res.clone()).then(() => trimCache(pagesCache, PAGES_MAX_ENTRIES))
+			);
+		}
 		return res;
 	} catch {
 		const hit = await cache.match(request);
@@ -276,7 +367,10 @@ async function staleWhileRevalidate(event: FetchEvent, cacheName: string): Promi
 	const hit = await cache.match(request);
 	const fetched = fetch(request)
 		.then(async (res) => {
-			if (isCacheable(res)) await cache.put(request, res.clone());
+			if (isCacheable(res)) {
+				await cache.put(request, res.clone());
+				await trimCache(cacheName, RUNTIME_MAX_ENTRIES);
+			}
 			return res;
 		})
 		.catch(() => undefined);
@@ -298,7 +392,10 @@ export function initPwaServiceWorker(sw: ServiceWorkerGlobalScope, init: Service
 	const PAGES = `jc-pages-${init.version}`;
 	const RUNTIME = `jc-runtime-${init.version}`;
 	const ACTIVE = new Set([PRECACHE, IMMUTABLE, PAGES, RUNTIME]);
-	const precacheUrls = [offlineUrl, '/manifest.json', ...(init.precacheExtras ?? [])];
+	precacheStore = {
+		name: PRECACHE,
+		urls: [offlineUrl, '/manifest.json', ...(init.precacheExtras ?? [])]
+	};
 
 	sw.addEventListener('install', (event) => {
 		event.waitUntil(
@@ -306,12 +403,8 @@ export function initPwaServiceWorker(sw: ServiceWorkerGlobalScope, init: Service
 				// Read the offline flag first — a disabled toggle must mean no
 				// caching at all, not "cache but never serve".
 				await refreshPwaConfig(init.settingsUrl);
-				if (!offlineEnabled) return;
-				const cache = await caches.open(PRECACHE);
-				// Per-URL adds: one missing precache asset must not fail the whole
-				// install — a failing addAll would brick the worker (and, on the
-				// main app, take push notifications down with it).
-				await Promise.allSettled(precacheUrls.map((url) => cache.add(url)));
+				if (!offlineEnabled || !precacheStore) return;
+				await fillPrecache(precacheStore);
 			})()
 		);
 	});
@@ -325,6 +418,9 @@ export function initPwaServiceWorker(sw: ServiceWorkerGlobalScope, init: Service
 						.filter((n) => n.startsWith('jc-') && !ACTIVE.has(n))
 						.map((n) => caches.delete(n))
 				);
+				// Race navigations against SW dispatch — the request starts at
+				// commit time and the fetch handler prefers event.preloadResponse.
+				await sw.registration.navigationPreload?.enable().catch(() => {});
 				await refreshPwaConfig(init.settingsUrl);
 			})()
 		);
@@ -333,12 +429,15 @@ export function initPwaServiceWorker(sw: ServiceWorkerGlobalScope, init: Service
 	// Pages inform the worker of their auth state so guest navigations cache
 	// and authed ones don't. Transitioning to authed purges the page cache —
 	// anything cached while the previous state held is no longer safe to keep.
+	// Transitioning to guest (logout) purges the runtime cache — it may hold
+	// personalized responses from the session that just ended.
 	sw.addEventListener('message', (event) => {
 		const data = event.data as { type?: string; authed?: boolean } | undefined;
 		if (data?.type !== 'jc:pwa-auth' || typeof data.authed !== 'boolean') return;
 		const wasAuthed = authed;
 		authed = data.authed;
 		if (authed && !wasAuthed) event.waitUntil(caches.delete(PAGES));
+		if (!authed && wasAuthed) event.waitUntil(caches.delete(RUNTIME));
 	});
 
 	sw.addEventListener('fetch', (event) => {
@@ -364,6 +463,10 @@ export function initPwaServiceWorker(sw: ServiceWorkerGlobalScope, init: Service
 			event.respondWith(networkFirstNavigation(event, PAGES, PRECACHE, offlineUrl));
 			return;
 		}
-		event.respondWith(staleWhileRevalidate(event, RUNTIME));
+		// Runtime SWR is guest-only — the same policy as page navigations.
+		// SvelteKit __data.json payloads carry personalized data (including
+		// the seeded access token) and must never be replayed to a later
+		// logged-out session on a shared device.
+		if (!authed) event.respondWith(staleWhileRevalidate(event, RUNTIME));
 	});
 }

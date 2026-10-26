@@ -203,7 +203,7 @@ func (q *Queries) CreateJobApplication(ctx context.Context, arg CreateJobApplica
 	return i, err
 }
 
-const expireJobListingsPastDeadline = `-- name: ExpireJobListingsPastDeadline :execrows
+const expireJobListingsPastDeadline = `-- name: ExpireJobListingsPastDeadline :many
 
 UPDATE contents c
 SET status = 'archived', updated_at = now()
@@ -223,7 +223,13 @@ WHERE c.content_type = 'job_listing'
            THEN cfv.value_text::timestamptz END < now()
  )
  )
+RETURNING c.id, c.slug
 `
+
+type ExpireJobListingsPastDeadlineRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+}
 
 // =====================================================================
 // Expire listings past deadline — archive job_listing content whose
@@ -239,13 +245,26 @@ WHERE c.content_type = 'job_listing'
 // fallback is guarded by an ISO-date regex — Postgres may evaluate the cast
 // before the cf.key predicate, and unrelated fields (e.g. destination_country)
 // store non-date text in value_text, which would otherwise fail the whole
-// task with SQLSTATE 22007.
-func (q *Queries) ExpireJobListingsPastDeadline(ctx context.Context) (int64, error) {
-	result, err := q.db.Exec(ctx, expireJobListingsPastDeadline)
+// task with SQLSTATE 22007. RETURNING id+slug lets callers purge each expired
+// listing's detail page at the edge CDN (ADR-134).
+func (q *Queries) ExpireJobListingsPastDeadline(ctx context.Context) ([]ExpireJobListingsPastDeadlineRow, error) {
+	rows, err := q.db.Query(ctx, expireJobListingsPastDeadline)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []ExpireJobListingsPastDeadlineRow
+	for rows.Next() {
+		var i ExpireJobListingsPastDeadlineRow
+		if err := rows.Scan(&i.ID, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getJobApplicationByID = `-- name: GetJobApplicationByID :one

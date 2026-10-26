@@ -28,12 +28,14 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -396,9 +398,24 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		listingKind = ""
 	}
 
+	// §102 mentorship-kind params — no-ops on other kinds: ?areas= keyword
+	// filter, ?include_unavailable re-includes at-capacity mentors, and the
+	// authenticated viewer's id feeds the profile-dest default + match sort.
+	var areas []string
+	if v := r.URL.Query().Get("areas"); v != "" {
+		areas = strings.Split(v, ",")
+	}
+
+	includeUnavailable, _ := strconv.ParseBool(r.URL.Query().Get("include_unavailable"))
+
+	var viewerID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		viewerID = u.UserID
+	}
+
 	page, limit := parsePageParams(r)
 
-	services, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, listingKind, nil, pgtype.Date{}, q, sort, page, limit)
+	services, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, listingKind, nil, pgtype.Date{}, q, sort, viewerID, areas, includeUnavailable, page, limit)
 	if err != nil {
 		if errors.Is(err, ErrPackagesDisabled) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
@@ -499,6 +516,13 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if service.ListingKind != ListingKindMentorship && !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
+	}
+
+	// ADR-134: tag published public listings so the configured edge CDN can
+	// invalidate them by tag (CF-Cache-Tag / CDN-Tag). ID is the contents
+	// row id — the same key content.Service emits on mutation.
+	if service.Status == content.StatusPublished && service.Visibility == content.VisibilityPublic {
+		cdn.SetCacheTags(w, "content:"+service.ID, "type:service_listing")
 	}
 
 	// BUG-014: §98 spec says "service detail + reviews". Embed the

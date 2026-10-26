@@ -11,6 +11,7 @@
 	import { EmptyState, RelativeTime, PaginationControls } from '$lib/components/ui';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
+	import { contentHref } from '$lib/utils/contentLink';
 	import type { MyReport } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -79,8 +80,34 @@
 				return t('my_reports.entity_space', 'Space');
 			case 'message':
 				return t('my_reports.entity_message', 'Message');
+			case 'source':
+				return t('my_reports.entity_source', 'Source');
+			case 'forum_reply':
+				return t('my_reports.entity_forum_reply', 'Forum reply');
 			default:
 				return entityType;
+		}
+	}
+
+	/** Deep-link to the reported entity on the public site, mirroring the
+	 *  moderation-queue resolution (comments/replies link their parent). */
+	function entityHref(report: MyReport): string | null {
+		const slug = report.entity_slug;
+		if (!slug) return null;
+		switch (report.entity_type) {
+			case 'user':
+				return `/u/${slug}`;
+			case 'space':
+				return `/spaces/${slug}`;
+			case 'source':
+				return `/sources/${slug}`;
+			case 'forum_reply':
+				return slug ? `/forum/${slug}` : null;
+			case 'message':
+				return null;
+			default:
+				if (report.thread_slug) return `/forum/${report.thread_slug}`;
+				return contentHref({ slug, content_type: report.entity_content_type });
 		}
 	}
 </script>
@@ -136,6 +163,14 @@
 										&middot; {t('my_reports.reason', 'Reason')}: {report.reason}
 									</span>
 								</div>
+								{#if entityHref(report) && report.entity_title}
+									<a
+										href={entityHref(report)}
+										class="mt-1 block truncate text-sm text-[var(--color-primary)] hover:underline"
+									>{report.entity_title}</a>
+								{:else if report.entity_title}
+									<p class="mt-1 truncate text-sm text-[var(--color-text-subtle)]">{report.entity_title}</p>
+								{/if}
 								{#if report.notes}
 									<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{report.notes}</p>
 								{/if}

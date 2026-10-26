@@ -120,7 +120,7 @@ ORDER BY count DESC;
 -- contents with custom_field_values and updates status.
 -- =====================================================================
 
--- name: ExpireJobListingsPastDeadline :execrows
+-- name: ExpireJobListingsPastDeadline :many
 -- Archive published job_listing content whose application_deadline custom
 -- field value is in the past. custom_field_values is EAV: field_id →
 -- custom_fields.id, entity_type='content', entity_id = contents.id. The
@@ -129,7 +129,8 @@ ORDER BY count DESC;
 -- fallback is guarded by an ISO-date regex — Postgres may evaluate the cast
 -- before the cf.key predicate, and unrelated fields (e.g. destination_country)
 -- store non-date text in value_text, which would otherwise fail the whole
--- task with SQLSTATE 22007.
+-- task with SQLSTATE 22007. RETURNING id+slug lets callers purge each expired
+-- listing's detail page at the edge CDN (ADR-134).
 UPDATE contents c
 SET status = 'archived', updated_at = now()
 WHERE c.content_type = 'job_listing'
@@ -147,4 +148,5 @@ WHERE c.content_type = 'job_listing'
    OR CASE WHEN cfv.value_text ~ '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'
            THEN cfv.value_text::timestamptz END < now()
  )
- );
+ )
+RETURNING c.id, c.slug;

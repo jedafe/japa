@@ -2,7 +2,9 @@
 	// /mentorship — migrated to the EntityPage scaffold.
 	// Two tabs: Programs (full CRUD) and Matches (view + status update).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { mentorshipAdminApiExtended as mentorshipApi } from '$lib/api';
+	import { mentorshipAdminApiExtended as mentorshipApi, serviceDirectoryAdminApi } from '$lib/api';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { t, locale } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Tabs } from '$lib/components/ui/tabs';
@@ -15,7 +17,7 @@
 		description?: string;
 		is_active: boolean;
 		mentor_count: number;
-		active_mentee_count: number;
+		mentee_count: number;
 		match_count: number;
 		created_at: string;
 	};
@@ -42,6 +44,7 @@
 		mentee_username?: string;
 		status: string;
 		goals?: string | null;
+		listing_content_id?: string;
 		created_at: string;
 		updated_at: string;
 	};
@@ -51,9 +54,9 @@
 
 	let activeTab = $state('programs');
 	const tabs = [
-		{ value: 'programs', label: t('app.mentorship.tabs.programs', 'Programs') },
-		{ value: 'matches', label: t('app.mentorship.tabs.matches', 'Matches') },
-		{ value: 'connections', label: t('app.mentorship.tabs.connections', 'Connections') }
+		{ value: 'programs', label: t('app.mentorship.tabs.programs', 'Programs (legacy)') },
+		{ value: 'matches', label: t('app.mentorship.tabs.matches', 'Matches (legacy)') },
+		{ value: 'connections', label: t('app.mentorship.tabs.connections', 'Connections (§102)') }
 	];
 
 	const canManageMentorship = hasPermission('mentorship.admin');
@@ -106,7 +109,7 @@
 				render: (v: number) => `<span class="font-medium">${v ?? 0}</span>`
 			},
 			{
-				key: 'active_mentee_count',
+				key: 'mentee_count',
 				label: t('app.mentorship.columns.mentees', 'Mentees'),
 				sortable: true,
 				render: (v: number) => `<span class="font-medium">${v ?? 0}</span>`
@@ -332,6 +335,29 @@
 
 	let connectionController = $state<EntityPageController | undefined>(undefined);
 	let connectionPageError = $state('');
+	// "Remove bad actor" moderation arm: unpublish the mentor's shadow
+	// service listing (the row stays unpublished across profile re-syncs —
+	// UpdateMentorshipShadowContent only republishes 'draft' rows).
+	let unpublishTarget = $state<Connection | null>(null);
+	let unpublishing = $state(false);
+	let showUnpublishConfirm = $state(false);
+
+	async function confirmUnpublishListing() {
+		const row = unpublishTarget;
+		if (!row?.listing_content_id) return;
+		unpublishing = true;
+		connectionPageError = '';
+		const result = await serviceDirectoryAdminApi.unpublish(row.listing_content_id);
+		unpublishing = false;
+		if (result.ok) {
+			unpublishTarget = null;
+			connectionController?.reload();
+		} else {
+			connectionPageError =
+				result.error ?? t('app.mentorship.error.unpublish_failed', 'Failed to unpublish listing');
+			unpublishTarget = null;
+		}
+	}
 
 	const connectionFields: FieldDef[] = [
 		{
@@ -388,33 +414,46 @@
 			}
 		],
 		fields: connectionFields,
+		actions: [
+			{ label: t('common.view', 'View'), onclick: (row, ctx) => ctx?.openView(row) },
+			{ label: t('common.edit', 'Edit'), onclick: (row, ctx) => ctx?.openEdit(row) },
+			{
+				label: t('app.mentorship.actions.unpublish_listing', 'Unpublish mentor listing'),
+				variant: 'destructive',
+				show: (row: Connection) => !!row.listing_content_id,
+				onclick: (row: Connection) => {
+					unpublishTarget = row;
+					showUnpublishConfirm = true;
+				}
+			}
+		] as ActionItem[],
 		load: async ({ page, pageSize, q, sort, filter }) => {
-			const params = new URLSearchParams({ page_size: '1000' });
+			// Server-side list contract: the API accepts
+			// status/q/sort/page/page_size and returns meta.total — sort is
+			// sent as '<key>:<dir>' and mapped onto the backend vocabulary
+			// (latest|oldest|status).
+			const size = pageSize || 25;
+			const params = new URLSearchParams({
+				page: String((page ?? 0) + 1),
+				page_size: String(size)
+			});
+			if (filter?.status) params.set('status', filter.status);
+			if (q) params.set('q', q);
 			if (sort) {
-				params.set('sort', sort);
+				const [key, dir] = sort.split(':');
+				params.set(
+					'sort',
+					key === 'status' ? 'status' : dir === 'asc' ? 'oldest' : 'latest'
+				);
 			}
 			const result = await mentorshipApi.listConnections(`?${params.toString()}`);
 			if (result.ok) {
-				let data = (result.data as Connection[]) ?? [];
-				if (filter?.status) {
-					data = data.filter((row) => row.status === filter.status);
-				}
-				const query = (q ?? '').toLowerCase();
-				if (query) {
-					data = data.filter((row) =>
-						[row.mentor_username, row.mentee_username, row.status, row.goals].some((v) =>
-							String(v ?? '').toLowerCase().includes(query)
-						)
-					);
-				}
-				const size = pageSize || 25;
-				const offset = (page || 0) * size;
-				const total = data.length;
-				const totalPages = Math.max(1, Math.ceil(total / size));
+				const data = (result.data?.data as Connection[]) ?? [];
+				const total = result.data?.meta?.total ?? data.length;
 				return {
-					data: data.slice(offset, offset + size),
+					data,
 					total,
-					totalPages
+					totalPages: Math.max(1, Math.ceil(total / size))
 				};
 			}
 			throw new Error(
@@ -484,7 +523,7 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.mentees', 'Mentees')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{row.active_mentee_count ?? 0}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.mentee_count ?? 0}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.matches', 'Matches')}</p>
@@ -545,3 +584,38 @@
 		</div>
 	</div>
 {/snippet}
+
+<!-- Unpublish mentor listing (remove bad actor) — stays unpublished across
+     profile re-syncs; the listing re-enters review on next publish. -->
+<Modal
+	bind:open={showUnpublishConfirm}
+	title={t('app.mentorship.unpublish_title', 'Unpublish mentor listing')}
+>
+	{#if unpublishTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t(
+				'app.mentorship.unpublish_confirm',
+				'Remove the mentor’s listing from the directory? They will stop receiving new requests immediately.'
+			)}
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">
+			{t('app.mentorship.unpublish_warning', 'Existing connections are not cancelled — only the public listing is unpublished.')}
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button
+			variant="ghost"
+			onclick={() => {
+				showUnpublishConfirm = false;
+				unpublishTarget = null;
+			}}
+		>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button variant="destructive" onclick={confirmUnpublishListing} disabled={unpublishing}>
+			{unpublishing
+				? t('common.working', 'Working…')
+				: t('app.mentorship.actions.unpublish_listing', 'Unpublish mentor listing')}
+		</Button>
+	</div>
+</Modal>

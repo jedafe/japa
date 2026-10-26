@@ -27,7 +27,7 @@ class JapaConnectApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
-      title: ref.watch(siteNameProvider).valueOrNull ?? 'JapaConnect',
+      title: ref.watch(siteNameProvider).value ?? 'JapaConnect',
       theme: ref.watch(jcThemeProvider),
       routerConfig: ref.watch(jcRouterProvider),
     );

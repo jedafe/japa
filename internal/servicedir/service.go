@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pgvector/pgvector-go"
 
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -411,6 +412,29 @@ type Service struct {
 	enqueuer  TaskEnqueuer          // §111 booking notifications/fee settlement
 	payments  PaymentCreator        // §17 fee payment intents
 	dmCreator DMConversationCreator // §48 DM seam — mentorship accept auto-open (wired by server)
+	tracker   EventTracker          // §102 analytics events (wired by server; nil = best-effort off)
+}
+
+// EventTracker records platform analytics events (§102). The
+// analytics.Service satisfies this via the server package's adapter —
+// same signature the mentorship compat layer uses.
+type EventTracker interface {
+	TrackEvent(ctx context.Context, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error
+}
+
+// SetEventTracker wires the analytics tracker for §102 mentorship events.
+func (s *Service) SetEventTracker(t EventTracker) { s.tracker = t }
+
+// trackEvent is a best-effort analytics emitter — failures are logged,
+// never fatal (mirrors the mentorship compat layer's helper).
+func (s *Service) trackEvent(ctx context.Context, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) {
+	if s.tracker == nil {
+		return
+	}
+
+	if err := s.tracker.TrackEvent(ctx, userID, eventType, entityType, entityID, meta); err != nil {
+		slog.Warn("servicedir: track event", "event_type", eventType, "error", err)
+	}
 }
 
 // TaskEnqueuer enqueues Asynq tasks (§111 booking lifecycle).
@@ -1945,6 +1969,14 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (ServiceDTO, error
 	// coupons set stands in for it.
 	dto.Badge = s.deriveBadge(ctx, dto.ReviewCount, dto.RatingAvg, dto.HasCoupon || len(dto.Coupons) > 0)
 
+	// §102 analytics: mentor_view — the mentorship listing page IS the
+	// mentor profile page post-000824, so the event fires here (the compat
+	// /mentors/:username handler also emits it for API consumers).
+	if row.ListingKind == ListingKindMentorship {
+		s.trackEvent(ctx, row.AuthorID, "mentor_view", "user", row.AuthorID,
+			map[string]any{"mentor_username": row.AuthorName})
+	}
+
 	return dto, nil
 }
 
@@ -2338,7 +2370,7 @@ func departureToDTO(d gen.ServicePackageDeparture) PackageDepartureDTO {
 // List returns a paginated, filtered list of published service listings.
 // destSpaceID, citySpaceID, serviceCategory, originCommunity are optional
 // geo-aware filters (§98: ?dest=&city=&category=&origin=&verified=&sort=).
-func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, serviceCategory, originCommunity string, isVerified *bool, listingKind string, priceMax *int64, dateFrom pgtype.Date, q, sort string, page, limit int32) ([]ServiceDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, serviceCategory, originCommunity string, isVerified *bool, listingKind string, priceMax *int64, dateFrom pgtype.Date, q, sort string, viewerID pgtype.UUID, areas []string, includeUnavailable bool, page, limit int32) ([]ServiceDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -2378,21 +2410,42 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 		}
 	}
 
+	// §102 Geo Awareness: on the mentorship kind, when the caller is
+	// authenticated and passed no explicit ?dest=, inject their profile's
+	// japa-stage destination as the default filter — no UI action needed.
+	if listingKind == ListingKindMentorship && !destSpaceID.Valid && viewerID.Valid {
+		if row, err := s.store.read.GetMenteeDestinationSpaceID(ctx, viewerID); err == nil && row.DestinationSpaceID.Valid {
+			destSpaceID = row.DestinationSpaceID
+		}
+	}
+
+	// §102 sort=match needs the caller's embedding for the 40% bio-cosine
+	// term; absent → the query's keyword-only fallback (weight 1.0).
+	var menteeEmbedding *pgvector.Vector
+	if listingKind == ListingKindMentorship && sort == "match" && viewerID.Valid {
+		if row, err := s.store.read.GetUserEmbedding(ctx, viewerID); err == nil {
+			menteeEmbedding = row.MentorEmbedding
+		}
+	}
+
 	rows, total, err := s.store.ListServices(ctx, ListServicesFilter{
-		DestSpaceID:     destSpaceID,
-		CitySpaceID:     citySpaceID,
-		ServiceCategory: serviceCategory,
-		OriginCommunity: originCommunity,
-		IsVerified:      isVerified,
-		ListingKind:     listingKind,
-		ExcludeKind:     excludeKind,
-		PriceMax:        priceMax,
-		DateFrom:        dateFrom,
-		Q:               q,
-		Sort:            sort,
-		Status:          content.StatusPublished,
-		Limit:           limit,
-		Offset:          offset,
+		DestSpaceID:        destSpaceID,
+		CitySpaceID:        citySpaceID,
+		ServiceCategory:    serviceCategory,
+		OriginCommunity:    originCommunity,
+		IsVerified:         isVerified,
+		ListingKind:        listingKind,
+		ExcludeKind:        excludeKind,
+		PriceMax:           priceMax,
+		DateFrom:           dateFrom,
+		Q:                  q,
+		Sort:               sort,
+		Areas:              areas,
+		IncludeUnavailable: includeUnavailable,
+		MenteeEmbedding:    menteeEmbedding,
+		Status:             content.StatusPublished,
+		Limit:              limit,
+		Offset:             offset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: list: %w", err)

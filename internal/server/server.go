@@ -1917,7 +1917,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mentorshipService.SetSettingsProvider(settingsService)
 	mentorshipService.SetEventTracker(analyticsEventTrackerAdapter{analyticsService})
 	// 000824 unification: connection lifecycle + mentor shadow listing
-	// delegate to servicedir bookings/listings.
+	// delegate to servicedir bookings/listings. The servicedir service
+	// gets the same tracker seam — the frontend's real mentorship flow
+	// (services bookings) emits the §102 events there.
+	serviceDirService.SetEventTracker(analyticsEventTrackerAdapter{analyticsService})
 	mentorshipService.SetBookingBackend(serviceDirService)
 	mentorshipHandlers := mentorship.NewHandlers(mentorshipService)
 	mentorshipHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in mentorship responses
@@ -3855,7 +3858,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/spaces/{slug}/leave", spaceHandlers.Leave)
 			// catalog: POST /spaces/:id/report — takes a raw ID (like the other
 			// report routes), not the slug the rest of this block resolves on.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
 			// catalog: GET /spaces/:id/reviews — public reviews for a university/space.
 			// Ref: Section 29 (polymorphic reviews), Section 39 (university as space).
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces/{id}/reviews", reviewHandlers.ListSpaceReviews)
@@ -3934,7 +3937,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/content/{id}/schedule", contentHandlers.ScheduleContent)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Post("/content/{id}/view", contentHandlers.RecordContentView)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/share-count", contentHandlers.GetContentShareCount)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/content/{id}/report", reportsHandlers.ReportContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/content/{id}/report", reportsHandlers.ReportContent)
 			// Revisions (require auth + permission to view)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.revisions.view")).
 				Get("/content/{id}/revisions", contentHandlers.ListRevisions)
@@ -4074,7 +4077,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService)).Delete("/comments/{id}", commentsHandlers.DeleteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
 			// BL-003: pin/unpin route is RequireAuth only; the handler resolves
 			// moderator (comments.pin) vs content-author at request time so a
 			// content author who doesn't hold comments.pin can still pin comments
@@ -4111,7 +4114,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.mute.manage")).Post("/users/{user_id}/mute", interactionsHandlers.MuteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.mute.manage")).Delete("/users/{user_id}/mute", interactionsHandlers.UnmuteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mute-status", interactionsHandlers.GetUserMuteStatus)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/users/{id}/report", reportsHandlers.ReportUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/users/{id}/report", reportsHandlers.ReportUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-users", interactionsHandlers.ListMutedUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-spaces", interactionsHandlers.ListMutedSpaces)
 
@@ -4360,7 +4363,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.send")).Patch("/dm/conversations/{id}/messages/{mid}", wsHandlers.EditMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.delete")).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/requests", wsHandlers.ListMessageRequests)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/requests/{id}/accept", wsHandlers.AcceptMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/requests/{id}/decline", wsHandlers.DeclineMessageRequest)
@@ -4568,6 +4571,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
 				r.Post("/forum/replies/{id}/view", forumHandlers.RecordReplyView)
+				// Section 51: forum replies are reportable via the same
+				// content_reports pipeline (entity_type 'forum_reply').
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/forum/replies/{id}/report", reportsHandlers.ReportForumReply)
 
 				// Vote routes — URL-param (catalog). Votes, poll votes, and
 				// bookmarks are cheap spam/abuse vectors, so they carry the
@@ -8042,7 +8048,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Delete("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).
 				Post("/sources/{slug}/report", intelHandlers.HandleReportSource)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/me/blocked-sources", intelHandlers.HandleListBlockedSources)
@@ -8624,6 +8630,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/system-settings/{key}", controlHandlers.UpdateSystemSetting)
 			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
 				Post("/system-settings/{key}/reset", controlHandlers.ResetSystemSetting)
+
+			// Edge CDN (ADR-134) — status + credential validation for the
+			// Settings → Edge CDN category.
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.view")).
+				Get("/cdn/status", controlHandlers.CDNStatus)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Post("/cdn/test-purge", controlHandlers.CDNTestPurge)
 
 			// Seed / enrichment ops (Control → Seeds) — space creation +
 			// population, gated on the spaces management node.

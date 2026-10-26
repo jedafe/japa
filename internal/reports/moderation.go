@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
@@ -245,6 +246,100 @@ func (s *Service) GetModerationQueueItem(ctx context.Context, scope *ModerationS
 	return row, nil
 }
 
+// removableEntityTypes lists entity types the "remove" action can take down:
+// user/space/source reports resolve with warn/ban or dismissal instead.
+var removableEntityTypes = map[string]bool{
+	EntityTypeContent:    true,
+	EntityTypeComment:    true,
+	EntityTypeMessage:    true,
+	EntityTypeForumReply: true,
+}
+
+// resolveWithAction is the shared terminal-action path for both the scoped
+// moderator queue and the admin reports handler. It validates the action
+// against the entity (removable types for remove; resolvable user target for
+// warn/ban), applies entity-level side effects for remove *before* the status
+// transition so a failed removal leaves the report open, then atomically
+// resolves via ResolveReportIfOpen and fires warn/ban user side effects.
+func (s *Service) resolveWithAction(ctx context.Context, id, reviewerID pgtype.UUID, entityType string, entityID pgtype.UUID, action, reason string) (gen.ContentReport, error) {
+	var target pgtype.UUID
+	var hasTarget bool
+
+	switch action {
+	case "dismiss":
+		// Always applicable.
+	case "remove":
+		if !removableEntityTypes[entityType] {
+			return gen.ContentReport{}, fmt.Errorf("%w: %s", ErrActionNotApplicable, entityType)
+		}
+	case "warn", "ban":
+		t, found, err := s.ResolveTargetUser(ctx, entityType, entityID)
+		if err != nil {
+			return gen.ContentReport{}, fmt.Errorf("resolve %s target: %w", action, err)
+		}
+		if !found {
+			return gen.ContentReport{}, ErrNoTarget
+		}
+		target, hasTarget = t, true
+	default:
+		return gen.ContentReport{}, fmt.Errorf("%w: %s", ErrInvalidAction, action)
+	}
+
+	// Removal and the status transition run in one transaction: if the
+	// transition fails (another moderator resolved concurrently) the removal
+	// rolls back — a dismissed report never leaves deleted content behind.
+	status := "actioned"
+	if action == "dismiss" {
+		status = "dismissed"
+	}
+
+	var note *string
+	if reason != "" {
+		note = &reason
+	}
+
+	updated, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.ContentReport, error) {
+		if action == "remove" {
+			if err := s.removeReportedEntity(ctx, q, entityType, entityID); err != nil {
+				return gen.ContentReport{}, err
+			}
+		}
+		row, err := q.ResolveReportIfOpen(ctx, gen.ResolveReportIfOpenParams{
+			Status:         status,
+			ReviewedBy:     reviewerID,
+			ResolutionNote: note,
+			ID:             id,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.ContentReport{}, ErrAlreadyResolved
+		}
+		return row, err
+	})
+	if err != nil {
+		if errors.Is(err, ErrAlreadyResolved) {
+			return gen.ContentReport{}, err
+		}
+		return gen.ContentReport{}, fmt.Errorf("resolving report: %w", err)
+	}
+
+	// warn/ban side effects are best-effort: the status transition is
+	// committed and the target was validated, so a downstream failure logs
+	// and still returns the actioned report.
+	if hasTarget {
+		var sideErr error
+		if action == "warn" {
+			sideErr = s.WarnUser(ctx, target, reason)
+		} else {
+			sideErr = s.BanUser(ctx, target, reason)
+		}
+		if sideErr != nil {
+			slog.Warn("moderation: side-effect failed", "id", id.String(), "action", action, "error", sideErr)
+		}
+	}
+
+	return updated, nil
+}
+
 // ActionModerationItem applies an action to a scoped report.
 // Actions: dismiss (status='dismissed'), remove/warn/ban (status='actioned').
 // warn/ban additionally fire the user-moderation side effects and require
@@ -281,68 +376,37 @@ func (s *Service) ActionModerationItem(ctx context.Context, caller, id pgtype.UU
 		return gen.ContentReport{}, fmt.Errorf("%w: %s", ErrInvalidAction, action)
 	}
 
-	status := "actioned"
-	if action == "dismiss" {
-		status = "dismissed"
-	}
-
-	var note *string
-	if reason != "" {
-		note = &reason
-	}
-
-	updated, err := s.write.ResolveReportIfOpen(ctx, gen.ResolveReportIfOpenParams{
-		Status:         status,
-		ReviewedBy:     caller,
-		ResolutionNote: note,
-		ID:             id,
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return gen.ContentReport{}, ErrAlreadyResolved
-	}
-
-	if err != nil {
-		return gen.ContentReport{}, fmt.Errorf("resolving report: %w", err)
-	}
-
-	// Side effects are best-effort: the status transition is already committed,
-	// so a failed warn/ban logs and still returns the actioned report — same
-	// semantics as the admin UpdateReport handler.
-	if err := s.applyActionSideEffects(ctx, action, item.EntityType, item.EntityID, reason); err != nil {
-		slog.Warn("moderation: side-effect failed", "id", id.String(), "action", action, "error", err)
-	}
-
-	return updated, nil
+	return s.resolveWithAction(ctx, id, caller, item.EntityType, item.EntityID, action, reason)
 }
 
-// applyActionSideEffects fires the warn/ban user-moderation effects shared with
-// the admin report handler. The target is the reported user (resolved via
-// ResolveTargetUser), never the reporter. Missing targets are skipped.
-func (s *Service) applyActionSideEffects(ctx context.Context, action, entityType string, entityID pgtype.UUID, reason string) error {
-	if action != "warn" && action != "ban" {
-		return nil
-	}
-
-	target, found, err := s.ResolveTargetUser(ctx, entityType, entityID)
+// ApplyAdminAction is the admin-path analogue of ActionModerationItem: it
+// applies a terminal action (dismiss/remove/warn/ban) via the shared
+// resolveWithAction flow, or marks the report 'reviewing' (non-terminal)
+// when the caller starts work on it.
+func (s *Service) ApplyAdminAction(ctx context.Context, id, reviewerID pgtype.UUID, action, reason string) (gen.ContentReport, error) {
+	report, err := s.GetReport(ctx, id)
 	if err != nil {
-		return fmt.Errorf("resolve %s target: %w", action, err)
+		return gen.ContentReport{}, err
 	}
 
-	if !found {
-		return nil
-	}
-
-	if action == "warn" {
-		if err := s.WarnUser(ctx, target, reason); err != nil {
-			return fmt.Errorf("warn user: %w", err)
+	if action == "review" {
+		var note *string
+		if reason != "" {
+			note = &reason
 		}
-
-		return nil
+		// ResolveReportIfOpen's guard makes the transition atomic — a
+		// concurrently-actioned report can't be flipped back to reviewing.
+		row, err := s.write.ResolveReportIfOpen(ctx, gen.ResolveReportIfOpenParams{
+			Status:         "reviewing",
+			ReviewedBy:     reviewerID,
+			ResolutionNote: note,
+			ID:             id,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.ContentReport{}, ErrAlreadyResolved
+		}
+		return row, err
 	}
 
-	if err := s.BanUser(ctx, target, reason); err != nil {
-		return fmt.Errorf("ban user: %w", err)
-	}
-
-	return nil
+	return s.resolveWithAction(ctx, id, reviewerID, report.EntityType, report.EntityID, action, reason)
 }

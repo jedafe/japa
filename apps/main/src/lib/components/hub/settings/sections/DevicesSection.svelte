@@ -4,7 +4,8 @@
 	import { t } from '$lib/i18n';
 	import { deleteDevice, deletePushToken, getVapidKey, getPushTokens, subscribePush } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import { pwaInstall } from '$lib/pwa/install.svelte';
+	import { pwaInstall } from '@japaconnect/ui/pwa-install';
+	import { arrayBufferToBase64, urlBase64ToUint8Array } from '$lib/pwa/push-sync';
 	import type { DeviceInfo } from '$lib/types';
 
 	interface PushToken {
@@ -56,23 +57,6 @@
 		});
 	}
 
-	function urlBase64ToUint8Array(base64String: string): Uint8Array {
-		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-		const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-		const raw = atob(base64);
-		const out = new Uint8Array(raw.length);
-		for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-		return out;
-	}
-
-	function arrayBufferToBase64(buffer: ArrayBuffer | null): string {
-		if (!buffer) return '';
-		const bytes = new Uint8Array(buffer);
-		let binary = '';
-		for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-		return btoa(binary);
-	}
-
 	async function doRemovePushToken(id: string) {
 		const idx = pushTokens.findIndex((t) => t.id === id);
 		if (idx < 0) return;
@@ -82,6 +66,17 @@
 			rollback: () => (pushTokens = [...pushTokens.slice(0, idx), removed, ...pushTokens.slice(idx + 1)]),
 			call: () => deletePushToken(id)
 		});
+		// Drop the browser-side subscription too when the removed token is
+		// this browser's — otherwise the push-sync reconciliation sees an
+		// unregistered endpoint and re-registers it on the next visit,
+		// resurrecting a subscription the user explicitly removed.
+		try {
+			const reg = await navigator.serviceWorker.ready;
+			const sub = await reg.pushManager.getSubscription();
+			if (sub && sub.endpoint === removed.endpoint) await sub.unsubscribe();
+		} catch {
+			// Best effort — the server row is already gone.
+		}
 	}
 
 	async function enablePush() {
@@ -129,6 +124,9 @@
 		installLoading = true;
 		try {
 			await pwaInstall.prompt();
+		} catch {
+			// The native dialog can reject (e.g. rapid re-trigger) — the button
+			// just resets.
 		} finally {
 			installLoading = false;
 		}

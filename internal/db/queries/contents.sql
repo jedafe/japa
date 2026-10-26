@@ -723,6 +723,12 @@ UPDATE contents SET deleted_at = now(), updated_at = now() WHERE id = @id AND de
 -- name: ContentExistsAny :one
 SELECT EXISTS(SELECT 1 FROM contents WHERE id = @id);
 
+-- name: GetContentSlugTypeAny :one
+-- slug + content_type for any row including soft-deleted — the hard-delete
+-- path needs them to purge the canonical URL at the edge (ADR-134);
+-- GetContentByID filters deleted_at and would miss the row.
+SELECT slug, content_type FROM contents WHERE id = @id;
+
 -- name: HardDeleteContent :execrows
 -- Admin force-delete — only rows already soft-deleted are removed
 -- (gated by admin.hard_delete via ?force=true). Children cascade via

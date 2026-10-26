@@ -5432,6 +5432,14 @@ func archiveReportedEntity(ctx context.Context, entityType, entityIDStr string, 
 
 		slog.Info("task:moderation:auto_hide: message hidden", "message_id", entityIDStr, "report_count", reportCount)
 
+	case "forum_reply":
+		if err := gen.New(dbPool.Writer).SoftDeleteForumReply(ctx, entityID); err != nil {
+			slog.Error("task:moderation:auto_hide: failed to hide forum reply", "reply_id", entityIDStr, "error", err)
+			return err
+		}
+
+		slog.Info("task:moderation:auto_hide: forum reply hidden", "reply_id", entityIDStr, "report_count", reportCount)
+
 	default:
 		// user/space reports require human review — log but don't auto-hide.
 		slog.Info("task:moderation:auto_hide: entity type requires human review", "entity_type", entityType, "entity_id", entityIDStr, "report_count", reportCount)
@@ -5498,7 +5506,10 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 		body = payload.EntityType + " reported"
 	}
 
-	actionURL := "/admin/reports"
+	// /studio/moderation is the main-app moderator workbench — recipients with
+	// reports.review resolve there with platform scope. The admin panel's
+	// /reports path only exists on the admin app domain.
+	actionURL := "/studio/moderation"
 	subjectType := "content_report"
 	actorType := "system"
 

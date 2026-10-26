@@ -9,9 +9,10 @@ export const GET: RequestHandler = (event) => {
 		defaultShortName: 'JC Docs',
 		defaultStartUrl: '/docs'
 	});
-	// The docs PWA always launches into the docs tree — pwa.start_url is the
-	// main app's setting and must not redirect the docs launcher to '/'.
-	manifest.start_url = '/docs';
+	// The docs PWA launches into the docs tree: a '/' start_url (the seeded
+	// main-app default) resolves to '/docs'; an explicit admin-configured
+	// path is honored.
+	if (manifest.start_url === '/') manifest.start_url = '/docs';
 	return json(manifest, {
 		headers: {
 			'Content-Type': 'application/manifest+json',

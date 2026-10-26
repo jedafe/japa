@@ -896,8 +896,13 @@ type BookingsAdminFilter struct {
 	Kind           string
 	ProviderUserID pgtype.UUID
 	BookerUserID   pgtype.UUID
-	Limit          int32
-	Offset         int32
+	// ?q= username/display-name search (booker + provider) and ?sort=
+	// (latest|oldest|status) — the admin list contract: filter + sort +
+	// paginate server-side (000824 fix pass).
+	Q     string
+	Sort  string
+	Limit int32
+	Offset int32
 }
 
 // AdminListBookings returns all bookings (any payment state) for admins.
@@ -919,6 +924,14 @@ func (s *Store) AdminListBookings(ctx context.Context, f BookingsAdminFilter) ([
 		params.Kind = &f.Kind
 	}
 
+	if f.Q != "" {
+		params.Q = &f.Q
+	}
+
+	if f.Sort != "" {
+		params.Sort = &f.Sort
+	}
+
 	rows, err := s.read.AdminListServiceBookings(ctx, params)
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: admin list bookings: %w", err)
@@ -927,6 +940,7 @@ func (s *Store) AdminListBookings(ctx context.Context, f BookingsAdminFilter) ([
 	total, err := s.read.AdminCountServiceBookings(ctx, gen.AdminCountServiceBookingsParams{
 		Status: params.Status, Intent: params.Intent, OrgID: f.OrgID,
 		Kind: params.Kind, ProviderUserID: f.ProviderUserID, BookerUserID: f.BookerUserID,
+		Q: params.Q,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: admin count bookings: %w", err)

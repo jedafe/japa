@@ -4,9 +4,9 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus, MoreVertical } from 'lucide-svelte';
-	import { Modal, Menu, MenuItem, MenuSeparator } from '$lib/components/ui';
+	import { Menu, MenuItem, MenuSeparator } from '$lib/components/ui';
+	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { encodeTiptapDoc, tiptapBodyToHtml, tiptapExcerpt, type TipTapDoc } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
@@ -321,50 +321,15 @@ import { contentHref } from '$lib/utils/contentLink';
 		}
 	}
 
-	// Report thread — submits a content report via POST /content/{content_id}/report.
-	// A forum thread is reported as entity_type 'content' using its content_id
-	// (the contents row backing the thread). Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
+	// Report thread — shared ReportDialog posts to
+	// POST /content/{content_id}/report using the thread's backing contents row.
+	// Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
 	let reportOpen = $state(false);
-	let reportReason = $state('');
-	let reportNotes = $state('');
-	let reportSubmitting = $state(false);
-	let reportError = $state('');
-	let reportSubmitted = $state(false);
 
 	async function openReport() {
 		if (!thread.content_id) return;
 		if (!data.authed && !(await requireAuthOrRedirect())) return;
 		reportOpen = true;
-		reportSubmitted = false;
-		reportError = '';
-	}
-
-	function closeReport() {
-		reportOpen = false;
-		reportSubmitted = false;
-		reportError = '';
-		reportReason = '';
-		reportNotes = '';
-	}
-
-	async function submitReport() {
-		if (!(await requireAuthOrRedirect())) return;
-		if (!thread.content_id || !reportReason.trim() || reportSubmitting) return;
-		reportSubmitting = true;
-		reportError = '';
-		const res = await api.post<{ id: string }>(`/content/${thread.content_id}/report`, {
-			reason: reportReason.trim(),
-			notes: reportNotes.trim() || null,
-			evidence_urls: []
-		});
-		if (res.error) {
-			reportError = res.error.message;
-		} else {
-			reportSubmitted = true;
-			reportReason = '';
-			reportNotes = '';
-		}
-		reportSubmitting = false;
 	}
 
 	// Inline edit (author or moderator — backend enforces via can_edit).
@@ -912,73 +877,4 @@ import { contentHref } from '$lib/utils/contentLink';
 </div>
 
 <!-- Report thread dialog — POST /content/{content_id}/report (Section 51) -->
-{#if reportOpen}
-	<Modal open={reportOpen} onOpenChange={(v) => { if (!v) closeReport(); }} icon={Flag} title={t('forum.report_title', 'Report this discussion')} overlayClass="backdrop-blur-sm" size="md">
-				{#if reportSubmitted}
-					<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-400">
-						{t('forum.report_submitted', 'Your report has been submitted. Our team will review it.')}
-					</p>
-					<button
-						type="button"
-						onclick={closeReport}
-						class="mt-4 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-					>
-						{t('common.close', 'Close')}
-					</button>
-				{:else}
-					<form onsubmit={(e) => { e.preventDefault(); submitReport(); }} class="space-y-3">
-						{#if reportError}
-							<p class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{reportError}</p>
-						{/if}
-						<div>
-							<label for="report-reason" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-								{t('forum.report_reason', 'Reason')}
-							</label>
-							<AutocompleteSelect
-								id="report-reason"
-								bind:value={reportReason}
-								options={[
-									{ value: '', label: t('forum.report_reason_select', 'Select a reason…') },
-									{ value: 'spam', label: t('forum.report_spam', 'Spam') },
-									{ value: 'harassment', label: t('forum.report_harassment', 'Harassment') },
-									{ value: 'hate_speech', label: t('forum.report_hate_speech', 'Hate speech') },
-									{ value: 'misinformation', label: t('forum.report_misinformation', 'Misinformation') },
-									{ value: 'illegal_content', label: t('forum.report_illegal', 'Illegal content') },
-									{ value: 'self_harm', label: t('forum.report_self_harm', 'Self harm') },
-									{ value: 'copyright', label: t('forum.report_copyright', 'Copyright') },
-									{ value: 'other', label: t('forum.report_other', 'Other') }
-								]}
-							/>
-						</div>
-						<div>
-							<label for="report-notes" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-								{t('forum.report_notes', 'Additional notes (optional)')}
-							</label>
-							<textarea
-								id="report-notes"
-								bind:value={reportNotes}
-								rows={3}
-								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-							></textarea>
-						</div>
-						<div class="flex items-center gap-2">
-							<button
-								type="submit"
-								disabled={reportSubmitting || !reportReason.trim()}
-								class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-							>
-								{#if reportSubmitting}<Loader2 size={14} class="animate-spin" />{:else}
-								{t('forum.report_submit', 'Submit report')}{/if}
-							</button>
-							<button
-								type="button"
-								onclick={closeReport}
-								class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-							>
-								{t('common.cancel', 'Cancel')}
-							</button>
-						</div>
-					</form>
-				{/if}
-	</Modal>
-{/if}
+<ReportDialog bind:open={reportOpen} entityType="content" entityId={thread.content_id ?? ''} entityName={thread.title} />

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/forum/providers/forum_provider.dart';
+import 'package:japaconnect_mobile/features/social/services/report_service.dart';
+import 'package:japaconnect_mobile/features/social/widgets/report_sheet.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class ForumDetailScreen extends ConsumerWidget {
@@ -93,6 +95,17 @@ class _ThreadHeader extends ConsumerWidget {
                 icon: const Icon(Icons.bookmark),
                 onPressed: () => service.bookmarkThread(thread.id),
               ),
+              if (thread.contentId != null)
+                IconButton(
+                  icon: const Icon(Icons.flag_outlined),
+                  tooltip: t('report.action'),
+                  onPressed: () => showReportSheet(
+                    context,
+                    onSubmit: (reason, notes) => ref
+                        .read(reportServiceProvider)
+                        .reportContent(thread.contentId!, reason: reason, notes: notes),
+                  ),
+                ),
             ],
           ),
         ],
@@ -150,6 +163,16 @@ class _ReplyTile extends ConsumerWidget {
                 IconButton(
                   icon: const Icon(Icons.arrow_downward, size: 18),
                   onPressed: () => service.vote(reply.id, 'reply', -1),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.flag_outlined, size: 18),
+                  tooltip: t('report.action'),
+                  onPressed: () => showReportSheet(
+                    context,
+                    onSubmit: (reason, notes) => ref
+                        .read(reportServiceProvider)
+                        .reportForumReply(reply.id, reason: reason, notes: notes),
+                  ),
                 ),
                 const Spacer(),
                 if (reply.viewCount > 0)

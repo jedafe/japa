@@ -563,7 +563,7 @@
   "tour.sidebar_desc": "La barre latérale droite suit votre progression, propose des raccourcis pour reprendre vos cours et suggère quoi étudier ensuite.",
   "tour.sidebar_title": "Votre progression",
   "pwa.dismiss": "Ignorer",
-  "pwa.install_body": "Accédez plus vite à la plateforme et recevez les notifications push.",
+  "pwa.install_body": "Accédez plus vite à vos cours et à votre progression.",
   "pwa.install_button": "Installer",
   "pwa.install_ios_hint": "Touchez",
   "pwa.install_ios_hint2": "puis « Sur l'écran d'accueil »",

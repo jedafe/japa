@@ -66,12 +66,15 @@
 	let { item }: Props = $props();
 
 	let reported = $state(false);
+	let reportOpen = $state(false);
 	let bookmarked = $state(false);
 	let bookmarkCount = $state(0);
 	let bookmarkPending = $state(false);
 	let bookmarkInitialized = $state(false);
 
 	const authed = $derived(page.data.isAuthed as boolean);
+
+	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 
 	const time = $derived(relativeTime(item.created_at, new Date(), i18n.locale));
 
@@ -241,16 +244,11 @@
 		bookmarkPending = false;
 	}
 
-	async function reportPost(e: Event) {
+	// Opens the shared ReportDialog — the click is stopped so the card's
+	// navigation handler doesn't fire.
+	function reportPost(e: Event) {
 		e.stopPropagation();
-		const reason = window.prompt(t('feed.report_prompt', 'Why are you reporting this post?'));
-		if (!reason) return;
-		const res = await api.post<void>(`/content/${item.id}/report`, { reason });
-		if (res.error) {
-			window.alert(res.error.message ?? t('error.500_body'));
-		} else {
-			reported = true;
-		}
+		reportOpen = true;
 	}
 </script>
 
@@ -420,3 +418,5 @@
 		{/if}
 	</div>
 </div>
+
+<ReportDialog bind:open={reportOpen} entityType="content" entityId={item.id} entityName={item.title ?? ''} onSubmitted={() => (reported = true)} />

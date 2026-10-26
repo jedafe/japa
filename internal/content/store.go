@@ -1381,7 +1381,14 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	})
 
 	// Purge both slugs — a rename leaves the old URL cached at the edge.
-	s.purgeEdgeContent(ctx, content.ID, content.ContentType, existing.Slug, content.Slug)
+	// Only publicly served revisions can sit in the edge cache; edits to
+	// drafts/members-only content would burn CDN purge quota on pages the
+	// edge never cached (ADR-134).
+	wasPublic := existing.Status == StatusPublished && existing.Visibility == VisibilityPublic
+	isPublic := content.Status == StatusPublished && content.Visibility == VisibilityPublic
+	if wasPublic || isPublic {
+		s.purgeEdgeContent(ctx, content.ID, content.ContentType, existing.Slug, content.Slug)
+	}
 
 	return content, nil
 }
@@ -1812,6 +1819,16 @@ func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 // errpkg.ErrInUse. Returns pgx.ErrNoRows when missing and
 // errpkg.ErrNotDeleted while live.
 func (s *Service) HardDeleteContent(ctx context.Context, id pgtype.UUID) error {
+	// Read slug+type before the row disappears so the edge purge can still
+	// target the canonical URL — the soft-delete purge ran earlier, but a
+	// failed purge gets retried here (ADR-134). GetContentSlugTypeAny sees
+	// soft-deleted rows; GetContentByID does not.
+	var slug, contentType string
+	if st, err := s.read.GetContentSlugTypeAny(ctx, id); err == nil {
+		slug = st.Slug
+		contentType = st.ContentType
+	}
+
 	affected, err := s.write.HardDeleteContent(ctx, id)
 	if err != nil {
 		if errpkg.IsFKViolation(err) {
@@ -1833,6 +1850,8 @@ func (s *Service) HardDeleteContent(ctx context.Context, id pgtype.UUID) error {
 
 		return errpkg.ErrNotDeleted
 	}
+
+	s.purgeEdgeContent(ctx, id, contentType, slug)
 
 	return nil
 }

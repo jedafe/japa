@@ -4,6 +4,8 @@ class ForumThread {
   final String id;
   final String title;
   final String slug;
+  /// Backing contents row id — needed for /content/{id}/report (§51).
+  final String? contentId;
   final String? body;
   final String? bodyText;
   final int voteScore;
@@ -29,6 +31,7 @@ class ForumThread {
     required this.id,
     required this.title,
     required this.slug,
+    this.contentId,
     this.body,
     this.bodyText,
     this.voteScore = 0,
@@ -57,6 +60,7 @@ class ForumThread {
       id: json['id'] as String,
       title: json['title'] as String,
       slug: json['slug'] as String,
+      contentId: json['content_id'] as String?,
       body: rawBody,
       bodyText: tiptapBase64ToText(rawBody),
       voteScore: (json['vote_score'] as num?)?.toInt() ?? 0,

@@ -93,6 +93,39 @@ sw.addEventListener('push', (event) => {
 	);
 });
 
+// §35 — the OS rotated or revoked the push subscription (e.g. after a
+// VAPID key change). Re-subscribe with the previous application server key
+// when the browser didn't hand us a new subscription, then notify open
+// windows: only a page can register the new endpoint with the backend
+// (the worker has no access token), so clients reconcile via
+// syncPushSubscription on the jc:push-subscription-changed message — and
+// on every authenticated load as a backstop.
+sw.addEventListener('pushsubscriptionchange', (event) => {
+	event.waitUntil(
+		(async () => {
+			if (!event.newSubscription) {
+				try {
+					const options: PushSubscriptionOptionsInit = { userVisibleOnly: true };
+					const key = event.oldSubscription?.options?.applicationServerKey;
+					if (key) options.applicationServerKey = key;
+					await sw.registration.pushManager.subscribe(options);
+				} catch {
+					// Re-subscribe refused (permission revoked, browser policy) —
+					// the client-side sync rebuilds it on the next visit if
+					// permission is still granted.
+				}
+			}
+			const clientList = await sw.clients.matchAll({
+				type: 'window',
+				includeUncontrolled: true
+			});
+			for (const client of clientList) {
+				client.postMessage({ type: 'jc:push-subscription-changed' });
+			}
+		})()
+	);
+});
+
 // Clicking a push notification focuses/closes the relevant client.
 sw.addEventListener('notificationclick', (event) => {
 	event.notification.close();

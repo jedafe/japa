@@ -95,7 +95,7 @@ type BookingBackend interface {
 	MentorshipBookingRow(ctx context.Context, bookingID pgtype.UUID) (servicedir.BookingRow, error)
 	ListMentorshipBookingsByBooker(ctx context.Context, bookerID pgtype.UUID, status string, limit, offset int32) ([]servicedir.BookingRow, error)
 	ListMentorshipBookingsByProvider(ctx context.Context, providerID pgtype.UUID, status string, limit, offset int32) ([]servicedir.BookingRow, error)
-	ListMentorshipBookingsAdmin(ctx context.Context, status string, providerID, bookerID pgtype.UUID, limit, offset int32) ([]servicedir.BookingRow, error)
+	ListMentorshipBookingsAdmin(ctx context.Context, status, q, sort string, providerID, bookerID pgtype.UUID, limit, offset int32) ([]servicedir.BookingRow, int64, error)
 	// RespondToBooking applies the provider transitions
 	// (accept|decline|complete).
 	RespondToBooking(ctx context.Context, providerID, bookingID pgtype.UUID, action, note string) (servicedir.BookingDTO, error)
@@ -434,6 +434,10 @@ type Connection struct {
 	MentorDisplayName  *string            `json:"mentor_display_name,omitempty"`
 	MenteeDisplayName  *string            `json:"mentee_display_name,omitempty"`
 	DMConversationID   pgtype.UUID        `json:"dm_conversation_id,omitempty"`
+	// ListingContentID is the mentor's shadow service_listing contents id —
+	// lets the admin connections surface act on the listing (unpublish =
+	// "remove bad actor" moderation arm, 000824).
+	ListingContentID pgtype.UUID `json:"listing_content_id,omitempty"`
 }
 
 // Sentinel errors for §102.
@@ -586,7 +590,12 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 	if capacity != nil {
 		mergedCapacity = capacity
 		// Validate against platform-wide cap (Rule 3, §102 system_settings).
-		if *mergedCapacity > 0 && int(*mergedCapacity) > int(mentorMaxCap) {
+		// Capacity must be >= 1 — a zero/negative value would mint a listed
+		// but permanently unbookable mentor (available_slots <= 0 forever).
+		if *mergedCapacity < 1 {
+			return MentorProfile{}, ErrInvalidMentorField
+		}
+		if int(*mergedCapacity) > int(mentorMaxCap) {
 			return MentorProfile{}, ErrCapacityExceeded
 		}
 	}
@@ -1346,20 +1355,20 @@ func (s *Service) CancelConnection(ctx context.Context, userID, connID pgtype.UU
 
 // ListAllConnections lists all connections for admin (with filters).
 // GET /api/v1/admin/mentorship/connections.
-func (s *Service) ListAllConnections(ctx context.Context, status string, mentorID, menteeID pgtype.UUID, limit, offset int32) ([]Connection, error) {
+func (s *Service) ListAllConnections(ctx context.Context, status, q, sort string, mentorID, menteeID pgtype.UUID, limit, offset int32) ([]Connection, int64, error) {
 	if s.bookings == nil {
-		return nil, errBackendUnavailable
+		return nil, 0, errBackendUnavailable
 	}
 
 	// The ?status= filter speaks connection vocabulary only — booking-only
 	// tokens (disputed, refunded) are invalid input, not an empty page.
 	if status != "" && !isConnectionStatus(status) {
-		return nil, ErrInvalidStatusChange
+		return nil, 0, ErrInvalidStatusChange
 	}
 
-	rows, err := s.bookings.ListMentorshipBookingsAdmin(ctx, bookingStatus(status), mentorID, menteeID, limit, offset)
+	rows, total, err := s.bookings.ListMentorshipBookingsAdmin(ctx, bookingStatus(status), q, sort, mentorID, menteeID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("listing all connections: %w", err)
+		return nil, 0, fmt.Errorf("listing all connections: %w", err)
 	}
 
 	conns := make([]Connection, len(rows))
@@ -1367,7 +1376,7 @@ func (s *Service) ListAllConnections(ctx context.Context, status string, mentorI
 		conns[i] = connectionFromBookingRow(r)
 	}
 
-	return conns, nil
+	return conns, total, nil
 }
 
 // isConnectionStatus reports whether s belongs to the legacy
@@ -1445,12 +1454,23 @@ func (s *Service) GenerateEmbedding(ctx context.Context, userID pgtype.UUID) err
 		return nil
 	}
 
-	// Fetch the mentor's bio text.
+	// §102 mentee-side scoring: refresh mentee_goal_embedding from the
+	// user's latest request goals regardless of mentor status — GetUserEmbedding
+	// COALESCEs it over mentor_embedding for sort=match bio cosine.
+	s.embedMenteeGoals(ctx, userID)
+
+	// Fetch the mentor's bio text. A pure mentee (task fired for goals
+	// refresh only) has no mentor profile — the goals embed above already
+	// did its work, so a missing row is a clean exit, not an error.
 	profile, err := s.read.GetMentorProfile(ctx,
 
 		userID,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+
 		return fmt.Errorf("fetching mentor profile for embedding: %w", err)
 	}
 
@@ -1468,6 +1488,37 @@ func (s *Service) GenerateEmbedding(ctx context.Context, userID pgtype.UUID) err
 	}
 
 	return s.UpdateMentorEmbedding(ctx, userID, embedding)
+}
+
+// embedMenteeGoals embeds the user's most recent mentorship-request goals
+// into mentee_goal_embedding — the §102 mentee-side vector for sort=match.
+// Best-effort: no goals (or a non-mentee's first task run) leaves the column
+// NULL and scoring falls back to keyword-only.
+func (s *Service) embedMenteeGoals(ctx context.Context, userID pgtype.UUID) {
+	goals, err := s.read.GetLatestMenteeGoals(ctx, userID)
+	if err != nil || goals == "" {
+		return
+	}
+
+	vec, err := s.embedder.GenerateEmbedding(ctx, goals, "text-embedding-3-small")
+	if err != nil {
+		slog.Warn("mentorship: mentee goals embedding failed", "user_id", userID, "error", err)
+		return
+	}
+
+	if err := s.UpdateMenteeGoalEmbedding(ctx, userID, vec); err != nil {
+		slog.Warn("mentorship: mentee goals embedding write failed", "user_id", userID, "error", err)
+	}
+}
+
+// UpdateMenteeGoalEmbedding stores the mentee's goals vector (§102).
+func (s *Service) UpdateMenteeGoalEmbedding(ctx context.Context, userID pgtype.UUID, embedding []float32) error {
+	vec := pgvector.NewVector(embedding)
+
+	return s.write.UpdateMenteeGoalEmbedding(ctx, gen.UpdateMenteeGoalEmbeddingParams{
+		UserID:               userID,
+		MenteeGoalEmbedding: &vec,
+	})
 }
 
 // UpdateMeilisearch syncs a mentor's user document to the Meilisearch users
@@ -1542,6 +1593,7 @@ func connectionFromBookingRow(r servicedir.BookingRow) Connection {
 		MenteeUsername:     r.BookerUsername,
 		MentorDisplayName:  r.ProviderDisplayName,
 		MenteeDisplayName:  r.BookerDisplayName,
+		ListingContentID:  r.ListingContentID,
 	}
 
 	// goals: meta->>'goals' wins; the note column is the fallback for

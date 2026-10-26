@@ -12,6 +12,7 @@
 	import { moderationAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { PUBLIC_JC_SITE_URL } from '$env/static/public';
 	import { Eye, Ban, AlertTriangle, Trash2, XCircle } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 
@@ -22,6 +23,12 @@
 		reporter_display_name?: string;
 		entity_type: string;
 		entity_id: string;
+		entity_title?: string;
+		entity_excerpt?: string;
+		entity_slug?: string;
+		thread_slug?: string;
+		entity_content_type?: string;
+		entity_author_username?: string | null;
 		reason: string;
 		notes?: string;
 		evidence_urls?: string[];
@@ -32,7 +39,36 @@
 		created_at: string;
 	};
 
-	type ActionType = 'dismiss' | 'warn' | 'ban' | 'remove';
+	type ActionType = 'dismiss' | 'warn' | 'ban' | 'remove' | 'review';
+
+	/** Entity types that resolve to a user for warn/ban side effects —
+	 *  warn/ban on space/source reports has no target (backend 400s). */
+	const USER_TARGETABLE = new Set(['user', 'content', 'comment', 'message', 'forum_reply']);
+	/** Entity types "remove" can take down (archive/soft-delete). */
+	const REMOVABLE = new Set(['content', 'comment', 'message', 'forum_reply']);
+
+	/** Deep-link to the reported entity on the main site. */
+	function entityHref(row: Report): string | null {
+		const slug = row.entity_slug;
+		if (!slug) return null;
+		switch (row.entity_type) {
+			case 'user': return `${PUBLIC_JC_SITE_URL}/u/${slug}`;
+			case 'space': return `${PUBLIC_JC_SITE_URL}/spaces/${slug}`;
+			case 'source': return `${PUBLIC_JC_SITE_URL}/sources/${slug}`;
+			case 'message': return null;
+			default: {
+				if (row.thread_slug) return `${PUBLIC_JC_SITE_URL}/forum/${row.thread_slug}`;
+				const prefixes: Record<string, string> = {
+					blog_post: '/blog', guide: '/guide', discussion: '/forum', forum_thread: '/forum',
+					comparison: '/comparisons', story: '/story', achievement: '/achievements',
+					page: '/pages', job_listing: '/jobs', service_listing: '/services',
+					video: '/video', list: '/list'
+				};
+				const prefix = (row.entity_content_type && prefixes[row.entity_content_type]) || '/content';
+				return `${PUBLIC_JC_SITE_URL}${prefix}/${slug}`;
+			}
+		}
+	}
 
 	const canManage = $derived(hasPermission('reports.review'));
 
@@ -52,6 +88,7 @@
 			case 'warn': return t('moderation.warn', 'Warn');
 			case 'ban': return t('moderation.ban', 'Ban');
 			case 'remove': return t('moderation.remove_content', 'Remove Content');
+			case 'review': return t('moderation.mark_reviewing', 'Mark reviewing');
 			default: return type;
 		}
 	}
@@ -61,6 +98,16 @@
 	// a page-local Modal with richer copy + optional reason, then call
 	// controller.reload() after the API call succeeds.
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let moderationReportEntityTypeOptions = $state<CatalogOption[]>([
+		{ value: 'content', label: t('moderation.type_content', 'Content') },
+		{ value: 'comment', label: t('moderation.type_comment', 'Comment') },
+		{ value: 'user', label: t('moderation.type_user', 'User') },
+		{ value: 'space', label: t('moderation.type_space', 'Space') },
+		{ value: 'message', label: t('moderation.type_message', 'Message') },
+		{ value: 'source', label: t('moderation.type_source', 'Source') },
+		{ value: 'forum_reply', label: t('moderation.type_forum_reply', 'Forum reply') }
+	]);
 
 	let moderationReportStatusOptions = $state<CatalogOption[]>([
 		{ value: 'pending', label: t('app.moderation.queue.pending', 'Pending') },
@@ -120,32 +167,39 @@
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) }
 		];
 		if (canManage) {
+			const openRow = (row: Report) => row.status === 'pending' || row.status === 'reviewing';
+			acts.push({
+				label: t('moderation.mark_reviewing', 'Mark reviewing'),
+				icon: Eye,
+				onclick: (row: Report) => openAction(row, 'review'),
+				show: (row: Report) => row.status === 'pending'
+			});
 			acts.push({
 				label: t('moderation.dismiss', 'Dismiss'),
 				icon: XCircle,
 				onclick: (row: Report) => openAction(row, 'dismiss'),
-				show: (row: Report) => row.status === 'pending'
+				show: openRow
 			});
 			acts.push({
 				label: t('moderation.warn', 'Warn'),
 				icon: AlertTriangle,
 				variant: 'destructive',
 				onclick: (row: Report) => openAction(row, 'warn'),
-				show: (row: Report) => row.status === 'pending'
+				show: (row: Report) => openRow(row) && USER_TARGETABLE.has(row.entity_type)
 			});
 			acts.push({
 				label: t('moderation.remove_content', 'Remove Content'),
 				icon: Trash2,
 				variant: 'destructive',
 				onclick: (row: Report) => openAction(row, 'remove'),
-				show: (row: Report) => row.status === 'pending'
+				show: (row: Report) => openRow(row) && REMOVABLE.has(row.entity_type)
 			});
 			acts.push({
 				label: t('moderation.ban', 'Ban'),
 				icon: Ban,
 				variant: 'destructive',
 				onclick: (row: Report) => openAction(row, 'ban'),
-				show: (row: Report) => row.status === 'pending'
+				show: (row: Report) => openRow(row) && USER_TARGETABLE.has(row.entity_type)
 			});
 		}
 		return acts;
@@ -173,11 +227,18 @@
 					`<span class="text-sm">${v || row.reporter_username || 'anonymous'}</span>`
 			},
 			{
-				key: 'entity_type',
+				key: 'entity_title',
 				label: t('moderation.target', 'Target'),
-				sortable: true,
-				render: (_: any, row: Report) =>
-					`<span class="text-xs" style="color: var(--color-muted)">${row.entity_type} &middot; ${(row.entity_id ?? '').slice(0, 10)}</span>`
+				sortable: false,
+				render: (_: any, row: Report) => {
+					const href = entityHref(row);
+					const title = (row.entity_title || `${row.entity_type} · ${(row.entity_id ?? '').slice(0, 10)}`)
+						.replace(/</g, '&lt;');
+					const link = href
+						? `<a href="${href}" target="_blank" rel="noopener" class="text-xs hover:underline" style="color: var(--color-primary)">${title}</a>`
+						: `<span class="text-xs" style="color: var(--color-muted)">${title}</span>`;
+					return `<span class="text-xs font-medium uppercase" style="color: var(--color-muted)">${row.entity_type}</span><br/>${link}`;
+				}
 			},
 			{
 				key: 'reason',
@@ -204,6 +265,11 @@
 				key: 'status',
 				label: t('moderation.status', 'Status'),
 				options: moderationReportStatusOptions
+			},
+			{
+				key: 'entity_type',
+				label: t('moderation.type', 'Type'),
+				options: moderationReportEntityTypeOptions
 			}
 		],
 		actions: rowActions,
@@ -213,6 +279,7 @@
 			params.set('page', String(page));
 			params.set('page_size', String(pageSize));
 			if (filter.status) params.set('status', filter.status);
+			if (filter.entity_type) params.set('entity_type', filter.entity_type);
 			if (q) params.set('q', q);
 			const result = await moderationAdminApi.listReports(params.toString() || undefined);
 			if (result.ok) {
@@ -264,7 +331,7 @@
 			{t('common.cancel', 'Cancel')}
 		</Button>
 		<Button
-			variant={actionType === 'dismiss' ? 'default' : 'destructive'}
+			variant={actionType === 'dismiss' || actionType === 'review' ? 'default' : 'destructive'}
 			onclick={executeAction}
 			disabled={acting}
 		>
@@ -284,13 +351,23 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.target', 'Target')}</p>
 				<p class="mt-1 text-sm">{row.entity_type}</p>
-				<p class="text-xs font-mono" style="color: var(--color-muted)">{row.entity_id}</p>
+				{#if entityHref(row)}
+					<a href={entityHref(row)} target="_blank" rel="noopener" class="text-sm hover:underline" style="color: var(--color-primary)">{row.entity_title || row.entity_id}</a>
+				{:else}
+					<p class="text-xs font-mono" style="color: var(--color-muted)">{row.entity_title || row.entity_id}</p>
+				{/if}
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.reason', 'Reason')}</p>
 				<p class="mt-1 text-sm">{row.reason}</p>
 			</div>
 		</div>
+		{#if row.entity_excerpt}
+			<div class="rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
+				<p class="mb-1 text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reported_content', 'Reported content')}</p>
+				{row.entity_excerpt}
+			</div>
+		{/if}
 		{#if row.notes}
 			<div class="rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
 				<p class="mb-1 text-xs font-medium" style="color: var(--color-muted)">{t('moderation.notes', 'Notes')}</p>

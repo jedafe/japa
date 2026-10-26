@@ -112,7 +112,7 @@ func (f *fakeBookingBackend) ListMentorshipBookingsByProvider(_ context.Context,
 	return out, nil
 }
 
-func (f *fakeBookingBackend) ListMentorshipBookingsAdmin(_ context.Context, status string, providerID, bookerID pgtype.UUID, _, _ int32) ([]servicedir.BookingRow, error) {
+func (f *fakeBookingBackend) ListMentorshipBookingsAdmin(_ context.Context, status, _, _ string, providerID, bookerID pgtype.UUID, _, _ int32) ([]servicedir.BookingRow, int64, error) {
 	out := make([]servicedir.BookingRow, 0, len(f.rows))
 
 	for _, r := range f.rows {
@@ -131,7 +131,7 @@ func (f *fakeBookingBackend) ListMentorshipBookingsAdmin(_ context.Context, stat
 		out = append(out, r)
 	}
 
-	return out, nil
+	return out, int64(len(out)), nil
 }
 
 func (f *fakeBookingBackend) RespondToBooking(_ context.Context, _, bookingID pgtype.UUID, action, _ string) (servicedir.BookingDTO, error) {
@@ -374,7 +374,7 @@ func TestConnectionMethodsRequireBackend(t *testing.T) {
 		t.Errorf("CancelConnection = %v, want errBackendUnavailable", err)
 	}
 
-	if _, err := svc.ListAllConnections(ctx, "", pgtype.UUID{}, pgtype.UUID{}, 10, 0); !errors.Is(err, errBackendUnavailable) {
+	if _, _, err := svc.ListAllConnections(ctx, "", "", "", pgtype.UUID{}, pgtype.UUID{}, 10, 0); !errors.Is(err, errBackendUnavailable) {
 		t.Errorf("ListAllConnections = %v, want errBackendUnavailable", err)
 	}
 

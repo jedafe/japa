@@ -961,7 +961,10 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 		_ = menteeID.Scan(v)
 	}
 
-	conns, err := h.Service.ListAllConnections(r.Context(), status, mentorID, menteeID, limit, offset)
+	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+
+	conns, total, err := h.Service.ListAllConnections(r.Context(), status, q, sort, mentorID, menteeID, limit, offset)
 	if err != nil {
 		if errors.Is(err, ErrInvalidStatusChange) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid connection status filter")
@@ -976,7 +979,10 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &conns)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conns})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": conns,
+		"meta": map[string]any{"page": offset/limit + 1, "page_size": limit, "total": total},
+	})
 }
 
 // AdminUpdateConnection allows an admin to override a connection's status.

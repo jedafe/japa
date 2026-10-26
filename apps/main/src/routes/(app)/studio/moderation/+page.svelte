@@ -232,7 +232,9 @@
 			? t('studio.moderation.action_not_allowed', 'This action exceeds your moderation scope')
 			: err.code === 'already_resolved'
 				? t('studio.moderation.already_resolved', 'This report was already resolved by another moderator')
-				: err.message || t('studio.moderation.action_error', 'Action failed — please try again');
+				: err.code === 'no_target' || err.code === 'action_not_applicable'
+					? t('studio.moderation.action_not_applicable', 'That action does not apply to this report type')
+					: err.message || t('studio.moderation.action_error', 'Action failed — please try again');
 	}
 
 	// Runs the action over one or many rows. There is no /me bulk endpoint —
@@ -288,6 +290,13 @@
 		return !!(scope?.platform_moderator || item.scope_assigned || item.scope_space);
 	}
 
+	// 'remove' only applies to entities the backend can take down — user,
+	// space, and source reports resolve via warn/ban or dismissal instead.
+	const REMOVABLE = new Set(['content', 'comment', 'message', 'forum_reply']);
+	function canRemove(item: ModerationQueueItem): boolean {
+		return REMOVABLE.has(item.entity_type);
+	}
+
 	function scopeLabels(item: ModerationQueueItem): string[] {
 		const labels: string[] = [];
 		if (scope?.platform_moderator) labels.push(t('studio.moderation.scope_platform', 'platform'));
@@ -310,6 +319,9 @@
 				return contentHref({ slug: item.entity_slug, content_type: item.entity_content_type });
 			}
 			return null;
+		}
+		if (item.entity_type === 'forum_reply') {
+			return item.thread_slug || item.entity_slug ? `/forum/${item.thread_slug || item.entity_slug}` : null;
 		}
 		if (item.entity_type === 'space' && item.entity_slug) return `/spaces/${item.entity_slug}`;
 		if (item.entity_type === 'user' && item.entity_title) return `/u/${item.entity_title}`;
@@ -619,13 +631,15 @@
 									>
 										{t('studio.moderation.dismiss', 'Dismiss')}
 									</button>
-									<button
-										type="button"
-										class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-										onclick={() => requestAction(item.id, 'remove')}
-									>
-										{t('studio.moderation.remove', 'Remove')}
-									</button>
+									{#if canRemove(item)}
+										<button
+											type="button"
+											class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+											onclick={() => requestAction(item.id, 'remove')}
+										>
+											{t('studio.moderation.remove', 'Remove')}
+										</button>
+									{/if}
 									{#if canWarnBan(item)}
 										<button
 											type="button"

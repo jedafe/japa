@@ -19,6 +19,11 @@
 			"types": "./src/pwa.ts",
 			"svelte": "./src/pwa.ts",
 			"default": "./src/pwa.ts"
+		},
+		"./pwa-install": {
+			"types": "./src/pwa-install.svelte.ts",
+			"svelte": "./src/pwa-install.svelte.ts",
+			"default": "./src/pwa-install.svelte.ts"
 		}
 	},
 	"peerDependencies": {

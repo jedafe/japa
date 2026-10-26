@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"sync/atomic"
+	"time"
 )
 
 // Cloudflare cache purge API. Bearer-token auth against
@@ -29,13 +30,40 @@ var errCFRejected = errors.New("cdn: cloudflare purge rejected")
 // cfTagPurgeUnsupported flips after the first tag-purge rejection: tag purge
 // requires an Enterprise zone, and on every other plan each publish would
 // otherwise burn a doomed API call and log a warning. File purges keep
-// running; the flag only skips the tags call for the process lifetime.
+// running; the flag only suppresses the tags call until cfTagRetryAt.
 var cfTagPurgeUnsupported atomic.Bool
 
-// cfTagZone records the zone the flag was set for — an operator swapping in
-// a different zone (or upgraded plan) gets tag purge re-attempted without a
-// restart.
+// cfTagRetryAt is the unix timestamp at which tag purge is re-attempted
+// after a rejection — a zone upgraded to Enterprise (or given a token with
+// tag-purge permission) recovers automatically after the cooldown, without
+// a restart or a zone change.
+var cfTagRetryAt atomic.Int64
+
+// cfTagRetryCooldown bounds tag-purge suppression after an API-level
+// rejection.
+const cfTagRetryCooldown = 6 * time.Hour
+
+// cfTagZone records the zone the suppression was set for — an operator
+// swapping in a different zone gets tag purge re-attempted immediately
+// without waiting out the cooldown.
 var cfTagZone atomic.Value // string
+
+// cfTagSuppressed reports whether tag purge is currently suppressed —
+// rejected by the API and still inside the retry cooldown. When the
+// cooldown has elapsed the flag is cleared so this call re-probes the plan.
+func cfTagSuppressed() bool {
+	if !cfTagPurgeUnsupported.Load() {
+		return false
+	}
+
+	if time.Now().Unix() < cfTagRetryAt.Load() {
+		return true
+	}
+
+	cfTagPurgeUnsupported.Store(false)
+
+	return false
+}
 
 func purgeCloudflare(ctx context.Context, cfg Config, req PurgeRequest) error {
 	if cfg.CloudflareZoneID == "" || cfg.CloudflareAPIToken == "" {
@@ -59,15 +87,17 @@ func purgeCloudflare(ctx context.Context, cfg Config, req PurgeRequest) error {
 
 	// Tag purge — requires a Cloudflare Enterprise zone. cfPurgeTags marks
 	// the zone tag-incapable on rejection so subsequent purges skip the
-	// call entirely; URL purge above still applies. A zone change resets
-	// the flag so a fixed plan is retried without a restart.
+	// call for the cooldown window; URL purge above still applies. A zone
+	// change resets the suppression immediately, and a plan upgrade is
+	// picked up when the cooldown elapses — neither needs a restart.
 	if len(req.Tags) > 0 {
 		if z := cfTagZone.Load(); z != cfg.CloudflareZoneID {
 			cfTagPurgeUnsupported.Store(false)
+			cfTagRetryAt.Store(0)
 			cfTagZone.Store(cfg.CloudflareZoneID)
 		}
 
-		if !cfTagPurgeUnsupported.Load() {
+		if !cfTagSuppressed() {
 			if err := cfPurgeTags(ctx, cfg, req.Tags); err != nil && firstErr == nil {
 				firstErr = err
 			}
@@ -78,12 +108,13 @@ func purgeCloudflare(ctx context.Context, cfg Config, req PurgeRequest) error {
 }
 
 // cfPurgeTags runs the tags purge and flags the zone tag-incapable on an
-// API-level rejection (non-Enterprise plans) — a transport flake does not
-// disable future tag purges.
+// API-level rejection (non-Enterprise plans) for cfTagRetryCooldown — a
+// transport flake does not suppress future tag purges.
 func cfPurgeTags(ctx context.Context, cfg Config, tags []string) error {
 	err := cfPurge(ctx, cfg, map[string]any{"tags": tags})
 	if errors.Is(err, errCFRejected) {
 		cfTagPurgeUnsupported.Store(true)
+		cfTagRetryAt.Store(time.Now().Add(cfTagRetryCooldown).Unix())
 	}
 
 	return err

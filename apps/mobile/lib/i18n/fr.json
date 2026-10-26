@@ -121,5 +121,22 @@
   "tools.stop": "Arrêter",
   "tools.tools_on": "Outils activés",
   "tools.tools_off": "Outils désactivés",
-  "tools.sources": "Sources"
+  "tools.sources": "Sources",
+  "report.action": "Signaler",
+  "report.title": "Signaler",
+  "report.reason_label": "Motif",
+  "report.reason_required": "Veuillez choisir un motif",
+  "report.notes_label": "Notes supplémentaires",
+  "report.notes_placeholder": "Ajoutez des détails susceptibles d'aider notre équipe de modération...",
+  "report.other_notes_required": "Veuillez décrire le problème dans les notes",
+  "report.submit": "Envoyer le signalement",
+  "report.success": "Signalement envoyé. Notre équipe de modération l'examinera.",
+  "report.reason.spam": "Spam",
+  "report.reason.misinformation": "Désinformation",
+  "report.reason.harassment": "Harcèlement",
+  "report.reason.hate_speech": "Discours haineux",
+  "report.reason.illegal_content": "Contenu illégal",
+  "report.reason.self_harm": "Automutilation",
+  "report.reason.copyright": "Violation de droits d'auteur",
+  "report.reason.other": "Autre"
 }

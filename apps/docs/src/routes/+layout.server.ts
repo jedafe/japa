@@ -104,6 +104,9 @@ export const load: LayoutServerLoad = async (event) => {
 
 	return {
 		user: event.locals.user,
+		// Auth signal for client-side gates (e.g. the §124 SW auth report) —
+		// never overridden by page-level `user` data.
+		isAuthed: !!event.locals.user,
 		theme: event.locals.theme,
 		locale: event.locals.locale,
 		i18nPack,

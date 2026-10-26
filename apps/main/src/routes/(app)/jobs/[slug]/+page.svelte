@@ -8,8 +8,8 @@
 		Flag, ArrowRight, ChevronRight, Building2, Wallet, GraduationCap, X,
 		UserRound, Layers
 	} from 'lucide-svelte';
-	import { Modal } from '$lib/components/ui';
-	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
+	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
+	import { EmptyState } from '$lib/components/ui';
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import { api } from '$lib/api/client';
 	import { initiateUpload, uploadToPresigned, confirmMedia } from '$lib/api/create';
@@ -312,47 +312,8 @@
 		}
 	}
 
-	// ---- Report — POST /content/{id}/report (Section 51). ----
+	// ---- Report — shared ReportDialog posts to /content/{id}/report (Section 51). ----
 	let reportOpen = $state(false);
-	let reportReason = $state('');
-	let reportNotes = $state('');
-	let reportSubmitting = $state(false);
-	let reportError = $state('');
-	let reportSubmitted = $state(false);
-
-	function openReport() {
-		reportOpen = true;
-		reportSubmitted = false;
-		reportError = '';
-	}
-
-	function closeReport() {
-		reportOpen = false;
-		reportSubmitted = false;
-		reportError = '';
-		reportReason = '';
-		reportNotes = '';
-	}
-
-	async function submitReport() {
-		if (!(await requireAuthOrRedirect())) return;
-		if (!job || !reportReason.trim() || reportSubmitting) return;
-		reportSubmitting = true;
-		reportError = '';
-		const res = await api.post<{ id: string }>(`/content/${job.id}/report`, {
-			reason: reportReason.trim(),
-			notes: reportNotes.trim() || null,
-			evidence_urls: []
-		});
-		if (res.error) {
-			reportError = res.error.message;
-		} else {
-			reportSubmitted = true;
-			reportReason = '';
-			reportNotes = '';
-		}
-		reportSubmitting = false;
-	}
 
 	// ---- View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget
 	// on mount; the backend deduplicates per user/session per day. ----
@@ -888,7 +849,7 @@
 					</dl>
 					<button
 						type="button"
-						onclick={openReport}
+						onclick={() => (reportOpen = true)}
 						class="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-danger)]"
 					>
 						<Flag size={13} /> {t('jobs.report_job', 'Report this job')}
@@ -964,73 +925,6 @@
 </div>
 
 <!-- Report job dialog — POST /content/{content_id}/report (Section 51) -->
-{#if reportOpen}
-	<Modal open={reportOpen} onOpenChange={(v) => { if (!v) closeReport(); }} icon={Flag} title={t('jobs.report_title', 'Report this job')} overlayClass="backdrop-blur-sm" size="md">
-				{#if reportSubmitted}
-					<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-400">
-						{t('jobs.report_submitted', 'Your report has been submitted. Our team will review it.')}
-					</p>
-					<button
-						type="button"
-						onclick={closeReport}
-						class="mt-4 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-					>
-						{t('common.close', 'Close')}
-					</button>
-				{:else}
-					<form onsubmit={(e) => { e.preventDefault(); void submitReport(); }} class="space-y-3">
-						{#if reportError}
-							<p class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{reportError}</p>
-						{/if}
-						<div>
-							<label for="report-reason" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-								{t('jobs.report_reason', 'Reason')}
-							</label>
-							<AutocompleteSelect
-								id="report-reason"
-								bind:value={reportReason}
-								options={[
-									{ value: '', label: t('jobs.report_reason_select', 'Select a reason…') },
-									{ value: 'spam', label: t('forum.report_spam', 'Spam') },
-									{ value: 'harassment', label: t('forum.report_harassment', 'Harassment') },
-									{ value: 'hate_speech', label: t('forum.report_hate_speech', 'Hate speech') },
-									{ value: 'misinformation', label: t('forum.report_misinformation', 'Misinformation') },
-									{ value: 'illegal_content', label: t('forum.report_illegal', 'Illegal content') },
-									{ value: 'self_harm', label: t('forum.report_self_harm', 'Self harm') },
-									{ value: 'copyright', label: t('forum.report_copyright', 'Copyright') },
-									{ value: 'other', label: t('forum.report_other', 'Other') }
-								]}
-							/>
-						</div>
-						<div>
-							<label for="report-notes" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-								{t('jobs.report_notes', 'Additional notes (optional)')}
-							</label>
-							<textarea
-								id="report-notes"
-								bind:value={reportNotes}
-								rows={3}
-								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-							></textarea>
-						</div>
-						<div class="flex items-center gap-2">
-							<button
-								type="submit"
-								disabled={reportSubmitting || !reportReason.trim()}
-								class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-							>
-								{#if reportSubmitting}<Loader2 size={14} class="animate-spin" />{:else}
-								{t('jobs.report_submit', 'Submit report')}{/if}
-							</button>
-							<button
-								type="button"
-								onclick={closeReport}
-								class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-							>
-								{t('common.cancel', 'Cancel')}
-							</button>
-						</div>
-					</form>
-				{/if}
-	</Modal>
+{#if job}
+	<ReportDialog bind:open={reportOpen} entityType="content" entityId={job.id} entityName={job.title} />
 {/if}

@@ -585,7 +585,7 @@
 						{#if canModerate && !isTombstone}
 							<MenuItem icon={Pin} onSelect={togglePin} disabled={pinPending}>{pinned ? t('comments.unpin') : t('comments.pin')}</MenuItem>
 						{/if}
-						{#if authed && !isAuthor}
+						{#if authed && !isAuthor && !isTombstone}
 							<MenuItem icon={Flag} onSelect={() => (reportOpen = true)}>{t('comments.report', 'Report')}</MenuItem>
 						{/if}
 					</Menu>

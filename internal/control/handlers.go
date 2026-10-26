@@ -24,6 +24,7 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
@@ -505,6 +506,49 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+}
+
+// ---------------------------------------------------------------------------
+// Edge CDN (ADR-134) — status + credential validation.
+// ---------------------------------------------------------------------------
+
+// CDNStatus reports the resolved edge CDN configuration and the outcome of
+// the most recent purge so the Settings → Edge CDN card can show whether
+// the integration is working. Credential fields are presence flags only —
+// values are never returned.
+func (h *Handlers) CDNStatus(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cdn.StatusSnapshot()})
+}
+
+// CDNTestPurge validates the configured provider credentials end-to-end by
+// issuing a real purge for a sentinel URL (ADR-134). A URL purge exercises
+// auth + zone/pull-zone resolution on every plan; tag purge is reported
+// separately via status.tag_purge_ready since Cloudflare restricts it to
+// Enterprise.
+func (h *Handlers) CDNTestPurge(w http.ResponseWriter, r *http.Request) {
+	if !cdn.Enabled() {
+		errpkg.WriteError(w, http.StatusBadRequest, "cdn_disabled", "No edge CDN provider is configured")
+		return
+	}
+
+	snap := cdn.StatusSnapshot()
+	if !snap.CredentialsConfigured {
+		errpkg.WriteError(w, http.StatusBadRequest, "cdn_not_configured", "Provider credentials are incomplete — save the required settings first")
+		return
+	}
+
+	if snap.SiteURL == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "cdn_no_site_url", "JC_SITE_URL is unset — set the public site URL so URL purges can be issued")
+		return
+	}
+
+	probe := snap.SiteURL + "/cdn-probe-" + time.Now().UTC().Format("20060102150405")
+	if err := cdn.Purge(r.Context(), cdn.PurgeRequest{URLs: []string{probe}}); err != nil {
+		errpkg.WriteError(w, http.StatusBadGateway, "cdn_purge_failed", "Purge request failed: "+err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok", "url": probe}})
 }
 
 // ---------------------------------------------------------------------------

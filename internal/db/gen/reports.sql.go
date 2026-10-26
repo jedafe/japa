@@ -118,24 +118,28 @@ WITH scoped AS (
            COALESCE(
                (cr.entity_type = 'space'   AND cr.entity_id = ANY($11::uuid[])) OR
                (cr.entity_type = 'content' AND c.space_id   = ANY($11::uuid[])) OR
-               (cr.entity_type = 'comment' AND pc.space_id  = ANY($11::uuid[])),
+               (cr.entity_type = 'comment' AND pc.space_id  = ANY($11::uuid[])) OR
+               (cr.entity_type = 'forum_reply' AND rc.space_id = ANY($11::uuid[])),
                false
            )::bool AS scope_space,
            EXISTS (SELECT 1 FROM content_tags ct
-                    WHERE ct.content_id = COALESCE(c.id, pc.id)
+                    WHERE ct.content_id = COALESCE(c.id, pc.id, rc.id)
                       AND ct.tag_id = ANY($12::uuid[]))::bool AS scope_tag,
            cr.status, cr.entity_type, cr.entity_id, cr.reason, cr.notes,
-           COALESCE(c.id, pc.id) AS resolved_content_id,
-           COALESCE(c.content_type, pc.content_type, '')::text AS entity_content_type,
+           COALESCE(c.id, pc.id, rc.id) AS resolved_content_id,
+           COALESCE(c.content_type, pc.content_type, rc.content_type, '')::text AS entity_content_type,
            CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
-                ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
-           COALESCE(c.title, pc.title, s.name, tu.username, '') AS entity_title
+                ELSE COALESCE(c.space_id, pc.space_id, rc.space_id) END::uuid AS resolved_space_id,
+           COALESCE(c.title, pc.title, s.name, tu.username, rt.title, '') AS entity_title
     FROM content_reports cr
     LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_id
     LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
     LEFT JOIN contents pc       ON pc.id = cm.content_id
     LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
     LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
+    LEFT JOIN forum_replies fr  ON cr.entity_type = 'forum_reply' AND fr.id = cr.entity_id
+    LEFT JOIN forum_threads rt  ON rt.id = fr.thread_id
+    LEFT JOIN contents rc       ON rc.id = rt.content_id
 )
 SELECT COUNT(*)::int FROM scoped
 WHERE ($1::bool OR scope_assigned OR scope_space OR scope_tag)
@@ -209,6 +213,46 @@ func (q *Queries) CountPendingReportsForEntity(ctx context.Context, arg CountPen
 	return column_1, err
 }
 
+const countReports = `-- name: CountReports :one
+SELECT COUNT(*)::int
+FROM content_reports cr
+LEFT JOIN users u ON u.id = cr.reporter_user_id
+LEFT JOIN user_profiles up ON up.user_id = cr.reporter_user_id
+LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_id
+LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
+LEFT JOIN contents pc       ON pc.id = cm.content_id
+LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
+LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
+LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
+LEFT JOIN forum_replies fr  ON cr.entity_type = 'forum_reply' AND fr.id = cr.entity_id
+LEFT JOIN forum_threads rt  ON rt.id = fr.thread_id
+WHERE ($1::text IS NULL OR cr.status = $1)
+ AND ($2::text IS NULL OR cr.entity_type = $2)
+ AND ($3::text IS NULL OR (
+ cr.entity_id::text ILIKE '%' || $3 || '%'
+ OR cr.entity_type ILIKE '%' || $3 || '%'
+ OR cr.reporter_user_id::text ILIKE '%' || $3 || '%'
+ OR cr.reason ILIKE '%' || $3 || '%'
+ OR COALESCE(cr.notes, '') ILIKE '%' || $3 || '%'
+ OR COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') ILIKE '%' || $3 || '%'
+ ))
+`
+
+type CountReportsParams struct {
+	Status     *string `json:"status"`
+	EntityType *string `json:"entity_type"`
+	Q          *string `json:"q"`
+}
+
+// Pagination twin of ListReports — same joins and filters so the total
+// matches the page contents (search covers reason/notes/entity title).
+func (q *Queries) CountReports(ctx context.Context, arg CountReportsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countReports, arg.Status, arg.EntityType, arg.Q)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createReport = `-- name: CreateReport :one
 INSERT INTO content_reports (reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls) VALUES ($1, $2, $3, $4, $5, $6)
 
@@ -268,28 +312,31 @@ SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.n
        cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
        ru.username AS reporter_username,
        rup.display_name AS reporter_display_name,
-       COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, '') AS entity_title,
+       COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
        COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
                     FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
-                s.description, LEFT(dm.body, 240), isrc.source_url, '') AS entity_excerpt,
-       COALESCE(c.slug, pc.slug, s.slug, isrc.slug, '') AS entity_slug,
+                s.description, LEFT(dm.body, 240), isrc.source_url,
+                LEFT((SELECT string_agg(DISTINCT n2 #>> '{}', ' ')
+                FROM jsonb_path_query(fr.body, '$.** ? (@.text.type() == "string").text') AS n2), 240), '') AS entity_excerpt,
+       COALESCE(c.slug, pc.slug, s.slug, isrc.slug, rt.slug, '') AS entity_slug,
        COALESCE((SELECT thr.slug FROM forum_threads thr
-             WHERE thr.content_id = COALESCE(c.id, pc.id) LIMIT 1), '')::text AS thread_slug,
-       COALESCE(c.content_type, pc.content_type, '')::text AS entity_content_type,
+             WHERE thr.content_id = COALESCE(c.id, pc.id, rc.id) LIMIT 1), '')::text AS thread_slug,
+       COALESCE(c.content_type, pc.content_type, rc.content_type, '')::text AS entity_content_type,
        au.username AS entity_author_username,
        CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
-            ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
+            ELSE COALESCE(c.space_id, pc.space_id, rc.space_id) END::uuid AS resolved_space_id,
        sp.name AS entity_space_name,
        sp.slug AS entity_space_slug,
        COALESCE(cr.reviewed_by = $1::uuid, false)::bool AS scope_assigned,
        COALESCE(
            (cr.entity_type = 'space'   AND cr.entity_id = ANY($2::uuid[])) OR
            (cr.entity_type = 'content' AND c.space_id   = ANY($2::uuid[])) OR
-           (cr.entity_type = 'comment' AND pc.space_id  = ANY($2::uuid[])),
+           (cr.entity_type = 'comment' AND pc.space_id  = ANY($2::uuid[])) OR
+           (cr.entity_type = 'forum_reply' AND rc.space_id = ANY($2::uuid[])),
            false
        )::bool AS scope_space,
        EXISTS (SELECT 1 FROM content_tags ct
-                WHERE ct.content_id = COALESCE(c.id, pc.id)
+                WHERE ct.content_id = COALESCE(c.id, pc.id, rc.id)
                   AND ct.tag_id = ANY($3::uuid[]))::bool AS scope_tag
 FROM content_reports cr
 LEFT JOIN users ru          ON ru.id = cr.reporter_user_id
@@ -298,11 +345,14 @@ LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_i
 LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
 LEFT JOIN contents pc       ON pc.id = cm.content_id
 LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
-LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id)
+LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id, rc.space_id)
 LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
 LEFT JOIN dm_messages dm    ON cr.entity_type = 'message' AND dm.id = cr.entity_id
 LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
-LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id)
+LEFT JOIN forum_replies fr  ON cr.entity_type = 'forum_reply' AND fr.id = cr.entity_id
+LEFT JOIN forum_threads rt  ON rt.id = fr.thread_id
+LEFT JOIN contents rc       ON rc.id = rt.content_id
+LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id, fr.author_user_id)
 WHERE cr.id = $4
 `
 
@@ -500,29 +550,32 @@ WITH scoped AS (
            cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
            ru.username AS reporter_username,
            rup.display_name AS reporter_display_name,
-           COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, '') AS entity_title,
+           COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
            COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
                     FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
-                    s.description, LEFT(dm.body, 240), isrc.source_url, '') AS entity_excerpt,
-           COALESCE(c.slug, pc.slug, s.slug, isrc.slug, '') AS entity_slug,
+                    s.description, LEFT(dm.body, 240), isrc.source_url,
+                    LEFT((SELECT string_agg(DISTINCT n2 #>> '{}', ' ')
+                    FROM jsonb_path_query(fr.body, '$.** ? (@.text.type() == "string").text') AS n2), 240), '') AS entity_excerpt,
+           COALESCE(c.slug, pc.slug, s.slug, isrc.slug, rt.slug, '') AS entity_slug,
            COALESCE((SELECT thr.slug FROM forum_threads thr
-             WHERE thr.content_id = COALESCE(c.id, pc.id) LIMIT 1), '')::text AS thread_slug,
-           COALESCE(c.content_type, pc.content_type, '')::text AS entity_content_type,
+             WHERE thr.content_id = COALESCE(c.id, pc.id, rc.id) LIMIT 1), '')::text AS thread_slug,
+           COALESCE(c.content_type, pc.content_type, rc.content_type, '')::text AS entity_content_type,
            au.username AS entity_author_username,
-           COALESCE(c.id, pc.id) AS resolved_content_id,
+           COALESCE(c.id, pc.id, rc.id) AS resolved_content_id,
            CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
-                ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
+                ELSE COALESCE(c.space_id, pc.space_id, rc.space_id) END::uuid AS resolved_space_id,
            sp.name AS entity_space_name,
            sp.slug AS entity_space_slug,
            COALESCE(cr.reviewed_by = $12::uuid, false)::bool AS scope_assigned,
            COALESCE(
                (cr.entity_type = 'space'   AND cr.entity_id = ANY($13::uuid[])) OR
                (cr.entity_type = 'content' AND c.space_id   = ANY($13::uuid[])) OR
-               (cr.entity_type = 'comment' AND pc.space_id  = ANY($13::uuid[])),
+               (cr.entity_type = 'comment' AND pc.space_id  = ANY($13::uuid[])) OR
+               (cr.entity_type = 'forum_reply' AND rc.space_id = ANY($13::uuid[])),
                false
            )::bool AS scope_space,
            EXISTS (SELECT 1 FROM content_tags ct
-                    WHERE ct.content_id = COALESCE(c.id, pc.id)
+                    WHERE ct.content_id = COALESCE(c.id, pc.id, rc.id)
                       AND ct.tag_id = ANY($14::uuid[]))::bool AS scope_tag
     FROM content_reports cr
     LEFT JOIN users ru          ON ru.id = cr.reporter_user_id
@@ -531,11 +584,14 @@ WITH scoped AS (
     LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
     LEFT JOIN contents pc       ON pc.id = cm.content_id
     LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
-    LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id)
+    LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id, rc.space_id)
     LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
     LEFT JOIN dm_messages dm    ON cr.entity_type = 'message' AND dm.id = cr.entity_id
     LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
-    LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id)
+    LEFT JOIN forum_replies fr  ON cr.entity_type = 'forum_reply' AND fr.id = cr.entity_id
+    LEFT JOIN forum_threads rt  ON rt.id = fr.thread_id
+    LEFT JOIN contents rc       ON rc.id = rt.content_id
+    LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id, fr.author_user_id)
 )
 SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
        status, reviewed_by, resolution_note, resolved_at, created_at,
@@ -673,16 +729,44 @@ func (q *Queries) ListModerationQueue(ctx context.Context, arg ListModerationQue
 const listReports = `-- name: ListReports :many
 SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.notes, cr.evidence_urls,
  cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
- u.username AS reporter_username, up.display_name AS reporter_display_name
+ u.username AS reporter_username, up.display_name AS reporter_display_name,
+ COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
+ COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
+          FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
+          s.description, LEFT(dm.body, 240), isrc.source_url,
+          LEFT((SELECT string_agg(DISTINCT n2 #>> '{}', ' ')
+          FROM jsonb_path_query(fr.body, '$.** ? (@.text.type() == "string").text') AS n2), 240), '') AS entity_excerpt,
+ COALESCE(c.slug, pc.slug, s.slug, isrc.slug, rt.slug, '') AS entity_slug,
+ COALESCE((SELECT thr.slug FROM forum_threads thr
+   WHERE thr.content_id = COALESCE(c.id, pc.id, rc.id) LIMIT 1), '')::text AS thread_slug,
+ COALESCE(c.content_type, pc.content_type, rc.content_type, '')::text AS entity_content_type,
+ au.username AS entity_author_username,
+ sp.name AS entity_space_name,
+ sp.slug AS entity_space_slug
 FROM content_reports cr
 LEFT JOIN users u ON u.id = cr.reporter_user_id
 LEFT JOIN user_profiles up ON up.user_id = cr.reporter_user_id
+LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_id
+LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
+LEFT JOIN contents pc       ON pc.id = cm.content_id
+LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
+LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id, rc.space_id)
+LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
+LEFT JOIN dm_messages dm    ON cr.entity_type = 'message' AND dm.id = cr.entity_id
+LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
+LEFT JOIN forum_replies fr  ON cr.entity_type = 'forum_reply' AND fr.id = cr.entity_id
+LEFT JOIN forum_threads rt  ON rt.id = fr.thread_id
+LEFT JOIN contents rc       ON rc.id = rt.content_id
+LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id, fr.author_user_id)
 WHERE ($1::text IS NULL OR cr.status = $1)
  AND ($2::text IS NULL OR cr.entity_type = $2)
  AND ($3::text IS NULL OR (
  cr.entity_id::text ILIKE '%' || $3 || '%'
  OR cr.entity_type ILIKE '%' || $3 || '%'
  OR cr.reporter_user_id::text ILIKE '%' || $3 || '%'
+ OR cr.reason ILIKE '%' || $3 || '%'
+ OR COALESCE(cr.notes, '') ILIKE '%' || $3 || '%'
+ OR COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') ILIKE '%' || $3 || '%'
  ))
 ORDER BY cr.created_at DESC
 LIMIT $5 OFFSET $4
@@ -697,22 +781,33 @@ type ListReportsParams struct {
 }
 
 type ListReportsRow struct {
-	ID                  pgtype.UUID        `json:"id"`
-	ReporterUserID      pgtype.UUID        `json:"reporter_user_id"`
-	EntityType          string             `json:"entity_type"`
-	EntityID            pgtype.UUID        `json:"entity_id"`
-	Reason              string             `json:"reason"`
-	Notes               *string            `json:"notes"`
-	EvidenceUrls        []string           `json:"evidence_urls"`
-	Status              string             `json:"status"`
-	ReviewedBy          pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote      *string            `json:"resolution_note"`
-	ResolvedAt          pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	ReporterUsername    *string            `json:"reporter_username"`
-	ReporterDisplayName *string            `json:"reporter_display_name"`
+	ID                   pgtype.UUID        `json:"id"`
+	ReporterUserID       pgtype.UUID        `json:"reporter_user_id"`
+	EntityType           string             `json:"entity_type"`
+	EntityID             pgtype.UUID        `json:"entity_id"`
+	Reason               string             `json:"reason"`
+	Notes                *string            `json:"notes"`
+	EvidenceUrls         []string           `json:"evidence_urls"`
+	Status               string             `json:"status"`
+	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote       *string            `json:"resolution_note"`
+	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	ReporterUsername     *string            `json:"reporter_username"`
+	ReporterDisplayName  *string            `json:"reporter_display_name"`
+	EntityTitle          string             `json:"entity_title"`
+	EntityExcerpt        string             `json:"entity_excerpt"`
+	EntitySlug           string             `json:"entity_slug"`
+	ThreadSlug           string             `json:"thread_slug"`
+	EntityContentType    string             `json:"entity_content_type"`
+	EntityAuthorUsername *string            `json:"entity_author_username"`
+	EntitySpaceName      *string            `json:"entity_space_name"`
+	EntitySpaceSlug      *string            `json:"entity_space_slug"`
 }
 
+// Admin report queue — resolves the reported entity's title/excerpt/link so
+// reviewers can see what was reported without leaving the list. forum_reply
+// reports resolve through forum_threads back to the backing contents row.
 func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]ListReportsRow, error) {
 	rows, err := q.db.Query(ctx, listReports,
 		arg.Status,
@@ -743,6 +838,14 @@ func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]Lis
 			&i.CreatedAt,
 			&i.ReporterUsername,
 			&i.ReporterDisplayName,
+			&i.EntityTitle,
+			&i.EntityExcerpt,
+			&i.EntitySlug,
+			&i.ThreadSlug,
+			&i.EntityContentType,
+			&i.EntityAuthorUsername,
+			&i.EntitySpaceName,
+			&i.EntitySpaceSlug,
 		); err != nil {
 			return nil, err
 		}
@@ -755,11 +858,28 @@ func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]Lis
 }
 
 const listReportsByReporter = `-- name: ListReportsByReporter :many
-SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
-FROM content_reports
-WHERE reporter_user_id = $1
-ORDER BY created_at DESC
+SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.notes, cr.evidence_urls,
+ cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
+ COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
+ COALESCE(c.slug, pc.slug, s.slug, isrc.slug, tu.username, rt.slug, '') AS entity_slug,
+ COALESCE((SELECT thr.slug FROM forum_threads thr
+   WHERE thr.content_id = COALESCE(c.id, pc.id, rc.id) LIMIT 1), '')::text AS thread_slug,
+ COALESCE(c.content_type, pc.content_type, rc.content_type, '')::text AS entity_content_type,
+ au.username AS entity_author_username
+FROM content_reports cr
+LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_id
+LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
+LEFT JOIN contents pc       ON pc.id = cm.content_id
+LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
+LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
+LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
+LEFT JOIN dm_messages dm0   ON cr.entity_type = 'message' AND dm0.id = cr.entity_id
+LEFT JOIN forum_replies fr  ON cr.entity_type = 'forum_reply' AND fr.id = cr.entity_id
+LEFT JOIN forum_threads rt  ON rt.id = fr.thread_id
+LEFT JOIN contents rc       ON rc.id = rt.content_id
+LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm0.sender_id, fr.author_user_id)
+WHERE cr.reporter_user_id = $1
+ORDER BY cr.created_at DESC
 LIMIT $3 OFFSET $2
 `
 
@@ -769,15 +889,37 @@ type ListReportsByReporterParams struct {
 	PageLimit      int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListReportsByReporter(ctx context.Context, arg ListReportsByReporterParams) ([]ContentReport, error) {
+type ListReportsByReporterRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	ReporterUserID       pgtype.UUID        `json:"reporter_user_id"`
+	EntityType           string             `json:"entity_type"`
+	EntityID             pgtype.UUID        `json:"entity_id"`
+	Reason               string             `json:"reason"`
+	Notes                *string            `json:"notes"`
+	EvidenceUrls         []string           `json:"evidence_urls"`
+	Status               string             `json:"status"`
+	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote       *string            `json:"resolution_note"`
+	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	EntityTitle          string             `json:"entity_title"`
+	EntitySlug           string             `json:"entity_slug"`
+	ThreadSlug           string             `json:"thread_slug"`
+	EntityContentType    string             `json:"entity_content_type"`
+	EntityAuthorUsername *string            `json:"entity_author_username"`
+}
+
+// Reporter's own reports with the resolved entity preview so /dashboard/reports
+// can name and link the reported entity (same joins as the moderation queue).
+func (q *Queries) ListReportsByReporter(ctx context.Context, arg ListReportsByReporterParams) ([]ListReportsByReporterRow, error) {
 	rows, err := q.db.Query(ctx, listReportsByReporter, arg.ReporterUserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ContentReport
+	var items []ListReportsByReporterRow
 	for rows.Next() {
-		var i ContentReport
+		var i ListReportsByReporterRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ReporterUserID,
@@ -791,6 +933,11 @@ func (q *Queries) ListReportsByReporter(ctx context.Context, arg ListReportsByRe
 			&i.ResolutionNote,
 			&i.ResolvedAt,
 			&i.CreatedAt,
+			&i.EntityTitle,
+			&i.EntitySlug,
+			&i.ThreadSlug,
+			&i.EntityContentType,
+			&i.EntityAuthorUsername,
 		); err != nil {
 			return nil, err
 		}

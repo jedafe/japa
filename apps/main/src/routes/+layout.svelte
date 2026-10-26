@@ -6,6 +6,10 @@
 	import { t, DEFAULT_SITE_NAME, isRtl } from '$lib/i18n';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import { seedAccessToken, clearAccessToken } from '$lib/api/token.svelte';
+	import { realtime } from '$lib/realtime/realtime.svelte';
+	import { pwaInstall } from '@japaconnect/ui/pwa-install';
+	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
+	import { syncPushSubscription } from '$lib/pwa/push-sync';
 	import { env } from '$env/dynamic/public';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
@@ -153,6 +157,97 @@
 		}
 	});
 	const preconnectApi = $derived(apiOrigin !== '' && apiOrigin !== page.url.origin);
+
+	// §124 — PWA install prompt, gated by pwa.install_prompt_enabled.
+	// init() only registers the beforeinstallprompt listener (idempotent);
+	// the banner self-hides when the browser can't install or the app is
+	// already running standalone.
+	const installPromptEnabled = $derived(
+		data.siteSettings?.['pwa.install_prompt_enabled'] !== false
+	);
+
+	onMount(() => {
+		if (installPromptEnabled) pwaInstall.init();
+		// Register the service worker at the root so EVERY surface — auth,
+		// onboarding, marketplace, public pages — gets installability,
+		// offline caching, and push delivery, not just the (app) group.
+		// Ref: .jeos/sections/124-progressive-web-app.md
+		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+			// SvelteKit/Vite serves the source service worker as an ES module in dev,
+			// but compiles it to a classic IIFE for production. Use the matching
+			// registration type so the browser does not fail to evaluate the script.
+			const swType = import.meta.env.DEV ? 'module' : 'classic';
+			const registerSw = () => {
+				navigator.serviceWorker.register('/service-worker.js', { type: swType }).catch((err) => {
+					// eslint-disable-next-line no-console
+					console.error('Service worker registration failed:', err);
+				});
+			};
+			if (import.meta.env.DEV) {
+				// During dev, an existing classic-registered worker (from production
+				// or an older dev build) would try to re-fetch the script as a
+				// classic script and fail because it is now an ES module. Unregister
+				// any stale worker first so the new registration can take over.
+				navigator.serviceWorker.getRegistration().then((reg) => {
+					if (reg) {
+						reg.unregister().then(registerSw).catch(registerSw);
+					} else {
+						registerSw();
+					}
+				});
+			} else {
+				registerSw();
+			}
+			// §35 — the worker broadcasts jc:push-subscription-changed when the
+			// OS rotates/revokes the push subscription; reconcile the new
+			// endpoint with the backend (only a page has the access token).
+			navigator.serviceWorker.addEventListener('message', (e) => {
+				if ((e.data as { type?: string } | undefined)?.type === 'jc:push-subscription-changed') {
+					void syncPushSubscription();
+				}
+			});
+		}
+	});
+
+	// §124 — report auth state to the service worker so its caches only ever
+	// store guest content. reportAuth also re-sends on controllerchange, so
+	// this is safe even before the worker finishes claiming the page. Reads
+	// isAuthed (never overridden) rather than data.user — page-level loads
+	// can shadow the layout's `user` key (e.g. a viewed profile's record).
+	$effect(() => {
+		pwaInstall.reportAuth(data.isAuthed ?? !!data.user);
+	});
+
+	// §35/§124 — reconcile the browser's push subscription with the backend
+	// token list once per authenticated user (keyed on viewerId, which is
+	// never shadowed by page-level `user` data — profile pages return the
+	// viewed profile under `user`). Covers rotations that ran while no
+	// window was open; mid-session rotations re-sync via the worker's
+	// jc:push-subscription-changed broadcast.
+	let pushSyncedFor = $state<string | null>(null);
+	$effect(() => {
+		const uid = data.viewerId ?? null;
+		if (uid && uid !== pushSyncedFor) {
+			pushSyncedFor = uid;
+			void syncPushSubscription();
+		}
+	});
+
+	// §124 — mirror the LIVE unread count onto the installed app icon badge
+	// (Chromium only; no-op elsewhere). Gated by pwa.badge_enabled. Reads the
+	// realtime store so WebSocket-delivered notifications update the badge
+	// without waiting for a navigation/invalidation.
+	$effect(() => {
+		const enabled = data.siteSettings?.['pwa.badge_enabled'] !== false;
+		const nav = navigator as Navigator & {
+			setAppBadge?: (n: number) => Promise<void>;
+			clearAppBadge?: () => Promise<void>;
+		};
+		if (!enabled || !pwaInstall.standalone || !nav.setAppBadge) return;
+		const count = realtime.unreadNotifications;
+		if (count > 0) void nav.setAppBadge(count).catch(() => {});
+		else void nav.clearAppBadge?.().catch(() => {});
+	});
 </script>
 
 <svelte:head>
@@ -206,6 +301,12 @@
 <div id="main-content">
 	{@render children()}
 </div>
+
+{#if installPromptEnabled}
+	<!-- §124 install prompt — renders only when the browser can install
+	     (beforeinstallprompt fired or manual iOS flow) and not standalone. -->
+	<PwaInstallBanner />
+{/if}
 
 {#if customJs}
 	<!-- Admin custom JavaScript (§57). Renders only when the super_admin-approved

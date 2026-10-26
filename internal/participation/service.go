@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/personas"
@@ -355,12 +356,26 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 	// the dispatcher (ADR-077 §5, BUG-010).
 	var dispatchedEntityID pgtype.UUID
 
+	// ADR-134: the direct UPDATE below bypasses content.Service, so the
+	// edge purge fires here — clears any cached 404/draft response at the
+	// content URL the moment the orchestration publishes it.
+	publishContent := func(id pgtype.UUID) error {
+		var slug, cType string
+		err := s.db.Writer.QueryRow(ctx, `UPDATE contents SET status = 'published', published_at = now()
+			 WHERE id = $1 RETURNING slug, content_type`, id).Scan(&slug, &cType)
+		if err != nil {
+			return err
+		}
+
+		cdn.PurgeContentDetail(ctx, id.String(), cType, slug)
+
+		return nil
+	}
+
 	switch p.ActionType {
 	case "blog_post", "discussion", "guide", "forum_thread":
 		// Content-type action: publish the draft content row.
-		_, err = s.db.Writer.Exec(ctx, `UPDATE contents SET status = 'published', published_at = now()
-			 WHERE id = $1`, contentID)
-		if err != nil {
+		if err := publishContent(contentID); err != nil {
 			return fmt.Errorf("participation: publish content: %w", err)
 		}
 
@@ -371,9 +386,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		// first, then create the forum thread linked to that content via
 		// forum_threads.content_id (BUG-004 — previously the thread was
 		// created with content_id=NULL, leaving an orphan content row).
-		_, err = s.db.Writer.Exec(ctx, `UPDATE contents SET status = 'published', published_at = now()
-			 WHERE id = $1`, contentID)
-		if err != nil {
+		if err := publishContent(contentID); err != nil {
 			return fmt.Errorf("participation: publish forum thread content: %w", err)
 		}
 

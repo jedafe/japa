@@ -29,7 +29,8 @@
 		Save,
 		Undo2,
 		AlertTriangle,
-		Upload
+		Upload,
+		Cloud
 	} from 'lucide-svelte';
 
 	let originalSettings = $state<SystemSetting[]>([]);
@@ -117,6 +118,59 @@
 			return {};
 		})()
 	);
+
+	// ── Edge CDN (ADR-134) ─────────────────────────────────────────────────
+	// Live integration status for the "Edge CDN" (integrations) category —
+	// resolved provider, credential presence, tag-purge readiness, and the
+	// last purge outcome. Fetched from GET /control/cdn/status.
+	interface CdnStatus {
+		enabled: boolean;
+		provider: string;
+		site_url: string;
+		country_header?: string;
+		cache_tag_header?: string;
+		credentials_configured: boolean;
+		tag_purge_ready: boolean;
+		last_purge?: { at: string; urls: number; tags: number; error?: string };
+	}
+	let cdnStatus = $state<CdnStatus | null>(null);
+	let cdnTesting = $state(false);
+	let cdnTestMessage = $state('');
+
+	// The currently selected provider value (live, including unsaved edits).
+	const cdnProvider = $derived(
+		(currentSettings.find((s) => s.key === 'integrations.cdn.provider')?.value ?? '').replace(
+			/^"(.*)"$/,
+			'$1'
+		)
+	);
+
+	// Show only the selected provider's credential fields — Cloudflare keys
+	// are meaningless when BunnyCDN is configured and vice versa.
+	function isCdnSettingVisible(key: string): boolean {
+		if (key.startsWith('integrations.cloudflare.')) return cdnProvider === 'cloudflare';
+		if (key.startsWith('integrations.bunnycdn.')) return cdnProvider === 'bunnycdn';
+		return true;
+	}
+
+	async function loadCdnStatus() {
+		const res = await api<CdnStatus>('/control/cdn/status');
+		if (res.ok && res.data) cdnStatus = res.data;
+	}
+
+	async function testCdnPurge() {
+		cdnTesting = true;
+		cdnTestMessage = '';
+		const res = await api<{ status: string; url: string }>('/control/cdn/test-purge', {
+			method: 'POST'
+		});
+		cdnTestMessage = res.ok
+			? t('settings.cdn_test_ok', 'Purge succeeded — credentials are working.')
+			: res.error || t('settings.cdn_test_fail', 'Purge request failed.');
+		cdnTesting = false;
+		await loadCdnStatus();
+	}
+	// ──────────────────────────────────────────────────────────────────────
 
 	const textareaKeys = new Set(categoryTextareaKeys);
 	const uploadKeys = new Set(categoryUploadKeys);
@@ -420,6 +474,9 @@
 				originalSettings = JSON.parse(JSON.stringify(currentSettings));
 				message = t('settings.save_all_success', '{count} setting(s) saved successfully.').replace('{count}', String(changed.length));
 				messageType = 'success';
+				// Refresh the Edge CDN status card — a saved provider/credential
+				// change is resolved hot on the backend (ADR-134).
+				loadCdnStatus();
 			} else {
 				message = result.error || t('settings.save_all_error', 'Failed to save {count} setting(s).').replace('{count}', String(changed.length));
 				messageType = 'error';
@@ -518,6 +575,8 @@
 			// Fetch embedding models from the AI gateway for the RAG embedding
 			// model autocomplete (§69, ADR-069).
 			await loadEmbeddingModels();
+			// Edge CDN integration status (ADR-134).
+			await loadCdnStatus();
 		}
 		isLoading = false;
 	}
@@ -830,7 +889,14 @@
 	let categoryItems = $derived(
 		categories.map((cat) => ({
 			category: cat,
-			count: currentSettings.filter((s) => getSettingCategory(s) === cat).length
+			// Match the list's visibility rules so the count agrees with what
+			// renders — the CDN provider keys hide when their provider is not
+			// selected (ADR-134).
+			count: currentSettings.filter(
+				(s) =>
+					getSettingCategory(s) === cat &&
+					(!s.key.startsWith('integrations.') || isCdnSettingVisible(s.key))
+			).length
 		}))
 	);
 
@@ -840,7 +906,11 @@
 				activeCategory === 'all'
 					? true
 					: getSettingCategory(s) === activeCategory;
-			return matchesCategory;
+			if (!matchesCategory) return false;
+			// ADR-134: only the selected CDN provider's credential fields are
+			// meaningful — hide the other provider's keys.
+			if (s.key.startsWith('integrations.')) return isCdnSettingVisible(s.key);
+			return true;
 		})
 	);
 
@@ -1213,6 +1283,89 @@
 			</div>
 		{:else if activeCategory !== 'all'}
 			<!-- Single category: flat list of settings -->
+			{#if activeCategory === 'integrations'}
+				<!-- Edge CDN integration status + prerequisites (ADR-134) -->
+				<div class="border-border-card bg-background-alt mb-4 rounded-xl border p-4">
+					<div class="flex items-start justify-between gap-4">
+						<div class="min-w-0 flex-1 space-y-1.5 text-xs">
+							<div class="text-foreground flex items-center gap-2 text-sm font-medium">
+								<Cloud class="size-4" />
+								{t('settings.cdn_status_title', 'Edge CDN status')}
+								{#if cdnStatus}
+									<span
+										class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {cdnStatus.enabled
+											? 'bg-emerald-500/10 text-emerald-600'
+											: 'bg-muted text-muted-foreground'}"
+									>
+										{cdnStatus.enabled
+											? cdnStatus.provider
+											: t('settings.cdn_disabled', 'disabled')}
+									</span>
+								{/if}
+							</div>
+							{#if cdnStatus}
+								{#if cdnStatus.enabled}
+									<p class="text-muted-foreground">
+										{t('settings.cdn_credentials', 'Credentials:')}
+										<span class={cdnStatus.credentials_configured ? 'text-emerald-600' : 'text-amber-600'}>
+											{cdnStatus.credentials_configured
+												? t('settings.cdn_configured', 'configured')
+												: t('settings.cdn_missing', 'missing')}
+										</span>
+										· {t('settings.cdn_tag_purge', 'Tag purge:')}
+										<span class={cdnStatus.tag_purge_ready ? 'text-emerald-600' : 'text-amber-600'}>
+											{cdnStatus.tag_purge_ready
+												? t('settings.cdn_ready', 'ready')
+												: t('settings.cdn_tag_limited', 'unavailable (Cloudflare plan may restrict tag purge to Enterprise)')}
+										</span>
+										· {t('settings.cdn_site_url', 'Site URL:')}
+										<span class={cdnStatus.site_url ? 'text-emerald-600' : 'text-amber-600'}>
+											{cdnStatus.site_url || t('settings.cdn_site_url_missing', 'JC_SITE_URL unset')}
+										</span>
+									</p>
+									{#if cdnStatus.last_purge}
+										<p class="text-muted-foreground">
+											{t('settings.cdn_last_purge', 'Last purge:')}
+											{new Date(cdnStatus.last_purge.at).toLocaleString()}
+											({cdnStatus.last_purge.urls} URLs, {cdnStatus.last_purge.tags} tags)
+											{#if cdnStatus.last_purge.error}
+												<span class="text-destructive"> — {cdnStatus.last_purge.error}</span>
+											{:else}
+												<span class="text-emerald-600"> — OK</span>
+											{/if}
+										</p>
+									{/if}
+								{/if}
+								<p class="text-muted-foreground">
+									{t(
+										'settings.cdn_prereqs',
+										'Requires: DNS pointed at the provider, CDN egress ranges in JC_TRUSTED_PROXIES, and media.cdn.base_url (under Media Storage) for image delivery.'
+									)}
+								</p>
+							{:else}
+								<p class="text-muted-foreground">{t('settings.cdn_status_loading', 'Loading status…')}</p>
+							{/if}
+						</div>
+						{#if cdnStatus?.enabled}
+							<button
+								class="border-border-input bg-background hover:bg-muted text-foreground flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+								onclick={testCdnPurge}
+								disabled={cdnTesting}
+							>
+								{#if cdnTesting}
+									<Loader2 class="size-3 animate-spin" />
+								{/if}
+								{t('settings.cdn_test_purge', 'Test purge')}
+							</button>
+						{/if}
+					</div>
+					{#if cdnTestMessage}
+						<p class="mt-2 text-xs {cdnTestMessage.includes('succeed') || cdnTestMessage.includes('OK') ? 'text-emerald-600' : 'text-destructive'}">
+							{cdnTestMessage}
+						</p>
+					{/if}
+				</div>
+			{/if}
 			<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
 				<div class="divide-border-card divide-y">
 					{#each filtered as setting (setting.key)}

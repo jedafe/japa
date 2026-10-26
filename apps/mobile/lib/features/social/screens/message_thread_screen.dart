@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/social/providers/social_provider.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
+import 'package:japaconnect_mobile/features/social/services/report_service.dart';
+import 'package:japaconnect_mobile/features/social/widgets/report_sheet.dart';
 
 class MessageThreadScreen extends ConsumerStatefulWidget {
   final String id;
@@ -41,8 +43,20 @@ class _MessageThreadScreenState extends ConsumerState<MessageThreadScreen> {
             Expanded(
               child: ListView.builder(
                 itemCount: items.length,
-                itemBuilder: (_, i) =>
-                    ListTile(title: Text(items[i].text)),
+                itemBuilder: (_, i) => ListTile(
+                      title: Text(items[i].text),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.flag_outlined, size: 18),
+                        tooltip: t('report.action'),
+                        onPressed: () => showReportSheet(
+                          context,
+                          onSubmit: (reason, notes) => ref
+                              .read(reportServiceProvider)
+                              .reportDMMessage(widget.id, items[i].id,
+                                  reason: reason, notes: notes),
+                        ),
+                      ),
+                    ),
               ),
             ),
             Padding(

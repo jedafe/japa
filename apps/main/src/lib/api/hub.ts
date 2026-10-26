@@ -267,6 +267,9 @@ export const reportSpace = (id: string, body: { reason: string; notes?: string; 
 	api.post<{ id: string }>(`/spaces/${id}/report`, body);
 export const reportSource = (slug: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
 	api.post<{ id: string }>(`/sources/${slug}/report`, body);
+/** Section 51 — POST /forum/replies/{id}/report (entity_type 'forum_reply'). */
+export const reportForumReply = (id: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
+	api.post<{ id: string }>(`/forum/replies/${id}/report`, body);
 /** Section 48 — POST /dm/conversations/{id}/messages/{mid}/report */
 export const reportDMMessage = (conversationId: string, messageId: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
 	api.post<{ id: string }>(`/dm/conversations/${conversationId}/messages/${messageId}/report`, body);

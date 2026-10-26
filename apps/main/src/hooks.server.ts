@@ -1,4 +1,4 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, HandleFetch } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { apiContext, apiGet, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
@@ -444,6 +444,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const pwaAppName = String(
 		siteSettings['pwa.short_name'] || siteSettings['pwa.name'] || siteSettings['general.site_name'] || 'JapaConnect'
 	).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+	// The admin-uploaded manifest icon doubles as the iOS home-screen icon —
+	// bundled 180px default when unset. Attribute-escaped like the app name.
+	const pwaAppleIcon = String(siteSettings['pwa.icon_192'] || '/apple-touch-icon.png')
+		.replace(/&/g, '&amp;')
+		.replace(/"/g, '&quot;')
+		.replace(/</g, '&lt;');
 	const pwaMeta = [
 		`<meta name="theme-color" content="${pwaThemeColor}" />`,
 		`<meta name="mobile-web-app-capable" content="yes" />`,
@@ -451,7 +457,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		`<meta name="apple-mobile-web-app-status-bar-style" content="default" />`,
 		`<meta name="apple-mobile-web-app-title" content="${pwaAppName}" />`,
 		`<meta name="application-name" content="${pwaAppName}" />`,
-		`<link rel="apple-touch-icon" href="/apple-touch-icon.png" />`
+		`<link rel="apple-touch-icon" href="${pwaAppleIcon}" />`
 	].join('');
 
 	const response = await resolve(event, {
@@ -467,6 +473,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 				)
 				.replace('</head>', () => `${hreflangLinks}</head>`)
 	});
+	// Re-emit edge cache tags captured from upstream API detail responses so
+	// the CDN can invalidate this HTML page by tag (ADR-134).
+	if (event.locals.edgeCacheTags) {
+		for (const [name, tags] of event.locals.edgeCacheTags) {
+			response.headers.set(name, [...tags].join(','));
+		}
+	}
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
@@ -478,6 +491,39 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// page loads; API/asset responses keep default buffering.
 	if (response.headers.get('content-type')?.startsWith('text/html')) {
 		response.headers.set('X-Accel-Buffering', 'no');
+	}
+	// §124 — personalized responses are never cacheable: a stale authed page
+	// (or __data.json payload carrying the seeded access token) must not be
+	// stored anywhere — service worker, browser HTTP cache, or shared proxy —
+	// to be served to a later logged-out session on a shared device.
+	// Endpoints that set their own Cache-Control (e.g. /manifest.json) keep it.
+	if (event.locals.user && !response.headers.has('cache-control')) {
+		const ct = response.headers.get('content-type') ?? '';
+		if (ct.startsWith('text/html') || ct.startsWith('application/json')) {
+			response.headers.set('cache-control', 'private, no-store');
+		}
+	}
+	return response;
+};
+
+// Edge-CDN cache-tag propagation (ADR-134): upstream API detail responses
+// carry the configured provider's tag header (CF-Cache-Tag / CDN-Tag), but
+// edge invalidation targets the SSR'd HTML pages — not the JSON. Capture
+// the tags here so `handle` can re-emit them on the page response.
+const EDGE_CACHE_TAG_HEADERS = ['cf-cache-tag', 'cdn-tag'] as const;
+
+export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
+	const response = await fetch(request);
+	for (const name of EDGE_CACHE_TAG_HEADERS) {
+		const value = response.headers.get(name);
+		if (!value) continue;
+		const tags = (event.locals.edgeCacheTags ??= new Map());
+		const set = tags.get(name) ?? new Set<string>();
+		for (const t of value.split(',')) {
+			const tag = t.trim();
+			if (tag) set.add(tag);
+		}
+		tags.set(name, set);
 	}
 	return response;
 };

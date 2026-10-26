@@ -137,7 +137,6 @@
 			label: t("nav.section.analytics", "Analytics & Reports"),
 			items: [
 				{ path: "/analytics", label: t("nav.analytics", "Analytics"), icon: BarChart3, permission: "admin.analytics.view" },
-			{ path: "/reports", label: t("nav.reports", "Reports"), icon: FileText, permission: "reports.review" },
 			{ path: "/search", label: t("nav.search", "Search Analytics"), icon: Search, permission: "search.analytics.view" },
 			{ path: "/pagespeed", label: t("nav.pagespeed", "PageSpeed"), icon: Gauge, permission: "analytics.admin" }
 			]

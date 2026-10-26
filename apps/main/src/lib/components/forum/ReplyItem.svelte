@@ -8,12 +8,12 @@
 		Plus,
 		Share2,
 		MoreHorizontal,
-		Check
-	} from 'lucide-svelte';
+		Check, Flag } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Menu, MenuItem } from '$lib/components/ui';
+	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
@@ -129,6 +129,7 @@
 	let editError = $state<string | null>(null);
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
+	let reportOpen = $state(false);
 	let removed = $state(false);
 	let viewRecorded = $state(false);
 	let replyEl = $state<HTMLElement | null>(null);
@@ -219,6 +220,7 @@
 	});
 	const canEditReplyInWindow = $derived(canEditReply && !replyEditExpired);
 	const canDeleteReply = $derived.by(() => authed && (canModerate || currentUserId === reply.author_user_id));
+	const canReport = $derived.by(() => authed && currentUserId !== reply.author_user_id);
 	const canMarkSolved = $derived.by(() => canSolve && !isAccepted && !removed && typeof onMarkSolved === 'function');
 
 	// Server-resolved children plus any posted locally during this session.
@@ -513,7 +515,7 @@
 						{#if copied}<Check size={18} class="text-[var(--color-success)]" />{:else}<Share2 size={18} />{/if}
 					</button>
 
-					{#if (canEditReply || canDeleteReply || canMarkSolved || (isPending && isHost)) && !removed}
+					{#if (canEditReply || canDeleteReply || canMarkSolved || (isPending && isHost) || canReport) && !removed}
 						<Menu contentClass="min-w-44">
 							{#snippet trigger(props)}
 								<button
@@ -539,6 +541,9 @@
 								<MenuItem icon={CheckCircle2} onSelect={approveQuestion} disabled={approving}>
 									{approving ? t('common.loading', 'Loading') : t('ama.approve', 'Approve')}
 								</MenuItem>
+							{/if}
+							{#if canReport}
+								<MenuItem icon={Flag} onSelect={() => (reportOpen = true)}>{t('forum.report', 'Report')}</MenuItem>
 							{/if}
 						</Menu>
 					{/if}
@@ -665,3 +670,5 @@
 		z-index: -10;
 	}
 </style>
+
+<ReportDialog bind:open={reportOpen} entityType="forum_reply" entityId={reply.id} entityName={t('comments.report_entity', 'reply')} />

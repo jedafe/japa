@@ -8,12 +8,12 @@
 		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
 		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen, Star
 	} from 'lucide-svelte';
-	import { Modal } from '$lib/components/ui';
+	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import SpaceSidebar from '$lib/components/spaces/SpaceSidebar.svelte';
 	import SpaceSettings from '$lib/components/spaces/SpaceSettings.svelte';
 	import ForumList from '$lib/components/forum/ForumList.svelte';
-	import { EmptyState, UrlTabs, AutocompleteSelect } from '$lib/components/ui';
+	import { EmptyState, UrlTabs } from '$lib/components/ui';
 	import type { UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { imgLightbox } from '$lib/lightbox.svelte';
@@ -197,50 +197,8 @@ import { flagUrl } from '$lib/utils/flags';
 		mutePending = false;
 	}
 
-	// Report dialog state.
+	// Report dialog — shared ReportDialog posts to /spaces/{id}/report (Section 51).
 	let reportOpen = $state(false);
-	let reportReason = $state('');
-	let reportNotes = $state('');
-	let reportSubmitting = $state(false);
-	let reportError = $state('');
-	let reportSubmitted = $state(false);
-
-	// Rule 16: report reason codes are admin-configurable via
-	// system_settings.moderation.report_reasons (Section 51).
-	const reportReasons = $derived<string[]>(
-		Array.isArray(page.data.siteSettings?.['moderation.report_reasons'])
-			? (page.data.siteSettings['moderation.report_reasons'] as string[])
-			: []
-	);
-
-	function humanize(code: string): string {
-		return code.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-	}
-
-	async function submitReport() {
-		if (!reportReason.trim() || reportSubmitting) return;
-		reportSubmitting = true;
-		reportError = '';
-		const res = await api.post<{ id: string }>(`/spaces/${space.id}/report`, {
-			reason: reportReason.trim(),
-			notes: reportNotes.trim() || null,
-			evidence_urls: []
-		});
-		if (res.error) {
-			reportError = res.error.message;
-		} else {
-			reportSubmitted = true;
-			reportReason = '';
-			reportNotes = '';
-		}
-		reportSubmitting = false;
-	}
-
-	function closeReport() {
-		reportOpen = false;
-		reportSubmitted = false;
-		reportError = '';
-	}
 
 	const analytics = $derived(data.analytics as {
 		total_views?: number;
@@ -1160,66 +1118,5 @@ import { flagUrl } from '$lib/utils/flags';
 	</div>
 </div>
 
-<!-- Report space dialog — bind:open keeps the parent state in sync when the
-     dialog is dismissed via Escape/backdrop click, so it can reopen. -->
-<Modal bind:open={reportOpen} onOpenChange={(v) => { if (!v) closeReport(); }} icon={Flag} title={t('space.report_title', 'Report this space')} overlayClass="backdrop-blur-sm" size="md">
-				{#if reportSubmitted}
-					<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-400">
-						{t('space.report_submitted', 'Your report has been submitted. Our team will review it.')}
-					</p>
-					<button
-						type="button"
-						onclick={closeReport}
-						class="mt-4 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-					>
-						{t('common.close', 'Close')}
-					</button>
-				{:else}
-					<form onsubmit={(e) => { e.preventDefault(); submitReport(); }} class="space-y-3">
-						{#if reportError}
-							<p class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{reportError}</p>
-						{/if}
-						<div>
-							<label for="report-reason" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-								{t('space.report_reason', 'Reason')}
-							</label>
-							<AutocompleteSelect
-								id="report-reason"
-								bind:value={reportReason}
-								options={[
-									{ value: '', label: t('space.report_reason_select', 'Select a reason…') },
-									...reportReasons.map((r) => ({ value: r, label: t(`report.reason.${r}`, humanize(r)) }))
-								]}
-							/>
-						</div>
-						<div>
-							<label for="report-notes" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-								{t('space.report_notes', 'Additional notes (optional)')}
-							</label>
-							<textarea
-								id="report-notes"
-								bind:value={reportNotes}
-								rows="3"
-								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-							></textarea>
-						</div>
-						<div class="flex items-center gap-2">
-							<button
-								type="submit"
-								disabled={reportSubmitting || !reportReason.trim()}
-								class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-							>
-								{#if reportSubmitting}<Loader2 size={14} class="animate-spin" />{:else}
-								{t('space.report_submit', 'Submit report')}{/if}
-							</button>
-							<button
-								type="button"
-								onclick={closeReport}
-								class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-							>
-								{t('common.cancel', 'Cancel')}
-							</button>
-						</div>
-					</form>
-				{/if}
-	</Modal>
+<!-- Report space dialog — POST /spaces/{id}/report (Section 51) -->
+<ReportDialog bind:open={reportOpen} entityType="space" entityId={space.id} entityName={space.name} />

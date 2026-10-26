@@ -173,6 +173,10 @@ func contentDetailURL(siteBase, contentType, slug string) string {
 	return siteBase + prefix + "/" + slug
 }
 
+// siteURLWarned latches so the "no SiteURL" misconfiguration logs once per
+// process instead of on every publish.
+var siteURLWarned atomic.Bool
+
 // PurgeContentDetail invalidates a content item at the edge: its canonical
 // detail page for every slug supplied (pass the old slug too on rename)
 // plus the content:{id}/type:{type} tags. Fire-and-forget — see PurgeAsync.
@@ -204,6 +208,31 @@ func PurgeContentDetail(ctx context.Context, id, contentType string, slugs ...st
 			seen[slug] = struct{}{}
 			req.URLs = append(req.URLs, contentDetailURL(base, contentType, slug))
 		}
+	} else if siteURLWarned.CompareAndSwap(false, true) {
+		// Without JC_SITE_URL no URLs can be built — on Cloudflare
+		// non-Enterprise (where tag purge is unavailable) this leaves the
+		// edge cache with no invalidation at all.
+		slog.Warn("cdn: JC_SITE_URL unset — edge purges send tags only; URL purge disabled")
+	}
+
+	PurgeAsync(ctx, req)
+}
+
+// PurgePublicPaths invalidates site-relative public paths — used by entities
+// that are not contents rows (scam alerts, mutual-aid posts, planning groups,
+// digest editions, tool pages). paths are URL paths ("/scam-alerts/{id}");
+// when JC_SITE_URL is unset only the tags are sent. Fire-and-forget — see
+// PurgeAsync.
+func PurgePublicPaths(ctx context.Context, tags []string, paths ...string) {
+	if !Enabled() {
+		return
+	}
+
+	req := PurgeRequest{Tags: tags}
+	if base := SiteURL(); base != "" {
+		for _, p := range paths {
+			req.URLs = append(req.URLs, base+p)
+		}
 	}
 
 	PurgeAsync(ctx, req)
@@ -222,14 +251,21 @@ type PurgeRequest struct {
 // Provider errors are returned to the caller.
 func Purge(ctx context.Context, req PurgeRequest) error {
 	cfg := resolve()
+
+	var err error
+
 	switch providerOf(cfg) {
 	case ProviderCloudflare:
-		return purgeCloudflare(ctx, cfg, req)
+		err = purgeCloudflare(ctx, cfg, req)
 	case ProviderBunnyCDN:
-		return purgeBunny(ctx, cfg, req)
+		err = purgeBunny(ctx, cfg, req)
 	default:
 		return nil
 	}
+
+	recordPurge(req, err)
+
+	return err
 }
 
 // PurgeAsync fires a purge detached from the request lifecycle

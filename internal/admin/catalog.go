@@ -307,6 +307,7 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "space", Label: "Space"},
 		{Value: "message", Label: "Message"},
 		{Value: "source", Label: "Source"},
+		{Value: "forum_reply", Label: "Forum reply"},
 	},
 	"moderation.appeals.status": {
 		{Value: "pending", Label: "Pending"},

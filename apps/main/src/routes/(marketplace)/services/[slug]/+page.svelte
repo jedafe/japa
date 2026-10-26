@@ -23,6 +23,7 @@
 		CheckCircle2,
 		ChevronRight,
 		ExternalLink,
+		Flag,
 		Globe,
 		GraduationCap,
 		HandCoins,
@@ -57,6 +58,7 @@
 	import StickyBookBar from '$lib/components/marketplace/StickyBookBar.svelte';
 	import BookingDialog from '$lib/components/marketplace/BookingDialog.svelte';
 	import MentorshipRequestDialog from '$lib/components/marketplace/MentorshipRequestDialog.svelte';
+	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import MessageDialog from '$lib/components/marketplace/MessageDialog.svelte';
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import { serviceCategoryIcon } from '$lib/components/marketplace/serviceCategoryIcon';
@@ -216,6 +218,7 @@
 	);
 	let mentorDialogOpen = $state(false);
 	let messageOpen = $state(false);
+	let reportOpen = $state(false);
 	// §114 flags — the API omits tiers/coupons entirely when the flags are
 	// off, so the data-length guard is the authoritative check.
 	const tiersVisible = $derived(
@@ -1224,6 +1227,16 @@
 						<div class="mt-2.5 flex items-center gap-2">
 							<ShareButton contentId={service.id} url={canonical} title={service.title} />
 						</div>
+						{#if isMentorship && data.authed}
+							<button
+								type="button"
+								onclick={() => (reportOpen = true)}
+								class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+							>
+								<Flag size={14} />
+								{t('services.report_listing', 'Report this listing')}
+							</button>
+						{/if}
 						{#if page.data.features?.['scam_alert.enabled']}
 							<a
 								href="/scam-alerts/new"
@@ -1853,6 +1866,15 @@
 
 {#if service}
 	<MessageDialog bind:open={messageOpen} {service} authed={!!data.authed} />
+{/if}
+
+{#if service && isMentorship}
+	<ReportDialog
+		bind:open={reportOpen}
+		entityType="content"
+		entityId={service.id}
+		entityName={service.title}
+	/>
 {/if}
 
 {#if stickyCta && service}

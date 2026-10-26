@@ -82,7 +82,7 @@ func TestMentorshipBookingPreferredDatesRejected(t *testing.T) {
 	providerID.Scan("22222222-2222-2222-2222-222222222222")
 	contentID.Scan("33333333-3333-3333-3333-333333333333")
 
-	listing := ServiceRow{AuthorID: providerID}
+	listing := ServiceRow{AuthorID: providerID, Status: "published"}
 	input := CreateBookingInput{
 		Goals:          "g",
 		PreferredDates: &PreferredDatesInput{StartOn: "2026-01-01", EndOn: "2026-01-10"},

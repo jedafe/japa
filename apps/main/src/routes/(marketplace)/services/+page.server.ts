@@ -18,6 +18,8 @@ import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space } from '$li
 const DEFAULT_PAGE_SIZE = 8;
 const MAX_PAGE_SIZE = 100; // backend caps ?limit= at 100
 const VALID_SORTS = new Set(['latest', 'top']);
+// §102: mentorship-kind sort extensions — match scoring + open-slots.
+const VALID_MENTORSHIP_SORTS = new Set(['match', 'capacity']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parsePositiveInt(raw: string | null, fallback: number, max: number): number {
@@ -77,7 +79,21 @@ export const load: PageServerLoad = async (event) => {
 	const verifiedRaw = get('verified');
 	const verified = ['1', 'true', 'yes', 'on'].includes(verifiedRaw.toLowerCase()) ? 'true' : '';
 	const sortRaw = get('sort');
-	const sort = VALID_SORTS.has(sortRaw) ? sortRaw : 'latest';
+	// mentorship-kind sorts are valid only under kind=mentorship —
+	// they normalize to latest elsewhere (the backend no-ops them too).
+	const kindIsMentorship = kindRaw === 'mentorship' && mentorshipEnabled;
+	const sort =
+		VALID_SORTS.has(sortRaw) || (kindIsMentorship && VALID_MENTORSHIP_SORTS.has(sortRaw))
+			? sortRaw
+			: 'latest';
+	// §102 discovery params — mentorship kind only: ?areas= keyword list
+	// (comma-separated) and ?include_unavailable to surface at-capacity mentors.
+	const areas = kindIsMentorship ? get('areas') : '';
+	const includeUnavailableRaw = get('include_unavailable');
+	const includeUnavailable =
+		kindIsMentorship && ['1', 'true', 'yes', 'on'].includes(includeUnavailableRaw.toLowerCase())
+			? 'true'
+			: '';
 	// §111/000824: kind tabs are flag-gated — only kind=mentorship
 	// needs mentorship.enabled; a dark-launched kind is a
 	// backend 404, so it is dropped here. kind=service/'all' are
@@ -120,6 +136,8 @@ export const load: PageServerLoad = async (event) => {
 		verified,
 		sort,
 		kind,
+		areas,
+		includeUnavailable,
 		page,
 		limit
 	};
@@ -135,6 +153,8 @@ export const load: PageServerLoad = async (event) => {
 	if (verified === 'true') params.set('verified', 'true');
 	if (sort !== 'latest') params.set('sort', sort);
 	if (kind) params.set('kind', kind);
+	if (areas) params.set('areas', areas);
+	if (includeUnavailable === 'true') params.set('include_unavailable', 'true');
 
 	// ?submitted=1 — set by /services/new after a successful create, since
 	// the new listing enters `in_review` and its detail URL is gated to

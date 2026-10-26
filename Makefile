@@ -73,3 +73,7 @@ check: build vet lint test
 # Remove build artifacts
 clean:
 	rm -rf bin/
+
+# Sync BunnyCDN edge IPs into the nginx geo block (ADR-134)
+cdn-geo-bunny:
+	./scripts/sync-bunny-edges.sh docker/nginx.conf

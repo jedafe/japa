@@ -52,32 +52,13 @@
 		if (tourRequested && data.user) tourMounted = true;
 	});
 
-	// Realtime socket + PWA service worker — identical mounting pattern to
-	// (app)/+layout.svelte; notifications/DM must stay live while browsing
-	// the marketplace group.
+	// Realtime socket — identical mounting pattern to (app)/+layout.svelte;
+	// notifications/DM must stay live while browsing the marketplace group.
+	// §124 PWA wiring (SW registration, auth reporting, install prompt,
+	// badge) lives in the root +layout so all shells share it.
 	// Ref: sections/10-realtime-websockets.md, sections/35-notification-system.md
 	onMount(() => {
 		if (data.user) realtime.connect();
-		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-			const swType = import.meta.env.DEV ? 'module' : 'classic';
-			const registerSw = () => {
-				navigator.serviceWorker.register('/service-worker.js', { type: swType }).catch((err) => {
-					// eslint-disable-next-line no-console
-					console.error('Service worker registration failed:', err);
-				});
-			};
-			if (import.meta.env.DEV) {
-				navigator.serviceWorker.getRegistration().then((reg) => {
-					if (reg) {
-						reg.unregister().then(registerSw).catch(registerSw);
-					} else {
-						registerSw();
-					}
-				});
-			} else {
-				registerSw();
-			}
-		}
 		return () => realtime.disconnect();
 	});
 
@@ -91,16 +72,6 @@
 	// Seed the realtime unread-notification counter from the SSR value.
 	$effect(() => {
 		realtime.setUnreadCount(data.unreadNotifications);
-	});
-
-	// §124 — inform the service worker of auth state so its navigation cache
-	// only ever stores guest pages (worker defaults to authed=true and purges
-	// the page cache on the guest→authed transition).
-	$effect(() => {
-		navigator.serviceWorker?.controller?.postMessage({
-			type: 'jc:pwa-auth',
-			authed: !!data.user
-		});
 	});
 </script>
 

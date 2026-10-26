@@ -95,7 +95,10 @@ func TestCloudflarePurge(t *testing.T) {
 
 	defer func() { cfAPIBase = old }()
 
-	defer cfTagPurgeUnsupported.Store(false)
+	defer func() {
+		cfTagPurgeUnsupported.Store(false)
+		cfTagRetryAt.Store(0)
+	}()
 
 	err := purgeCloudflare(context.Background(), cfg, PurgeRequest{
 		URLs: urls,
@@ -170,6 +173,100 @@ func TestPurgeMissingCredentials(t *testing.T) {
 
 	if err := purgeBunny(context.Background(), Config{}, PurgeRequest{URLs: []string{"https://x/y"}}); err != nil {
 		t.Fatalf("missing creds should no-op, got %v", err)
+	}
+}
+
+// TestContentRoutePrefixParity pins the route-prefix map so accidental edits
+// are caught — the map mirrors apps/main/src/lib/utils/contentLink.ts (§14,
+// ADR-058); a drifted entry purges the wrong URL.
+func TestContentRoutePrefixParity(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]string{
+		"blog_post":       "/blog",
+		"guide":           "/guide",
+		"discussion":      "/forum",
+		"forum_thread":    "/forum",
+		"comparison":      "/comparisons",
+		"story":           "/story",
+		"achievement":     "/achievements",
+		"page":            "/pages",
+		"job_listing":     "/jobs",
+		"service_listing": "/services",
+		"video":           "/video",
+		"list":            "/list",
+	}
+	for k, v := range want {
+		if got := contentRoutePrefix[k]; got != v {
+			t.Errorf("contentRoutePrefix[%q] = %q, want %q", k, got, v)
+		}
+	}
+	if len(contentRoutePrefix) != len(want) {
+		t.Errorf("contentRoutePrefix has %d entries, want %d", len(contentRoutePrefix), len(want))
+	}
+	if got := contentDetailURL("https://japa.to", "unknown_type", "x"); got != "https://japa.to/content/x" {
+		t.Errorf("fallback = %q, want /content/x", got)
+	}
+}
+
+// TestCFTagPurgeRecovery — after an Enterprise-rejection suppression, a zone
+// change retries immediately and an elapsed cooldown also retries (plan
+// upgrade picks up without a restart). Not parallel: it swaps cfAPIBase.
+func TestCFTagPurgeRecovery(t *testing.T) {
+
+	var calls atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(`{"success":false,"errors":[{"message":"not entitled"}]}`))
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: ProviderCloudflare, CloudflareZoneID: "zone", CloudflareAPIToken: "tok"}
+
+	old := cfAPIBase
+	cfAPIBase = srv.URL
+	defer func() { cfAPIBase = old }()
+	defer func() {
+		cfTagPurgeUnsupported.Store(false)
+		cfTagRetryAt.Store(0)
+		cfTagZone.Store("")
+	}()
+
+	req := PurgeRequest{Tags: []string{"content:1"}}
+
+	// First rejection → suppressed.
+	if err := purgeCloudflare(context.Background(), cfg, req); err == nil {
+		t.Fatal("expected rejection error")
+	}
+	if calls.Load() != 1 || !cfTagPurgeUnsupported.Load() {
+		t.Fatalf("expected 1 call + suppression, calls=%d suppressed=%v", calls.Load(), cfTagPurgeUnsupported.Load())
+	}
+
+	// Inside cooldown → skipped.
+	if err := purgeCloudflare(context.Background(), cfg, req); err != nil {
+		t.Fatalf("suppressed tag purge should not error, got %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("suppressed tag purge should not call API, calls=%d", calls.Load())
+	}
+
+	// Cooldown elapsed → retried (and re-rejected → suppressed again).
+	cfTagRetryAt.Store(0)
+	if err := purgeCloudflare(context.Background(), cfg, req); err == nil {
+		t.Fatal("expected rejection error on retry")
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected retry after cooldown, calls=%d", calls.Load())
+	}
+
+	// Zone change → immediate retry regardless of cooldown.
+	cfg.CloudflareZoneID = "zone2"
+	if err := purgeCloudflare(context.Background(), cfg, req); err == nil {
+		t.Fatal("expected rejection error on zone change")
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("expected retry on zone change, calls=%d", calls.Load())
 	}
 }
 

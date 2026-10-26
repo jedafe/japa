@@ -23,11 +23,12 @@ const (
 	OpDiscussion OperationType = "discussion"
 	OpBlog       OperationType = "blog"
 	OpMessage    OperationType = "message"
+	OpReport     OperationType = "report"
 )
 
 // AllOperations returns every restrictable operation.
 func AllOperations() []OperationType {
-	return []OperationType{OpPost, OpComment, OpDiscussion, OpBlog, OpMessage}
+	return []OperationType{OpPost, OpComment, OpDiscussion, OpBlog, OpMessage, OpReport}
 }
 
 type opBanContextKey struct{}

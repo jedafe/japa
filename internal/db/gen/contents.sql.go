@@ -1554,6 +1554,25 @@ func (q *Queries) GetContentScore(ctx context.Context, contentID pgtype.UUID) (G
 	return i, err
 }
 
+const getContentSlugTypeAny = `-- name: GetContentSlugTypeAny :one
+SELECT slug, content_type FROM contents WHERE id = $1
+`
+
+type GetContentSlugTypeAnyRow struct {
+	Slug        string `json:"slug"`
+	ContentType string `json:"content_type"`
+}
+
+// slug + content_type for any row including soft-deleted — the hard-delete
+// path needs them to purge the canonical URL at the edge (ADR-134);
+// GetContentByID filters deleted_at and would miss the row.
+func (q *Queries) GetContentSlugTypeAny(ctx context.Context, id pgtype.UUID) (GetContentSlugTypeAnyRow, error) {
+	row := q.db.QueryRow(ctx, getContentSlugTypeAny, id)
+	var i GetContentSlugTypeAnyRow
+	err := row.Scan(&i.Slug, &i.ContentType)
+	return i, err
+}
+
 const getContentSpaces = `-- name: GetContentSpaces :many
 SELECT cs.space_id, cs.is_primary
 FROM content_spaces cs

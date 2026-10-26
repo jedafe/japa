@@ -915,7 +915,7 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 		t.Helper()
 
 		rows, _, err := svc.List(ctx, pgtype.UUID{}, pgtype.UUID{}, "", "", nil,
-			kind, nil, pgtype.Date{}, "T4 t4", "", 1, 100)
+			kind, nil, pgtype.Date{}, "T4 t4", "", pgtype.UUID{}, nil, false, 1, 100)
 		if err != nil {
 			t.Fatalf("list kind=%q: %v", kind, err)
 		}
@@ -935,7 +935,7 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 		})
 
 		rows, _, err := svc.List(ctx, pgtype.UUID{}, pgtype.UUID{}, "", "", nil,
-			"", nil, pgtype.Date{}, "T4 t4", "", 1, 100)
+			"", nil, pgtype.Date{}, "T4 t4", "", pgtype.UUID{}, nil, false, 1, 100)
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
@@ -1016,7 +1016,7 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 		svcOff := newTestService(database, fakeFlags{})
 
 		_, _, err := svcOff.List(ctx, pgtype.UUID{}, pgtype.UUID{}, "", "", nil,
-			ListingKindMentorship, nil, pgtype.Date{}, "T4 t4", "", 1, 100)
+			ListingKindMentorship, nil, pgtype.Date{}, "T4 t4", "", pgtype.UUID{}, nil, false, 1, 100)
 		if !errors.Is(err, ErrMentorshipDisabled) {
 			t.Fatalf("kind=mentorship with flag off: expected ErrMentorshipDisabled, got %v", err)
 		}

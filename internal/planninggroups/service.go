@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -368,6 +369,8 @@ func (s *Service) UpdateOwn(ctx context.Context, id, userID pgtype.UUID, input U
 		return PlanningGroupDTO{}, fmt.Errorf("planninggroups: update: %w", err)
 	}
 
+	cdn.PurgePublicPaths(ctx, []string{"planning_group:" + id.String()}, "/planning-groups/"+id.String(), "/planning-groups")
+
 	return s.Get(ctx, id)
 }
 
@@ -395,6 +398,8 @@ func (s *Service) DeleteOwn(ctx context.Context, id, userID pgtype.UUID) error {
 
 		return fmt.Errorf("planninggroups: delete: %w", err)
 	}
+
+	cdn.PurgePublicPaths(ctx, []string{"planning_group:" + id.String()}, "/planning-groups/"+id.String(), "/planning-groups")
 
 	return nil
 }

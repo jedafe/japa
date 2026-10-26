@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
@@ -256,6 +257,13 @@ func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
 	} else if story.Visibility == "private" && !isAuthor && !canSeePrivate {
 		errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 		return
+	}
+
+	// ADR-134: tag published public stories so the configured edge CDN can
+	// invalidate them by tag (CF-Cache-Tag / CDN-Tag). ID is the contents
+	// row id — the same key purgeEdgeContent emits on mutation.
+	if story.Status == "published" && story.Visibility == "public" {
+		cdn.SetCacheTags(w, "content:"+story.ID, "type:story")
 	}
 
 	h.resolveLiterals(r, &story)

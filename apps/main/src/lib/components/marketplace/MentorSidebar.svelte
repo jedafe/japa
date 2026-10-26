@@ -33,6 +33,8 @@
 	let { service, currencies, canApply, onApply, onMessage }: Props = $props();
 
 	const mentor = $derived(service.mentor);
+	const mentorFull = $derived(!!mentor && mentor.available_slots <= 0);
+	const mentorUnavailable = $derived(!mentor || mentor.is_mentor === false);
 	const price = $derived(
 		service.price_amount != null
 			? formatMoney(service.price_amount, service.price_currency ?? '', currencies, {
@@ -156,7 +158,16 @@
 			>
 				{t('services.apply_mentorship', 'Apply for mentorship')}
 			</button>
-			{#if mentor.capacity > 0}
+			{#if mentorUnavailable}
+				<p class="mt-2.5 text-[11px] font-medium text-[var(--color-muted)]">
+					{t('services.mentor_not_mentoring', 'This mentor is not currently accepting mentees.')}
+				</p>
+			{:else if mentorFull}
+				<p class="mt-2.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-warning,#b45309)]">
+					<Users size={12} aria-hidden="true" />
+					{t('services.mentor_at_capacity', 'At capacity — not accepting new mentees right now')}
+				</p>
+			{:else if mentor.capacity > 0}
 				<p
 					class="mt-2.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-success)]"
 				>

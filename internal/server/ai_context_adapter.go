@@ -97,12 +97,12 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID pg
 
 		case "mentorship_activity":
 			if a.mentorship != nil {
-				menteeConns, err := a.mentorship.ListAllConnections(ctx, "", pgtype.UUID{}, userID, 20, 0)
+				menteeConns, _, err := a.mentorship.ListAllConnections(ctx, "", "", "", pgtype.UUID{}, userID, 20, 0)
 				if err != nil {
 					return nil, fmt.Errorf("mentorship_activity mentee: %w", err)
 				}
 
-				mentorConns, err := a.mentorship.ListAllConnections(ctx, "", userID, pgtype.UUID{}, 20, 0)
+				mentorConns, _, err := a.mentorship.ListAllConnections(ctx, "", "", "", userID, pgtype.UUID{}, 20, 0)
 				if err != nil {
 					return nil, fmt.Errorf("mentorship_activity mentor: %w", err)
 				}

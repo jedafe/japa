@@ -9,17 +9,26 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pgvector/pgvector-go"
 )
 
 const adminCountServiceBookings = `-- name: AdminCountServiceBookings :one
 SELECT COUNT(*) FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+LEFT JOIN users u ON u.id = sb.booker_user_id
+LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
+LEFT JOIN users pu ON pu.id = sb.provider_user_id
+LEFT JOIN user_profiles pup ON pup.user_id = pu.id
 WHERE ($1::text IS NULL OR sb.status = $1::text)
   AND ($2::text IS NULL OR sb.intent = $2::text)
   AND ($3::uuid IS NULL OR sb.org_id = $3::uuid)
   AND ($4::text IS NULL OR sm.listing_kind = $4::text)
   AND ($5::uuid IS NULL OR sb.provider_user_id = $5::uuid)
   AND ($6::uuid IS NULL OR sb.booker_user_id = $6::uuid)
+  AND ($7::text IS NULL OR u.username ILIKE '%' || $7::text || '%'
+       OR up.display_name ILIKE '%' || $7::text || '%'
+       OR pu.username ILIKE '%' || $7::text || '%'
+       OR pup.display_name ILIKE '%' || $7::text || '%')
 `
 
 type AdminCountServiceBookingsParams struct {
@@ -29,6 +38,7 @@ type AdminCountServiceBookingsParams struct {
 	Kind           *string     `json:"kind"`
 	ProviderUserID pgtype.UUID `json:"provider_user_id"`
 	BookerUserID   pgtype.UUID `json:"booker_user_id"`
+	Q              *string     `json:"q"`
 }
 
 func (q *Queries) AdminCountServiceBookings(ctx context.Context, arg AdminCountServiceBookingsParams) (int64, error) {
@@ -39,6 +49,7 @@ func (q *Queries) AdminCountServiceBookings(ctx context.Context, arg AdminCountS
 		arg.Kind,
 		arg.ProviderUserID,
 		arg.BookerUserID,
+		arg.Q,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -114,8 +125,18 @@ WHERE ($1::text IS NULL OR sb.status = $1::text)
   AND ($4::text IS NULL OR sm.listing_kind = $4::text)
   AND ($5::uuid IS NULL OR sb.provider_user_id = $5::uuid)
   AND ($6::uuid IS NULL OR sb.booker_user_id = $6::uuid)
-ORDER BY sb.created_at DESC
-LIMIT $8 OFFSET $7
+  -- ?q= username/display-name search across booker + provider (admin
+  --  list contract: filter + sort + paginate — 000824 fix pass).
+  AND ($7::text IS NULL OR u.username ILIKE '%' || $7::text || '%'
+       OR up.display_name ILIKE '%' || $7::text || '%'
+       OR pu.username ILIKE '%' || $7::text || '%'
+       OR pup.display_name ILIKE '%' || $7::text || '%')
+ORDER BY
+  CASE WHEN $8::text = 'oldest' THEN sb.created_at END ASC NULLS LAST,
+  CASE WHEN $8::text = 'status' THEN sb.status END ASC NULLS LAST,
+  CASE WHEN COALESCE($8::text, 'latest') = 'latest' THEN sb.created_at END DESC NULLS LAST,
+  sb.created_at DESC
+LIMIT $10 OFFSET $9
 `
 
 type AdminListServiceBookingsParams struct {
@@ -125,6 +146,8 @@ type AdminListServiceBookingsParams struct {
 	Kind           *string     `json:"kind"`
 	ProviderUserID pgtype.UUID `json:"provider_user_id"`
 	BookerUserID   pgtype.UUID `json:"booker_user_id"`
+	Q              *string     `json:"q"`
+	Sort           *string     `json:"sort"`
 	PageOffset     int32       `json:"page_offset"`
 	PageLimit      int32       `json:"page_limit"`
 }
@@ -198,6 +221,8 @@ func (q *Queries) AdminListServiceBookings(ctx context.Context, arg AdminListSer
 		arg.Kind,
 		arg.ProviderUserID,
 		arg.BookerUserID,
+		arg.Q,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -1202,7 +1227,7 @@ func (q *Queries) CreateCouponRedemption(ctx context.Context, arg CreateCouponRe
 const createMentorshipShadowContent = `-- name: CreateMentorshipShadowContent :one
 
 INSERT INTO contents (author_id, content_type, title, slug, body, body_html, status, published_at, content_hash)
-VALUES ($1, 'service_listing', $2, $3, $4, '', 'published', now(), $5)
+VALUES ($1, 'service_listing', $2, $3, $4, '', 'in_review', NULL, $5)
 ON CONFLICT DO NOTHING
 RETURNING id
 `
@@ -1224,6 +1249,12 @@ type CreateMentorshipShadowContentParams struct {
 // on slug/content_hash (000745): a collision returns no row and the
 // service re-reads the winning shadow.
 // ---------------------------------------------------------------------
+// §102/000824 amendment: mentor listings ride the service review queue —
+// a new shadow enters 'in_review' and goes public only after the admin
+// publish gate (PATCH /admin/services/:id/publish), same as every other
+// service_listing. The ensure-path's UpdateMentorshipShadowContent only
+// republishes 'draft' rows, so an in_review/rejected shadow can't escape
+// review by re-saving the profile.
 func (q *Queries) CreateMentorshipShadowContent(ctx context.Context, arg CreateMentorshipShadowContentParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createMentorshipShadowContent,
 		arg.AuthorID,
@@ -2771,6 +2802,7 @@ LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
 LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.id = $1 AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
+  AND COALESCE(u.status, 'active') <> 'banned'
 LIMIT 1
 `
 
@@ -2995,6 +3027,7 @@ LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
 LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.slug = $1 AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
+  AND COALESCE(u.status, 'active') <> 'banned'
 LIMIT 1
 `
 
@@ -4547,7 +4580,27 @@ LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.enti
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND c.status = COALESCE($1, 'published')
-  AND ($2::uuid IS NULL OR sm.destination_space_id = $2::uuid)
+  AND COALESCE(u.status, 'active') <> 'banned'
+  -- 000824 mentorship-kind geo match: shadow listings are spaceless
+  -- (sm.destination_space_id IS NULL), so for mentorship rows ?dest=
+  -- matches the mentor's mentor_areas/mentor_countries text against the
+  -- space's name/geo_code/slug — same semantics as ListMentors (§102).
+  AND ($2::uuid IS NULL
+       OR sm.destination_space_id = $2::uuid
+       OR (sm.listing_kind = 'mentorship' AND EXISTS (
+            SELECT 1 FROM spaces ds2
+            WHERE ds2.id = $2::uuid
+              AND (
+                array_to_string(up.mentor_areas, ' ') ILIKE '%' || ds2.name || '%'
+                OR array_to_string(up.mentor_countries, ' ') ILIKE '%' || ds2.name || '%'
+                OR (ds2.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || ds2.geo_code || '%')
+                OR (ds2.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || ds2.slug || '%')
+                OR EXISTS (
+                    SELECT 1 FROM unnest(string_to_array(ds2.name, ' ')) AS word
+                    WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
+                )
+              )
+          )))
   AND ($3::uuid IS NULL OR sm.city_space_id = $3::uuid)
   AND ($4::text IS NULL OR sm.service_category = $4::text)
   AND ($5::text IS NULL OR $5::text = ANY(sm.origin_communities))
@@ -4558,31 +4611,78 @@ WHERE c.content_type = 'service_listing'
   -- 'mentorship' while mentorship.enabled is off) without collapsing
   -- the list to a single kind.
   AND ($8::text IS NULL OR sm.listing_kind <> $8::text)
-  AND ($9::bigint IS NULL OR sm.price_amount <= $9::bigint)
-  AND ($10::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= $10::date)
-  AND ($11::text IS NULL OR c.title ILIKE '%' || $11::text || '%')
+  -- §102 ?areas= (mentorship kind only): keyword overlap against
+  -- mentor_areas — partial substring match, same rule as ListMentors.
+  AND ($9::text[] IS NULL
+       OR COALESCE(array_length($9::text[], 1), 0) = 0
+       OR sm.listing_kind <> 'mentorship'
+       OR EXISTS (
+            SELECT 1 FROM unnest($9::text[]) AS a
+            WHERE length(a) >= 2
+              AND EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma
+                  WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\'
+              )
+          ))
+  -- §102/§111 discovery availability filter: at-capacity mentors are
+  -- excluded by default; ?include_unavailable=1 re-includes them.
+  -- Non-mentorship kinds are never capacity-gated.
+  AND ($10::boolean IS TRUE
+       OR sm.listing_kind <> 'mentorship'
+       OR COALESCE(up.mentor_capacity, 0) > COALESCE(up.active_mentee_count, 0))
+  AND ($11::bigint IS NULL OR sm.price_amount <= $11::bigint)
+  AND ($12::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= $12::date)
+  AND ($13::text IS NULL OR c.title ILIKE '%' || $13::text || '%')
 ORDER BY
-  CASE WHEN $12::text = 'top' THEN c.view_count END DESC NULLS LAST,
-  CASE WHEN $12::text = 'top' THEN c.comment_count END DESC NULLS LAST,
+  CASE WHEN $14::text = 'top' THEN c.view_count END DESC NULLS LAST,
+  CASE WHEN $14::text = 'top' THEN c.comment_count END DESC NULLS LAST,
+  -- §102 mentorship sorts (no-op on other kinds): sort=capacity orders by
+  -- open slots; sort=match uses 60% ?areas= keyword overlap + 40% pgvector
+  -- bio cosine — mentors without an embedding (or viewers without one)
+  -- fall back to keyword-only at weight 1.0.
+  CASE WHEN $14::text = 'capacity' AND sm.listing_kind = 'mentorship'
+       THEN (up.mentor_capacity - up.active_mentee_count) END DESC NULLS LAST,
+  CASE WHEN $14::text = 'match' AND sm.listing_kind = 'mentorship' THEN
+       CASE
+         WHEN up.mentor_embedding IS NOT NULL AND $15::vector IS NOT NULL
+           THEN 0.6 * COALESCE((
+             SELECT COUNT(*)::double precision / NULLIF(array_length($9::text[], 1), 0)
+             FROM unnest($9::text[]) AS a
+             WHERE length(a) >= 2
+               AND EXISTS (SELECT 1 FROM unnest(up.mentor_areas) AS ma
+                           WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\')
+           ), 0) + 0.4 * (1 - (up.mentor_embedding <=> $15::vector))
+         ELSE COALESCE((
+           SELECT COUNT(*)::double precision / NULLIF(array_length($9::text[], 1), 0)
+           FROM unnest($9::text[]) AS a
+           WHERE length(a) >= 2
+             AND EXISTS (SELECT 1 FROM unnest(up.mentor_areas) AS ma
+                         WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\')
+         ), 0)
+       END
+  END DESC NULLS LAST,
   c.published_at DESC NULLS LAST, c.created_at DESC
-LIMIT $14 OFFSET $13
+LIMIT $17 OFFSET $16
 `
 
 type ListServiceListingsParams struct {
-	Status             *string     `json:"status"`
-	DestSpaceID        pgtype.UUID `json:"dest_space_id"`
-	CitySpaceID        pgtype.UUID `json:"city_space_id"`
-	ServiceCategory    *string     `json:"service_category"`
-	OriginCommunity    *string     `json:"origin_community"`
-	IsVerified         *bool       `json:"is_verified"`
-	ListingKind        *string     `json:"listing_kind"`
-	ExcludeListingKind *string     `json:"exclude_listing_kind"`
-	PriceMax           *int64      `json:"price_max"`
-	DateFrom           pgtype.Date `json:"date_from"`
-	Q                  *string     `json:"q"`
-	Sort               *string     `json:"sort"`
-	PageOffset         int32       `json:"page_offset"`
-	PageLimit          int32       `json:"page_limit"`
+	Status             *string          `json:"status"`
+	DestSpaceID        pgtype.UUID      `json:"dest_space_id"`
+	CitySpaceID        pgtype.UUID      `json:"city_space_id"`
+	ServiceCategory    *string          `json:"service_category"`
+	OriginCommunity    *string          `json:"origin_community"`
+	IsVerified         *bool            `json:"is_verified"`
+	ListingKind        *string          `json:"listing_kind"`
+	ExcludeListingKind *string          `json:"exclude_listing_kind"`
+	Areas              []string         `json:"areas"`
+	IncludeUnavailable *bool            `json:"include_unavailable"`
+	PriceMax           *int64           `json:"price_max"`
+	DateFrom           pgtype.Date      `json:"date_from"`
+	Q                  *string          `json:"q"`
+	Sort               *string          `json:"sort"`
+	MenteeEmbedding    *pgvector.Vector `json:"mentee_embedding"`
+	PageOffset         int32            `json:"page_offset"`
+	PageLimit          int32            `json:"page_limit"`
 }
 
 type ListServiceListingsRow struct {
@@ -4665,10 +4765,13 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 		arg.IsVerified,
 		arg.ListingKind,
 		arg.ExcludeListingKind,
+		arg.Areas,
+		arg.IncludeUnavailable,
 		arg.PriceMax,
 		arg.DateFrom,
 		arg.Q,
 		arg.Sort,
+		arg.MenteeEmbedding,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -5477,9 +5580,9 @@ SET title = $1,
         ) THEN $4
         ELSE contents.slug
     END,
-    status = CASE WHEN status = 'draft' THEN 'published' ELSE status END,
+    status = CASE WHEN status = 'draft' AND published_at IS NULL THEN 'published' ELSE status END,
     published_at = CASE
-        WHEN status = 'draft' THEN COALESCE(published_at, now())
+        WHEN status = 'draft' AND published_at IS NULL THEN now()
         ELSE published_at
     END,
     updated_at = now()
@@ -5501,10 +5604,11 @@ type UpdateMentorshipShadowContentParams struct {
 // minted with a suffix because the canonical slug was squatted) snaps
 // back once the slug frees up; the NOT EXISTS guard keeps the old slug
 // when another live row occupies the target so the update never 23505s
-// or hijacks an occupied slug. Status semantics: only a 'draft' shadow is
-// republished (preserved 000824 fallback rows for non-listed mentors); an
-// archived/moderated status is left alone so refresh can't silently
-// republish a deliberately unpublished row.
+// or hijacks an occupied slug. Status semantics: only a never-published
+// 'draft' shadow is republished (the preserved 000824 fallback rows have
+// published_at NULL); a draft carrying published_at is an admin
+// unpublish decision — refresh must not silently undo it — and an
+// in_review/archived status is likewise left alone.
 func (q *Queries) UpdateMentorshipShadowContent(ctx context.Context, arg UpdateMentorshipShadowContentParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateMentorshipShadowContent,
 		arg.Title,

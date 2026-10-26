@@ -884,6 +884,15 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 		return BookingResult{}, ErrMentorshipDisabled
 	}
 
+	// The listing lookup (GetServiceListingByContentID) is deliberately
+	// status-agnostic so non-published rows can produce kind-correct 404s —
+	// but an in_review/draft/unpublished shadow must not mint bookings.
+	// Booking only becomes possible once the admin review gate publishes
+	// the shadow (000824 fix-pass).
+	if listing.Status != content.StatusPublished {
+		return BookingResult{}, pgx.ErrNoRows
+	}
+
 	// §111 free-text caps — goals/note are unbounded user input landing in
 	// a text column + meta JSON; reject oversized payloads early.
 	if utf8.RuneCountInString(input.Note) > maxBookingTextLen || utf8.RuneCountInString(input.Goals) > maxBookingTextLen {
@@ -1030,6 +1039,22 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 	result.Booking.ListingSlug = listing.Slug
 	result.Booking.ListingKind = listing.ListingKind
 	result.Booking.ProviderUserID = providerID.String()
+
+	// §102 analytics: mentorship_request_sent — the mentee is the actor;
+	// emitted here (not only in the compat route) so the unified UI flow
+	// the frontend actually calls produces the event.
+	s.trackEvent(ctx, bookerID, "mentorship_request_sent", "mentorship_connection", booking.ID,
+		map[string]any{"mentor_id": providerID.String()})
+
+	// §102: refresh the mentee's goals embedding — the latest request's
+	// goals text feeds mentee_goal_embedding for sort=match scoring.
+	if s.enqueuer != nil {
+		if payload, merr := json.Marshal(map[string]string{"user_id": bookerID.String()}); merr == nil {
+			if eerr := s.enqueuer.Enqueue("mentor:generate_embedding", payload); eerr != nil {
+				slog.Warn("servicedir: enqueue mentee goals embedding", "error", eerr)
+			}
+		}
+	}
 	result.Booking.ConnectionStatus = mentorshipConnectionStatus(result.Booking.Status)
 
 	// Inquiry path — notify immediately (audience resolution for
@@ -1291,6 +1316,16 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 				dmConvID = conv.ID.String()
 			}
 		}
+
+		// §102 analytics: mentorship_accepted — the mentor is the actor.
+		s.trackEvent(ctx, providerID, "mentorship_accepted", "mentorship_connection", bookingID,
+			map[string]any{"mentee_id": row.BookerUserID.String()})
+	}
+
+	// §102 analytics: mentorship_completed — fires on the provider's
+	// 'complete' arm; the mentee arm lives in CompleteMyBooking.
+	if action == "complete" && row.ListingKind == ListingKindMentorship {
+		s.trackEvent(ctx, providerID, "mentorship_completed", "mentorship_connection", bookingID, nil)
 	}
 
 	// Any mentorship-kind transition out of 'confirmed' (complete) or into

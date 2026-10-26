@@ -5,7 +5,7 @@
 	import { beforeNavigate } from '$app/navigation';
 	import { Sparkles } from 'lucide-svelte';
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
-	import { pwaInstall } from '$lib/pwa/install.svelte';
+	import { pwaInstall } from '@japaconnect/ui/pwa-install';
 	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
 	import { ensureAiPanelDeps } from '$lib/ai/panel';
 	import { resolveAiPageContext } from '$lib/ai/pageContext';
@@ -62,23 +62,16 @@
 		if (data.i18nPack && data.locale) setRuntimePack(data.locale, data.i18nPack);
 	});
 
-	// §124 — inform the service worker of auth state so its navigation cache
-	// only ever stores guest pages (worker defaults to authed=true and purges
-	// the page cache on the guest→authed transition).
+	// §124 — report auth state to the service worker so its caches only ever
+	// store guest content (re-sent on controllerchange inside init()).
 	$effect(() => {
-		navigator.serviceWorker?.controller?.postMessage({
-			type: 'jc:pwa-auth',
-			authed: !!data.user
-		});
+		pwaInstall.reportAuth((data as { isAuthed?: boolean }).isAuthed ?? !!data.user);
 	});
 
 	// §124 — install prompt gated by pwa.install_prompt_enabled.
 	const installPromptEnabled = $derived(
 		data.siteSettings?.['pwa.install_prompt_enabled'] !== false
 	);
-	$effect(() => {
-		if (installPromptEnabled) pwaInstall.init();
-	});
 
 	// Admin appearance overrides are injected server-side by hooks.server.ts
 	// into the static <style id="jc-theme-overrides"> tag in app.html.
@@ -109,6 +102,40 @@
 	beforeNavigate(() => setAiPageContext(null));
 
 	onMount(() => ensureAiPanelDeps());
+
+	// §124 — capture beforeinstallprompt + register the PWA service worker
+	// (precache, runtime caching, offline fallback). Without registration
+	// Chromium never marks the app installable and the offline layer is
+	// dead code.
+	// Ref: .jeos/sections/124-progressive-web-app.md
+	onMount(() => {
+		if (installPromptEnabled) pwaInstall.init();
+		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+			// SvelteKit/Vite serves the source service worker as an ES module in dev,
+			// but compiles it to a classic IIFE for production. Use the matching
+			// registration type so the browser does not fail to evaluate the script.
+			const swType = import.meta.env.DEV ? 'module' : 'classic';
+			const registerSw = () => {
+				navigator.serviceWorker.register('/service-worker.js', { type: swType }).catch((err) => {
+					// eslint-disable-next-line no-console
+					console.error('Service worker registration failed:', err);
+				});
+			};
+			if (import.meta.env.DEV) {
+				// Unregister any stale classic-registered worker before
+				// re-registering as a module (see main +layout.svelte).
+				navigator.serviceWorker.getRegistration().then((reg) => {
+					if (reg) {
+						reg.unregister().then(registerSw).catch(registerSw);
+					} else {
+						registerSw();
+					}
+				});
+			} else {
+				registerSw();
+			}
+		}
+	});
 </script>
 
 <a

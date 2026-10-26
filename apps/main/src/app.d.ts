@@ -48,6 +48,12 @@ declare global {
 			 * page load functions. Ref: conventions/system-settings-catalog.md.
 			 */
 			siteSettings: Record<string, unknown>;
+			/**
+			 * Edge-CDN cache tags captured from upstream API responses during SSR
+			 * (ADR-134) — header name (cf-cache-tag / cdn-tag) → deduped tag set,
+			 * re-emitted on the HTML response so the edge can tag-purge pages.
+			 */
+			edgeCacheTags?: Map<string, Set<string>>;
 		}
 		interface PageData {
 			user: SessionUser | null;

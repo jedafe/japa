@@ -5,11 +5,17 @@
 	// never renders once the app runs standalone.
 	// Ref: .jeos/sections/124-progressive-web-app.md
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { pwaInstall } from './install.svelte';
+	import { pwaInstall } from '@japaconnect/ui/pwa-install';
 	import { X, Download, Share } from 'lucide-svelte';
 
 	const DISMISS_COOKIE = 'jc_pwa_banner';
+
+	// Admin-uploaded 192px icon (pwa.icon_192) wins over the bundled default.
+	const iconUrl = $derived(
+		(page.data.siteSettings?.['pwa.icon_192'] as string | undefined) || '/icon-192.png'
+	);
 
 	let dismissed = $state(false);
 	let installing = $state(false);
@@ -32,7 +38,10 @@
 	async function install() {
 		installing = true;
 		try {
-			await pwaInstall.prompt();
+			// A dismissed native dialog counts as a dismissal too — remember it
+			// so the banner doesn't re-nag next session.
+			const accepted = await pwaInstall.prompt();
+			if (!accepted) dismiss();
 		} finally {
 			installing = false;
 		}
@@ -41,11 +50,12 @@
 
 {#if visible}
 	<div
-		class="fixed inset-x-3 bottom-3 z-50 mx-auto flex max-w-md items-center gap-3 rounded-[var(--radius-card,12px)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-lg sm:bottom-6"
+		class="fixed inset-x-3 z-50 mx-auto flex max-w-md items-center gap-3 rounded-[var(--radius-card,12px)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-lg"
+		style="bottom: max(1.5rem, calc(env(safe-area-inset-bottom) + 0.75rem))"
 		role="dialog"
 		aria-label={t('pwa.install_title', 'Install app')}
 	>
-		<img src="/icon-192.png" alt="" class="h-10 w-10 shrink-0 rounded-[10px]" />
+		<img src={iconUrl} alt="" class="h-10 w-10 shrink-0 rounded-[10px]" />
 		<div class="min-w-0 flex-1">
 			<p class="text-sm font-medium text-[var(--color-text)]">{t('pwa.install_title', 'Install app')}</p>
 			{#if pwaInstall.needsManualIos}
@@ -56,7 +66,7 @@
 				</p>
 			{:else}
 				<p class="mt-0.5 truncate text-xs text-[var(--color-muted)]">
-					{t('pwa.install_body', 'Get faster access and push notifications.')}
+					{t('pwa.install_body', 'Get faster access to the documentation.')}
 				</p>
 			{/if}
 		</div>

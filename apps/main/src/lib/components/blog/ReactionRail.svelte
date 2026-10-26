@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Bookmark, MessageCircle, Share2, Check, Heart, Copy } from 'lucide-svelte';
+	import { Bookmark, MessageCircle, Share2, Check, Heart, Copy, Flag } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { getReactionTypes, type ReactionType } from '$lib/api/reactions';
@@ -8,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { shareContrastColor } from '$lib/utils/shareColor';
+	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 
 	interface SharePlatform {
 		key: string;
@@ -69,6 +70,7 @@
 	let shared = $state(false);
 	let copied = $state(false);
 	let showShareMenu = $state(false);
+	let reportOpen = $state(false);
 	let showReactions = $state(false);
 	let reactionCloseTimer: ReturnType<typeof setTimeout> | null = null;
 	let sharePlatforms = $state<SharePlatform[]>([]);
@@ -493,4 +495,23 @@
 			</span>
 		</button>
 	{/if}
+
+	<!-- Report (Section 51) — guests are sent to /login, matching the rail's
+	     other authenticated actions. -->
+	<button
+		type="button"
+		onclick={() => {
+			if (!requireAuth()) return;
+			reportOpen = true;
+		}}
+		class="flex {isHorizontal ? 'flex-1 items-center justify-center' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+		aria-label={t('report.action', 'Report')}
+		title={t('report.action', 'Report')}
+	>
+		<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+			<Flag size={18} />
+		</span>
+	</button>
 </div>
+
+<ReportDialog bind:open={reportOpen} entityType="content" entityId={contentId} />

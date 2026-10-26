@@ -392,20 +392,22 @@ func (s *Service) ListMentorshipBookingsByProvider(ctx context.Context, provider
 // ListMentorshipBookingsAdmin is the admin connections list (legacy
 // ListAllConnections): every mentorship-kind booking, optional mentor
 // (provider_user_id) / mentee (booker_user_id) filters.
-func (s *Service) ListMentorshipBookingsAdmin(ctx context.Context, status string, providerID, bookerID pgtype.UUID, limit, offset int32) ([]BookingRow, error) {
-	rows, _, err := s.store.AdminListBookings(ctx, BookingsAdminFilter{
+func (s *Service) ListMentorshipBookingsAdmin(ctx context.Context, status, q, sort string, providerID, bookerID pgtype.UUID, limit, offset int32) ([]BookingRow, int64, error) {
+	rows, total, err := s.store.AdminListBookings(ctx, BookingsAdminFilter{
 		Status:         status,
 		Kind:           ListingKindMentorship,
 		ProviderUserID: providerID,
 		BookerUserID:   bookerID,
+		Q:              q,
+		Sort:           sort,
 		Limit:          limit,
 		Offset:         offset,
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return rows, nil
+	return rows, total, nil
 }
 
 // ---------------------------------------------------------------------
@@ -445,6 +447,8 @@ func (s *Service) CompleteMyBooking(ctx context.Context, bookingID, userID pgtyp
 	s.enqueueStatusChangedAudience(row.ID, BookingStatusFulfilled, "provider")
 
 	if row.ListingKind == ListingKindMentorship {
+		// §102 analytics: mentorship_completed — mentee-side arm.
+		s.trackEvent(ctx, userID, "mentorship_completed", "mentorship_connection", bookingID, nil)
 		// Leaving 'confirmed' dropped active_mentee_count via the trigger.
 		s.enqueueMentorMeilisearch(row.ProviderUserID)
 	}

@@ -180,13 +180,14 @@ func (s *Store) AdminApplicationStatusDistribution(ctx context.Context) ([]gen.A
 }
 
 // ExpireListingsPastDeadline archives published job_listing content whose
-// application_deadline custom field value is in the past. Returns the number
-// of rows affected.
-func (s *Store) ExpireListingsPastDeadline(ctx context.Context) (int64, error) {
-	n, err := s.writeQueries.ExpireJobListingsPastDeadline(ctx)
+// application_deadline custom field value is in the past. Returns the
+// expired rows (id + slug) so the caller can purge each listing's detail
+// page at the edge CDN (ADR-134).
+func (s *Store) ExpireListingsPastDeadline(ctx context.Context) ([]gen.ExpireJobListingsPastDeadlineRow, error) {
+	rows, err := s.writeQueries.ExpireJobListingsPastDeadline(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("jobs: expire listings: %w", err)
+		return nil, fmt.Errorf("jobs: expire listings: %w", err)
 	}
 
-	return n, nil
+	return rows, nil
 }

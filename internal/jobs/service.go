@@ -26,6 +26,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/bots"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -1112,6 +1113,10 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 		}
 	}
 
+	// ADR-134: this path inserts contents directly (no content.Service), so
+	// the edge purge must fire here — clears any cached 404 at the new slug.
+	cdn.PurgeContentDetail(ctx, contentID.String(), "job_listing", slug)
+
 	return JobDetail{
 		ID:          contentID.String(),
 		Title:       title,
@@ -1325,6 +1330,22 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 			return JobDetail{}, err
 		}
 	}
+
+	// ADR-134: this path writes contents directly (no content.Service), so
+	// the slug-history record and edge purge must fire here — a rename
+	// otherwise leaves the old URL cached with no 301 to follow.
+	if slug != existing.Slug {
+		if _, err := gen.New(s.store.pool.Writer).CreateSlugHistory(ctx, gen.CreateSlugHistoryParams{
+			EntityType: content.EntityContent,
+			EntityID:   jobID,
+			OldSlug:    existing.Slug,
+			NewSlug:    slug,
+		}); err != nil {
+			slog.Error("jobs: failed to record slug history",
+				"error", err, "job_id", jobID.String(), "old_slug", existing.Slug, "new_slug", slug)
+		}
+	}
+	cdn.PurgeContentDetail(ctx, jobID.String(), "job_listing", existing.Slug, slug)
 
 	// Re-fetch from the writer to avoid read-replica lag.
 	return s.GetJobByID(ctx, orgID, jobID)
@@ -2151,7 +2172,18 @@ func (s *Service) AdminApplicationStatusDistribution(ctx context.Context) (map[s
 // ExpireListingsPastDeadline archives published job_listing content whose
 // application_deadline is in the past. Called by the jobs:expire_listings task.
 func (s *Service) ExpireListingsPastDeadline(ctx context.Context) (int64, error) {
-	return s.store.ExpireListingsPastDeadline(ctx)
+	rows, err := s.store.ExpireListingsPastDeadline(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	// ADR-134: the bulk UPDATE bypasses content.Service — purge each expired
+	// listing's detail page or expired jobs stay served from the edge.
+	for _, r := range rows {
+		cdn.PurgeContentDetail(ctx, r.ID.String(), "job_listing", r.Slug)
+	}
+
+	return int64(len(rows)), nil
 }
 
 // ToggleFeature toggles the is_featured custom field value for a job listing.
@@ -2221,6 +2253,16 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 		return err
 	}
 
+	// Fetch the slug before update so the edge purge can target the
+	// canonical detail URL (ADR-134) — this path writes contents directly.
+	var jobSlug string
+	if err := s.store.pool.Reader.QueryRow(ctx,
+		`SELECT slug FROM contents WHERE id = $1 AND content_type = 'job_listing'`, jobID,
+	).Scan(&jobSlug); err != nil {
+		slog.Warn("jobs: admin update: pre-update slug read failed — purge will send tags only",
+			"job_id", jobID.String(), "error", err)
+	}
+
 	// Build the SET clause dynamically based on which fields are provided.
 	// summary is intentionally ignored — no such column (JOBS-004).
 	setParts := []string{"updated_at = now()"}
@@ -2279,6 +2321,10 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 		}
 	}
 
+	// ADR-134: status changes here (unpublish/expire) bypass
+	// content.Service — purge the detail page or it stays cached until TTL.
+	cdn.PurgeContentDetail(ctx, jobID.String(), "job_listing", jobSlug)
+
 	return nil
 }
 
@@ -2286,6 +2332,16 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 // The jobID must be a content row with content_type='job_listing' in the
 // given platform.
 func (s *Service) AdminDeleteJob(ctx context.Context, jobID pgtype.UUID) error {
+	// Fetch the slug first so the edge purge can target the canonical
+	// detail URL — a deleted listing must leave the edge cache (ADR-134).
+	var jobSlug string
+	if err := s.store.pool.Reader.QueryRow(ctx,
+		`SELECT slug FROM contents WHERE id = $1 AND content_type = 'job_listing'`, jobID,
+	).Scan(&jobSlug); err != nil {
+		slog.Warn("jobs: admin delete: pre-delete slug read failed — purge will send tags only",
+			"job_id", jobID.String(), "error", err)
+	}
+
 	_, err := s.store.pool.Writer.Exec(ctx, `
 		UPDATE contents SET deleted_at = now(), updated_at = now()
 		WHERE id = $1 AND content_type = 'job_listing'`,
@@ -2293,6 +2349,8 @@ func (s *Service) AdminDeleteJob(ctx context.Context, jobID pgtype.UUID) error {
 	if err != nil {
 		return fmt.Errorf("jobs: admin delete: %w", err)
 	}
+
+	cdn.PurgeContentDetail(ctx, jobID.String(), "job_listing", jobSlug)
 
 	return nil
 }

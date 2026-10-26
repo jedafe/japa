@@ -134,7 +134,7 @@ SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.profession, up.website_url
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE (u.username = @username OR lower(u.public_username) = lower(@username)) AND up.is_mentor = true
+WHERE (u.username = @username OR lower(u.public_username) = lower(@username)) AND up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND EXISTS (
    SELECT 1 FROM contents sc
    JOIN service_listing_meta sm ON sm.content_id = sc.id
@@ -171,7 +171,7 @@ WITH mentors AS (
  ) AS area_overlap
  FROM user_profiles up
  JOIN users u ON u.id = up.user_id
- WHERE up.is_mentor = true
+ WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  -- 000824: only mentors with a live shadow listing are discoverable.
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -238,7 +238,7 @@ WITH mentors AS (
  COUNT(*) OVER() AS total_count,
  CASE WHEN up.mentor_embedding IS NOT NULL
  THEN (1 - (up.mentor_embedding <=> @mentee_embedding))::double precision
- ELSE 0::double precision
+ ELSE NULL::double precision
  END AS bio_similarity,
  COALESCE(
  (SELECT COUNT(*)::double precision / NULLIF(array_length(@areas::text[], 1), 0)
@@ -251,7 +251,7 @@ WITH mentors AS (
  ) AS area_overlap
  FROM user_profiles up
  JOIN users u ON u.id = up.user_id
- WHERE up.is_mentor = true
+ WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  -- 000824: only mentors with a live shadow listing are discoverable.
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -299,7 +299,11 @@ SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
  display_name, avatar_url, username, profession, website_url,
  available_slots, total_count, bio_similarity, area_overlap,
- (0.6 * area_overlap + 0.4 * bio_similarity) AS match_score
+ -- §102 fallback: a mentor without an embedding scores keyword-only at
+ -- weight 1.0 (not 0.6) so they aren't penalised while their embedding
+ -- job is still pending.
+ CASE WHEN bio_similarity IS NULL THEN area_overlap
+      ELSE (0.6 * area_overlap + 0.4 * bio_similarity) END AS match_score
 FROM mentors
 ORDER BY match_score DESC, mentor_since DESC NULLS LAST
 LIMIT @page_limit OFFSET @page_offset;
@@ -314,7 +318,7 @@ SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE up.is_mentor = true
+WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND up.user_id = ANY(@user_ids::uuid[])
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -336,7 +340,7 @@ SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE up.is_mentor = true
+WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND (u.username ILIKE @q OR up.display_name ILIKE @q)
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -377,8 +381,25 @@ WHERE user_id = @user_id AND is_mentor = true;
 -- a mentee who is also a mentor will have an embedding from their own bio.
 -- Returns NULL for users without an embedding (service falls back to
 -- keyword-only scoring, §102).
-SELECT user_id, mentor_embedding
+SELECT user_id, COALESCE(mentee_goal_embedding, mentor_embedding) AS mentor_embedding
 FROM user_profiles
+WHERE user_id = @user_id;
+
+-- name: GetLatestMenteeGoals :one
+-- The mentee-side match source (§102 mentee_goal_embedding): the most
+-- recent goals text the user submitted with a mentorship request — meta's
+-- 'goals' wins, the note column is the fallback for migrated rows.
+SELECT COALESCE(sb.meta->>'goals', sb.note, '') AS goals
+FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+WHERE sm.listing_kind = 'mentorship'
+  AND sb.booker_user_id = @user_id
+  AND COALESCE(sb.meta->>'goals', sb.note, '') <> ''
+ORDER BY sb.created_at DESC
+LIMIT 1;
+
+-- name: UpdateMenteeGoalEmbedding :exec
+UPDATE user_profiles SET mentee_goal_embedding = @mentee_goal_embedding, updated_at = now()
 WHERE user_id = @user_id;
 
 -- name: GetMenteeDestinationSpaceID :one

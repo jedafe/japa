@@ -167,6 +167,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 		return '#3b49df';
 	})();
 	const pwaAppName = `${String(siteSettings['pwa.short_name'] || siteSettings['pwa.name'] || siteSettings['general.site_name'] || 'JapaConnect').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')} Academy`;
+	// The admin-uploaded manifest icon doubles as the iOS home-screen icon —
+	// bundled 180px default when unset.
+	const pwaAppleIcon = String(siteSettings['pwa.icon_192'] || '/apple-touch-icon.png')
+		.replace(/&/g, '&amp;')
+		.replace(/"/g, '&quot;')
+		.replace(/</g, '&lt;');
 	const pwaMeta = [
 		`<meta name="theme-color" content="${pwaThemeColor}" />`,
 		`<meta name="mobile-web-app-capable" content="yes" />`,
@@ -174,7 +180,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		`<meta name="apple-mobile-web-app-status-bar-style" content="default" />`,
 		`<meta name="apple-mobile-web-app-title" content="${pwaAppName}" />`,
 		`<meta name="application-name" content="${pwaAppName}" />`,
-		`<link rel="apple-touch-icon" href="/apple-touch-icon.png" />`
+		`<link rel="apple-touch-icon" href="${pwaAppleIcon}" />`
 	].join('');
 
 	const response = await resolve(event, {
@@ -196,6 +202,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 	if (response.headers.get('content-type')?.startsWith('text/html')) {
 		response.headers.set('X-Accel-Buffering', 'no');
+	}
+	// §124 — personalized responses are never cacheable (service worker,
+	// browser HTTP cache, or shared proxy). Endpoints that set their own
+	// Cache-Control keep it.
+	if (event.locals.user && !response.headers.has('cache-control')) {
+		const ct = response.headers.get('content-type') ?? '';
+		if (ct.startsWith('text/html') || ct.startsWith('application/json')) {
+			response.headers.set('cache-control', 'private, no-store');
+		}
 	}
 	return response;
 };

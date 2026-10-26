@@ -607,18 +607,29 @@ WHERE id = $1 AND deleted_at IS NULL
 // ExpirePosts marks all active posts past their expires_at as 'expired'.
 // Returns the number of posts expired. Called nightly by the
 // mutual_aid:expire Asynq task (§85, ADR-093).
-func (s *Store) ExpirePosts(ctx context.Context) (int64, error) {
+func (s *Store) ExpirePosts(ctx context.Context) ([]pgtype.UUID, error) {
 	const q = `
 UPDATE mutual_aid_posts
 SET status = 'expired', updated_at = now()
-WHERE status = 'active' AND expires_at < now() AND deleted_at IS NULL`
+WHERE status = 'active' AND expires_at < now() AND deleted_at IS NULL
+RETURNING id`
 
-	cmd, err := s.pool.Writer.Exec(ctx, q)
+	rows, err := s.pool.Writer.Query(ctx, q)
 	if err != nil {
-		return 0, fmt.Errorf("mutualaid: expire posts: %w", err)
+		return nil, fmt.Errorf("mutualaid: expire posts: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("mutualaid: expire posts scan: %w", err)
+		}
+		ids = append(ids, id)
 	}
 
-	return cmd.RowsAffected(), nil
+	return ids, rows.Err()
 }
 
 // PostsExpiringSoon returns the IDs and owner IDs of active posts that

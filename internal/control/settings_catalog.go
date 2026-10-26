@@ -1,6 +1,7 @@
 package control
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -362,8 +363,8 @@ var settingsCatalog = map[string]settingMeta{
 	"pwa.description":            {Type: "string", DefaultValue: "", Description: "Manifest description; empty = general.site_description.", Public: true, Panel: "admin"},
 	"pwa.theme_color":            {Type: "string", DefaultValue: "", Description: "Manifest theme_color + theme-color meta; empty = appearance.primary_color.", Public: true, Panel: "admin"},
 	"pwa.background_color":       {Type: "string", DefaultValue: "#ffffff", Description: "Manifest background_color (splash/launch screen).", Public: true, Panel: "admin"},
-	"pwa.display":                {Type: "string", DefaultValue: "standalone", Description: "Manifest display mode.", Options: `[{"value":"standalone","label":"Standalone"},{"value":"minimal-ui","label":"Minimal UI"},{"value":"browser","label":"Browser"}]`, Public: true, Panel: "admin"},
-	"pwa.start_url":              {Type: "string", DefaultValue: "/", Description: "Manifest start_url for the main app (docs overrides to /docs).", Public: true, Panel: "admin"},
+	"pwa.display":                {Type: "string", DefaultValue: "standalone", Description: "Manifest display mode.", Options: `[{"value":"standalone","label":"Standalone"},{"value":"minimal-ui","label":"Minimal UI"},{"value":"browser","label":"Browser"},{"value":"fullscreen","label":"Fullscreen"}]`, Public: true, Panel: "admin"},
+	"pwa.start_url":              {Type: "string", DefaultValue: "/", Description: "Manifest start_url for the main app (docs falls back to /docs when '/').", Public: true, Panel: "admin"},
 	"pwa.icon_192":               {Type: "string", DefaultValue: "", Description: "Media URL for the 192px manifest icon; empty = bundled /icon-192.png.", Public: true, Panel: "admin"},
 	"pwa.icon_512":               {Type: "string", DefaultValue: "", Description: "Media URL for the 512px manifest icon; empty = bundled /favicon.png.", Public: true, Panel: "admin"},
 	"pwa.maskable_icon":          {Type: "string", DefaultValue: "", Description: "Media URL for the maskable (purpose:maskable) icon; empty = bundled /icon-maskable-512.png.", Public: true, Panel: "admin"},
@@ -990,6 +991,59 @@ func validateSettingValue(key, raw string) error {
 		lower := strings.ToLower(unquoted)
 		if lower != "true" && lower != "false" {
 			return fmt.Errorf("setting %q must be true or false", key)
+		}
+	case "string", "csv":
+		// Options-listed settings (integrations.cdn.provider,
+		// media.storage.provider, …) accept catalog values only — an
+		// out-of-options value silently no-ops downstream (providerOf
+		// normalises unknown providers to disabled). Enforced server-side
+		// because API callers bypass the UI's select. Currency keys are
+		// exempt: their options are rendered dynamically from the currencies
+		// table (operator-managed ISO 4217 codes) — the static catalog list
+		// predates that and would reject valid managed currencies.
+		if !currencySettingKeys[key] {
+			if err := validateOptionsMembership(key, meta.Options, raw, meta.Type == "csv"); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateOptionsMembership enforces catalog Options for string/csv
+// settings. `raw` may arrive JSON-quoted from the frontend — the check runs
+// on the unquoted value (for csv, on each comma-separated element).
+func validateOptionsMembership(key, optionsJSON, raw string, csv bool) error {
+	if optionsJSON == "" {
+		return nil
+	}
+
+	var opts []struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal([]byte(optionsJSON), &opts); err != nil || len(opts) == 0 {
+		return nil
+	}
+
+	allowed := make(map[string]bool, len(opts))
+	for _, o := range opts {
+		allowed[o.Value] = true
+	}
+
+	unquoted := strings.Trim(raw, `"`)
+
+	values := []string{unquoted}
+	if csv {
+		values = nil
+		for _, v := range strings.Split(unquoted, ",") {
+			values = append(values, strings.TrimSpace(v))
+		}
+	}
+
+	for _, v := range values {
+		if !allowed[v] {
+			return fmt.Errorf("setting %q has invalid option %q", key, v)
 		}
 	}
 

@@ -4665,6 +4665,7 @@ type UserProfile struct {
 	MaritalStatus            *string             `json:"marital_status"`
 	DateOfBirth              pgtype.Date         `json:"date_of_birth"`
 	Gender                   *string             `json:"gender"`
+	MenteeGoalEmbedding      *pgvector_go.Vector `json:"mentee_goal_embedding"`
 }
 
 type UserRole struct {

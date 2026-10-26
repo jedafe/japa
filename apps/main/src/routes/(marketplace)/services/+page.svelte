@@ -99,6 +99,10 @@
 	let cityLabelInput = $state(untrack(() => data.filters.cityLabel));
 	let originInput = $state(untrack(() => data.filters.origin));
 	let verifiedInput = $state(untrack(() => data.filters.verified === 'true'));
+	let areasInput = $state(untrack(() => data.filters.areas ?? ''));
+	let includeUnavailableInput = $state(
+		untrack(() => data.filters.includeUnavailable === 'true')
+	);
 
 	$effect(() => {
 		destInput = data.filters.dest;
@@ -106,6 +110,8 @@
 		cityLabelInput = data.filters.cityLabel;
 		originInput = data.filters.origin;
 		verifiedInput = data.filters.verified === 'true';
+		areasInput = data.filters.areas ?? '';
+		includeUnavailableInput = data.filters.includeUnavailable === 'true';
 	});
 
 	// §111/000824 kind tabs — the row renders once the gated
@@ -123,7 +129,14 @@
 
 	const sortOptions = $derived([
 		{ value: 'latest', label: t('services.sort_latest', 'Latest') },
-		{ value: 'top', label: t('services.sort_top', 'Top') }
+		{ value: 'top', label: t('services.sort_top', 'Top') },
+		// §102: mentorship-kind extensions — match scoring + open slots.
+		...(activeKind === 'mentorship'
+			? [
+					{ value: 'match', label: t('services.sort_match', 'Best match') },
+					{ value: 'capacity', label: t('services.sort_capacity', 'Most slots open') }
+				]
+			: [])
 	]);
 
 	// The selected destination's ISO geo code drives the city picker —
@@ -251,6 +264,12 @@
 				else p.delete('origin');
 				if (verifiedInput) p.set('verified', 'true');
 				else p.delete('verified');
+				if (activeKind === 'mentorship' && areasInput.trim())
+					p.set('areas', areasInput.trim());
+				else p.delete('areas');
+				if (activeKind === 'mentorship' && includeUnavailableInput)
+					p.set('include_unavailable', 'true');
+				else p.delete('include_unavailable');
 			}),
 			{ keepFocus: true }
 		);
@@ -262,6 +281,8 @@
 		cityLabelInput = '';
 		originInput = '';
 		verifiedInput = false;
+		areasInput = '';
+		includeUnavailableInput = false;
 		goto('/services');
 	}
 
@@ -273,7 +294,9 @@
 			!!data.filters.category ||
 			!!data.filters.origin ||
 			!!data.filters.verified ||
-			!!data.filters.kind
+			!!data.filters.kind ||
+			!!data.filters.areas ||
+			!!data.filters.includeUnavailable
 	);
 
 	let showFilters = $state(false);
@@ -450,7 +473,35 @@
 						/>
 						{t('services.filter_verified', 'Verified only')}
 					</label>
+					{#if activeKind === 'mentorship'}
+						<label class="flex items-center gap-1.5 text-sm text-[var(--color-text)]">
+							<input
+								type="checkbox"
+								checked={includeUnavailableInput}
+								onchange={(e) => {
+									includeUnavailableInput = e.currentTarget.checked;
+									applyFilters();
+								}}
+								class="h-4 w-4 rounded border-[var(--color-border)]"
+							/>
+							{t('services.filter_include_unavailable', 'Include unavailable')}
+						</label>
+					{/if}
 				</div>
+				{#if activeKind === 'mentorship'}
+					<div class="sm:col-span-2">
+						<label for="services-areas-filter" class="sr-only">
+							{t('services.filter_areas', 'Goals / expertise areas')}
+						</label>
+						<input
+							id="services-areas-filter"
+							type="text"
+							bind:value={areasInput}
+							placeholder={t('services.filter_areas_placeholder', 'Mentorship areas (e.g. visa, canada)')}
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+						/>
+					</div>
+				{/if}
 				<div class="flex items-center gap-2">
 					<button
 						type="submit"

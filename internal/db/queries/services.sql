@@ -136,6 +136,7 @@ LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
 LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.slug = @slug AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
+  AND COALESCE(u.status, 'active') <> 'banned'
 LIMIT 1;
 
 -- name: GetServiceListingByContentID :one
@@ -191,6 +192,7 @@ LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
 LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.id = @content_id AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
+  AND COALESCE(u.status, 'active') <> 'banned'
 LIMIT 1;
 
 -- Mentor's shadow listing (000824): the listing_kind='mentorship' meta row
@@ -278,8 +280,14 @@ LIMIT 1;
 -- ---------------------------------------------------------------------
 
 -- name: CreateMentorshipShadowContent :one
+-- §102/000824 amendment: mentor listings ride the service review queue —
+-- a new shadow enters 'in_review' and goes public only after the admin
+-- publish gate (PATCH /admin/services/:id/publish), same as every other
+-- service_listing. The ensure-path's UpdateMentorshipShadowContent only
+-- republishes 'draft' rows, so an in_review/rejected shadow can't escape
+-- review by re-saving the profile.
 INSERT INTO contents (author_id, content_type, title, slug, body, body_html, status, published_at, content_hash)
-VALUES (@author_id, 'service_listing', @title, @slug, @body, '', 'published', now(), @content_hash)
+VALUES (@author_id, 'service_listing', @title, @slug, @body, '', 'in_review', NULL, @content_hash)
 ON CONFLICT DO NOTHING
 RETURNING id;
 
@@ -290,10 +298,11 @@ RETURNING id;
 -- minted with a suffix because the canonical slug was squatted) snaps
 -- back once the slug frees up; the NOT EXISTS guard keeps the old slug
 -- when another live row occupies the target so the update never 23505s
--- or hijacks an occupied slug. Status semantics: only a 'draft' shadow is
--- republished (preserved 000824 fallback rows for non-listed mentors); an
--- archived/moderated status is left alone so refresh can't silently
--- republish a deliberately unpublished row.
+-- or hijacks an occupied slug. Status semantics: only a never-published
+-- 'draft' shadow is republished (the preserved 000824 fallback rows have
+-- published_at NULL); a draft carrying published_at is an admin
+-- unpublish decision — refresh must not silently undo it — and an
+-- in_review/archived status is likewise left alone.
 -- name: UpdateMentorshipShadowContent :execrows
 UPDATE contents
 SET title = @title,
@@ -308,9 +317,9 @@ SET title = @title,
         ) THEN @target_slug
         ELSE contents.slug
     END,
-    status = CASE WHEN status = 'draft' THEN 'published' ELSE status END,
+    status = CASE WHEN status = 'draft' AND published_at IS NULL THEN 'published' ELSE status END,
     published_at = CASE
-        WHEN status = 'draft' THEN COALESCE(published_at, now())
+        WHEN status = 'draft' AND published_at IS NULL THEN now()
         ELSE published_at
     END,
     updated_at = now()
@@ -398,7 +407,27 @@ LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.enti
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND c.status = COALESCE(sqlc.narg(status), 'published')
-  AND (sqlc.narg(dest_space_id)::uuid IS NULL OR sm.destination_space_id = sqlc.narg(dest_space_id)::uuid)
+  AND COALESCE(u.status, 'active') <> 'banned'
+  -- 000824 mentorship-kind geo match: shadow listings are spaceless
+  -- (sm.destination_space_id IS NULL), so for mentorship rows ?dest=
+  -- matches the mentor's mentor_areas/mentor_countries text against the
+  -- space's name/geo_code/slug — same semantics as ListMentors (§102).
+  AND (sqlc.narg(dest_space_id)::uuid IS NULL
+       OR sm.destination_space_id = sqlc.narg(dest_space_id)::uuid
+       OR (sm.listing_kind = 'mentorship' AND EXISTS (
+            SELECT 1 FROM spaces ds2
+            WHERE ds2.id = sqlc.narg(dest_space_id)::uuid
+              AND (
+                array_to_string(up.mentor_areas, ' ') ILIKE '%' || ds2.name || '%'
+                OR array_to_string(up.mentor_countries, ' ') ILIKE '%' || ds2.name || '%'
+                OR (ds2.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || ds2.geo_code || '%')
+                OR (ds2.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || ds2.slug || '%')
+                OR EXISTS (
+                    SELECT 1 FROM unnest(string_to_array(ds2.name, ' ')) AS word
+                    WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
+                )
+              )
+          )))
   AND (sqlc.narg(city_space_id)::uuid IS NULL OR sm.city_space_id = sqlc.narg(city_space_id)::uuid)
   AND (sqlc.narg(service_category)::text IS NULL OR sm.service_category = sqlc.narg(service_category)::text)
   AND (sqlc.narg(origin_community)::text IS NULL OR sqlc.narg(origin_community)::text = ANY(sm.origin_communities))
@@ -409,12 +438,56 @@ WHERE c.content_type = 'service_listing'
   -- 'mentorship' while mentorship.enabled is off) without collapsing
   -- the list to a single kind.
   AND (sqlc.narg(exclude_listing_kind)::text IS NULL OR sm.listing_kind <> sqlc.narg(exclude_listing_kind)::text)
+  -- §102 ?areas= (mentorship kind only): keyword overlap against
+  -- mentor_areas — partial substring match, same rule as ListMentors.
+  AND (sqlc.narg(areas)::text[] IS NULL
+       OR COALESCE(array_length(sqlc.narg(areas)::text[], 1), 0) = 0
+       OR sm.listing_kind <> 'mentorship'
+       OR EXISTS (
+            SELECT 1 FROM unnest(sqlc.narg(areas)::text[]) AS a
+            WHERE length(a) >= 2
+              AND EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma
+                  WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\'
+              )
+          ))
+  -- §102/§111 discovery availability filter: at-capacity mentors are
+  -- excluded by default; ?include_unavailable=1 re-includes them.
+  -- Non-mentorship kinds are never capacity-gated.
+  AND (sqlc.narg(include_unavailable)::boolean IS TRUE
+       OR sm.listing_kind <> 'mentorship'
+       OR COALESCE(up.mentor_capacity, 0) > COALESCE(up.active_mentee_count, 0))
   AND (sqlc.narg(price_max)::bigint IS NULL OR sm.price_amount <= sqlc.narg(price_max)::bigint)
   AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
   AND (sqlc.narg(q)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(q)::text || '%')
 ORDER BY
   CASE WHEN sqlc.narg(sort)::text = 'top' THEN c.view_count END DESC NULLS LAST,
   CASE WHEN sqlc.narg(sort)::text = 'top' THEN c.comment_count END DESC NULLS LAST,
+  -- §102 mentorship sorts (no-op on other kinds): sort=capacity orders by
+  -- open slots; sort=match uses 60% ?areas= keyword overlap + 40% pgvector
+  -- bio cosine — mentors without an embedding (or viewers without one)
+  -- fall back to keyword-only at weight 1.0.
+  CASE WHEN sqlc.narg(sort)::text = 'capacity' AND sm.listing_kind = 'mentorship'
+       THEN (up.mentor_capacity - up.active_mentee_count) END DESC NULLS LAST,
+  CASE WHEN sqlc.narg(sort)::text = 'match' AND sm.listing_kind = 'mentorship' THEN
+       CASE
+         WHEN up.mentor_embedding IS NOT NULL AND sqlc.narg(mentee_embedding)::vector IS NOT NULL
+           THEN 0.6 * COALESCE((
+             SELECT COUNT(*)::double precision / NULLIF(array_length(sqlc.narg(areas)::text[], 1), 0)
+             FROM unnest(sqlc.narg(areas)::text[]) AS a
+             WHERE length(a) >= 2
+               AND EXISTS (SELECT 1 FROM unnest(up.mentor_areas) AS ma
+                           WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\')
+           ), 0) + 0.4 * (1 - (up.mentor_embedding <=> sqlc.narg(mentee_embedding)::vector))
+         ELSE COALESCE((
+           SELECT COUNT(*)::double precision / NULLIF(array_length(sqlc.narg(areas)::text[], 1), 0)
+           FROM unnest(sqlc.narg(areas)::text[]) AS a
+           WHERE length(a) >= 2
+             AND EXISTS (SELECT 1 FROM unnest(up.mentor_areas) AS ma
+                         WHERE ma ILIKE '%' || regexp_replace(a, '([\\%_])', '\\\1', 'g') || '%' ESCAPE '\')
+         ), 0)
+       END
+  END DESC NULLS LAST,
   c.published_at DESC NULLS LAST, c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -1091,18 +1164,36 @@ WHERE (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
   AND (sqlc.narg(kind)::text IS NULL OR sm.listing_kind = sqlc.narg(kind)::text)
   AND (sqlc.narg(provider_user_id)::uuid IS NULL OR sb.provider_user_id = sqlc.narg(provider_user_id)::uuid)
   AND (sqlc.narg(booker_user_id)::uuid IS NULL OR sb.booker_user_id = sqlc.narg(booker_user_id)::uuid)
-ORDER BY sb.created_at DESC
+  -- ?q= username/display-name search across booker + provider (admin
+  --  list contract: filter + sort + paginate — 000824 fix pass).
+  AND (sqlc.narg(q)::text IS NULL OR u.username ILIKE '%' || sqlc.narg(q)::text || '%'
+       OR up.display_name ILIKE '%' || sqlc.narg(q)::text || '%'
+       OR pu.username ILIKE '%' || sqlc.narg(q)::text || '%'
+       OR pup.display_name ILIKE '%' || sqlc.narg(q)::text || '%')
+ORDER BY
+  CASE WHEN sqlc.narg(sort)::text = 'oldest' THEN sb.created_at END ASC NULLS LAST,
+  CASE WHEN sqlc.narg(sort)::text = 'status' THEN sb.status END ASC NULLS LAST,
+  CASE WHEN COALESCE(sqlc.narg(sort)::text, 'latest') = 'latest' THEN sb.created_at END DESC NULLS LAST,
+  sb.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: AdminCountServiceBookings :one
 SELECT COUNT(*) FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+LEFT JOIN users u ON u.id = sb.booker_user_id
+LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
+LEFT JOIN users pu ON pu.id = sb.provider_user_id
+LEFT JOIN user_profiles pup ON pup.user_id = pu.id
 WHERE (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
   AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
   AND (sqlc.narg(org_id)::uuid IS NULL OR sb.org_id = sqlc.narg(org_id)::uuid)
   AND (sqlc.narg(kind)::text IS NULL OR sm.listing_kind = sqlc.narg(kind)::text)
   AND (sqlc.narg(provider_user_id)::uuid IS NULL OR sb.provider_user_id = sqlc.narg(provider_user_id)::uuid)
-  AND (sqlc.narg(booker_user_id)::uuid IS NULL OR sb.booker_user_id = sqlc.narg(booker_user_id)::uuid);
+  AND (sqlc.narg(booker_user_id)::uuid IS NULL OR sb.booker_user_id = sqlc.narg(booker_user_id)::uuid)
+  AND (sqlc.narg(q)::text IS NULL OR u.username ILIKE '%' || sqlc.narg(q)::text || '%'
+       OR up.display_name ILIKE '%' || sqlc.narg(q)::text || '%'
+       OR pu.username ILIKE '%' || sqlc.narg(q)::text || '%'
+       OR pup.display_name ILIKE '%' || sqlc.narg(q)::text || '%');
 
 -- ---------------------------------------------------------------------
 -- Booking state machine (§111). Each transition is guarded on its

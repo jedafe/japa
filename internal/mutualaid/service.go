@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -297,6 +298,8 @@ func (s *Service) UpdateOwn(ctx context.Context, id, userID pgtype.UUID, input U
 		return PostDTO{}, fmt.Errorf("mutualaid: update re-fetch: %w", err)
 	}
 
+	cdn.PurgePublicPaths(ctx, []string{"mutual_aid:" + id.String()}, "/mutual-aid/"+id.String(), "/mutual-aid")
+
 	return rowToDTO(row), nil
 }
 
@@ -320,6 +323,8 @@ func (s *Service) DeleteOwn(ctx context.Context, id, userID pgtype.UUID) error {
 		return fmt.Errorf("mutualaid: delete: %w", err)
 	}
 
+	cdn.PurgePublicPaths(ctx, []string{"mutual_aid:" + id.String()}, "/mutual-aid/"+id.String(), "/mutual-aid")
+
 	return nil
 }
 
@@ -341,6 +346,8 @@ func (s *Service) MarkFulfilled(ctx context.Context, id, userID pgtype.UUID) err
 	if err := s.store.MarkFulfilled(ctx, id); err != nil {
 		return fmt.Errorf("mutualaid: fulfill: %w", err)
 	}
+
+	cdn.PurgePublicPaths(ctx, []string{"mutual_aid:" + id.String()}, "/mutual-aid/"+id.String(), "/mutual-aid")
 
 	return nil
 }
@@ -383,6 +390,8 @@ func (s *Service) Renew(ctx context.Context, id, userID pgtype.UUID) (PostDTO, e
 	if err != nil {
 		return PostDTO{}, fmt.Errorf("mutualaid: renew re-fetch: %w", err)
 	}
+
+	cdn.PurgePublicPaths(ctx, []string{"mutual_aid:" + id.String()}, "/mutual-aid/"+id.String(), "/mutual-aid")
 
 	return rowToDTO(row), nil
 }
@@ -434,6 +443,8 @@ func (s *Service) AdminModerate(ctx context.Context, id pgtype.UUID, status stri
 		return fmt.Errorf("mutualaid: admin moderate: %w", err)
 	}
 
+	cdn.PurgePublicPaths(ctx, []string{"mutual_aid:" + id.String()}, "/mutual-aid/"+id.String(), "/mutual-aid")
+
 	return nil
 }
 
@@ -453,9 +464,20 @@ func (s *Service) NeedReputationThreshold(ctx context.Context) int64 {
 // to expire. Called nightly by the mutual_aid:expire Asynq task (§85).
 // Implements worker.MutualAidProcessor.
 func (s *Service) ExpirePosts(ctx context.Context) (int64, error) {
-	n, err := s.store.ExpirePosts(ctx)
+	ids, err := s.store.ExpirePosts(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("mutualaid: expire: %w", err)
+	}
+	n := int64(len(ids))
+	if n > 0 {
+		// ADR-134: bulk UPDATE bypasses any tag emission — purge each expired
+		// post's detail page plus the listing.
+		paths := make([]string, 0, len(ids)+1)
+		paths = append(paths, "/mutual-aid")
+		for _, pid := range ids {
+			paths = append(paths, "/mutual-aid/"+pid.String())
+		}
+		cdn.PurgePublicPaths(ctx, nil, paths...)
 	}
 	// BUG-004: send 3-day-prior expiry notifications to owners of active
 	// posts that will expire within the next 72 hours. §85 requires the

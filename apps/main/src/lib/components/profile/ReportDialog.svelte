@@ -1,13 +1,14 @@
 <script lang="ts">
 	/**
-	 * Generic report dialog for users and other followable/reportable entities.
+	 * Generic report dialog for users and other reportable entities.
 	 * Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
 	 * Reason options are read from the public system setting
-	 * `moderation.report_reasons` so they are never hardcoded (Rule 16).
+	 * `moderation.report_reasons` so they are never hardcoded (Rule 16) — the
+	 * backend validates against the same setting.
 	 */
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { reportContent, reportComment, reportSpace, reportUser, reportSource, reportDMMessage } from '$lib/api/hub';
+	import { reportContent, reportComment, reportSpace, reportUser, reportSource, reportDMMessage, reportForumReply } from '$lib/api/hub';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Flag, Loader2, AlertCircle } from 'lucide-svelte';
 	import { AutocompleteSelect, Modal } from '$lib/components/ui';
@@ -15,13 +16,16 @@
 	interface Props {
 		open?: boolean;
 		/** Entity type must match the backend report route. */
-		entityType?: 'user' | 'content' | 'comment' | 'space' | 'source' | 'dm_message';
+		entityType?: 'user' | 'content' | 'comment' | 'space' | 'source' | 'dm_message' | 'forum_reply';
 		/** Backend ID (or slug for sources) for the entity being reported. */
 		entityId: string;
 		/** Human-readable name shown in the dialog title. */
 		entityName?: string;
 		/** Required for dm_message — the conversation that owns the message. */
 		dmConversationId?: string;
+		/** Fired after a report is accepted — lets callers persist a
+		 *  "reported" state on their affordance. */
+		onSubmitted?: () => void;
 	}
 
 	let {
@@ -29,7 +33,8 @@
 		entityType = 'user',
 		entityId,
 		entityName,
-		dmConversationId
+		dmConversationId,
+		onSubmitted
 	}: Props = $props();
 
 	/** Reason codes are admin-configurable via system_settings (public). */
@@ -39,8 +44,12 @@
 			: []
 	);
 
+	const NOTES_MAX = 5000;
+	const MAX_EVIDENCE = 10;
+
 	let reason = $state('');
 	let notes = $state('');
+	let evidenceInput = $state('');
 	let status = $state<'idle' | 'submitting' | 'success' | 'error'>('idle');
 	let errorMessage = $state('');
 
@@ -51,8 +60,19 @@
 	function reset() {
 		reason = '';
 		notes = '';
+		evidenceInput = '';
 		status = 'idle';
 		errorMessage = '';
+	}
+
+	/** Parses the evidence textarea into http(s) URLs, one per line. */
+	function parseEvidence(): { urls: string[]; invalid: boolean } {
+		const urls = evidenceInput
+			.split('\n')
+			.map((l) => l.trim())
+			.filter(Boolean);
+		const invalid = urls.some((u) => !/^https?:\/\/\S+$/i.test(u));
+		return { urls: urls.slice(0, MAX_EVIDENCE), invalid };
 	}
 
 	async function submit() {
@@ -61,16 +81,27 @@
 			errorMessage = t('report.reason_required', 'Please choose a reason');
 			return;
 		}
+		const trimmedNotes = notes.trim();
+		if (reason === 'other' && !trimmedNotes) {
+			status = 'error';
+			errorMessage = t('report.other_notes_required', 'Please describe the issue in the notes');
+			return;
+		}
+		const { urls, invalid } = parseEvidence();
+		if (invalid) {
+			status = 'error';
+			errorMessage = t('report.evidence_invalid', 'Evidence links must be valid http(s) URLs');
+			return;
+		}
 		if (!(await requireAuthOrRedirect())) return;
 
 		status = 'submitting';
 		errorMessage = '';
 
-		const trimmedNotes = notes.trim();
 		const body = {
 			reason,
 			notes: trimmedNotes || undefined,
-			evidence_urls: [] as string[]
+			evidence_urls: urls
 		};
 
 		let res;
@@ -90,6 +121,9 @@
 			case 'user':
 				res = await reportUser(entityId, body);
 				break;
+			case 'forum_reply':
+				res = await reportForumReply(entityId, body);
+				break;
 			case 'dm_message':
 				if (!dmConversationId) {
 					res = { error: { message: t('report.unsupported_entity', 'Reporting is not yet supported for this type') } } as any;
@@ -107,6 +141,7 @@
 			errorMessage = res.error.message ?? t('report.submit_error', 'Failed to submit report');
 		} else {
 			status = 'success';
+			onSubmitted?.();
 		}
 	}
 
@@ -117,11 +152,20 @@
 	});
 </script>
 
-<Modal bind:open title={t('report.title', `Report ${entityName ?? ''}`.trim())} icon={Flag} size="md">
+<Modal bind:open title={t('report.title', 'Report {entity}').replace('{entity}', entityName ?? t('report.this_entity', 'this item')).trim()} icon={Flag} size="md">
 	{#snippet children(close)}
 		{#if status === 'success'}
 				<div class="rounded-[var(--radius)] border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-300">
 					{t('report.success', 'Report submitted. Our moderation team will review it.')}
+				</div>
+				<div class="mt-4 flex justify-end">
+					<button
+						type="button"
+						onclick={close}
+						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+					>
+						{t('common.close', 'Close')}
+					</button>
 				</div>
 			{:else}
 				{#if reportReasons.length === 0}
@@ -144,14 +188,28 @@
 					</label>
 				{/if}
 
-				<label class="mb-4 block">
+				<label class="mb-3 block">
 					<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('report.notes_label', 'Additional notes')}
+						{#if reason === 'other'}<span class="text-[var(--color-error)]">*</span>{/if}
 					</span>
 					<textarea
 						bind:value={notes}
 						rows={4}
+						maxlength={NOTES_MAX}
 						placeholder={t('report.notes_placeholder', 'Add any details that may help our moderation team...')}
+						class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+					></textarea>
+				</label>
+
+				<label class="mb-4 block">
+					<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('report.evidence_label', 'Evidence links (optional)')}
+					</span>
+					<textarea
+						bind:value={evidenceInput}
+						rows={2}
+						placeholder={t('report.evidence_placeholder', 'https://… — one link per line')}
 						class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					></textarea>
 				</label>

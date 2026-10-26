@@ -6,11 +6,11 @@
 package digest
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
 	"html/template"
 	"log/slog"
 	"os"
@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/email"
 	"github.com/jedafe/japa/internal/literals"
@@ -321,6 +322,9 @@ func (s *Service) AdminPublish(ctx context.Context, reviewerID, id pgtype.UUID) 
 	}
 
 	// Clear the draft review lock (§84, valkey-keys-catalog.md).
+	// ADR-134: publishing changes the public edition page.
+	cdn.PurgePublicPaths(ctx, []string{"digest_edition:" + id.String()}, "/digest/"+id.String(), "/digest")
+
 	s.clearDraftLock(ctx, id)
 
 	// Fire-and-forget: enqueue digest:send_email so members with the digest
@@ -421,6 +425,9 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 	for _, e := range published {
 		// Clear the draft review lock (mirrors AdminPublish, §84).
 		s.clearDraftLock(ctx, e.ID)
+
+		// ADR-134: auto-published edition — same purge as AdminPublish.
+		cdn.PurgePublicPaths(ctx, []string{"digest_edition:" + e.ID.String()}, "/digest/"+e.ID.String(), "/digest")
 
 		// Fire-and-forget: enqueue digest:send_email so subscribed members
 		// receive the now-published edition. A failed enqueue is logged but

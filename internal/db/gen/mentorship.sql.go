@@ -51,6 +51,27 @@ func (q *Queries) DeleteMentorshipProgram(ctx context.Context, id pgtype.UUID) (
 	return result.RowsAffected(), nil
 }
 
+const getLatestMenteeGoals = `-- name: GetLatestMenteeGoals :one
+SELECT COALESCE(sb.meta->>'goals', sb.note, '') AS goals
+FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+WHERE sm.listing_kind = 'mentorship'
+  AND sb.booker_user_id = $1
+  AND COALESCE(sb.meta->>'goals', sb.note, '') <> ''
+ORDER BY sb.created_at DESC
+LIMIT 1
+`
+
+// The mentee-side match source (§102 mentee_goal_embedding): the most
+// recent goals text the user submitted with a mentorship request — meta's
+// 'goals' wins, the note column is the fallback for migrated rows.
+func (q *Queries) GetLatestMenteeGoals(ctx context.Context, userID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getLatestMenteeGoals, userID)
+	var goals string
+	err := row.Scan(&goals)
+	return goals, err
+}
+
 const getMenteeDestinationSpaceID = `-- name: GetMenteeDestinationSpaceID :one
 SELECT user_id, japa_stage_dest_space_id AS destination_space_id
 FROM user_profiles
@@ -80,7 +101,7 @@ SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.profession, up.website_url
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE (u.username = $1 OR lower(u.public_username) = lower($1)) AND up.is_mentor = true
+WHERE (u.username = $1 OR lower(u.public_username) = lower($1)) AND up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND EXISTS (
    SELECT 1 FROM contents sc
    JOIN service_listing_meta sm ON sm.content_id = sc.id
@@ -238,7 +259,7 @@ SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE up.is_mentor = true
+WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND up.user_id = ANY($1::uuid[])
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -326,7 +347,7 @@ func (q *Queries) GetMentorshipProgram(ctx context.Context, id pgtype.UUID) (Men
 }
 
 const getUserEmbedding = `-- name: GetUserEmbedding :one
-SELECT user_id, mentor_embedding
+SELECT user_id, COALESCE(mentee_goal_embedding, mentor_embedding) AS mentor_embedding
 FROM user_profiles
 WHERE user_id = $1
 `
@@ -366,7 +387,7 @@ WITH mentors AS (
  ) AS area_overlap
  FROM user_profiles up
  JOIN users u ON u.id = up.user_id
- WHERE up.is_mentor = true
+ WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  -- 000824: only mentors with a live shadow listing are discoverable.
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -509,7 +530,7 @@ WITH mentors AS (
  COUNT(*) OVER() AS total_count,
  CASE WHEN up.mentor_embedding IS NOT NULL
  THEN (1 - (up.mentor_embedding <=> $3))::double precision
- ELSE 0::double precision
+ ELSE NULL::double precision
  END AS bio_similarity,
  COALESCE(
  (SELECT COUNT(*)::double precision / NULLIF(array_length($4::text[], 1), 0)
@@ -522,7 +543,7 @@ WITH mentors AS (
  ) AS area_overlap
  FROM user_profiles up
  JOIN users u ON u.id = up.user_id
- WHERE up.is_mentor = true
+ WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  -- 000824: only mentors with a live shadow listing are discoverable.
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -570,7 +591,11 @@ SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
  display_name, avatar_url, username, profession, website_url,
  available_slots, total_count, bio_similarity, area_overlap,
- (0.6 * area_overlap + 0.4 * bio_similarity) AS match_score
+ -- §102 fallback: a mentor without an embedding scores keyword-only at
+ -- weight 1.0 (not 0.6) so they aren't penalised while their embedding
+ -- job is still pending.
+ CASE WHEN bio_similarity IS NULL THEN area_overlap
+      ELSE (0.6 * area_overlap + 0.4 * bio_similarity) END AS match_score
 FROM mentors
 ORDER BY match_score DESC, mentor_since DESC NULLS LAST
 LIMIT $2 OFFSET $1
@@ -602,7 +627,7 @@ type ListMentorsByMatchRow struct {
 	TotalCount        int64              `json:"total_count"`
 	BioSimilarity     float64            `json:"bio_similarity"`
 	AreaOverlap       interface{}        `json:"area_overlap"`
-	MatchScore        int32              `json:"match_score"`
+	MatchScore        interface{}        `json:"match_score"`
 }
 
 // Discover mentors ordered by §102 match score (60% keyword + 40% bio cosine).
@@ -896,7 +921,7 @@ SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE up.is_mentor = true
+WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND (u.username ILIKE $1 OR up.display_name ILIKE $1)
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -984,6 +1009,21 @@ type SetMentorListingContentIDParams struct {
 // contents row is soft-deleted).
 func (q *Queries) SetMentorListingContentID(ctx context.Context, arg SetMentorListingContentIDParams) error {
 	_, err := q.db.Exec(ctx, setMentorListingContentID, arg.ContentID, arg.UserID)
+	return err
+}
+
+const updateMenteeGoalEmbedding = `-- name: UpdateMenteeGoalEmbedding :exec
+UPDATE user_profiles SET mentee_goal_embedding = $1, updated_at = now()
+WHERE user_id = $2
+`
+
+type UpdateMenteeGoalEmbeddingParams struct {
+	MenteeGoalEmbedding *pgvector_go.Vector `json:"mentee_goal_embedding"`
+	UserID              pgtype.UUID         `json:"user_id"`
+}
+
+func (q *Queries) UpdateMenteeGoalEmbedding(ctx context.Context, arg UpdateMenteeGoalEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, updateMenteeGoalEmbedding, arg.MenteeGoalEmbedding, arg.UserID)
 	return err
 }
 

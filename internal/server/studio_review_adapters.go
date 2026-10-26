@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,6 +21,7 @@ import (
 	"github.com/jedafe/japa/internal/arrivalchecklist"
 	"github.com/jedafe/japa/internal/attestationguide"
 	"github.com/jedafe/japa/internal/calendar"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/credentialchecker"
@@ -74,6 +76,50 @@ type toolTablePublisher struct {
 	docsSvc         *docs.Service
 }
 
+// toolPublicPaths maps each HITL tool target table to the public URL
+// prefixes that render it (detail path for id-keyed pages — "{id}" is
+// substituted — plus the section listing root). Used for edge purge after
+// publish (ADR-134); these entities are not contents rows so they cannot
+// go through purgeEdgeContent. Slug-keyed pages (community-locator,
+// wiki) purge the section root only — the detail slug isn't in the row id.
+var toolPublicPaths = map[string][]string{
+	"arrival_checklist_guides":   {"/tools/arrival-checklist"},
+	"attestation_pathways":       {"/tools/attestation-guide/{id}", "/tools/attestation-guide"},
+	"community_organisations":    {"/tools/community-locator"},
+	"credential_pathways":        {"/tools/credential-checker"},
+	"housing_guides":             {"/tools/housing-guide/{id}", "/tools/housing-guide"},
+	"language_test_requirements": {"/tools/language-test"},
+	"tax_obligation_guides":      {"/tools/tax-calculator"},
+	"visa_routes":                {"/tools/visa-routes/{id}", "/tools/visa-routes"},
+	"calendar_entries":           {"/calendar/{id}", "/calendar"},
+	"wiki_pages":                 {"/wiki"},
+}
+
+// purgeToolPages invalidates a tool entity's public pages at the edge —
+// fire-and-forget like every other purge call site (Rule 8).
+func purgeToolPages(ctx context.Context, targetTable string, targetID pgtype.UUID) {
+	if !cdn.Enabled() {
+		return
+	}
+
+	paths := toolPublicPaths[targetTable]
+	if len(paths) == 0 {
+		return
+	}
+
+	base := cdn.SiteURL()
+	if base == "" {
+		return
+	}
+
+	req := cdn.PurgeRequest{Tags: []string{"tool:" + targetTable + ":" + targetID.String()}}
+	for _, p := range paths {
+		req.URLs = append(req.URLs, base+strings.ReplaceAll(p, "{id}", targetID.String()))
+	}
+
+	cdn.PurgeAsync(ctx, req)
+}
+
 // Publish calls the appropriate tool service to mark the AI-generated draft
 // as reviewed and published. Unknown target tables are logged and skipped.
 //
@@ -82,6 +128,8 @@ func (p *toolTablePublisher) Publish(ctx context.Context, reviewerID pgtype.UUID
 	if !targetID.Valid {
 		return errors.New("tool-table publisher: target_id is invalid")
 	}
+
+	defer purgeToolPages(ctx, targetTable, targetID)
 
 	switch targetTable {
 	case "arrival_checklist_guides":

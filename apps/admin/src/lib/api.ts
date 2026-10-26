@@ -1568,8 +1568,12 @@ export const mentorshipAdminApiExtended = {
 	updateMatch: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/mentorship/matches/${id}`, { method: 'PATCH', body }),
 	// §102 Mentorship Matching (ADR-110) — connections management.
+	// apiRaw: the endpoint returns meta.total alongside data for
+	// server-side pagination.
 	listConnections: (params?: string) =>
-		api<unknown>(`/admin/mentorship/connections${params ? `?${params}` : ''}`),
+		apiRaw<{ data: unknown[]; meta: { page: number; page_size: number; total: number } }>(
+			`/admin/mentorship/connections${params ? `?${params}` : ''}`
+		),
 	updateConnection: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/mentorship/connections/${id}`, { method: 'PATCH', body }),
 };

@@ -1548,6 +1548,13 @@ export interface MyReport {
 	resolution_note: string | null;
 	resolved_at: string | null;
 	created_at: string;
+	/** Resolved entity preview fields for linking (added with the
+	 *  moderation-queue joins). */
+	entity_title?: string;
+	entity_slug?: string;
+	thread_slug?: string;
+	entity_content_type?: string;
+	entity_author_username?: string | null;
 }
 
 /** GET /spaces/{slug}/content item — ListContentsBySpaceRow (content cards). */

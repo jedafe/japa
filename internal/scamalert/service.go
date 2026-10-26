@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/wallet"
@@ -733,6 +734,9 @@ func (s *Service) Review(ctx context.Context, id pgtype.UUID, status, note strin
 
 		return fmt.Errorf("scamalert: review: %w", err)
 	}
+
+	// ADR-134: review transitions change the public report page — purge it.
+	cdn.PurgePublicPaths(ctx, []string{"scam_alert:" + id.String()}, "/scam-alerts/"+id.String(), "/scam-alerts")
 
 	// §81: on confirm, enqueue the notification + badge fan-out task.
 	// Fire-and-forget — never block the review response (Rule 8).

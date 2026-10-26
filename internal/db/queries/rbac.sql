@@ -32,6 +32,75 @@ ON CONFLICT (user_id, group_id) DO NOTHING;
 DELETE FROM user_group_memberships
 WHERE user_id = @user_id AND group_id = @group_id;
 
+-- name: RetireMentorWithoutBecomeMentorPerm :exec
+-- 000824/§102: when a user loses the mentorship.become_mentor node (group
+-- removal), their mentor shadow listing must leave the directory — the
+-- shadow would otherwise stay published behind a mentor who can no longer
+-- respond to requests (PATCH/respond are permission-gated). Soft-deletes
+-- the shadow and clears is_mentor + mentor_listing_content_id in one pass.
+-- No-op while any remaining group still grants the node.
+WITH has_perm AS (
+    SELECT 1
+    FROM user_group_memberships ugm
+    JOIN group_roles gr ON gr.group_id = ugm.group_id
+    JOIN role_permissions rp ON rp.role_id = gr.role_id
+    JOIN permissions p ON rp.permission_id = p.id
+    WHERE ugm.user_id = @user_id
+      AND (p.key = 'mentorship.become_mentor' OR p.key = '*')
+), retired AS (
+    UPDATE contents c
+    SET deleted_at = now(), updated_at = now()
+    WHERE c.author_id = @user_id
+      AND c.content_type = 'service_listing'
+      AND c.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM has_perm)
+      AND EXISTS (
+          SELECT 1 FROM service_listing_meta sm
+          WHERE sm.content_id = c.id AND sm.listing_kind = 'mentorship')
+    RETURNING c.id
+)
+UPDATE user_profiles up
+SET is_mentor = false,
+    mentor_listing_content_id = NULL,
+    updated_at = now()
+WHERE up.user_id = @user_id
+  AND up.is_mentor = true
+  AND NOT EXISTS (SELECT 1 FROM has_perm);
+
+-- name: RetireGroupMentorsWithoutBecomeMentorPerm :exec
+-- Bulk variant of RetireMentorWithoutBecomeMentorPerm for role→group
+-- detach and role→permission revoke demotions (§102/000824): retires the
+-- mentor profile + shadow for every affected member who no longer holds
+-- mentorship.become_mentor (or '*') through ANY remaining group.
+WITH demoted AS (
+    SELECT ugm.user_id
+    FROM user_group_memberships ugm
+    WHERE ugm.group_id = @group_id
+      AND NOT EXISTS (
+          SELECT 1 FROM user_group_memberships ugm2
+          JOIN group_roles gr ON gr.group_id = ugm2.group_id
+          JOIN role_permissions rp ON rp.role_id = gr.role_id
+          JOIN permissions p ON rp.permission_id = p.id
+          WHERE ugm2.user_id = ugm.user_id
+            AND (p.key = 'mentorship.become_mentor' OR p.key = '*'))
+), retired AS (
+    UPDATE contents c
+    SET deleted_at = now(), updated_at = now()
+    WHERE c.author_id IN (SELECT user_id FROM demoted)
+      AND c.content_type = 'service_listing'
+      AND c.deleted_at IS NULL
+      AND EXISTS (
+          SELECT 1 FROM service_listing_meta sm
+          WHERE sm.content_id = c.id AND sm.listing_kind = 'mentorship')
+    RETURNING c.id
+)
+UPDATE user_profiles up
+SET is_mentor = false,
+    mentor_listing_content_id = NULL,
+    updated_at = now()
+WHERE up.user_id IN (SELECT user_id FROM demoted)
+  AND up.is_mentor = true;
+
 -- name: ListUserGroups :many
 SELECT id, name, slug, is_system, description
 FROM user_groups

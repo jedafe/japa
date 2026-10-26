@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/spaces/providers/spaces_provider.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
+import 'package:japaconnect_mobile/features/social/services/report_service.dart';
+import 'package:japaconnect_mobile/features/social/widgets/report_sheet.dart';
 
 class SpaceDetailScreen extends ConsumerStatefulWidget {
   final String slug;
@@ -58,7 +60,22 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
     final state = ref.watch(spaceDetailProvider(widget.slug));
     final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: Text(t('spaces.space'))),
+      appBar: AppBar(
+        title: Text(t('spaces.space')),
+        actions: [
+          if (state.value?.id != null)
+            IconButton(
+              icon: const Icon(Icons.flag_outlined),
+              tooltip: t('report.action'),
+              onPressed: () => showReportSheet(
+                context,
+                onSubmit: (reason, notes) => ref
+                    .read(reportServiceProvider)
+                    .reportSpace(state.value!.id!, reason: reason, notes: notes),
+              ),
+            ),
+        ],
+      ),
       body: state.when(
         data: (space) => Column(
           children: [

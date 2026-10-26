@@ -138,8 +138,43 @@ func (h *Handlers) ReportSpace(w http.ResponseWriter, r *http.Request) {
 }
 
 // ReportDMMessage handles POST /api/v1/dm/conversations/{id}/messages/{mid}/report.
+// Unlike the other entity routes it verifies the reporter is a participant in
+// the conversation and that the message belongs to it — reports can't be
+// filed against arbitrary message UUIDs.
 func (h *Handlers) ReportDMMessage(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	conversationID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid conversation ID format")
+		return
+	}
+
+	messageID, err := parseUUIDParam(r, "mid")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid message ID format")
+		return
+	}
+
+	participant, err := h.service.IsDMParticipant(r.Context(), conversationID, messageID, user.UserID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify conversation access")
+		return
+	}
+	if !participant {
+		errpkg.WriteError(w, http.StatusForbidden, "not_participant", "You are not a participant in this conversation")
+		return
+	}
+
 	h.submitReport(w, r, EntityTypeMessage, "mid")
+}
+
+// ReportForumReply handles POST /api/v1/forum/replies/{id}/report.
+func (h *Handlers) ReportForumReply(w http.ResponseWriter, r *http.Request) {
+	h.submitReport(w, r, EntityTypeForumReply, "id")
 }
 
 // ListMyReports handles GET /api/v1/me/reports.
@@ -218,13 +253,18 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 
 // DeleteReport handles DELETE /api/v1/admin/reports/{id}.
 func (h *Handlers) DeleteReport(w http.ResponseWriter, r *http.Request) {
+	reviewer, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
-	if err := h.service.DeleteReport(r.Context(), id); err != nil {
+	if err := h.service.DeleteReport(r.Context(), id, reviewer.UserID); err != nil {
 		writeServiceError(w, err)
 		return
 	}
@@ -250,8 +290,10 @@ func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateReport handles PATCH /api/v1/admin/reports/{id}.
-// It records the report resolution and, for warn/ban actions, also fires the
-// matching user-moderation side effect (warn the reporter / ban the reported user).
+// Actions: dismiss/remove/warn/ban resolve the report (remove also archives or
+// soft-deletes the reported entity; warn/ban fire the matching user-moderation
+// side effect) via the shared resolveWithAction flow; review marks the report
+// 'reviewing' and assigns it to the caller.
 func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 	reviewer, ok := h.requireUser(w, r)
 	if !ok {
@@ -265,7 +307,7 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Action string `json:"action"` // "dismiss", "warn", "ban", "remove"
+		Action string `json:"action"` // "dismiss", "warn", "ban", "remove", "review"
 		Reason string `json:"reason"`
 	}
 
@@ -279,35 +321,10 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load the report so we can resolve warn/ban targets.
-	report, err := h.service.GetReport(r.Context(), id)
+	updated, err := h.service.ApplyAdminAction(r.Context(), id, reviewer.UserID, input.Action, input.Reason)
 	if err != nil {
 		writeServiceError(w, err)
 		return
-	}
-
-	status := "actioned"
-	if input.Action == "dismiss" {
-		status = "dismissed"
-	}
-
-	var note *string
-	if input.Reason != "" {
-		note = &input.Reason
-	}
-
-	updated, err := h.service.UpdateReportStatus(r.Context(), id, reviewer.UserID, status, note)
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-
-	// Fire the user-moderation side effects for warn/ban actions. Both
-	// target the reported user (the offender), resolved via ResolveTargetUser
-	// — never the reporter. Space reports and unknown types resolve to no
-	// target, in which case the side effect is skipped.
-	if e := h.service.applyActionSideEffects(r.Context(), input.Action, report.EntityType, report.EntityID, input.Reason); e != nil {
-		slog.Warn("reports: side-effect failed", "id", id.String(), "action", input.Action, "error", e)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
@@ -318,10 +335,23 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidAction):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_action", err.Error())
-	case errors.Is(err, ErrInvalidEntityType), errors.Is(err, ErrInvalidReason), errors.Is(err, ErrInvalidStatus):
+	case errors.Is(err, ErrInvalidEntityType), errors.Is(err, ErrInvalidReason), errors.Is(err, ErrInvalidStatus),
+		errors.Is(err, ErrNotesTooLong), errors.Is(err, ErrTooManyEvidenceURLs), errors.Is(err, ErrInvalidEvidenceURL):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+	case errors.Is(err, ErrSelfReport):
+		errpkg.WriteError(w, http.StatusBadRequest, "self_report", err.Error())
 	case errors.Is(err, ErrAlreadyReported):
 		errpkg.WriteError(w, http.StatusConflict, "already_reported", err.Error())
+	case errors.Is(err, ErrAlreadyResolved):
+		errpkg.WriteError(w, http.StatusConflict, "already_resolved", err.Error())
+	case errors.Is(err, ErrNotParticipant):
+		errpkg.WriteError(w, http.StatusForbidden, "not_participant", err.Error())
+	case errors.Is(err, ErrNoTarget):
+		errpkg.WriteError(w, http.StatusBadRequest, "no_target", err.Error())
+	case errors.Is(err, ErrActionNotApplicable):
+		errpkg.WriteError(w, http.StatusBadRequest, "action_not_applicable", err.Error())
+	case errors.Is(err, ErrEntityNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "entity_not_found", "The reported item no longer exists")
 	case errors.Is(err, errpkg.ErrNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Report not found")
 	default:

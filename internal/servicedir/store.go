@@ -22,6 +22,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pgvector/pgvector-go"
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -580,11 +581,15 @@ type ListServicesFilter struct {
 	ExcludeKind string
 	PriceMax    *int64      // optional, ?price_max= minor units (§111)
 	DateFrom    pgtype.Date // optional, ?date_from= (§111)
-	Sort        string      // "top" | "latest" (default: latest)
+	Sort        string      // "top" | "latest" | "match" | "capacity" (§102 mentorship kinds)
 	Status      string      // filter by status (default: published)
 	Q           string      // optional, ?q= — title substring search
-	Limit       int32
-	Offset      int32
+	// §102 mentorship-kind filters — no-ops on other kinds.
+	Areas              []string         // optional, ?areas= keyword overlap vs mentor_areas
+	IncludeUnavailable bool             // ?include_unavailable=1 keeps at-capacity mentors
+	MenteeEmbedding    *pgvector.Vector // sort=match bio cosine input
+	Limit              int32
+	Offset             int32
 }
 
 // ListServices returns a paginated, filtered list of service listings.
@@ -617,6 +622,13 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 		params.ExcludeListingKind = &f.ExcludeKind
 	}
 
+	params.Areas = f.Areas
+
+	if f.IncludeUnavailable {
+		params.IncludeUnavailable = &f.IncludeUnavailable
+	}
+
+	params.MenteeEmbedding = f.MenteeEmbedding
 	params.PriceMax = f.PriceMax
 	params.DateFrom = f.DateFrom
 
