@@ -816,7 +816,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	comparisonService.SetSettings(settingsService)
 	comparisonService.SetContentService(contentService)
 	comparisonService.SetTierResolver(tierService)      // jce.comparisons.max_per_day.{tier} quota
-	comparisonService.SetFeatureChecker(featureChecker) // feature.jce.nested_items / feature.jce.ai_quick
+	comparisonService.SetFeatureChecker(featureChecker) // feature.jce.nested_items
 
 	comparisonService.SetValkey(vkClient.Redis())
 
@@ -842,6 +842,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	verificationService := verification.NewService(database)
 	verificationService.SetAsynqClient(asynqClient) // review-outcome email:send tasks
 	verificationService.SetSiteURL(cfg.SiteURL)     // absolute links in notify emails
+	verificationService.SetSettings(settingsService) // verification.form_slug lookup
 	verificationHandlers := verification.NewHandlers(verificationService)
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
@@ -5888,6 +5889,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// via pre-search, and optionally creates a comparison content
 			// row for Tier 3.
 			r.With(features.Gate(featureChecker, "feature.ai_agent"),
+				features.Gate(featureChecker, "feature.jce.ai_quick"),
 				auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Post("/ai/compare-entities", agentHTTPHandlers.HandleCompareEntities)
 

@@ -18,12 +18,18 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
+// settingsReader is the subset of config.Settings the service needs.
+type settingsReader interface {
+	GetStringOr(ctx context.Context, key, fallback string) string
+}
+
 // Service implements the verification-request business logic.
 type Service struct {
-	store   *Store
+	store    *Store
 	webhooks WebhookEmitter
-	asynq   *asynq.Client
-	siteURL string
+	asynq    *asynq.Client
+	siteURL  string
+	settings settingsReader
 }
 
 // NewService creates a Service backed by the given database pools.
@@ -43,6 +49,9 @@ func (s *Service) SetAsynqClient(c *asynq.Client) { s.asynq = c }
 // absolute frontend links in notification emails. Never derived from the
 // request Host (CWE-601).
 func (s *Service) SetSiteURL(u string) { s.siteURL = strings.TrimRight(u, "/") }
+
+// SetSettings injects the system-settings reader (verification.form_slug).
+func (s *Service) SetSettings(cfg settingsReader) { s.settings = cfg }
 
 // emitWebhook fires a verification_request.* / user.verified event
 // fire-and-forget (Rule 8). Errors are logged inside the emitter, never
@@ -163,6 +172,20 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 	}
 	if submission.UserID.Valid && submission.UserID != requesterID {
 		return gen.VerificationRequest{}, fmt.Errorf("%w: form submission belongs to another user", errpkg.ErrForbidden)
+	}
+
+	// The submission must come from the configured verification form —
+	// not from any other Form Builder form (claim-ownership, feedback, …).
+	slug := "verification-request"
+	if s.settings != nil {
+		slug = s.settings.GetStringOr(ctx, "verification.form_slug", slug)
+	}
+	form, err := s.store.GetFormBySlug(ctx, slug)
+	if err != nil {
+		return gen.VerificationRequest{}, fmt.Errorf("resolving verification form: %w", err)
+	}
+	if submission.FormID != form.ID {
+		return gen.VerificationRequest{}, fmt.Errorf("%w: form submission is not for the verification-request form", errpkg.ErrInvalid)
 	}
 
 	req, err := s.store.CreateVerificationRequest(ctx, gen.CreateVerificationRequestParams{

@@ -109,3 +109,8 @@ func (s *Store) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, e
 func (s *Store) Reopen(ctx context.Context, id pgtype.UUID) error {
 	return s.write.ReopenVerificationRequest(ctx, id)
 }
+
+// GetFormBySlug resolves a Form Builder form by slug (verification.form_slug).
+func (s *Store) GetFormBySlug(ctx context.Context, slug string) (gen.GetFormBySlugRow, error) {
+	return s.read.GetFormBySlug(ctx, slug)
+}
