@@ -2190,6 +2190,21 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		FieldValues   map[string]any `json:"field_values"`
 		PaymentMethod string         `json:"payment_method"`
+		// Same-origin URL the hosted checkout redirects back to after
+		// payment (§17 ReturnURL) — lets flows like /verification-request
+		// resume the request that the payment unlocked.
+		ReturnURL string `json:"return_url"`
+		// §06/§07: business-record intent carried into the payment metadata
+		// so the payment webhook can auto-create the linked record
+		// (verification request / ownership claim) even when the submitter
+		// never returns from hosted checkout. Only honored on the two
+		// system slugs that consume submissions this way.
+		Link *struct {
+			Kind           string `json:"kind"`
+			EntityType     string `json:"entity_type"`
+			OrganizationID string `json:"organization_id"`
+			RequestedType  string `json:"requested_type"`
+		} `json:"link"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -2350,16 +2365,39 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		metadata := map[string]interface{}{
+			"form_id": formID.String(),
+
+			"field_values": req.FieldValues,
+		}
+		// Only the verification-request and claim-ownership system forms
+		// consume a link intent — other forms ignore it. The linked record
+		// is created by the payment-webhook task (§06 Paid Form Submissions)
+		// and still passes the full server-side eligibility checks. The slugs
+		// are admin-configurable — resolve them, don't hardcode (Rule 3).
+		if req.Link != nil {
+			verificationSlug := "verification-request"
+			claimSlug := "claim-ownership"
+			if h.settings != nil {
+				if v, sErr := h.settings.GetSetting(r.Context(), "verification.form_slug"); sErr == nil && v != "" {
+					verificationSlug = v
+				}
+				if v, sErr := h.settings.GetSetting(r.Context(), "claim_ownership.form_slug"); sErr == nil && v != "" {
+					claimSlug = v
+				}
+			}
+			if form.Slug == verificationSlug || form.Slug == claimSlug {
+				metadata["link"] = req.Link
+			}
+		}
+
 		result, pErr := h.payments.CreatePayment(r.Context(), userID, payments.CreatePaymentInput{
 			Provider:    req.PaymentMethod,
 			PurposeType: "form_submission",
 			PurposeID:   formID.String(),
 			Amount:      feeCredits,
-			Metadata: map[string]interface{}{
-				"form_id": formID.String(),
-
-				"field_values": req.FieldValues,
-			},
+			ReturnURL:   req.ReturnURL,
+			Metadata:    metadata,
 		})
 		if pErr != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "payment_intent_failed", "Failed to create payment intent")

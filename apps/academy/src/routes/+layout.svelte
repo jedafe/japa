@@ -13,6 +13,8 @@
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
 	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
 	import { api } from '$lib/api/client';
+	import { pwaInstall } from '$lib/pwa/install.svelte';
+	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
@@ -49,6 +51,16 @@
 		seedCsrfToken(data.csrfToken ?? null);
 	});
 
+	// §124 — inform the service worker of auth state so its navigation cache
+	// only ever stores guest pages (worker defaults to authed=true and purges
+	// the page cache on the guest→authed transition).
+	$effect(() => {
+		navigator.serviceWorker?.controller?.postMessage({
+			type: 'jc:pwa-auth',
+			authed: !!data.user
+		});
+	});
+
 	// Seed from the server value once; thereafter this is user-controlled.
 	let collapsed = $state(untrack(() => data.navCollapsed));
 
@@ -57,6 +69,16 @@
 	// every page.
 	const showChatFab = $derived(data.features?.['feature.japabot'] === true);
 	let aiPanelOpen = $state(false);
+
+	// §124 — install prompt gated by pwa.install_prompt_enabled; init() only
+	// registers the beforeinstallprompt listener, the banner self-hides when
+	// the browser can't install or the app is already standalone.
+	const installPromptEnabled = $derived(
+		data.siteSettings?.['pwa.install_prompt_enabled'] !== false
+	);
+	$effect(() => {
+		if (installPromptEnabled) pwaInstall.init();
+	});
 
 	$effect(() => {
 		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
@@ -195,4 +217,9 @@
 		<Sparkles size={22} />
 	</button>
 	<AiPanel open={aiPanelOpen} user={data.user ?? null} onclose={() => (aiPanelOpen = false)} />
+{/if}
+
+{#if installPromptEnabled}
+	<!-- §124 install prompt — renders only when the browser can install. -->
+	<PwaInstallBanner />
 {/if}

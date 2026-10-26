@@ -32,8 +32,8 @@ export const load: PageServerLoad = async (event) => {
 
 	const fetchSize = Math.min(MAX_PAGE_SIZE, pageSize + 1);
 	const params = new URLSearchParams({
-		limit: String(fetchSize),
-		page: String(page)
+		page_size: String(fetchSize),
+		page_offset: String(pageOffset)
 	});
 
 	const ctx = apiContext(event);

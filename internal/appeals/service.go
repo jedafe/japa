@@ -23,12 +23,15 @@ package appeals
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -70,20 +73,20 @@ const (
 
 	// Extended registry (§22 round 2): per-domain moderation decisions
 	// that produce a user-visible rejected/removed/suspended state.
-	SubjectAcademyTrack      = "academy_track"
-	SubjectReview            = "review"
-	SubjectMutualAidPost     = "mutual_aid_post"
-	SubjectVideoSource       = "video_source"
-	SubjectRoadmapItem       = "roadmap_item"
-	SubjectOrganization      = "organization"
-	SubjectSpace             = "space"
-	SubjectAffiliateMember   = "affiliate_member"
-	SubjectReferral          = "referral"
-	SubjectWithdrawal        = "withdrawal"
-	SubjectAdCampaign        = "ad_campaign"
-	SubjectContentReview     = "content_review"
-	SubjectCommunityOrg      = "community_org"
-	SubjectCommunityOrgClaim = "community_org_claim"
+	SubjectAcademyTrack        = "academy_track"
+	SubjectReview              = "review"
+	SubjectMutualAidPost       = "mutual_aid_post"
+	SubjectVideoSource         = "video_source"
+	SubjectRoadmapItem         = "roadmap_item"
+	SubjectOrganization        = "organization"
+	SubjectSpace               = "space"
+	SubjectAffiliateMember     = "affiliate_member"
+	SubjectReferral            = "referral"
+	SubjectWithdrawal          = "withdrawal"
+	SubjectAdCampaign          = "ad_campaign"
+	SubjectContentReview       = "content_review"
+	SubjectCommunityOrg        = "community_org"
+	SubjectCommunityOrgClaim   = "community_org_claim"
 	SubjectVerificationRequest = "verification_request"
 )
 
@@ -323,8 +326,8 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 		return Appeal{}, ErrReasonRequired
 	}
 
-	if len(reason) > maxReasonLen {
-		reason = reason[:maxReasonLen]
+	if utf8.RuneCountInString(reason) > maxReasonLen {
+		reason = string([]rune(reason)[:maxReasonLen])
 	}
 
 	hooks, ok := s.subjects[entityType]
@@ -335,6 +338,23 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 	var entityID pgtype.UUID
 	if err := entityID.Scan(entityIDStr); err != nil {
 		return Appeal{}, fmt.Errorf("%w: invalid entity_id", ErrNotEligible)
+	}
+
+	// The aggregate 'user' subject shares a restriction with the granular
+	// 'ban'/'suspension'/'warning'/'operation_ban' subjects (which key on
+	// moderation-action row ids, not user_id), so the (entity_type,
+	// entity_id) pending check can't catch it — guard explicitly.
+	if entityType == SubjectUser {
+		dup, err := s.write.HasPendingUserRestrictionAppeal(ctx, gen.HasPendingUserRestrictionAppealParams{
+			UserID:  userID,
+			Column2: []string{SubjectUser, SubjectBan, SubjectSuspension, SubjectWarning, SubjectOperationBan},
+		})
+		if err != nil {
+			return Appeal{}, fmt.Errorf("checking pending restriction appeal: %w", err)
+		}
+		if dup {
+			return Appeal{}, ErrDuplicate
+		}
 	}
 
 	label, err := hooks.CanAppeal(ctx, userID, entityID)
@@ -508,26 +528,42 @@ func (s *Service) Eligible(ctx context.Context, userID pgtype.UUID) ([]EligibleI
 	types := s.Subjects()
 	sort.Strings(types)
 
-	var out []EligibleItem
+	// Fan out per-subject ListEligible hooks — each is one or two indexed
+	// queries, but ~30 of them sequentially added noticeable latency.
+	type eligibleBatch struct {
+		entityType string
+		items      []EligibleItem
+	}
 
-	for _, et := range types {
+	results := make([]eligibleBatch, len(types))
+
+	var wg sync.WaitGroup
+	for i, et := range types {
 		hook := s.subjects[et].ListEligible
 		if hook == nil {
 			continue
 		}
+		wg.Add(1)
+		go func(i int, et string, hook func(context.Context, pgtype.UUID) ([]EligibleItem, error)) {
+			defer wg.Done()
+			items, err := hook(ctx, userID)
+			if err != nil {
+				slog.Warn("appeals: eligible list failed", "entity_type", et, "error", err)
+				return
+			}
+			results[i] = eligibleBatch{entityType: et, items: items}
+		}(i, et, hook)
+	}
+	wg.Wait()
 
-		items, err := hook(ctx, userID)
-		if err != nil {
-			slog.Warn("appeals: eligible list failed", "entity_type", et, "error", err)
-			continue
-		}
+	out := make([]EligibleItem, 0, 8)
 
-		for _, it := range items {
-			it.EntityType = et
-			if anyPending(et, it.EntityID) {
+	for _, b := range results {
+		for _, it := range b.items {
+			it.EntityType = b.entityType
+			if anyPending(b.entityType, it.EntityID) {
 				continue
 			}
-
 			out = append(out, it)
 		}
 	}
@@ -559,14 +595,6 @@ func (s *Service) Resolve(ctx context.Context, appealID, reviewerID pgtype.UUID,
 		ResolutionNote: row.ResolutionNote, CreatedAt: row.CreatedAt, ResolvedAt: row.ResolvedAt,
 	})
 
-	if status == StatusOverturn {
-		if hooks, ok := s.subjects[appeal.EntityType]; ok && hooks.OnOverturn != nil {
-			if err := hooks.OnOverturn(ctx, appeal, reviewerID); err != nil {
-				return fmt.Errorf("applying overturn: %w", err)
-			}
-		}
-	}
-
 	var notePtr *string
 
 	if strings.TrimSpace(note) != "" {
@@ -574,6 +602,9 @@ func (s *Service) Resolve(ctx context.Context, appealID, reviewerID pgtype.UUID,
 		notePtr = &n
 	}
 
+	// Claim the transition first — the guarded status='pending' update makes
+	// exactly one resolver win, so concurrent resolves can't both apply the
+	// reversal. A failed reversal rolls the appeal back to pending.
 	tag, err := s.write.ResolveAppeal(ctx, gen.ResolveAppealParams{
 		Status:         status,
 		ReviewedBy:     reviewerID,
@@ -586,6 +617,36 @@ func (s *Service) Resolve(ctx context.Context, appealID, reviewerID pgtype.UUID,
 
 	if tag == 0 {
 		return ErrAlreadyResolved
+	}
+
+	if status == StatusOverturn {
+		if hooks, ok := s.subjects[appeal.EntityType]; ok && hooks.OnOverturn != nil {
+			if err := hooks.OnOverturn(ctx, appeal, reviewerID); err != nil {
+				if rerr := s.write.ReopenAppealOnFailedOverturn(ctx, appealID); rerr != nil {
+					slog.Error("appeals: failed to reopen after overturn failure", "appeal_id", appealID.String(), "error", rerr)
+				}
+				return fmt.Errorf("applying overturn: %w", err)
+			}
+		}
+	}
+
+	// §22: every resolution is audit-logged. Written after the reversal so a
+	// rolled-back overturn isn't recorded as resolved.
+	targetType := "appeal"
+	metadata, _ := json.Marshal(map[string]any{
+		"appeal_id":       appeal.ID,
+		"entity_type":     appeal.EntityType,
+		"entity_id":       appeal.EntityID,
+		"resolution_note": notePtr,
+	})
+	if _, aerr := s.write.CreateAuditLog(ctx, gen.CreateAuditLogParams{
+		ActorUserID: reviewerID,
+		ActionType:  "moderation.appeal.resolve",
+		TargetType:  &targetType,
+		TargetID:    appealID,
+		Metadata:    metadata,
+	}); aerr != nil {
+		slog.Warn("appeals: resolution audit log failed", "appeal_id", appeal.ID, "error", aerr)
 	}
 
 	if row.TicketID.Valid && s.tickets != nil {

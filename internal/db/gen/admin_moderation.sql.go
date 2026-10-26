@@ -235,6 +235,34 @@ func (q *Queries) CheckUserBanExists(ctx context.Context, userID pgtype.UUID) (b
 	return exists, err
 }
 
+const countModerationAppeals = `-- name: CountModerationAppeals :one
+SELECT COUNT(*)
+FROM moderation_appeals ma
+LEFT JOIN users u ON u.id = ma.user_id
+LEFT JOIN user_profiles up ON up.user_id = ma.user_id
+WHERE ($1::text IS NULL OR ma.status = $1::text)
+  AND ($2::text IS NULL OR (
+ ma.entity_id::text ILIKE '%' || $2 || '%'
+ OR ma.reason ILIKE '%' || $2 || '%'
+ OR ma.entity_type ILIKE '%' || $2 || '%'
+ OR ma.subject_label ILIKE '%' || $2 || '%'
+ OR u.username ILIKE '%' || $2 || '%'
+ OR up.display_name ILIKE '%' || $2 || '%'
+ ))
+`
+
+type CountModerationAppealsParams struct {
+	Status *string `json:"status"`
+	Search *string `json:"search"`
+}
+
+func (q *Queries) CountModerationAppeals(ctx context.Context, arg CountModerationAppealsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countModerationAppeals, arg.Status, arg.Search)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAdminBroadcastRecord = `-- name: CreateAdminBroadcastRecord :exec
 INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at) VALUES ($1, $2, $3, $4, now())
 `
@@ -375,9 +403,12 @@ func (q *Queries) DeleteAdminBroadcast(ctx context.Context, id pgtype.UUID) erro
 
 const getModerationAppeal = `-- name: GetModerationAppeal :one
 SELECT ma.id, ma.user_id, ma.entity_type, ma.entity_id, ma.reason, ma.subject_label, ma.status, ma.created_at,
- ma.ticket_id, ma.resolution_note, ma.reviewed_by, ma.resolved_at, t.ticket_number
+ ma.ticket_id, ma.resolution_note, ma.reviewed_by, ma.resolved_at, ma.updated_at, t.ticket_number,
+ u.username, up.display_name
 FROM moderation_appeals ma
 LEFT JOIN tickets t ON t.id = ma.ticket_id
+LEFT JOIN users u ON u.id = ma.user_id
+LEFT JOIN user_profiles up ON up.user_id = ma.user_id
 WHERE ma.id = $1
 `
 
@@ -394,7 +425,10 @@ type GetModerationAppealRow struct {
 	ResolutionNote *string            `json:"resolution_note"`
 	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
 	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	TicketNumber   *int64             `json:"ticket_number"`
+	Username       *string            `json:"username"`
+	DisplayName    *string            `json:"display_name"`
 }
 
 func (q *Queries) GetModerationAppeal(ctx context.Context, id pgtype.UUID) (GetModerationAppealRow, error) {
@@ -413,7 +447,10 @@ func (q *Queries) GetModerationAppeal(ctx context.Context, id pgtype.UUID) (GetM
 		&i.ResolutionNote,
 		&i.ReviewedBy,
 		&i.ResolvedAt,
+		&i.UpdatedAt,
 		&i.TicketNumber,
+		&i.Username,
+		&i.DisplayName,
 	)
 	return i, err
 }
@@ -763,15 +800,25 @@ FROM moderation_appeals ma
 LEFT JOIN users u ON u.id = ma.user_id
 LEFT JOIN user_profiles up ON up.user_id = ma.user_id
 LEFT JOIN tickets t ON t.id = ma.ticket_id
-WHERE ($1::text IS NULL OR (
- ma.entity_id::text ILIKE '%' || $1 || '%'
- OR ma.reason ILIKE '%' || $1 || '%'
- OR ma.entity_type ILIKE '%' || $1 || '%'
- OR ma.subject_label ILIKE '%' || $1 || '%'
+WHERE ($1::text IS NULL OR ma.status = $1::text)
+  AND ($2::text IS NULL OR (
+ ma.entity_id::text ILIKE '%' || $2 || '%'
+ OR ma.reason ILIKE '%' || $2 || '%'
+ OR ma.entity_type ILIKE '%' || $2 || '%'
+ OR ma.subject_label ILIKE '%' || $2 || '%'
+ OR u.username ILIKE '%' || $2 || '%'
+ OR up.display_name ILIKE '%' || $2 || '%'
  ))
 ORDER BY ma.created_at DESC
-LIMIT 50
+LIMIT $4 OFFSET $3
 `
+
+type ListModerationAppealsParams struct {
+	Status     *string `json:"status"`
+	Search     *string `json:"search"`
+	PageOffset int32   `json:"page_offset"`
+	PageLimit  int32   `json:"page_limit"`
+}
 
 type ListModerationAppealsRow struct {
 	ID             pgtype.UUID        `json:"id"`
@@ -792,8 +839,13 @@ type ListModerationAppealsRow struct {
 // =====================
 // Appeals
 // =====================
-func (q *Queries) ListModerationAppeals(ctx context.Context, search *string) ([]ListModerationAppealsRow, error) {
-	rows, err := q.db.Query(ctx, listModerationAppeals, search)
+func (q *Queries) ListModerationAppeals(ctx context.Context, arg ListModerationAppealsParams) ([]ListModerationAppealsRow, error) {
+	rows, err := q.db.Query(ctx, listModerationAppeals,
+		arg.Status,
+		arg.Search,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

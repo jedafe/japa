@@ -1,14 +1,28 @@
 /// <reference types="@sveltejs/kit" />
 /// <reference lib="webworker" />
 
-// Service worker for browser push notifications (Section 35 / Section 50).
+// Service worker: browser push notifications (Section 35 / Section 50) plus
+// the §124 PWA caching layer (precache, runtime caching, offline fallback).
 // Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: .jeos/sections/124-progressive-web-app.md
 
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { version } from '$service-worker';
 import { buildApiUrl } from '@japaconnect/api-url';
+import { initPwaServiceWorker } from '@japaconnect/ui/pwa';
 import { DEFAULT_SITE_NAME } from '$lib/brand';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
+
+// §124 — offline caching + fallback. Listeners are additive: the push
+// handlers below are unaffected. `version` changes every build, so cache
+// namespaces roll and the worker re-installs on each deploy. The API host
+// is cross-origin, so API responses are never cached.
+initPwaServiceWorker(sw, {
+	version,
+	settingsUrl: buildApiUrl('/site/settings/public', PUBLIC_JC_API_URL),
+	precacheExtras: ['/favicon.png', '/icon-192.png']
+});
 
 // Notification title fallback comes from general.site_name — fetched lazily
 // on the first push (activate is too early: no network guarantee) and cached

@@ -33,6 +33,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
@@ -265,6 +266,10 @@ func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// ADR-134: tag the listing so the configured edge CDN can invalidate it
+	// by tag (CF-Cache-Tag / CDN-Tag).
+	cdn.SetCacheTags(w, "content:"+detail.ID, "type:job_listing")
 
 	// Viewer-scoped: include the caller's own application so the detail page
 	// renders the applied state instead of the submit form.

@@ -367,6 +367,31 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "feed_card_style", Label: "Feed Card Style", Type: "text", Description: "Default feed card style: `reddit`|`compact`|`grid`|`magazine`", Value: "reddit", Hidden: true},
 		},
 	},
+	// Progressive Web App (§124) — public keys consumed by each app's dynamic
+	// /manifest.json endpoint, service worker, and install UX.
+	"pwa": {
+		Key:   "pwa",
+		Label: "Progressive Web App",
+		Settings: []SettingDef{
+			{Key: "name", Label: "App Name", Type: "text", Description: "Installed app name; empty falls back to Site Name"},
+			{Key: "short_name", Label: "Short Name", Type: "text", Description: "Launcher short name; empty falls back to App Name"},
+			{Key: "description", Label: "Description", Type: "textarea", Description: "Manifest description; empty falls back to Site Description"},
+			{Key: "theme_color", Label: "Theme Color", Type: "color", Description: "Manifest theme_color + browser chrome tint; empty falls back to Primary Color"},
+			{Key: "background_color", Label: "Background Color", Type: "color", Value: "#ffffff", Description: "Splash/launch screen background"},
+			{Key: "display", Label: "Display Mode", Type: "select", Options: []string{"standalone", "minimal-ui", "browser"}, Value: "standalone"},
+			{Key: "start_url", Label: "Start URL", Type: "text", Value: "/", Description: "Main-app manifest start_url (docs overrides to /docs)"},
+			{Key: "icon_192", Label: "Icon 192px", Type: "media", Accept: "image/*", Description: "Empty uses the bundled /icon-192.png"},
+			{Key: "icon_512", Label: "Icon 512px", Type: "media", Accept: "image/*", Description: "Empty uses the bundled /favicon.png"},
+			{Key: "maskable_icon", Label: "Maskable Icon", Type: "media", Accept: "image/*", Description: "Safe-zone padded icon for adaptive launchers; empty uses /icon-maskable-512.png"},
+			{Key: "shortcuts", Label: "App Shortcuts", Type: "link-list", Max: 4, Description: "Manifest shortcuts on the main app (label + url)"},
+			{Key: "screenshots", Label: "Screenshots", Type: "textarea", Placeholder: `[{"src":"/screenshots/home.png","sizes":"1280x720","type":"image/png"}]`, Description: "JSON array for the richer install dialog"},
+			{Key: "categories", Label: "Categories", Type: "text", Value: "social", Description: "Comma-separated manifest categories"},
+			{Key: "offline_enabled", Label: "Offline Support", Type: "toggle", Value: true, Description: "Service-worker caching + offline fallback page"},
+			{Key: "install_prompt_enabled", Label: "Install Prompt", Type: "toggle", Value: true, Description: "Show the install banner and Devices install row when the browser offers install"},
+			{Key: "badge_enabled", Label: "App Icon Badge", Type: "toggle", Value: true, Description: "Mirror unread notifications onto the installed app icon"},
+			{Key: "share_target_enabled", Label: "Share Target", Type: "toggle", Value: false, Description: "Accept OS-level shares into the /studio/create composer"},
+		},
+	},
 	"users": {
 		Key:   "users",
 		Label: "Users",

@@ -545,5 +545,11 @@
   "landing.globe_api": "API",
   "landing.globe_members": "Members",
   "landing.globe_analytics": "Analytics",
-  "landing.globe_security": "Security"
+  "landing.globe_security": "Security",
+  "pwa.dismiss": "Dismiss",
+  "pwa.install_body": "Get faster access and push notifications.",
+  "pwa.install_button": "Install",
+  "pwa.install_ios_hint": "Tap",
+  "pwa.install_ios_hint2": "then \"Add to Home Screen\"",
+  "pwa.install_title": "Install app"
 }

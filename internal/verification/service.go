@@ -214,6 +214,43 @@ func strPtr(t *string) *string {
 	return nil
 }
 
+// GetPendingForOrgScoped returns the org's pending verification request for
+// org owner/admin members (GET /organizations/{id}/verification-request) —
+// the pre-check the /verification-request form needs so a member never pays
+// a submission fee for a request that would 409 on another admin's pending
+// filing. Not-found when no pending request exists.
+func (s *Service) GetPendingForOrgScoped(ctx context.Context, orgID, requesterID pgtype.UUID) (pgtype.UUID, error) {
+	org, err := s.store.GetOrganizationByIDOnly(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, fmt.Errorf("%w: organization not found", errpkg.ErrNotFound)
+		}
+		return pgtype.UUID{}, fmt.Errorf("fetching organization: %w", err)
+	}
+	allowed := org.OwnerUserID == requesterID
+	if !allowed {
+		role, err := s.store.GetOrganizationMemberRole(ctx, orgID, requesterID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return pgtype.UUID{}, fmt.Errorf("%w: only organization owners and admins may view org verification requests", errpkg.ErrForbidden)
+			}
+			return pgtype.UUID{}, fmt.Errorf("checking membership: %w", err)
+		}
+		allowed = role == "owner" || role == "admin"
+	}
+	if !allowed {
+		return pgtype.UUID{}, fmt.Errorf("%w: only organization owners and admins may view org verification requests", errpkg.ErrForbidden)
+	}
+	req, err := s.store.GetPendingForOrg(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, fmt.Errorf("%w: no pending verification request for this organization", errpkg.ErrNotFound)
+		}
+		return pgtype.UUID{}, fmt.Errorf("fetching pending request: %w", err)
+	}
+	return req, nil
+}
+
 // ListMyRequests returns the requester's own requests (GET /me/verification-requests).
 func (s *Service) ListMyRequests(ctx context.Context, requesterID pgtype.UUID) ([]gen.ListVerificationRequestsByRequesterRow, error) {
 	return s.store.ListByRequester(ctx, requesterID)

@@ -729,6 +729,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 			"title":      content.Title,
 			"actor_id":   content.AuthorID,
 		})
+		s.purgeEdgeContent(ctx, content.ID, content.ContentType, content.Slug)
 	}
 
 	return content, nil
@@ -1379,6 +1380,9 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		"actor_id":   editedBy,
 	})
 
+	// Purge both slugs — a rename leaves the old URL cached at the edge.
+	s.purgeEdgeContent(ctx, content.ID, content.ContentType, existing.Slug, content.Slug)
+
 	return content, nil
 }
 
@@ -1627,6 +1631,10 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 		worker.PurgeRAGEntity(ctx, "content", id)
 	}
 
+	// Every status transition purges the edge cache — unpublishing must drop
+	// the cached copy just as publishing refreshes it (ADR-134).
+	s.purgeEdgeContent(ctx, content.ID, content.ContentType, content.Slug)
+
 	return content, nil
 }
 
@@ -1792,6 +1800,8 @@ func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 		"title":      existing.Title,
 		"actor_id":   existing.AuthorID,
 	})
+
+	s.purgeEdgeContent(ctx, id, existing.ContentType, existing.Slug)
 
 	return nil
 }

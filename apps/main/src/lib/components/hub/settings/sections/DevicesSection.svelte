@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { deleteDevice, deletePushToken, getVapidKey, getPushTokens, subscribePush } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
+	import { pwaInstall } from '$lib/pwa/install.svelte';
 	import type { DeviceInfo } from '$lib/types';
 
 	interface PushToken {
@@ -29,6 +31,13 @@
 	});
 	let pushLoading = $state(false);
 	let pushError = $state<string | null>(null);
+	let installLoading = $state(false);
+
+	// §124 — install row mirrors the banner; gated by pwa.install_prompt_enabled
+	// and hidden entirely once running standalone.
+	const installPromptEnabled = $derived(
+		page.data.siteSettings?.['pwa.install_prompt_enabled'] !== false
+	);
 
 	function deviceName(device: DeviceInfo): string {
 		const platform = device.platform || t('settings.devices.unknown', 'Unknown device');
@@ -114,6 +123,16 @@
 			pushLoading = false;
 		}
 	}
+
+	async function installApp() {
+		if (installLoading) return;
+		installLoading = true;
+		try {
+			await pwaInstall.prompt();
+		} finally {
+			installLoading = false;
+		}
+	}
 </script>
 
 <section class="max-w-2xl space-y-6">
@@ -121,6 +140,31 @@
 		<h1 class="text-lg font-medium text-[var(--color-text)]">{t('settings.devices.title')}</h1>
 		<p class="text-sm text-[var(--color-muted)]">{t('settings.devices.desc')}</p>
 	</header>
+
+	{#if installPromptEnabled && !pwaInstall.installed && (pwaInstall.canPrompt || pwaInstall.needsManualIos)}
+		<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('settings.devices.install_app', 'Install app')}</h2>
+			<div class="flex items-center justify-between gap-3">
+				<p class="text-sm text-[var(--color-muted)]">
+					{#if pwaInstall.needsManualIos}
+						{t('settings.devices.install_ios', 'Use the browser Share menu, then "Add to Home Screen".')}
+					{:else}
+						{t('settings.devices.install_desc', 'Install this app for faster access and a native feel.')}
+					{/if}
+				</p>
+				{#if pwaInstall.canPrompt}
+					<button
+						type="button"
+						disabled={installLoading}
+						class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+						onclick={installApp}
+					>
+						{installLoading ? t('settings.devices.install_working', 'Installing…') : t('settings.devices.install_button', 'Install')}
+					</button>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('settings.devices.browser_push', 'Browser push')}</h2>

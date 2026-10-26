@@ -37,6 +37,7 @@ import {
     Receipt,
     MapPin,
     BookOpen,
+    Cloud,
 } from 'lucide-svelte';
 
 // Only categories that have Panel: "control" settings appear in the control
@@ -50,6 +51,7 @@ import {
 export const categoryIcons: Record<string, typeof Settings> = {
     cors: Globe,
     media: Server,
+    integrations: Cloud,
     pricing: CreditCard,
     academy: Monitor,
     geo_personalization: Globe,
@@ -120,6 +122,7 @@ export const categoryIcons: Record<string, typeof Settings> = {
 export const categoryNames: Record<string, string> = {
     cors: 'CORS',
     media: 'Media Storage',
+    integrations: 'Edge CDN',
     pricing: 'Pricing Plans',
     academy: 'Japa Academy',
     geo_personalization: 'Geo Personalization',
@@ -191,6 +194,9 @@ export const categoryNames: Record<string, string> = {
 export const sensitiveKeys: string[] = [
     'media.storage.access_key',
     'media.storage.secret_key',
+    // Edge CDN credentials (ADR-134)
+    'integrations.cloudflare.api_token',
+    'integrations.bunnycdn.api_key',
     // V2 push notification secrets (§77, ADR-074)
     'push.fcm_server_key',
     'push.fcm_service_account',

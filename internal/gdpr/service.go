@@ -614,6 +614,10 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// (Section 55, ADR-014). The events are retained for aggregate
 		// click/copy analytics; only the user association is cleared.
 		// Best-effort: a failure logs a warning but does not abort.
+		if err := s.store.anonymizeModerationAppeals(ctx, request.UserID); err != nil {
+			slog.Warn("failed to anonymize moderation appeals during deletion", "user_id", request.UserID.String(), "error", err)
+		}
+
 		if err := s.store.anonymizeCouponEvents(ctx, request.UserID); err != nil {
 			slog.Warn("failed to anonymize coupon events during deletion", "user_id", request.UserID.String(), "error", err)
 		}

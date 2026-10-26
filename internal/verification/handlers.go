@@ -149,6 +149,28 @@ func (h *Handlers) WithdrawRequest(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id.String(), "status": StatusWithdrawn}})
 }
 
+// GetOrgPendingRequest handles GET /organizations/{id}/verification-request —
+// returns the org's pending request for owner/admin pre-checks (§07).
+func (h *Handlers) GetOrgPendingRequest(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	orgID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	row, err := h.service.GetPendingForOrgScoped(r.Context(), orgID, user.UserID)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": row.String()}})
+}
+
 // ListTypes handles GET /verification-requests/types — the allowed badge-type
 // vocabulary (public; Rule 16 so frontends never hardcode the enum).
 func (h *Handlers) ListTypes(w http.ResponseWriter, _ *http.Request) {

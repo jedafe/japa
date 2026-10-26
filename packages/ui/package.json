@@ -14,6 +14,11 @@
 		"./theme": {
 			"types": "./src/theme.ts",
 			"svelte": "./src/theme.ts"
+		},
+		"./pwa": {
+			"types": "./src/pwa.ts",
+			"svelte": "./src/pwa.ts",
+			"default": "./src/pwa.ts"
 		}
 	},
 	"peerDependencies": {

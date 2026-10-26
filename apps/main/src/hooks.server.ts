@@ -430,9 +430,34 @@ export const handle: Handle = async ({ event, resolve }) => {
 				`<link rel="alternate" hreflang="x-default" href="${event.url.origin}${canonicalPath}" />`
 			: '';
 
+	// §124 — PWA head tags: theme-color (manifest theme_color fallback to
+	// appearance.primary_color) and the iOS/desktop install meta block. The
+	// app name is admin-controlled, so it's attribute-escaped before
+	// interpolation; the color is hex-whitelist-validated.
+	// Ref: .jeos/sections/124-progressive-web-app.md
+	const pwaThemeColor = (() => {
+		for (const v of [siteSettings['pwa.theme_color'], siteSettings['appearance.primary_color']]) {
+			if (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v.trim())) return v.trim();
+		}
+		return '#3b49df';
+	})();
+	const pwaAppName = String(
+		siteSettings['pwa.short_name'] || siteSettings['pwa.name'] || siteSettings['general.site_name'] || 'JapaConnect'
+	).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+	const pwaMeta = [
+		`<meta name="theme-color" content="${pwaThemeColor}" />`,
+		`<meta name="mobile-web-app-capable" content="yes" />`,
+		`<meta name="apple-mobile-web-app-capable" content="yes" />`,
+		`<meta name="apple-mobile-web-app-status-bar-style" content="default" />`,
+		`<meta name="apple-mobile-web-app-title" content="${pwaAppName}" />`,
+		`<meta name="application-name" content="${pwaAppName}" />`,
+		`<link rel="apple-touch-icon" href="/apple-touch-icon.png" />`
+	].join('');
+
 	const response = await resolve(event, {
 		transformPageChunk: ({ html }) =>
 			html
+				.replace('%jc.pwa-meta%', () => pwaMeta)
 				.replace('%jc.themevars%', () => themeVars)
 				.replace('%jc.customcss%', () => customCss)
 				.replace('%jc.theme%', () => event.locals.resolvedTheme)

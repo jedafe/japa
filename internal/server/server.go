@@ -40,10 +40,10 @@ import (
 	"github.com/jedafe/japa/internal/blog"
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/bots"
-	"github.com/jedafe/japa/internal/pagespeed"
 	"github.com/jedafe/japa/internal/calendar"
 	"github.com/jedafe/japa/internal/campaign"
 	"github.com/jedafe/japa/internal/catalog"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/checklist"
 	"github.com/jedafe/japa/internal/comments"
 	"github.com/jedafe/japa/internal/communitylocator"
@@ -116,6 +116,7 @@ import (
 	"github.com/jedafe/japa/internal/onboarding"
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/pagebuilder"
+	"github.com/jedafe/japa/internal/pagespeed"
 	"github.com/jedafe/japa/internal/participation"
 	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/personas"
@@ -154,8 +155,8 @@ import (
 	"github.com/jedafe/japa/internal/universities"
 	"github.com/jedafe/japa/internal/university_courses"
 	"github.com/jedafe/japa/internal/users"
-	"github.com/jedafe/japa/internal/verification"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/verification"
 	"github.com/jedafe/japa/internal/video"
 	"github.com/jedafe/japa/internal/visaroutes"
 	"github.com/jedafe/japa/internal/visatimeline"
@@ -840,10 +841,59 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// emitter is wired inside the route group below alongside the other
 	// services (orgService.SetWebhookEmitter call site).
 	verificationService := verification.NewService(database)
-	verificationService.SetAsynqClient(asynqClient) // review-outcome email:send tasks
-	verificationService.SetSiteURL(cfg.SiteURL)     // absolute links in notify emails
+	verificationService.SetAsynqClient(asynqClient)  // review-outcome email:send tasks
+	verificationService.SetSiteURL(cfg.SiteURL)      // absolute links in notify emails
 	verificationService.SetSettings(settingsService) // verification.form_slug lookup
 	verificationHandlers := verification.NewHandlers(verificationService)
+
+	// §06 paid-form-submission link adapter: the payment webhook task calls
+	// this when a paid submission's metadata carries a link intent, so a
+	// verification request / ownership claim is created even if the
+	// submitter never returns from hosted checkout. Lives here (not in the
+	// worker) because worker cannot import verification/organizations.
+	worker.RegisterSubmissionLinker(func(ctx context.Context, requesterID, submissionID string, in worker.SubmissionLinkInput) error {
+		var uid, subID pgtype.UUID
+		if err := uid.Scan(requesterID); err != nil {
+			return fmt.Errorf("link: invalid requester id: %w", err)
+		}
+
+		if err := subID.Scan(submissionID); err != nil {
+			return fmt.Errorf("link: invalid submission id: %w", err)
+		}
+
+		switch in.Kind {
+		case "verification_request":
+			input := verification.SubmitInput{
+				EntityType:       in.EntityType,
+				FormSubmissionID: submissionID,
+			}
+
+			if in.OrganizationID != "" {
+				input.OrganizationID = &in.OrganizationID
+			}
+
+			if in.RequestedType != "" {
+				input.RequestedType = &in.RequestedType
+			}
+
+			_, err := verificationService.SubmitRequest(ctx, uid, input)
+
+			return err
+		case "org_claim":
+			var orgID pgtype.UUID
+			if err := orgID.Scan(in.OrganizationID); err != nil {
+				return fmt.Errorf("link: invalid organization_id: %w", err)
+			}
+
+			_, err := orgService.ClaimOwnership(ctx, uid, orgID, organizations.ClaimOwnershipInput{
+				FormSubmissionID: &subID,
+			})
+
+			return err
+		default:
+			return fmt.Errorf("link: unknown kind %q", in.Kind)
+		}
+	})
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
@@ -1085,6 +1135,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	media.SetCDNBaseURLResolver(func() string {
 		return settingsService.GetStringOr(context.Background(), "media.cdn.base_url", "")
 	})
+
+	// Edge CDN integration (ADR-134): provider + credentials resolve from
+	// system_settings on every call so Control Panel edits take effect with
+	// no redeploy. Empty integrations.cdn.provider disables purge/geo/tags.
+	cdn.SetConfigResolver(func() cdn.Config {
+		ctx := context.Background()
+
+		return cdn.Config{
+			Provider:           settingsService.GetStringOr(ctx, "integrations.cdn.provider", ""),
+			SiteURL:            cfg.SiteURL,
+			CloudflareZoneID:   settingsService.GetStringOr(ctx, "integrations.cloudflare.zone_id", ""),
+			CloudflareAPIToken: settingsService.GetStringOr(ctx, "integrations.cloudflare.api_token", ""),
+			BunnyPullZoneID:    settingsService.GetStringOr(ctx, "integrations.bunnycdn.pull_zone_id", ""),
+			BunnyAPIKey:        settingsService.GetStringOr(ctx, "integrations.bunnycdn.api_key", ""),
+		}
+	})
+	// geoip country-header fallback consults the configured provider's
+	// visitor-country header (CF-IPCountry / CDN-RequestCountryCode).
+	geoip.SetCountryHeaderResolver(cdn.CountryHeader)
 
 	mediaHandlers := media.NewHandlers(mediaService)
 	// Inject RBAC resolver for in-handler permission checks (media.video.upload).
@@ -4775,6 +4844,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.request")).Delete("/verification-requests/{id}", verificationHandlers.WithdrawRequest)
 			// Public badge-type vocabulary — frontends fetch it (Rule 16).
 			r.Get("/verification-requests/types", verificationHandlers.ListTypes)
+			// Org-scoped pending lookup — lets owner/admin members detect a
+			// pending request filed by ANOTHER admin before paying a fee.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.request")).Get("/organizations/{id}/verification-request", verificationHandlers.GetOrgPendingRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/admin/verification-requests", verificationHandlers.AdminListRequests)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/admin/verification-requests/{id}/submission", adminHandlers.GetVerificationRequestSubmission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Patch("/admin/verification-requests/{id}", verificationHandlers.ReviewRequest)

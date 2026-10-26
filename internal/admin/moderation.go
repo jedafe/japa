@@ -669,14 +669,17 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The queue item id comes from the route param; the JSON body is
+	// optional ({ id, type, reason }) — decode leniently so an empty or
+	// reason-only body still works.
 	var req struct {
 		ID   string `json:"id"`
 		Type string `json:"type"` // "review"
 	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
-		return
+	if req.ID == "" {
+		req.ID = chi.URLParam(r, "id")
 	}
 
 	if req.ID == "" {
@@ -1505,9 +1508,42 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 		search = &s
 	}
 
-	rows, err := h.Queries.ListModerationAppeals(r.Context(), search)
+	var status *string
+	if s := r.URL.Query().Get("status"); s != "" {
+		status = &s
+	}
+
+	pageSize := int32(25)
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			pageSize = int32(n) // #nosec
+		}
+	}
+
+	var pageOffset int32
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			pageOffset = int32(n) // #nosec
+		}
+	}
+
+	rows, err := h.Queries.ListModerationAppeals(r.Context(), gen.ListModerationAppealsParams{
+		Status:     status,
+		Search:     search,
+		PageLimit:  pageSize,
+		PageOffset: pageOffset,
+	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list appeals")
+		return
+	}
+
+	total, err := h.Queries.CountModerationAppeals(r.Context(), gen.CountModerationAppealsParams{
+		Status: status,
+		Search: search,
+	})
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count appeals")
 		return
 	}
 
@@ -1545,7 +1581,20 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 		appeals = append(appeals, entry)
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": appeals})
+	totalPages := int64(1)
+	if total > 0 {
+		totalPages = (total + int64(pageSize) - 1) / int64(pageSize)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"items":       appeals,
+			"total":       total,
+			"total_pages": totalPages,
+			"page_size":   pageSize,
+			"page_offset": pageOffset,
+		},
+	})
 }
 
 // GetAppeal handles GET /admin/appeals/:id.
@@ -1591,6 +1640,18 @@ func (h *Handlers) GetAppeal(w http.ResponseWriter, r *http.Request) {
 
 	if a.ResolvedAt.Valid {
 		out["resolved_at"] = a.ResolvedAt.Time.Format(time.RFC3339)
+	}
+
+	if a.UpdatedAt.Valid {
+		out["updated_at"] = a.UpdatedAt.Time.Format(time.RFC3339)
+	}
+
+	if a.Username != nil {
+		out["username"] = *a.Username
+	}
+
+	if a.DisplayName != nil {
+		out["display_name"] = *a.DisplayName
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
@@ -1651,7 +1712,9 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": input.Status})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"id": id, "status": input.Status},
+	})
 }
 
 // ─── Moderation Queue Assign ──────────────────────────────────────────────

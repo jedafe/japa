@@ -275,6 +275,17 @@ func (q *Queries) AnonymizeMentorshipShadowListings(ctx context.Context, userID 
 	return err
 }
 
+const anonymizeModerationAppeals = `-- name: AnonymizeModerationAppeals :exec
+UPDATE moderation_appeals
+SET reason = '[erased]', resolution_note = NULL, updated_at = now()
+WHERE user_id = $1
+`
+
+func (q *Queries) AnonymizeModerationAppeals(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeModerationAppeals, userID)
+	return err
+}
+
 const anonymizeRevenueSplitsForInstructor = `-- name: AnonymizeRevenueSplitsForInstructor :execrows
 UPDATE revenue_splits rs
 SET instructor_id = NULL

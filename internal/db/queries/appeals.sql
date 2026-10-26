@@ -43,6 +43,18 @@ WHERE user_id = @user_id
   AND entity_id = @entity_id
   AND status = 'pending';
 
+-- name: HasPendingUserRestrictionAppeal :one
+SELECT EXISTS(
+  SELECT 1 FROM moderation_appeals
+  WHERE user_id = $1 AND status = 'pending'
+    AND entity_type = ANY($2::text[])
+ ) AS exists;
+
+-- name: ReopenAppealOnFailedOverturn :exec
+UPDATE moderation_appeals
+SET status = 'pending', reviewed_by = NULL, resolution_note = NULL, resolved_at = NULL, updated_at = now()
+WHERE id = $1;
+
 -- name: SetAppealTicketID :exec
 UPDATE moderation_appeals
 SET ticket_id = @ticket_id, updated_at = now()

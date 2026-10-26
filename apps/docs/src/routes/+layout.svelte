@@ -5,6 +5,8 @@
 	import { beforeNavigate } from '$app/navigation';
 	import { Sparkles } from 'lucide-svelte';
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
+	import { pwaInstall } from '$lib/pwa/install.svelte';
+	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
 	import { ensureAiPanelDeps } from '$lib/ai/panel';
 	import { resolveAiPageContext } from '$lib/ai/pageContext';
 	import NextActions from '$lib/components/shell/NextActions.svelte';
@@ -58,6 +60,24 @@
 	// strings the server rendered with.
 	$effect(() => {
 		if (data.i18nPack && data.locale) setRuntimePack(data.locale, data.i18nPack);
+	});
+
+	// §124 — inform the service worker of auth state so its navigation cache
+	// only ever stores guest pages (worker defaults to authed=true and purges
+	// the page cache on the guest→authed transition).
+	$effect(() => {
+		navigator.serviceWorker?.controller?.postMessage({
+			type: 'jc:pwa-auth',
+			authed: !!data.user
+		});
+	});
+
+	// §124 — install prompt gated by pwa.install_prompt_enabled.
+	const installPromptEnabled = $derived(
+		data.siteSettings?.['pwa.install_prompt_enabled'] !== false
+	);
+	$effect(() => {
+		if (installPromptEnabled) pwaInstall.init();
 	});
 
 	// Admin appearance overrides are injected server-side by hooks.server.ts
@@ -135,4 +155,9 @@
 		<Sparkles size={22} />
 	</button>
 	<AiPanel open={aiPanelOpen} user={data.user ?? null} onclose={() => (aiPanelOpen = false)} />
+{/if}
+
+{#if installPromptEnabled}
+	<!-- §124 install prompt — renders only when the browser can install. -->
+	<PwaInstallBanner />
 {/if}

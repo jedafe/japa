@@ -96,6 +96,12 @@
 					{ value: 's3', label: t('settings.storage_s3', 'Amazon S3') },
 					{ value: 'r2', label: t('settings.storage_r2', 'Cloudflare R2') },
 					{ value: 'b2', label: t('settings.storage_b2', 'Backblaze B2') }
+				],
+				// ADR-134 — edge CDN provider select.
+				'integrations.cdn.provider': [
+					{ value: '', label: t('settings.cdn_none', 'None (disabled)') },
+					{ value: 'cloudflare', label: t('settings.cdn_cloudflare', 'Cloudflare') },
+					{ value: 'bunnycdn', label: t('settings.cdn_bunnycdn', 'BunnyCDN') }
 				]
 			};
 			return opts;

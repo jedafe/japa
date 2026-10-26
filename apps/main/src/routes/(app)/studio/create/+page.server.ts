@@ -101,6 +101,21 @@ export const load: PageServerLoad = async (event) => {
 	const initialSpaceId = requestedSpaceSlug
 		? (spaces.find((s) => s.slug === requestedSpaceSlug)?.id ?? null)
 		: null;
+
+	// §124 share_target — the manifest declares /create as the OS share target;
+	// shared title/text/url arrive as query params and prefill the composer.
+	// Text+url are joined into minimal escaped HTML for the editor. Lengths
+	// are capped so a crafted share can't dump a megabyte into the editor.
+	const sharedTitle = (event.url.searchParams.get('title') ?? '').trim().slice(0, 300) || null;
+	const sharedBody = (() => {
+		const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		const parts = [
+			(event.url.searchParams.get('text') ?? '').trim(),
+			(event.url.searchParams.get('url') ?? '').trim()
+		].filter(Boolean);
+		if (parts.length === 0) return null;
+		return `<p>${esc(parts.join('\n\n')).slice(0, 20000).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>')}</p>`;
+	})();
 	// Only load field groups that match the content types the /create composer
 	// actually supports. Job listing and forum fields have their own creation
 	// surfaces and should not show up here.
@@ -325,6 +340,8 @@ export const load: PageServerLoad = async (event) => {
 		draftSpaces,
 		initialType,
 		initialSpaceId,
+		initialTitle: sharedTitle,
+		initialBody: sharedBody,
 		loadError: typesRes.status === 'rejected'
 	};
 };

@@ -14,7 +14,10 @@
 
 	let { data } = $props();
 	const appeals = $derived<AppealListItem[]>(data.appeals);
-	const eligible = $derived<AppealEligibleItem[]>(data.eligible);
+	let submittedIds = $state(new Set<string>());
+	const eligible = $derived<AppealEligibleItem[]>(
+		(data.eligible as AppealEligibleItem[]).filter((i) => !submittedIds.has(i.entity_id))
+	);
 	const userStatus = $derived<string>(data.userStatus);
 	const restricted = $derived(userStatus !== 'active');
 	const pageNum = $derived(data.page);
@@ -58,7 +61,8 @@
 		ad_campaign: 'appeals.entity.ad_campaign',
 		content_review: 'appeals.entity.content_review',
 		community_org: 'appeals.entity.community_org',
-		community_org_claim: 'appeals.entity.community_org_claim'
+		community_org_claim: 'appeals.entity.community_org_claim',
+		verification_request: 'appeals.entity.verification_request'
 	};
 
 	function statusClass(status: AppealListItem['status']): string {
@@ -138,7 +142,9 @@
 						<AppealButton
 							entityType={item.entity_type}
 							entityId={item.entity_id}
+							subject={item.label}
 							class="shrink-0 !px-3 !py-1.5"
+							onSubmitted={() => submittedIds.add(item.entity_id)}
 						/>
 					</li>
 				{/each}

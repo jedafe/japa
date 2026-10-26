@@ -2476,6 +2476,15 @@ export interface FormField {
 	options: string[] | null;
 }
 
+/** A single step in a multi-step Form Builder form (§06). */
+export interface FormStep {
+	id: string;
+	title: string;
+	position: number;
+	field_group_id?: string | null;
+	fields: FormField[];
+}
+
 /** GET /forms/{slug}/embed — public form definition for embedded rendering. */
 export interface FormEmbed {
 	id: string;
@@ -2488,6 +2497,8 @@ export interface FormEmbed {
 	success_message?: string | null;
 	submission_fee_credits: number;
 	fields: FormField[];
+	/** Populated when is_multi_step — per-step field groups from the embed. */
+	steps?: FormStep[];
 }
 
 /** POST /forms/{id}/submissions — submission response. */

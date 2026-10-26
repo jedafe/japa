@@ -151,6 +151,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Every 15 min: check ticket SLA breaches.
 	schedule("*/15 * * * *", TypeMaintenanceCheckSLABreaches, 15*time.Minute)
 
+	// §06: hourly sweep — expire form submissions stuck at 'pending_payment'
+	// past forms.pending_payment_ttl_hours (abandoned hosted checkouts).
+	schedule("7 * * * *", TypeFormExpirePendingSubmissions, 1*time.Hour)
+
 	// Every 30 min: check expired bans and expired boosts.
 	schedule("*/30 * * * *", TypeMaintenanceCheckExpiredBans, 30*time.Minute)
 	schedule("*/30 * * * *", TypeMaintenanceCheckExpiredBoosts, 30*time.Minute)

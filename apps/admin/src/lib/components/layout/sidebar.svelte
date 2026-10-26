@@ -122,7 +122,7 @@
 			items: [
 				{ path: "/moderation", label: t("nav.moderation", "Queue"), icon: Shield, permission: "admin.moderation" },
 				{ path: "/moderation-queue", label: t("nav.moderation_queue", "Review Queue"), icon: AlertTriangle, permission: "admin.moderation" },
-				{ path: "/moderation/appeals", label: t("nav.moderation_appeals", "Appeals"), icon: MessageCircle, permission: "reports.review" },
+				{ path: "/moderation/appeals", label: t("nav.moderation_appeals", "Appeals"), icon: MessageCircle, permission: "moderation.appeal.review" },
 				{ path: "/moderation/reports", label: t("nav.moderation_reports", "Reports"), icon: FileText, permission: "reports.review" },
 				{ path: "/moderation/content", label: t("nav.moderation_content", "Content"), icon: FileText, permission: "moderation.content.review" },
 				{ path: "/moderation/alerts", label: t("nav.moderation_alerts", "Alerts"), icon: AlertTriangle, permission: "moderation.alerts.manage" },

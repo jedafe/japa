@@ -30,7 +30,9 @@ import (
 	"github.com/jedafe/japa/internal/rbac"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 )
@@ -212,6 +214,13 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get achievement")
 
 		return
+	}
+
+	// ADR-134: tag published public achievements so the configured edge CDN
+	// can invalidate them by tag (CF-Cache-Tag / CDN-Tag). ID is the
+	// contents row id — the same key purgeEdgeContent emits on mutation.
+	if achievement.Status == content.StatusPublished && achievement.Visibility == content.VisibilityPublic {
+		cdn.SetCacheTags(w, "content:"+achievement.ID, "type:achievement")
 	}
 
 	h.resolveLiterals(r, &achievement)

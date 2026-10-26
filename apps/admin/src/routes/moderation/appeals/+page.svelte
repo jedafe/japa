@@ -27,7 +27,7 @@
 		updated_at?: string;
 	};
 
-	const canReview = $derived(hasPermission('moderation.appeals.review'));
+	const canReview = $derived(hasPermission('moderation.appeal.review'));
 
 	// ── State-action confirmation modal (shared by uphold / overturn / dismiss) ──
 	let entityController = $state<EntityPageController | undefined>(undefined);

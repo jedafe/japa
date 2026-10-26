@@ -46,6 +46,9 @@ declare global {
 			 * X-CSRF-Token. Null for guests or when the backend is unreachable.
 			 */
 			csrfToken: string | null;
+			/** Public site settings (GET /site/settings/public, cached in hooks).
+			 *  Read by the dynamic /manifest.json endpoint (§124). */
+			siteSettings: Record<string, unknown>;
 			/**
 			 * Whether the left navigation rail is collapsed. Persisted via a
 			 * `jc_nav_collapsed` cookie (ADR-058). The backend /me/account endpoint

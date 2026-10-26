@@ -247,7 +247,7 @@
 		</div>
 	{/if}
 
-	<section>
+	<section class="mt-8">
 		<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('jce.compare.items_heading')}</h2>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each resolvedItems as item (item.id)}
@@ -273,7 +273,7 @@
 	</section>
 
 	{#if matrix.length > 0}
-		<section>
+		<section class="mt-8">
 			<div class="mb-3 flex flex-wrap items-center justify-end gap-3">
 				<div class="flex flex-wrap items-center gap-2">
 					{#if user && features['feature.jce.refresh']}

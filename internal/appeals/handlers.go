@@ -29,23 +29,36 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
 }
 
-func parsePageParams(r *http.Request) (page, limit int32) {
-	page = 1
+// maxBodyBytes bounds the appeal payload — the reason field caps at 4000
+// runes, so 64 KiB is generous headroom for the JSON envelope.
+const maxBodyBytes = 64 << 10
+
+func parsePageParams(r *http.Request) (limit, offset int32) {
 	limit = 20
 
-	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
+	// Convention params (page_size/page_offset) win; legacy page/limit
+	// spelling is still accepted for older clients.
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n) // #nosec
 		}
-	}
-
-	if v := r.URL.Query().Get("limit"); v != "" {
+	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
 		}
 	}
 
-	return page, limit
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = int32(n) // #nosec
+		}
+	} else if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 1 {
+			offset = (int32(n) - 1) * limit // #nosec
+		}
+	}
+
+	return limit, offset
 }
 
 // writeAppealError maps service sentinels to the standard error envelope.
@@ -84,7 +97,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		Reason     string `json:"reason"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes)).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
@@ -106,9 +119,9 @@ func (h *Handlers) HandleListMine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, limit := parsePageParams(r)
+	limit, offset := parsePageParams(r)
 
-	appeals, err := h.service.ListMine(r.Context(), user.UserID, limit, (page-1)*limit)
+	appeals, err := h.service.ListMine(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list appeals")
 		return
@@ -116,7 +129,7 @@ func (h *Handlers) HandleListMine(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": appeals,
-		"meta": map[string]any{"page": page, "limit": limit},
+		"meta": map[string]any{"page_size": limit, "page_offset": offset},
 	})
 }
 

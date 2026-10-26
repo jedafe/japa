@@ -67,6 +67,10 @@ const (
 	TypeScholarshipSyncFromGuide      = "scholarship:sync_from_guide"
 	TypeDocsGeneratePage              = "docs:generate_page"
 	TypeFormFireSubmissionTriggers    = "form:fire_submission_triggers"
+	// §06 Paid Form Submissions — expires submissions stuck at
+	// 'pending_payment' past forms.pending_payment_ttl_hours (abandoned
+	// checkouts), so they can never be consumed by a late business record.
+	TypeFormExpirePendingSubmissions = "form:expire_pending_submissions"
 	// §113 Public Product Roadmap (ADR-127) — notification fan-out when an
 	// item transitions to shipped; enqueued fire-and-forget by
 	// PATCH /admin/roadmap/items/{id}/status.
@@ -244,6 +248,7 @@ var handlerRegistry = []struct {
 	{TypeScholarshipSyncFromGuide, HandleScholarshipSyncFromGuide},
 	{TypeDocsGeneratePage, HandleDocsGeneratePage},
 	{TypeFormFireSubmissionTriggers, HandleFormFireSubmissionTriggers},
+	{TypeFormExpirePendingSubmissions, HandleFormExpirePendingSubmissions},
 	// §113 Public Product Roadmap (ADR-127)
 	{TypeRoadmapShipNotify, HandleRoadmapShipNotify},
 

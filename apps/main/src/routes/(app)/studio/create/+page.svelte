@@ -61,6 +61,8 @@
 		draftSpaces={data.draftSpaces}
 		initialType={data.initialType}
 		initialSpaceId={data.initialSpaceId}
+		initialTitle={data.initialTitle}
+		initialBody={data.initialBody}
 		user={data.user}
 		features={data.features ?? {}}
 		{defaultEditor}

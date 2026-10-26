@@ -82,7 +82,8 @@
 		i18n: '🌐',
 		gdpr: '📜',
 		search: '🔎',
-		affiliate: '🤝'
+		affiliate: '🤝',
+		pwa: '📱'
 	};
 
 	const CATEGORY_DESCRIPTIONS: Record<string, string> = {
@@ -108,7 +109,8 @@
 		gdpr: t('settings.cat_gdpr_desc', 'Data protection and deletion settings'),
 		search: t('settings.cat_search_desc', 'Search and autocomplete settings'),
 		affiliate: t('settings.cat_affiliate_desc', 'Affiliate program commission settings'),
-		docs: t('settings.cat_docs_desc', 'Docs portal links, pins, versions, and changelog')
+		docs: t('settings.cat_docs_desc', 'Docs portal links, pins, versions, and changelog'),
+		pwa: t('settings.cat_pwa_desc', 'Installable app (PWA): manifest, icons, offline, install prompt')
 	};
 
 	// Tab definitions derived from the loaded categories. The count badge shows

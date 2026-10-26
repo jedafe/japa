@@ -968,6 +968,26 @@ func (q *Queries) GetWithdrawalForAppeal(ctx context.Context, id pgtype.UUID) (G
 	return i, err
 }
 
+const hasPendingUserRestrictionAppeal = `-- name: HasPendingUserRestrictionAppeal :one
+SELECT EXISTS(
+  SELECT 1 FROM moderation_appeals
+  WHERE user_id = $1 AND status = 'pending'
+    AND entity_type = ANY($2::text[])
+ ) AS exists
+`
+
+type HasPendingUserRestrictionAppealParams struct {
+	UserID  pgtype.UUID `json:"user_id"`
+	Column2 []string    `json:"column_2"`
+}
+
+func (q *Queries) HasPendingUserRestrictionAppeal(ctx context.Context, arg HasPendingUserRestrictionAppealParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasPendingUserRestrictionAppeal, arg.UserID, arg.Column2)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const isSpaceOwnerMember = `-- name: IsSpaceOwnerMember :one
 SELECT EXISTS(
   SELECT 1 FROM space_members
@@ -2099,6 +2119,17 @@ func (q *Queries) ReopenAdCampaignOnAppeal(ctx context.Context, arg ReopenAdCamp
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const reopenAppealOnFailedOverturn = `-- name: ReopenAppealOnFailedOverturn :exec
+UPDATE moderation_appeals
+SET status = 'pending', reviewed_by = NULL, resolution_note = NULL, resolved_at = NULL, updated_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) ReopenAppealOnFailedOverturn(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, reopenAppealOnFailedOverturn, id)
+	return err
 }
 
 const reopenContentReportOnAppeal = `-- name: ReopenContentReportOnAppeal :execrows

@@ -75,6 +75,10 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// ADR-134: tag published public content so the configured edge CDN can
+	// invalidate it by tag (CF-Cache-Tag / CDN-Tag — see EmitEdgeCacheTags).
+	EmitEdgeCacheTags(w, content.ID, content.ContentType, content.Status, content.Visibility)
+
 	// Resolve template literals in the content title, body, and meta fields.
 	rc := buildRenderContext(r, "")
 	if err := h.Service.ResolveContentFields(r.Context(), &content, rc); err != nil {

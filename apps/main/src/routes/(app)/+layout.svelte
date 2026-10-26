@@ -24,6 +24,8 @@
 	import AdConversionTracker from '$lib/components/ads/AdConversionTracker.svelte';
 	import { lightbox } from '$lib/lightbox.svelte';
 	import { chatTemplateRail } from '$lib/ai/chatTemplateRail.svelte';
+	import { pwaInstall } from '$lib/pwa/install.svelte';
+	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
 	import { Sparkles } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { setAiPageContext } from '@japaconnect/ai-panel';
@@ -205,8 +207,15 @@
 		}
 	});
 
+	// §124 — capture beforeinstallprompt so the install banner / Devices row
+	// can trigger the native dialog. Gated by pwa.install_prompt_enabled.
+	const installPromptEnabled = $derived(
+		data.siteSettings?.['pwa.install_prompt_enabled'] !== false
+	);
+
 	onMount(() => {
 		ensureAiPanelDeps();
+		if (installPromptEnabled) pwaInstall.init();
 		if (data.user) realtime.connect();
 		// Register the PWA service worker so push subscriptions can be created.
 		// Ref: japaconnect-engineering/sections/35-notification-system.md
@@ -254,6 +263,30 @@
 	untrack(() => realtime.setUnreadCount(data.unreadNotifications));
 	$effect(() => {
 		realtime.setUnreadCount(data.unreadNotifications);
+	});
+
+	// §124 — inform the service worker of auth state so its navigation cache
+	// only ever stores guest pages (the worker defaults to authed=true and
+	// purges the page cache on the guest→authed transition).
+	$effect(() => {
+		navigator.serviceWorker?.controller?.postMessage({
+			type: 'jc:pwa-auth',
+			authed: !!data.user
+		});
+	});
+
+	// §124 — mirror the unread count onto the installed app icon badge
+	// (Chromium only; no-op elsewhere). Gated by pwa.badge_enabled.
+	$effect(() => {
+		const enabled = data.siteSettings?.['pwa.badge_enabled'] !== false;
+		const nav = navigator as Navigator & {
+			setAppBadge?: (n: number) => Promise<void>;
+			clearAppBadge?: () => Promise<void>;
+		};
+		if (!enabled || !pwaInstall.standalone || !nav.setAppBadge) return;
+		const count = data.unreadNotifications;
+		if (count > 0) void nav.setAppBadge(count).catch(() => {});
+		else void nav.clearAppBadge?.().catch(() => {});
 	});
 </script>
 
@@ -375,6 +408,12 @@
 		<!-- §09 Product Tour: steps come from onboarding.tour_steps (admin-managed) -->
 		<ProductTourComp replay={true} steps={data.tourSteps} />
 	{/if}
+{/if}
+
+{#if installPromptEnabled}
+	<!-- §124 install prompt — renders only when the browser can install
+	     (beforeinstallprompt fired or manual iOS flow) and not standalone. -->
+	<PwaInstallBanner />
 {/if}
 
 <!-- Shared fullscreen media viewer — any surface opens it via openLightbox() -->

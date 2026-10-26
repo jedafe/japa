@@ -92,6 +92,16 @@
 	$effect(() => {
 		realtime.setUnreadCount(data.unreadNotifications);
 	});
+
+	// §124 — inform the service worker of auth state so its navigation cache
+	// only ever stores guest pages (worker defaults to authed=true and purges
+	// the page cache on the guest→authed transition).
+	$effect(() => {
+		navigator.serviceWorker?.controller?.postMessage({
+			type: 'jc:pwa-auth',
+			authed: !!data.user
+		});
+	});
 </script>
 
 <div

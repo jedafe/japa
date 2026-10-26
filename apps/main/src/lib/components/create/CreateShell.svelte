@@ -83,6 +83,10 @@
 		/** Space ID resolved from ?space — used to preselect the space
 		 *  when creating new content. Ignored when restoring a draft. */
 		initialSpaceId?: string | null;
+		/** §124 share_target — title/text/url from an OS share (via /create)
+		 *  seed a fresh composer. Ignored when restoring a draft. */
+		initialTitle?: string | null;
+		initialBody?: string | null;
 		user: SessionUser | null;
 		defaultEditor?: EditorMode;
 		/** Visibility options from GET /content/visibility-options (Rule 16). */
@@ -95,7 +99,7 @@
 		assessmentDimensions: string[];
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], videoSource = null, initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], videoSource = null, initialType = null, initialSpaceId = null, initialTitle = null, initialBody = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -111,10 +115,13 @@
 			return types[0] ?? resolveType('blog_post');
 		})
 	);
-	let title = $state(untrack(() => draft?.title ?? ''));
-	let slug = $state(untrack(() => draft?.slug ?? ''));
+	let title = $state(untrack(() => draft?.title ?? initialTitle ?? ''));
+	// §124 — a shared title (initialTitle) never fires handleTitle, so the
+	// slug is seeded too; slugTouched stays false so later title edits still
+	// auto-derive it.
+	let slug = $state(untrack(() => draft?.slug ?? (initialTitle ? suggestSlug(initialTitle) : '')));
 	let slugTouched = $state(untrack(() => Boolean(draft?.slug)));
-	let bodyHtml = $state(untrack(() => draft?.body_html || draft?.body || ''));
+	let bodyHtml = $state(untrack(() => draft?.body_html || draft?.body || initialBody || ''));
 	let spaceIds = $state<string[]>(
 		untrack(() => {
 			if (draft?.id && draftSpaces.length > 0) {

@@ -1484,3 +1484,8 @@ FROM (
  WHERE reviewer_id = @user_id
  ORDER BY created_at DESC
 ) t;
+
+-- name: AnonymizeModerationAppeals :exec
+UPDATE moderation_appeals
+SET reason = '[erased]', resolution_note = NULL, updated_at = now()
+WHERE user_id = $1;

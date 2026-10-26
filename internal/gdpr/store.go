@@ -763,6 +763,16 @@ func (s *Store) anonymizeCouponEvents(ctx context.Context, userID pgtype.UUID) e
 	return nil
 }
 
+// anonymizeModerationAppeals scrubs the free-text reason (possible PII) from
+// the erased user's appeals; rows are kept so moderation records stay intact.
+func (s *Store) anonymizeModerationAppeals(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.AnonymizeModerationAppeals(ctx, userID); err != nil {
+		return fmt.Errorf("anonymizing moderation appeals: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Store) deleteUserTokens(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.DeleteUserTokens(ctx, userID); err != nil {
 		return fmt.Errorf("deleting user tokens: %w", err)

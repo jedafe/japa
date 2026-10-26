@@ -1299,6 +1299,10 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// ADR-134: tag published public content so the configured edge CDN can
+	// invalidate it by tag (CF-Cache-Tag / CDN-Tag — see EmitEdgeCacheTags).
+	EmitEdgeCacheTags(w, content.ID, content.ContentType, content.Status, content.Visibility)
+
 	// Resolve template literals in the content title, body, and meta fields.
 	// This is best-effort: failures are logged but do not fail the request.
 	rc := buildRenderContext(r, "")
@@ -3606,8 +3610,8 @@ func (h *Handlers) contentIndexable(ctx context.Context, c indexableContentInput
 	if h.settings != nil {
 		cfg.MinWords = h.settings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
 		cfg.BlogMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
-	cfg.StoryMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.story_min_words", cfg.StoryMinWords)
-	cfg.ListMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.list_min_words", cfg.ListMinWords)
+		cfg.StoryMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.story_min_words", cfg.StoryMinWords)
+		cfg.ListMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.list_min_words", cfg.ListMinWords)
 		cfg.ForumMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
 		cfg.DiscussionMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
 		cfg.GuideMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.guide_min_words", cfg.GuideMinWords)

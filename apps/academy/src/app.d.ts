@@ -28,6 +28,9 @@ declare global {
 			 * X-CSRF-Token. Null for guests or when the backend is unreachable.
 			 */
 			csrfToken: string | null;
+			/** Public site settings (GET /site/settings/public, cached in hooks).
+			 *  Read by the dynamic /manifest.json endpoint (§124). */
+			siteSettings: Record<string, unknown>;
 		}
 		interface PageData {
 			user: SessionUser | null;

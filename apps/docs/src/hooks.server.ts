@@ -243,9 +243,33 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
+	event.locals.siteSettings = settings;
+
+	// §124 — PWA head tags: theme-color (pwa.theme_color → appearance
+	// .primary_color) + iOS install meta. Admin-controlled name is
+	// attribute-escaped; colors are hex-whitelist-validated.
+	// Ref: .jeos/sections/124-progressive-web-app.md
+	const pwaThemeColor = (() => {
+		for (const v of [settings['pwa.theme_color'], settings['appearance.primary_color']]) {
+			if (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v.trim())) return v.trim();
+		}
+		return '#3b49df';
+	})();
+	const pwaAppName = `${String(settings['pwa.short_name'] || settings['pwa.name'] || settings['general.site_name'] || 'JapaConnect').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')} Docs`;
+	const pwaMeta = [
+		`<meta name="theme-color" content="${pwaThemeColor}" />`,
+		`<meta name="mobile-web-app-capable" content="yes" />`,
+		`<meta name="apple-mobile-web-app-capable" content="yes" />`,
+		`<meta name="apple-mobile-web-app-status-bar-style" content="default" />`,
+		`<meta name="apple-mobile-web-app-title" content="${pwaAppName}" />`,
+		`<meta name="application-name" content="${pwaAppName}" />`,
+		`<link rel="apple-touch-icon" href="/apple-touch-icon.png" />`
+	].join('');
+
 	const response = await resolve(event, {
 		transformPageChunk: ({ html }) =>
 			html
+				.replace('%jc.pwa-meta%', () => pwaMeta)
 				.replace('%jc.themevars%', () => buildThemeOverrides(settings))
 				.replace('%jc.theme%', () => event.locals.resolvedTheme)
 				.replace(

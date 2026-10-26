@@ -30,6 +30,7 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/jedafe/japa/internal/bots"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -145,6 +146,28 @@ func RegisterSiteName(name string) {
 // to enqueue follow-up tasks (e.g. payment webhook → affiliate commission).
 func RegisterTaskEnqueuer(e *Enqueuer) {
 	taskEnqueuer = e
+}
+
+// SubmissionLinkInput is the §06 paid-form-submission link intent carried in
+// payment metadata — it names the business record a paid submission should
+// be linked to once the payment webhook confirms it. The worker cannot
+// import internal/verification or internal/organizations (import cycle), so
+// the server bootstrap registers an adapter via RegisterSubmissionLinker.
+type SubmissionLinkInput struct {
+	Kind           string `json:"kind"` // "verification_request" | "org_claim"
+	EntityType     string `json:"entity_type"`
+	OrganizationID string `json:"organization_id"`
+	RequestedType  string `json:"requested_type"`
+}
+
+// submissionLinker creates the business record for a paid submission whose
+// payment carried a link intent (§07 verification requests, §07 ownership
+// claims). Registered at bootstrap; nil-safe.
+var submissionLinker func(ctx context.Context, requesterID, submissionID string, in SubmissionLinkInput) error
+
+// RegisterSubmissionLinker sets the paid-submission link adapter.
+func RegisterSubmissionLinker(fn func(ctx context.Context, requesterID, submissionID string, in SubmissionLinkInput) error) {
+	submissionLinker = fn
 }
 
 // RegisterRedis sets the Valkey/Redis client for worker handlers.
@@ -881,7 +904,11 @@ func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, p gen.
 		return
 	}
 
-	if submission.Status != "pending_payment" {
+	// 'expired' is also acceptable: the hourly TTL sweep can fire between a
+	// delayed webhook and the checkout — a payment that DID succeed must
+	// still deliver the submission it paid for (expiry only guards
+	// abandoned checkouts).
+	if submission.Status != "pending_payment" && submission.Status != "expired" {
 		return
 	}
 
@@ -892,6 +919,24 @@ func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, p gen.
 		slog.Error("task:payment:process_webhook: failed to update form submission status", "submission_id", submission.ID, "error", err)
 
 		return
+	}
+
+	// §06 link intent: a paid submission for a system form (verification
+	// request / ownership claim) carries the target record in the payment
+	// metadata so the record is created even when the submitter never
+	// returns from hosted checkout. Fire-and-forget — the adapter applies
+	// the same eligibility checks as the public POST route, and failures
+	// are logged, not retried here (the submission stays consumable).
+	if submissionLinker != nil && submission.UserID.Valid && len(p.Metadata) > 0 {
+		var meta struct {
+			Link *SubmissionLinkInput `json:"link"`
+		}
+		if json.Unmarshal(p.Metadata, &meta) == nil && meta.Link != nil && meta.Link.Kind != "" {
+			if err := submissionLinker(ctx, pgUUIDString(submission.UserID), submission.ID.String(), *meta.Link); err != nil {
+				slog.Error("task:payment:process_webhook: submission link failed",
+					"submission_id", submission.ID, "kind", meta.Link.Kind, "error", err)
+			}
+		}
 	}
 
 	if taskEnqueuer == nil {
@@ -917,6 +962,50 @@ func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, p gen.
 	if err := taskEnqueuer.Enqueue(TypeFormFireSubmissionTriggers, triggerPayload); err != nil {
 		slog.Error("task:payment:process_webhook: failed to enqueue form triggers", "submission_id", submission.ID, "error", err)
 	}
+}
+
+// HandleFormExpirePendingSubmissions is the §06 paid-form-submission TTL
+// sweep (hourly, low tier): marks submissions still 'pending_payment' past
+// forms.pending_payment_ttl_hours as 'expired' so an abandoned hosted
+// checkout can never be consumed by a later business record (verification
+// request, ownership claim). The linked payment row stays 'pending' for
+// reconciliation — only the submission's consumable status changes.
+func HandleFormExpirePendingSubmissions(ctx context.Context, _ *asynq.Task) error {
+	if dbPool == nil {
+		slog.Warn("task:form:expire_pending_submissions: no database, skipping")
+		return nil
+	}
+
+	// TTL is admin-configurable via system_settings
+	// 'forms.pending_payment_ttl_hours' (default 72h).
+	ttlHours := 72
+
+	var raw string
+
+	if err := dbPool.Reader.QueryRow(ctx,
+		`SELECT value::text FROM system_settings WHERE key = $1`,
+		"forms.pending_payment_ttl_hours").Scan(&raw); err == nil {
+		raw = strings.Trim(raw, `"`)
+
+		if n, cerr := strconv.Atoi(raw); cerr == nil && n > 0 {
+			ttlHours = n
+		}
+	}
+
+	res, err := dbPool.Writer.Exec(ctx,
+		`UPDATE form_submissions SET status = 'expired'
+		 WHERE status = 'pending_payment'
+		   AND created_at < now() - make_interval(hours => $1)`, ttlHours)
+	if err != nil {
+		slog.Error("task:form:expire_pending_submissions: sweep failed", "error", err)
+		return err
+	}
+
+	if n := res.RowsAffected(); n > 0 {
+		slog.Info("task:form:expire_pending_submissions: expired submissions", "count", n, "ttl_hours", ttlHours)
+	}
+
+	return nil
 }
 
 // reversePaymentSideEffects reverses the side effects of a payment based on
@@ -1956,6 +2045,11 @@ func scheduleScheduledPublishFanOut(ctx context.Context, contentID pgtype.UUID, 
 	if len(spaceIDs) == 0 && published.SpaceID.Valid {
 		spaceIDs = append(spaceIDs, published.SpaceID)
 	}
+
+	// ADR-134: the scheduled publish path bypasses content.Service (it uses
+	// PublishScheduledContent's conditional UPDATE), so the edge purge must
+	// fire here or the detail page stays stale at the CDN until TTL.
+	cdn.PurgeContentDetail(ctx, contentIDStr, published.ContentType, published.Slug)
 
 	// 3. Enqueue a "space" task and a "bubble" task per assigned space.
 	for _, sid := range spaceIDs {

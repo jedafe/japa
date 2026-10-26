@@ -1415,6 +1415,10 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ADR-134: tag published public posts so the configured edge CDN can
+	// invalidate them by tag (CF-Cache-Tag / CDN-Tag).
+	content.EmitEdgeCacheTags(w, post.ID, post.ContentType, post.Status, post.Visibility)
+
 	// Resolve template literals ({{...}}) in title/body/meta fields — the blog
 	// detail path bypasses the content handlers, so it must resolve here.
 	// Best-effort: failures are logged but do not fail the request.

@@ -176,16 +176,26 @@ var settingsCatalog = map[string]settingMeta{
 	// JC_S3_* env vars; otherwise the env-based client is retained. The
 	// effective bucket also determines the StorageBucket recorded on media
 	// rows and the bucket in generated serve/imgproxy URLs.
-	"media.storage.provider":       {Type: "string", DefaultValue: "seaweedfs", Description: "Storage backend provider (env-only: JC_S3_ENDPOINT).", Options: `[{"value":"seaweedfs","label":"SeaweedFS"},{"value":"s3","label":"Amazon S3"},{"value":"r2","label":"Cloudflare R2"},{"value":"b2","label":"Backblaze B2"}]`, Panel: "control"},
-	"media.storage.endpoint":       {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL (env-only: JC_S3_ENDPOINT).", Panel: "control"},
-	"media.storage.bucket":         {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name (env-only: JC_S3_BUCKET).", Panel: "control"},
-	"media.storage.region":         {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (env-only: JC_S3_REGION; SeaweedFS ignores this).", Panel: "control"},
-	"media.storage.access_key":     {Type: "string", DefaultValue: "", Description: "S3 access key (env-only: JC_S3_ACCESS_KEY).", Sensitive: true, Panel: "control"},
-	"media.storage.secret_key":     {Type: "string", DefaultValue: "", Description: "S3 secret key (env-only: JC_S3_SECRET_KEY).", Sensitive: true, Panel: "control"},
-	"media.cdn.base_url":           {Type: "string", DefaultValue: "", Description: "CDN base URL (empty = use imgproxy directly).", Panel: "control"},
+	"media.storage.provider":   {Type: "string", DefaultValue: "seaweedfs", Description: "Storage backend provider (env-only: JC_S3_ENDPOINT).", Options: `[{"value":"seaweedfs","label":"SeaweedFS"},{"value":"s3","label":"Amazon S3"},{"value":"r2","label":"Cloudflare R2"},{"value":"b2","label":"Backblaze B2"}]`, Panel: "control"},
+	"media.storage.endpoint":   {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL (env-only: JC_S3_ENDPOINT).", Panel: "control"},
+	"media.storage.bucket":     {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name (env-only: JC_S3_BUCKET).", Panel: "control"},
+	"media.storage.region":     {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (env-only: JC_S3_REGION; SeaweedFS ignores this).", Panel: "control"},
+	"media.storage.access_key": {Type: "string", DefaultValue: "", Description: "S3 access key (env-only: JC_S3_ACCESS_KEY).", Sensitive: true, Panel: "control"},
+	"media.storage.secret_key": {Type: "string", DefaultValue: "", Description: "S3 secret key (env-only: JC_S3_SECRET_KEY).", Sensitive: true, Panel: "control"},
+	"media.cdn.base_url":       {Type: "string", DefaultValue: "", Description: "CDN base URL (empty = use imgproxy directly).", Panel: "control"},
+
 	"media.max_upload_mb":          {Type: "int", DefaultValue: "50", Description: "Max file size in MB.", Panel: "admin"},
 	"media.allowed_video_types":    {Type: "csv", DefaultValue: "mp4,webm,mov", Description: "Allowed video MIME extensions.", Panel: "admin"},
 	"media.deleted_retention_days": {Type: "int", DefaultValue: "30", Description: "Days a soft-deleted media row and its storage object are retained before the media:cleanup_deleted sweep purges them.", Panel: "control"},
+
+	// Edge CDN (ADR-134) — provider-pluggable edge cache: publish-time purge,
+	// provider country headers for geoip fallback, and cache-tag emission.
+	// All keys hot-reload via system_settings; empty provider disables everything.
+	"integrations.cdn.provider":          {Type: "string", DefaultValue: "", Description: "Edge CDN provider fronting the site (empty = disabled). Enables publish-time cache purge, CDN country headers, and cache-tag emission.", Options: `[{"value":"","label":"None"},{"value":"cloudflare","label":"Cloudflare"},{"value":"bunnycdn","label":"BunnyCDN"}]`, Panel: "control"},
+	"integrations.cloudflare.zone_id":    {Type: "string", DefaultValue: "", Description: "Cloudflare zone ID for the site domain.", Panel: "control"},
+	"integrations.cloudflare.api_token":  {Type: "string", DefaultValue: "", Description: "Cloudflare API token with Cache Purge permission.", Sensitive: true, Panel: "control"},
+	"integrations.bunnycdn.pull_zone_id": {Type: "string", DefaultValue: "", Description: "BunnyCDN pull zone ID.", Panel: "control"},
+	"integrations.bunnycdn.api_key":      {Type: "string", DefaultValue: "", Description: "BunnyCDN API access key.", Sensitive: true, Panel: "control"},
 	// Notifications
 	"notifications.max_delivery_attempts": {Type: "int", DefaultValue: "5", Description: "Max retry attempts for notification delivery.", Panel: "admin"},
 	"notifications.batch_window_minutes":  {Type: "int", DefaultValue: "5", Description: "Notification dedup batch window.", Panel: "admin"},
@@ -344,6 +354,27 @@ var settingsCatalog = map[string]settingMeta{
 	"appearance.heading_weight_tablet":     {Type: "string", DefaultValue: "inherit", Description: "Heading weight at ≤1024px; inherit = use heading_weight.", Options: `[{"value":"inherit","label":"Inherit"},{"value":"500","label":"Medium (500)"},{"value":"600","label":"Semibold (600)"},{"value":"700","label":"Bold (700)"},{"value":"800","label":"Extrabold (800)"},{"value":"900","label":"Black (900)"}]`, Public: true, Panel: "admin"},
 	"appearance.heading_weight_mobile":     {Type: "string", DefaultValue: "inherit", Description: "Heading weight at ≤640px; inherit = use heading_weight.", Options: `[{"value":"inherit","label":"Inherit"},{"value":"500","label":"Medium (500)"},{"value":"600","label":"Semibold (600)"},{"value":"700","label":"Bold (700)"},{"value":"800","label":"Extrabold (800)"},{"value":"900","label":"Black (900)"}]`, Public: true, Panel: "admin"},
 	"appearance.border_radius":             {Type: "string", DefaultValue: "8", Description: "Corner radius in px mapped to --radius (--radius-card derives as radius+4).", Options: `[{"value":"0","label":"0 (square)"},{"value":"4","label":"4px"},{"value":"8","label":"8px"},{"value":"12","label":"12px"},{"value":"16","label":"16px"}]`, Public: true, Panel: "admin"},
+	// Progressive Web App (§124) — all Public so each app's dynamic
+	// /manifest.json endpoint, service worker, and install UX read them via
+	// GET /site/settings/public.
+	"pwa.name":                   {Type: "string", DefaultValue: "", Description: "Installed app name; empty = general.site_name (per-app suffix on academy/docs).", Public: true, Panel: "admin"},
+	"pwa.short_name":             {Type: "string", DefaultValue: "", Description: "Launcher short name; empty = pwa.name fallback chain.", Public: true, Panel: "admin"},
+	"pwa.description":            {Type: "string", DefaultValue: "", Description: "Manifest description; empty = general.site_description.", Public: true, Panel: "admin"},
+	"pwa.theme_color":            {Type: "string", DefaultValue: "", Description: "Manifest theme_color + theme-color meta; empty = appearance.primary_color.", Public: true, Panel: "admin"},
+	"pwa.background_color":       {Type: "string", DefaultValue: "#ffffff", Description: "Manifest background_color (splash/launch screen).", Public: true, Panel: "admin"},
+	"pwa.display":                {Type: "string", DefaultValue: "standalone", Description: "Manifest display mode.", Options: `[{"value":"standalone","label":"Standalone"},{"value":"minimal-ui","label":"Minimal UI"},{"value":"browser","label":"Browser"}]`, Public: true, Panel: "admin"},
+	"pwa.start_url":              {Type: "string", DefaultValue: "/", Description: "Manifest start_url for the main app (docs overrides to /docs).", Public: true, Panel: "admin"},
+	"pwa.icon_192":               {Type: "string", DefaultValue: "", Description: "Media URL for the 192px manifest icon; empty = bundled /icon-192.png.", Public: true, Panel: "admin"},
+	"pwa.icon_512":               {Type: "string", DefaultValue: "", Description: "Media URL for the 512px manifest icon; empty = bundled /favicon.png.", Public: true, Panel: "admin"},
+	"pwa.maskable_icon":          {Type: "string", DefaultValue: "", Description: "Media URL for the maskable (purpose:maskable) icon; empty = bundled /icon-maskable-512.png.", Public: true, Panel: "admin"},
+	"pwa.shortcuts":              {Type: "json", DefaultValue: "[]", Description: "Manifest shortcut list [{name, url, icons?}] for the main app manifest.", Public: true, Panel: "admin"},
+	"pwa.screenshots":            {Type: "json", DefaultValue: "[]", Description: "Manifest screenshots [{src, sizes, type, label?}] for richer install UI.", Public: true, Panel: "admin"},
+	"pwa.categories":             {Type: "csv", DefaultValue: "social", Description: "Manifest categories.", Public: true, Panel: "admin"},
+	"pwa.offline_enabled":        {Type: "bool", DefaultValue: "true", Description: "Service-worker precache/runtime caching + offline fallback page.", Public: true, Panel: "admin"},
+	"pwa.install_prompt_enabled": {Type: "bool", DefaultValue: "true", Description: "Show install banner + Devices install row when beforeinstallprompt fires.", Public: true, Panel: "admin"},
+	"pwa.badge_enabled":          {Type: "bool", DefaultValue: "true", Description: "Mirror unread notification count to navigator.setAppBadge in standalone mode.", Public: true, Panel: "admin"},
+	"pwa.share_target_enabled":   {Type: "bool", DefaultValue: "false", Description: "Declare share_target in the main manifest — prefills /studio/create from shared title/text/url.", Public: true, Panel: "admin"},
+
 	// Documentation portal (docs app) — public so docs.japa.to renders
 	// its header chrome, sidebar sections, and landing cards from settings.
 	"docs.pinned_pages":       {Type: "json", DefaultValue: "[]", Description: "Get Started pinned pages for the docs portal: [{audience, slug, label?}]. Label falls back to the page title; unresolvable pins are skipped.", Public: true, Panel: "admin"},
@@ -650,8 +681,8 @@ var settingsCatalog = map[string]settingMeta{
 	"attestation_guide.hague_members":    {Type: "json", DefaultValue: "[]", Description: "JSON array of destination space IDs that are Hague Convention members (§97).", Panel: "control"},
 
 	// Claim Ownership (§07)
-	"claim_ownership.form_slug":   {Type: "string", DefaultValue: "claim-ownership", Description: "Slug of the Form Builder form used for ownership claims (§07).", Panel: "control"},
-	"verification.form_slug":      {Type: "string", DefaultValue: "verification-request", Description: "Slug of the Form Builder form used for verification badge requests (§07).", Panel: "control"},
+	"claim_ownership.form_slug":   {Type: "string", DefaultValue: "claim-ownership", Description: "Slug of the Form Builder form used for ownership claims (§07).", Panel: "control", Public: true},
+	"verification.form_slug":      {Type: "string", DefaultValue: "verification-request", Description: "Slug of the Form Builder form used for verification badge requests (§07).", Panel: "control", Public: true},
 	"verification.fee_credits":    {Type: "number", DefaultValue: "0", Description: "Optional submission fee (credits) charged on verification requests via the Form Builder (§07).", Panel: "control"},
 	"claim_ownership.fee_credits": {Type: "int", DefaultValue: "0", Min: 0, Description: "Override fee for claim submissions in credits; 0 = use form's submission_fee_credits (§07).", Panel: "control"},
 

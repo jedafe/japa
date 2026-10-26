@@ -112,6 +112,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.locals.locale = enabledLanguages.includes(defaultLang) ? defaultLang : 'en';
 	}
 	event.locals.user = null;
+	event.locals.siteSettings = siteSettings;
 
 	// Resolve the session. The app is public: an absent or invalid token
 	// simply means "guest" — never a redirect to login. Enrollment and progress
@@ -155,12 +156,33 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
+	// §124 — PWA head tags: theme-color (pwa.theme_color → appearance
+	// .primary_color) + iOS install meta. Admin-controlled name is
+	// attribute-escaped; colors are hex-whitelist-validated.
+	// Ref: .jeos/sections/124-progressive-web-app.md
+	const pwaThemeColor = (() => {
+		for (const v of [siteSettings['pwa.theme_color'], siteSettings['appearance.primary_color']]) {
+			if (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v.trim())) return v.trim();
+		}
+		return '#3b49df';
+	})();
+	const pwaAppName = `${String(siteSettings['pwa.short_name'] || siteSettings['pwa.name'] || siteSettings['general.site_name'] || 'JapaConnect').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')} Academy`;
+	const pwaMeta = [
+		`<meta name="theme-color" content="${pwaThemeColor}" />`,
+		`<meta name="mobile-web-app-capable" content="yes" />`,
+		`<meta name="apple-mobile-web-app-capable" content="yes" />`,
+		`<meta name="apple-mobile-web-app-status-bar-style" content="default" />`,
+		`<meta name="apple-mobile-web-app-title" content="${pwaAppName}" />`,
+		`<meta name="application-name" content="${pwaAppName}" />`,
+		`<link rel="apple-touch-icon" href="/apple-touch-icon.png" />`
+	].join('');
+
 	const response = await resolve(event, {
 		transformPageChunk: ({ html }) =>
 			html
+				.replace('%jc.pwa-meta%', () => pwaMeta)
 				.replace('%jc.themevars%', () => buildThemeOverrides(siteSettings))
 				.replace('%jc.theme%', () => event.locals.resolvedTheme)
-				.replace('%jc.theme-color%', () => event.locals.resolvedTheme === 'dark' ? '#0a0a0a' : '#3b49df')
 				.replace(
 					'lang="en"',
 					() => `lang="${event.locals.locale}" dir="${isRtl(event.locals.locale ?? '') ? 'rtl' : 'ltr'}"`
