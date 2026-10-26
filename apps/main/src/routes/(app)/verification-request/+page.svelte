@@ -4,7 +4,6 @@
 	// plus a suggested badge-type select fed by GET /verification-requests/types.
 	// Flow: submit form → POST /forms/{id}/submissions → POST /verification-requests.
 	import { t } from '$lib/i18n';
-	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { BadgeCheck, Loader2, Send, CreditCard, Wallet, FileCheck, Trash2, Upload } from 'lucide-svelte';
