@@ -90,7 +90,7 @@ export async function uploadMediaImage(
 
 	return asset?.url
 		? asset
-		: { id: init.data.media_id, url: `/api/v1/media/serve/media/${init.data.storage_path}`, filename: file.name, mime_type: file.type };
+		: { id: init.data.media_id, url: buildApiUrl(`/media/serve/media/${init.data.storage_path}`, API_BASE), filename: file.name, mime_type: file.type };
 }
 
 /** Stock photo providers (Unsplash/Pexels et al.) — Stock tab of the picker. */

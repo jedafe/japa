@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { CardGridProps } from '../types';
-  import type { Component } from 'svelte';
-  import * as LucideIcons from 'lucide-svelte';
+  import LazyIcon from '../lib/LazyIcon.svelte';
 
   interface Props {
     props: CardGridProps;
@@ -39,13 +38,7 @@
   });
 
   // Resolve Lucide icon by name.
-  function getIcon(name?: string): Component | null {
-    if (!name) return null;
-    const found = (LucideIcons as Record<string, unknown>)[name];
-    return (found as Component) ?? null;
-  }
 
-  const ArrowRight = $derived((LucideIcons as Record<string, unknown>)['ArrowRight'] as Component | undefined);
 </script>
 
 <svelte:head>
@@ -61,7 +54,6 @@
         style="grid-template-columns: repeat({desktopCols}, minmax(0, 1fr))"
       >
         {#each props.cards as card, i (card.title)}
-          {@const Icon = getIcon(card.icon)}
           {@const waveColor = card.icon_background_color ?? 'var(--color-primary)'}
           <a
             href={card.cta?.href ?? '#'}
@@ -69,12 +61,12 @@
             style="--wave-color: {waveColor};"
           >
             <div class="p-6">
-              {#if Icon}
+              {#if card.icon}
                 <div
                   class="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full shadow-sm"
                   style="background-color: {card.icon_background_color ?? 'var(--color-primary)'}; color: {card.icon_color ?? 'white'}"
                 >
-                  <Icon size={24} />
+                  <LazyIcon name={card.icon} size={24} />
                 </div>
               {/if}
               {#if card.title}
@@ -140,11 +132,7 @@
                     style="color: var(--wave-color)"
                   >
                     {card.cta.label}
-                    {#if ArrowRight}
-                      <ArrowRight class="rtl:-scale-x-100" size={14} />
-                    {:else}
-                      <span aria-hidden="true">&#8594;</span>
-                    {/if}
+                    <LazyIcon name="ArrowRight" size={14} class="rtl:-scale-x-100" />
                   </span>
                 {/if}
               </div>
@@ -168,12 +156,9 @@
               <img src={card.media.url} alt={card.media.alt} class="mb-4 w-full rounded-[var(--radius)] object-cover" loading="lazy" />
             {/if}
             {#if card.icon}
-              {@const Icon = getIcon(card.icon)}
-              {#if Icon}
-                <div class="mb-4 inline-flex rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3 text-[var(--color-primary)]">
-                  <Icon size={24} />
-                </div>
-              {/if}
+              <div class="mb-4 inline-flex rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3 text-[var(--color-primary)]">
+                <LazyIcon name={card.icon} size={24} />
+              </div>
             {/if}
             {#if card.stat_value}
               <p class="text-3xl font-bold text-[var(--color-text)]">{card.stat_value}</p>

@@ -6,6 +6,7 @@
   import type { ExploreMapStatsProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getExploreMapCtx, exploreMapChildVisible } from './context.svelte';
+  import LazyIcon from '../../lib/LazyIcon.svelte';
 
   interface Props {
     props: ExploreMapStatsProps;
@@ -26,10 +27,10 @@
     <h3 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Quick stats</h3>
     <ul class="space-y-3">
       {#each ctx.P.stats ?? [] as stat (stat.label)}
-        {@const Icon = ctx.iconFor(stat.icon)}
+        
         <li class="flex items-center gap-2.5">
           <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-            {#if Icon}<Icon size={15} />{/if}
+            <LazyIcon name={stat.icon} size={15} />
           </span>
           <span class="min-w-0">
             <span class="block text-sm font-bold leading-tight text-[var(--color-text)]">{ctx.statValue(stat.source, stat.value, stat.suffix)}</span>

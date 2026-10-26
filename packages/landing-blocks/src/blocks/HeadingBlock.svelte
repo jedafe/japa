@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { HeadingProps } from '../types';
-  import * as LucideIcons from 'lucide-svelte';
-  import type { Component } from 'svelte';
+  import LazyIcon from '../lib/LazyIcon.svelte';
 
   interface Props {
     props: HeadingProps;
@@ -33,12 +32,6 @@
     'full': 'max-w-full',
   };
 
-  function getIcon(name: string): Component | null {
-    const found = (LucideIcons as Record<string, unknown>)[name];
-    return (found as Component) ?? null;
-  }
-
-  const Icon = $derived(props.icon ? getIcon(props.icon) : null);
   const level = $derived(props.level ?? 'h2');
   const headingStyle = $derived(
     (props.accent === 'underline' && props.accent_color ? `border-color: ${props.accent_color};` : '') +
@@ -52,10 +45,10 @@
 <section class="px-6 py-12">
   <div class="mx-auto max-w-6xl flex flex-col {alignClass[props.align ?? 'left'] ?? 'text-start items-start'}">
     <div class="{maxWidthClass[props.max_width ?? 'xl'] ?? 'max-w-4xl'} w-full">
-      {#if props.eyebrow || Icon}
+      {#if props.eyebrow || props.icon}
         <div class="mb-3 flex items-center gap-2 {props.align === 'center' ? 'justify-center' : ''}">
-          {#if Icon}
-            <Icon size={16} class="text-[var(--color-primary)]" />
+          {#if props.icon}
+            <LazyIcon name={props.icon} size={16} class="text-[var(--color-primary)]" />
           {/if}
           {#if props.eyebrow}
             <span class="text-sm font-semibold uppercase tracking-wider text-[var(--color-primary)]">

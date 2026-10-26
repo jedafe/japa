@@ -34,7 +34,19 @@ func (a *ProcessorAdapter) ProcessImage(ctx context.Context, mediaID, operation 
 			return fmt.Errorf("invalid media_id %q: %w", mediaID, err)
 		}
 
-		return a.svc.OptimizeMedia(ctx, id)
+		if err := a.svc.OptimizeMedia(ctx, id); err != nil {
+			return err
+		}
+		// Durable warm: the upload-path warm in ConfirmUpload is a
+		// fire-and-forget goroutine lost on restart — redoing it inside the
+		// Asynq task gets retries for free. Best-effort: failures log, not
+		// fail the task.
+		if m, err := a.svc.GetMedia(ctx, id); err == nil {
+			WarmImageDerivatives(m.StorageBucket, m.StoragePath)
+		} else {
+			slog.Debug("media:process_image: warm skipped, media lookup failed", "media_id", mediaID, "error", err)
+		}
+		return nil
 	}
 
 	opts := ImageProxyOpts{}

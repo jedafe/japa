@@ -1,10 +1,17 @@
 import { api } from '$lib/api/client';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 import type {
 	MediaPickerItem,
 	StockApi,
 	StockProvider,
 	StockSearchResult
 } from '@japaconnect/ui';
+
+// Serve URLs must be anchored on the API origin — the academy's own host
+// only proxies /api in dev (vite) and prod (nginx), not on staging's
+// per-app subdomains.
+const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
 /**
  * Two-step presigned-URL media upload (§34) — ported from the main app's
@@ -131,7 +138,7 @@ export async function uploadMediaImage(
 	if (asset.data?.url) return asset.data;
 	return {
 		id: init.data.media_id,
-		url: `/api/v1/media/serve/media/${init.data.storage_path}`,
+		url: buildApiUrl(`/media/serve/media/${init.data.storage_path}`, API_BASE),
 		filename: file.name,
 		mime_type: file.type
 	};

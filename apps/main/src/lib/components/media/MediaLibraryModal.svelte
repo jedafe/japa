@@ -12,6 +12,8 @@
 		confirmMedia
 	} from '$lib/api/create';
 	import { listStockProviders, searchStock, importStockPhoto } from '$lib/api/stock';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 	import type { MediaAsset } from '$lib/types';
 
 	interface Props {
@@ -57,7 +59,7 @@
 		// so construct the URL from the storage_path returned by initiateUpload.
 		return {
 			id: init.data.media_id,
-			url: `/api/v1/media/serve/media/${init.data.storage_path}`,
+			url: buildApiUrl(`/media/serve/media/${init.data.storage_path}`, PUBLIC_JC_API_URL ?? ''),
 			filename: file.name,
 			mime_type: file.type,
 			file_size: file.size,

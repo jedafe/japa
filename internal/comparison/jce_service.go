@@ -147,13 +147,6 @@ func (s *Service) createJCEContentAndMetadata(
 		status = content.StatusDraft
 	}
 
-	// feature.jce.ai_quick (§30): quick-compare drafts are the AI-generated
-	// surface; the flag gates creation of depth=quick comparisons.
-	if depth == DepthQuick && !s.flagOn(ctx, "feature.jce.ai_quick") {
-		return gen.CreateContentRow{}, gen.ComparisonContentMetadatum{},
-			fmt.Errorf("%w: AI quick comparisons are disabled", errpkg.ErrInvalid)
-	}
-
 	if depth == DepthQuick {
 		visibility = content.VisibilityPrivate
 		status = content.StatusDraft

@@ -81,6 +81,17 @@
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.
 	const canonical = $derived(`${page.url.origin}/blog/${article.slug}`);
+	// The featured image is the LCP element on most posts — preconnect its
+	// (usually cross-origin) host and preload it so discovery isn't blocked
+	// behind stylesheet fetches. Guarded because URL parsing can throw on
+	// relative/empty URLs.
+	const featuredImageOrigin = $derived.by(() => {
+		try {
+			return article.featured_image_url ? new URL(article.featured_image_url).origin : '';
+		} catch {
+			return '';
+		}
+	});
 	const allowedIframeHosts = $derived(
 		(data.siteSettings?.['content.sanitization.allowed_iframe_hosts'] as string | undefined) ?? undefined
 	);
@@ -127,7 +138,11 @@
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
-	{#if article.featured_image_url}<meta property="og:image" content={article.featured_image_url} />{/if}
+	{#if article.featured_image_url}
+		<meta property="og:image" content={article.featured_image_url} />
+		{#if featuredImageOrigin && featuredImageOrigin !== page.url.origin}<link rel="preconnect" href={featuredImageOrigin} crossorigin="anonymous" />{/if}
+		<link rel="preload" as="image" href={article.featured_image_url} fetchpriority="high" />
+	{/if}
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={article.title} />
 	<meta name="twitter:description" content={description} />
@@ -228,7 +243,7 @@
 		{/if}
 
 		{#if article.featured_image_url}
-			<img src={article.featured_image_url} alt={article.title} class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
+			<img src={article.featured_image_url} alt={article.title} fetchpriority="high" class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
 		{/if}
 
 		<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-heading, var(--font-serif));">{article.title}</h1>
@@ -353,7 +368,7 @@
 							class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/30"
 						>
 							{#if rel.featured_image_url}
-								<img src={rel.featured_image_url} alt="" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
+								<img src={rel.featured_image_url} alt="" loading="lazy" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
 							{/if}
 							<h3 class="line-clamp-2 font-medium text-[var(--color-text)]">{rel.title}</h3>
 							{#if rel.author_name}

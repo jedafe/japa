@@ -1,9 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Component } from 'svelte';
   import type { HeroProps } from '../types';
   import GuestHeroIllustration from './GuestHeroIllustration.svelte';
-  import * as LucideIcons from 'lucide-svelte';
+  import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
   interface Props {
     props: HeroProps;
@@ -52,8 +51,7 @@
     return () => clearInterval(id);
   });
 
-  const ChevronLeft = (LucideIcons as Record<string, unknown>)['ChevronLeft'] as Component | undefined;
-  const ChevronRight = (LucideIcons as Record<string, unknown>)['ChevronRight'] as Component | undefined;
+
 </script>
 
 {#if layout === 'split'}

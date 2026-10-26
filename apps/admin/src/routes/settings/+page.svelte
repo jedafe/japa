@@ -11,6 +11,8 @@
 	import { RefreshCw, Save, Check, Upload, RotateCcw, ListRestart, Undo2, AlertTriangle, ArrowRight, Image as ImageIcon } from 'lucide-svelte';
 	import { Switch } from "bits-ui";
 	import { settingsAdminApi, api } from '$lib/api';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 	import { getAccessToken } from '$lib/api/token';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import AuthBrandSlidesEditor from '$lib/components/settings/AuthBrandSlidesEditor.svelte';
@@ -521,7 +523,7 @@
 				uploadError = t('settings.upload_initiate_failed', 'Failed to initiate upload');
 				return;
 			}
-			const { media_id, presigned_url } = initiateRes.data;
+			const { media_id, storage_path, presigned_url } = initiateRes.data;
 			const putRes = await fetch(presigned_url, {
 				method: 'PUT',
 				headers: {
@@ -539,7 +541,9 @@
 				uploadError = confirmRes.error || t('settings.upload_confirm_failed', 'Failed to confirm upload');
 				return;
 			}
-			updateSettingValue(catKey, settingKey, `/api/v1/media/${media_id}`);
+			// Store the public serve path — /api/v1/media/{id} is an
+			// auth-gated JSON endpoint, not a loadable image URL.
+			updateSettingValue(catKey, settingKey, `/api/v1/media/serve/media/${storage_path}`);
 		} catch (e) {
 			uploadError = e instanceof Error ? e.message : t('settings.upload_error', 'Upload failed');
 		} finally {
@@ -558,9 +562,22 @@
 
 	function handleMediaSelect(media: { id: string; url: string; filename: string }) {
 		if (mediaPickerTarget) {
-			updateSettingValue(mediaPickerTarget.catKey, mediaPickerTarget.settingKey, media.url);
+			// Store the portable relative serve path — the picker returns an
+			// API-anchored absolute URL; persisting the absolute form would
+			// bake this environment's API host into a sitewide setting.
+			const serveIdx = media.url.indexOf('/api/v1/media/serve/');
+			const value = serveIdx >= 0 ? media.url.slice(serveIdx) : media.url;
+			updateSettingValue(mediaPickerTarget.catKey, mediaPickerTarget.settingKey, value);
 		}
 		mediaPickerTarget = null;
+	}
+
+	// Relative /api/v1/... setting values only resolve on hosts that proxy
+	// /api (prod nginx). On staging's admin subdomain the API lives at
+	// PUBLIC_JC_API_URL — anchor the preview the same way apiFetch does.
+	function settingImgSrc(value: unknown): string {
+		const v = String(value ?? '');
+		return v.startsWith('/api/v1/') ? buildApiUrl(v, PUBLIC_JC_API_URL ?? '') : v;
 	}
 
 	$effect(() => {
@@ -914,7 +931,7 @@
 												{t('settings.browse', 'Browse')}
 											</button>
 											{#if setting.value && typeof setting.value === 'string' && (setting.value.startsWith('/api/v1/media/') || setting.value.startsWith('http'))}
-												<img src={setting.value} alt={setting.label} class="h-10 w-10 rounded border object-cover" style="border-color: var(--color-border)" />
+												<img src={settingImgSrc(setting.value)} alt={setting.label} class="h-10 w-10 rounded border object-cover" style="border-color: var(--color-border)" />
 											{/if}
 										</div>
 									{:else if setting.type === 'file'}
@@ -947,7 +964,7 @@
 												{/if}
 											</label>
 											{#if setting.value && typeof setting.value === 'string' && (setting.value.startsWith('/api/v1/media/') || setting.value.startsWith('http'))}
-												<img src={setting.value} alt={setting.label} class="h-10 w-10 rounded border object-cover" style="border-color: var(--color-border)" />
+												<img src={settingImgSrc(setting.value)} alt={setting.label} class="h-10 w-10 rounded border object-cover" style="border-color: var(--color-border)" />
 											{/if}
 										</div>
 										{#if uploadError && uploadingKey === toggleId}

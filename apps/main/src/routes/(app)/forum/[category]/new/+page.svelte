@@ -5,7 +5,7 @@
 	import { ArrowLeft, Send, BarChart3, Plus, Trash2 } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import type { PageData, ActionData } from './$types';
-	import CommentEditor from '$lib/components/comments/CommentEditor.svelte';
+	import LazyCommentEditor from '$lib/components/comments/LazyCommentEditor.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import TagInput from '$lib/components/create/TagInput.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -181,7 +181,7 @@
 			<input type="hidden" name="body" value={body} />
 			<!-- initialBody restores the drafted body after a failed submit —
 			     the editor accepts base64 TipTap JSON. -->
-			<CommentEditor initialBody={body || null} placeholder={t('forum.new.placeholder_body', 'Write your discussion…')} oninput={(b) => (body = b)} />
+			<LazyCommentEditor eager initialBody={body || null} placeholder={t('forum.new.placeholder_body', 'Write your discussion…')} oninput={(b) => (body = b)} />
 		</div>
 
 		<!-- Anonymous toggle -->

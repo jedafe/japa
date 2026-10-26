@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { ComingSoonProps } from '../types';
-  import type { Component } from 'svelte';
-  import * as LucideIcons from 'lucide-svelte';
+  import LazyIcon from '../lib/LazyIcon.svelte';
 
   interface Props {
     props: ComingSoonProps;
@@ -28,22 +27,15 @@
     }
   }
 
-  function getIcon(name?: string): Component | null {
-    if (!name) return null;
-    const found = (LucideIcons as Record<string, unknown>)[name];
-    return (found as Component) ?? null;
-  }
+
 </script>
 
 <section class="px-6 py-16">
   <div class="mx-auto max-w-2xl rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-12 text-center">
     {#if props.icon}
-      {@const Icon = getIcon(props.icon)}
-      {#if Icon}
-        <div class="mx-auto mb-6 inline-flex rounded-full bg-[var(--color-surface-subtle)] p-4 text-[var(--color-primary)]">
-          <Icon size={32} />
-        </div>
-      {/if}
+      <div class="mx-auto mb-6 inline-flex rounded-full bg-[var(--color-surface-subtle)] p-4 text-[var(--color-primary)]">
+        <LazyIcon name={props.icon} size={32} />
+      </div>
     {/if}
     {#if props.title}
       <h2 class="text-2xl font-bold text-[var(--color-text)]">{props.title}</h2>

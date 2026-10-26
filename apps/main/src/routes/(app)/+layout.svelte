@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack, onMount, type Snippet } from 'svelte';
+	import { untrack, onMount, type Component, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import GuestHeader from '$lib/components/shell/GuestHeader.svelte';
@@ -11,8 +11,13 @@
 	import { isExceptionRoute, isNoTabBarRoute } from '$lib/components/create/gate';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
-	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
-	import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
+	// ProductTour (driver.js), MediaLightbox (bits-ui Dialog) and the AI
+	// panel mount lazily — they are interaction-gated, so eager imports
+	// would put them on every page's critical path for nothing.
+	let ProductTourComp = $state<any>(null);
+	let MediaLightboxComp = $state<any>(null);
+	let AiPanelComp = $state<any>(null);
+	let aiPanelLoading = false;
 	import StickyAnchorAd from '$lib/components/ads/StickyAnchorAd.svelte';
 	import NextActionBar from '$lib/components/shell/NextActionBar.svelte';
 	import NextActionPopup from '$lib/components/shell/NextActionPopup.svelte';
@@ -21,7 +26,7 @@
 	import { chatTemplateRail } from '$lib/ai/chatTemplateRail.svelte';
 	import { Sparkles } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
-	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
+	import { setAiPageContext } from '@japaconnect/ai-panel';
 	import { ensureAiPanelDeps } from '$lib/ai/panel';
 	import { resolveAiPageContext } from '$lib/ai/pageContext';
 	import { beforeNavigate } from '$app/navigation';
@@ -53,6 +58,11 @@
 	let tourMounted = $state(false);
 	$effect(() => {
 		if (tourRequested && data.user) tourMounted = true;
+	});
+	$effect(() => {
+		if (tourMounted && !ProductTourComp) {
+			import('$lib/components/onboarding/ProductTour.svelte').then((m) => (ProductTourComp = m.default));
+		}
 	});
 
 	// ADR-058 §5 Exception #3: guest landing page renders WITHOUT the app shell.
@@ -167,6 +177,18 @@
 	// instead of linking to /ai. Deps init on every page — /ai hides the
 	// FAB but JapaAIChat streams through the same package factory.
 	let aiPanelOpen = $state(false);
+	$effect(() => {
+		if (aiPanelOpen && !AiPanelComp && !aiPanelLoading) {
+			aiPanelLoading = true;
+			import('@japaconnect/ai-panel')
+				.then((m) => (AiPanelComp = m.AiPanel as Component))
+				.catch(() => {
+					// Reset on failure — a permanent latch would dead-end the
+					// FAB after one transient chunk-fetch error.
+					aiPanelLoading = false;
+				});
+		}
+	});
 
 	// Page-context registry: recompute on every path/data change; cleared
 	// while navigating so a stale entity context can't leak across pages.
@@ -174,6 +196,14 @@
 		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
 	});
 	beforeNavigate(() => setAiPageContext(null));
+
+	// The shared lightbox mounts on first use — items land in the store only
+	// when a user clicks a zoomable image, so the chunk loads on demand.
+	$effect(() => {
+		if (lightbox.items.length > 0 && !MediaLightboxComp) {
+			import('$lib/components/ui/MediaLightbox.svelte').then((m) => (MediaLightboxComp = m.default));
+		}
+	});
 
 	onMount(() => {
 		ensureAiPanelDeps();
@@ -337,16 +367,20 @@
 		>
 			<Sparkles size={22} />
 		</button>
-		<AiPanel open={aiPanelOpen} user={data.user ?? null} onclose={() => (aiPanelOpen = false)} />
+		{#if AiPanelComp}
+			<AiPanelComp open={aiPanelOpen} user={data.user ?? null} onclose={() => (aiPanelOpen = false)} />
+		{/if}
 	{/if}
-	{#if tourMounted}
+	{#if tourMounted && ProductTourComp}
 		<!-- §09 Product Tour: steps come from onboarding.tour_steps (admin-managed) -->
-		<ProductTour replay={true} steps={data.tourSteps} />
+		<ProductTourComp replay={true} steps={data.tourSteps} />
 	{/if}
 {/if}
 
 <!-- Shared fullscreen media viewer — any surface opens it via openLightbox() -->
-<MediaLightbox bind:open={lightbox.open} bind:index={lightbox.index} items={lightbox.items} />
+{#if MediaLightboxComp}
+	<MediaLightboxComp bind:open={lightbox.open} bind:index={lightbox.index} items={lightbox.items} />
+{/if}
 
 <!-- §25: fires the conversion ad event when a navigation lands with the
      same-origin attribution param (jc_ad_cid). Covers guests and authed

@@ -3,7 +3,7 @@
   import type { FetchContext } from '../data/types';
   import type { Component } from 'svelte';
   import { Tabs } from 'bits-ui';
-  import * as LucideIcons from 'lucide-svelte';
+  import LazyIcon from '../lib/LazyIcon.svelte';
   import { blockComponentFor } from '../render/blockComponent';
   import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
@@ -21,11 +21,7 @@
   const allNested = $derived(props.tabs.flatMap((tab) => tab.content_blocks ?? []));
   const visibilityCss = $derived(responsiveVisibilityCss(allNested));
 
-  function getIcon(name?: string): Component | null {
-    if (!name) return null;
-    const found = (LucideIcons as Record<string, unknown>)[name];
-    return (found as Component) ?? null;
-  }
+
 </script>
 
 <ScopedCss css={visibilityCss} />
@@ -47,10 +43,7 @@
               }"
           >
             {#if tab.icon}
-              {@const Icon = getIcon(tab.icon)}
-              {#if Icon}
-                <Icon size={16} />
-              {/if}
+              <LazyIcon name={tab.icon} size={16} />
             {/if}
             {tab.label}
           </Tabs.Trigger>

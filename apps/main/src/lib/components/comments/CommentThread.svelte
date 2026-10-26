@@ -6,7 +6,7 @@
 	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
 	import type { Comment } from '$lib/types';
 	import CommentItem from './CommentItem.svelte';
-	import CommentEditor from './CommentEditor.svelte';
+	import LazyCommentEditor from './LazyCommentEditor.svelte';
 
 	/**
 	 * Unified comment engine for content singles (blog + CPTs) — Section 49.
@@ -183,7 +183,7 @@
 
 	{#if authed}
 		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<CommentEditor placeholder={t('comments.placeholder')} oninput={(b) => (draftBody = b)} />
+			<LazyCommentEditor placeholder={t('comments.placeholder')} oninput={(b) => (draftBody = b)} />
 			<div class="mt-3 flex items-center justify-between">
 				<label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 					<input type="checkbox" bind:checked={draftAnonymous} class="h-3.5 w-3.5 accent-[var(--color-primary)]" />

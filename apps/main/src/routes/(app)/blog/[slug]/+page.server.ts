@@ -33,7 +33,16 @@ export const load: PageServerLoad = async (event) => {
 	let jsonLd: unknown = null;
 	let deletedUserIds: string[] | null = null;
 	try {
-		const envelope = await apiGetEnvelope<ContentArticle>(ctx, `/blog/${slug}`);
+		// One retry on transient upstream failures — a cold backend or brief
+		// DB hiccup otherwise surfaces as a hard 500 on an otherwise-valid
+		// post. Only network errors and 5xx retry; client errors don't.
+		let envelope;
+		try {
+			envelope = await apiGetEnvelope<ContentArticle>(ctx, `/blog/${slug}`);
+		} catch (err) {
+			if (err instanceof ApiError && err.status < 500) throw err;
+			envelope = await apiGetEnvelope<ContentArticle>(ctx, `/blog/${slug}`);
+		}
 		article = envelope.data;
 		jsonLd = envelope.json_ld ?? null;
 		deletedUserIds = envelope.deleted_user_ids ?? null;

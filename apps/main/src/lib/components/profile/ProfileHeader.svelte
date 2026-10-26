@@ -79,28 +79,43 @@
 			     of dropping under the handle, so they never span full width on
 			     mobile. -->
 			<div class="flex items-end justify-between gap-3">
-				{#if user.avatar_url}
-					<img
-						src={user.avatar_url}
-						alt={user.display_name ?? user.username}
-						class="h-24 w-24 rounded-full border-4 border-[var(--color-surface)] object-cover sm:h-32 sm:w-32"
-					/>
-				{:else}
-					<span
-						class="grid h-24 w-24 place-items-center rounded-full border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-3xl font-bold text-[var(--color-primary)] sm:h-32 sm:w-32"
-					>
-						{initials}
-					</span>
-				{/if}
+				<div class="flex min-w-0 items-end gap-3 sm:gap-4">
+					{#if user.avatar_url}
+						<img
+							src={user.avatar_url}
+							alt={user.display_name ?? user.username}
+							class="h-24 w-24 rounded-full border-4 border-[var(--color-surface)] object-cover sm:h-32 sm:w-32"
+						/>
+					{:else}
+						<span
+							class="grid h-24 w-24 place-items-center rounded-full border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-3xl font-bold text-[var(--color-primary)] sm:h-32 sm:w-32"
+						>
+							{initials}
+						</span>
+					{/if}
+
+					<!-- Name + handle at the avatar's bottom-right — sm+ only;
+					     mobile keeps them below the avatar. -->
+					<div class="hidden min-w-0 pb-1 sm:block">
+						<div class="flex items-center gap-2">
+							<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{user.display_name ?? user.username}</h1>
+							{#if user.verified}
+								<BadgeCheck size={18} class="shrink-0 text-[var(--color-primary)]" />
+							{/if}
+						</div>
+						<p class="truncate text-sm text-[var(--color-muted)]">@{user.username}</p>
+					</div>
+				</div>
 
 				{#if children}
-					<div class="flex items-center gap-2 pb-1">
+					<div class="flex items-center gap-2 pb-1 sm:pb-4">
 						{@render children()}
 					</div>
 				{/if}
 			</div>
 
-			<div class="mt-3">
+			<!-- Mobile-only name + handle, below the avatar row (original). -->
+			<div class="mt-3 sm:hidden">
 				<div class="flex items-center gap-2">
 					<h1 class="text-xl font-semibold text-[var(--color-text)]">{user.display_name ?? user.username}</h1>
 					{#if user.verified}

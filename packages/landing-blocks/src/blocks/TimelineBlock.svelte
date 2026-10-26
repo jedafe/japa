@@ -1,18 +1,13 @@
 <script lang="ts">
   import type { TimelineProps } from '../types';
-  import type { Component } from 'svelte';
-  import * as LucideIcons from 'lucide-svelte';
+  import LazyIcon from '../lib/LazyIcon.svelte';
 
   interface Props {
     props: TimelineProps;
   }
   let { props }: Props = $props();
 
-  function getIcon(name?: string): Component | null {
-    if (!name) return null;
-    const found = (LucideIcons as Record<string, unknown>)[name];
-    return (found as Component) ?? null;
-  }
+
 </script>
 
 <section class="px-6 py-16">
@@ -25,10 +20,7 @@
             <div class="flex flex-col items-center text-center">
               <div class="z-10 flex h-16 w-16 items-center justify-center rounded-full border-2 border-[var(--color-primary)] bg-[var(--color-surface)]">
                 {#if step.icon}
-                  {@const Icon = getIcon(step.icon)}
-                  {#if Icon}
-                    <Icon size={24} />
-                  {/if}
+                  <LazyIcon name={step.icon} size={24} />
                 {:else}
                   <span class="text-sm font-bold text-[var(--color-primary)]">0{i + 1}</span>
                 {/if}

@@ -4,14 +4,12 @@
 // and runs the data-loading $effects against it; children read/write it via
 // getExploreMapCtx(). Ported verbatim from the former monolith script.
 import { getContext, setContext } from 'svelte';
-import type { Component } from 'svelte';
 import type { ExploreMapProps } from '../../types';
 import type { FetchContext } from '../../data/types';
 import { countryCentroid } from '../../geo/countryCentroids';
 import { WORLD_COUNTRIES, WORLD_VIEWBOX, REGION_BOUNDS } from '../../geo/worldMapData';
 import { EXPLORE_MAP_DEFAULTS } from './exploreMapDefaults';
 import { buildApiUrl } from '@japaconnect/api-url';
-import * as LucideIcons from 'lucide-svelte';
 
 export const EXPLORE_MAP_CTX = Symbol('explore-map');
 
@@ -357,9 +355,8 @@ export class ExploreMapContext {
 		return value ?? '—';
 	}
 
-	iconFor(name?: string): Component | null {
-		if (!name) return null;
-		return ((LucideIcons as Record<string, unknown>)[name] as Component) ?? null;
+	iconFor(name?: string): string | null {
+		return name ?? null;
 	}
 
 	get visitorCode(): string {

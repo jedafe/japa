@@ -3,7 +3,6 @@
 	// modal. Same look/behavior as the Docs app's SearchLauncher (ADR-060).
 	import { Search } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
-	import SearchPalette from './SearchPalette.svelte';
 
 	interface Props {
 		/** Whether this launcher registers the global ⌘/Ctrl+K shortcut. */
@@ -15,12 +14,22 @@
 	let { keyboardShortcut = true, placeholder = '' }: Props = $props();
 
 	let open = $state(false);
+	// The palette (bits-ui Dialog + Command) loads on first open instead of
+	// riding every shell page's critical path.
+	let PaletteComp = $state<any>(null);
+
+	function openPalette() {
+		open = true;
+		if (!PaletteComp) {
+			import('./SearchPalette.svelte').then((m) => (PaletteComp = m.default));
+		}
+	}
 
 	function onKeydown(e: KeyboardEvent) {
 		// ⌘K / Ctrl+K opens the palette globally.
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
 			e.preventDefault();
-			open = true;
+			openPalette();
 		}
 	}
 
@@ -34,15 +43,15 @@
 <button
 	type="button"
 	class="launcher"
-	onclick={() => (open = true)}
+	onclick={openPalette}
 >
 	<Search size={16} />
 	<span class="label">{t('search.heading', 'Search')}</span>
 	<span class="kbd" aria-hidden="true">⌘K</span>
 </button>
 
-{#if open}
-	<SearchPalette onClose={() => (open = false)} {placeholder} />
+{#if open && PaletteComp}
+	<PaletteComp onClose={() => (open = false)} {placeholder} />
 {/if}
 
 <style>

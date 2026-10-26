@@ -98,6 +98,10 @@
 		page.url.pathname;
 		if (!collapsed || !overlayAllowed) navHoverPeek = false;
 		if (!collapsed) navHoverExpand = false;
+		// Any navigation also dismisses the mobile drawer — covers links in
+		// portaled dropdowns (space switcher, notification items) that the
+		// delegated click handler on .drawer can't see.
+		mobileNavOpen = false;
 	});
 	const effectiveCollapsed = $derived(collapsed && !navHoverExpand);
 	const navWidth = $derived(
@@ -198,7 +202,18 @@
 		aria-label={t('a11y.close_menu')}
 		onclick={() => (mobileNavOpen = false)}
 	></button>
-	<div class="drawer">
+	<!-- Delegated close: any anchor tap inside the drawer dismisses it
+	     (including re-taps of the current route, which don't change the
+	     pathname). [data-tour="compose"] is included because the compose
+	     sheet renders at the same z-50 layer and would open behind the
+	     drawer. -->
+	<div
+		class="drawer"
+		role="presentation"
+		onclick={(e) => {
+			if ((e.target as HTMLElement).closest('a[href], [data-tour="compose"]')) mobileNavOpen = false;
+		}}
+	>
 		<!-- Drawer nav is transient (dismissed via backdrop/button), so the
 		     toggle shows the unpinned outline state. -->
 		<LeftNav {menu} {user} collapsed={false} pinned={false} {userSpaces} {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} {features} onToggle={() => (mobileNavOpen = false)} />
@@ -260,7 +275,7 @@
 		justify-content: space-between;
 		gap: 0.5rem;
 		min-height: 3.5rem;
-		padding: env(safe-area-inset-top) 0.75rem 0.5rem;
+		padding: calc(env(safe-area-inset-top) + 0.5rem) 0.75rem 0.5rem;
 		border-bottom: 1px solid var(--color-border);
 		background-color: var(--color-surface);
 		transition: transform 0.25s ease;

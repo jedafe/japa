@@ -1,9 +1,7 @@
 import { page } from '$app/state';
 import { DEFAULT_SITE_NAME } from '$lib/brand';
 import en from './en.json';
-import fr from './fr.json';
 import jce_en from './jce_en.json';
-import jce_fr from './jce_fr.json';
 
 export type Locale = string;
 type Dict = Record<string, string>;
@@ -14,9 +12,47 @@ type Dict = Record<string, string>;
 // JCE keys are merged under the `jce.*` prefix so JCE public pages can reuse
 // the same translator.
 const dictionaries: Record<string, Dict> = {
-	en: { ...en, ...jce_en },
-	fr: { ...fr, ...jce_fr }
+	en: { ...en, ...jce_en }
 };
+
+// Bundled-but-lazy locales (ADR-013): shipped as separate chunks and
+// registered by +layout.ts's ensureLocale() before first render — keeps
+// ~370KB of non-English strings out of the eager bundle for the
+// English-majority traffic while SSR and hydration see identical dicts.
+const localeLoaders: Record<string, () => Promise<Dict>> = {
+	fr: async () => {
+		const [fr, jce] = await Promise.all([import('./fr.json'), import('./jce_fr.json')]);
+		return { ...fr.default, ...jce.default };
+	}
+};
+
+const pendingLocales = new Map<string, Promise<void>>();
+
+/** Ensure the dictionary for `locale` is registered. Awaited by the root
+ * layout's universal load so SSR and hydration always render with the same
+ * strings. No-op for `en` and runtime-pack locales (es, de, …). */
+export function ensureLocale(locale: string): Promise<void> {
+	const loader = localeLoaders[locale];
+	if (!loader || dictionaries[locale]) return Promise.resolve();
+	let p = pendingLocales.get(locale);
+	if (!p) {
+		p = loader().then(
+			(dict) => {
+				dictionaries[locale] = dict;
+				delete mergedBundled[locale];
+				pendingLocales.delete(locale);
+			},
+			(err) => {
+				// Evict on failure so the next navigation retries — caching a
+				// rejected promise would permanently break the locale.
+				pendingLocales.delete(locale);
+				throw err;
+			}
+		);
+		pendingLocales.set(locale, p);
+	}
+	return p;
+}
 
 // Non-bundled locales are served by the DB pack: the root layout load fetches
 // /i18n/packs/{locale} and returns it as `i18nPack` in page data.

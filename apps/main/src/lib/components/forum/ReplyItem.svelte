@@ -28,7 +28,7 @@
 	// reply is first visible in the viewport.
 	// Self-import replaces the deprecated <svelte:self> for recursive nesting.
 	import ReplyItem from './ReplyItem.svelte';
-	import CommentEditor from '$lib/components/comments/CommentEditor.svelte';
+	import LazyCommentEditor from '$lib/components/comments/LazyCommentEditor.svelte';
 
 	interface Props {
 		reply: ForumReply;
@@ -430,7 +430,7 @@
 					{#if replyEditCountdown}
 						<p class="text-xs text-[var(--color-muted)]">{replyEditCountdown}</p>
 					{/if}
-					<CommentEditor
+					<LazyCommentEditor
 						initialBody={editBody}
 						oninput={(b) => (editBody = b)}
 						placeholder={t('forum.edit_placeholder', 'Edit your reply…')}
@@ -552,7 +552,7 @@
 			<!-- Inline reply composer -->
 			{#if composing && authed}
 				<div class="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5">
-					<CommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (replyBody = b)} />
+					<LazyCommentEditor eager placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (replyBody = b)} />
 					<div class="mt-2 flex items-center justify-end gap-2">
 						<button
 							type="button"

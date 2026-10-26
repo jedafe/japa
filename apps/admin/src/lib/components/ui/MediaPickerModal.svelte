@@ -8,6 +8,8 @@
 	// ad campaign content supports an image_media_id + image_url pair.
 	// Ref: AGENTS.md Rule 16 — media comes from the API, never hardcoded.
 	import { apiFetch, apiRaw, mediaAdminApi, stockAdminApi, type StockPhoto } from '$lib/api';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
@@ -79,13 +81,16 @@
 	});
 
 	// fixMediaUrl — the backend returns imgproxy URLs (e.g.
-	// http://imgproxy:8080/{sig}/{opts}/{base64_source}.{format}) which
-	// don't resolve in dev. Decode the base64 source segment to recover
-	// the s3:// path and construct a direct /api/v1/media/serve/ URL.
+	// http://imgproxy:8080/{sig}/{opts}/{base64_source}.{format}) whose host
+	// may not be publicly resolvable. Decode the base64 source segment to
+	// recover the s3:// path and construct a media/serve URL anchored on the
+	// API origin (PUBLIC_JC_API_URL). Anchoring matters: only prod's nginx
+	// proxies /api on each app host — staging's admin subdomain would 404 a
+	// relative /api/v1/... path against the SPA.
 	function fixMediaUrl(url: string): string {
 		if (!url) return '';
-		// Already a relative serve URL — use as-is.
-		if (url.startsWith('/api/v1/media/serve/')) return url;
+		// Relative serve URL — anchor it to the API origin.
+		if (url.startsWith('/api/v1/media/serve/')) return buildApiUrl(url, PUBLIC_JC_API_URL ?? '');
 		try {
 			// Format:        {base}/{sig}/{opts}/{base64_source}.{format}
 			// legacy:        {base}/{sig}/{opts}/plain/{base64_source}@{format}
@@ -110,7 +115,7 @@
 			// decoded = "s3://{bucket}/{path}"
 			if (decoded.startsWith('s3://')) {
 				const path = decoded.slice(5); // strip "s3://"
-				return '/api/v1/media/serve/' + path;
+				return buildApiUrl('/api/v1/media/serve/' + path, PUBLIC_JC_API_URL ?? '');
 			}
 			return url;
 		} catch {

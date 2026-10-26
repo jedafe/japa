@@ -5,6 +5,7 @@
   import type { ExploreMapLegendProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getExploreMapCtx, exploreMapChildVisible } from './context.svelte';
+  import LazyIcon from '../../lib/LazyIcon.svelte';
 
   interface Props {
     props: ExploreMapLegendProps;
@@ -22,7 +23,7 @@
     <p class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Map legend</p>
     <ul class="space-y-2.5">
       {#each ctx.P.categories ?? [] as cat (cat.key)}
-        {@const Icon = ctx.iconFor(cat.icon)}
+        
         <li>
           <button
             type="button"
@@ -31,7 +32,7 @@
             aria-pressed={ctx.selCategory === cat.key}
           >
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white" style="background:{cat.color}">
-              {#if Icon}<Icon size={15} />{/if}
+              <LazyIcon name={cat.icon} size={15} />
             </span>
             <span class="min-w-0">
               <span class="block truncate text-xs font-semibold text-[var(--color-text)]">{cat.label}</span>

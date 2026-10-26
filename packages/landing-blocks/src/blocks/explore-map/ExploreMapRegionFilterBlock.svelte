@@ -5,7 +5,7 @@
   import type { ExploreMapRegionFilterProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getExploreMapCtx, exploreMapChildVisible } from './context.svelte';
-  import * as LucideIcons from 'lucide-svelte';
+  import { Globe, MapPin } from 'lucide-svelte';
 
   interface Props {
     props: ExploreMapRegionFilterProps;
@@ -28,7 +28,7 @@
           class="flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-1.5 text-sm transition-colors {ctx.selRegion === '' ? 'bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
           onclick={() => ctx.resetView()}
         >
-          <LucideIcons.Globe size={14} /> All Regions
+          <Globe size={14} /> All Regions
         </button>
       </li>
       {#each ctx.regionOptions as region (region)}
@@ -39,7 +39,7 @@
             onclick={() => ctx.selectRegion(region)}
             aria-pressed={ctx.selRegion === region}
           >
-            <LucideIcons.MapPin size={14} class="opacity-60" /> {region}
+            <MapPin size={14} class="opacity-60" /> {region}
           </button>
         </li>
       {/each}

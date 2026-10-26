@@ -3,8 +3,7 @@
   import { styleToCss, responsiveStyleToCss, typographyScopeCss, BLUR_MAP } from './styleToCss';
   import { setBlockContentContext, type BlockContentContext } from './blockContent';
   import Reveal from './Reveal.svelte';
-  import * as LucideIcons from 'lucide-svelte';
-  import type { Component } from 'svelte';
+  import LazyIcon from '../lib/LazyIcon.svelte';
 
   interface Props {
     style?: BlockStyle;
@@ -80,14 +79,12 @@
   // shell beside/above the block content; position 'none' hides it.
   const ICON_SIZE_MAP: Record<string, number> = { xs: 12, sm: 16, md: 20, lg: 24, xl: 32, '2xl': 40 };
   const iconCfg = $derived(style?.icon);
-  const IconComponent = $derived(
-    iconCfg?.name ? ((LucideIcons as Record<string, unknown>)[iconCfg.name] as Component | undefined) : undefined
-  );
+  const hasIcon = $derived(!!iconCfg?.name);
   const iconPosition = $derived(iconCfg?.position ?? 'left');
   const iconPx = $derived(
     typeof iconCfg?.size === 'number' ? iconCfg.size : ICON_SIZE_MAP[iconCfg?.size ?? 'md'] ?? 20
   );
-  const showIcon = $derived(!!IconComponent && iconPosition !== 'none');
+  const showIcon = $derived(hasIcon && iconPosition !== 'none');
   const iconWrapperStyle = $derived.by(() => {
     const parts: string[] = [`color: ${iconCfg?.color ?? 'currentColor'}`];
     if (iconCfg?.background_color) {
@@ -160,11 +157,11 @@
       <div class="absolute inset-0" data-bglayer style="background-color: {background.color}; {bgFilterAndOpacity(background)}"></div>
     {/if}
     <div class="relative" style={hasBg ? 'z-index: 10;' : undefined}>
-      {#if showIcon && IconComponent}
+      {#if showIcon}
         <div class="flex gap-3 {iconPosition === 'top' ? 'flex-col' : 'flex-row items-start'}">
           {#if iconPosition !== 'right'}
             <span class="inline-flex shrink-0 items-center justify-center" style={iconWrapperStyle}>
-              <IconComponent size={iconPx} />
+              <LazyIcon name={iconCfg?.name} size={iconPx} />
             </span>
           {/if}
           <div class="min-w-0 flex-1">
@@ -172,7 +169,7 @@
           </div>
           {#if iconPosition === 'right'}
             <span class="inline-flex shrink-0 items-center justify-center" style={iconWrapperStyle}>
-              <IconComponent size={iconPx} />
+              <LazyIcon name={iconCfg?.name} size={iconPx} />
             </span>
           {/if}
         </div>

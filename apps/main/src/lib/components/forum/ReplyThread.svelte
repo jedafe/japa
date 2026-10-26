@@ -6,7 +6,7 @@
 	import { t } from '$lib/i18n';
 	import type { ForumReply } from '$lib/types';
 	import ReplyItem from './ReplyItem.svelte';
-	import CommentEditor from '$lib/components/comments/CommentEditor.svelte';
+	import LazyCommentEditor from '$lib/components/comments/LazyCommentEditor.svelte';
 
 	interface Props {
 		/** Flat list of all replies for the thread (parent_reply_id links them). */
@@ -108,7 +108,7 @@
 	<!-- Composer renders for guests too — the submit button stays enabled
 	     and redirects to /login on click (see submitTopReply). -->
 	<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<CommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} />
+		<LazyCommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} />
 		<div class="mt-2 flex items-center justify-between">
 			<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
 				<CornerUpLeft class="rtl:-scale-x-100" size={12} /> {t('forum.replying_to_thread', 'Replying to this thread')}

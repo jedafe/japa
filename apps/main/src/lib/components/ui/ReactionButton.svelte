@@ -181,6 +181,24 @@
 		return String(n);
 	}
 
+	// Set when the picker was opened by a touch tap — the per-item handler
+	// closes the popover on selection in that mode only.
+	let openedViaTouch = $state(false);
+
+	function onTriggerClick(e: MouseEvent) {
+		// Touch has no hover, so the tap's job is to open the picker — the
+		// bits-ui trigger toggles `open` on click — and keep it there while
+		// the user picks a reaction type, not to toggle the primary
+		// reaction. Desktop clicks keep the toggle; hybrid devices get the
+		// right behavior per-interaction via pointerType.
+		const coarse =
+			(e as PointerEvent).pointerType === 'touch' ||
+			(typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches);
+		openedViaTouch = coarse;
+		if (coarse) return;
+		toggleReaction(primaryKey);
+	}
+
 	const triggerActive = $derived(reactionsEnabled ? primaryActive : simpleActive);
 	const triggerIconFill = $derived(triggerActive ? 'currentColor' : 'none');
 	const baseClass = $derived(
@@ -198,7 +216,7 @@
 			openOnHover
 			openDelay={100}
 			closeDelay={200}
-			onclick={() => toggleReaction(primaryKey)}
+			onclick={onTriggerClick}
 			class={triggerClass}
 			aria-label={ariaLabel ?? primaryReaction.label}
 			aria-pressed={triggerActive}
@@ -224,7 +242,14 @@
 						{@const cnt = countFor(r.key)}
 						<button
 							type="button"
-							onclick={() => toggleReaction(r.key)}
+							onclick={async () => {
+								await toggleReaction(r.key);
+								// Touch-opened pickers close on selection — the popover
+								// only exists because there is no hover to preview with.
+								if (openedViaTouch || window.matchMedia('(pointer: coarse)').matches) {
+									showReactions = false;
+								}
+							}}
 							class="flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 							aria-label={r.label}
 							aria-pressed={active}

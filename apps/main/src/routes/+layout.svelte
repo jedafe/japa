@@ -140,9 +140,23 @@
 	// Umami analytics — Main surface (§40, ROADMAP-MAIN 01.10).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
 	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID);
+
+	// Cross-origin API host (logos, avatars, media). Preconnecting saves the
+	// DNS+TLS handshake on the first media request — a real LCP factor on
+	// media-heavy pages (§26 performance).
+	const apiOrigin = $derived.by(() => {
+		try {
+			const u = new URL(env.PUBLIC_JC_API_URL ?? '');
+			return u.origin;
+		} catch {
+			return '';
+		}
+	});
+	const preconnectApi = $derived(apiOrigin !== '' && apiOrigin !== page.url.origin);
 </script>
 
 <svelte:head>
+	{#if preconnectApi}<link rel="preconnect" href={apiOrigin} crossorigin="anonymous" />{/if}
 	<meta property="og:locale" content={ogLocale} />
 	{#each enabledLanguages.filter((l) => l !== ogLocale) as alt}<meta property="og:locale:alternate" content={alt} />{/each}
 	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', '{site} Blog')} href="/blog/rss.xml" />

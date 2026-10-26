@@ -9,7 +9,8 @@
   import { getExploreMapCtx, exploreMapChildVisible, CARD_W, CARD_H } from './context.svelte';
   import type { Pin } from './context.svelte';
   import { WORLD_COUNTRIES, WORLD_VIEWBOX } from '../../geo/worldMapData';
-  import * as LucideIcons from 'lucide-svelte';
+  import { Plus, Minus, LocateFixed } from 'lucide-svelte';
+  import LazyIcon from '../../lib/LazyIcon.svelte';
 
   interface Props {
     props: ExploreMapCanvasProps;
@@ -109,15 +110,15 @@
       <div class="absolute bottom-4 end-4 flex flex-col items-end gap-2">
         <div class="flex flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
           <button type="button" aria-label="Zoom in" class="grid h-9 w-9 place-items-center text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]" onclick={() => ctx.zoomBy(0.7)}>
-            <LucideIcons.Plus size={15} />
+            <Plus size={15} />
           </button>
           <div class="h-px bg-[var(--color-border)]"></div>
           <button type="button" aria-label="Zoom out" class="grid h-9 w-9 place-items-center text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]" onclick={() => ctx.zoomBy(1.45)}>
-            <LucideIcons.Minus size={15} />
+            <Minus size={15} />
           </button>
           <div class="h-px bg-[var(--color-border)]"></div>
           <button type="button" aria-label="Reset view" class="grid h-9 w-9 place-items-center text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]" onclick={() => ctx.resetView()}>
-            <LucideIcons.LocateFixed size={15} />
+            <LocateFixed size={15} />
           </button>
         </div>
         <button type="button" aria-label="Reset north" class="grid h-11 w-11 place-items-center" onclick={() => ctx.resetView()}>
@@ -139,10 +140,10 @@
         <h3 class="sr-only">Quick stats</h3>
         <ul class="flex items-center gap-4 overflow-x-auto">
           {#each ctx.P.stats ?? [] as stat (stat.label)}
-            {@const Icon = ctx.iconFor(stat.icon)}
+            
             <li class="flex shrink-0 items-center gap-2">
               <span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-                {#if Icon}<Icon size={13} />{/if}
+                <LazyIcon name={stat.icon} size={13} />
               </span>
               <span class="min-w-0">
                 <span class="block text-xs font-bold leading-tight text-[var(--color-text)]">{ctx.statValue(stat.source, stat.value, stat.suffix)}</span>

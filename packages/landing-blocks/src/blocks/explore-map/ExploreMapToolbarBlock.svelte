@@ -5,7 +5,7 @@
   import type { ExploreMapToolbarProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { getExploreMapCtx, exploreMapChildVisible } from './context.svelte';
-  import * as LucideIcons from 'lucide-svelte';
+  import { MapPin, ChevronDown, LayoutGrid, CircleDollarSign } from 'lucide-svelte';
 
   interface Props {
     props: ExploreMapToolbarProps;
@@ -21,7 +21,7 @@
 {#if ctx && exploreMapChildVisible(ctx.P, 'explore_map_toolbar')}
   <div class="flex shrink-0 divide-x divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
     <label class="flex items-center gap-2 px-3 py-2">
-      <LucideIcons.MapPin size={15} class="text-[var(--color-primary)]" />
+      <MapPin size={15} class="text-[var(--color-primary)]" />
       <span class="flex flex-col">
         <span class="text-[10px] leading-tight text-[var(--color-muted)]">View</span>
         <span class="em-select-wrap"><select
@@ -29,11 +29,11 @@
           class="em-select"
         >
           {#each ctx.P.views ?? [] as v (v.key)}<option value={v.key}>{v.label}</option>{/each}
-        </select><LucideIcons.ChevronDown size={11} class="em-chevron" /></span>
+        </select><ChevronDown size={11} class="em-chevron" /></span>
       </span>
     </label>
     <label class="flex items-center gap-2 px-3 py-2">
-      <LucideIcons.LayoutGrid size={15} class="text-[var(--color-primary)]" />
+      <LayoutGrid size={15} class="text-[var(--color-primary)]" />
       <span class="flex flex-col">
         <span class="text-[10px] leading-tight text-[var(--color-muted)]">Show</span>
         <span class="em-select-wrap"><select
@@ -42,12 +42,12 @@
         >
           <option value="">All Categories</option>
           {#each ctx.P.categories ?? [] as c (c.key)}<option value={c.key}>{c.label}</option>{/each}
-        </select><LucideIcons.ChevronDown size={11} class="em-chevron" /></span>
+        </select><ChevronDown size={11} class="em-chevron" /></span>
       </span>
     </label>
     {#if ctx.currencies.length > 0}
       <label class="flex items-center gap-2 px-3 py-2">
-        <LucideIcons.CircleDollarSign size={15} class="text-[var(--color-primary)]" />
+        <CircleDollarSign size={15} class="text-[var(--color-primary)]" />
         <span class="flex flex-col">
           <span class="text-[10px] leading-tight text-[var(--color-muted)]">Currency</span>
           <span class="em-select-wrap"><select
@@ -55,7 +55,7 @@
             class="em-select"
           >
             {#each ctx.currencies as c (c.code)}<option value={c.code}>{c.code}</option>{/each}
-          </select><LucideIcons.ChevronDown size={11} class="em-chevron" /></span>
+          </select><ChevronDown size={11} class="em-chevron" /></span>
         </span>
       </label>
     {/if}

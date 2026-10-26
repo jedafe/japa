@@ -22,7 +22,7 @@
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import CommentItem from './CommentItem.svelte';
-	import CommentEditor from './CommentEditor.svelte';
+	import LazyCommentEditor from './LazyCommentEditor.svelte';
 
 	interface Props {
 		comment: Comment;
@@ -479,7 +479,7 @@
 		{:else}
 			{#if editing}
 				<div class="mt-2">
-					<CommentEditor initialBody={editBody} oninput={(b) => (editBody = b)} />
+					<LazyCommentEditor initialBody={editBody} oninput={(b) => (editBody = b)} />
 					<div class="mt-2 flex items-center justify-end gap-2">
 						<button
 							type="button"
@@ -609,7 +609,7 @@
 			<!-- Inline reply composer -->
 			{#if composing && authed}
 				<div class="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5">
-					<CommentEditor placeholder={t('comments.reply_placeholder')} oninput={(b) => (replyBody = b)} />
+					<LazyCommentEditor eager placeholder={t('comments.reply_placeholder')} oninput={(b) => (replyBody = b)} />
 					<div class="mt-2 flex items-center justify-between gap-2">
 						<label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 							<input type="checkbox" bind:checked={replyAnonymous} class="h-3.5 w-3.5 accent-[var(--color-primary)]" />

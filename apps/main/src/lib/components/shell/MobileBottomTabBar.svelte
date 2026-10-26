@@ -4,6 +4,7 @@
 	import { t } from '$lib/i18n';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import { compose } from './compose.svelte';
+	import UserDropdown from './UserDropdown.svelte';
 	import { resolveIcon } from '$lib/components/ui';
 	import type { IconComponent } from '$lib/components/ui/icons';
 	import type { SessionUser, Menu } from '$lib/types';
@@ -22,12 +23,19 @@
 
 	let { user, features = {}, menu = null }: Props = $props();
 
-	const profileHref = $derived(user ? `/u/${user.username}` : '/login');
 	const unread = $derived(realtime.unreadNotifications);
 	const notificationsEnabled = $derived(features['feature.notifications'] === true);
+	// The signed-in account tab highlights while on any account surface
+	// (own profile, settings, dashboard) rather than only /u/{username}.
+	const accountActive = $derived(
+		page.url.pathname.startsWith(`/u/${user?.username}`) ||
+			page.url.pathname.startsWith('/settings') ||
+			page.url.pathname.startsWith('/dashboard')
+	);
 
 	type NavEntry =
 		| { kind: 'link'; href: string; icon: IconComponent; label: string; notifications?: boolean }
+		| { kind: 'account' }
 		| { kind: 'compose' };
 
 	// Admin-managed items take precedence when configured. The literal url
@@ -54,8 +62,10 @@
 		}
 
 		// Built-in fallback: Home, Search, Compose (center), Notifications,
-		// Profile — notifications is auth-gated and hidden when its feature
-		// flag is disabled so no trace of it leaks into the mobile tab bar.
+		// Account — the account tab opens the same dropdown as the desktop
+		// sidebar avatar (Profile, Dashboard, Settings, Logout) since the
+		// right-sidebar topbar is hidden on mobile. Notifications is
+		// auth-gated and hidden when its feature flag is disabled.
 		return [
 			{ kind: 'link', href: '/', icon: Home, label: t('nav.home', 'Home') },
 			{ kind: 'link', href: '/search', icon: Search, label: t('nav.search', 'Search') },
@@ -71,7 +81,9 @@
 						}
 					] as NavEntry[])
 				: []),
-			{ kind: 'link', href: profileHref, icon: User, label: t('nav.profile', 'Profile') }
+			user
+				? ({ kind: 'account' } as NavEntry)
+				: ({ kind: 'link', href: '/login', icon: User, label: t('nav.profile', 'Profile') } as NavEntry)
 		];
 	});
 
@@ -98,8 +110,10 @@
 	aria-label={t('nav.main', 'Main navigation')}
 	data-tour="primary-nav"
 >
-	{#each entries as entry (entry.kind === 'link' ? entry.href : 'compose')}
-		{#if entry.kind === 'compose'}
+	{#each entries as entry (entry.kind === 'link' ? entry.href : entry.kind)}
+		{#if entry.kind === 'account'}
+			<UserDropdown {user} variant="tab" active={accountActive} />
+		{:else if entry.kind === 'compose'}
 			<!-- Compose button (center, elevated) — guests get a login link with
 			     returnTo instead of opening the auth-gated composer modal. The
 			     data-tour hook lets the product tour (§09) highlight compose on

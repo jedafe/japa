@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { IconProps } from '../types';
-  import type { Component } from 'svelte';
-  import * as LucideIcons from 'lucide-svelte';
+  import LazyIcon from '../lib/LazyIcon.svelte';
 
   interface Props {
     props: IconProps;
@@ -23,21 +22,16 @@
 
   const padding = $derived(pxSize >= 48 ? 'p-4' : pxSize >= 32 ? 'p-3' : 'p-2');
 
-  function getIcon(name: string): Component | null {
-    const found = (LucideIcons as Record<string, unknown>)[name];
-    return (found as Component) ?? null;
-  }
-
-  const Icon = $derived(getIcon(props.icon));
+  const hasIcon = $derived(!!props.icon);
 </script>
 
 <section class="px-6 py-8">
   <div class="mx-auto max-w-6xl flex items-center justify-center gap-3">
     {#if props.href}
       <a href={props.href} class="inline-flex items-center gap-3">
-        {#if Icon}
+        {#if hasIcon}
           <div class="inline-flex {shapeClass} {padding}" style="background-color: {props.background_color}; color: {props.color}">
-            <Icon size={pxSize} />
+            <LazyIcon name={props.icon} size={pxSize} />
           </div>
         {/if}
         {#if props.label}
@@ -45,9 +39,9 @@
         {/if}
       </a>
     {:else}
-      {#if Icon}
+      {#if hasIcon}
         <div class="inline-flex {shapeClass} {padding}" style="background-color: {props.background_color}; color: {props.color}">
-          <Icon size={pxSize} />
+          <LazyIcon name={props.icon} size={pxSize} />
         </div>
       {/if}
       {#if props.label}

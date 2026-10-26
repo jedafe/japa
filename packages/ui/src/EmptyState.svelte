@@ -42,7 +42,23 @@
 		class: className = ''
 	}: Props = $props();
 
-	const Icon = $derived(typeof icon === 'string' ? resolveLucideIcon(icon) : icon);
+	// String names resolve lazily — the icon chunk is fetched on demand so
+	// component-passing callers (the common case) never pay for the registry.
+	let Icon = $state<IconComponent | undefined>();
+	$effect(() => {
+		if (typeof icon !== 'string') {
+			Icon = icon;
+			return;
+		}
+		const name = icon;
+		let cancelled = false;
+		resolveLucideIcon(name).then((c) => {
+			if (!cancelled) Icon = c;
+		});
+		return () => {
+			cancelled = true;
+		};
+	});
 	const text = $derived(description ?? body);
 </script>
 

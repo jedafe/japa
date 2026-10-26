@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { CtaButtonProps } from '../types';
-  import * as LucideIcons from 'lucide-svelte';
-  import type { Component } from 'svelte';
+  import LazyIcon from '../lib/LazyIcon.svelte';
 
   interface Props {
     props: CtaButtonProps;
@@ -29,13 +28,6 @@
     'right': 'justify-end',
   };
 
-  function getIcon(name: string): Component | null {
-    const found = (LucideIcons as Record<string, unknown>)[name];
-    return (found as Component) ?? null;
-  }
-
-  const IconLeft = $derived(props.icon ? getIcon(props.icon) : null);
-  const IconRight = $derived(props.icon_right ? getIcon(props.icon_right) : null);
   const gradientStyle = $derived(
     props.variant === 'gradient'
       ? `background: linear-gradient(135deg, ${props.gradient_from ?? 'var(--color-primary)'}, ${props.gradient_to ?? '#a855f7'})`
@@ -52,12 +44,12 @@
       class="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] font-semibold transition-all duration-200 {sizeClass[props.size ?? 'lg'] ?? 'px-6 py-3 text-base'} {variantClass[props.variant ?? 'primary'] ?? ''} {props.full_width ? 'w-full' : ''}"
       style={gradientStyle}
     >
-      {#if IconLeft}
-        <IconLeft size={props.size === 'xl' ? 22 : props.size === 'lg' ? 20 : 18} />
+      {#if props.icon}
+        <LazyIcon name={props.icon} size={props.size === 'xl' ? 22 : props.size === 'lg' ? 20 : 18} />
       {/if}
       {props.label}
-      {#if IconRight}
-        <IconRight size={props.size === 'xl' ? 22 : props.size === 'lg' ? 20 : 18} />
+      {#if props.icon_right}
+        <LazyIcon name={props.icon_right} size={props.size === 'xl' ? 22 : props.size === 'lg' ? 20 : 18} />
       {/if}
     </a>
     {#if props.subtext}
