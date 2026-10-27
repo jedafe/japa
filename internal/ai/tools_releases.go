@@ -350,7 +350,9 @@ func RoadmapEntriesIngestHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
 		if len(a.Commits) == 0 {
-			return errorToolResult("missing_commits", "commits is required"), nil
+			// Empty pushes (tag deletes, branch prunes) are a no-op, not an
+			// error — the CI workflow shouldn't report a failed run.
+			return successToolResult(map[string]any{"created": 0, "skipped": 0}), nil
 		}
 		created, skipped, err := svc.IngestCommits(ctx, a.Commits)
 		if err != nil {

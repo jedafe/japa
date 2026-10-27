@@ -533,6 +533,13 @@ func (s *Service) AdminCreateRelease(ctx context.Context, in ReleaseInput) (gen.
 		}
 		status = *in.Status
 	}
+	// A create that lands directly on published stamps released_at now —
+	// the status-transition path only stamps NULL released_at, so a
+	// published create without an explicit date would sit "upcoming"
+	// forever.
+	if status == string(ReleasePublished) && !params.ReleasedAt.Valid {
+		params.ReleasedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	}
 	row, err := s.store.write.CreateRoadmapRelease(ctx, gen.CreateRoadmapReleaseParams{
 		Surface: params.Surface, Version: params.Version, Slug: params.Slug,
 		Title: params.Title, Summary: params.Summary, Body: params.Body,
@@ -605,7 +612,7 @@ func (s *Service) buildReleaseParams(ctx context.Context, cur gen.RoadmapRelease
 	if p.Surface == string(SurfaceMobile) && !mobileSemverRe.MatchString(p.Version) {
 		return p, ErrInvalidReleaseVersion
 	}
-	if in.Slug != nil && *in.Slug != "" {
+	if in.Slug != nil && strings.TrimSpace(*in.Slug) != "" {
 		p.Slug = content.Slugify(*in.Slug)
 	} else if create || p.Slug == "" {
 		slug, err := s.uniqueReleaseSlug(ctx, content.Slugify(p.Version))
@@ -614,7 +621,7 @@ func (s *Service) buildReleaseParams(ctx context.Context, cur gen.RoadmapRelease
 		}
 		p.Slug = slug
 	}
-	if reservedReleaseSlugs[p.Slug] {
+	if p.Slug == "" || reservedReleaseSlugs[p.Slug] {
 		return p, errpkg.ErrInvalid
 	}
 	if in.Title != nil {

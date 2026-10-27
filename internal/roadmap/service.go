@@ -1058,17 +1058,19 @@ func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, i
 	var linkStatus ItemStatus
 
 	// release_id patch: "" detaches; a UUID attaches — but only shipped
-	// items may join a release (ADR-135).
+	// items may join a release (ADR-135). The shipped gate applies only
+	// when the value actually changes — an unshipped item holding a stale
+	// link must still accept unrelated edits (and detach freely).
 	if in.ReleaseID != nil {
-		if *in.ReleaseID == "" {
-			params.ReleaseID = pgtype.UUID{}
-		} else {
-			if ItemStatus(current.Status) != StatusShipped {
-				return gen.UpdateRoadmapItemParams{}, "", ErrItemNotShipped
-			}
-			var relID pgtype.UUID
+		var relID pgtype.UUID
+		if *in.ReleaseID != "" {
 			if err := relID.Scan(*in.ReleaseID); err != nil {
 				return gen.UpdateRoadmapItemParams{}, "", errpkg.ErrInvalid
+			}
+		}
+		if relID != current.ReleaseID {
+			if relID.Valid && ItemStatus(current.Status) != StatusShipped {
+				return gen.UpdateRoadmapItemParams{}, "", ErrItemNotShipped
 			}
 			params.ReleaseID = relID
 		}
