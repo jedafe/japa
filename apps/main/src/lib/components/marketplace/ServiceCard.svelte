@@ -22,6 +22,7 @@
 	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
 	import { accentClasses, priceLabel, serviceCategoryInfo } from '$lib/marketplace';
 	import { excerpt } from '$lib/utils/seo-score';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { serviceCategoryIcon } from './serviceCategoryIcon';
 	import type { ServiceCategoryInfo, ServiceListing } from '$lib/types';
 	import type { CurrencyInfo } from '$lib/utils/currency';
@@ -106,12 +107,23 @@
 	<!-- Image area -->
 	<div class="relative aspect-[16/10] w-full overflow-hidden">
 		{#if isMentorship}
-			<!-- Mentor avatar tile — no featured image on shadow listings. -->
-			<div class="grid h-full w-full place-items-center bg-[var(--color-surface-subtle)]">
-				<div class="flex flex-col items-center gap-2 px-4">
+			<!-- Mentor cover + avatar tile — no featured image on shadow
+			     listings, so the mentor's profile cover fronts the card with
+			     their avatar centered over it. -->
+			<div class="relative grid h-full w-full place-items-center bg-[var(--color-surface-subtle)]">
+				{#if mentor?.cover_url}
+					<img
+						src={remoteImageUrl(mentor.cover_url)}
+						alt=""
+						loading="lazy"
+						class="absolute inset-0 h-full w-full object-cover"
+					/>
+					<span class="absolute inset-0 bg-black/25" aria-hidden="true"></span>
+				{/if}
+				<div class="relative flex flex-col items-center gap-2 px-4">
 					{#if mentor?.avatar_url}
 						<img
-							src={mentor.avatar_url}
+							src={remoteImageUrl(mentor.avatar_url)}
 							alt={mentorName}
 							loading="lazy"
 							class="h-16 w-16 rounded-full object-cover ring-2 ring-[var(--color-surface)]"
@@ -124,7 +136,11 @@
 						</div>
 					{/if}
 					{#if mentorName}
-						<span class="max-w-full truncate text-sm font-medium text-[var(--color-text)]">
+						<span
+							class="max-w-full truncate text-sm font-medium {mentor?.cover_url
+								? 'rounded bg-black/45 px-1.5 text-white'
+								: 'text-[var(--color-text)]'}"
+						>
 							{mentorName}
 						</span>
 					{/if}

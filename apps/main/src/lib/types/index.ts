@@ -4256,6 +4256,7 @@ export interface ServiceMentor {
 	username: string;
 	display_name?: string;
 	avatar_url?: string;
+	cover_url?: string;
 	/** From the mentor's user profile (user_profiles) — optional on payloads. */
 	profession?: string | null;
 	website_url?: string | null;

@@ -251,6 +251,7 @@ type ServiceRow struct {
 	VerifiedAt        pgtype.Timestamptz
 	AuthorName        *string
 	AuthorAvatar      *string
+	AuthorCover       *string
 
 	// Mentor profile fields (000824 unification) — read off the author
 	// user_profiles join on the listing queries. Only meaningful when
@@ -344,7 +345,7 @@ func rowFromList(r gen.ListServiceListingsRow) ServiceRow {
 		VerificationType: r.VerificationType,
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
-		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar,
+		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
@@ -380,7 +381,7 @@ func rowFromSlug(r gen.GetServiceListingBySlugRow) ServiceRow {
 		VerificationType: r.VerificationType,
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
-		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar,
+		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
@@ -425,7 +426,7 @@ func rowFromContentID(r gen.GetServiceListingByContentIDRow) ServiceRow {
 		VerificationType: r.VerificationType,
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
-		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar,
+		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
@@ -466,7 +467,7 @@ func rowFromAdmin(r gen.AdminListServiceListingsRow) ServiceRow {
 		VerificationType: r.VerificationType,
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
-		VerifiedAt: r.VerifiedAt, AuthorName: r.AuthorName, AuthorAvatar: r.AuthorAvatar,
+		VerifiedAt: r.VerifiedAt, AuthorName: r.AuthorName, AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
@@ -503,7 +504,7 @@ func rowFromOrg(r gen.ListServiceListingsByOrgRow) ServiceRow {
 		VerificationType: r.VerificationType,
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
-		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar,
+		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,

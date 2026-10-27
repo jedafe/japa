@@ -101,7 +101,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -157,7 +157,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -221,7 +221,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -371,7 +371,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -527,7 +527,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       u.username AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -599,7 +599,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,

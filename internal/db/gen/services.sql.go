@@ -315,7 +315,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       u.username AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -417,6 +417,7 @@ type AdminListServiceListingsRow struct {
 	Steps              []byte             `json:"steps"`
 	AuthorName         *string            `json:"author_name"`
 	AuthorAvatar       *string            `json:"author_avatar"`
+	AuthorCover        *string            `json:"author_cover"`
 	AuthorDisplayName  *string            `json:"author_display_name"`
 	IsMentor           *bool              `json:"is_mentor"`
 	MentorCapacity     *int16             `json:"mentor_capacity"`
@@ -498,6 +499,7 @@ func (q *Queries) AdminListServiceListings(ctx context.Context, arg AdminListSer
 			&i.Steps,
 			&i.AuthorName,
 			&i.AuthorAvatar,
+			&i.AuthorCover,
 			&i.AuthorDisplayName,
 			&i.IsMentor,
 			&i.MentorCapacity,
@@ -2199,7 +2201,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -2298,6 +2300,7 @@ type GetMentorshipListingByAuthorRow struct {
 	Audience              []byte             `json:"audience"`
 	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
+	AuthorCover           *string            `json:"author_cover"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`
 	MentorCapacity        *int16             `json:"mentor_capacity"`
@@ -2395,6 +2398,7 @@ func (q *Queries) GetMentorshipListingByAuthor(ctx context.Context, authorID pgt
 		&i.Audience,
 		&i.AuthorName,
 		&i.AuthorAvatar,
+		&i.AuthorCover,
 		&i.AuthorDisplayName,
 		&i.IsMentor,
 		&i.MentorCapacity,
@@ -2767,7 +2771,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -2861,6 +2865,7 @@ type GetServiceListingByContentIDRow struct {
 	Audience              []byte             `json:"audience"`
 	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
+	AuthorCover           *string            `json:"author_cover"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`
 	MentorCapacity        *int16             `json:"mentor_capacity"`
@@ -2945,6 +2950,7 @@ func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pg
 		&i.Audience,
 		&i.AuthorName,
 		&i.AuthorAvatar,
+		&i.AuthorCover,
 		&i.AuthorDisplayName,
 		&i.IsMentor,
 		&i.MentorCapacity,
@@ -2992,7 +2998,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.faqs, sm.steps,
        -- 000829 detail-page content fields (all listing kinds).
        sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -3086,6 +3092,7 @@ type GetServiceListingBySlugRow struct {
 	Audience              []byte             `json:"audience"`
 	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
+	AuthorCover           *string            `json:"author_cover"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`
 	MentorCapacity        *int16             `json:"mentor_capacity"`
@@ -3173,6 +3180,7 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 		&i.Audience,
 		&i.AuthorName,
 		&i.AuthorAvatar,
+		&i.AuthorCover,
 		&i.AuthorDisplayName,
 		&i.IsMentor,
 		&i.MentorCapacity,
@@ -4544,7 +4552,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -4735,6 +4743,7 @@ type ListServiceListingsRow struct {
 	Steps                 []byte             `json:"steps"`
 	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
+	AuthorCover           *string            `json:"author_cover"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`
 	MentorCapacity        *int16             `json:"mentor_capacity"`
@@ -4832,6 +4841,7 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 			&i.Steps,
 			&i.AuthorName,
 			&i.AuthorAvatar,
+			&i.AuthorCover,
 			&i.AuthorDisplayName,
 			&i.IsMentor,
 			&i.MentorCapacity,
@@ -4871,7 +4881,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(u.public_username, u.username, '') AS author_name, up.avatar_url AS author_avatar, up.cover_url AS author_cover,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
@@ -4971,6 +4981,7 @@ type ListServiceListingsByOrgRow struct {
 	Steps                 []byte             `json:"steps"`
 	AuthorName            string             `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
+	AuthorCover           *string            `json:"author_cover"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	IsMentor              *bool              `json:"is_mentor"`
 	MentorCapacity        *int16             `json:"mentor_capacity"`
@@ -5052,6 +5063,7 @@ func (q *Queries) ListServiceListingsByOrg(ctx context.Context, arg ListServiceL
 			&i.Steps,
 			&i.AuthorName,
 			&i.AuthorAvatar,
+			&i.AuthorCover,
 			&i.AuthorDisplayName,
 			&i.IsMentor,
 			&i.MentorCapacity,

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { untrack } from 'svelte';
 	import { t, siteName } from '$lib/i18n';
-	import { ArrowLeft, GitCommitHorizontal } from 'lucide-svelte';
+	import { Accordion } from 'bits-ui';
+	import { ArrowLeft, ChevronDown, GitCommitHorizontal } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { RoadmapReleaseEntry } from '$lib/types';
 
@@ -24,6 +26,10 @@
 		}
 		return order.filter((k) => m.has(k)).map((k) => ({ type: k, entries: m.get(k)! }));
 	});
+
+	// Commit accordion — every type group starts expanded; bound so
+	// triggers actually toggle.
+	let openCommitGroups = $state<string[]>(untrack(() => groups.map((g) => g.type)));
 </script>
 
 <svelte:head>
@@ -52,28 +58,43 @@
 			description={t('roadmap.unreleased.empty_desc', 'New commits will appear here as they land.')}
 		/>
 	{:else}
-		{#each groups as g}
-			<section class="group">
-				<h2>{t('roadmap.type_' + g.type, g.type)} <span class="n">({g.entries.length})</span></h2>
-				<ul>
-					{#each g.entries as e}
-						<li>
-							{#if e.is_breaking}
-								<span class="breaking">{t('roadmap.breaking', 'BREAKING')}</span>
-							{/if}
-							{#if e.commit_url}
-								<a href={e.commit_url} target="_blank" rel="noopener">{e.title}</a>
-							{:else}
-								{e.title}
-							{/if}
-							{#if e.scope}
-								<span class="scope">{e.scope}</span>
-							{/if}
-						</li>
-					{/each}
-				</ul>
-			</section>
-		{/each}
+		<!-- Same grouped-commit presentation as the release detail page —
+		     collapsible type groups with bulleted commit lines. -->
+		<Accordion.Root type="multiple" bind:value={openCommitGroups} class="commit-groups">
+			{#each groups as g}
+				<Accordion.Item value={g.type} class="commit-group">
+					<Accordion.Header>
+						<Accordion.Trigger class="commit-trigger">
+							<span class="commit-title">
+								{t('roadmap.type_' + g.type, g.type)} <span class="n">({g.entries.length})</span>
+							</span>
+							<ChevronDown size={16} class="chev" aria-hidden="true" />
+						</Accordion.Trigger>
+					</Accordion.Header>
+					<Accordion.Content class="commit-content">
+						<ul>
+							{#each g.entries as e}
+								<li>
+									<span class="entry">
+										{#if e.is_breaking}
+											<span class="breaking">{t('roadmap.breaking', 'BREAKING')}</span>
+										{/if}
+										{#if e.commit_url}
+											<a href={e.commit_url} target="_blank" rel="noopener">{e.title}</a>
+										{:else}
+											{e.title}
+										{/if}
+										{#if e.scope}
+											<span class="scope">{e.scope}</span>
+										{/if}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					</Accordion.Content>
+				</Accordion.Item>
+			{/each}
+		</Accordion.Root>
 	{/if}
 </div>
 
@@ -107,17 +128,63 @@
 		font-weight: 400;
 		color: var(--color-muted, #6b7280);
 	}
-	ul {
-		list-style: none;
-		padding: 0;
-		margin: 0;
+	.commit-groups {
+		border: 1px solid var(--color-border, #e5e7eb);
+		border-radius: var(--radius-card, 0.75rem);
+		background: var(--color-surface, #fff);
+		overflow: hidden;
+	}
+	.commit-group + .commit-group {
+		border-top: 1px solid var(--color-border, #e5e7eb);
+	}
+	.commit-trigger {
 		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
+		width: 100%;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.65rem 0.9rem;
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+		text-align: start;
+	}
+	.commit-trigger:hover {
+		background: var(--color-surface-subtle, #f3f4f6);
+	}
+	.commit-trigger:focus-visible {
+		outline: 2px solid var(--color-primary, #6d28d9);
+		outline-offset: -2px;
+	}
+	.commit-title {
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+	.commit-trigger .chev {
+		color: var(--color-muted, #6b7280);
+		transition: transform 0.15s ease;
+	}
+	.commit-trigger[data-state='open'] .chev {
+		transform: rotate(180deg);
+	}
+	.commit-content {
+		border-top: 1px solid var(--color-border, #e5e7eb);
+		padding: 0.5rem 0.9rem 0.75rem;
+	}
+	ul {
+		list-style: disc;
+		padding-inline-start: 1.4rem;
+		margin: 0;
 	}
 	li {
 		font-size: 0.9rem;
-		display: flex;
+		padding: 0.25rem 0;
+	}
+	li::marker {
+		color: var(--color-muted, #6b7280);
+	}
+	.entry {
+		display: inline-flex;
 		align-items: baseline;
 		gap: 0.5rem;
 		flex-wrap: wrap;

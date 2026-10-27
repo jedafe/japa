@@ -64,6 +64,7 @@
 	import { serviceCategoryIcon } from '$lib/components/marketplace/serviceCategoryIcon';
 	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
 	import { accentClasses, priceLabel, serviceCategoryInfo } from '$lib/marketplace';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { serviceCategoryLabel } from '$lib/enumOptions';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import { formatMoney } from '$lib/utils/currency';
@@ -996,6 +997,12 @@
 						{#if service.featured_image_url}
 							<img
 								src={service.featured_image_url}
+								alt={service.title}
+								class="h-full w-full object-cover"
+							/>
+						{:else if mentor?.cover_url}
+							<img
+								src={remoteImageUrl(mentor.cover_url)}
 								alt={service.title}
 								class="h-full w-full object-cover"
 							/>

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { untrack } from 'svelte';
 	import { t, siteName } from '$lib/i18n';
-	import { ArrowLeft, Package } from 'lucide-svelte';
+	import { Accordion } from 'bits-ui';
+	import { ArrowLeft, ChevronDown, Package } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { markdownToHtml } from '$lib/studio/markdown-html';
 	import type { RoadmapReleaseEntry } from '$lib/types';
@@ -36,6 +38,11 @@
 		}
 		return order.filter((k) => m.has(k)).map((k) => ({ type: k, entries: m.get(k)! }));
 	});
+
+	// Commit accordion — every type group starts expanded; the user folds
+	// the ones they don't need. Bound so triggers actually toggle (a static
+	// value would make the accordion controlled and inert).
+	let openCommitGroups = $state<string[]>(untrack(() => groups.map((g) => g.type)));
 </script>
 
 <svelte:head>
@@ -93,7 +100,10 @@
 			{/if}
 		</header>
 
-		{#if rel.body}
+		{#if rel.body && data.scope === ''}
+			<!-- Release notes (incl. Highlights) describe the whole release —
+			     they only make sense on the unfiltered "All" view, not when a
+			     scope chip narrows the entries. -->
 			<section class="notes">
 				{@html markdownToHtml(rel.body, { sanitize: true })}
 			</section>
@@ -123,28 +133,48 @@
 			</section>
 		{/if}
 
-		{#each groups as g}
+		{#if groups.length > 0}
+			<!-- Commit entries grouped by type inside a collapsible accordion
+			     (expanded by default) — each group folds independently. -->
 			<section>
-				<h2>{t('roadmap.type_' + g.type, g.type)} <span class="n">({g.entries.length})</span></h2>
-				<ul class="entries">
-					{#each g.entries as e}
-						<li>
-							{#if e.is_breaking}
-								<span class="breaking">{t('roadmap.breaking', 'BREAKING')}</span>
-							{/if}
-							{#if e.commit_url}
-								<a href={e.commit_url} target="_blank" rel="noopener">{e.title}</a>
-							{:else}
-								{e.title}
-							{/if}
-							{#if e.scope}
-								<span class="scope-tag">{e.scope}</span>
-							{/if}
-						</li>
+				<h2>{t('roadmap.releases.commits', 'Commits')}</h2>
+				<Accordion.Root type="multiple" bind:value={openCommitGroups} class="commit-groups">
+					{#each groups as g}
+						<Accordion.Item value={g.type} class="commit-group">
+							<Accordion.Header>
+								<Accordion.Trigger class="commit-trigger">
+									<span class="commit-title">
+										{t('roadmap.type_' + g.type, g.type)} <span class="n">({g.entries.length})</span>
+									</span>
+									<ChevronDown size={16} class="chev" aria-hidden="true" />
+								</Accordion.Trigger>
+							</Accordion.Header>
+							<Accordion.Content class="commit-content">
+								<ul class="entries">
+									{#each g.entries as e}
+										<li>
+											<span class="entry">
+												{#if e.is_breaking}
+													<span class="breaking">{t('roadmap.breaking', 'BREAKING')}</span>
+												{/if}
+												{#if e.commit_url}
+													<a href={e.commit_url} target="_blank" rel="noopener">{e.title}</a>
+												{:else}
+													{e.title}
+												{/if}
+												{#if e.scope}
+													<span class="scope-tag">{e.scope}</span>
+												{/if}
+											</span>
+										</li>
+									{/each}
+								</ul>
+							</Accordion.Content>
+						</Accordion.Item>
 					{/each}
-				</ul>
+				</Accordion.Root>
 			</section>
-		{/each}
+		{/if}
 	{/if}
 </div>
 
@@ -310,13 +340,65 @@
 		font-size: 0.82rem;
 		flex-basis: 100%;
 	}
+	.commit-groups {
+		border: 1px solid var(--color-border, #e5e7eb);
+		border-radius: var(--radius-card, 0.75rem);
+		background: var(--color-surface, #fff);
+		overflow: hidden;
+	}
+	.commit-group + .commit-group {
+		border-top: 1px solid var(--color-border, #e5e7eb);
+	}
+	.commit-trigger {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.65rem 0.9rem;
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+		text-align: start;
+	}
+	.commit-trigger:hover {
+		background: var(--color-surface-subtle, #f3f4f6);
+	}
+	.commit-trigger:focus-visible {
+		outline: 2px solid var(--color-primary, #6d28d9);
+		outline-offset: -2px;
+	}
+	.commit-title {
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+	.commit-trigger .chev {
+		color: var(--color-muted, #6b7280);
+		transition: transform 0.15s ease;
+	}
+	.commit-trigger[data-state='open'] .chev {
+		transform: rotate(180deg);
+	}
+	.commit-content {
+		border-top: 1px solid var(--color-border, #e5e7eb);
+		padding: 0.5rem 0.9rem 0.75rem;
+	}
+	ul.entries {
+		list-style: disc;
+		padding-inline-start: 1.4rem;
+	}
 	.entries li {
 		font-size: 0.9rem;
-		display: flex;
+		padding: 0.25rem 0;
+	}
+	.entries li::marker {
+		color: var(--color-muted, #6b7280);
+	}
+	.entries .entry {
+		display: inline-flex;
 		align-items: baseline;
 		gap: 0.5rem;
 		flex-wrap: wrap;
-		padding: 0.25rem 0;
 	}
 	.entries a {
 		color: var(--color-primary, #6d28d9);

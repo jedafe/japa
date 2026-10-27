@@ -6,6 +6,7 @@
 	import { relativeTime } from '$lib/feed/time';
 	import { t, i18n } from '$lib/i18n';
 	import { contentHref } from '$lib/utils/contentLink';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { formatDuration } from '$lib/utils/duration';
 	import type { CardStyle } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
@@ -84,7 +85,7 @@
 
 {#snippet avatar(size: number)}
 	{#if authorAvatar}
-		<img src={authorAvatar} alt="" loading="lazy" class="shrink-0 rounded-full object-cover" style="width:{size}px;height:{size}px" />
+		<img src={remoteImageUrl(authorAvatar)} alt="" loading="lazy" class="shrink-0 rounded-full object-cover" style="width:{size}px;height:{size}px" />
 	{:else}
 		<span class="grid shrink-0 place-items-center rounded-full bg-[var(--color-primary)] font-semibold text-[var(--color-primary-contrast)]" style="width:{size}px;height:{size}px;font-size:{Math.round(size * 0.4)}px">{initials}</span>
 	{/if}

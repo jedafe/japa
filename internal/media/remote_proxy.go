@@ -12,7 +12,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -53,6 +55,26 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) {
 	s.vk = vk
 }
 
+// firstPartyProxyHosts are our own media/API hosts — derived from
+// JC_IMGPROXY_BASE_URL, JC_API_PUBLIC_URL and JC_SITE_URL. They resolve to
+// private/CGNAT addresses inside the backend network, which the SSRF guard
+// below would reject, so the proxy could never serve our own imgproxy/serve
+// URLs (they appeared wherever remoteImageUrl wrapped a first-party URL and
+// rendered as the placeholder). The allowlist is a fixed set of configured
+// hostnames — not a wildcard — so it cannot be used to smuggle arbitrary
+// internal targets through the proxy.
+var firstPartyProxyHosts = sync.OnceValue(func() map[string]bool {
+	hosts := map[string]bool{}
+	for _, env := range []string{"JC_IMGPROXY_BASE_URL", "JC_API_PUBLIC_URL", "JC_SITE_URL"} {
+		u, err := url.Parse(strings.TrimSpace(os.Getenv(env)))
+		if err != nil || u == nil || u.Hostname() == "" {
+			continue
+		}
+		hosts[strings.ToLower(u.Hostname())] = true
+	}
+	return hosts
+})
+
 // proxyHTTPClient performs SSRF-safe outbound fetches: every connection is
 // established through a DialContext that resolves the host and rejects any
 // non-public IP, so DNS answers and redirect targets are validated at connect
@@ -76,8 +98,9 @@ var proxyHTTPClient = &http.Client{
 			// ServerName and the Host header still come from the request
 			// URL, so virtual hosting is unaffected.
 			var target net.IP
+			firstParty := firstPartyProxyHosts()[strings.ToLower(host)]
 			for _, ip := range ips {
-				if !isPublicIP(ip) {
+				if !firstParty && !isPublicIP(ip) {
 					return nil, fmt.Errorf("media proxy: %s resolves to non-public IP %s", host, ip)
 				}
 				if target == nil {

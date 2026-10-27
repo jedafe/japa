@@ -168,6 +168,7 @@ type MentorDTO struct {
 	Username          string   `json:"username"`
 	DisplayName       string   `json:"display_name,omitempty"`
 	AvatarURL         string   `json:"avatar_url,omitempty"`
+	CoverURL          string   `json:"cover_url,omitempty"`
 	Areas             []string `json:"areas,omitempty"`
 	Capacity          int32    `json:"capacity"`
 	ActiveMenteeCount int32    `json:"active_mentee_count"`
@@ -3420,6 +3421,7 @@ func mentorBlock(r ServiceRow) *MentorDTO {
 		Username:    strOrEmpty(r.AuthorName),
 		DisplayName: strOrEmpty(r.AuthorDisplayName),
 		AvatarURL:   strOrEmpty(r.AuthorAvatar),
+		CoverURL:    strOrEmpty(r.AuthorCover),
 		Areas:       r.MentorAreas,
 		MentorSince: formatTs(r.MentorSince),
 	}
