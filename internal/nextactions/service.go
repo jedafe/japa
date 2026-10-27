@@ -436,10 +436,17 @@ func (s *Service) ensureMerged(ctx context.Context, state *UserState, r *http.Re
 	if state.UserID.Valid && s.cache != nil {
 		mergedKey := valkey.MustKey("nextactions:merged:%s", state.UserID.String())
 		if ok, err := s.cache.SetNX(ctx, mergedKey, "1", 90*24*time.Hour).Result(); err == nil && ok {
+			// Merge only when the jc_guest cookie is present — the client-IP
+			// fallback is a weak shared signal (CGNAT, offices) and must not
+			// import another guest's state into the member's rows.
+			var guestKey string
+			if c, err := r.Cookie(GuestCookieName); err == nil {
+				guestKey = c.Value
+			}
 			// Drop the marker when the merge fails so the next authed
 			// request retries — otherwise a mid-merge DB blip loses the
 			// guest's state for the marker's whole 90-day TTL.
-			if err := s.MergeGuestState(ctx, state.UserID, guestSessionKey(r)); err != nil {
+			if err := s.MergeGuestState(ctx, state.UserID, guestKey); err != nil {
 				slog.Warn("nextactions: guest merge failed, will retry", "user_id", state.UserID, "error", err)
 				_ = s.cache.Del(ctx, mergedKey).Err()
 			}
@@ -872,6 +879,7 @@ func (s *Service) MergeGuestState(ctx context.Context, userID pgtype.UUID, guest
 		return nil
 	}
 	var firstErr error
+	var mergedNonTerminal [][16]byte
 	for rid, st := range s.guestStates(ctx, guestKey) {
 		status := st.Status
 		if status == "" {
@@ -886,6 +894,29 @@ func (s *Service) MergeGuestState(ctx context.Context, userID pgtype.UUID, guest
 			SnoozedUntil: st.SnoozedUntil,
 		}); err != nil && firstErr == nil {
 			firstErr = err
+		}
+		if status != StatusDismissed && status != StatusCompleted && status != StatusExpired {
+			mergedNonTerminal = append(mergedNonTerminal, rid)
+		}
+	}
+	// Registering/logging in satisfies any register-CTA suggestion the guest
+	// was served — mark those merged rows completed so they can't resurface
+	// (e.g. after a later logout on the same device) and the funnel's
+	// completed count covers cross-surface signups where the sessionStorage
+	// pending-completion hook can't reach.
+	if len(mergedNonTerminal) > 0 {
+		if rules, err := s.loadRules(ctx); err == nil {
+			byID := make(map[[16]byte]Rule, len(rules))
+			for i := range rules {
+				byID[rules[i].ID.Bytes] = rules[i]
+			}
+			for _, rid := range mergedNonTerminal {
+				if rl, ok := byID[rid]; ok && isAuthCTA(rl.Payload.CTAURL) {
+					_ = s.write.CompleteNextAction(ctx, gen.CompleteNextActionParams{
+						UserID: userID, RuleID: pgtype.UUID{Bytes: rid, Valid: true},
+					})
+				}
+			}
 		}
 	}
 	// Attribute pre-auth platform_events to the new user — guest tool/usage
@@ -1099,6 +1130,12 @@ func parseUUID(s string) pgtype.UUID {
 		return pgtype.UUID{}
 	}
 	return id
+}
+
+// isAuthCTA reports whether a rule's CTA sends the visitor to register or
+// sign up — completing those flows satisfies the suggestion outright.
+func isAuthCTA(url string) bool {
+	return strings.HasPrefix(url, "/register") || strings.HasPrefix(url, "/signup")
 }
 
 func statusFor(snoozeHours int) string {

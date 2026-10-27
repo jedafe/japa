@@ -1,6 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { Source, SourceItemEnvelope, SourceMeta } from '$lib/types/sources';
 
 const PAGE_SIZE = 24;
@@ -20,8 +20,13 @@ export const load: PageServerLoad = async (event) => {
 		item_sorts: []
 	}));
 
-	const source = await apiGet<Source>(ctx, `/sources/${encodeURIComponent(slug)}`).catch(() => {
-		error(404, { code: 'not_found', message: 'Source not found' });
+	const source = await apiGet<Source>(ctx, `/sources/${encodeURIComponent(slug)}`).catch((err) => {
+		// Only a real 404 is "not found" — a backend outage/upstream error
+		// must surface as 502, not a misleading "Source not found" page.
+		if (err instanceof ApiError && err.status === 404) {
+			error(404, { code: 'not_found', message: 'Source not found' });
+		}
+		error(502, { code: 'upstream_error', message: 'Source service unavailable' });
 	});
 
 	// §106: the backend also resolves a source by its UUID — canonicalize to

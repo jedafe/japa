@@ -3454,7 +3454,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// requests to tool action/engagement endpoints (see
 			// nextactions.ToolUsageRoutes). Must run AFTER OptionalAuth so
 			// member events carry user_id; guests key on the jc_guest cookie.
-			r.Use(nextactions.TrackToolUsage(analyticsService))
+			r.Use(nextactions.TrackToolUsage(analyticsService, vkClient.Redis()))
 
 			// Identity-dependent enforcement middleware — MUST run after
 			// OptionalAuth + impersonation so auth.FromContext is populated.

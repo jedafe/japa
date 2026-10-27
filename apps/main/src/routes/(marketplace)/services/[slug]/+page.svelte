@@ -387,7 +387,11 @@
 		if (service.purchase_mode === 'inquiry' && (canBook || guestBooking)) {
 			return { label: t('services.talk_to_expert', 'Talk to an Expert'), dialog: 'booking' };
 		}
-		if (service.author_id && service.author_id !== data.currentUserId) {
+		// "Message provider" on non-mentorship listings is a commercial
+		// lead — the dialog posts it as an inquiry to the provider/org
+		// inbox (mentorship uses DM instead, handled above). canMessage
+		// carries the editor/external/permission gates.
+		if (canMessage) {
 			return { label: t('services.talk_to_expert', 'Talk to an Expert'), dialog: 'message' };
 		}
 		if (service.org_slug) {
@@ -436,6 +440,47 @@
 			return null;
 		}
 	);
+
+	// The mobile bottom bar renders for every listing (non-editors only):
+	// engagement actions (message / share / report) apply even when no
+	// booking CTA exists. Hidden on desktop — inline sections cover it.
+	const showStickyBar = $derived(!!service && !canEdit);
+
+	// Contact surface for every listing: mentorship → 1:1 DM with the
+	// mentor (structured listing context); anything else → inquiry into
+	// the provider/org bookings inbox. External listings link out (no
+	// inquiry endpoint), the inquiry POST needs service.booking.create,
+	// and editors/the author get no surface at all.
+	const canMessage = $derived(
+		!!service?.author_id &&
+			!canEdit &&
+			service.author_id !== data.currentUserId &&
+			(isMentorship ||
+				!!service.org_id ||
+				(service.purchase_mode !== 'external' &&
+					(!data.authed ||
+						(data.user?.permissions ?? []).includes('service.booking.create'))))
+	);
+
+	let linkCopied = $state(false);
+	async function shareService() {
+		const url = canonical;
+		try {
+			if (navigator.share) {
+				await navigator.share({ title: service?.title ?? '', url });
+				return;
+			}
+		} catch {
+			return; // user dismissed the share sheet
+		}
+		try {
+			await navigator.clipboard.writeText(url);
+			linkCopied = true;
+			setTimeout(() => (linkCopied = false), 2000);
+		} catch {
+			// clipboard unavailable — nothing else to do on mobile
+		}
+	}
 
 	// ---------------------------------------------------------------
 	// Mockup surfaces (§114 2026-10-10) — structured listing fields with
@@ -740,7 +785,7 @@
 					entityId={service.id}
 					onCreated={() => invalidateAll()}
 				/>
-			{:else}
+			{:else if !data.authed}
 				<p
 					class="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] p-4 text-center text-sm text-[var(--color-muted)]"
 				>
@@ -754,7 +799,7 @@
 		</div>
 	{/snippet}
 
-	<div class="mx-auto w-full max-w-6xl {stickyCta ? 'pb-24' : 'pb-14'} lg:pb-14">
+	<div class="mx-auto w-full max-w-6xl {showStickyBar ? 'pb-24' : 'pb-14'} lg:pb-14">
 		<!-- Breadcrumb: Home / Services|Packages|?kind=mentorship / Category / Title -->
 		<nav
 			class="mb-6 flex flex-wrap items-center gap-1 text-xs text-[var(--color-muted)]"
@@ -1218,7 +1263,7 @@
 							mentorTierGoals = '';
 							mentorDialogOpen = true;
 						}}
-						onMessage={() => (messageOpen = true)}
+						onMessage={canMessage ? () => (messageOpen = true) : undefined}
 					/>
 					<div class="mt-6">
 						<p class="text-sm font-semibold text-[var(--color-text)]">
@@ -1227,15 +1272,25 @@
 						<div class="mt-2.5 flex items-center gap-2">
 							<ShareButton contentId={service.id} url={canonical} title={service.title} />
 						</div>
-						{#if isMentorship && data.authed}
-							<button
-								type="button"
-								onclick={() => (reportOpen = true)}
-								class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
-							>
-								<Flag size={14} />
-								{t('services.report_listing', 'Report this listing')}
-							</button>
+						{#if isMentorship}
+							{#if data.authed}
+								<button
+									type="button"
+									onclick={() => (reportOpen = true)}
+									class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+								>
+									<Flag size={14} />
+									{t('services.report_listing', 'Report this listing')}
+								</button>
+							{:else}
+								<a
+									href="/login?redirect={encodeURIComponent(page.url.pathname + page.url.search)}"
+									class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+								>
+									<Flag size={14} />
+									{t('services.report_listing', 'Report this listing')}
+								</a>
+							{/if}
 						{/if}
 						{#if page.data.features?.['scam_alert.enabled']}
 							<a
@@ -1868,7 +1923,7 @@
 	<MessageDialog bind:open={messageOpen} {service} authed={!!data.authed} />
 {/if}
 
-{#if service && isMentorship}
+{#if service}
 	<ReportDialog
 		bind:open={reportOpen}
 		entityType="content"
@@ -1877,14 +1932,18 @@
 	/>
 {/if}
 
-{#if stickyCta && service}
+{#if showStickyBar && service}
 	<StickyBookBar
 		price={heroPrice}
 		{ratingAvg}
 		{ratingCount}
-		ctaLabel={stickyCta.label}
-		ctaHref={stickyCta.href}
-		external={stickyCta.external}
-		onCta={stickyCta.dialog ? openCtaDialog : undefined}
+		ctaLabel={stickyCta?.label}
+		ctaHref={stickyCta?.href}
+		external={stickyCta?.external}
+		onCta={stickyCta?.dialog ? openCtaDialog : undefined}
+		onMessage={canMessage ? () => (messageOpen = true) : undefined}
+		onShare={shareService}
+		onReport={() => (reportOpen = true)}
+		{linkCopied}
 	/>
 {/if}

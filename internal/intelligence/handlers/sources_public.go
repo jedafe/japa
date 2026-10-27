@@ -131,6 +131,12 @@ type publicSource struct {
 	// publishes (detail endpoint only) — the detail page scopes its filter
 	// pills to it instead of offering every global type.
 	EntityTypes []string `json:"entity_types,omitempty"`
+	// Detail-endpoint provenance fields for the About section (v2 spec):
+	// license, attribution requirement, crawl cadence, and last crawl time.
+	SourceLicense       *string            `json:"source_license,omitempty"`
+	AttributionRequired bool               `json:"attribution_required"`
+	CrawlFrequency      string             `json:"crawl_frequency,omitempty"`
+	LastCrawledAt       pgtype.Timestamptz `json:"last_crawled_at,omitempty"`
 }
 
 type linkedEntity struct {
@@ -437,6 +443,11 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		IsFollowing:   isFollowing,
 		IsBlocked:     isBlocked,
 		LinkedEntity:  linked,
+		// About-section provenance (detail endpoint only).
+		SourceLicense:       row.SourceLicense,
+		AttributionRequired: row.AttributionRequired,
+		CrawlFrequency:      row.CrawlFrequency,
+		LastCrawledAt:       row.LastCrawledAt,
 	}
 
 	// §106: video channel sources expose the channel account username so the
@@ -937,6 +948,17 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Never trust a client-supplied probe_snapshot — when one was provided
+	// the proposer is claiming a probe ran, so re-run the preview probe
+	// server-side (same per-user quota class as /sources/probe) and store
+	// OUR report. A failed or quota-blocked re-probe keeps the client
+	// snapshot — reviewers see it flagged unverified (last_probed_at NULL).
+	serverReport, serverMethods := h.reprobeProposal(r.Context(), userID, req)
+	snapshot := req.ProbeSnapshot
+	if serverReport != nil {
+		snapshot = serverReport
+	}
+
 	src, err := h.intelSources.Propose(r.Context(), userID, sources.ProposeInput{
 		Name:          req.Name,
 		Domain:        req.Domain,
@@ -945,7 +967,7 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 		Categories:    req.Categories,
 		SourceType:    req.SourceType,
 		SourceKind:    req.SourceKind,
-		ProbeSnapshot: req.ProbeSnapshot,
+		ProbeSnapshot: snapshot,
 		Description:   req.Description,
 	})
 	if err != nil {
@@ -984,6 +1006,15 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 
 	slug := derefString(src.Slug)
 
+	// Stamp the server-verified probe report: last_probed_at marks it as
+	// backend-produced so the review UI distinguishes it from a
+	// proposer-supplied snapshot.
+	if serverReport != nil {
+		if serr := h.intelSources.RecordProposeProbe(r.Context(), src.ID, serverReport, serverMethods); serr != nil {
+			slog.Warn("intel: propose probe stamp failed", "source_id", src.ID.String(), "error", serr)
+		}
+	}
+
 	// Materialize directory tags for the proposed keywords here (write path)
 	// so GET /sources/{slug} only has to link existing tags.
 	h.createSourceTags(r.Context(), src.Keywords)
@@ -992,11 +1023,10 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": map[string]interface{}{
-			"id":               pgtypeUUIDString(src.ID),
-			"slug":             slug,
-			"name":             src.Name,
-			"status":           src.Status,
-			"admin_review_url": "/intelligence/sources/proposed", // control-panel review surface
+			"id":     pgtypeUUIDString(src.ID),
+			"slug":   slug,
+			"name":   src.Name,
+			"status": src.Status,
 		},
 	})
 }

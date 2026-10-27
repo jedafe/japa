@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { api, apiList } from '$lib/api';
+	import { env } from '$env/dynamic/public';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import {
 		Download,
-		Sparkles,
 		Copy,
 		Eye,
 		Rocket,
@@ -101,6 +101,19 @@
 		if (srcRes.status === 'fulfilled' && srcRes.value.ok) {
 			sources = Array.isArray(srcRes.value.data) ? (srcRes.value.data as SourceEntry[]) : [];
 			sourcesTotal = srcRes.value.meta.total ?? sources.length;
+			// Freshness reads last_crawled_at per source — page through the
+			// remaining sources (bounded) so the count is not limited to the
+			// first 100 rows of the registry.
+			const remaining = Math.min(sourcesTotal, 2000) - sources.length;
+			for (let offset = 100; offset < 100 + remaining && !signal?.aborted; offset += 100) {
+				const page2 = await apiList<SourceEntry[]>(
+					`/api/v1/intel/sources?page_size=100&page_offset=${offset}&include_disabled=true`,
+					{ signal }
+				);
+				if (!page2.ok || !Array.isArray(page2.data) || page2.data.length === 0) break;
+				sources = [...sources, ...(page2.data as SourceEntry[])];
+				if (page2.data.length < 100) break;
+			}
 		}
 		if (reviewRes.status === 'fulfilled' && reviewRes.value.ok) {
 			reviewTotal = reviewRes.value.meta.total ?? 0;
@@ -159,24 +172,10 @@
 
 	// --- Queue counts (all derived from API responses, never hardcoded) ---
 
-	// Fetch queue: registered sources awaiting/eligible for crawl (total
-	// from the sources directory meta).
-	const fetchQueueCount = $derived(sourcesTotal);
-
-	// Extract queue: records that have been extracted and are flowing
-	// through the pipeline toward review — mirrors the review queue depth.
-	const extractQueueCount = $derived(reviewTotal);
-
 	// Dedup queue: records that have been approved but not yet promoted.
 	// These are records in 'approved' status waiting for the intel:promote
 	// task to project them into domain tables.
 	const dedupQueueCount = $derived(approvedTotal);
-
-	// Review queue: records awaiting human moderation (server-side total).
-	const reviewQueueCount = $derived(reviewTotal);
-
-	// Publish queue: promoted records that are live in domain projections.
-	const publishQueueCount = $derived(publishedTotal);
 
 	// Proposed queue: sources awaiting admin approval (server-side total).
 	const proposedQueueCount = $derived(proposedTotal);
@@ -212,22 +211,22 @@
 
 	const queues = $derived<QueueCard[]>([
 		{
-			key: 'fetch',
-			label: t('intel.queue_fetch', 'Fetch Queue'),
-			count: fetchQueueCount,
+			key: 'sources',
+			label: t('intel.queue_sources', 'Registered Sources'),
+			count: sourcesTotal,
 			icon: Download,
 			accent: 'text-sky-500',
 			href: '/intelligence/sources',
-			subtitle: t('intel.queue_fetch_sub', 'Sources registered for crawl')
+			subtitle: t('intel.queue_sources_sub', '{enabled} enabled for crawl').replace('{enabled}', formatNumber(enabledTotal))
 		},
 		{
-			key: 'extract',
-			label: t('intel.queue_extract', 'Extract Queue'),
-			count: extractQueueCount,
-			icon: Sparkles,
-			accent: 'text-violet-500',
+			key: 'review',
+			label: t('intel.queue_review', 'Review Queue'),
+			count: reviewTotal,
+			icon: Eye,
+			accent: 'text-amber-500',
 			href: '/intelligence/review?status=review_required',
-			subtitle: t('intel.queue_extract_sub', 'Records post-extraction')
+			subtitle: t('intel.queue_review_sub', 'Records awaiting moderation')
 		},
 		{
 			key: 'dedup',
@@ -239,18 +238,9 @@
 			subtitle: t('intel.queue_dedup_sub', 'Approved, awaiting promotion')
 		},
 		{
-			key: 'review',
-			label: t('intel.queue_review', 'Review Queue'),
-			count: reviewQueueCount,
-			icon: Eye,
-			accent: 'text-amber-500',
-			href: '/intelligence/review?status=review_required',
-			subtitle: t('intel.queue_review_sub', 'Records awaiting moderation')
-		},
-		{
 			key: 'publish',
-			label: t('intel.queue_publish', 'Publish Queue'),
-			count: publishQueueCount,
+			label: t('intel.queue_publish', 'Published Records'),
+			count: publishedTotal,
 			icon: Rocket,
 			accent: 'text-emerald-500',
 			href: '/intelligence/review?status=published',
@@ -314,12 +304,10 @@
 	}
 
 	function recordEntityTypeLabel(et: string): string {
-		const labels: Record<string, string> = {
-			scholarship: 'Scholarship', job: 'Job', visa: 'Visa',
-			housing: 'Housing', remittance: 'Remittance', cost_of_living: 'Cost of Living',
-			guide: 'Guide', news: 'News', community: 'Community', mentorship: 'Mentorship'
-		};
-		return labels[et] ?? et;
+		// i18n lookup with a humanized fallback — covers every registered
+		// entity type, not just a hardcoded subset.
+		const human = et.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+		return t(`intel.category_${et}`, human);
 	}
 
 	function recordEntityTypeColor(et: string): string {
@@ -342,12 +330,14 @@
 		return d.toLocaleDateString(document.documentElement.lang || 'en', { month: 'short', day: 'numeric', year: 'numeric' });
 	}
 
-	// Build the Main app URL for cross-app links. In dev, the Control app
-	// runs on port 3002 and the Main app on port 3000. In production, both
-	// are served from the same domain (e.g. japa.to) so a relative
-	// /scholarships path works. We detect dev by checking if the port is
-	// 3002 and swap to 3000.
+	// Build the Main app URL for cross-app links. PUBLIC_JC_MAIN_URL is the
+	// authoritative override (dev box on :3000, separate prod origin, etc).
+	// Fallbacks keep the dev port-swap heuristic then same-origin.
 	function mainAppUrl(path: string): string {
+		const configured = env.PUBLIC_JC_MAIN_URL?.trim();
+		if (configured) {
+			return configured.replace(/\/$/, '') + path;
+		}
 		const origin = window.location.origin;
 		if (origin.includes(':3002')) {
 			return origin.replace(':3002', ':3000') + path;
@@ -449,7 +439,7 @@
 			<ListChecks class="text-muted-foreground size-5" />
 			<div>
 				<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">{t('intel.records_in_review', 'Records In Review')}</p>
-				<p class="text-foreground text-lg font-bold">{formatNumber(reviewQueueCount)}</p>
+				<p class="text-foreground text-lg font-bold">{formatNumber(reviewTotal)}</p>
 			</div>
 		</div>
 	</div>

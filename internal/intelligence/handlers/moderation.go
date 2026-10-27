@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -84,10 +85,12 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 	return entry
 }
 
-// HandleSourcesDirectory returns the public source directory. Only enabled
-// sources are listed; internal crawl state (errors, robots policy, provider
-// config) is omitted. The route uses OptionalAuth so anonymous users can
-// browse the directory.
+// HandleSourcesDirectory serves the control-panel source registry and,
+// without include_disabled, the enabled+active subset. It is registered on
+// the authenticated /intel/sources route behind intel.sources.view|manage —
+// the public anonymous directory is HandlePublicSourcesDirectory on
+// /sources. Internal crawl state (errors, robots policy, provider config)
+// is omitted from the response shape.
 // // When the ?include_disabled=true query param is set, ALL sources (including
 // disabled) are returned with the full crawl-state fields the control panel
 // needs (crawl_method, crawl_frequency, last_crawled_at, etc.). This is used
@@ -375,8 +378,11 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 		Note string `json:"note"`
 	}
 
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body) // note is optional
+	// note is optional, but a non-empty body that isn't valid JSON is a
+	// client bug worth a 400 rather than silently treating it as absent.
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
 	}
 
 	// Refuse to approve a record whose extraction carries no field values —
@@ -437,6 +443,11 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 		note = "approved by reviewer"
 	}
 
+	// The status transition already committed — a log write failure must not
+	// 500 (a retry would then 409 on a successful action). Surface the gap as
+	// log_failed so the client can flag a missing audit entry instead.
+	logFailed := false
+
 	if err := h.intelStores.CreateIntelReviewLog(r.Context(), gen.CreateIntelReviewLogParams{
 		IntelRecordID: recordID,
 		ActorUserID:   userID,
@@ -445,9 +456,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 		Note:          &note,
 	}); err != nil {
 		slog.Error("intel: approve review log write failed", "record_id", recordID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
-
-		return
+		logFailed = true
 	}
 
 	// BUG-003 fix: enqueue intel:promote so the approved record is actually
@@ -470,6 +479,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 			"record_id":      recordID.String(),
 			"status":         "approved",
 			"promote_queued": promoteQueued,
+			"log_failed":     logFailed,
 		},
 	})
 }
@@ -498,8 +508,11 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 		Note string `json:"note"`
 	}
 
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body) // note is optional
+	// note is optional, but a non-empty body that isn't valid JSON is a
+	// client bug worth a 400 rather than silently treating it as absent.
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
 	}
 
 	// State guard mirrors approve: only a record awaiting review may be
@@ -547,6 +560,10 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 		note = "rejected by reviewer"
 	}
 
+	// Same ordering rationale as approve — the transition already committed,
+	// so a log failure surfaces as a flag, not a 500 on a successful action.
+	logFailed := false
+
 	if err := h.intelStores.CreateIntelReviewLog(r.Context(), gen.CreateIntelReviewLogParams{
 		IntelRecordID: recordID,
 		ActorUserID:   userID,
@@ -555,15 +572,14 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 		Note:          &note,
 	}); err != nil {
 		slog.Error("intel: reject review log write failed", "record_id", recordID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
-
-		return
+		logFailed = true
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
-			"record_id": recordID.String(),
-			"status":    "rejected",
+			"record_id":  recordID.String(),
+			"status":     "rejected",
+			"log_failed": logFailed,
 		},
 	})
 }

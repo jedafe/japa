@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -113,10 +114,12 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	// sources returned an empty feed under popular/discussed/upvoted. The
 	// merge fetches (offset + limit) items from each source (each sorted at
 	// the DB level by the requested mode), then re-sorts and slices in
-	// memory. To keep the DB cost bounded, this mixed path is only used when
-	// the requested window fits inside max_page_size *
-	// mixed_fetch_page_multiplier.
-	if entityType == "" && h.canUseMixedFetch(r.Context(), pageOffset+limit) {
+	// memory. Deep pagination past max_page_size*mixed_fetch_page_multiplier
+	// keeps the same merged dataset but caps the reachable window: the inner
+	// fetch is clamped and meta.total is reported as min(realTotal, cap), so
+	// the feed ends honestly at the cap instead of silently degrading to a
+	// records-only dataset. Per-type filters (?entity_type=) paginate fully.
+	if entityType == "" {
 		items, total, err := h.listMixedSourceItems(r.Context(), w, r, src.ID, page, limit, pageOffset, sortMode)
 		if err != nil {
 			return
@@ -365,12 +368,17 @@ func (h *Handlers) remittanceRecordToSourceItem(ctx context.Context, rec gen.Int
 		publishedAt = rec.ExtractedAt
 	}
 
+	// Deep-link the corridor so a rate card lands on its pair rather than
+	// the generic tool page (the tools app ignores unknown params today —
+	// harmless if unsupported, useful when corridor links land).
+	href := "/tools/remittance?corridor=" + rate.SendCurrency + "-" + rate.ReceiveCurrency
+
 	return sourceItem{
 		ID:          pgtypeUUIDString(rate.ID),
 		EntityType:  "remittance",
 		Title:       title,
 		OriginalURL: originalURL,
-		Href:        "/tools/remittance",
+		Href:        href,
 		PublishedAt: publishedAt,
 	}, true, nil
 }
@@ -488,7 +496,12 @@ func sortSourceItems(items []sourceItem, sortMode string) {
 	})
 }
 
-func (h *Handlers) canUseMixedFetch(ctx context.Context, needed int) bool {
+// mixedFetchCap returns the maximum reachable window (offset+limit) for the
+// merged unfiltered feed — max_page_size * mixed_fetch_page_multiplier
+// (defaults 1000 items). Beyond it the inner per-source fetches are clamped
+// and the reported total is capped, so the feed ends cleanly instead of
+// silently dropping the video/comparison legs.
+func (h *Handlers) mixedFetchCap(ctx context.Context) int {
 	maxSize := 100
 	if h.settings != nil {
 		maxSize = h.settings.GetIntOr(ctx, "intel.radar.max_page_size", 100)
@@ -499,13 +512,18 @@ func (h *Handlers) canUseMixedFetch(ctx context.Context, needed int) bool {
 		multiplier = h.settings.GetIntOr(ctx, "intel.radar.mixed_fetch_page_multiplier", 10)
 	}
 
-	return needed <= maxSize*multiplier
+	return maxSize * multiplier
 }
 
 func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWriter, r *http.Request, sourceID pgtype.UUID, page, limit, pageOffset int, sortMode string) ([]sourceItem, int64, error) {
 	slug := chi.URLParam(r, "slug")
 
-	innerLimit := clampInt32(pageOffset + limit)
+	capWindow := h.mixedFetchCap(ctx)
+	innerNeeded := pageOffset + limit
+	if innerNeeded > capWindow {
+		innerNeeded = capWindow
+	}
+	innerLimit := clampInt32(innerNeeded)
 
 	records, err := h.intelStores.ListIntelRecordsBySource(ctx, sourceID, "", sortMode, innerLimit, 0)
 	if err != nil {
@@ -585,7 +603,14 @@ func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWrit
 		end = len(items)
 	}
 
-	return items[start:end], int64(recordTotal) + videoTotal + comparisonTotal, nil
+	// The merged feed is windowed by capWindow — report the reachable total
+	// so clients stop paging at the cap rather than the true merged count.
+	total := int64(recordTotal) + videoTotal + comparisonTotal
+	if total > int64(capWindow) {
+		total = int64(capWindow)
+	}
+
+	return items[start:end], total, nil
 }
 
 func videoSourceToItem(v gen.ListVideoSourceItemsBySourceIDRow) sourceItem {
@@ -642,32 +667,36 @@ func comparisonContentToItem(c gen.ListComparisonContentsBySourceIDRow) sourceIt
 	}
 }
 
+// Markdown patterns stripped by excerptFromBody — applied to syntax
+// positions only (links, images, heading/ emphasis markers, list bullets)
+// so ordinary text containing '#', '_', parens, or '!' survives (e.g.
+// "C# developer", "£1,000 (GBP)").
+var (
+	mdImage    = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
+	mdLink     = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+	mdHeading  = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s+`)
+	mdListItem = regexp.MustCompile(`(?m)^\s*[-*+]\s+`)
+	mdEmph     = regexp.MustCompile(`[*_` + "`" + `~]{1,3}`)
+	mdWs       = regexp.MustCompile(`\s+`)
+)
+
 // excerptFromBody returns a short plain-text excerpt from a markdown body,
-// truncated to maxLen runes. It is intentionally simple.
+// truncated to maxLen runes on a rune boundary.
 func excerptFromBody(body string, maxLen int) string {
 	if body == "" {
 		return ""
 	}
 
-	text := body
-	text = strings.ReplaceAll(text, "#", "")
-	text = strings.ReplaceAll(text, "*", "")
-	text = strings.ReplaceAll(text, "_", "")
-	text = strings.ReplaceAll(text, "`", "")
-	text = strings.ReplaceAll(text, "[", "")
-	text = strings.ReplaceAll(text, "]", "")
-	text = strings.ReplaceAll(text, "(", "")
-	text = strings.ReplaceAll(text, ")", "")
-	text = strings.ReplaceAll(text, "!", "")
+	text := mdImage.ReplaceAllString(body, "")
+	text = mdLink.ReplaceAllString(text, "$1")
+	text = mdHeading.ReplaceAllString(text, "")
+	text = mdListItem.ReplaceAllString(text, "")
+	text = mdEmph.ReplaceAllString(text, "")
+	text = mdWs.ReplaceAllString(strings.TrimSpace(text), " ")
 
-	for strings.Contains(text, "  ") {
-		text = strings.ReplaceAll(text, "  ", " ")
-	}
-
-	text = strings.TrimSpace(text)
-
-	if len(text) > maxLen {
-		return text[:maxLen]
+	runes := []rune(text)
+	if len(runes) > maxLen {
+		return string(runes[:maxLen])
 	}
 
 	return text

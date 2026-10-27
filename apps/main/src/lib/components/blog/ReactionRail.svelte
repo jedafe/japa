@@ -142,6 +142,19 @@
 		return () => document.removeEventListener('click', handler);
 	});
 
+	// Close the reaction picker on outside click — bottom-bar mode only,
+	// where the panel is click-toggled like the share menu.
+	$effect(() => {
+		if (!showReactions || !bottom) return;
+		const handler = (e: MouseEvent) => {
+			if (!(e.target as HTMLElement)?.closest('[data-reaction-menu]')) {
+				showReactions = false;
+			}
+		};
+		document.addEventListener('click', handler);
+		return () => document.removeEventListener('click', handler);
+	});
+
 	function requireAuth(): boolean {
 		if (!authed) {
 			goto(`/login?redirect=${encodeURIComponent(page.url.pathname)}`);
@@ -281,6 +294,22 @@
 		showShareMenu = !showShareMenu;
 	}
 
+	// Bottom (mobile) bar: the heart behaves like the share button — tap to
+	// open the reaction picker, which stays open until a type is tapped or
+	// the user clicks outside. Desktop rail keeps hover/focus behavior.
+	function toggleReactionMenu() {
+		if (reactionCloseTimer) {
+			clearTimeout(reactionCloseTimer);
+			reactionCloseTimer = null;
+		}
+		showReactions = !showReactions;
+	}
+
+	function pickReaction(reactionKey: string) {
+		toggleReaction(reactionKey);
+		if (bottom) showReactions = false;
+	}
+
 	function openReactions() {
 		if (reactionCloseTimer) {
 			clearTimeout(reactionCloseTimer);
@@ -326,14 +355,15 @@
 			class="relative {isHorizontal ? 'flex flex-1 items-center justify-center' : 'flex flex-col items-center gap-1'}"
 			role="group"
 			aria-label={t('blog.reactions', 'Reactions')}
-			onmouseenter={openReactions}
-			onmouseleave={closeReactionsSoon}
-			onfocusin={openReactions}
-			onfocusout={closeReactionsSoon}
+			data-reaction-menu
+			onmouseenter={bottom ? undefined : openReactions}
+			onmouseleave={bottom ? undefined : closeReactionsSoon}
+			onfocusin={bottom ? undefined : openReactions}
+			onfocusout={bottom ? undefined : closeReactionsSoon}
 		>
 			<button
 				type="button"
-				onclick={() => toggleReaction(primaryKey)}
+				onclick={() => (bottom ? toggleReactionMenu() : toggleReaction(primaryKey))}
 				class="flex {isHorizontal ? 'w-full flex-row items-center justify-center gap-1.5' : 'flex-col items-center gap-1'} transition-colors"
 				aria-label={primaryReaction.label}
 				aria-pressed={primaryActive}
@@ -356,10 +386,10 @@
 					class="absolute {reactionPopoverPosition} z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
 					role="group"
 					aria-label={t('blog.reactions', 'Reactions')}
-					onmouseenter={openReactions}
-					onmouseleave={closeReactionsSoon}
-					onfocusin={openReactions}
-					onfocusout={closeReactionsSoon}
+					onmouseenter={bottom ? undefined : openReactions}
+					onmouseleave={bottom ? undefined : closeReactionsSoon}
+					onfocusin={bottom ? undefined : openReactions}
+					onfocusout={bottom ? undefined : closeReactionsSoon}
 				>
 					<div class="mb-1 px-2 py-1 text-xs font-semibold uppercase text-[var(--color-muted)]">
 						{t('blog.add_reaction', 'Add reaction')}
@@ -370,7 +400,7 @@
 							{@const count = countFor(r.key)}
 							<button
 								type="button"
-								onclick={() => toggleReaction(r.key)}
+								onclick={() => pickReaction(r.key)}
 								class="flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 								aria-label={r.label}
 								aria-pressed={active}

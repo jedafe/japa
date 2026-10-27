@@ -131,9 +131,32 @@ RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username,
- up.profession, up.website_url
+ up.profession, up.website_url,
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+ -- 000940: mentor card fields (000829) + location + mentees-helped count +
+ -- shadow-listing package price — power the mentors comparison dimensions.
+ up.location, up.mentor_title, up.mentor_response_time,
+ up.mentor_availability, up.mentor_session_type,
+ up.mentor_languages, up.mentor_session_formats,
+ up.mentor_countries, up.mentor_credentials,
+ up.mentor_years_experience, up.mentor_success_label,
+ (SELECT COUNT(*)::int FROM service_bookings sb
+  WHERE sb.provider_user_id = up.user_id AND sb.status = 'fulfilled') AS mentees_helped,
+ ml.price_amount AS package_price, ml.price_currency AS package_currency, ml.price_per AS package_per
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
+LEFT JOIN LATERAL (
+ SELECT sm.price_amount, sm.price_currency, sm.price_per
+ FROM contents sc
+ JOIN service_listing_meta sm ON sm.content_id = sc.id
+ WHERE sc.author_id = up.user_id
+   AND sc.content_type = 'service_listing'
+   AND sm.listing_kind = 'mentorship'
+   AND sc.status = 'published'
+   AND sc.deleted_at IS NULL
+ ORDER BY sc.id
+ LIMIT 1
+) ml ON true
 WHERE (u.username = @username OR lower(u.public_username) = lower(@username)) AND up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -315,9 +338,31 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
- (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+ -- 000940: mentor card fields (000829) + location + mentees-helped count +
+ -- shadow-listing package price — power the mentors comparison dimensions.
+ up.location, up.mentor_title, up.mentor_response_time,
+ up.mentor_availability, up.mentor_session_type,
+ up.mentor_languages, up.mentor_session_formats,
+ up.mentor_countries, up.mentor_credentials,
+ up.mentor_years_experience, up.mentor_success_label,
+ (SELECT COUNT(*)::int FROM service_bookings sb
+  WHERE sb.provider_user_id = up.user_id AND sb.status = 'fulfilled') AS mentees_helped,
+ ml.price_amount AS package_price, ml.price_currency AS package_currency, ml.price_per AS package_per
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
+LEFT JOIN LATERAL (
+ SELECT sm.price_amount, sm.price_currency, sm.price_per
+ FROM contents sc
+ JOIN service_listing_meta sm ON sm.content_id = sc.id
+ WHERE sc.author_id = up.user_id
+   AND sc.content_type = 'service_listing'
+   AND sm.listing_kind = 'mentorship'
+   AND sc.status = 'published'
+   AND sc.deleted_at IS NULL
+ ORDER BY sc.id
+ LIMIT 1
+) ml ON true
 WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND up.user_id = ANY(@user_ids::uuid[])
  AND EXISTS (
@@ -337,9 +382,31 @@ ORDER BY u.username;
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
- (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+ -- 000940: mentor card fields (000829) + location + mentees-helped count +
+ -- shadow-listing package price — power the mentors comparison dimensions.
+ up.location, up.mentor_title, up.mentor_response_time,
+ up.mentor_availability, up.mentor_session_type,
+ up.mentor_languages, up.mentor_session_formats,
+ up.mentor_countries, up.mentor_credentials,
+ up.mentor_years_experience, up.mentor_success_label,
+ (SELECT COUNT(*)::int FROM service_bookings sb
+  WHERE sb.provider_user_id = up.user_id AND sb.status = 'fulfilled') AS mentees_helped,
+ ml.price_amount AS package_price, ml.price_currency AS package_currency, ml.price_per AS package_per
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
+LEFT JOIN LATERAL (
+ SELECT sm.price_amount, sm.price_currency, sm.price_per
+ FROM contents sc
+ JOIN service_listing_meta sm ON sm.content_id = sc.id
+ WHERE sc.author_id = up.user_id
+   AND sc.content_type = 'service_listing'
+   AND sm.listing_kind = 'mentorship'
+   AND sc.status = 'published'
+   AND sc.deleted_at IS NULL
+ ORDER BY sc.id
+ LIMIT 1
+) ml ON true
 WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND (u.username ILIKE @q OR up.display_name ILIKE @q)
  AND EXISTS (

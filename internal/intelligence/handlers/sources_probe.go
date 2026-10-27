@@ -60,6 +60,57 @@ func (h *Handlers) incrProbeQuota(ctx context.Context, userID pgtype.UUID) (int6
 	return count, nil
 }
 
+// reprobeProposal re-runs the preview probe server-side when the proposal
+// carries a client-supplied probe_snapshot — the snapshot claims a probe ran,
+// and a fabricated one could otherwise mislead reviewers. Charged to the same
+// jc:intel:probe_quota budget as /sources/probe (it is the same "fetch a URL
+// a user pointed at" action class). Returns the verified report + method
+// names, or nils to keep the client snapshot (reviewers see it flagged
+// unverified via last_probed_at NULL).
+func (h *Handlers) reprobeProposal(ctx context.Context, userID pgtype.UUID, req proposeSourceRequest) ([]byte, []string) {
+	if h.prober == nil || len(req.ProbeSnapshot) == 0 {
+		return nil, nil
+	}
+
+	if h.rdb != nil {
+		limit := defaultProbeRateLimit
+		if h.settings != nil {
+			limit = h.settings.GetIntOr(ctx, "intel.probe.rate_limit_per_hr", defaultProbeRateLimit)
+		}
+
+		count, incrErr := h.incrProbeQuota(ctx, userID)
+		if incrErr != nil {
+			slog.Warn("intel: propose re-probe quota increment failed; allowing", "user_id", userID.String(), "error", incrErr, "quota_fail_open_total", h.noteQuotaFailOpen())
+		} else if count > int64(limit) {
+			return nil, nil
+		}
+	}
+
+	// Bound the synchronous re-probe so a slow target cannot stall the
+	// propose request — the preview path already surfaced its findings to
+	// the user before submit.
+	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	report, err := h.prober.Preview(probeCtx, req.SourceURL, req.SourceKind, req.Categories)
+	if err != nil {
+		slog.Debug("intel: propose server re-probe failed", "url", req.SourceURL, "error", err)
+		return nil, nil
+	}
+
+	raw, err := json.Marshal(report)
+	if err != nil {
+		return nil, nil
+	}
+
+	methods := make([]string, 0, len(report.Methods))
+	for _, m := range report.Methods {
+		methods = append(methods, m.Method)
+	}
+
+	return raw, methods
+}
+
 // probeSourceRequest is the POST /api/v1/sources/probe body. `url` is the
 // canonical field; `source_url` is accepted as an alias so the propose form
 // can reuse its payload field name (spec §6: {name, source_url, ...}).

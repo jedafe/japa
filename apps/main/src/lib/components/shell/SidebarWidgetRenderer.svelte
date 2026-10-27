@@ -26,7 +26,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { trackNextAction, dismissNextAction, getNextActions, claimNextAction, isNextActionClaimed, markNextActionPending } from '$lib/api/nextActions';
+	import { trackNextAction, dismissNextAction, getNextActions, claimNextAction, releaseNextAction, isNextActionClaimed, markNextActionPending, nextActionsViewer, nextActionsSurface } from '$lib/api/nextActions';
 	import { page } from '$app/state';
 	import { Menu, MenuItem } from '$lib/components/ui';
 	import { untrack } from 'svelte';
@@ -241,6 +241,9 @@
 	// Last ?dest= the upcoming_events fetch resolved against — that widget's
 	// data depends on the param alone, not the whole URL.
 	let resolvedDest = $state(page.url.searchParams.get('dest') ?? '');
+	// Last viewer identity the next_action widget fetched for — login/logout
+	// must drop the previous identity's suggestion and re-pick.
+	let resolvedNaViewer = $state(untrack(() => nextActionsViewer()));
 
 	// --- Learning widgets state ---
 	let featuredTrack = $state<CatalogTrack | null>(null);
@@ -594,6 +597,17 @@
 				clearWidgetData(wt);
 			}
 		}
+		// §122 next_action is identity-scoped — an in-app login/logout must
+		// drop the previous viewer's suggestion and re-pick.
+		const viewer = nextActionsViewer();
+		if (untrack(() => resolvedNaViewer) !== viewer) {
+			resolvedNaViewer = viewer;
+			if (wt === 'next_action' && dataLoaded[wt]) {
+				for (const a of nextActions) releaseNextAction(a.id);
+				nextActions = [];
+				dataLoaded = { ...dataLoaded, next_action: false };
+			}
+		}
 		if (dataLoaded[wt] || inflight.has(wt)) return;
 		inflight.add(wt);
 		// `forUrl` pins the URL this request was issued for. If a navigation
@@ -662,8 +676,10 @@
 			// Shares the memoized fetch with the bar/popup/inline renderers so
 			// one page view issues one request; a suggestion already claimed by
 			// another channel is skipped.
-			const list = await getNextActions('main');
+			const list = await getNextActions(nextActionsSurface());
+			const prev = nextActions;
 			nextActions = list.filter((a) => a.channels.includes('sidebar') && !isNextActionClaimed(a.id));
+			for (const p of prev) if (!nextActions.some((a) => a.id === p.id)) releaseNextAction(p.id);
 			if (nextActions[0]) claimNextAction(nextActions[0].id);
 			/* server records the impression */
 			dataLoaded = { ...dataLoaded, next_action: true };

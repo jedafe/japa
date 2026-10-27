@@ -4,29 +4,51 @@
 	// article/reader bodies. Guests and members alike (API does the
 	// filtering); hidden while empty.
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import {
 		getNextActions,
 		dismissNextAction,
 		trackNextAction,
 		claimNextAction,
+		releaseNextAction,
 		isNextActionClaimed,
-		markNextActionPending
+		markNextActionPending,
+		nextActionsViewer,
+		nextActionsSurface,
+		goToNextAction
 	} from '$lib/api/nextActions';
 	import type { NextAction } from '$lib/types';
 	import { nextActionIcon } from '$lib/icons/nextActionIcon';
 
 	let action = $state<NextAction | null>(null);
 	let dismissed = $state(false);
+	let lastViewer = '';
 
-	onMount(async () => {
-		const list = await getNextActions('main');
+	async function load() {
+		const list = await getNextActions(nextActionsSurface());
+		const prev = action;
 		action = list.find((a) => a.channels.includes('in_article') && !isNextActionClaimed(a.id)) ?? null;
+		if (prev && prev.id !== action?.id) releaseNextAction(prev.id);
 		if (action) {
 			claimNextAction(action.id);
 			/* server records the impression */
 		}
+	}
+
+	onMount(() => {
+		lastViewer = nextActionsViewer();
+		void load();
+		return () => { if (action) releaseNextAction(action.id); };
+	});
+
+	// Identity change (in-app login/signup/logout) — re-pick against the
+	// fresh list instead of rendering the previous viewer's suggestion.
+	$effect(() => {
+		const v = nextActionsViewer();
+		if (lastViewer === '' || v === lastViewer) { lastViewer = v; return; }
+		lastViewer = v;
+		dismissed = false;
+		void load();
 	});
 
 	function click(e: MouseEvent) {
@@ -37,7 +59,7 @@
 		// same-origin CTA throws away the SPA session.
 		if (action.cta_url.startsWith('/')) {
 			e.preventDefault();
-			void goto(action.cta_url);
+			goToNextAction(action.cta_url);
 		}
 	}
 

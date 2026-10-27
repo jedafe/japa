@@ -396,7 +396,7 @@ func (c *Client) readPump(dmSvc *DMService) {
 			// type, scoped to the conversation channel. The client sends
 			// {conversation_id, is_typing}; the server forwards to the OTHER
 			// participant only. The sender must be a participant —
-			// GetOtherParticipant validates this so non-participants cannot
+			// GetTypingTargets validates this so non-participants cannot
 			// probe conversation membership. The client should throttle
 			// typing events (e.g. every 3s, not per keystroke) to avoid
 			// excessive DB lookups.
@@ -409,7 +409,7 @@ func (c *Client) readPump(dmSvc *DMService) {
 // Defining it as an interface allows tests to inject a mock without a DB
 // dependency. *DMService satisfies this interface.
 type typingLookup interface {
-	GetOtherParticipant(ctx context.Context, conversationID, userID pgtype.UUID) (pgtype.UUID, error)
+	GetTypingTargets(ctx context.Context, conversationID, userID pgtype.UUID) ([]pgtype.UUID, error)
 }
 
 // handleTypingEvent parses a typing indicator from the client, looks up the
@@ -455,21 +455,26 @@ func (c *Client) handleTypingEvent(dmSvc typingLookup, event WSEvent) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	otherID, err := dmSvc.GetOtherParticipant(ctx, convID, userID)
+	targets, err := dmSvc.GetTypingTargets(ctx, convID, userID)
 	if err != nil {
 		// Not a participant or conversation doesn't exist — silently drop
 		// so membership is not leaked to the sender.
 		return
 	}
 
-	c.Hub.BroadcastToUser(otherID.String(), WSEvent{
-		Type: EventTyping,
-		Payload: map[string]interface{}{
-			"conversation_id": payload.ConversationID,
-			"user_id":         c.UserID,
-			"is_typing":       payload.IsTyping,
-		},
-	})
+	for _, uid := range targets {
+		if uid == userID {
+			continue
+		}
+		c.Hub.BroadcastToUser(uid.String(), WSEvent{
+			Type: EventTyping,
+			Payload: map[string]interface{}{
+				"conversation_id": payload.ConversationID,
+				"user_id":         c.UserID,
+				"is_typing":       payload.IsTyping,
+			},
+		})
+	}
 }
 
 // writePump writes messages from the send channel to the WebSocket connection.

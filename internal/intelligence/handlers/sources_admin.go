@@ -465,6 +465,14 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		src.ProviderConfig = merged
 	}
 
+	// A changed source_url means the existing channels point at a stale
+	// entry point — re-run the deep verify probe so channels are
+	// re-materialized for the new URL (idempotent; probe-origin rows dedupe).
+	// Fire-and-forget like the approve path.
+	if body.SourceURL != "" && body.SourceURL != existing.SourceUrl {
+		h.intelSources.QueueProbeVerify(r.Context(), src)
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": sourceToDirectoryEntry(src),
 	})
@@ -722,6 +730,17 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Terminal states are not editable: mutating a rejected, stale, or
+	// off-topic record's extraction has no downstream effect and would
+	// write a confusing audit entry. Published/approved records stay
+	// editable — the scholarship mirror below propagates corrections.
+	switch record.Status {
+	case "rejected", "stale", "off_topic":
+		errpkg.WriteError(w, http.StatusConflict, "invalid_record_state",
+			"Cannot edit a "+record.Status+" record")
+		return
+	}
+
 	// Merge the edited fields into the record's extracted payload so the
 	// change persists for records without a projection row and promotion
 	// (intel:promote) picks up the reviewer edits.
@@ -780,6 +799,10 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fieldChangesJSON, _ := json.Marshal(body.Fields)
+	// The extracted write already committed — a log failure must not 500 on
+	// a successful edit. Surface the gap as log_failed like approve/reject.
+	logFailed := false
+
 	if err := h.intelStores.CreateIntelReviewLog(r.Context(), gen.CreateIntelReviewLogParams{
 		IntelRecordID: recordID,
 		ActorUserID:   userID,
@@ -788,9 +811,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 		Note:          &note,
 	}); err != nil {
 		slog.Error("intel: review edit log write failed", "record_id", recordID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
-
-		return
+		logFailed = true
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -799,6 +820,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 			"scholarship_id":  scholarshipID,
 			"edited_fields":   body.Fields,
 			"override_source": overrideSource,
+			"log_failed":      logFailed,
 		},
 	})
 }
@@ -1017,6 +1039,60 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Optional review-time trust assignment: a proposed source defaults to
+	// trust_level=5 (unverified); the reviewer can promote it at approval
+	// instead of approve-then-edit. An absent/empty body keeps the default.
+	if r.Body != nil && r.ContentLength != 0 {
+		var body struct {
+			TrustLevel *int16 `json:"trust_level"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) == nil && body.TrustLevel != nil {
+			tl := *body.TrustLevel
+			if tl < 1 || tl > 5 {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_trust_level", "trust_level must be 1-5")
+				return
+			}
+			if tl != src.TrustLevel {
+				params := gen.UpdateIntelSourceParams{
+					ID:                  src.ID,
+					Name:                src.Name,
+					Domain:              src.Domain,
+					SourceUrl:           src.SourceUrl,
+					Category:            src.Category,
+					SourceType:          src.SourceType,
+					TrustLevel:          tl,
+					CrawlMethod:         src.CrawlMethod,
+					CrawlFrequency:      src.CrawlFrequency,
+					CrawlFrequencyMins:  src.CrawlFrequencyMins,
+					SourceLicense:       src.SourceLicense,
+					AttributionRequired: src.AttributionRequired,
+					UsageRestriction:    src.UsageRestriction,
+					Enabled:             src.Enabled,
+					Slug:                src.Slug,
+					Description:         src.Description,
+					SourceKind:          &src.SourceKind,
+					LogoUrl:             src.LogoUrl,
+					Keywords:            src.Keywords,
+					Status:              &src.Status,
+					ProposedBy:          src.ProposedBy,
+					ProposedAt:          src.ProposedAt,
+					ApprovedBy:          src.ApprovedBy,
+					ApprovedAt:          src.ApprovedAt,
+					PersonaID:           src.PersonaID,
+				}
+				if updated, uerr := h.intelSources.Update(r.Context(), params); uerr != nil {
+					slog.Warn("intel: approve proposed trust update failed", "source_id", sourceID.String(), "error", uerr)
+				} else {
+					src = updated
+				}
+			}
+		}
+	}
+
+	// Notify the proposer of the verdict — a public proposal should not be
+	// a dead end. Fire-and-forget (Rule 8); failure logs inside the adapter.
+	h.notifyProposer(r.Context(), src, true)
+
 	// Materialize directory tags for the approved source's keywords on the
 	// write path so the public GET stays read-only.
 	h.createSourceTags(r.Context(), src.Keywords)
@@ -1074,6 +1150,8 @@ func (h *Handlers) HandleRejectProposedSource(w http.ResponseWriter, r *http.Req
 
 		return
 	}
+
+	h.notifyProposer(r.Context(), src, false)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{

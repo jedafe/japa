@@ -5,7 +5,9 @@
 	import { Globe, ExternalLink, Users, FileText, Tag } from 'lucide-svelte';
 	import { FollowButton, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import SourceActions from '$lib/components/source/SourceActions.svelte';
+	import SourceBlockButton from '$lib/components/source/SourceBlockButton.svelte';
 	import SourceDailyCard from '$lib/components/source/SourceDailyCard.svelte';
+	import { sourceTrustLabel } from '$lib/sources';
 	import { api } from '$lib/api/client';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
@@ -147,7 +149,7 @@
 					<h1 class="text-lg font-bold">{source.name}</h1>
 					{#if source.trust_level > 0}
 						<span class="rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-xs font-medium text-[var(--color-primary)]">
-							{t('sources.trust.level', 'Trust {level}').replace('{level}', String(source.trust_level))}
+							{sourceTrustLabel(source.trust_level)}
 						</span>
 					{/if}
 				</div>
@@ -229,6 +231,34 @@
 					{source.post_count} {t('sources.posts', 'posts')}
 				</span>
 			</div>
+
+			<!-- About: provenance metadata from the detail endpoint (v2 spec
+			     "About" tab — license, attribution, crawl cadence, last crawl). -->
+			{#if source.source_license || source.attribution_required || source.crawl_frequency || source.last_crawled_at}
+				<details class="mt-2 text-xs text-[var(--color-text-muted)]">
+					<summary class="cursor-pointer font-medium hover:text-[var(--color-text)]">
+						{t('sources.about', 'About this source')}
+					</summary>
+					<dl class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+						{#if source.source_license}
+							<dt>{t('sources.about.license', 'License')}</dt>
+							<dd>{source.source_license}</dd>
+						{/if}
+						{#if source.attribution_required}
+							<dt>{t('sources.about.attribution', 'Attribution')}</dt>
+							<dd>{t('sources.about.attribution_required', 'Required')}</dd>
+						{/if}
+						{#if source.crawl_frequency && source.crawl_frequency !== 'manual'}
+							<dt>{t('sources.about.crawl_frequency', 'Updated')}</dt>
+							<dd class="capitalize">{source.crawl_frequency}</dd>
+						{/if}
+						{#if source.last_crawled_at}
+							<dt>{t('sources.about.last_crawled', 'Last checked')}</dt>
+							<dd>{new Date(source.last_crawled_at).toLocaleDateString()}</dd>
+						{/if}
+					</dl>
+				</details>
+			{/if}
 		</div>
 	</div>
 
@@ -264,9 +294,12 @@
 	</div>
 
 	{#if isBlocked}
-		<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">
-			{t('sources.items.blocked', 'You have blocked this source.')}
-		</p>
+		<div class="flex flex-col items-center gap-3 py-8">
+			<p class="text-sm text-[var(--color-text-muted)]">
+				{t('sources.items.blocked', 'You have blocked this source.')}
+			</p>
+			<SourceBlockButton slug={source.slug} initial={true} onChange={(v) => { isBlocked = v; }} />
+		</div>
 	{:else if items.length === 0}
 		<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">
 			{t('sources.items.empty', 'No items from this source yet.')}

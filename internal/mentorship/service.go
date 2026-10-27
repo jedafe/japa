@@ -412,6 +412,30 @@ type MentorSummary struct {
 	AvailableSlots    int32              `json:"available_slots"`
 	Profession        *string            `json:"profession"`
 	WebsiteURL        *string            `json:"website_url"`
+
+	// 000940 comparison card fields — populated by the resolver-facing
+	// queries (GetMentorByUsername, GetMentorsByIDs, SearchMentors) so JCE
+	// matrix cells hydrate from the same data as the §114 "Mentorship
+	// details" sidebar. Discovery rows (ListMentors/ListMentorsByMatch)
+	// leave them at zero values.
+	Location        *string  `json:"location,omitempty"`
+	MentorTitle     *string  `json:"mentor_title,omitempty"`
+	ResponseTime    *string  `json:"mentor_response_time,omitempty"`
+	Availability    *string  `json:"mentor_availability,omitempty"`
+	SessionType     *string  `json:"mentor_session_type,omitempty"`
+	Languages       []string `json:"mentor_languages,omitempty"`
+	SessionFormats  []string `json:"mentor_session_formats,omitempty"`
+	Countries       []string `json:"mentor_countries,omitempty"`
+	Credentials     []string `json:"mentor_credentials,omitempty"`
+	YearsExperience *int16   `json:"mentor_years_experience,omitempty"`
+	SuccessLabel    *string  `json:"mentor_success_label,omitempty"`
+	// MenteesHelped is nil unless populated — discovery queries
+	// (ListMentors/ListMentorsByMatch) don't run the count subquery, so a
+	// nil means "not loaded" rather than a real zero.
+	MenteesHelped   *int32   `json:"mentees_helped,omitempty"`
+	PackagePrice    *int64   `json:"package_price,omitempty"`
+	PackageCurrency *string  `json:"package_currency,omitempty"`
+	PackagePer      *string  `json:"package_per,omitempty"`
 }
 
 // Connection is a mentorship connection with resolved user names.
@@ -768,7 +792,17 @@ func (s *Service) GetMentorByUsername(ctx context.Context, username string) (Men
 
 	return mentorSummaryFromRow(row.UserID, row.IsMentor, row.MentorCapacity,
 		row.ActiveMenteeCount, row.MentorAreas, row.MentorBio, row.MentorSince,
-		row.DisplayName, row.AvatarUrl, row.Username, 0, row.Profession, row.WebsiteUrl), nil
+		row.DisplayName, row.AvatarUrl, row.Username, row.AvailableSlots, row.Profession, row.WebsiteUrl,
+		mentorCardFields{
+			Location: row.Location, MentorTitle: row.MentorTitle,
+			ResponseTime: row.MentorResponseTime, Availability: row.MentorAvailability,
+			SessionType: row.MentorSessionType, Languages: row.MentorLanguages,
+			SessionFormats: row.MentorSessionFormats, Countries: row.MentorCountries,
+			Credentials: row.MentorCredentials, YearsExperience: row.MentorYearsExperience,
+			SuccessLabel: row.MentorSuccessLabel, MenteesHelped: &row.MenteesHelped,
+			PackagePrice: row.PackagePrice, PackageCurrency: row.PackageCurrency,
+			PackagePer: row.PackagePer,
+		}), nil
 }
 
 // ListMentors discovers mentors with optional destination and area filters.
@@ -807,7 +841,8 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 
 			mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 				r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl)
+				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl,
+				mentorCardFields{})
 		}
 
 		return mentors, total, nil
@@ -838,7 +873,8 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 
 		mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl)
+			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl,
+			mentorCardFields{})
 	}
 
 	return mentors, total, nil
@@ -872,6 +908,16 @@ func (s *Service) SearchMentors(ctx context.Context, query string, limit int32) 
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots,
 			r.Profession, r.WebsiteUrl,
+			mentorCardFields{
+				Location: r.Location, MentorTitle: r.MentorTitle,
+				ResponseTime: r.MentorResponseTime, Availability: r.MentorAvailability,
+				SessionType: r.MentorSessionType, Languages: r.MentorLanguages,
+				SessionFormats: r.MentorSessionFormats, Countries: r.MentorCountries,
+				Credentials: r.MentorCredentials, YearsExperience: r.MentorYearsExperience,
+				SuccessLabel: r.MentorSuccessLabel, MenteesHelped: &r.MenteesHelped,
+				PackagePrice: r.PackagePrice, PackageCurrency: r.PackageCurrency,
+				PackagePer: r.PackagePer,
+			},
 		)
 	}
 
@@ -927,7 +973,17 @@ func (s *Service) GetMentorsByIDs(ctx context.Context, userIDs []pgtype.UUID) ([
 	for i, r := range rows {
 		mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl)
+			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl,
+			mentorCardFields{
+				Location: r.Location, MentorTitle: r.MentorTitle,
+				ResponseTime: r.MentorResponseTime, Availability: r.MentorAvailability,
+				SessionType: r.MentorSessionType, Languages: r.MentorLanguages,
+				SessionFormats: r.MentorSessionFormats, Countries: r.MentorCountries,
+				Credentials: r.MentorCredentials, YearsExperience: r.MentorYearsExperience,
+				SuccessLabel: r.MentorSuccessLabel, MenteesHelped: &r.MenteesHelped,
+				PackagePrice: r.PackagePrice, PackageCurrency: r.PackageCurrency,
+				PackagePer: r.PackagePer,
+			})
 	}
 
 	return mentors, nil
@@ -1553,7 +1609,30 @@ func (s *Service) enqueueGenerateEmbedding(ctx context.Context, userID pgtype.UU
 }
 
 // mentorSummaryFromRow builds a MentorSummary from common field values.
-func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCount *int16, areas []string, bio *string, since pgtype.Timestamptz, displayName, avatarURL *string, username string, availableSlots int32, profession, websiteURL *string) MentorSummary {
+// mentorCardFields carries the 000829 mentor card fields + mentees-helped
+// count + shadow-listing package price — the §114 "Mentorship details" data
+// the mentors comparison hydrates (000940). Discovery queries
+// (ListMentors/ListMentorsByMatch) pass the zero value.
+type mentorCardFields struct {
+	Location        *string
+	MentorTitle     *string
+	ResponseTime    *string
+	Availability    *string
+	SessionType     *string
+	Languages       []string
+	SessionFormats  []string
+	Countries       []string
+	Credentials     []string
+	YearsExperience *int16
+	SuccessLabel    *string
+	MenteesHelped   *int32
+	PackagePrice    *int64
+	PackageCurrency *string
+	PackagePer      *string
+}
+
+// mentorSummaryFromRow builds a MentorSummary from common field values.
+func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCount *int16, areas []string, bio *string, since pgtype.Timestamptz, displayName, avatarURL *string, username string, availableSlots int32, profession, websiteURL *string, card mentorCardFields) MentorSummary {
 	return MentorSummary{
 		UserID:            userID,
 		Username:          username,
@@ -1567,6 +1646,22 @@ func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCo
 		AvailableSlots:    availableSlots,
 		Profession:        profession,
 		WebsiteURL:        websiteURL,
+
+		Location:        card.Location,
+		MentorTitle:     card.MentorTitle,
+		ResponseTime:    card.ResponseTime,
+		Availability:    card.Availability,
+		SessionType:     card.SessionType,
+		Languages:       card.Languages,
+		SessionFormats:  card.SessionFormats,
+		Countries:       card.Countries,
+		Credentials:     card.Credentials,
+		YearsExperience: card.YearsExperience,
+		SuccessLabel:    card.SuccessLabel,
+		MenteesHelped:   card.MenteesHelped,
+		PackagePrice:    card.PackagePrice,
+		PackageCurrency: card.PackageCurrency,
+		PackagePer:      card.PackagePer,
 	}
 }
 

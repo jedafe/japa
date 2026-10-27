@@ -138,6 +138,7 @@
 		if (result.ok) {
 			sources = Array.isArray(result.data) ? (result.data as IntelSource[]) : [];
 			totalRows = Number(result.meta?.total ?? sources.length);
+			errorMessage = ''; // clear a stale banner after a successful refresh
 		} else {
 			errorMessage = result.error;
 		}
@@ -482,8 +483,14 @@
 		bulkBusy = true;
 		noticeMessage = '';
 		errorMessage = '';
+		// Only active sources can be enabled — proposed/rejected rows must go
+		// through the approve flow. Skip them up front instead of collecting
+		// a 409 per row (the row-level Toggle action hides them the same way).
+		const statusById = new Map(sources.map((s) => [s.id, s.status]));
+		const eligible = enabled ? ids.filter((id) => statusById.get(id) === 'active') : ids;
+		const skipped = ids.length - eligible.length;
 		const results = await Promise.allSettled(
-			ids.map((id) =>
+			eligible.map((id) =>
 				api(`/api/v1/intel/sources/${id}`, { method: 'PATCH', body: { enabled } })
 					.then((r) => (r.ok ? null : r.error))
 			)
@@ -496,11 +503,15 @@
 				failures.push(`${ids[i].slice(0, 8)}: ${r.value}`);
 			}
 		});
-		const succeeded = ids.length - failures.length;
+		const succeeded = eligible.length - failures.length;
 		if (failures.length === 0) {
 			noticeMessage = t('intel.bulk_done', '{done} of {total} sources updated.')
 				.replace('{done}', String(succeeded))
-				.replace('{total}', String(ids.length));
+				.replace('{total}', String(eligible.length));
+			if (skipped > 0) {
+				noticeMessage += ' ' + t('intel.bulk_skipped_not_active', '{n} skipped — approve proposed sources first.')
+					.replace('{n}', String(skipped));
+			}
 		} else {
 			errorMessage = t('intel.bulk_partial', '{done} of {total} sources updated; {failed} failed: {list}')
 				.replace('{done}', String(succeeded))

@@ -122,21 +122,30 @@ type previewProber interface {
 	Preview(ctx context.Context, rawURL, kind string, categories []string) (probe.Report, error)
 }
 
+// sourceDecisionNotifier notifies a source's proposer of the approve/reject
+// verdict so a public proposal is not a dead end for the submitter.
+// Implemented by an adapter over notifications.Service at server wiring;
+// nil disables proposer notifications (tests).
+type sourceDecisionNotifier interface {
+	NotifySourceDecision(ctx context.Context, proposerID pgtype.UUID, sourceName, slug string, approved bool)
+}
+
 // Handlers exposes the /api/v1/intel/* HTTP routes.
 type Handlers struct {
 	intelStores  *stores.Store
 	intelSources *sources.Service
 	followsSvc   *follows.Service
 	scholarSvc   *scholarships.Service
-	asynqClient  *asynq.Client        // enqueues intel:promote on review approve (BUG-003)
-	settings     SettingsReader       // system_settings reader (INTEL-016); nil → hardcoded defaults
-	videos       videoStore           // optional; enables video source item feeds
-	contents     contentStore         // optional; enables comparison source item feeds
-	reportSvc    reportService        // optional; creates source reports from the detail page
-	tagSvc       tagService           // optional; ensures source keyword tags exist
-	prober       previewProber        // optional; enables POST /sources/probe (intel-channels §2)
-	rdb          valkeycompat.Cmdable // optional; probe quota counter (jc:intel:probe_quota:{user_id})
-	lit          literalResolver      // nil disables literal resolution (§14)
+	asynqClient  *asynq.Client          // enqueues intel:promote on review approve (BUG-003)
+	settings     SettingsReader         // system_settings reader (INTEL-016); nil → hardcoded defaults
+	videos       videoStore             // optional; enables video source item feeds
+	contents     contentStore           // optional; enables comparison source item feeds
+	reportSvc    reportService          // optional; creates source reports from the detail page
+	tagSvc       tagService             // optional; ensures source keyword tags exist
+	prober       previewProber          // optional; enables POST /sources/probe (intel-channels §2)
+	rdb          valkeycompat.Cmdable   // optional; probe quota counter (jc:intel:probe_quota:{user_id})
+	lit          literalResolver        // nil disables literal resolution (§14)
+	decisionNtf  sourceDecisionNotifier // optional; notifies proposers of review verdicts
 
 	// quotaFailOpenTotal counts quota-store failures where a request was
 	// allowed through without quota accounting. Logged on every occurrence
@@ -230,6 +239,24 @@ func (h *Handlers) SetProber(p *probe.Prober) { h.prober = p }
 // counter (jc:intel:probe_quota:{user_id}, 1h window). A nil client leaves
 // the quota check disabled (fail-open; the probe's SSRF guard still applies).
 func (h *Handlers) SetValkey(rdb valkeycompat.Cmdable) { h.rdb = rdb }
+
+// SetSourceDecisionNotifier injects the proposer-notification adapter used
+// by the approve/reject proposed-source handlers.
+func (h *Handlers) SetSourceDecisionNotifier(n sourceDecisionNotifier) { h.decisionNtf = n }
+
+// notifyProposer fires the approve/reject verdict notification to the
+// source's proposer. Fire-and-forget per Rule 8 — a notification failure
+// must not fail the moderation action.
+func (h *Handlers) notifyProposer(ctx context.Context, src sources.Source, approved bool) {
+	if h.decisionNtf == nil || !src.ProposedBy.Valid {
+		return
+	}
+	slug := ""
+	if src.Slug != nil {
+		slug = *src.Slug
+	}
+	h.decisionNtf.NotifySourceDecision(ctx, src.ProposedBy, src.Name, slug, approved)
+}
 
 func (h *Handlers) enqueueIntelPromote(ctx context.Context, recordID, reviewerUserID pgtype.UUID) error {
 	if h.asynqClient == nil {

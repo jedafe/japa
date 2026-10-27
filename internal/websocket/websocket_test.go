@@ -550,19 +550,19 @@ func TestConversationResultStructFields(t *testing.T) {
 // ---------------------------------------------------------------------------
 //
 // handleTypingEvent parses a typing event from the client, looks up the other
-// participant via DMService.GetOtherParticipant, and broadcasts a typing event
+// participant via DMService.GetTypingTargets, and broadcasts a typing event
 // to that participant. Non-participants get a silent no-op. These tests use a
 // mock DMService to avoid a DB dependency.
 
 // mockDMServiceForTyping implements the subset of DMService needed by
-// handleTypingEvent: just GetOtherParticipant.
+// handleTypingEvent: just GetTypingTargets.
 type mockDMServiceForTyping struct {
 	// otherParticipantID is returned for valid participant lookups.
 	otherParticipantID string
 	// err controls the return value. If non-nil, the lookup "fails" (simulating
 	// a non-participant or non-existent conversation).
 	err error
-	// calls records the arguments passed to GetOtherParticipant.
+	// calls records the arguments passed to GetTypingTargets.
 	calls []mockTypingCall
 }
 
@@ -571,19 +571,19 @@ type mockTypingCall struct {
 	userID         string
 }
 
-func (m *mockDMServiceForTyping) GetOtherParticipant(_ context.Context, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
+func (m *mockDMServiceForTyping) GetTypingTargets(_ context.Context, conversationID, userID pgtype.UUID) ([]pgtype.UUID, error) {
 	m.calls = append(m.calls, mockTypingCall{
 		conversationID: conversationID.String(),
 		userID:         userID.String(),
 	})
 	if m.err != nil {
-		return pgtype.UUID{}, m.err
+		return nil, m.err
 	}
 
 	var id pgtype.UUID
 	_ = id.Scan(m.otherParticipantID)
 
-	return id, nil
+	return []pgtype.UUID{id}, nil
 }
 
 func TestHandleTypingEventBroadcastsToOtherParticipant(t *testing.T) {
@@ -624,7 +624,7 @@ func TestHandleTypingEventBroadcastsToOtherParticipant(t *testing.T) {
 	})
 
 	if len(mockSvc.calls) != 1 {
-		t.Fatalf("expected 1 GetOtherParticipant call, got %d", len(mockSvc.calls))
+		t.Fatalf("expected 1 GetTypingTargets call, got %d", len(mockSvc.calls))
 	}
 
 	// The other participant should receive a typing event.
@@ -683,7 +683,7 @@ func TestHandleTypingEventNonParticipantSilentlyDrops(t *testing.T) {
 		SpaceIDs: make(map[string]bool),
 	}
 
-	// Simulate a non-participant: GetOtherParticipant returns an error.
+	// Simulate a non-participant: GetTypingTargets returns an error.
 	mockSvc := &mockDMServiceForTyping{err: errors.New("not a participant")}
 	sender.handleTypingEvent(mockSvc, WSEvent{
 		Type: EventTyping,
@@ -743,7 +743,7 @@ func TestHandleTypingEventMissingConversationIDIgnores(t *testing.T) {
 	})
 
 	if len(mockSvc.calls) != 0 {
-		t.Errorf("expected 0 GetOtherParticipant calls, got %d", len(mockSvc.calls))
+		t.Errorf("expected 0 GetTypingTargets calls, got %d", len(mockSvc.calls))
 	}
 }
 

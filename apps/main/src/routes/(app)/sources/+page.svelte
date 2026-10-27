@@ -171,25 +171,29 @@
 		</div>
 	</div>
 
+	<!-- Search is a primary directory action — it stays visible above the
+	     sort tabs rather than living inside the collapsible filter panel. -->
+	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
+		<form
+			class="w-full"
+			role="search"
+			onsubmit={(e) => {
+				e.preventDefault();
+				onFilterChange();
+			}}
+		>
+			<SearchInput
+				bind:value={query}
+				placeholder={searchPlaceholder}
+				ariaLabel={t('sources.heading', 'Sources')}
+				fetcher={sourceSearchFetcher}
+			/>
+		</form>
+	</div>
+
 	{#if showFilters}
 		<div id="sources-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-				<form
-					class="w-full"
-					role="search"
-					onsubmit={(e) => {
-						e.preventDefault();
-						onFilterChange();
-					}}
-				>
-					<SearchInput
-						bind:value={query}
-						placeholder={searchPlaceholder}
-						ariaLabel={t('sources.heading', 'Sources')}
-						fetcher={sourceSearchFetcher}
-					/>
-				</form>
-
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				{#if categoryOptions.length > 0}
 					<div>
 						<label for="sources-category" class="sr-only">

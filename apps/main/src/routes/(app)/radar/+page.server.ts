@@ -134,7 +134,6 @@ export const load: PageServerLoad = async (event) => {
 	// reuse it for the browse-list badges instead of a second 1-row
 	// fetch of /intel/radar just for the sidecar.
 	const followedSpaceIds = (followedMeta?.['followed_space_ids'] as string[] | undefined) ?? [];
-	const followedTotal = followedSpaceIds.length;
 	const followedHasMore = followedMeta?.['has_more'] === true;
 	// Spec §739 sidecars: keyset cursor + per-type/per-country counts.
 	const followedNextCursor = (followedMeta?.['next_cursor'] as string | undefined) ?? '';
@@ -159,7 +158,6 @@ export const load: PageServerLoad = async (event) => {
 		countries,
 		countriesError,
 		followedItems,
-		followedTotal,
 		followedHasMore,
 		followedNextCursor,
 		followedCountsByType,
@@ -168,7 +166,6 @@ export const load: PageServerLoad = async (event) => {
 		intelUnavailable,
 		authed,
 		pageSize: PAGE_SIZE,
-		currentPage: page,
 		// Geo-aware filter state
 		spaceId,
 		dest,

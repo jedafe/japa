@@ -12,6 +12,7 @@
 	import { Users, FileText, Shield } from 'lucide-svelte';
 	import { FollowButton } from '$lib/components/ui';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
+	import { sourceTrustLabel } from '$lib/sources';
 	import type { Source } from '$lib/types/sources';
 
 	interface Props {
@@ -36,7 +37,9 @@
 	});
 
 	const initials = $derived(source.name.slice(0, 2).toUpperCase());
-	const trustLabel = $derived(`${t('sources.trust', 'Trust')} ${source.trust_level}`);
+	// The numeric trust level is never shown — 1 is most trusted and 5 is
+	// unverified, so a raw "Trust 5" badge reads inverted to users.
+	const trustLabel = $derived(sourceTrustLabel(source.trust_level));
 
 	// Third-party logo URLs can fail to load — some origins send
 	// Cross-Origin-Resource-Policy: same-origin (CORB/CORB-blocked), others

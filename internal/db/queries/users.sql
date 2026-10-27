@@ -172,6 +172,14 @@ SELECT id
 FROM user_profiles
 WHERE user_id = @user_id;
 
+-- name: GetUserProfileIDsByUserIDs :many
+-- Batched counterpart of GetUserProfileID — resolves user_profiles.id for a
+-- set of users so callers can batch-read user_profile custom_field_values
+-- (entity_type='user_profile', entity_id=profile id).
+SELECT id, user_id
+FROM user_profiles
+WHERE user_id = ANY(@user_ids::uuid[]);
+
 -- name: GetUserPreferences :one
 SELECT id, user_id, dark_mode, language, created_at, updated_at
 FROM user_preferences

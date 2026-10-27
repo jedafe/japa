@@ -1,6 +1,7 @@
 package nextactions
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/valkey"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // ToolRoute maps an API endpoint (method + path prefix, relative to /api/v1)
@@ -66,7 +69,13 @@ const apiPrefix = "/api/v1"
 // for guests (session_id = client IP) and members (JTI + user_id) alike,
 // so guest tool_use predicates and member tool_not_used predicates both
 // resolve. Mounted once on the /api/v1 router.
-func TrackToolUsage(tracker EventTracker) func(http.Handler) http.Handler {
+//
+// cache (may be nil) is the engine's Valkey handle: a tool used event can
+// flip rule conditions (tool_used / tool_not_used) and completion signals
+// in either direction, so the identity's cached suggestion lists are busted
+// — without it a just-earned nudge (or a just-completed one) would wait out
+// nextactions.cache_ttl_seconds before the pull path saw it.
+func TrackToolUsage(tracker EventTracker, cache valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// WrapResponseWriter preserves optional interfaces (Flusher,
@@ -93,8 +102,18 @@ func TrackToolUsage(tracker EventTracker) func(http.Handler) http.Handler {
 				}
 
 				emitToolUsed(r, tracker, rt.Slug)
+				bustSuggestionCache(r.Context(), cache, r)
 
 				return // first match wins
+			}
+
+			// Non-tool signal endpoints — a successful write here can flip
+			// event_count-style predicates (content.viewed feeds the
+			// guest-register-after-views rule). The owning handler emits the
+			// platform_event; this middleware only busts the cached
+			// suggestion lists so the next pull sees the new count.
+			if r.Method == http.MethodPost && strings.HasPrefix(path, "/content/") && strings.HasSuffix(path, "/view") {
+				bustSuggestionCache(r.Context(), cache, r)
 			}
 		})
 	}
@@ -118,4 +137,45 @@ func emitToolUsed(r *http.Request, tracker EventTracker, slug string) {
 		Meta:       map[string]any{"tool": slug},
 		SessionID:  session,
 	})
+}
+
+// bustSuggestionCache drops the caller's cached suggestion lists after a
+// tool.used emission: member result keys (jc:nextactions:user:{id}:{surface})
+// are SCAN-deleted, guest per-surface _cache:* hash fields are HDELed (the
+// hash itself holds dismiss/snooze state and must survive). Tool endpoints
+// are low-volume, so the SCAN cost per call is acceptable.
+func bustSuggestionCache(ctx context.Context, cache valkeycompat.Cmdable, r *http.Request) {
+	if cache == nil {
+		return
+	}
+	if u := auth.FromContext(r.Context()); u != nil {
+		pattern := valkey.MustKey("nextactions:user:%s:*", u.UserID.String())
+		var cursor uint64
+		for {
+			keys, next, err := cache.Scan(ctx, cursor, pattern, 50).Result()
+			if err != nil {
+				break
+			}
+			for _, k := range keys {
+				_ = cache.Del(ctx, k).Err()
+			}
+			if next == 0 {
+				break
+			}
+			cursor = next
+		}
+		return
+	}
+	hk := valkey.MustKey("nextactions:guest:%s", guestSessionKey(r))
+	if m, err := cache.HGetAll(ctx, hk).Result(); err == nil {
+		fields := make([]string, 0, len(m))
+		for f := range m {
+			if strings.HasPrefix(f, guestCacheFieldPrefix) {
+				fields = append(fields, f)
+			}
+		}
+		if len(fields) > 0 {
+			_ = cache.HDel(ctx, hk, fields...).Err()
+		}
+	}
 }

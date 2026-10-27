@@ -32,25 +32,91 @@
 	let body = $state('');
 	let sending = $state(false);
 	let sendError = $state('');
+	let sent = $state(false);
+
+	// Reset the inquiry success state when the dialog closes so a reopen
+	// shows the composer, not a stale confirmation.
+	$effect(() => {
+		if (!open) {
+			sent = false;
+			sendError = '';
+		}
+	});
+
+	// Channel by listing kind: mentorship contact is a personal 1:1 DM
+	// (structured context card; the same thread the mentorship accept
+	// materializes) and org-owned listings open an org conversation that
+	// every member can answer (000942). Personal non-mentorship service
+	// contact is a commercial lead — POST /services/:id/bookings
+	// intent='inquiry' lands it in the author's bookings inbox.
+	const isMentorship = $derived(service.listing_kind === 'mentorship');
+	const dmChannel = $derived(isMentorship || !!service.org_id);
+
+	function friendlyError(code: string | undefined, fallback: string): string {
+		switch (code) {
+			case 'self_conversation':
+			case 'self_booking':
+				return t('services.message_err_self', "You can't message your own listing.");
+			case 'dm_privacy_blocked':
+			case 'dm_not_mutual_follower':
+			case 'dm_blocked':
+				return t(
+					'services.message_err_unavailable',
+					"This provider isn't accepting direct messages right now."
+				);
+			case 'invalid_context':
+				return t(
+					'services.message_err_context',
+					"This listing can't accept messages right now."
+				);
+			case 'duplicate_inquiry':
+				return t(
+					'services.message_err_dup_inquiry',
+					'You already have an open inquiry with this provider.'
+				);
+			default:
+				return fallback;
+		}
+	}
 
 	async function send(e: SubmitEvent) {
 		e.preventDefault();
 		if (!body.trim() || sending) return;
 		sendError = '';
 		sending = true;
-		const res = await api.post<{ conversation_id: string }>('/dm/conversations', {
-			recipient_id: service.author_id,
-			message: body.trim()
-		});
-		sending = false;
-		if (res.error || !res.data) {
-			sendError =
-				res.error?.message ?? t('messages.new_conv_error', 'Could not start the conversation.');
+		if (dmChannel) {
+			const res = await api.post<{ conversation_id: string }>('/dm/conversations', {
+				recipient_id: service.author_id,
+				message: body.trim(),
+				context: { type: 'service_listing', id: service.id }
+			});
+			sending = false;
+			if (res.error || !res.data) {
+				sendError = friendlyError(
+					res.error?.code,
+					res.error?.message ??
+						t('messages.new_conv_error', 'Could not start the conversation.')
+				);
+				return;
+			}
+			open = false;
+			body = '';
+			await goto(`/messages?c=${res.data.conversation_id}`);
 			return;
 		}
-		open = false;
-		body = '';
-		await goto(`/messages?c=${res.data.conversation_id}`);
+		const res = await api.post<{ booking: { id: string } }>(
+			`/services/${service.id}/bookings`,
+			{ intent: 'inquiry', note: body.trim() }
+		);
+		sending = false;
+		if (res.error || !res.data) {
+			sendError = friendlyError(
+				res.error?.code,
+				res.error?.message ?? t('services.message_send_error', 'Could not send your message.')
+			);
+			return;
+		}
+		sent = true;
 	}
 </script>
 
@@ -61,8 +127,26 @@
 				{t('services.message_login', 'Log in to send a message')}
 			</a>
 		</p>
+	{:else if sent}
+		<p
+			class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3 text-sm text-[var(--color-text)]"
+		>
+			{t(
+				'services.message_inquiry_sent',
+				'Your inquiry was sent — the provider will respond from their bookings inbox.'
+			)}
+		</p>
 	{:else}
 		<form onsubmit={send} class="flex flex-col gap-3">
+			{#if dmChannel}
+				<!-- Context chip — the recipient's inbox renders the same
+				     listing as a structured card on the first message (000941). -->
+				<p
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-text-subtle)]"
+				>
+					{t('services.message_context', 'Re: {title}', { title: service.title })}
+				</p>
+			{/if}
 			<textarea
 				bind:value={body}
 				rows={4}

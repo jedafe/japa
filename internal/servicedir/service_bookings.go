@@ -581,9 +581,9 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID, listingContentID 
 		// External listings link out via booking_url — no on-platform bookings.
 		return BookingResult{}, ErrBookingUnavailable
 	case PurchaseModePaid:
-		if intent != BookingIntentBooking {
-			return BookingResult{}, ErrInvalidIntent
-		}
+		// Both intents valid on paid listings — an inquiry is a pre-sales
+		// lead landing in the provider's inbox with no payment surface
+		// ("Message provider" on org listings routes here).
 	default: // inquiry
 		if intent != BookingIntentInquiry {
 			return BookingResult{}, ErrInvalidIntent

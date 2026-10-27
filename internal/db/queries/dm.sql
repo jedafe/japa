@@ -52,17 +52,32 @@ WHERE participant_1_id = LEAST(@participant_1_id, @participant_2_id)::uuid
 SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
  dc.last_message_at, dc.last_message_preview,
  dc.p1_unread_count, dc.p2_unread_count, dc.created_at, dc.updated_at,
- (CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END)::text AS other_username,
- COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END,
-          CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END)::text AS other_display_name,
- COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
- (CASE WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count ELSE dc.p2_unread_count END)::int AS unread_count
+ dc.conversation_type, dc.org_id, o.name::text AS org_name, o.slug::text AS org_slug,
+ -- other_* for org convs: the external user (p1) sees the ORG as the
+ -- other party; org members see the external user (normal p1 branch).
+ (CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.slug
+       WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username, o.slug)
+       ELSE COALESCE(u1.public_username, u1.username, o.slug) END)::text AS other_username,
+ COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.name
+               WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END,
+          CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END, o.name)::text AS other_display_name,
+ COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.avatar_url
+               WHEN dc.participant_1_id = @user_id THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
+ (CASE
+    WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count
+    WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
+      WHERE dm.conversation_id = dc.id AND dm.deleted_at IS NULL AND NOT dm.sent_as_org
+        AND dm.created_at > COALESCE(ors.last_read_at, '-infinity'::timestamptz))
+    ELSE dc.p2_unread_count END)::int AS unread_count
 FROM dm_conversations dc
 JOIN users u1 ON u1.id = dc.participant_1_id
-JOIN users u2 ON u2.id = dc.participant_2_id
+LEFT JOIN users u2 ON u2.id = dc.participant_2_id
 LEFT JOIN user_profiles p1 ON p1.user_id = u1.id
 LEFT JOIN user_profiles p2 ON p2.user_id = u2.id
-WHERE (dc.participant_1_id = @user_id OR dc.participant_2_id = @user_id)
+LEFT JOIN organizations o ON o.id = dc.org_id
+LEFT JOIN organization_members om ON om.organization_id = dc.org_id AND om.user_id = @user_id
+LEFT JOIN dm_org_read_state ors ON ors.conversation_id = dc.id AND ors.member_user_id = @user_id
+WHERE (dc.participant_1_id = @user_id OR dc.participant_2_id = @user_id OR om.user_id IS NOT NULL OR o.owner_user_id = @user_id)
  -- Section 48: a conversation backed by a PENDING dm_request stays out of
  -- the recipient's main inbox until they accept — it lives under Requests.
  AND NOT EXISTS (
@@ -71,10 +86,16 @@ WHERE (dc.participant_1_id = @user_id OR dc.participant_2_id = @user_id)
     AND dr.recipient_id = @user_id
     AND dr.status = 'pending')
  AND (@filter::text <> 'unread' OR
-      (CASE WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count ELSE dc.p2_unread_count END) > 0)
+      (CASE
+        WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count
+        WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
+          WHERE dm.conversation_id = dc.id AND dm.deleted_at IS NULL AND NOT dm.sent_as_org
+            AND dm.created_at > COALESCE(ors.last_read_at, '-infinity'::timestamptz))
+        ELSE dc.p2_unread_count END) > 0)
  AND (@q::text = '' OR
       (CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END) ILIKE '%' || @q || '%' OR
       COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END, '') ILIKE '%' || @q || '%' OR
+      COALESCE(o.name, '') ILIKE '%' || @q || '%' OR
       COALESCE(dc.last_message_preview, '') ILIKE '%' || @q || '%')
  AND (NOT @has_cursor::bool OR
       (@sort::text = 'recent' AND
@@ -84,7 +105,12 @@ WHERE (dc.participant_1_id = @user_id OR dc.participant_2_id = @user_id)
         (COALESCE(dc.last_message_at, dc.created_at), dc.id) >
         (@cursor_ts::timestamptz, @cursor_id::uuid)) OR
       (@sort::text = 'unread' AND
-        ((CASE WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count ELSE dc.p2_unread_count END), dc.id) <
+        ((CASE
+          WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count
+          WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
+            WHERE dm.conversation_id = dc.id AND dm.deleted_at IS NULL AND NOT dm.sent_as_org
+              AND dm.created_at > COALESCE(ors.last_read_at, '-infinity'::timestamptz))
+          ELSE dc.p2_unread_count END), dc.id) <
         (@cursor_int::bigint, @cursor_id::uuid)) OR
       (@sort::text = 'name' AND
         (COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END,
@@ -92,7 +118,12 @@ WHERE (dc.participant_1_id = @user_id OR dc.participant_2_id = @user_id)
         (@cursor_text::text, @cursor_id::uuid)))
 ORDER BY
  (CASE WHEN @sort::text = 'unread' THEN
-   (CASE WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count ELSE dc.p2_unread_count END) END) DESC NULLS LAST,
+   (CASE
+     WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count
+     WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
+       WHERE dm.conversation_id = dc.id AND dm.deleted_at IS NULL AND NOT dm.sent_as_org
+         AND dm.created_at > COALESCE(ors.last_read_at, '-infinity'::timestamptz))
+     ELSE dc.p2_unread_count END) END) DESC NULLS LAST,
  (CASE WHEN @sort::text = 'unread' THEN dc.id END) DESC NULLS LAST,
  (CASE WHEN @sort::text = 'name' THEN
    COALESCE(CASE WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END,
@@ -105,8 +136,72 @@ ORDER BY
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: InsertDMMessage :exec
-INSERT INTO dm_messages (conversation_id, sender_id, body) VALUES (@conversation_id, @sender_id, @body)
+INSERT INTO dm_messages (conversation_id, sender_id, body, context_type, context_id, context_label, context_slug, sent_as_org)
+VALUES (@conversation_id, @sender_id, @body, sqlc.narg(context_type), sqlc.narg(context_id), sqlc.narg(context_label), sqlc.narg(context_slug), @sent_as_org)
 ;
+
+-- name: GetServiceListingContext :one
+-- Validates a service_listing DM context (000941/000942): the listing must
+-- be published; org-owned listings route to an org conversation (org_id
+-- from service_listing_meta) instead of a personal DM. Returns the
+-- display snapshot for context_label/context_slug.
+SELECT c.id, c.author_id, c.title, c.slug, sm.org_id
+FROM contents c
+LEFT JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.id = @id
+ AND c.content_type = 'service_listing'
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL;
+
+-- name: GetOrCreateOrgConversation :one
+-- 000942: one (external user, org) conversation — sender is participant_1,
+-- participant_2 stays NULL (org side = all members).
+INSERT INTO dm_conversations (participant_1_id, org_id, conversation_type)
+VALUES (@participant_1_id, @org_id, 'org')
+ON CONFLICT (participant_1_id, org_id) WHERE conversation_type = 'org'
+DO UPDATE SET updated_at = now()
+RETURNING *;
+
+-- name: GetOrgConversationByParticipants :one
+SELECT * FROM dm_conversations
+WHERE conversation_type = 'org' AND participant_1_id = @participant_1_id AND org_id = @org_id;
+
+-- name: UpsertDMOrgReadState :exec
+INSERT INTO dm_org_read_state (conversation_id, member_user_id, last_read_at)
+VALUES (@conversation_id, @member_user_id, now())
+ON CONFLICT (conversation_id, member_user_id)
+DO UPDATE SET last_read_at = now();
+
+-- name: GetSenderDisplayName :one
+-- Display name for a sender's messages — WS payload fan-out (000942) so a
+-- live org-member reply renders with its attribution, not after refresh.
+SELECT COALESCE(p.display_name, u.public_username, u.username, '')::text
+FROM users u
+LEFT JOIN user_profiles p ON p.user_id = u.id
+WHERE u.id = @id;
+
+-- name: GetOrgIDForListingContext :one
+-- Lenient org lookup for an existing org conversation (000942): skips the
+-- published-status filter so a since-unpublished org listing can still
+-- resolve its org conv and degrade to a context-less message.
+SELECT sm.org_id
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.id = @id
+ AND c.content_type = 'service_listing'
+ AND c.deleted_at IS NULL
+ AND sm.org_id IS NOT NULL;
+
+-- name: ListOrgMembers :many
+-- Members who can act on the org side of an org conversation (000942).
+-- UNIONs the owner — organizations.owner_user_id can exist without an
+-- organization_members row, and an org inbox with no recipients is
+-- worse than a spare member.
+SELECT user_id FROM organization_members
+WHERE organization_id = @organization_id
+UNION
+SELECT owner_user_id FROM organizations
+WHERE id = @organization_id AND owner_user_id IS NOT NULL;
 
 -- name: GetConversationMessages :many
 -- Keyset-paginated by (created_at, id) DESC per Section 48 ("cursor-

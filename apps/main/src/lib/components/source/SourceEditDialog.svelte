@@ -103,6 +103,11 @@
 						bind:value={sourceUrl}
 						class="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 					/>
+					{#if sourceUrl !== (source.source_url ?? '')}
+						<p class="text-xs text-[var(--color-text-muted)]">
+							{t('sources.edit.reprobe_hint', 'Changing the URL re-runs channel detection for this source.')}
+						</p>
+					{/if}
 				</div>
 
 				<div class="flex flex-col gap-1">

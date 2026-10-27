@@ -39,7 +39,7 @@
 Insert after the "Agent & MCP Access" section, before "Edge Cases & Error Handling". Bump the header `**Status:** 📋 V3 (ADR-127)` → `**Status:** 📋 V4 (ADR-127, ADR-135)`.
 
 ```markdown
-## Versioned Releases (ADR-135, migration `000942_roadmap_releases`)
+## Versioned Releases (ADR-135, migration `000943_roadmap_releases`)
 
 `roadmap_releases` is a curated release/train entity — the JapaConnect
 equivalent of releases.discourse.org — that groups shipped `roadmap_items`
@@ -279,7 +279,7 @@ a second changelog.
 ## Consequences
 
 - New tables `roadmap_releases`, `roadmap_release_entries` +
-  `roadmap_items.release_id` (migration `000942_roadmap_releases`); FKs
+  `roadmap_items.release_id` (migration `000943_roadmap_releases`); FKs
   recorded in `schemas/MIGRATION-ORDER.md`.
 - 16 new routes (4 public, 12 admin) + `release_id` PATCH field on items.
 - New Valkey pattern `jc:roadmap:releases`; new system_settings
@@ -348,11 +348,11 @@ git commit -m "chore: update JEOS submodule for versioned-releases spec"
 
 ---
 
-### Task 2: Migration `000942_roadmap_releases` + sqlc queries
+### Task 2: Migration `000943_roadmap_releases` + sqlc queries
 
 **Files:**
-- Create: `migrations/000942_roadmap_releases.up.sql`
-- Create: `migrations/000942_roadmap_releases.down.sql`
+- Create: `migrations/000943_roadmap_releases.up.sql`
+- Create: `migrations/000943_roadmap_releases.down.sql`
 - Modify: `internal/db/queries/roadmap.sql` (append releases section)
 - Modify: `internal/db/gen/*` (regenerated only)
 - Check: `.jeos/schemas/MIGRATION-ORDER.md` — record `roadmap_releases → (none)`, `roadmap_items.release_id → roadmap_releases`
@@ -363,7 +363,7 @@ git commit -m "chore: update JEOS submodule for versioned-releases spec"
 - [ ] **Step 1: Write the up migration**
 
 ```sql
--- 000942_roadmap_releases.up.sql
+-- 000943_roadmap_releases.up.sql
 --
 -- Versioned releases on the public roadmap (§113, ADR-135): curated
 -- per-surface release entity grouping shipped roadmap_items. platform =
@@ -642,7 +642,7 @@ Expected: `gen.RoadmapRelease` exists; `roadmap_items` model has `ReleaseID`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add migrations/000942_roadmap_releases.* internal/db/
+git add migrations/000943_roadmap_releases.* internal/db/
 git commit -m "feat(roadmap): roadmap_releases table + sqlc queries (ADR-135)"
 ```
 

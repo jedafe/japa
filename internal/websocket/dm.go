@@ -194,13 +194,86 @@ func (s *DMStore) GetUserConversations(ctx context.Context, userID pgtype.UUID, 
 	})
 }
 
-// InsertDMMessage inserts a new message into a conversation.
-func (s *DMStore) InsertDMMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) error {
-	return s.write.InsertDMMessage(ctx, gen.InsertDMMessageParams{
+// InsertDMMessage inserts a new message into a conversation. mc carries
+// the optional structured context (000941) — nil for plain DMs.
+func (s *DMStore) InsertDMMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string, mc *DMMessageContext, asOrg bool) error {
+	p := gen.InsertDMMessageParams{
 		ConversationID: conversationID,
 		SenderID:       senderID,
+		Body:           body,
+		SentAsOrg:      asOrg,
+	}
+	if mc != nil && mc.Type != "" {
+		p.ContextType = &mc.Type
+		p.ContextID = mc.ID
+		p.ContextLabel = &mc.Label
+		p.ContextSlug = &mc.Slug
+	}
+	return s.write.InsertDMMessage(ctx, p)
+}
 
-		Body: body,
+// GetServiceListingContext resolves a service_listing DM context to its
+// published-listing snapshot (000941) — pgx.ErrNoRows for any other
+// entity id (non-listing, unpublished, or deleted).
+func (s *DMStore) GetServiceListingContext(ctx context.Context, id pgtype.UUID) (gen.GetServiceListingContextRow, error) {
+	return s.read.GetServiceListingContext(ctx, id)
+}
+
+// GetOrCreateOrgConversation returns the single (user, org) conversation
+// (000942) — the org side is every member, not a participant row.
+func (s *DMStore) GetOrCreateOrgConversation(ctx context.Context, senderID, orgID pgtype.UUID) (gen.DmConversation, error) {
+	return s.write.GetOrCreateOrgConversation(ctx, gen.GetOrCreateOrgConversationParams{
+		Participant1ID: senderID,
+		OrgID:          orgID,
+	})
+}
+
+// IsOrgMember reports whether userID is a member of orgID (000942).
+func (s *DMStore) IsOrgMember(ctx context.Context, orgID, userID pgtype.UUID) (bool, error) {
+	members, err := s.read.ListOrgMembers(ctx, orgID)
+	if err != nil {
+		return false, err
+	}
+	for _, m := range members {
+		if m == userID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ListOrgMembers returns the org's member user ids (broadcast fan-out).
+func (s *DMStore) ListOrgMembers(ctx context.Context, orgID pgtype.UUID) ([]pgtype.UUID, error) {
+	return s.read.ListOrgMembers(ctx, orgID)
+}
+
+// GetOrgIDForListingContext is the lenient variant of
+// GetServiceListingContext (000942) — resolves a listing's org regardless
+// of publish status so an existing org conversation survives staleness.
+func (s *DMStore) GetOrgIDForListingContext(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	return s.read.GetOrgIDForListingContext(ctx, id)
+}
+
+// GetOrgConversationByParticipants returns the (user, org) conversation
+// if it exists — used for the stale-context degrade path (000942).
+func (s *DMStore) GetOrgConversationByParticipants(ctx context.Context, senderID, orgID pgtype.UUID) (gen.DmConversation, error) {
+	return s.read.GetOrgConversationByParticipants(ctx, gen.GetOrgConversationByParticipantsParams{
+		Participant1ID: senderID,
+		OrgID:          orgID,
+	})
+}
+
+// GetSenderDisplayName resolves a sender's display name for live-event
+// attribution (000942).
+func (s *DMStore) GetSenderDisplayName(ctx context.Context, senderID pgtype.UUID) (string, error) {
+	return s.read.GetSenderDisplayName(ctx, senderID)
+}
+
+// UpsertDMOrgReadState marks an org conversation read for one member.
+func (s *DMStore) UpsertDMOrgReadState(ctx context.Context, conversationID, memberID pgtype.UUID) error {
+	return s.write.UpsertDMOrgReadState(ctx, gen.UpsertDMOrgReadStateParams{
+		ConversationID: conversationID,
+		MemberUserID:   memberID,
 	})
 }
 
@@ -442,6 +515,22 @@ type ConversationInfo struct {
 	LastMessagePreview *string `json:"last_message_preview,omitempty"`
 	UnreadCount        int32   `json:"unread_count"`
 	CreatedAt          string  `json:"created_at"`
+	// 000942 — org conversations show the org as the "other" party and
+	// flag the type so the UI can badge it.
+	ConversationType string  `json:"conversation_type,omitempty"`
+	OrgID            *string `json:"org_id,omitempty"`
+	OrgSlug          *string `json:"org_slug,omitempty"`
+}
+
+// DMMessageContext is the structured context attached to a dm_messages row
+// (000941) — a link to the entity the conversation is about. Type is one
+// of the migration CHECK values ("service_listing"); Label/Slug are the
+// send-time display snapshot.
+type DMMessageContext struct {
+	Type  string      `json:"type"`
+	ID    pgtype.UUID `json:"id"`
+	Label string      `json:"label,omitempty"`
+	Slug  string      `json:"slug,omitempty"`
 }
 
 // MessageInfo is the API response for a message list item.
@@ -453,6 +542,12 @@ type MessageInfo struct {
 	Body              string  `json:"body"`
 	CreatedAt         string  `json:"created_at"`
 	ReadAt            *string `json:"read_at,omitempty"`
+	ContextType       *string `json:"context_type,omitempty"`
+	ContextID         *string `json:"context_id,omitempty"`
+	ContextLabel      *string `json:"context_label,omitempty"`
+	ContextSlug       *string `json:"context_slug,omitempty"`
+	// 000942 — sent by an org member on behalf of the org inbox.
+	SentAsOrg bool `json:"sent_as_org,omitempty"`
 }
 
 // DMPrivacyResult is returned when getting DM privacy.
@@ -507,6 +602,10 @@ var (
 	ErrDMRequestNotRecipient    = errors.New("only the recipient can act on a message request")
 	ErrDMRequestAlreadyResolved = errors.New("message request is no longer pending")
 	ErrDMSelfConversation       = errors.New("cannot create conversation with yourself")
+	// 000941 — a context that isn't a published listing authored by the
+	// recipient (spoofed privacy-bypass attempt or stale entity id).
+	ErrDMInvalidContext = errors.New("invalid message context")
+	ErrDMNotParticipant = errors.New("user is not a participant in this conversation")
 )
 
 // GetOrCreateConversation gets existing or creates new DM conversation.
@@ -519,10 +618,73 @@ var (
 // non-mutual-follow senders so the recipient can see what the requester
 // wants to say (Section 48: "first message text; shown in the request
 // preview").
-func (s *DMService) GetOrCreateConversation(ctx context.Context, senderID, recipientID pgtype.UUID, previewMessage string) (ConversationResult, error) {
+func (s *DMService) GetOrCreateConversation(ctx context.Context, senderID, recipientID pgtype.UUID, previewMessage string, mc *DMMessageContext) (ConversationResult, error) {
 	// Ensure sender != recipient
 	if senderID == recipientID {
 		return ConversationResult{}, ErrDMSelfConversation
+	}
+
+	// 000941 — resolve a service_listing context before the thread lookup:
+	// a valid context (published listing authored by the recipient) carries
+	// the dm_privacy bypass and snapshots its label/slug server-side
+	// (never client-trusted). A spoofed context (listing authored by
+	// someone else) hard-fails everywhere; a stale one (unpublished or
+	// deleted listing) only fails on the new-conversation path — an
+	// existing thread stays usable and the message sends without context.
+	listingCtx := false
+	staleListing := false
+	orgListing := pgtype.UUID{}
+	listingAuthor := pgtype.UUID{}
+	if mc != nil && mc.Type == "service_listing" {
+		listing, err := s.store.GetServiceListingContext(ctx, mc.ID)
+		switch {
+		case err != nil:
+			staleListing = true
+		case listing.OrgID.Valid:
+			// 000942 — org-owned listing: the commercial channel is the
+			// org inbox, not whoever authored it. Authorship vs the
+			// recipient_id is irrelevant here (any member may have
+			// authored it).
+			mc.Label = listing.Title
+			mc.Slug = listing.Slug
+			listingCtx = true
+			orgListing = listing.OrgID
+			listingAuthor = listing.AuthorID
+		case listing.AuthorID != recipientID:
+			return ConversationResult{}, ErrDMInvalidContext
+		default:
+			mc.Label = listing.Title
+			mc.Slug = listing.Slug
+			listingCtx = true
+		}
+	}
+
+	// 000942 — org listings: one (sender, org) conversation, resolved BEFORE
+	// the user-pair lookup so an org contact never lands in a personal
+	// thread with the listing author. No dm_privacy (orgs have no such
+	// setting) and no dm_requests round-trip — the org inbox IS the
+	// channel. Block check still enforced against the listing's author.
+	if listingCtx && orgListing.Valid {
+		blocked, bErr := s.store.IsBlocked(ctx, senderID, listingAuthor)
+		if bErr != nil {
+			return ConversationResult{}, fmt.Errorf("checking block status: %w", bErr)
+		}
+		if blocked {
+			return ConversationResult{}, ErrDMBlocked
+		}
+
+		// An org member contacting their own org's listing is a
+		// self-inbox — reject it like a self-DM.
+		if member, mErr := s.store.IsOrgMember(ctx, orgListing, senderID); mErr == nil && member {
+			return ConversationResult{}, ErrDMSelfConversation
+		}
+
+		conv, err := s.store.GetOrCreateOrgConversation(ctx, senderID, orgListing)
+		if err != nil {
+			return ConversationResult{}, fmt.Errorf("getting or creating org conversation: %w", err)
+		}
+
+		return ConversationResult{Conversation: conv, IsNew: true}, nil
 	}
 
 	// If a conversation already exists, return it — privacy settings do not
@@ -541,9 +703,31 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, senderID, recip
 			return ConversationResult{}, ErrDMBlocked
 		}
 
+		// Stale context on an existing thread: degrade to a plain DM
+		// rather than failing — the listing state can't kill an
+		// already-open conversation.
+		if staleListing {
+			*mc = DMMessageContext{}
+		}
+
 		return ConversationResult{Conversation: existing, IsNew: false}, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return ConversationResult{}, fmt.Errorf("checking existing conversation: %w", err)
+	}
+
+	// Stale context: before failing, check whether it was an org listing —
+	// an existing org conversation survives its listing going stale (000942)
+	// and degrades to a plain message, same as the DM path above.
+	if staleListing {
+		orgID, oErr := s.store.GetOrgIDForListingContext(ctx, mc.ID)
+		if oErr == nil && orgID.Valid {
+			conv, gErr := s.store.GetOrgConversationByParticipants(ctx, senderID, orgID)
+			if gErr == nil {
+				*mc = DMMessageContext{}
+				return ConversationResult{Conversation: conv, IsNew: false}, nil
+			}
+		}
+		return ConversationResult{}, ErrDMInvalidContext
 	}
 
 	// No existing conversation — apply privacy + block checks for new ones.
@@ -557,40 +741,51 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, senderID, recip
 		return ConversationResult{}, ErrDMBlocked
 	}
 
-	// Privacy check (Section 48) — only applies to NEW conversations.
-	privacy, err := s.store.GetUserDMPrivacy(ctx, recipientID)
-	if err != nil {
-		return ConversationResult{}, fmt.Errorf("reading recipient dm_privacy: %w", err)
-	}
-
+	// Privacy check (Section 48) — only applies to NEW conversations, and
+	// is bypassed when a valid service-listing context rides along (000941):
+	// a listing's contact surface is a commercial channel, not a cold DM —
+	// the provider's social DM setting can't kill it. Blocks still apply.
 	isMutualFollow := false
 
-	switch privacy {
-	case "nobody":
-		return ConversationResult{}, ErrDMPrivacyNobody
-	case "followers_only":
+	if listingCtx {
 		mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
 		if mErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
 		}
-
-		if !mutualFollow {
-			return ConversationResult{}, ErrDMNotMutualFollower
-		}
-
-		isMutualFollow = true
-	case "everyone", "":
-		// Allowed; check mutual follow to decide direct vs request.
-		mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
-		if mErr != nil {
-			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
-		}
-
 		isMutualFollow = mutualFollow
-	default:
-		// Unknown privacy value — fail closed (treat as nobody).
-		slog.Warn("dm: unknown dm_privacy value, failing closed", "recipient_id", recipientID.String(), "dm_privacy", privacy)
-		return ConversationResult{}, ErrDMPrivacyNobody
+	} else {
+		privacy, err := s.store.GetUserDMPrivacy(ctx, recipientID)
+		if err != nil {
+			return ConversationResult{}, fmt.Errorf("reading recipient dm_privacy: %w", err)
+		}
+
+		switch privacy {
+		case "nobody":
+			return ConversationResult{}, ErrDMPrivacyNobody
+		case "followers_only":
+			mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
+			if mErr != nil {
+				return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
+			}
+
+			if !mutualFollow {
+				return ConversationResult{}, ErrDMNotMutualFollower
+			}
+
+			isMutualFollow = true
+		case "everyone", "":
+			// Allowed; check mutual follow to decide direct vs request.
+			mutualFollow, mErr := s.store.IsMutualFollow(ctx, senderID, recipientID)
+			if mErr != nil {
+				return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
+			}
+
+			isMutualFollow = mutualFollow
+		default:
+			// Unknown privacy value — fail closed (treat as nobody).
+			slog.Warn("dm: unknown dm_privacy value, failing closed", "recipient_id", recipientID.String(), "dm_privacy", privacy)
+			return ConversationResult{}, ErrDMPrivacyNobody
+		}
 	}
 
 	conv, err := s.store.GetOrCreateConversation(ctx, senderID, recipientID)
@@ -603,8 +798,16 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, senderID, recip
 	// it joins their main inbox. The requester's first message is the
 	// preview. (BUG-002: previously skipped, creating direct conversations
 	// for all non-mutual-follow senders.)
+	// The request preview carries the listing's reference too — the
+	// provider's requests inbox shows what the inquiry is about before
+	// they accept and see the structured card (000941).
+	reqPreview := previewMessage
+	if listingCtx && mc.Label != "" {
+		reqPreview = "Re: " + mc.Label + "\n\n" + previewMessage
+	}
+
 	if !isMutualFollow {
-		if err := s.store.CreateMessageRequest(ctx, senderID, recipientID, conv.ID, previewMessage); err != nil {
+		if err := s.store.CreateMessageRequest(ctx, senderID, recipientID, conv.ID, reqPreview); err != nil {
 			slog.Warn("dm: failed to create message request", "conversation_id", conv.ID.String(), "error", err)
 		}
 		// Enqueue push notification for the recipient (fire-and-forget).
@@ -616,6 +819,13 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, senderID, recip
 
 // SendMessage sends a message in a conversation.
 func (s *DMService) SendMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) error {
+	return s.SendMessageWithContext(ctx, conversationID, senderID, body, nil)
+}
+
+// SendMessageWithContext stores an optional structured context on the
+// message row (000941) — the first DM of a listing-initiated conversation
+// carries the listing so the thread renders a context card.
+func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, senderID pgtype.UUID, body string, mc *DMMessageContext) error {
 	if body == "" {
 		return errors.New("message body cannot be empty")
 	}
@@ -626,32 +836,100 @@ func (s *DMService) SendMessage(ctx context.Context, conversationID, senderID pg
 		return fmt.Errorf("verifying conversation access: %w", err)
 	}
 
-	if conv.Participant1ID != senderID && conv.Participant2ID != senderID {
-		return errors.New("sender is not a participant in this conversation")
+	// 000942 — org conversations admit any org member as the org side;
+	// their sends carry sent_as_org for thread attribution. The external
+	// user (p1) is always admitted without a membership lookup.
+	asOrg := false
+	if conv.ConversationType == "org" && conv.Participant1ID != senderID {
+		member, mErr := s.store.IsOrgMember(ctx, conv.OrgID, senderID)
+		if mErr != nil {
+			return fmt.Errorf("checking org membership: %w", mErr)
+		}
+		if !member {
+			return ErrDMNotParticipant
+		}
+		asOrg = true
+	} else if conv.ConversationType != "org" && conv.Participant1ID != senderID && conv.Participant2ID != senderID {
+		return ErrDMNotParticipant
+	}
+
+	// A later block must prevent further interaction even on existing
+	// conversations (Section 48) — the initiate path rechecks, but direct
+	// message sends bypassed it entirely. Org conversations skip this:
+	// the block was evaluated against the listing author at initiation,
+	// and a member's personal block can't gate the org's reply channel.
+	if conv.ConversationType != "org" {
+		peer := conv.Participant1ID
+		if conv.Participant1ID == senderID {
+			peer = conv.Participant2ID
+		}
+		blocked, bErr := s.store.IsBlocked(ctx, senderID, peer)
+		if bErr != nil {
+			return fmt.Errorf("checking block status: %w", bErr)
+		}
+		if blocked {
+			return ErrDMBlocked
+		}
 	}
 
 	// Insert the message.
-	if err := s.store.InsertDMMessage(ctx, conversationID, senderID, body); err != nil {
+	if err := s.store.InsertDMMessage(ctx, conversationID, senderID, body, mc, asOrg); err != nil {
 		return fmt.Errorf("inserting dm message: %w", err)
 	}
 
-	// Determine the recipient for unread increment.
-	var recipientID pgtype.UUID
-	if conv.Participant1ID == senderID {
-		recipientID = conv.Participant2ID
-	} else {
-		recipientID = conv.Participant1ID
+	// 000942 — notification/unread targets by conversation shape:
+	//   DM: the other participant.
+	//   org: inbound (external user) → every member (their unread is
+	//   computed per member from dm_org_read_state); outbound (member)
+	//   → the external user + fellow members for live thread sync.
+	var notifyIDs []pgtype.UUID
+	switch {
+	case conv.ConversationType == "org" && asOrg:
+		notifyIDs = append(notifyIDs, conv.Participant1ID)
+		members, mErr := s.store.ListOrgMembers(ctx, conv.OrgID)
+		if mErr == nil {
+			notifyIDs = append(notifyIDs, members...)
+		}
+	case conv.ConversationType == "org":
+		members, mErr := s.store.ListOrgMembers(ctx, conv.OrgID)
+		if mErr != nil {
+			return fmt.Errorf("listing org members: %w", mErr)
+		}
+		notifyIDs = append(notifyIDs, members...)
+	default:
+		if conv.Participant1ID == senderID {
+			notifyIDs = append(notifyIDs, conv.Participant2ID)
+		} else {
+			notifyIDs = append(notifyIDs, conv.Participant1ID)
+		}
 	}
 
-	// Increment unread count for recipient.
-	if err := s.store.IncrementUnreadCount(ctx, conversationID, recipientID); err != nil {
-		return fmt.Errorf("incrementing unread count: %w", err)
+	// Increment the external user's DB counter when an org member sends —
+	// org members read unread from dm_org_read_state instead.
+	if conv.ConversationType == "org" && asOrg && conv.Participant1ID.Valid {
+		if err := s.store.IncrementUnreadCount(ctx, conversationID, conv.Participant1ID); err != nil {
+			return fmt.Errorf("incrementing unread count: %w", err)
+		}
+	} else if conv.ConversationType == "dm" && len(notifyIDs) > 0 {
+		if err := s.store.IncrementUnreadCount(ctx, conversationID, notifyIDs[0]); err != nil {
+			return fmt.Errorf("incrementing unread count: %w", err)
+		}
 	}
 
 	// Maintain the Valkey badge counter: INCR jc:dm_total_unread:{recipient}
-	// (Section 48). The DB column is the source of truth; this cache
-	// avoids a DB query on every page load for the unread badge.
-	s.incrTotalUnread(ctx, recipientID)
+	// (Section 48). The DB column/read-state is the source of truth; the
+	// cache avoids a DB query on every page load for the unread badge.
+	if conv.ConversationType == "org" {
+		if asOrg {
+			s.incrTotalUnread(ctx, conv.Participant1ID)
+		} else {
+			for _, m := range notifyIDs {
+				s.incrTotalUnread(ctx, m)
+			}
+		}
+	} else if len(notifyIDs) > 0 {
+		s.incrTotalUnread(ctx, notifyIDs[0])
+	}
 
 	// Truncate preview to 100 characters (runes, not bytes — slicing by
 	// bytes splits multi-byte UTF-8 and corrupts non-ASCII previews on a
@@ -668,17 +946,41 @@ func (s *DMService) SendMessage(ctx context.Context, conversationID, senderID pg
 
 	// Broadcast DM message event via WebSocket hub. §14: resolve {{...}} —
 	// the live event has no later read-path resolution.
-	s.hub.BroadcastToUser(recipientID.String(), WSEvent{
-		Type: EventDMMessage,
-		Payload: map[string]interface{}{
-			"conversation_id": conversationID.String(),
-			"sender_id":       senderID.String(),
-			"body":            s.resolveDMText(ctx, body),
-		},
-	})
+	payload := map[string]interface{}{
+		"conversation_id": conversationID.String(),
+		"sender_id":       senderID.String(),
+		"body":            s.resolveDMText(ctx, body),
+	}
+	if mc != nil {
+		payload["context_type"] = mc.Type
+		payload["context_id"] = mc.ID.String()
+		payload["context_label"] = mc.Label
+		payload["context_slug"] = mc.Slug
+	}
+	if asOrg {
+		payload["sent_as_org"] = true
+		if name, nErr := s.store.GetSenderDisplayName(ctx, senderID); nErr == nil {
+			payload["sender_display_name"] = name
+		}
+	}
+	for _, uid := range notifyIDs {
+		if uid == senderID {
+			continue
+		}
+		s.hub.BroadcastToUser(uid.String(), WSEvent{
+			Type:    EventDMMessage,
+			Payload: payload,
+		})
+	}
 
-	// Enqueue push notification for recipient — fire-and-forget.
-	s.enqueueDMNotifyMessage(ctx, recipientID, senderID, conversationID, preview)
+	// Enqueue push notification for recipients — fire-and-forget. For org
+	// conversations the org side is every member except the sender.
+	for _, uid := range notifyIDs {
+		if uid == senderID || (conv.ConversationType == "org" && asOrg && uid != conv.Participant1ID) {
+			continue
+		}
+		s.enqueueDMNotifyMessage(ctx, uid, senderID, conversationID, preview)
+	}
 
 	return nil
 }
@@ -699,7 +1001,9 @@ func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, q,
 	infos := make([]ConversationInfo, len(rows))
 
 	for i, r := range rows {
-		// Determine other user's ID.
+		// Determine other party's ID — for org conversations viewed by a
+		// member, the "other" is the external user (p1); for the external
+		// user it's the org (no user id).
 		var otherID pgtype.UUID
 		if r.Participant1ID == userID {
 			otherID = r.Participant2ID
@@ -707,14 +1011,31 @@ func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, q,
 			otherID = r.Participant1ID
 		}
 
+		var otherUserID string
+		if otherID.Valid {
+			otherUserID = otherID.String()
+		}
+
 		infos[i] = ConversationInfo{
 			ID:               r.ID.String(),
-			OtherUserID:      otherID.String(),
+			OtherUserID:      otherUserID,
 			OtherUsername:    r.OtherUsername,
 			OtherDisplayName: r.OtherDisplayName,
 			OtherAvatarURL:   r.OtherAvatarUrl,
 			UnreadCount:      r.UnreadCount,
 			CreatedAt:        r.CreatedAt.Time.Format(time.RFC3339),
+			ConversationType: r.ConversationType,
+		}
+
+		if r.ConversationType == "org" {
+			if r.OrgID.Valid {
+				s := r.OrgID.String()
+				infos[i].OrgID = &s
+			}
+			if r.OrgSlug != "" {
+				slug := r.OrgSlug
+				infos[i].OrgSlug = &slug
+			}
 		}
 
 		if r.LastMessageAt.Valid {
@@ -779,8 +1100,16 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 		return nil, "", fmt.Errorf("verifying conversation access: %w", err)
 	}
 
-	if conv.Participant1ID != userID && conv.Participant2ID != userID {
-		return nil, "", errors.New("user is not a participant in this conversation")
+	// 000942 — org conversations: any org member can read the thread.
+	allowed := conv.Participant1ID == userID || conv.Participant2ID == userID
+	if !allowed && conv.ConversationType == "org" {
+		allowed, err = s.store.IsOrgMember(ctx, conv.OrgID, userID)
+		if err != nil {
+			return nil, "", fmt.Errorf("checking org membership: %w", err)
+		}
+	}
+	if !allowed {
+		return nil, "", ErrDMNotParticipant
 	}
 
 	rows, err := s.store.GetConversationMessages(ctx, conversationID, limit, offset, cursor)
@@ -808,6 +1137,17 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 			CreatedAt:         r.CreatedAt.Time.Format(time.RFC3339),
 		}
 
+		// 000941 — structured context snapshot on listing-initiated
+		// first messages; the thread renders a linked card.
+		if r.ContextType != nil {
+			msgs[i].ContextType = r.ContextType
+			id := r.ContextID.String()
+			msgs[i].ContextID = &id
+			msgs[i].ContextLabel = r.ContextLabel
+			msgs[i].ContextSlug = r.ContextSlug
+		}
+		msgs[i].SentAsOrg = r.SentAsOrg
+
 		if r.ReadAt.Valid {
 			s := r.ReadAt.Time.Format(time.RFC3339)
 			msgs[i].ReadAt = &s
@@ -830,11 +1170,36 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 // Valkey badge counter jc:dm_total_unread:{user_id} is recalculated from
 // the sum of all conversation unread counts (Section 48).
 func (s *DMService) MarkAsRead(ctx context.Context, conversationID, userID pgtype.UUID) error {
+	// Participation check (IDOR): without it, anyone could flip read_at
+	// on another conversation's messages — or write dm_org_read_state
+	// rows for an org they don't belong to.
+	conv, err := s.store.GetConversationByID(ctx, conversationID)
+	if err != nil {
+		return fmt.Errorf("verifying conversation access: %w", err)
+	}
+
+	allowed := conv.Participant1ID == userID || conv.Participant2ID == userID
+	if !allowed && conv.ConversationType == "org" {
+		allowed, err = s.store.IsOrgMember(ctx, conv.OrgID, userID)
+		if err != nil {
+			return fmt.Errorf("checking org membership: %w", err)
+		}
+	}
+	if !allowed {
+		return ErrDMNotParticipant
+	}
+
 	if err := s.store.MarkMessagesRead(ctx, conversationID, userID); err != nil {
 		return fmt.Errorf("marking messages read: %w", err)
 	}
 
-	if err := s.store.ResetUnreadCount(ctx, conversationID, userID); err != nil {
+	// 000942 — org members read-mark via dm_org_read_state (per-member
+	// unread), not the shared participant counter.
+	if conv.ConversationType == "org" && conv.Participant1ID != userID {
+		if err := s.store.UpsertDMOrgReadState(ctx, conversationID, userID); err != nil {
+			return fmt.Errorf("upserting org read state: %w", err)
+		}
+	} else if err := s.store.ResetUnreadCount(ctx, conversationID, userID); err != nil {
 		return fmt.Errorf("resetting unread count: %w", err)
 	}
 
@@ -1008,7 +1373,7 @@ func (s *DMService) EditMessage(ctx context.Context, conversationID, messageID, 
 	}
 
 	if conv.Participant1ID != senderID && conv.Participant2ID != senderID {
-		return errors.New("user is not a participant in this conversation")
+		return ErrDMNotParticipant
 	}
 
 	// Verify the user is the sender of this specific message. The
@@ -1041,7 +1406,7 @@ func (s *DMService) DeleteMessage(ctx context.Context, conversationID, messageID
 	}
 
 	if conv.Participant1ID != senderID && conv.Participant2ID != senderID {
-		return errors.New("user is not a participant in this conversation")
+		return ErrDMNotParticipant
 	}
 
 	// Verify sender ownership explicitly — the SoftDeleteDMMessage :exec
@@ -1067,29 +1432,55 @@ func (s *DMService) DeleteMessage(ctx context.Context, conversationID, messageID
 // is stored as the dm_requests.preview_message when a message request is
 // created for a non-mutual-follow sender (Section 48 spec).
 func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, initiatorID, recipientID pgtype.UUID, previewMessage string) (ConversationResult, error) {
-	return s.GetOrCreateConversation(ctx, initiatorID, recipientID, previewMessage)
+	return s.GetOrCreateConversation(ctx, initiatorID, recipientID, previewMessage, nil)
 }
 
-// GetOtherParticipant returns the ID of the other participant in a
-// conversation, scoped to the platform. Returns an error if the conversation
-// doesn't exist or the given user is not a participant. Used by the typing
-// indicator path (Section 10) to route typing events to the correct
-// recipient without exposing conversation membership to non-participants.
-func (s *DMService) GetOtherParticipant(ctx context.Context, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
+// GetOrCreateConversationForInitiatorWithContext carries a structured
+// context (000941). A valid service_listing context authored by the
+// recipient bypasses the dm_privacy gate — the listing's contact surface
+// is commercial, not a cold DM. Blocks still enforced; non-mutual senders
+// still land as a message request.
+func (s *DMService) GetOrCreateConversationForInitiatorWithContext(ctx context.Context, initiatorID, recipientID pgtype.UUID, previewMessage string, mc *DMMessageContext) (ConversationResult, error) {
+	return s.GetOrCreateConversation(ctx, initiatorID, recipientID, previewMessage, mc)
+}
+
+// GetTypingTargets returns every user who should receive a typing event
+// for a conversation (000942): the other participant for DMs; the external
+// user + all org members minus the typer for org conversations. Non-
+// participants get ErrDMNotParticipant (silently dropped by the caller).
+func (s *DMService) GetTypingTargets(ctx context.Context, conversationID, userID pgtype.UUID) ([]pgtype.UUID, error) {
 	conv, err := s.store.GetConversationByID(ctx, conversationID)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("looking up conversation: %w", err)
+		return nil, fmt.Errorf("looking up conversation: %w", err)
+	}
+
+	if conv.ConversationType == "org" {
+		member, mErr := s.store.IsOrgMember(ctx, conv.OrgID, userID)
+		if mErr != nil {
+			return nil, fmt.Errorf("checking org membership: %w", mErr)
+		}
+		if conv.Participant1ID != userID && !member {
+			return nil, ErrDMNotParticipant
+		}
+		var targets []pgtype.UUID
+		if conv.Participant1ID != userID {
+			targets = append(targets, conv.Participant1ID)
+		}
+		members, lErr := s.store.ListOrgMembers(ctx, conv.OrgID)
+		if lErr == nil {
+			targets = append(targets, members...)
+		}
+		return targets, nil
 	}
 
 	if conv.Participant1ID != userID && conv.Participant2ID != userID {
-		return pgtype.UUID{}, errors.New("user is not a participant in this conversation")
+		return nil, ErrDMNotParticipant
 	}
 
 	if conv.Participant1ID == userID {
-		return conv.Participant2ID, nil
+		return []pgtype.UUID{conv.Participant2ID}, nil
 	}
-
-	return conv.Participant1ID, nil
+	return []pgtype.UUID{conv.Participant1ID}, nil
 }
 
 // enqueueDMNotifyMessage enqueues a push notification for a new DM message.

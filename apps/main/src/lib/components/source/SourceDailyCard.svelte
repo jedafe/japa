@@ -55,7 +55,9 @@
 		Object.assign(source, updated);
 	}
 
-	const shareUrl = $derived(item.original_url || item.href);
+	// Share links to the in-app page (the card itself navigates there);
+	// the external publisher URL stays on the "View" chip.
+	const shareUrl = $derived(item.href || item.original_url);
 </script>
 
 <div

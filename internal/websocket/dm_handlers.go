@@ -182,6 +182,14 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 	var req struct {
 		RecipientID string `json:"recipient_id"`
 		Message     string `json:"message"`
+		// 000941 — optional structured context; {type:'service_listing',
+		// id} references the listing the message is about. Server-side
+		// validated (published + authored by recipient) before it carries
+		// the dm_privacy bypass.
+		Context *struct {
+			Type string `json:"type"`
+			ID   string `json:"id"`
+		} `json:"context"`
 	}
 
 	if err := parseJSONBody(r, &req); err != nil {
@@ -205,7 +213,17 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.dmService.GetOrCreateConversationForInitiator(r.Context(), user.UserID, recipientID, req.Message)
+	var mc *DMMessageContext
+	if req.Context != nil && req.Context.Type == "service_listing" {
+		var ctxID pgtype.UUID
+		if err := ctxID.Scan(req.Context.ID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_context", "Invalid context id")
+			return
+		}
+		mc = &DMMessageContext{Type: "service_listing", ID: ctxID}
+	}
+
+	result, err := h.dmService.GetOrCreateConversationForInitiatorWithContext(r.Context(), user.UserID, recipientID, req.Message, mc)
 	if err != nil {
 		// Map DM privacy/block sentinel errors to 403 per Section 48.
 		switch {
@@ -221,6 +239,9 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, ErrDMSelfConversation):
 			errpkg.WriteError(w, http.StatusBadRequest, "self_conversation", "Cannot start a conversation with yourself")
 			return
+		case errors.Is(err, ErrDMInvalidContext):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_context", "Invalid message context")
+			return
 		}
 
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to initiate conversation")
@@ -230,7 +251,7 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 
 	// Send the initial message (BUG-003: previously the handler created a
 	// conversation but never sent the first message).
-	if err := h.dmService.SendMessage(r.Context(), result.Conversation.ID, user.UserID, req.Message); err != nil {
+	if err := h.dmService.SendMessageWithContext(r.Context(), result.Conversation.ID, user.UserID, req.Message, mc); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to send initial message")
 		return
 	}
@@ -266,6 +287,10 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	messages, nextCursor, err := h.dmService.GetMessages(r.Context(), conversationID, user.UserID, limit, offset, cursor)
 	if err != nil {
+		if errors.Is(err, ErrDMNotParticipant) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_participant", "You are not a participant in this conversation")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get messages")
 		return
 	}
@@ -330,7 +355,14 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.dmService.SendMessage(r.Context(), conversationID, user.UserID, req.Body); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to send message")
+		switch {
+		case errors.Is(err, ErrDMBlocked):
+			errpkg.WriteError(w, http.StatusForbidden, "dm_blocked", "Cannot send DMs to this user")
+		case errors.Is(err, ErrDMNotParticipant):
+			errpkg.WriteError(w, http.StatusForbidden, "not_participant", "You are not a participant in this conversation")
+		default:
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to send message")
+		}
 		return
 	}
 
@@ -362,6 +394,10 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.dmService.MarkAsRead(r.Context(), conversationID, user.UserID); err != nil {
+		if errors.Is(err, ErrDMNotParticipant) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_participant", "You are not a participant in this conversation")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark messages as read")
 		return
 	}

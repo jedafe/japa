@@ -299,7 +299,7 @@ func TestResolveScoreInputs(t *testing.T) {
 		},
 		{
 			name:     "mentor",
-			item:     mentorToResolvedItem(mentorship.MentorSummary{UserID: id, Username: "mentor", MentorAreas: []string{"career"}}, nil),
+			item:     mentorToResolvedItem(mentorship.MentorSummary{UserID: id, Username: "mentor", MentorAreas: []string{"career"}}, nil, nil),
 			wantKeys: []string{"cost", "rating", "sessions_count", "areas", "language", "availability_days"},
 		},
 		{

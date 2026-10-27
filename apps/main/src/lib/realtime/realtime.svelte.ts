@@ -21,6 +21,15 @@ export interface DMMessageEvent {
 	conversation_id: string;
 	sender_id: string;
 	body: string;
+	/** 000941 structured context (service_listing) — set on listing-
+	 *  initiated first messages so the thread renders the card live. */
+	context_type?: string;
+	context_id?: string;
+	context_label?: string;
+	context_slug?: string;
+	/** 000942 — sent by an org member on behalf of the org. */
+	sent_as_org?: boolean;
+	sender_display_name?: string;
 }
 
 /** Payload shape broadcast by the backend for `presence` events. */

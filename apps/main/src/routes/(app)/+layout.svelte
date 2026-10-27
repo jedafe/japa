@@ -170,7 +170,11 @@
 	// redirects to login.
 	const showChatFab = $derived(
 		data.features?.['feature.japabot'] === true &&
-			!page.route.id?.startsWith('/(app)/ai')
+			!page.route.id?.startsWith('/(app)/ai') &&
+			// The service-create form embeds its own AI assist fields
+			// (AiBodyField); the floating JapaAI panel competes for the same
+			// controls, so it's suppressed on /services/new.
+			!page.route.id?.startsWith('/(app)/services/new')
 	);
 
 	// §115 AI Quick Panel: the FAB now toggles a page-aware slide-in panel

@@ -13,7 +13,8 @@
 		Settings,
 		Search,
 		Loader2,
-		Flag
+		Flag,
+		Package
 	} from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import {
@@ -227,10 +228,15 @@
 						id: crypto.randomUUID(),
 						sender_id: ev.sender_id,
 						sender_username: '',
-						sender_display_name: '',
+						sender_display_name: ev.sender_display_name ?? '',
 						body: ev.body,
 						created_at: new Date().toISOString(),
-						read_at: null
+						read_at: null,
+						context_type: ev.context_type,
+						context_id: ev.context_id,
+						context_label: ev.context_label,
+						context_slug: ev.context_slug,
+						sent_as_org: ev.sent_as_org
 					}
 				];
 				// Keep the server-side unread count accurate for the open thread.
@@ -612,7 +618,9 @@
 						</p>
 						{#if activeConversation?.other_username}
 							<a
-								href="/u/{activeConversation.other_username}"
+								href={activeConversation?.conversation_type === 'org'
+									? `/org/${activeConversation.other_username}`
+									: `/u/${activeConversation.other_username}`}
 								class="truncate text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
 								>@{activeConversation.other_username}</a
 							>
@@ -676,6 +684,28 @@
 												</button>
 											</div>
 										{:else}
+											{#if msg.context_type === 'service_listing' && msg.context_slug}
+												<a
+													href="/services/{msg.context_slug}"
+													class="mb-1.5 flex items-center gap-2 rounded-[var(--radius)] border px-2.5 py-1.5 text-xs {mine
+														? 'border-[var(--color-primary-contrast)]/30 text-[var(--color-primary-contrast)]'
+														: 'border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]'}"
+												>
+													<Package size={13} aria-hidden="true" />
+													<span class="truncate font-medium"
+														>{msg.context_label ?? msg.context_slug}</span
+													>
+												</a>
+											{/if}
+											{#if msg.sent_as_org && msg.sender_display_name}
+												<p
+													class="mb-0.5 text-[10px] font-medium {mine
+														? 'text-[var(--color-primary-contrast)]/80'
+														: 'text-[var(--color-text-subtle)]'}"
+												>
+													{msg.sender_display_name}
+												</p>
+											{/if}
 											<p class="whitespace-pre-wrap break-words">{msg.body}</p>
 											<p
 												class="mt-1 text-[10px] {mine

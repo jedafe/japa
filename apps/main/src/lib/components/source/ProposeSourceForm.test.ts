@@ -85,7 +85,7 @@ function mockApi(handler?: (url: string) => Response | undefined) {
 		if (url.includes('/sources/probe')) return Promise.resolve(jsonResponse({ data: probeReport }));
 		if (url.includes('/sources/propose'))
 			return Promise.resolve(
-				jsonResponse({ data: { id: '1', slug: 's', status: 'proposed', admin_review_url: '' } }, 201)
+				jsonResponse({ data: { id: '1', slug: 's', status: 'proposed' } }, 201)
 			);
 		return Promise.resolve(jsonResponse({ error: { code: 'not_found', message: 'not found' } }, 404));
 	}) as unknown as typeof fetch;

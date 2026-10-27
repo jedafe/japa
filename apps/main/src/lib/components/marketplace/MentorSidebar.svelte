@@ -28,7 +28,9 @@
 		currencies: CurrencyInfo[];
 		canApply: boolean;
 		onApply: () => void;
-		onMessage: () => void;
+		/** Omitted when DM isn't a valid channel (own listing) — hides the
+		 *  contact card. */
+		onMessage?: () => void;
 	}
 	let { service, currencies, canApply, onApply, onMessage }: Props = $props();
 
@@ -180,6 +182,7 @@
 		</div>
 
 		<!-- Questions? contact card -->
+		{#if onMessage}
 		<div
 			class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-center"
 		>
@@ -196,12 +199,13 @@
 			</p>
 			<button
 				type="button"
-				onclick={onMessage}
+				onclick={() => onMessage?.()}
 				class="mt-3.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-semibold text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				<MessageSquare size={14} aria-hidden="true" />
 				{t('services.mentor_contact', 'Contact mentor')}
 			</button>
 		</div>
+		{/if}
 	</aside>
 {/if}

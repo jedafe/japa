@@ -144,6 +144,7 @@
 		if (result.ok) {
 			sources = Array.isArray(result.data) ? (result.data as ProposedSource[]) : [];
 			totalRows = Number(result.meta?.total ?? sources.length);
+			errorMessage = ''; // clear a stale banner after a successful refresh
 		} else {
 			errorMessage = result.error;
 		}
@@ -174,17 +175,37 @@
 	// doProposedAction is the shared core for row and bulk approve/reject:
 	// it returns the backend error string (or null on success) so bulk
 	// callers can build a per-item failure summary.
-	async function doProposedAction(id: string, action: 'approve' | 'reject'): Promise<string | null> {
+	async function doProposedAction(
+		id: string,
+		action: 'approve' | 'reject',
+		trustLevel?: number
+	): Promise<string | null> {
+		// trust_level is an optional approve-time assignment — proposals
+		// default to 5 (unverified) unless the reviewer promotes them.
+		const body = action === 'approve' && trustLevel ? { trust_level: trustLevel } : undefined;
 		const result = await api<{ source_id: string; status: string; enabled: boolean }>(
 			`/api/v1/intel/sources/${id}/${action}`,
-			{ method: 'POST' }
+			{ method: 'POST', body }
 		);
 		return result.ok ? null : result.error;
 	}
 
-	async function approveSource(id: string) {
+	// Review-time trust assignment — the approve endpoint accepts an optional
+	// {trust_level}; proposals default to 5 (unverified) without one.
+	let approveTrust = $state<number | null>(null);
+
+	// Levels match the backend scale: 5=unverified (proposal default) … 1=official.
+	const trustOptions = [
+		{ value: 5, label: t('intel.trust_unverified', 'Unverified') },
+		{ value: 4, label: t('intel.trust_community', 'Community') },
+		{ value: 3, label: t('intel.trust_aggregator', 'Aggregator') },
+		{ value: 2, label: t('intel.trust_trusted', 'Trusted') },
+		{ value: 1, label: t('intel.trust_official', 'Official') }
+	];
+
+	async function approveSource(id: string, trustLevel?: number) {
 		approving = id;
-		const err = await doProposedAction(id, 'approve');
+		const err = await doProposedAction(id, 'approve', trustLevel);
 		approving = null;
 		if (!err) {
 			await load();
@@ -238,6 +259,7 @@
 
 	function openDetail(s: ProposedSource) {
 		detailSource = s;
+		approveTrust = s.trust_level || null;
 		detailOpen = true;
 	}
 
@@ -246,11 +268,13 @@
 		detailSource = null;
 	}
 
+	// Columns are intentionally not sortable — the backend serves this list
+	// in fixed proposed_at DESC order and accepts no sort params, so a
+	// client-side sort would only reorder the visible page.
 	const columns: DataTableColumn[] = [
 		{
 			key: 'name',
 			label: t('intel.field_name', 'Name'),
-			sortable: true,
 			render: (_val, row) =>
 				`<div class="flex flex-col"><span class="font-medium">${escapeHtml(row.name as string)}</span>` +
 				`<span class="text-muted-foreground text-xs font-mono">${escapeHtml((row as unknown as ProposedSource).domain)}</span></div>`
@@ -258,26 +282,22 @@
 		{
 			key: 'category',
 			label: t('intel.field_category', 'Category'),
-			sortable: true,
 			render: (val) => `<span class="text-muted-foreground capitalize">${escapeHtml(val as string)}</span>`
 		},
 		{
 			key: 'trust_level',
 			label: t('intel.field_trust_level', 'Trust'),
-			sortable: true,
 			render: (val) =>
 				`<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${trustColor(Number(val))}">${trustLabel(Number(val))}</span>`
 		},
 		{
 			key: 'proposed_at',
 			label: t('intel.proposed_at', 'Proposed'),
-			sortable: true,
 			render: (val) => `<span class="text-muted-foreground text-xs">${formatTime(val as string)}</span>`
 		},
 		{
 			key: 'source_url',
 			label: t('intel.source_url', 'URL'),
-			sortable: true,
 			render: (val) => {
 				const raw = String(val ?? '');
 				if (!isSafeUrl(raw)) return `<span class="font-mono text-xs">${escapeHtml(raw) || '—'}</span>`;
@@ -464,6 +484,21 @@
 								{/if}
 							</div>
 
+							<!-- Provenance: probe_report is either the verify probe's
+							     output (last_probed_at set) or the proposer's own
+							     probe_snapshot — user-supplied and not verified.
+							     Distinguish the two so reviewers don't read a
+							     fabricated report as authoritative. -->
+							{#if !detailSource.last_probed_at}
+								<p class="mt-1.5 text-xs text-amber-500">
+									{t('intel.probe_unverified', 'Submitted by the proposer — verified probe runs on approval.')}
+								</p>
+							{:else}
+								<p class="mt-1.5 text-xs text-emerald-500">
+									{t('intel.probe_verified', 'Verified by the backend probe.')}
+								</p>
+							{/if}
+
 							{#if (detailSource.detected_methods?.length ?? 0) > 0}
 								<div class="mt-2">
 									<span class="text-muted-foreground text-xs">{t('intel.detected_methods', 'Detected methods')}</span>
@@ -553,6 +588,17 @@
 						{t('common.close', 'Close')}
 					</button>
 					{#if canManage && detailSource}
+						<select
+							bind:value={approveTrust}
+							class="border-border-input bg-background-alt text-foreground rounded-9px border px-2 py-2 text-sm disabled:opacity-50"
+							disabled={!!approving}
+							aria-label={t('intel.field_trust_level', 'Trust')}
+							title={t('intel.trust_picker_hint', 'Trust level to assign on approval')}
+						>
+							{#each trustOptions as o}
+								<option value={o.value}>{t('intel.trust_as', 'Trust: {label}').replace('{label}', o.label)}</option>
+							{/each}
+						</select>
 						<button
 							class="border-destructive/40 text-destructive hover:bg-destructive/10 rounded-9px border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 							disabled={!!approving}
@@ -563,7 +609,7 @@
 						<button
 							class="bg-foreground text-background hover:bg-foreground/90 rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 							disabled={!!approving}
-							onclick={() => { if (detailSource) { detailOpen = false; approveSource(detailSource.id); } }}
+							onclick={() => { if (detailSource) { detailOpen = false; approveSource(detailSource.id, approveTrust ?? undefined); } }}
 						>
 							{t('intel.approve', 'Approve')}
 						</button>

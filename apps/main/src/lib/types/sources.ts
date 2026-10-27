@@ -38,6 +38,11 @@ export interface Source {
 	/** Feed entity types this source currently publishes (detail endpoint
 	 *  only) — scopes the entity-type filter pills to types with items. */
 	entity_types?: string[];
+	/** Detail-endpoint provenance fields for the About section (v2 spec). */
+	source_license?: string | null;
+	attribution_required?: boolean;
+	crawl_frequency?: string;
+	last_crawled_at?: string | null;
 }
 
 export interface SourceItem {

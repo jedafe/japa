@@ -41,6 +41,22 @@ func RegisterSourceLinkPreviewer(p SourceLinkPreviewer) {
 	sourceLinkPreviewerInstance = p
 }
 
+// SourceTagEnsurer materializes directory tags for source keywords so
+// public keyword chips link to /tags/{slug} — the same write-path work the
+// HTTP handlers run on propose/approve, needed here because the metadata
+// worker can be the first writer of the keywords column.
+type SourceTagEnsurer interface {
+	EnsureSourceTags(ctx context.Context, keywords []string)
+}
+
+var sourceTagEnsurerInstance SourceTagEnsurer
+
+// RegisterSourceTagEnsurer wires the tag creator for metadata-worker
+// keywords. Nil-safe: a missing ensurer simply leaves chips unlinked.
+func RegisterSourceTagEnsurer(e SourceTagEnsurer) {
+	sourceTagEnsurerInstance = e
+}
+
 // HandleSourceMetadata loads the source, fetches its homepage link preview,
 // and writes the description and logo back to the row if the current values are
 // empty. Failures are logged and swallowed so a single unreachable site does not
@@ -118,6 +134,13 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 
 	if err := q.UpdateIntelSourceMetadata(ctx, params); err != nil {
 		return fmt.Errorf("task:intel:source_metadata: update source: %w", err)
+	}
+
+	// This task can be the first writer of keywords — materialize directory
+	// tags for them so public keyword chips link instead of rendering dead
+	// text until the next write-path runs createSourceTags.
+	if len(params.Keywords) > 0 && sourceTagEnsurerInstance != nil {
+		sourceTagEnsurerInstance.EnsureSourceTags(ctx, params.Keywords)
 	}
 
 	slog.Info("task:intel:source_metadata: updated", "source_id", p.SourceID)

@@ -460,7 +460,7 @@ LEFT JOIN spaces sp ON sp.source_id = s.id
 LEFT JOIN organizations o ON o.source_id = s.id
 LEFT JOIN users u ON u.source_id = s.id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE s.slug = $1 AND s.enabled = true;
+WHERE s.slug = $1 AND s.enabled = true AND s.status = 'active';
 
 -- name: ListIntelRecordsBySource :many
 -- Published records for a source, sorted at the DB level by the requested

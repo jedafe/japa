@@ -22,7 +22,7 @@ func (f *fakeTracker) TrackEvent(_ context.Context, in analytics.TrackEventInput
 func tracked(t *testing.T, tracker *fakeTracker, method, path string, status int, user *auth.AuthenticatedUser) {
 	t.Helper()
 
-	h := TrackToolUsage(tracker)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := TrackToolUsage(tracker, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(status)
 	}))
 
@@ -117,7 +117,7 @@ func TestTrackToolUsage_UserIdentity(t *testing.T) {
 func TestTrackToolUsage_NilTrackerSafe(t *testing.T) {
 	t.Parallel()
 
-	h := TrackToolUsage(nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := TrackToolUsage(nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/crs/calculate", nil)

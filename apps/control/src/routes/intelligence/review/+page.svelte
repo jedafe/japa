@@ -134,18 +134,28 @@
 		load();
 	});
 
+	// Entity types come from the backend registry (Rule 16) — the static
+	// fallback keeps the filter usable if /sources/meta is unreachable.
+	let registeredEntityTypes = $state<string[]>([
+		'scholarship', 'job', 'visa', 'housing', 'remittance',
+		'cost_of_living', 'guide', 'news'
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await api<{ registered_entity_types?: string[] }>('/api/v1/sources/meta');
+			if (res.ok && res.data?.registered_entity_types?.length) {
+				registeredEntityTypes = res.data.registered_entity_types;
+			}
+		})();
+	});
+
 	const entityItems = $derived([
 		{ value: 'all', label: t('intel.filter_all_entities', 'All entity types') },
-		{ value: 'scholarship', label: t('intel.category_scholarship', 'Scholarship') },
-		{ value: 'job', label: t('intel.category_job', 'Job') },
-		{ value: 'visa', label: t('intel.category_visa', 'Visa') },
-		{ value: 'housing', label: t('intel.category_housing', 'Housing') },
-		{ value: 'remittance', label: t('intel.category_remittance', 'Remittance') },
-		{ value: 'cost_of_living', label: t('intel.category_cost_of_living', 'Cost of Living') },
-		{ value: 'guide', label: t('intel.category_guide', 'Guide') },
-		{ value: 'news', label: t('intel.category_news', 'News') },
-		{ value: 'community', label: t('intel.category_community', 'Community') },
-		{ value: 'mentorship', label: t('intel.category_mentorship', 'Mentorship') }
+		...registeredEntityTypes.map((et) => ({
+			value: et,
+			label: t(`intel.category_${et}`, et.replace(/_/g, ' '))
+		}))
 	]);
 
 	function formatTime(ts?: string): string {

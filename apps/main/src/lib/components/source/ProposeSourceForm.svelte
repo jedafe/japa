@@ -220,7 +220,7 @@
 			if (probeReport && probeUrl === sourceUrl.trim()) {
 				payload.probe_snapshot = probeReport;
 			}
-			const res = await api.post<{ id: string; slug: string; status: string; admin_review_url: string }>(
+			const res = await api.post<{ id: string; slug: string; status: string }>(
 				'/sources/propose',
 				payload
 			);
@@ -459,6 +459,8 @@
 				/>
 				<p class="mt-1 text-xs text-[var(--color-muted)]">
 					{t('sources.submit.categories_hint', 'Pick every domain this source covers — at least one.')}
+					{' '}
+					{t('sources.submit.categories_limited', 'More domains (visa, scholarships…) open as extraction coverage grows.')}
 				</p>
 			{:else}
 				<!-- Meta unavailable: free-text fallback (comma-separated) so the

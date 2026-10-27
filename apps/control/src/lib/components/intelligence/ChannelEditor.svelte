@@ -179,13 +179,18 @@
 		{ value: 'custom', label: t('intel.relevance_custom', 'Custom — gate on topics / URL patterns') }
 	]);
 
+	// Inbound/oneshot methods are never scheduled (ListDueChannels excludes
+	// them) — a crawl frequency is meaningless, so it must not block submit.
+	const SCHEDULED_METHODS = new Set(['email', 'webhook', 'manual', 'oneshot']);
+	const isScheduled = $derived(!SCHEDULED_METHODS.has(form.crawl_method));
+
 	const isEdit = $derived(!!channel?.id);
 	const valid = $derived(
 		form.label.trim().length > 0 &&
 			form.entry_url.trim().length > 0 &&
 			form.crawl_method.length > 0 &&
 			form.pipeline.length > 0 &&
-			form.crawl_frequency_mins > 0 &&
+			(!isScheduled || form.crawl_frequency_mins > 0) &&
 			jsonError === ''
 	);
 
@@ -310,7 +315,12 @@
 					</div>
 					<div>
 						<label for="ce-mins" class={labelClass}>{t('intel.field_crawl_mins', 'Crawl Interval (mins)')}</label>
-						<input id="ce-mins" type="number" min="1" bind:value={form.crawl_frequency_mins} class={inputClass} />
+						<input id="ce-mins" type="number" min="1" bind:value={form.crawl_frequency_mins} disabled={!isScheduled} class={inputClass} />
+						{#if !isScheduled}
+							<p class="text-muted-foreground mt-1 text-xs">
+								{t('intel.channel_not_scheduled', 'Inbound — triggered by incoming deliveries, not scheduled.')}
+							</p>
+						{/if}
 					</div>
 				</div>
 

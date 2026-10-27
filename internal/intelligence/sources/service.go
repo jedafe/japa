@@ -511,6 +511,14 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: invalid source_url", errpkg.ErrInvalid)
 	}
 
+	// Canonicalize the stored URL so trivially-equivalent spellings dedupe:
+	// lowercase scheme+host, drop default ports, treat an empty path as "/"
+	// and strip a lone trailing "/" on the root path. Paths below the root
+	// are preserved verbatim — a source may legitimately live under a
+	// sub-path (e.g. site.example/jobs/).
+	sourceURL = canonicalizeSourceURL(u)
+	u, _ = url.Parse(sourceURL)
+
 	domain := input.Domain
 	if domain == "" {
 		domain = u.Hostname()
@@ -518,6 +526,14 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 
 	if domain == "" || strings.Contains(domain, ":") {
 		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: invalid domain", errpkg.ErrInvalid)
+	}
+
+	// The domain is displayed publicly as the source's identity — a claimed
+	// domain that does not match the URL's host is rejected rather than
+	// shown to directory visitors. Suffix match both ways covers
+	// "example.com" ↔ "www.example.com"/"blog.example.com".
+	if host := u.Hostname(); !domainMatchesHost(domain, host) {
+		return gen.CreateIntelSourceParams{}, fmt.Errorf("sources: propose: %w: domain %q does not match source_url host %q", errpkg.ErrInvalid, domain, host)
 	}
 
 	// Multi-category proposals (intel-channels §6): at least one category is
@@ -616,6 +632,61 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	}
 
 	return arg, nil
+}
+
+// canonicalizeSourceURL normalizes a validated http(s) URL for storage and
+// dedupe: lowercase scheme and host, default ports removed, and a lone root
+// "/" path collapses to empty so "https://x.com/" and "https://x.com" dedupe
+// identically. Paths below the root are preserved verbatim — a source may
+// legitimately live under a sub-path (e.g. site.example/jobs/).
+func canonicalizeSourceURL(u *url.URL) string {
+	host := strings.ToLower(u.Hostname())
+	if port := u.Port(); port != "" &&
+		!(u.Scheme == "http" && port == "80") && !(u.Scheme == "https" && port == "443") {
+		host += ":" + port
+	}
+
+	// Root path is canonicalized to empty — "/" and "" spellings dedupe
+	// identically (e.g. "https://x.com/" == "https://x.com").
+	path := u.EscapedPath()
+	if path == "/" {
+		path = ""
+	}
+
+	out := strings.ToLower(u.Scheme) + "://" + host + path
+	if u.RawQuery != "" {
+		out += "?" + u.RawQuery
+	}
+
+	return out
+}
+
+// domainMatchesHost reports whether a claimed domain belongs to the URL's
+// host: exact match, or either is a subdomain of the other.
+func domainMatchesHost(domain, host string) bool {
+	domain = strings.TrimPrefix(strings.ToLower(domain), "www.")
+	host = strings.TrimPrefix(strings.ToLower(host), "www.")
+	return domain == host ||
+		strings.HasSuffix(host, "."+domain) ||
+		strings.HasSuffix(domain, "."+host)
+}
+
+// QueueProbeVerify exposes the fire-and-forget deep-verify enqueue so the
+// PATCH handler can re-probe when a source's entry URL changes. It applies
+// the same active/enabled/video/manual skip rules as the approve path.
+func (s *Service) QueueProbeVerify(ctx context.Context, src Source) {
+	s.queueProbeVerify(ctx, src)
+}
+
+// RecordProposeProbe stamps a server-run preview probe's report and detected
+// methods onto a freshly created proposal. last_probed_at marks the report
+// as backend-verified for the review UI rather than proposer-supplied.
+func (s *Service) RecordProposeProbe(ctx context.Context, id SourceID, report []byte, methods []string) error {
+	return s.store.UpdateSourceProbe(ctx, gen.UpdateIntelSourceProbeParams{
+		ID:              id,
+		ProbeReport:     report,
+		DetectedMethods: methods,
+	})
 }
 
 // NormalizeCategories trims, lowercases, and drops empty entries while

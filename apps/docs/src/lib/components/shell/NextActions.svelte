@@ -31,16 +31,47 @@
 	const POPUP_KEY = 'jc_nextaction_popup_count';
 	const PENDING = 'jc_na_pending';
 
-	function post(path: string, body: unknown) {
-		void fetch(`${API_BASE}${path}`, {
-			method: 'POST', credentials: 'include',
-			headers: { 'content-type': 'application/json', 'X-JC-Surface': 'docs' },
-			body: JSON.stringify(body)
-		}).catch(() => {});
+	// §5.2 double-submit CSRF — the api host's csrf_token cookie is invisible
+	// to document.cookie on this origin, so the token comes from the GET /csrf
+	// response body (authoritative — TokenHandler echoes the cookie value).
+	// On a 403 the token is refreshed once and the request retried.
+	let csrfToken = '';
+
+	async function ensureCsrf(force = false) {
+		if (csrfToken && !force) return;
+		try {
+			const res = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
+			const json = await res.json();
+			csrfToken = json?.data?.csrfToken ?? csrfToken;
+		} catch { /* best effort */ }
 	}
 
+	async function post(path: string, body: unknown) {
+		for (let attempt = 0; attempt < 2; attempt++) {
+			await ensureCsrf(attempt > 0);
+			try {
+				const res = await fetch(`${API_BASE}${path}`, {
+					method: 'POST', credentials: 'include',
+					headers: {
+						'content-type': 'application/json',
+						'X-JC-Surface': 'docs',
+						...(csrfToken ? { 'x-csrf-token': csrfToken } : {})
+					},
+					body: JSON.stringify(body)
+				});
+				if (res.status === 403) continue;
+				return;
+			} catch { return; }
+		}
+	}
+
+	// Cross-channel dedup — a rule carrying multiple channels must not render
+	// on bar + inline + popup simultaneously.
+	const taken = new Set<string>();
 	function pick(list: NextAction[], ch: string) {
-		return list.find((a) => a.channels.includes(ch)) ?? null;
+		const a = list.find((a) => a.channels.includes(ch) && !taken.has(a.id)) ?? null;
+		if (a) taken.add(a.id);
+		return a;
 	}
 
 	onMount(async () => {
@@ -58,13 +89,13 @@
 			cap = json?.meta?.popup_max_per_session ?? 1;
 		} catch { /* suggestion bar degrades silently */ }
 		bar = pick(list, 'announcement_bar');
-		if (inline) inlineAction = pick(list, 'in_article');
 		const shown = Number(sessionStorage.getItem(POPUP_KEY) ?? '0');
 		popup = shown < cap ? pick(list, 'popup') : null;
 		if (popup) {
 			sessionStorage.setItem(POPUP_KEY, String(shown + 1));
 			open = true;
 		}
+		if (inline) inlineAction = pick(list, 'in_article');
 	});
 
 	function cta(a: NextAction) {
@@ -97,9 +128,9 @@
 		</span>
 		<a href={bar.cta_url} onclick={() => cta(bar!)} class="shrink-0 rounded-full bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white hover:opacity-90">{bar.cta_label}</a>
 		{#if bar.snooze_default_hours > 0}
-			<button onclick={() => act(bar!, bar!.snooze_default_hours)} class="shrink-0 rounded-full px-2 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]">Later</button>
+			<button onclick={() => act(bar!, bar!.snooze_default_hours)} class="shrink-0 rounded-full px-2 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]">{t('nextaction.later', 'Later')}</button>
 		{/if}
-		<button onclick={() => act(bar!)} class="shrink-0 rounded-full p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" aria-label="Dismiss suggestion">✕</button>
+		<button onclick={() => act(bar!)} class="shrink-0 rounded-full p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" aria-label={t('nextaction.dismiss_suggestion', 'Dismiss suggestion')}>✕</button>
 	</div>
 {/if}
 
@@ -113,9 +144,9 @@
 				<div class="mt-4 flex items-center gap-2">
 					<a href={popup.cta_url} onclick={() => cta(popup!)} class="flex-1 rounded-full bg-[var(--color-accent)] px-4 py-2 text-center text-sm font-medium text-white hover:opacity-90">{popup.cta_label}</a>
 					{#if popup.snooze_default_hours > 0}
-						<button onclick={() => act(popup!, popup!.snooze_default_hours)} class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]">Later</button>
+						<button onclick={() => act(popup!, popup!.snooze_default_hours)} class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]">{t('nextaction.later', 'Later')}</button>
 					{/if}
-					<button onclick={() => act(popup!)} class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]">Dismiss</button>
+					<button onclick={() => act(popup!)} class="rounded-full px-4 py-2 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]">{t('nextaction.dismiss', 'Dismiss')}</button>
 				</div>
 			{/if}
 		</Dialog.Content>
@@ -130,7 +161,7 @@
 				{#if inlineAction.body}<p class="mt-1 text-sm text-[var(--color-text-muted)]">{inlineAction.body}</p>{/if}
 				<a href={inlineAction.cta_url} onclick={() => cta(inlineAction!)} class="mt-2 inline-block rounded-full bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white hover:opacity-90">{inlineAction.cta_label}</a>
 			</div>
-			<button onclick={() => act(inlineAction!)} class="shrink-0 rounded-full p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" aria-label="Dismiss suggestion">✕</button>
+			<button onclick={() => act(inlineAction!)} class="shrink-0 rounded-full p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" aria-label={t('nextaction.dismiss_suggestion', 'Dismiss suggestion')}>✕</button>
 		</div>
 	</aside>
 {/if}

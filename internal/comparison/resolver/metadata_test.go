@@ -139,7 +139,7 @@ func TestMentorResolvedItemMetadata(t *testing.T) {
 		MentorAreas: []string{"career", "visa"},
 	}
 
-	item := mentorToResolvedItem(m, nil)
+	item := mentorToResolvedItem(m, nil, nil)
 
 	if !slices.Equal(item.Metadata["tags"].([]string), []string{"career", "visa"}) {
 		t.Fatalf("unexpected tags: %v", item.Metadata["tags"])

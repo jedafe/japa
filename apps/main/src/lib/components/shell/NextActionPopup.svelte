@@ -4,7 +4,6 @@
 	// nextactions.popup_max_per_session per browser session.
 	import { onMount } from 'svelte';
 	import { Dialog } from 'bits-ui';
-	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import {
 		getNextActions,
@@ -12,8 +11,12 @@
 		dismissNextAction,
 		trackNextAction,
 		claimNextAction,
+		releaseNextAction,
 		isNextActionClaimed,
-		markNextActionPending
+		markNextActionPending,
+		nextActionsViewer,
+		nextActionsSurface,
+		goToNextAction
 	} from '$lib/api/nextActions';
 	import type { NextAction } from '$lib/types';
 	import { nextActionIcon } from '$lib/icons/nextActionIcon';
@@ -25,18 +28,43 @@
 	// Set when a button handler already resolved the suggestion — the
 	// onOpenChange path then must not apply its soft-close (snooze) rule.
 	let resolved = false;
+	let lastViewer = '';
 
-	onMount(async () => {
+	async function load() {
+		const surface = nextActionsSurface();
 		const shown = Number(sessionStorage.getItem(SESSION_KEY) ?? '0');
-		const [list, popupMax] = await Promise.all([getNextActions('main'), getPopupMaxPerSession('main')]);
+		const [list, popupMax] = await Promise.all([getNextActions(surface), getPopupMaxPerSession(surface)]);
+		// Identity changed mid-display — the rendered suggestion was computed
+		// for a different viewer, close it before re-picking.
+		if (open) {
+			resolved = true;
+			open = false;
+			if (action) releaseNextAction(action.id);
+			action = null;
+		}
 		if (shown >= popupMax) return;
 		action = list.find((a) => a.channels.includes('popup') && !isNextActionClaimed(a.id)) ?? null;
 		if (action) {
 			sessionStorage.setItem(SESSION_KEY, String(shown + 1));
 			claimNextAction(action.id);
 			/* server records the impression */
+			resolved = false; // re-arm soft-close for the new suggestion
 			open = true;
 		}
+	}
+
+	onMount(() => {
+		lastViewer = nextActionsViewer();
+		void load();
+		return () => { if (action) releaseNextAction(action.id); };
+	});
+
+	// In-app login/signup/logout — re-pick against the new identity's list.
+	$effect(() => {
+		const v = nextActionsViewer();
+		if (lastViewer === '' || v === lastViewer) { lastViewer = v; return; }
+		lastViewer = v;
+		void load();
 	});
 
 	function cta() {
@@ -45,7 +73,7 @@
 		trackNextAction(action.id, 'clicked');
 		markNextActionPending(action.id);
 		open = false;
-		void goto(action.cta_url);
+		goToNextAction(action.cta_url);
 	}
 
 	function dismiss() {

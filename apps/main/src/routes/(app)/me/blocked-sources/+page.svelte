@@ -30,9 +30,14 @@
 	</div>
 
 	{#if sources.length === 0}
-		<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">
-			{t('sources.blocked.empty', 'You have not blocked any sources.')}
-		</p>
+		<div class="flex flex-col items-center gap-3 py-8">
+			<p class="text-sm text-[var(--color-text-muted)]">
+				{t('sources.blocked.empty', 'You have not blocked any sources.')}
+			</p>
+			<a href="/sources" class="text-sm text-[var(--color-primary)] hover:underline">
+				{t('sources.blocked.browse', 'Browse sources')}
+			</a>
+		</div>
 	{:else}
 		<div class="flex flex-col gap-3">
 			{#each sources as source (source.slug)}

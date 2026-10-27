@@ -2,6 +2,9 @@ package resolver
 
 import (
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/housingguide"
@@ -140,6 +143,7 @@ func TestMentorCFVProjection(t *testing.T) {
 	item := mentorToResolvedItem(
 		mentorship.MentorSummary{UserID: id, Username: "mentor", MentorAreas: []string{"career"}},
 		map[string]any{"session_rate_usd": 40.0},
+		nil,
 	)
 
 	fv, ok := item.Metadata["field_values"].(map[string]any)
@@ -149,6 +153,72 @@ func TestMentorCFVProjection(t *testing.T) {
 
 	if fv["session_rate_usd"] != 40.0 {
 		t.Fatalf("expected cfv projected, got %v", fv["session_rate_usd"])
+	}
+}
+
+func ptrInt32(v int32) *int32 { return &v }
+
+func TestMentorBaseFieldValues(t *testing.T) {
+	id, _ := ParseUUID("550e8400-e29b-41d4-a716-446655440000")
+
+	capacity := int16(5)
+	mentees := int16(2)
+	bio := "Ask me about express entry"
+	since := pgtype.Timestamptz{Time: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Valid: true}
+	price := int64(18000)
+	curr, per := "usd", "package"
+	years := int16(9)
+
+	item := mentorToResolvedItem(
+		mentorship.MentorSummary{
+			UserID: id, Username: "mentor",
+			MentorAreas: []string{"canada", "express entry"},
+			MentorBio:   &bio, MentorSince: since,
+			MentorCapacity: &capacity, ActiveMenteeCount: &mentees,
+			AvailableSlots: 3,
+			Countries:       []string{"Canada", "United States"},
+			Credentials:     []string{"Certified career coach"},
+			YearsExperience: &years, MenteesHelped: ptrInt32(47),
+			PackagePrice: &price, PackageCurrency: &curr, PackagePer: &per,
+		},
+		map[string]any{"mentor_bio": "community-corrected bio"},
+		map[string]any{"destination_country": "CA", "japa_status": "settled"},
+	)
+
+	fv, ok := item.Metadata["field_values"].(map[string]any)
+	if !ok {
+		t.Fatalf("field_values missing: %v", item.Metadata)
+	}
+
+	if fv["active_mentee_count"] != 2.0 {
+		t.Fatalf("expected active_mentee_count 2, got %v", fv["active_mentee_count"])
+	}
+	if fv["available_slots"] != 3.0 {
+		t.Fatalf("expected available_slots 3, got %v", fv["available_slots"])
+	}
+	if fv["mentor_since"] != "2024-03-01" {
+		t.Fatalf("expected mentor_since 2024-03-01, got %v", fv["mentor_since"])
+	}
+	if fv["destination_country"] != "CA" {
+		t.Fatalf("expected destination_country CA, got %v", fv["destination_country"])
+	}
+	if fv["japa_status"] != nil {
+		t.Fatalf("unexpected profile field leaked: %v", fv["japa_status"])
+	}
+	if fv["mentor_bio"] != "community-corrected bio" {
+		t.Fatalf("expected mentor cfv to win over column, got %v", fv["mentor_bio"])
+	}
+	if fv["mentees_helped"] != 47.0 {
+		t.Fatalf("expected mentees_helped 47, got %v", fv["mentees_helped"])
+	}
+	if fv["mentor_years_experience"] != 9.0 {
+		t.Fatalf("expected mentor_years_experience 9, got %v", fv["mentor_years_experience"])
+	}
+	if fv["package_price"] != "USD 180.00 per package" {
+		t.Fatalf("expected formatted package price, got %v", fv["package_price"])
+	}
+	if fv["mentor_countries"] == nil || fv["mentor_credentials"] == nil {
+		t.Fatalf("expected card lists projected: %v", fv)
 	}
 }
 
