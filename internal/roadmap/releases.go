@@ -325,10 +325,20 @@ func (s *Service) scopeFromPaths(ctx context.Context, files []string) string {
 	if err := json.Unmarshal([]byte(raw), &pathMap); err != nil {
 		return ""
 	}
+	return matchScopePaths(pathMap, files)
+}
+
+// matchScopePaths walks the commit's file list against the prefix map;
+// the longest matching prefix wins. Prefixes match on path boundaries —
+// "internal/blog" hits "internal/blog/x" and "internal/blog.go" but not
+// "internal/blogfoo/x".
+func matchScopePaths(pathMap map[string]string, files []string) string {
 	best, bestLen := "", 0
 	for _, f := range files {
 		for prefix, scope := range pathMap {
-			if strings.HasPrefix(f, prefix) && len(prefix) > bestLen {
+			boundary := strings.HasPrefix(f, prefix+"/") ||
+				strings.HasPrefix(f, prefix+".") || f == prefix
+			if boundary && len(prefix) > bestLen {
 				best, bestLen = scope, len(prefix)
 			}
 		}
@@ -545,6 +555,9 @@ func (s *Service) AdminUpdateRelease(ctx context.Context, id pgtype.UUID, in Rel
 	if err != nil {
 		return gen.RoadmapRelease{}, err
 	}
+	if current.DeletedAt.Valid {
+		return gen.RoadmapRelease{}, fmt.Errorf("%w: release is deleted", ErrNotFound)
+	}
 	params, err := s.buildReleaseParams(ctx, current, in, false)
 	if err != nil {
 		return gen.RoadmapRelease{}, err
@@ -643,6 +656,9 @@ func (s *Service) AdminSetReleaseStatus(ctx context.Context, id pgtype.UUID, to 
 	if err != nil {
 		return gen.RoadmapRelease{}, err
 	}
+	if current.DeletedAt.Valid {
+		return gen.RoadmapRelease{}, fmt.Errorf("%w: release is deleted", ErrNotFound)
+	}
 	if !IsValidReleaseTransition(ReleaseStatus(current.Status), to) {
 		return gen.RoadmapRelease{}, ErrInvalidTransition
 	}
@@ -695,8 +711,12 @@ func (s *Service) AdminDeleteRelease(ctx context.Context, id pgtype.UUID, force 
 
 // AdminRestoreRelease clears deleted_at.
 func (s *Service) AdminRestoreRelease(ctx context.Context, id pgtype.UUID) error {
-	if _, err := s.AdminGetRelease(ctx, id); err != nil {
+	r, err := s.AdminGetRelease(ctx, id)
+	if err != nil {
 		return err
+	}
+	if !r.DeletedAt.Valid {
+		return errpkg.ErrNotDeleted
 	}
 	if err := s.store.write.RestoreRoadmapRelease(ctx, id); err != nil {
 		return fmt.Errorf("restoring release: %w", err)
@@ -708,8 +728,12 @@ func (s *Service) AdminRestoreRelease(ctx context.Context, id pgtype.UUID) error
 // ReplaceReleaseItems replaces a release's shipped-item set —
 // shipped-only; any non-shipped/missing id → ErrItemNotShipped.
 func (s *Service) ReplaceReleaseItems(ctx context.Context, releaseID pgtype.UUID, itemIDs []pgtype.UUID) error {
-	if _, err := s.AdminGetRelease(ctx, releaseID); err != nil {
+	rel, err := s.AdminGetRelease(ctx, releaseID)
+	if err != nil {
 		return err
+	}
+	if rel.DeletedAt.Valid {
+		return fmt.Errorf("%w: release is deleted", ErrNotFound)
 	}
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		if err := q.ClearRoadmapReleaseItems(ctx, releaseID); err != nil {

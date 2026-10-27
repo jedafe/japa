@@ -102,6 +102,33 @@ func TestParseConventionalCommit(t *testing.T) {
 	}
 }
 
+func TestMatchScopePaths(t *testing.T) {
+	pathMap := map[string]string{
+		"internal/blog":   "blog.enabled",
+		"internal/forum":  "forum.enabled",
+		"internal/spaces": "spaces.enabled",
+		"apps/mobile":     "mobile",
+	}
+	cases := []struct {
+		name  string
+		files []string
+		want  string
+	}{
+		{"blog file", []string{"internal/blog/handler.go"}, "blog.enabled"},
+		{"blog dotfile", []string{"internal/blog.go"}, "blog.enabled"},
+		{"blogfoo no match", []string{"internal/blogfoo/handler.go"}, ""},
+		{"mobile", []string{"apps/mobile/lib/main.dart"}, "mobile"},
+		{"longest prefix wins", []string{"internal/blog/api.go", "internal/x/y.go"}, "blog.enabled"},
+		{"unrelated", []string{"docs/readme.md"}, ""},
+		{"empty", []string{}, ""},
+	}
+	for _, c := range cases {
+		if got := matchScopePaths(pathMap, c.files); got != c.want {
+			t.Errorf("%s: matchScopePaths(%v) = %q, want %q", c.name, c.files, got, c.want)
+		}
+	}
+}
+
 func TestMobileSemverValidation(t *testing.T) {
 	for _, v := range []string{"v2.4.0", "2.4.0", "v10.20.30"} {
 		if !mobileSemverRe.MatchString(v) {
