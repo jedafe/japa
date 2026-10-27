@@ -15,6 +15,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"time"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -747,6 +749,11 @@ type ToolDeps struct {
 	// management — list/get/create/update/set_status + categories.
 	// nil → the roadmap.* tools return "not configured".
 	Roadmap RoadmapService
+
+	// Roadmap release/entry surface (§113, ADR-135) — releases,
+	// item attach, and commit-entry ingest for release automation.
+	// nil → the roadmap.release*/entries.* tools return "not configured".
+	RoadmapReleases RoadmapReleaseService
 
 	// Community discussion tools (§08 forum Q&A, §49 comments). nil →
 	// forum.*/comments.* tools return "not configured".
@@ -1679,4 +1686,97 @@ func uuidPtr(u pgtype.UUID) *pgtype.UUID {
 	}
 
 	return &u
+}
+
+// ---------------------------------------------------------------------------
+// Roadmap releases (§113, ADR-135) — mirror types; the ai package cannot
+// import internal/roadmap (roadmap→content→spam→ai cycle), so these
+// DTOs mirror the roadmap types and the server adapter converts.
+// ---------------------------------------------------------------------------
+
+// RoadmapReleaseInput mirrors roadmap.ReleaseInput — pointer fields
+// distinguish "absent" from "set" on PATCH.
+type RoadmapReleaseInput struct {
+	Version    *string
+	Slug       *string
+	Title      *string
+	Summary    *string
+	Body       *string
+	Surface    *string
+	IsESR      *bool
+	ReleasedAt *string
+	EOLAt      *string
+	SortOrder  *int32
+	Status     *string
+}
+
+// RoadmapReleaseFilter scopes the admin releases list.
+type RoadmapReleaseFilter struct {
+	Surface        string
+	Status         string
+	IncludeDeleted bool
+	PageSize       int32
+	PageOffset     int32
+}
+
+// RoadmapReleasePage is the paginated releases payload.
+type RoadmapReleasePage struct {
+	Releases   []gen.ListAdminRoadmapReleasesRow `json:"releases"`
+	Total      int64                             `json:"total"`
+	Page       int32                             `json:"page"`
+	TotalPages int32                             `json:"total_pages"`
+}
+
+// RoadmapEntryFilter scopes the entries queue list.
+type RoadmapEntryFilter struct {
+	Unreleased bool
+	CommitType string
+	Scope      string
+	PageSize   int32
+	PageOffset int32
+}
+
+// RoadmapEntryPage is the paginated entries payload.
+type RoadmapEntryPage struct {
+	Entries    []gen.RoadmapReleaseEntry `json:"entries"`
+	Total      int64                     `json:"total"`
+	Page       int32                     `json:"page"`
+	TotalPages int32                     `json:"total_pages"`
+}
+
+// RoadmapGitHubCommit mirrors roadmap.GitHubCommit — the GitHub
+// push-event commit object (id is the sha).
+type RoadmapGitHubCommit struct {
+	ID        string   `json:"id"`
+	Message   string   `json:"message"`
+	URL       string   `json:"url"`
+	Timestamp string   `json:"timestamp"`
+	Author    struct {
+		Name string `json:"name"`
+	} `json:"author"`
+	Added    []string `json:"added"`
+	Modified []string `json:"modified"`
+	Removed  []string `json:"removed"`
+}
+
+// RoadmapReleaseService is the release/entry subset of
+// internal/roadmap.Service the release tools call — implemented by
+// agentReleaseAdapter in package server, which converts these mirror
+// types and maps roadmap sentinels onto RoadmapServiceError.
+type RoadmapReleaseService interface {
+	ListReleases(ctx context.Context, f RoadmapReleaseFilter) (*RoadmapReleasePage, error)
+	GetRelease(ctx context.Context, id pgtype.UUID) (*gen.RoadmapRelease, error)
+	CreateRelease(ctx context.Context, in RoadmapReleaseInput) (*gen.RoadmapRelease, error)
+	UpdateRelease(ctx context.Context, id pgtype.UUID, in RoadmapReleaseInput) (*gen.RoadmapRelease, error)
+	SetReleaseStatus(ctx context.Context, id pgtype.UUID, status string, absorb bool) (*gen.RoadmapRelease, error)
+	ReplaceReleaseItems(ctx context.Context, releaseID pgtype.UUID, itemIDs []pgtype.UUID) error
+	AttachItemsByWindow(ctx context.Context, releaseID pgtype.UUID, since, until *time.Time) error
+	IngestCommits(ctx context.Context, commits []RoadmapGitHubCommit) (int, int, error)
+	ListEntries(ctx context.Context, f RoadmapEntryFilter) (*RoadmapEntryPage, error)
+}
+
+// WithRoadmapReleases injects the roadmap release service into the deps.
+func (d *ToolDeps) WithRoadmapReleases(s RoadmapReleaseService) *ToolDeps {
+	d.RoadmapReleases = s
+	return d
 }

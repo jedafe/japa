@@ -2445,6 +2445,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// surface exposed to the agent catalog + §119 MCP bridge under the
 	// same roadmap.* RBAC nodes as the REST routes.
 	agentDeps.Roadmap = &agentRoadmapAdapter{svc: roadmapService, checker: featureChecker}
+	// §113 releases (ADR-135): mirror-DTO adapter — the ai package
+	// can't import internal/roadmap (import cycle).
+	agentDeps.RoadmapReleases = &agentReleaseAdapter{svc: roadmapService}
 	// §20 V1 assist tools (migration 000847): the agent executor shares
 	// the same AssistRunner implementation as POST /ai/assist/*.
 	agentDeps.Assist = aiHandlers

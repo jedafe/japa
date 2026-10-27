@@ -356,4 +356,16 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("roadmap.item.create", RoadmapItemCreateHandler(deps))
 	registry.RegisterHandler("roadmap.item.update", RoadmapItemUpdateHandler(deps))
 	registry.RegisterHandler("roadmap.item.set_status", RoadmapItemSetStatusHandler(deps))
+
+	// --- Roadmap release tools (§113, ADR-135, migration 000943) ---
+	// Versioned releases + commit-sourced changelog entries — the release
+	// automation path (create → attach items/ingest commits → publish).
+	registry.RegisterHandler("roadmap.releases.list", RoadmapReleasesListHandler(deps))
+	registry.RegisterHandler("roadmap.release.get", RoadmapReleaseGetHandler(deps))
+	registry.RegisterHandler("roadmap.release.create", RoadmapReleaseCreateHandler(deps))
+	registry.RegisterHandler("roadmap.release.update", RoadmapReleaseUpdateHandler(deps))
+	registry.RegisterHandler("roadmap.release.set_status", RoadmapReleaseSetStatusHandler(deps))
+	registry.RegisterHandler("roadmap.release.attach_items", RoadmapReleaseAttachItemsHandler(deps))
+	registry.RegisterHandler("roadmap.entries.list", RoadmapEntriesListHandler(deps))
+	registry.RegisterHandler("roadmap.entries.ingest", RoadmapEntriesIngestHandler(deps))
 }

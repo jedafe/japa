@@ -3573,3 +3573,138 @@ func (a *agentRoadmapAdapter) ListCategories(ctx context.Context) ([]ai.RoadmapC
 
 	return out, nil
 }
+
+// ---------------------------------------------------------------------------
+// Roadmap releases (§113, ADR-135)
+// ---------------------------------------------------------------------------
+
+// agentReleaseAdapter bridges ai.RoadmapReleaseService (mirror DTOs) onto
+// *roadmap.Service — the ai package can't import internal/roadmap
+// (roadmap→content→spam→ai cycle), so this adapter converts types and
+// maps roadmap sentinels onto ai.RoadmapServiceError codes.
+type agentReleaseAdapter struct {
+	svc *roadmap.Service
+}
+
+// releaseErr maps roadmap release sentinels onto RoadmapServiceError so
+// the tool layer returns stable machine codes.
+func releaseErr(err error) error {
+	switch {
+	case errors.Is(err, roadmap.ErrNotFound):
+		return &ai.RoadmapServiceError{Code: "item_not_found", Message: "release not found"}
+	case errors.Is(err, roadmap.ErrInvalidTransition):
+		return &ai.RoadmapServiceError{Code: "invalid_status_transition", Message: "illegal release status transition"}
+	case errors.Is(err, roadmap.ErrItemNotShipped):
+		return &ai.RoadmapServiceError{Code: "item_not_shipped", Message: "only shipped roadmap items can be attached to a release"}
+	case errors.Is(err, roadmap.ErrInvalidReleaseVersion):
+		return &ai.RoadmapServiceError{Code: "invalid_version", Message: "mobile releases must use semver (e.g. v2.4.0)"}
+	case errors.Is(err, roadmap.ErrInvalidCommitType):
+		return &ai.RoadmapServiceError{Code: "invalid_commit_type", Message: "unknown commit_type"}
+	case errors.Is(err, errpkg.ErrDuplicate):
+		return &ai.RoadmapServiceError{Code: "duplicate_slug", Message: "a release with that slug or surface+version already exists"}
+	case errors.Is(err, errpkg.ErrInvalid):
+		return &ai.RoadmapServiceError{Code: "validation_error", Message: err.Error()}
+	}
+	return err
+}
+
+// releaseInput converts the ai mirror input onto roadmap.ReleaseInput.
+func releaseInput(in ai.RoadmapReleaseInput) roadmap.ReleaseInput {
+	return roadmap.ReleaseInput{
+		Version: in.Version, Slug: in.Slug, Title: in.Title,
+		Summary: in.Summary, Body: in.Body, Surface: in.Surface,
+		IsESR: in.IsESR, ReleasedAt: in.ReleasedAt, EOLAt: in.EOLAt,
+		SortOrder: in.SortOrder, Status: in.Status,
+	}
+}
+
+func (a *agentReleaseAdapter) ListReleases(ctx context.Context, f ai.RoadmapReleaseFilter) (*ai.RoadmapReleasePage, error) {
+	out, err := a.svc.AdminListReleases(ctx, roadmap.AdminReleaseListFilter{
+		Surface: f.Surface, Status: f.Status, IncludeDeleted: f.IncludeDeleted,
+		PageSize: f.PageSize, PageOffset: f.PageOffset,
+	})
+	if err != nil {
+		return nil, releaseErr(err)
+	}
+	return &ai.RoadmapReleasePage{
+		Releases: out.Releases, Total: out.Total,
+		Page: out.Page, TotalPages: out.TotalPages,
+	}, nil
+}
+
+func (a *agentReleaseAdapter) GetRelease(ctx context.Context, id pgtype.UUID) (*gen.RoadmapRelease, error) {
+	r, err := a.svc.AdminGetRelease(ctx, id)
+	if err != nil {
+		return nil, releaseErr(err)
+	}
+	return &r, nil
+}
+
+func (a *agentReleaseAdapter) CreateRelease(ctx context.Context, in ai.RoadmapReleaseInput) (*gen.RoadmapRelease, error) {
+	r, err := a.svc.AdminCreateRelease(ctx, releaseInput(in))
+	if err != nil {
+		return nil, releaseErr(err)
+	}
+	return &r, nil
+}
+
+func (a *agentReleaseAdapter) UpdateRelease(ctx context.Context, id pgtype.UUID, in ai.RoadmapReleaseInput) (*gen.RoadmapRelease, error) {
+	r, err := a.svc.AdminUpdateRelease(ctx, id, releaseInput(in))
+	if err != nil {
+		return nil, releaseErr(err)
+	}
+	return &r, nil
+}
+
+func (a *agentReleaseAdapter) SetReleaseStatus(ctx context.Context, id pgtype.UUID, status string, absorb bool) (*gen.RoadmapRelease, error) {
+	r, err := a.svc.AdminSetReleaseStatus(ctx, id, roadmap.ReleaseStatus(status), absorb)
+	if err != nil {
+		return nil, releaseErr(err)
+	}
+	return &r, nil
+}
+
+func (a *agentReleaseAdapter) ReplaceReleaseItems(ctx context.Context, releaseID pgtype.UUID, itemIDs []pgtype.UUID) error {
+	if err := a.svc.ReplaceReleaseItems(ctx, releaseID, itemIDs); err != nil {
+		return releaseErr(err)
+	}
+	return nil
+}
+
+func (a *agentReleaseAdapter) AttachItemsByWindow(ctx context.Context, releaseID pgtype.UUID, since, until *time.Time) error {
+	if err := a.svc.AttachItemsByWindow(ctx, releaseID, since, until); err != nil {
+		return releaseErr(err)
+	}
+	return nil
+}
+
+func (a *agentReleaseAdapter) IngestCommits(ctx context.Context, commits []ai.RoadmapGitHubCommit) (int, int, error) {
+	converted := make([]roadmap.GitHubCommit, 0, len(commits))
+	for _, c := range commits {
+		g := roadmap.GitHubCommit{
+			ID: c.ID, Message: c.Message, URL: c.URL, Timestamp: c.Timestamp,
+			Added: c.Added, Modified: c.Modified, Removed: c.Removed,
+		}
+		g.Author.Name = c.Author.Name
+		converted = append(converted, g)
+	}
+	created, skipped, err := a.svc.IngestCommits(ctx, converted)
+	if err != nil {
+		return created, skipped, releaseErr(err)
+	}
+	return created, skipped, nil
+}
+
+func (a *agentReleaseAdapter) ListEntries(ctx context.Context, f ai.RoadmapEntryFilter) (*ai.RoadmapEntryPage, error) {
+	out, err := a.svc.AdminListEntries(ctx, roadmap.EntryFilter{
+		Unreleased: f.Unreleased, CommitType: f.CommitType, Scope: f.Scope,
+		PageSize: f.PageSize, PageOffset: f.PageOffset,
+	})
+	if err != nil {
+		return nil, releaseErr(err)
+	}
+	return &ai.RoadmapEntryPage{
+		Entries: out.Entries, Total: out.Total,
+		Page: out.Page, TotalPages: out.TotalPages,
+	}, nil
+}
