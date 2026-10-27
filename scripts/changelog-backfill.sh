@@ -36,9 +36,9 @@ for record in sys.stdin.read().split("\x1e"):
 for i in range(0, len(commits), 100):
     print(json.dumps({"commits": commits[i:i+100]}))
 ' | while read -r batch; do
-  jq -n --argjson c "$batch" \
-    '{jsonrpc:"2.0",id:1,method:"tools/call",
-      params:{name:"roadmap.entries.ingest",arguments:$c}}' |
+  # Batches can exceed argv limits — wrap via stdin, not --argjson.
+  echo "$batch" | jq '{jsonrpc:"2.0",id:1,method:"tools/call",
+    params:{name:"roadmap.entries.ingest",arguments:.}}' |
   curl -fsS -X POST "$JC_API_BASE/api/v1/mcp" \
     -H "X-API-Key: $JC_INGEST_KEY" -H "Content-Type: application/json" -d @-
   echo
