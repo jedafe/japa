@@ -81,10 +81,10 @@
 		<div class="border-border-card rounded-lg border p-6"><p class="text-muted-foreground text-sm">{error}</p></div>
 	{:else if stats}
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
-			{#each [
+			{#each ([
 				['Pageviews', stats.pageviews], ['Visitors', stats.visitors], ['Visits', stats.visits],
 				['Bounce rate', stats.bounces], ['Avg. time', stats.totaltime]
-			] as [label, m]}
+			] as [string, Metric][]) as [label, m]}
 				<div class="border-border-card rounded-lg border p-4">
 					<p class="text-muted-foreground text-xs">{label}</p>
 					<p class="mt-1 text-xl font-semibold">
