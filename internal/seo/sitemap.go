@@ -633,6 +633,27 @@ func (h *SitemapHandler) ServeRoadmapSitemap(w http.ResponseWriter, r *http.Requ
 		})
 	}
 
+	// ADR-135: the releases index + one URL per published release.
+	// Unreleased entries and yanked releases are excluded — the
+	// {slug} detail route 404s for them anyway.
+	releaseRows, relErr := h.queries.ListRoadmapReleaseSlugs(r.Context())
+	if relErr == nil {
+		entries = append(entries, urlEntry{
+			Loc:        base + "/roadmap/releases",
+			LastMod:    lastMod,
+			ChangeFreq: "weekly",
+			Priority:   "0.5",
+		})
+		for _, rel := range releaseRows {
+			entries = append(entries, urlEntry{
+				Loc:        base + "/roadmap/releases/" + rel.Slug,
+				LastMod:    rel.UpdatedAt.Time.Format(time.RFC3339),
+				ChangeFreq: "weekly",
+				Priority:   "0.5",
+			})
+		}
+	}
+
 	h.serveSitemapBytes(w, r, "roadmap", renderURLSetXML(entries))
 }
 
