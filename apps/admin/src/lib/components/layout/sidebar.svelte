@@ -113,6 +113,8 @@
 			{ path: "/roadmap", label: t("nav.roadmap", "Roadmap"), icon: MapIcon, permission: "roadmap.view" },
 			{ path: "/roadmap/submissions", label: t("nav.roadmap_submissions", "Roadmap Submissions"), icon: Inbox, permission: "roadmap.moderate" },
 			{ path: "/roadmap/categories", label: t("nav.roadmap_categories", "Roadmap Categories"), icon: Tags, permission: "roadmap.edit" },
+			{ path: "/roadmap/releases", label: t("nav.roadmap_releases", "Releases"), icon: Package, permission: "roadmap.view" },
+			{ path: "/roadmap/releases/entries", label: t("nav.roadmap_entries", "Changelog Entries"), icon: ListChecks, permission: "roadmap.edit" },
 	{ path: "/imports", label: t("nav.imports", "Content Imports"), icon: FileUp, permission: "import.manage" }
 			]
 		},

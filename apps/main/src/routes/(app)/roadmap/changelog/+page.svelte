@@ -142,6 +142,14 @@
 										{item.category_name}
 									</span>
 								{/if}
+								{#if item.release_version && item.release_slug}
+									<a
+										href="/roadmap/releases/{item.release_slug}"
+										class="mt-1.5 ml-1 inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-muted)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+									>
+										{item.release_version}
+									</a>
+								{/if}
 							</div>
 						</li>
 					{/each}

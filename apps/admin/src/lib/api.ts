@@ -2607,6 +2607,39 @@ export const roadmapAdminApi = {
 		api<unknown>(`/admin/roadmap/submissions${params ? `?${params}` : ''}`),
 };
 
+// §113 Versioned releases (ADR-135) — release lifecycle + commit entries.
+export const roadmapReleasesAdminApi = {
+	list: (params?: string) =>
+		api<unknown>(`/admin/roadmap/releases${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/roadmap/releases/${id}`),
+	create: (body: Record<string, unknown>) =>
+		api('/admin/roadmap/releases', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api(`/admin/roadmap/releases/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/roadmap/releases/${id}`, { method: 'DELETE' }),
+	hardDelete: (id: string) =>
+		api(`/admin/roadmap/releases/${id}?force=true`, { method: 'DELETE' }),
+	restore: (id: string) =>
+		api(`/admin/roadmap/releases/${id}/restore`, { method: 'POST', body: {} }),
+	setStatus: (id: string, status: string, absorbUnreleased = true) =>
+		api(`/admin/roadmap/releases/${id}/status`, {
+			method: 'PATCH',
+			body: { status, absorb_unreleased: absorbUnreleased }
+		}),
+	replaceItems: (id: string, itemIds: string[]) =>
+		api(`/admin/roadmap/releases/${id}/items`, { method: 'PUT', body: { item_ids: itemIds } }),
+};
+
+export const roadmapEntriesAdminApi = {
+	list: (params?: string) =>
+		api<unknown>(`/admin/roadmap/releases/entries${params ? `?${params}` : ''}`),
+	update: (id: string, body: Record<string, unknown>) =>
+		api(`/admin/roadmap/releases/entries/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/roadmap/releases/entries/${id}`, { method: 'DELETE' }),
+};
+
 // ── Feature flags ───────────────────────────────────────────────────────
 // GET /admin/feature-flags is gated by admin.feature_flags.manage and
 // returns {key, name, isEnabled, phase, …}. Roadmap editors may not hold

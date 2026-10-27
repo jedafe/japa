@@ -1651,6 +1651,10 @@ export interface DMConversation {
 	last_message_preview: string | null;
 	unread_count: number;
 	created_at: string;
+	/** 000942 — 'org' conversations badge the org as the other party. */
+	conversation_type?: string;
+	org_id?: string;
+	org_slug?: string;
 }
 
 /** GET /dm/conversations/{id}/messages item — MessageInfo. */
@@ -1662,6 +1666,13 @@ export interface DMMessage {
 	body: string;
 	created_at: string;
 	read_at: string | null;
+	/** 000941 structured context — listing the message is about. */
+	context_type?: string;
+	context_id?: string;
+	context_label?: string;
+	context_slug?: string;
+	/** 000942 — sent by an org member on behalf of the org inbox. */
+	sent_as_org?: boolean;
 }
 
 /** GET /dm/requests item — MessageRequestInfo. */
@@ -5508,6 +5519,8 @@ export interface RoadmapChangelogItem {
 	feature_flag_key: string | null;
 	content_id: string | null;
 	shipped_at: string | null;
+	release_version: string | null;
+	release_slug: string | null;
 	created_at: string;
 }
 
@@ -5539,4 +5552,57 @@ export interface MyVerificationRequest {
 	org_slug?: string | null;
 	created_at: string;
 	reviewed_at?: string | null;
+}
+
+// §113 Versioned Releases (ADR-135) — GET /api/v1/roadmap/releases payloads.
+export interface RoadmapRelease {
+	id: string;
+	surface: string;
+	version: string;
+	slug: string;
+	title: string | null;
+	summary: string | null;
+	status: string;
+	support_state: string;
+	is_esr: boolean;
+	item_count: number;
+	released_at: string | null;
+	eol_at: string | null;
+	superseded_at: string | null;
+}
+
+export interface RoadmapReleaseEntry {
+	id: string;
+	commit_type: string;
+	scope: string | null;
+	is_breaking: boolean;
+	title: string;
+	commit_sha: string | null;
+	commit_url: string | null;
+	author_name: string | null;
+	committed_at: string | null;
+	item_id: string | null;
+	release_id: string | null;
+}
+
+export interface RoadmapReleaseItem {
+	id: string;
+	slug: string;
+	title: string;
+	summary: string | null;
+	shipped_at: string | null;
+	vote_count: number;
+	category_name: string | null;
+	category_color: string | null;
+}
+
+export interface RoadmapReleaseDetail extends RoadmapRelease {
+	body: string | null;
+	items: RoadmapReleaseItem[];
+	entries: RoadmapReleaseEntry[];
+}
+
+export interface RoadmapReleaseList {
+	releases: RoadmapRelease[];
+	unreleased_count: number;
 }
