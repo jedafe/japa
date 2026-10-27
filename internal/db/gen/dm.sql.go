@@ -393,6 +393,26 @@ func (q *Queries) GetOrgConversationByParticipants(ctx context.Context, arg GetO
 	return i, err
 }
 
+const getOrgIDForListingContext = `-- name: GetOrgIDForListingContext :one
+SELECT sm.org_id
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.id = $1
+ AND c.content_type = 'service_listing'
+ AND c.deleted_at IS NULL
+ AND sm.org_id IS NOT NULL
+`
+
+// Lenient org lookup for an existing org conversation (000942): skips the
+// published-status filter so a since-unpublished org listing can still
+// resolve its org conv and degrade to a context-less message.
+func (q *Queries) GetOrgIDForListingContext(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getOrgIDForListingContext, id)
+	var org_id pgtype.UUID
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
 const getPendingMessageRequests = `-- name: GetPendingMessageRequests :many
 SELECT dr.id, dr.requester_id, dr.recipient_id, dr.conversation_id, dr.preview_message, dr.status, dr.created_at, dr.updated_at, dr.resolved_at, COALESCE(u.public_username, u.username, '') AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
 FROM dm_requests dr
@@ -493,6 +513,22 @@ func (q *Queries) GetPendingMessageRequests(ctx context.Context, arg GetPendingM
 	return items, nil
 }
 
+const getSenderDisplayName = `-- name: GetSenderDisplayName :one
+SELECT COALESCE(p.display_name, u.public_username, u.username, '')::text
+FROM users u
+LEFT JOIN user_profiles p ON p.user_id = u.id
+WHERE u.id = $1
+`
+
+// Display name for a sender's messages — WS payload fan-out (000942) so a
+// live org-member reply renders with its attribution, not after refresh.
+func (q *Queries) GetSenderDisplayName(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getSenderDisplayName, id)
+	var column_1 string
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getServiceListingContext = `-- name: GetServiceListingContext :one
 SELECT c.id, c.author_id, c.title, c.slug, sm.org_id
 FROM contents c
@@ -557,7 +593,7 @@ LEFT JOIN user_profiles p2 ON p2.user_id = u2.id
 LEFT JOIN organizations o ON o.id = dc.org_id
 LEFT JOIN organization_members om ON om.organization_id = dc.org_id AND om.user_id = $1
 LEFT JOIN dm_org_read_state ors ON ors.conversation_id = dc.id AND ors.member_user_id = $1
-WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1 OR om.user_id IS NOT NULL)
+WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1 OR om.user_id IS NOT NULL OR o.owner_user_id = $1)
  -- Section 48: a conversation backed by a PENDING dm_request stays out of
  -- the recipient's main inbox until they accept — it lives under Requests.
  AND NOT EXISTS (
@@ -799,9 +835,15 @@ func (q *Queries) InsertDMMessage(ctx context.Context, arg InsertDMMessageParams
 const listOrgMembers = `-- name: ListOrgMembers :many
 SELECT user_id FROM organization_members
 WHERE organization_id = $1
+UNION
+SELECT owner_user_id FROM organizations
+WHERE id = $1 AND owner_user_id IS NOT NULL
 `
 
 // Members who can act on the org side of an org conversation (000942).
+// UNIONs the owner — organizations.owner_user_id can exist without an
+// organization_members row, and an org inbox with no recipients is
+// worse than a spare member.
 func (q *Queries) ListOrgMembers(ctx context.Context, organizationID pgtype.UUID) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listOrgMembers, organizationID)
 	if err != nil {

@@ -290,7 +290,7 @@ SELECT i.id, i.slug, i.title, i.summary, i.shipped_at, i.vote_count,
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id
 WHERE i.release_id = @release_id AND i.status = 'shipped' AND i.deleted_at IS NULL
-  AND (@scope::text = '' OR EXISTS (
+  AND (@scope::text = '' OR i.feature_flag_key = @scope OR EXISTS (
         SELECT 1 FROM roadmap_release_entries e
         WHERE e.item_id = i.id AND e.scope = @scope))
 ORDER BY i.shipped_at DESC;
@@ -423,9 +423,13 @@ WHERE release_id IS NULL
                       'translation','accessibility');
 
 -- name: AssignUnreleasedEntries :execrows
--- Publish absorb: sweep the whole queue into the release.
+-- Publish absorb: only public-type entries join the release — internal
+-- types (docs/chore/ci/etc.) stay in the unreleased queue for admin
+-- triage rather than landing silently on a public release.
 UPDATE roadmap_release_entries SET release_id = @release_id
-WHERE release_id IS NULL;
+WHERE release_id IS NULL
+  AND commit_type IN ('feature','fix','ui','performance','security',
+                      'translation','accessibility');
 
 -- name: ListAdminReleaseEntries :many
 SELECT * FROM roadmap_release_entries

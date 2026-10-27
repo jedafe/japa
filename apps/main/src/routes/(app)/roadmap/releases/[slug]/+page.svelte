@@ -3,6 +3,7 @@
 	import { t, siteName } from '$lib/i18n';
 	import { ArrowLeft, Package } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { markdownToHtml } from '$lib/studio/markdown-html';
 	import type { RoadmapReleaseEntry } from '$lib/types';
 
 	/**
@@ -91,7 +92,7 @@
 
 		{#if rel.body}
 			<section class="notes">
-				<p>{rel.body}</p>
+				{@html markdownToHtml(rel.body, { sanitize: true })}
 			</section>
 		{/if}
 
@@ -249,11 +250,22 @@
 		padding: 1rem;
 		margin-bottom: 1.5rem;
 	}
-	.notes p {
-		margin: 0;
-		white-space: pre-wrap;
+	.notes {
 		font-size: 0.9rem;
 		line-height: 1.6;
+	}
+	.notes :global(p) {
+		margin: 0.4rem 0;
+	}
+	.notes :global(pre) {
+		overflow-x: auto;
+		font-size: 0.82rem;
+	}
+	.notes :global(img) {
+		border-radius: 0.5rem;
+	}
+	.notes :global(a) {
+		color: var(--color-primary, #6d28d9);
 	}
 	h2 {
 		font-size: 1rem;

@@ -629,8 +629,8 @@ func (s *Service) buildReleaseParams(ctx context.Context, cur gen.RoadmapRelease
 }
 
 // AdminSetReleaseStatus drives the lifecycle; on → published with
-// absorbUnreleased the whole unreleased-entry queue sweeps into the
-// release inside one tx.
+// absorbUnreleased the public-type unreleased queue sweeps into the
+// release inside one tx — internal-only types stay queued for triage.
 func (s *Service) AdminSetReleaseStatus(ctx context.Context, id pgtype.UUID, to ReleaseStatus, absorbUnreleased bool) (gen.RoadmapRelease, error) {
 	current, err := s.AdminGetRelease(ctx, id)
 	if err != nil {
@@ -675,6 +675,9 @@ func (s *Service) AdminDeleteRelease(ctx context.Context, id pgtype.UUID, force 
 			return fmt.Errorf("hard-deleting release: %w", err)
 		}
 	} else {
+		if r.DeletedAt.Valid {
+			return fmt.Errorf("%w: release is already deleted", ErrNotFound)
+		}
 		if err := s.store.write.SoftDeleteRoadmapRelease(ctx, id); err != nil {
 			return fmt.Errorf("soft-deleting release: %w", err)
 		}

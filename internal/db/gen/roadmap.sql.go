@@ -14,9 +14,13 @@ import (
 const assignUnreleasedEntries = `-- name: AssignUnreleasedEntries :execrows
 UPDATE roadmap_release_entries SET release_id = $1
 WHERE release_id IS NULL
+  AND commit_type IN ('feature','fix','ui','performance','security',
+                      'translation','accessibility')
 `
 
-// Publish absorb: sweep the whole queue into the release.
+// Publish absorb: only public-type entries join the release — internal
+// types (docs/chore/ci/etc.) stay in the unreleased queue for admin
+// triage rather than landing silently on a public release.
 func (q *Queries) AssignUnreleasedEntries(ctx context.Context, releaseID pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, assignUnreleasedEntries, releaseID)
 	if err != nil {
@@ -1588,7 +1592,7 @@ SELECT i.id, i.slug, i.title, i.summary, i.shipped_at, i.vote_count,
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id
 WHERE i.release_id = $1 AND i.status = 'shipped' AND i.deleted_at IS NULL
-  AND ($2::text = '' OR EXISTS (
+  AND ($2::text = '' OR i.feature_flag_key = $2 OR EXISTS (
         SELECT 1 FROM roadmap_release_entries e
         WHERE e.item_id = i.id AND e.scope = $2))
 ORDER BY i.shipped_at DESC
