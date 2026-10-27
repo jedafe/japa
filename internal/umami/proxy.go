@@ -78,6 +78,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", ct)
 	}
 	w.WriteHeader(status)
+	// Wrap successful JSON in the platform {data:...} envelope so apiFetch's
+	// unwrapping yields the Umami body — same shape as every other endpoint.
+	if status < 300 && strings.Contains(ct, "json") {
+		_, _ = w.Write([]byte(`{"data":`))
+		_, _ = w.Write(body)
+		_, _ = w.Write([]byte(`}`))
+		return
+	}
 	_, _ = w.Write(body)
 }
 
