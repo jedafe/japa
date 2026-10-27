@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Backfill roadmap release entries from git history.
 # Usage: JC_API_BASE=https://api.japa.to JC_INGEST_KEY=<key> ./scripts/changelog-backfill.sh ["3 months ago"]
+# (JC_API_BASE matches the repo's PUBLIC_JC_API_URL variable value.)
 #
 # Emits git log in the GitHub push-event commit shape and posts batches of
 # 100 to roadmap.entries.ingest via the MCP bridge. Commits are delimited

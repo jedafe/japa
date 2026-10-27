@@ -3,8 +3,8 @@ name: Changelog ingest
 # Forwards every push to main into the roadmap release entry queue via
 # the §119 MCP bridge (roadmap.entries.ingest). The API key carries
 # agent.use + agent.write scopes and is owned by a principal holding
-# roadmap.edit — mint via the control panel or
-# POST /api/v1/control/api-keys. Ref: ADR-135.
+# agent.use + roadmap.edit RBAC nodes — mint via POST /api/v1/me/api-keys.
+# Reuses the existing PUBLIC_JC_API_URL repo variable. Ref: ADR-135.
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Ingest commits into release entries
         env:
-          API_BASE: ${{ vars.JC_API_BASE }}
+          API_BASE: ${{ vars.PUBLIC_JC_API_URL }}
           INGEST_KEY: ${{ secrets.JC_CHANGELOG_INGEST_KEY }}
         run: |
           # The push payload is already on disk — avoids the env-var size
