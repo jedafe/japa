@@ -40,7 +40,7 @@ ENV NODE_ENV=production \
 # typescript, eslint, etc. Reinstall from manifests with --production;
 # the adapter-node bundle only needs runtime deps at serve time.
 COPY --parents package.json bun.lock apps/*/package.json packages/*/package.json ./
-RUN bun install --frozen-lockfile --ignore-scripts --production
+RUN bun install --frozen-lockfile --ignore-scripts --production --filter './apps/docs'
 
 COPY --from=build /repo/packages ./packages
 COPY --from=build /repo/apps/docs/build ./apps/docs/build

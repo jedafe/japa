@@ -1704,7 +1704,7 @@ func (s *Store) HasApprovedPage(ctx context.Context, spaceID pgtype.UUID, minWor
 		       AND CASE WHEN jsonb_typeof(wr.content) = 'string'
 		           THEN array_length(string_to_array(trim(wr.content #>> '{}'), ' '), 1)
 		           ELSE (SELECT COALESCE(SUM(array_length(string_to_array(trim(t #>> '{}'), ' '), 1)), 0)
-		                 FROM jsonb_path_query(wr.content, 'lax $**.text') AS x(t))
+		                 FROM jsonb_path_query(wr.content, 'lax $.**.text') AS x(t))
 		           END >= $2
 		 )`, spaceID, minWords).Scan(&ok)
 	if err != nil {
