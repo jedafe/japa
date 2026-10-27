@@ -66,6 +66,7 @@ type roadmapItemArgs struct {
 	IsFlagship     *bool   `json:"is_flagship"`
 	TargetWindow   *string `json:"target_window"`
 	FeatureFlagKey *string `json:"feature_flag_key"`
+	ReleaseID      *string `json:"release_id"`
 }
 
 // toInput converts decoded tool args into a RoadmapItemInput. A non-nil
@@ -104,6 +105,7 @@ func (a roadmapItemArgs) toInput(actorID pgtype.UUID) (RoadmapItemInput, error) 
 	out.IsFlagship = a.IsFlagship
 	out.TargetWindow = a.TargetWindow
 	out.FeatureFlagKey = a.FeatureFlagKey
+	out.ReleaseID = a.ReleaseID
 
 	return out, nil
 }

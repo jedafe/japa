@@ -780,7 +780,10 @@ type AdminItemInput struct {
 	IsFlagship     *bool
 	TargetWindow   *string
 	FeatureFlagKey *string
-	ActorID        pgtype.UUID
+	// ReleaseID — nil keeps the current attachment; "" detaches; a UUID
+	// links the item to a release (shipped items only, ADR-135).
+	ReleaseID *string
+	ActorID   pgtype.UUID
 }
 
 // AdminListItems returns the paginated admin DataTable payload.
@@ -962,6 +965,9 @@ func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminI
 
 	s.syncShadowContent(ctx, item, in.ActorID)
 	s.invalidateBoard(ctx)
+	if in.ReleaseID != nil {
+		s.invalidateReleases(ctx) // release badges/counts changed (ADR-135)
+	}
 
 	return item, nil
 }
@@ -984,6 +990,7 @@ func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, i
 		TargetWindow:   current.TargetWindow,
 		FeatureFlagKey: current.FeatureFlagKey,
 		ApprovedBy:     current.ApprovedBy, // unchanged by edit; set on approval
+		ReleaseID:      current.ReleaseID,  // preserved unless explicitly patched
 	}
 
 	if strings.TrimSpace(in.Title) != "" {
@@ -1026,6 +1033,23 @@ func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, i
 	}
 
 	var linkStatus ItemStatus
+
+	// release_id patch: "" detaches; a UUID attaches — but only shipped
+	// items may join a release (ADR-135).
+	if in.ReleaseID != nil {
+		if *in.ReleaseID == "" {
+			params.ReleaseID = pgtype.UUID{}
+		} else {
+			if ItemStatus(current.Status) != StatusShipped {
+				return gen.UpdateRoadmapItemParams{}, "", ErrItemNotShipped
+			}
+			var relID pgtype.UUID
+			if err := relID.Scan(*in.ReleaseID); err != nil {
+				return gen.UpdateRoadmapItemParams{}, "", errpkg.ErrInvalid
+			}
+			params.ReleaseID = relID
+		}
+	}
 
 	if in.FeatureFlagKey != nil {
 		key, derived, err := s.resolveFlagLink(ctx, current.ID, *in.FeatureFlagKey)

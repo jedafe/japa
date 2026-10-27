@@ -408,8 +408,12 @@ func (s *Service) GetReleaseBySlug(ctx context.Context, slug, scope string) (Rel
 	if err != nil {
 		return ReleaseDetail{}, fmt.Errorf("listing release entries: %w", err)
 	}
+	now := time.Now()
+	if items == nil {
+		items = make([]gen.ListRoadmapReleaseItemsRow, 0) // null-safe JSON — the detail page reads items.length
+	}
 	out := ReleaseDetail{
-		ReleaseDTO: releaseDTO(r, nil, time.Now()),
+		ReleaseDTO: releaseDTO(r, s.successorReleasedAt(ctx, r), now),
 		Body:       r.Body,
 		Items:      items,
 		Entries:    make([]EntryDTO, 0, len(entries)),
@@ -418,6 +422,31 @@ func (s *Service) GetReleaseBySlug(ctx context.Context, slug, scope string) (Rel
 		out.Entries = append(out.Entries, entryDTO(e))
 	}
 	return out, nil
+}
+
+// successorReleasedAt finds the release that superseded r — the oldest
+// published release in the same surface released after r — matching the
+// LEAD() window semantics on the timeline list. Uses the (cached) public
+// list; returns nil when r is the newest.
+func (s *Service) successorReleasedAt(ctx context.Context, r gen.RoadmapRelease) *time.Time {
+	if !r.ReleasedAt.Valid {
+		return nil
+	}
+	list, err := s.ListPublicReleases(ctx)
+	if err != nil {
+		return nil
+	}
+	var best *time.Time
+	for _, rel := range list.Releases {
+		if rel.Surface != r.Surface || rel.ID == r.ID.String() || rel.ReleasedAt == nil {
+			continue
+		}
+		if rel.ReleasedAt.After(r.ReleasedAt.Time) &&
+			(best == nil || rel.ReleasedAt.Before(*best)) {
+			best = rel.ReleasedAt
+		}
+	}
+	return best
 }
 
 // ListUnreleasedEntries returns the public-type queue (the
@@ -727,10 +756,11 @@ func (s *Service) IngestCommits(ctx context.Context, commits []GitHubCommit) (cr
 			subject = subject[:idx]
 		}
 		commitType, scope, title, breaking := ParseConventionalCommit(subject)
-		if strings.Contains(c.Message, "BREAKING CHANGE") {
+		if strings.Contains(c.Message, "BREAKING CHANGE") || strings.Contains(c.Message, "BREAKING-CHANGE") {
 			breaking = true
 		}
 		if title == "" {
+			skipped++
 			continue
 		}
 		files := append(append(append([]string{}, c.Added...), c.Modified...), c.Removed...)
@@ -938,15 +968,19 @@ func parseUUID(s string) (pgtype.UUID, error) {
 	return id, nil
 }
 
+// parseOptionalTime accepts RFC 3339 plus the timezone-less shapes
+// HTML datetime-local/date inputs produce ("2006-01-02T15:04",
+// "2006-01-02") — treated as UTC.
 func parseOptionalTime(s string) (pgtype.Timestamptz, error) {
 	var out pgtype.Timestamptz
 	if s == "" {
 		return out, nil
 	}
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		return out, err
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04", "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return pgtype.Timestamptz{Time: t, Valid: true}, nil
+		}
 	}
-	return pgtype.Timestamptz{Time: t, Valid: true}, nil
+	return out, fmt.Errorf("unparseable timestamp %q", s)
 }
 

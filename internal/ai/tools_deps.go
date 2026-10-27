@@ -1375,6 +1375,7 @@ type RoadmapItemInput struct {
 	IsFlagship     *bool
 	TargetWindow   *string
 	FeatureFlagKey *string
+	ReleaseID      *string // "" detaches; UUID attaches (shipped only, ADR-135)
 	ActorID        pgtype.UUID
 }
 

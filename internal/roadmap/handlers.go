@@ -367,6 +367,7 @@ type adminItemRequest struct {
 	IsFlagship     *bool   `json:"is_flagship"`
 	TargetWindow   *string `json:"target_window"`
 	FeatureFlagKey *string `json:"feature_flag_key"`
+	ReleaseID      *string `json:"release_id"`
 }
 
 // toInput converts the decoded request into a service-layer input.
@@ -404,6 +405,7 @@ func (in adminItemRequest) toInput(actorID pgtype.UUID) (AdminItemInput, error) 
 	out.IsFlagship = in.IsFlagship
 	out.TargetWindow = in.TargetWindow
 	out.FeatureFlagKey = in.FeatureFlagKey
+	out.ReleaseID = in.ReleaseID
 
 	return out, nil
 }

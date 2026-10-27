@@ -64,6 +64,17 @@ func releasesUnavailable() (*ToolResult, error) {
 	return errorToolResult("roadmap_unavailable", "roadmap releases service is not configured"), nil
 }
 
+// parseISODate accepts RFC 3339 plus the timezone-less
+// "2006-01-02T15:04" and "2006-01-02" shapes (UTC).
+func parseISODate(s string) (time.Time, bool) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04", "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
 // RoadmapReleasesListHandler lists releases with surface/status filters.
 func RoadmapReleasesListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
@@ -260,15 +271,15 @@ func RoadmapReleaseAttachItemsHandler(deps *ToolDeps) ToolHandler {
 		if a.ShippedSince != nil || a.ShippedUntil != nil {
 			var since, until *time.Time
 			if a.ShippedSince != nil {
-				t, err := time.Parse(time.RFC3339, *a.ShippedSince)
-				if err != nil {
+				t, ok := parseISODate(*a.ShippedSince)
+				if !ok {
 					return errorToolResult("invalid_date", "shipped_since must be ISO 8601"), nil
 				}
 				since = &t
 			}
 			if a.ShippedUntil != nil {
-				t, err := time.Parse(time.RFC3339, *a.ShippedUntil)
-				if err != nil {
+				t, ok := parseISODate(*a.ShippedUntil)
+				if !ok {
 					return errorToolResult("invalid_date", "shipped_until must be ISO 8601"), nil
 				}
 				until = &t

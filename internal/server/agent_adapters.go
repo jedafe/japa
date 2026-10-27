@@ -3426,6 +3426,7 @@ func roadmapInput(in ai.RoadmapItemInput) roadmap.AdminItemInput {
 		IsFlagship:     in.IsFlagship,
 		TargetWindow:   in.TargetWindow,
 		FeatureFlagKey: in.FeatureFlagKey,
+		ReleaseID:      in.ReleaseID,
 		ActorID:        in.ActorID,
 	}
 }
