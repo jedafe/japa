@@ -11,6 +11,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const assignUnreleasedEntries = `-- name: AssignUnreleasedEntries :execrows
+UPDATE roadmap_release_entries SET release_id = $1
+WHERE release_id IS NULL
+`
+
+// Publish absorb: sweep the whole queue into the release.
+func (q *Queries) AssignUnreleasedEntries(ctx context.Context, releaseID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, assignUnreleasedEntries, releaseID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const clearRoadmapItemFlagKey = `-- name: ClearRoadmapItemFlagKey :exec
 UPDATE roadmap_items SET feature_flag_key = NULL, updated_at = now() WHERE feature_flag_key = $1
 `
@@ -20,6 +34,36 @@ UPDATE roadmap_items SET feature_flag_key = NULL, updated_at = now() WHERE featu
 func (q *Queries) ClearRoadmapItemFlagKey(ctx context.Context, flagKey *string) error {
 	_, err := q.db.Exec(ctx, clearRoadmapItemFlagKey, flagKey)
 	return err
+}
+
+const clearRoadmapReleaseItems = `-- name: ClearRoadmapReleaseItems :exec
+UPDATE roadmap_items SET release_id = NULL, updated_at = now()
+WHERE release_id = $1
+`
+
+func (q *Queries) ClearRoadmapReleaseItems(ctx context.Context, releaseID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearRoadmapReleaseItems, releaseID)
+	return err
+}
+
+const countAdminReleaseEntries = `-- name: CountAdminReleaseEntries :one
+SELECT count(*) FROM roadmap_release_entries
+WHERE ($1::bool = false OR release_id IS NULL)
+  AND ($2::text = '' OR commit_type = $2)
+  AND ($3::text = '' OR scope = $3)
+`
+
+type CountAdminReleaseEntriesParams struct {
+	Unreleased bool   `json:"unreleased"`
+	CommitType string `json:"commit_type"`
+	Scope      string `json:"scope"`
+}
+
+func (q *Queries) CountAdminReleaseEntries(ctx context.Context, arg CountAdminReleaseEntriesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAdminReleaseEntries, arg.Unreleased, arg.CommitType, arg.Scope)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countAdminRoadmapItems = `-- name: CountAdminRoadmapItems :one
@@ -44,6 +88,42 @@ func (q *Queries) CountAdminRoadmapItems(ctx context.Context, arg CountAdminRoad
 		arg.Search,
 		arg.IncludeDeleted,
 	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countAdminRoadmapReleases = `-- name: CountAdminRoadmapReleases :one
+SELECT count(*) FROM roadmap_releases r
+WHERE ($1::bool OR r.deleted_at IS NULL)
+  AND ($2::text = '' OR r.surface = $2)
+  AND ($3::text = '' OR r.status = $3)
+`
+
+type CountAdminRoadmapReleasesParams struct {
+	IncludeDeleted bool   `json:"include_deleted"`
+	Surface        string `json:"surface"`
+	Status         string `json:"status"`
+}
+
+func (q *Queries) CountAdminRoadmapReleases(ctx context.Context, arg CountAdminRoadmapReleasesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAdminRoadmapReleases, arg.IncludeDeleted, arg.Surface, arg.Status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUnreleasedEntries = `-- name: CountUnreleasedEntries :one
+SELECT count(*) FROM roadmap_release_entries
+WHERE release_id IS NULL
+  AND commit_type IN ('feature','fix','ui','performance','security',
+                      'translation','accessibility')
+`
+
+// Public-type count only — backs the "In development" card and must
+// match what ListPublicUnreleasedEntries renders.
+func (q *Queries) CountUnreleasedEntries(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnreleasedEntries)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -98,7 +178,7 @@ INSERT INTO roadmap_items (
     $5, $6, $7,
     $8, $9, $10,
     $11, $12, $13
-) RETURNING id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at
+) RETURNING id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at, release_id
 `
 
 type CreateRoadmapItemParams struct {
@@ -159,6 +239,66 @@ func (q *Queries) CreateRoadmapItem(ctx context.Context, arg CreateRoadmapItemPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReleaseID,
+	)
+	return i, err
+}
+
+const createRoadmapRelease = `-- name: CreateRoadmapRelease :one
+INSERT INTO roadmap_releases
+    (surface, version, slug, title, summary, body, status, is_esr,
+     released_at, eol_at, sort_order)
+VALUES ($1, $2, $3, $4, $5,
+        $6, $7, $8,
+        $9, $10, $11)
+RETURNING id, surface, version, slug, title, summary, body, status, is_esr, released_at, eol_at, sort_order, created_at, updated_at, deleted_at
+`
+
+type CreateRoadmapReleaseParams struct {
+	Surface    string             `json:"surface"`
+	Version    string             `json:"version"`
+	Slug       string             `json:"slug"`
+	Title      *string            `json:"title"`
+	Summary    *string            `json:"summary"`
+	Body       *string            `json:"body"`
+	Status     string             `json:"status"`
+	IsEsr      bool               `json:"is_esr"`
+	ReleasedAt pgtype.Timestamptz `json:"released_at"`
+	EolAt      pgtype.Timestamptz `json:"eol_at"`
+	SortOrder  int32              `json:"sort_order"`
+}
+
+func (q *Queries) CreateRoadmapRelease(ctx context.Context, arg CreateRoadmapReleaseParams) (RoadmapRelease, error) {
+	row := q.db.QueryRow(ctx, createRoadmapRelease,
+		arg.Surface,
+		arg.Version,
+		arg.Slug,
+		arg.Title,
+		arg.Summary,
+		arg.Body,
+		arg.Status,
+		arg.IsEsr,
+		arg.ReleasedAt,
+		arg.EolAt,
+		arg.SortOrder,
+	)
+	var i RoadmapRelease
+	err := row.Scan(
+		&i.ID,
+		&i.Surface,
+		&i.Version,
+		&i.Slug,
+		&i.Title,
+		&i.Summary,
+		&i.Body,
+		&i.Status,
+		&i.IsEsr,
+		&i.ReleasedAt,
+		&i.EolAt,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -194,6 +334,15 @@ func (q *Queries) CreateRoadmapShadowContent(ctx context.Context, arg CreateRoad
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const deleteReleaseEntry = `-- name: DeleteReleaseEntry :exec
+DELETE FROM roadmap_release_entries WHERE id = $1
+`
+
+func (q *Queries) DeleteReleaseEntry(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteReleaseEntry, id)
+	return err
 }
 
 const deleteRoadmapVote = `-- name: DeleteRoadmapVote :execrows
@@ -254,6 +403,31 @@ func (q *Queries) GetOtherRoadmapItemByFlagKey(ctx context.Context, arg GetOther
 	return id, err
 }
 
+const getReleaseEntryByID = `-- name: GetReleaseEntryByID :one
+SELECT id, release_id, item_id, commit_sha, commit_url, commit_type, scope, is_breaking, title, author_name, committed_at, sort_order, created_at FROM roadmap_release_entries WHERE id = $1
+`
+
+func (q *Queries) GetReleaseEntryByID(ctx context.Context, id pgtype.UUID) (RoadmapReleaseEntry, error) {
+	row := q.db.QueryRow(ctx, getReleaseEntryByID, id)
+	var i RoadmapReleaseEntry
+	err := row.Scan(
+		&i.ID,
+		&i.ReleaseID,
+		&i.ItemID,
+		&i.CommitSha,
+		&i.CommitUrl,
+		&i.CommitType,
+		&i.Scope,
+		&i.IsBreaking,
+		&i.Title,
+		&i.AuthorName,
+		&i.CommittedAt,
+		&i.SortOrder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getRoadmapCategoryByID = `-- name: GetRoadmapCategoryByID :one
 SELECT id, slug, name, description, color, sort_order, created_at, updated_at, deleted_at FROM roadmap_categories WHERE id = $1
 `
@@ -291,7 +465,7 @@ func (q *Queries) GetRoadmapCategoryIDBySlug(ctx context.Context, slug string) (
 
 const getRoadmapItemByFlagKey = `-- name: GetRoadmapItemByFlagKey :one
 
-SELECT id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at FROM roadmap_items WHERE feature_flag_key = $1 AND deleted_at IS NULL
+SELECT id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at, release_id FROM roadmap_items WHERE feature_flag_key = $1 AND deleted_at IS NULL
 `
 
 // =====================
@@ -321,12 +495,13 @@ func (q *Queries) GetRoadmapItemByFlagKey(ctx context.Context, flagKey *string) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReleaseID,
 	)
 	return i, err
 }
 
 const getRoadmapItemByID = `-- name: GetRoadmapItemByID :one
-SELECT id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at FROM roadmap_items WHERE id = $1
+SELECT id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at, release_id FROM roadmap_items WHERE id = $1
 `
 
 func (q *Queries) GetRoadmapItemByID(ctx context.Context, id pgtype.UUID) (RoadmapItem, error) {
@@ -352,12 +527,13 @@ func (q *Queries) GetRoadmapItemByID(ctx context.Context, id pgtype.UUID) (Roadm
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReleaseID,
 	)
 	return i, err
 }
 
 const getRoadmapItemBySlug = `-- name: GetRoadmapItemBySlug :one
-SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, i.release_id, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
        (v.user_id IS NOT NULL)::bool AS has_voted
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
@@ -390,6 +566,7 @@ type GetRoadmapItemBySlugRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ReleaseID      pgtype.UUID        `json:"release_id"`
 	CategoryName   *string            `json:"category_name"`
 	CategorySlug   *string            `json:"category_slug"`
 	CategoryColor  *string            `json:"category_color"`
@@ -419,6 +596,7 @@ func (q *Queries) GetRoadmapItemBySlug(ctx context.Context, arg GetRoadmapItemBy
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReleaseID,
 		&i.CategoryName,
 		&i.CategorySlug,
 		&i.CategoryColor,
@@ -435,6 +613,76 @@ SELECT id FROM roadmap_items WHERE slug = $1
 // deleted rows too, so uniqueItemSlug must see them or create hits 23505.
 func (q *Queries) GetRoadmapItemIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, getRoadmapItemIDBySlug, slug)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getRoadmapReleaseByID = `-- name: GetRoadmapReleaseByID :one
+SELECT id, surface, version, slug, title, summary, body, status, is_esr, released_at, eol_at, sort_order, created_at, updated_at, deleted_at FROM roadmap_releases WHERE id = $1
+`
+
+func (q *Queries) GetRoadmapReleaseByID(ctx context.Context, id pgtype.UUID) (RoadmapRelease, error) {
+	row := q.db.QueryRow(ctx, getRoadmapReleaseByID, id)
+	var i RoadmapRelease
+	err := row.Scan(
+		&i.ID,
+		&i.Surface,
+		&i.Version,
+		&i.Slug,
+		&i.Title,
+		&i.Summary,
+		&i.Body,
+		&i.Status,
+		&i.IsEsr,
+		&i.ReleasedAt,
+		&i.EolAt,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getRoadmapReleaseBySlug = `-- name: GetRoadmapReleaseBySlug :one
+SELECT id, surface, version, slug, title, summary, body, status, is_esr, released_at, eol_at, sort_order, created_at, updated_at, deleted_at FROM roadmap_releases
+WHERE slug = $1 AND status IN ('published','yanked') AND deleted_at IS NULL
+`
+
+// Plain row fetch — superseded_at is only needed by the timeline list
+// (LEAD must run over the whole surface set, not a post-WHERE single row).
+func (q *Queries) GetRoadmapReleaseBySlug(ctx context.Context, slug string) (RoadmapRelease, error) {
+	row := q.db.QueryRow(ctx, getRoadmapReleaseBySlug, slug)
+	var i RoadmapRelease
+	err := row.Scan(
+		&i.ID,
+		&i.Surface,
+		&i.Version,
+		&i.Slug,
+		&i.Title,
+		&i.Summary,
+		&i.Body,
+		&i.Status,
+		&i.IsEsr,
+		&i.ReleasedAt,
+		&i.EolAt,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getRoadmapReleaseIDBySlug = `-- name: GetRoadmapReleaseIDBySlug :one
+SELECT id FROM roadmap_releases WHERE slug = $1
+`
+
+// Existence check ignoring soft deletes — the slug UNIQUE covers deleted
+// rows too, so slug dedupe must see them to avoid 23505.
+func (q *Queries) GetRoadmapReleaseIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getRoadmapReleaseIDBySlug, slug)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -462,6 +710,15 @@ func (q *Queries) HardDeleteRoadmapItem(ctx context.Context, id pgtype.UUID) err
 	return err
 }
 
+const hardDeleteRoadmapRelease = `-- name: HardDeleteRoadmapRelease :exec
+DELETE FROM roadmap_releases WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+func (q *Queries) HardDeleteRoadmapRelease(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, hardDeleteRoadmapRelease, id)
+	return err
+}
+
 const hardDeleteRoadmapShadowContent = `-- name: HardDeleteRoadmapShadowContent :exec
 DELETE FROM contents WHERE id = $1 AND content_type = 'roadmap'
 `
@@ -471,6 +728,106 @@ DELETE FROM contents WHERE id = $1 AND content_type = 'roadmap'
 func (q *Queries) HardDeleteRoadmapShadowContent(ctx context.Context, contentID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, hardDeleteRoadmapShadowContent, contentID)
 	return err
+}
+
+const insertReleaseEntry = `-- name: InsertReleaseEntry :execrows
+
+INSERT INTO roadmap_release_entries
+    (release_id, commit_sha, commit_url, commit_type, scope, is_breaking,
+     title, author_name, committed_at)
+VALUES (NULL, $1, $2, $3,
+        $4, $5, $6,
+        $7, $8)
+ON CONFLICT DO NOTHING
+`
+
+type InsertReleaseEntryParams struct {
+	CommitSha   *string            `json:"commit_sha"`
+	CommitUrl   *string            `json:"commit_url"`
+	CommitType  string             `json:"commit_type"`
+	Scope       *string            `json:"scope"`
+	IsBreaking  bool               `json:"is_breaking"`
+	Title       string             `json:"title"`
+	AuthorName  *string            `json:"author_name"`
+	CommittedAt pgtype.Timestamptz `json:"committed_at"`
+}
+
+// =====================
+// Release entries (commit log)
+// =====================
+// 0 rows = sha already ingested (dedupe). NULL sha always inserts.
+func (q *Queries) InsertReleaseEntry(ctx context.Context, arg InsertReleaseEntryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertReleaseEntry,
+		arg.CommitSha,
+		arg.CommitUrl,
+		arg.CommitType,
+		arg.Scope,
+		arg.IsBreaking,
+		arg.Title,
+		arg.AuthorName,
+		arg.CommittedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const listAdminReleaseEntries = `-- name: ListAdminReleaseEntries :many
+SELECT id, release_id, item_id, commit_sha, commit_url, commit_type, scope, is_breaking, title, author_name, committed_at, sort_order, created_at FROM roadmap_release_entries
+WHERE ($1::bool = false OR release_id IS NULL)
+  AND ($2::text = '' OR commit_type = $2)
+  AND ($3::text = '' OR scope = $3)
+ORDER BY committed_at DESC NULLS LAST
+LIMIT $5 OFFSET $4
+`
+
+type ListAdminReleaseEntriesParams struct {
+	Unreleased bool   `json:"unreleased"`
+	CommitType string `json:"commit_type"`
+	Scope      string `json:"scope"`
+	PageOffset int32  `json:"page_offset"`
+	PageSize   int32  `json:"page_size"`
+}
+
+func (q *Queries) ListAdminReleaseEntries(ctx context.Context, arg ListAdminReleaseEntriesParams) ([]RoadmapReleaseEntry, error) {
+	rows, err := q.db.Query(ctx, listAdminReleaseEntries,
+		arg.Unreleased,
+		arg.CommitType,
+		arg.Scope,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoadmapReleaseEntry
+	for rows.Next() {
+		var i RoadmapReleaseEntry
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReleaseID,
+			&i.ItemID,
+			&i.CommitSha,
+			&i.CommitUrl,
+			&i.CommitType,
+			&i.Scope,
+			&i.IsBreaking,
+			&i.Title,
+			&i.AuthorName,
+			&i.CommittedAt,
+			&i.SortOrder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAdminRoadmapCategories = `-- name: ListAdminRoadmapCategories :many
@@ -509,7 +866,7 @@ func (q *Queries) ListAdminRoadmapCategories(ctx context.Context) ([]RoadmapCate
 }
 
 const listAdminRoadmapItems = `-- name: ListAdminRoadmapItems :many
-SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, c.name AS category_name
+SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, i.release_id, c.name AS category_name
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id
 WHERE ($1::text = '' OR i.status = $1::text)
@@ -553,6 +910,7 @@ type ListAdminRoadmapItemsRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ReleaseID      pgtype.UUID        `json:"release_id"`
 	CategoryName   *string            `json:"category_name"`
 }
 
@@ -593,6 +951,7 @@ func (q *Queries) ListAdminRoadmapItems(ctx context.Context, arg ListAdminRoadma
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReleaseID,
 			&i.CategoryName,
 		); err != nil {
 			return nil, err
@@ -605,8 +964,90 @@ func (q *Queries) ListAdminRoadmapItems(ctx context.Context, arg ListAdminRoadma
 	return items, nil
 }
 
+const listAdminRoadmapReleases = `-- name: ListAdminRoadmapReleases :many
+SELECT r.id, r.surface, r.version, r.slug, r.title, r.summary, r.body, r.status, r.is_esr, r.released_at, r.eol_at, r.sort_order, r.created_at, r.updated_at, r.deleted_at,
+    (SELECT count(*) FROM roadmap_items i
+     WHERE i.release_id = r.id AND i.deleted_at IS NULL) AS item_count
+FROM roadmap_releases r
+WHERE ($1::bool OR r.deleted_at IS NULL)
+  AND ($2::text = '' OR r.surface = $2)
+  AND ($3::text = '' OR r.status = $3)
+ORDER BY r.created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListAdminRoadmapReleasesParams struct {
+	IncludeDeleted bool   `json:"include_deleted"`
+	Surface        string `json:"surface"`
+	Status         string `json:"status"`
+	PageOffset     int32  `json:"page_offset"`
+	PageSize       int32  `json:"page_size"`
+}
+
+type ListAdminRoadmapReleasesRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	Surface    string             `json:"surface"`
+	Version    string             `json:"version"`
+	Slug       string             `json:"slug"`
+	Title      *string            `json:"title"`
+	Summary    *string            `json:"summary"`
+	Body       *string            `json:"body"`
+	Status     string             `json:"status"`
+	IsEsr      bool               `json:"is_esr"`
+	ReleasedAt pgtype.Timestamptz `json:"released_at"`
+	EolAt      pgtype.Timestamptz `json:"eol_at"`
+	SortOrder  int32              `json:"sort_order"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
+	ItemCount  int64              `json:"item_count"`
+}
+
+func (q *Queries) ListAdminRoadmapReleases(ctx context.Context, arg ListAdminRoadmapReleasesParams) ([]ListAdminRoadmapReleasesRow, error) {
+	rows, err := q.db.Query(ctx, listAdminRoadmapReleases,
+		arg.IncludeDeleted,
+		arg.Surface,
+		arg.Status,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAdminRoadmapReleasesRow
+	for rows.Next() {
+		var i ListAdminRoadmapReleasesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Surface,
+			&i.Version,
+			&i.Slug,
+			&i.Title,
+			&i.Summary,
+			&i.Body,
+			&i.Status,
+			&i.IsEsr,
+			&i.ReleasedAt,
+			&i.EolAt,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.ItemCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublicRoadmapItems = `-- name: ListPublicRoadmapItems :many
-SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, i.release_id, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
        (v.user_id IS NOT NULL)::bool AS has_voted
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
@@ -644,6 +1085,7 @@ type ListPublicRoadmapItemsRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ReleaseID      pgtype.UUID        `json:"release_id"`
 	CategoryName   *string            `json:"category_name"`
 	CategorySlug   *string            `json:"category_slug"`
 	CategoryColor  *string            `json:"category_color"`
@@ -684,10 +1126,130 @@ func (q *Queries) ListPublicRoadmapItems(ctx context.Context, arg ListPublicRoad
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReleaseID,
 			&i.CategoryName,
 			&i.CategorySlug,
 			&i.CategoryColor,
 			&i.HasVoted,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicRoadmapReleases = `-- name: ListPublicRoadmapReleases :many
+
+SELECT r.id, r.surface, r.version, r.slug, r.title, r.summary, r.body, r.status, r.is_esr, r.released_at, r.eol_at, r.sort_order, r.created_at, r.updated_at, r.deleted_at,
+    LEAD(r.released_at) OVER (PARTITION BY r.surface ORDER BY r.released_at) AS superseded_at,
+    (SELECT count(*) FROM roadmap_items i
+     WHERE i.release_id = r.id AND i.deleted_at IS NULL AND i.status = 'shipped') AS item_count
+FROM roadmap_releases r
+WHERE r.status = 'published' AND r.deleted_at IS NULL
+ORDER BY r.surface, r.released_at DESC
+`
+
+type ListPublicRoadmapReleasesRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Surface      string             `json:"surface"`
+	Version      string             `json:"version"`
+	Slug         string             `json:"slug"`
+	Title        *string            `json:"title"`
+	Summary      *string            `json:"summary"`
+	Body         *string            `json:"body"`
+	Status       string             `json:"status"`
+	IsEsr        bool               `json:"is_esr"`
+	ReleasedAt   pgtype.Timestamptz `json:"released_at"`
+	EolAt        pgtype.Timestamptz `json:"eol_at"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	SupersededAt interface{}        `json:"superseded_at"`
+	ItemCount    int64              `json:"item_count"`
+}
+
+// =====================
+// Roadmap releases (ADR-135)
+// =====================
+// Published releases for the public timeline; superseded_at = next
+// release's released_at per surface (LEAD window) — the band end when
+// eol_at is unset.
+func (q *Queries) ListPublicRoadmapReleases(ctx context.Context) ([]ListPublicRoadmapReleasesRow, error) {
+	rows, err := q.db.Query(ctx, listPublicRoadmapReleases)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicRoadmapReleasesRow
+	for rows.Next() {
+		var i ListPublicRoadmapReleasesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Surface,
+			&i.Version,
+			&i.Slug,
+			&i.Title,
+			&i.Summary,
+			&i.Body,
+			&i.Status,
+			&i.IsEsr,
+			&i.ReleasedAt,
+			&i.EolAt,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.SupersededAt,
+			&i.ItemCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicUnreleasedEntries = `-- name: ListPublicUnreleasedEntries :many
+SELECT id, release_id, item_id, commit_sha, commit_url, commit_type, scope, is_breaking, title, author_name, committed_at, sort_order, created_at FROM roadmap_release_entries
+WHERE release_id IS NULL
+  AND commit_type IN ('feature','fix','ui','performance','security',
+                      'translation','accessibility')
+  AND ($1::text = '' OR scope = $1)
+ORDER BY committed_at DESC
+LIMIT 200
+`
+
+func (q *Queries) ListPublicUnreleasedEntries(ctx context.Context, scope string) ([]RoadmapReleaseEntry, error) {
+	rows, err := q.db.Query(ctx, listPublicUnreleasedEntries, scope)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoadmapReleaseEntry
+	for rows.Next() {
+		var i RoadmapReleaseEntry
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReleaseID,
+			&i.ItemID,
+			&i.CommitSha,
+			&i.CommitUrl,
+			&i.CommitType,
+			&i.Scope,
+			&i.IsBreaking,
+			&i.Title,
+			&i.AuthorName,
+			&i.CommittedAt,
+			&i.SortOrder,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -740,9 +1302,11 @@ func (q *Queries) ListRoadmapCategories(ctx context.Context) ([]RoadmapCategory,
 }
 
 const listRoadmapChangelog = `-- name: ListRoadmapChangelog :many
-SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, c.name AS category_name, c.slug AS category_slug, c.color AS category_color
+SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, i.release_id, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+       r.version AS release_version, r.slug AS release_slug
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
+LEFT JOIN roadmap_releases r ON r.id = i.release_id AND r.status = 'published' AND r.deleted_at IS NULL
 WHERE i.status = 'shipped' AND i.deleted_at IS NULL
 ORDER BY i.shipped_at DESC
 `
@@ -767,9 +1331,12 @@ type ListRoadmapChangelogRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ReleaseID      pgtype.UUID        `json:"release_id"`
 	CategoryName   *string            `json:"category_name"`
 	CategorySlug   *string            `json:"category_slug"`
 	CategoryColor  *string            `json:"category_color"`
+	ReleaseVersion *string            `json:"release_version"`
+	ReleaseSlug    *string            `json:"release_slug"`
 }
 
 func (q *Queries) ListRoadmapChangelog(ctx context.Context) ([]ListRoadmapChangelogRow, error) {
@@ -801,9 +1368,12 @@ func (q *Queries) ListRoadmapChangelog(ctx context.Context) ([]ListRoadmapChange
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReleaseID,
 			&i.CategoryName,
 			&i.CategorySlug,
 			&i.CategoryColor,
+			&i.ReleaseVersion,
+			&i.ReleaseSlug,
 		); err != nil {
 			return nil, err
 		}
@@ -816,7 +1386,7 @@ func (q *Queries) ListRoadmapChangelog(ctx context.Context) ([]ListRoadmapChange
 }
 
 const listRoadmapItemsByFlagKeys = `-- name: ListRoadmapItemsByFlagKeys :many
-SELECT id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at FROM roadmap_items WHERE feature_flag_key = ANY($1::text[]) AND deleted_at IS NULL
+SELECT id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at, release_id FROM roadmap_items WHERE feature_flag_key = ANY($1::text[]) AND deleted_at IS NULL
 `
 
 // Batch variant for the control-panel extensions list (one query for the
@@ -850,6 +1420,7 @@ func (q *Queries) ListRoadmapItemsByFlagKeys(ctx context.Context, flagKeys []str
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReleaseID,
 		); err != nil {
 			return nil, err
 		}
@@ -862,7 +1433,7 @@ func (q *Queries) ListRoadmapItemsByFlagKeys(ctx context.Context, flagKeys []str
 }
 
 const listRoadmapRelatedItems = `-- name: ListRoadmapRelatedItems :many
-SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, i.release_id, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
        (v.user_id IS NOT NULL)::bool AS has_voted
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
@@ -901,6 +1472,7 @@ type ListRoadmapRelatedItemsRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ReleaseID      pgtype.UUID        `json:"release_id"`
 	CategoryName   *string            `json:"category_name"`
 	CategorySlug   *string            `json:"category_slug"`
 	CategoryColor  *string            `json:"category_color"`
@@ -944,11 +1516,150 @@ func (q *Queries) ListRoadmapRelatedItems(ctx context.Context, arg ListRoadmapRe
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReleaseID,
 			&i.CategoryName,
 			&i.CategorySlug,
 			&i.CategoryColor,
 			&i.HasVoted,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoadmapReleaseEntries = `-- name: ListRoadmapReleaseEntries :many
+SELECT id, release_id, item_id, commit_sha, commit_url, commit_type, scope, is_breaking, title, author_name, committed_at, sort_order, created_at FROM roadmap_release_entries
+WHERE release_id = $1
+  AND commit_type IN ('feature','fix','ui','performance','security',
+                      'translation','accessibility')
+  AND ($2::text = '' OR scope = $2)
+ORDER BY commit_type, committed_at DESC
+`
+
+type ListRoadmapReleaseEntriesParams struct {
+	ReleaseID pgtype.UUID `json:"release_id"`
+	Scope     string      `json:"scope"`
+}
+
+// Public-type entries for a release ordered by commit_type — the
+// frontend groups them into sections. ?scope= filter when non-empty.
+func (q *Queries) ListRoadmapReleaseEntries(ctx context.Context, arg ListRoadmapReleaseEntriesParams) ([]RoadmapReleaseEntry, error) {
+	rows, err := q.db.Query(ctx, listRoadmapReleaseEntries, arg.ReleaseID, arg.Scope)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoadmapReleaseEntry
+	for rows.Next() {
+		var i RoadmapReleaseEntry
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReleaseID,
+			&i.ItemID,
+			&i.CommitSha,
+			&i.CommitUrl,
+			&i.CommitType,
+			&i.Scope,
+			&i.IsBreaking,
+			&i.Title,
+			&i.AuthorName,
+			&i.CommittedAt,
+			&i.SortOrder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoadmapReleaseItems = `-- name: ListRoadmapReleaseItems :many
+SELECT i.id, i.slug, i.title, i.summary, i.shipped_at, i.vote_count,
+       c.name AS category_name, c.color AS category_color
+FROM roadmap_items i
+LEFT JOIN roadmap_categories c ON c.id = i.category_id
+WHERE i.release_id = $1 AND i.status = 'shipped' AND i.deleted_at IS NULL
+  AND ($2::text = '' OR EXISTS (
+        SELECT 1 FROM roadmap_release_entries e
+        WHERE e.item_id = i.id AND e.scope = $2))
+ORDER BY i.shipped_at DESC
+`
+
+type ListRoadmapReleaseItemsParams struct {
+	ReleaseID pgtype.UUID `json:"release_id"`
+	Scope     string      `json:"scope"`
+}
+
+type ListRoadmapReleaseItemsRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	Slug          string             `json:"slug"`
+	Title         string             `json:"title"`
+	Summary       *string            `json:"summary"`
+	ShippedAt     pgtype.Timestamptz `json:"shipped_at"`
+	VoteCount     int32              `json:"vote_count"`
+	CategoryName  *string            `json:"category_name"`
+	CategoryColor *string            `json:"category_color"`
+}
+
+func (q *Queries) ListRoadmapReleaseItems(ctx context.Context, arg ListRoadmapReleaseItemsParams) ([]ListRoadmapReleaseItemsRow, error) {
+	rows, err := q.db.Query(ctx, listRoadmapReleaseItems, arg.ReleaseID, arg.Scope)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoadmapReleaseItemsRow
+	for rows.Next() {
+		var i ListRoadmapReleaseItemsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Summary,
+			&i.ShippedAt,
+			&i.VoteCount,
+			&i.CategoryName,
+			&i.CategoryColor,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoadmapReleaseSlugs = `-- name: ListRoadmapReleaseSlugs :many
+SELECT slug, updated_at FROM roadmap_releases
+WHERE status = 'published' AND deleted_at IS NULL
+ORDER BY updated_at DESC
+`
+
+type ListRoadmapReleaseSlugsRow struct {
+	Slug      string             `json:"slug"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListRoadmapReleaseSlugs(ctx context.Context) ([]ListRoadmapReleaseSlugsRow, error) {
+	rows, err := q.db.Query(ctx, listRoadmapReleaseSlugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoadmapReleaseSlugsRow
+	for rows.Next() {
+		var i ListRoadmapReleaseSlugsRow
+		if err := rows.Scan(&i.Slug, &i.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1018,6 +1729,39 @@ func (q *Queries) ListRoadmapVoterIDs(ctx context.Context, itemID pgtype.UUID) (
 	return items, nil
 }
 
+const listShippedItemIDsInWindow = `-- name: ListShippedItemIDsInWindow :many
+SELECT id FROM roadmap_items
+WHERE status = 'shipped' AND deleted_at IS NULL
+  AND ($1::timestamptz IS NULL OR shipped_at >= $1::timestamptz)
+  AND ($2::timestamptz IS NULL OR shipped_at < $2::timestamptz)
+`
+
+type ListShippedItemIDsInWindowParams struct {
+	Since pgtype.Timestamptz `json:"since"`
+	Until pgtype.Timestamptz `json:"until"`
+}
+
+// attach_items window mode: shipped items inside a shipped_at window.
+func (q *Queries) ListShippedItemIDsInWindow(ctx context.Context, arg ListShippedItemIDsInWindowParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listShippedItemIDsInWindow, arg.Since, arg.Until)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reorderRoadmapItems = `-- name: ReorderRoadmapItems :exec
 UPDATE roadmap_items SET sort_order = v.ord
 FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS ord) v
@@ -1040,6 +1784,16 @@ UPDATE roadmap_items SET deleted_at = NULL, updated_at = now() WHERE id = $1 AND
 
 func (q *Queries) RestoreRoadmapItem(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, restoreRoadmapItem, id)
+	return err
+}
+
+const restoreRoadmapRelease = `-- name: RestoreRoadmapRelease :exec
+UPDATE roadmap_releases SET deleted_at = NULL, updated_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) RestoreRoadmapRelease(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, restoreRoadmapRelease, id)
 	return err
 }
 
@@ -1067,6 +1821,64 @@ func (q *Queries) SetRoadmapItemContent(ctx context.Context, arg SetRoadmapItemC
 	return err
 }
 
+const setRoadmapItemRelease = `-- name: SetRoadmapItemRelease :execrows
+UPDATE roadmap_items SET release_id = $1, updated_at = now()
+WHERE id = $2 AND status = 'shipped' AND deleted_at IS NULL
+`
+
+type SetRoadmapItemReleaseParams struct {
+	ReleaseID pgtype.UUID `json:"release_id"`
+	ItemID    pgtype.UUID `json:"item_id"`
+}
+
+// Only shipped items are attachable — 0 rows means the item is missing,
+// not shipped, or deleted; the service maps that to ErrItemNotShipped.
+func (q *Queries) SetRoadmapItemRelease(ctx context.Context, arg SetRoadmapItemReleaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setRoadmapItemRelease, arg.ReleaseID, arg.ItemID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setRoadmapReleaseStatus = `-- name: SetRoadmapReleaseStatus :one
+UPDATE roadmap_releases SET
+    status = $1,
+    released_at = CASE WHEN $1 = 'published' AND released_at IS NULL
+                       THEN now() ELSE released_at END,
+    updated_at = now()
+WHERE id = $2
+RETURNING id, surface, version, slug, title, summary, body, status, is_esr, released_at, eol_at, sort_order, created_at, updated_at, deleted_at
+`
+
+type SetRoadmapReleaseStatusParams struct {
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) SetRoadmapReleaseStatus(ctx context.Context, arg SetRoadmapReleaseStatusParams) (RoadmapRelease, error) {
+	row := q.db.QueryRow(ctx, setRoadmapReleaseStatus, arg.Status, arg.ID)
+	var i RoadmapRelease
+	err := row.Scan(
+		&i.ID,
+		&i.Surface,
+		&i.Version,
+		&i.Slug,
+		&i.Title,
+		&i.Summary,
+		&i.Body,
+		&i.Status,
+		&i.IsEsr,
+		&i.ReleasedAt,
+		&i.EolAt,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const softDeleteRoadmapCategory = `-- name: SoftDeleteRoadmapCategory :exec
 UPDATE roadmap_categories SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL
 `
@@ -1082,6 +1894,16 @@ UPDATE roadmap_items SET deleted_at = now(), updated_at = now() WHERE id = $1 AN
 
 func (q *Queries) SoftDeleteRoadmapItem(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteRoadmapItem, id)
+	return err
+}
+
+const softDeleteRoadmapRelease = `-- name: SoftDeleteRoadmapRelease :exec
+UPDATE roadmap_releases SET deleted_at = now(), updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) SoftDeleteRoadmapRelease(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteRoadmapRelease, id)
 	return err
 }
 
@@ -1128,6 +1950,49 @@ func (q *Queries) TryCreateRoadmapVote(ctx context.Context, arg TryCreateRoadmap
 	var item_id pgtype.UUID
 	err := row.Scan(&item_id)
 	return item_id, err
+}
+
+const updateReleaseEntry = `-- name: UpdateReleaseEntry :one
+UPDATE roadmap_release_entries SET
+    commit_type = $1, title = $2,
+    scope = $3, item_id = $4
+WHERE id = $5
+RETURNING id, release_id, item_id, commit_sha, commit_url, commit_type, scope, is_breaking, title, author_name, committed_at, sort_order, created_at
+`
+
+type UpdateReleaseEntryParams struct {
+	CommitType string      `json:"commit_type"`
+	Title      string      `json:"title"`
+	Scope      *string     `json:"scope"`
+	ItemID     pgtype.UUID `json:"item_id"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateReleaseEntry(ctx context.Context, arg UpdateReleaseEntryParams) (RoadmapReleaseEntry, error) {
+	row := q.db.QueryRow(ctx, updateReleaseEntry,
+		arg.CommitType,
+		arg.Title,
+		arg.Scope,
+		arg.ItemID,
+		arg.ID,
+	)
+	var i RoadmapReleaseEntry
+	err := row.Scan(
+		&i.ID,
+		&i.ReleaseID,
+		&i.ItemID,
+		&i.CommitSha,
+		&i.CommitUrl,
+		&i.CommitType,
+		&i.Scope,
+		&i.IsBreaking,
+		&i.Title,
+		&i.AuthorName,
+		&i.CommittedAt,
+		&i.SortOrder,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const updateRoadmapCategory = `-- name: UpdateRoadmapCategory :one
@@ -1180,10 +2045,11 @@ UPDATE roadmap_items SET
     sort_order = $6, is_flagship = $7,
     target_window = $8,
     feature_flag_key = $9,
-    approved_by = $10,
+    release_id = $10,
+    approved_by = $11,
     updated_at = now()
-WHERE id = $11
-RETURNING id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at
+WHERE id = $12
+RETURNING id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at, release_id
 `
 
 type UpdateRoadmapItemParams struct {
@@ -1196,6 +2062,7 @@ type UpdateRoadmapItemParams struct {
 	IsFlagship     bool        `json:"is_flagship"`
 	TargetWindow   *string     `json:"target_window"`
 	FeatureFlagKey *string     `json:"feature_flag_key"`
+	ReleaseID      pgtype.UUID `json:"release_id"`
 	ApprovedBy     pgtype.UUID `json:"approved_by"`
 	ID             pgtype.UUID `json:"id"`
 }
@@ -1211,6 +2078,7 @@ func (q *Queries) UpdateRoadmapItem(ctx context.Context, arg UpdateRoadmapItemPa
 		arg.IsFlagship,
 		arg.TargetWindow,
 		arg.FeatureFlagKey,
+		arg.ReleaseID,
 		arg.ApprovedBy,
 		arg.ID,
 	)
@@ -1235,6 +2103,7 @@ func (q *Queries) UpdateRoadmapItem(ctx context.Context, arg UpdateRoadmapItemPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReleaseID,
 	)
 	return i, err
 }
@@ -1245,7 +2114,7 @@ UPDATE roadmap_items SET
     shipped_at = CASE WHEN $1 = 'shipped' AND shipped_at IS NULL THEN now() ELSE shipped_at END,
     updated_at = now()
 WHERE id = $2
-RETURNING id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at
+RETURNING id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at, release_id
 `
 
 type UpdateRoadmapItemStatusParams struct {
@@ -1273,6 +2142,67 @@ func (q *Queries) UpdateRoadmapItemStatus(ctx context.Context, arg UpdateRoadmap
 		&i.SubmittedBy,
 		&i.ApprovedBy,
 		&i.ShippedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.ReleaseID,
+	)
+	return i, err
+}
+
+const updateRoadmapRelease = `-- name: UpdateRoadmapRelease :one
+UPDATE roadmap_releases SET
+    version = $1, slug = $2,
+    title = $3, summary = $4,
+    body = $5, surface = $6, is_esr = $7,
+    released_at = $8, eol_at = $9,
+    sort_order = $10, updated_at = now()
+WHERE id = $11
+RETURNING id, surface, version, slug, title, summary, body, status, is_esr, released_at, eol_at, sort_order, created_at, updated_at, deleted_at
+`
+
+type UpdateRoadmapReleaseParams struct {
+	Version    string             `json:"version"`
+	Slug       string             `json:"slug"`
+	Title      *string            `json:"title"`
+	Summary    *string            `json:"summary"`
+	Body       *string            `json:"body"`
+	Surface    string             `json:"surface"`
+	IsEsr      bool               `json:"is_esr"`
+	ReleasedAt pgtype.Timestamptz `json:"released_at"`
+	EolAt      pgtype.Timestamptz `json:"eol_at"`
+	SortOrder  int32              `json:"sort_order"`
+	ID         pgtype.UUID        `json:"id"`
+}
+
+func (q *Queries) UpdateRoadmapRelease(ctx context.Context, arg UpdateRoadmapReleaseParams) (RoadmapRelease, error) {
+	row := q.db.QueryRow(ctx, updateRoadmapRelease,
+		arg.Version,
+		arg.Slug,
+		arg.Title,
+		arg.Summary,
+		arg.Body,
+		arg.Surface,
+		arg.IsEsr,
+		arg.ReleasedAt,
+		arg.EolAt,
+		arg.SortOrder,
+		arg.ID,
+	)
+	var i RoadmapRelease
+	err := row.Scan(
+		&i.ID,
+		&i.Surface,
+		&i.Version,
+		&i.Slug,
+		&i.Title,
+		&i.Summary,
+		&i.Body,
+		&i.Status,
+		&i.IsEsr,
+		&i.ReleasedAt,
+		&i.EolAt,
+		&i.SortOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,

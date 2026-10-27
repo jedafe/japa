@@ -98,9 +98,32 @@ const getMentorByUsername = `-- name: GetMentorByUsername :one
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username,
- up.profession, up.website_url
+ up.profession, up.website_url,
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+ -- 000940: mentor card fields (000829) + location + mentees-helped count +
+ -- shadow-listing package price — power the mentors comparison dimensions.
+ up.location, up.mentor_title, up.mentor_response_time,
+ up.mentor_availability, up.mentor_session_type,
+ up.mentor_languages, up.mentor_session_formats,
+ up.mentor_countries, up.mentor_credentials,
+ up.mentor_years_experience, up.mentor_success_label,
+ (SELECT COUNT(*)::int FROM service_bookings sb
+  WHERE sb.provider_user_id = up.user_id AND sb.status = 'fulfilled') AS mentees_helped,
+ ml.price_amount AS package_price, ml.price_currency AS package_currency, ml.price_per AS package_per
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
+LEFT JOIN LATERAL (
+ SELECT sm.price_amount, sm.price_currency, sm.price_per
+ FROM contents sc
+ JOIN service_listing_meta sm ON sm.content_id = sc.id
+ WHERE sc.author_id = up.user_id
+   AND sc.content_type = 'service_listing'
+   AND sm.listing_kind = 'mentorship'
+   AND sc.status = 'published'
+   AND sc.deleted_at IS NULL
+ ORDER BY sc.id
+ LIMIT 1
+) ml ON true
 WHERE (u.username = $1 OR lower(u.public_username) = lower($1)) AND up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND EXISTS (
    SELECT 1 FROM contents sc
@@ -114,18 +137,34 @@ WHERE (u.username = $1 OR lower(u.public_username) = lower($1)) AND up.is_mentor
 `
 
 type GetMentorByUsernameRow struct {
-	UserID            pgtype.UUID        `json:"user_id"`
-	IsMentor          *bool              `json:"is_mentor"`
-	MentorCapacity    *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount *int16             `json:"active_mentee_count"`
-	MentorAreas       []string           `json:"mentor_areas"`
-	MentorBio         *string            `json:"mentor_bio"`
-	MentorSince       pgtype.Timestamptz `json:"mentor_since"`
-	DisplayName       *string            `json:"display_name"`
-	AvatarUrl         *string            `json:"avatar_url"`
-	Username          string             `json:"username"`
-	Profession        *string            `json:"profession"`
-	WebsiteUrl        *string            `json:"website_url"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	IsMentor              *bool              `json:"is_mentor"`
+	MentorCapacity        *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
+	MentorAreas           []string           `json:"mentor_areas"`
+	MentorBio             *string            `json:"mentor_bio"`
+	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
+	DisplayName           *string            `json:"display_name"`
+	AvatarUrl             *string            `json:"avatar_url"`
+	Username              string             `json:"username"`
+	Profession            *string            `json:"profession"`
+	WebsiteUrl            *string            `json:"website_url"`
+	AvailableSlots        int32              `json:"available_slots"`
+	Location              *string            `json:"location"`
+	MentorTitle           *string            `json:"mentor_title"`
+	MentorResponseTime    *string            `json:"mentor_response_time"`
+	MentorAvailability    *string            `json:"mentor_availability"`
+	MentorSessionType     *string            `json:"mentor_session_type"`
+	MentorLanguages       []string           `json:"mentor_languages"`
+	MentorSessionFormats  []string           `json:"mentor_session_formats"`
+	MentorCountries       []string           `json:"mentor_countries"`
+	MentorCredentials     []string           `json:"mentor_credentials"`
+	MentorYearsExperience *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel    *string            `json:"mentor_success_label"`
+	MenteesHelped         int32              `json:"mentees_helped"`
+	PackagePrice          *int64             `json:"package_price"`
+	PackageCurrency       *string            `json:"package_currency"`
+	PackagePer            *string            `json:"package_per"`
 }
 
 // Get a mentor's public profile by username (is_mentor must be true).
@@ -147,6 +186,22 @@ func (q *Queries) GetMentorByUsername(ctx context.Context, username string) (Get
 		&i.Username,
 		&i.Profession,
 		&i.WebsiteUrl,
+		&i.AvailableSlots,
+		&i.Location,
+		&i.MentorTitle,
+		&i.MentorResponseTime,
+		&i.MentorAvailability,
+		&i.MentorSessionType,
+		&i.MentorLanguages,
+		&i.MentorSessionFormats,
+		&i.MentorCountries,
+		&i.MentorCredentials,
+		&i.MentorYearsExperience,
+		&i.MentorSuccessLabel,
+		&i.MenteesHelped,
+		&i.PackagePrice,
+		&i.PackageCurrency,
+		&i.PackagePer,
 	)
 	return i, err
 }
@@ -256,9 +311,31 @@ const getMentorsByIDs = `-- name: GetMentorsByIDs :many
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
- (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+ -- 000940: mentor card fields (000829) + location + mentees-helped count +
+ -- shadow-listing package price — power the mentors comparison dimensions.
+ up.location, up.mentor_title, up.mentor_response_time,
+ up.mentor_availability, up.mentor_session_type,
+ up.mentor_languages, up.mentor_session_formats,
+ up.mentor_countries, up.mentor_credentials,
+ up.mentor_years_experience, up.mentor_success_label,
+ (SELECT COUNT(*)::int FROM service_bookings sb
+  WHERE sb.provider_user_id = up.user_id AND sb.status = 'fulfilled') AS mentees_helped,
+ ml.price_amount AS package_price, ml.price_currency AS package_currency, ml.price_per AS package_per
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
+LEFT JOIN LATERAL (
+ SELECT sm.price_amount, sm.price_currency, sm.price_per
+ FROM contents sc
+ JOIN service_listing_meta sm ON sm.content_id = sc.id
+ WHERE sc.author_id = up.user_id
+   AND sc.content_type = 'service_listing'
+   AND sm.listing_kind = 'mentorship'
+   AND sc.status = 'published'
+   AND sc.deleted_at IS NULL
+ ORDER BY sc.id
+ LIMIT 1
+) ml ON true
 WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND up.user_id = ANY($1::uuid[])
  AND EXISTS (
@@ -274,19 +351,34 @@ ORDER BY u.username
 `
 
 type GetMentorsByIDsRow struct {
-	UserID            pgtype.UUID        `json:"user_id"`
-	IsMentor          *bool              `json:"is_mentor"`
-	MentorCapacity    *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount *int16             `json:"active_mentee_count"`
-	MentorAreas       []string           `json:"mentor_areas"`
-	MentorBio         *string            `json:"mentor_bio"`
-	MentorSince       pgtype.Timestamptz `json:"mentor_since"`
-	DisplayName       *string            `json:"display_name"`
-	AvatarUrl         *string            `json:"avatar_url"`
-	Username          string             `json:"username"`
-	Profession        *string            `json:"profession"`
-	WebsiteUrl        *string            `json:"website_url"`
-	AvailableSlots    int32              `json:"available_slots"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	IsMentor              *bool              `json:"is_mentor"`
+	MentorCapacity        *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
+	MentorAreas           []string           `json:"mentor_areas"`
+	MentorBio             *string            `json:"mentor_bio"`
+	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
+	DisplayName           *string            `json:"display_name"`
+	AvatarUrl             *string            `json:"avatar_url"`
+	Username              string             `json:"username"`
+	Profession            *string            `json:"profession"`
+	WebsiteUrl            *string            `json:"website_url"`
+	AvailableSlots        int32              `json:"available_slots"`
+	Location              *string            `json:"location"`
+	MentorTitle           *string            `json:"mentor_title"`
+	MentorResponseTime    *string            `json:"mentor_response_time"`
+	MentorAvailability    *string            `json:"mentor_availability"`
+	MentorSessionType     *string            `json:"mentor_session_type"`
+	MentorLanguages       []string           `json:"mentor_languages"`
+	MentorSessionFormats  []string           `json:"mentor_session_formats"`
+	MentorCountries       []string           `json:"mentor_countries"`
+	MentorCredentials     []string           `json:"mentor_credentials"`
+	MentorYearsExperience *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel    *string            `json:"mentor_success_label"`
+	MenteesHelped         int32              `json:"mentees_helped"`
+	PackagePrice          *int64             `json:"package_price"`
+	PackageCurrency       *string            `json:"package_currency"`
+	PackagePer            *string            `json:"package_per"`
 }
 
 // Get up to 4 mentors by user IDs for the comparison endpoint (§30).
@@ -315,6 +407,21 @@ func (q *Queries) GetMentorsByIDs(ctx context.Context, userIds []pgtype.UUID) ([
 			&i.Profession,
 			&i.WebsiteUrl,
 			&i.AvailableSlots,
+			&i.Location,
+			&i.MentorTitle,
+			&i.MentorResponseTime,
+			&i.MentorAvailability,
+			&i.MentorSessionType,
+			&i.MentorLanguages,
+			&i.MentorSessionFormats,
+			&i.MentorCountries,
+			&i.MentorCredentials,
+			&i.MentorYearsExperience,
+			&i.MentorSuccessLabel,
+			&i.MenteesHelped,
+			&i.PackagePrice,
+			&i.PackageCurrency,
+			&i.PackagePer,
 		); err != nil {
 			return nil, err
 		}
@@ -918,9 +1025,31 @@ const searchMentors = `-- name: SearchMentors :many
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
- (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+ -- 000940: mentor card fields (000829) + location + mentees-helped count +
+ -- shadow-listing package price — power the mentors comparison dimensions.
+ up.location, up.mentor_title, up.mentor_response_time,
+ up.mentor_availability, up.mentor_session_type,
+ up.mentor_languages, up.mentor_session_formats,
+ up.mentor_countries, up.mentor_credentials,
+ up.mentor_years_experience, up.mentor_success_label,
+ (SELECT COUNT(*)::int FROM service_bookings sb
+  WHERE sb.provider_user_id = up.user_id AND sb.status = 'fulfilled') AS mentees_helped,
+ ml.price_amount AS package_price, ml.price_currency AS package_currency, ml.price_per AS package_per
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
+LEFT JOIN LATERAL (
+ SELECT sm.price_amount, sm.price_currency, sm.price_per
+ FROM contents sc
+ JOIN service_listing_meta sm ON sm.content_id = sc.id
+ WHERE sc.author_id = up.user_id
+   AND sc.content_type = 'service_listing'
+   AND sm.listing_kind = 'mentorship'
+   AND sc.status = 'published'
+   AND sc.deleted_at IS NULL
+ ORDER BY sc.id
+ LIMIT 1
+) ml ON true
 WHERE up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND (u.username ILIKE $1 OR up.display_name ILIKE $1)
  AND EXISTS (
@@ -942,19 +1071,34 @@ type SearchMentorsParams struct {
 }
 
 type SearchMentorsRow struct {
-	UserID            pgtype.UUID        `json:"user_id"`
-	IsMentor          *bool              `json:"is_mentor"`
-	MentorCapacity    *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount *int16             `json:"active_mentee_count"`
-	MentorAreas       []string           `json:"mentor_areas"`
-	MentorBio         *string            `json:"mentor_bio"`
-	MentorSince       pgtype.Timestamptz `json:"mentor_since"`
-	DisplayName       *string            `json:"display_name"`
-	AvatarUrl         *string            `json:"avatar_url"`
-	Username          string             `json:"username"`
-	Profession        *string            `json:"profession"`
-	WebsiteUrl        *string            `json:"website_url"`
-	AvailableSlots    int32              `json:"available_slots"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	IsMentor              *bool              `json:"is_mentor"`
+	MentorCapacity        *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
+	MentorAreas           []string           `json:"mentor_areas"`
+	MentorBio             *string            `json:"mentor_bio"`
+	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
+	DisplayName           *string            `json:"display_name"`
+	AvatarUrl             *string            `json:"avatar_url"`
+	Username              string             `json:"username"`
+	Profession            *string            `json:"profession"`
+	WebsiteUrl            *string            `json:"website_url"`
+	AvailableSlots        int32              `json:"available_slots"`
+	Location              *string            `json:"location"`
+	MentorTitle           *string            `json:"mentor_title"`
+	MentorResponseTime    *string            `json:"mentor_response_time"`
+	MentorAvailability    *string            `json:"mentor_availability"`
+	MentorSessionType     *string            `json:"mentor_session_type"`
+	MentorLanguages       []string           `json:"mentor_languages"`
+	MentorSessionFormats  []string           `json:"mentor_session_formats"`
+	MentorCountries       []string           `json:"mentor_countries"`
+	MentorCredentials     []string           `json:"mentor_credentials"`
+	MentorYearsExperience *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel    *string            `json:"mentor_success_label"`
+	MenteesHelped         int32              `json:"mentees_helped"`
+	PackagePrice          *int64             `json:"package_price"`
+	PackageCurrency       *string            `json:"package_currency"`
+	PackagePer            *string            `json:"package_per"`
 }
 
 // Username/display-name substring search over discoverable mentors —
@@ -982,6 +1126,21 @@ func (q *Queries) SearchMentors(ctx context.Context, arg SearchMentorsParams) ([
 			&i.Profession,
 			&i.WebsiteUrl,
 			&i.AvailableSlots,
+			&i.Location,
+			&i.MentorTitle,
+			&i.MentorResponseTime,
+			&i.MentorAvailability,
+			&i.MentorSessionType,
+			&i.MentorLanguages,
+			&i.MentorSessionFormats,
+			&i.MentorCountries,
+			&i.MentorCredentials,
+			&i.MentorYearsExperience,
+			&i.MentorSuccessLabel,
+			&i.MenteesHelped,
+			&i.PackagePrice,
+			&i.PackageCurrency,
+			&i.PackagePer,
 		); err != nil {
 			return nil, err
 		}

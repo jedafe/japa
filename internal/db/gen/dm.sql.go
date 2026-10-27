@@ -100,7 +100,7 @@ func (q *Queries) EditDMMessage(ctx context.Context, arg EditDMMessageParams) er
 }
 
 const getConversationByID = `-- name: GetConversationByID :one
-SELECT id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations WHERE id = $1
+SELECT id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at, conversation_type, org_id FROM dm_conversations WHERE id = $1
 `
 
 func (q *Queries) GetConversationByID(ctx context.Context, id pgtype.UUID) (DmConversation, error) {
@@ -116,12 +116,14 @@ func (q *Queries) GetConversationByID(ctx context.Context, id pgtype.UUID) (DmCo
 		&i.P2UnreadCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ConversationType,
+		&i.OrgID,
 	)
 	return i, err
 }
 
 const getConversationByParticipants = `-- name: GetConversationByParticipants :one
-SELECT id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations
+SELECT id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at, conversation_type, org_id FROM dm_conversations
 WHERE participant_1_id = LEAST($1, $2)::uuid
  AND participant_2_id = GREATEST($1, $2)::uuid
 `
@@ -148,12 +150,14 @@ func (q *Queries) GetConversationByParticipants(ctx context.Context, arg GetConv
 		&i.P2UnreadCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ConversationType,
+		&i.OrgID,
 	)
 	return i, err
 }
 
 const getConversationMessages = `-- name: GetConversationMessages :many
-SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, COALESCE(u.public_username, u.username, '') AS sender_username, p.display_name AS sender_display_name
+SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, dm.context_type, dm.context_id, dm.context_label, dm.context_slug, dm.sent_as_org, COALESCE(u.public_username, u.username, '') AS sender_username, p.display_name AS sender_display_name
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
@@ -183,6 +187,11 @@ type GetConversationMessagesRow struct {
 	ReadAt            pgtype.Timestamptz `json:"read_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	EditedAt          pgtype.Timestamptz `json:"edited_at"`
+	ContextType       *string            `json:"context_type"`
+	ContextID         pgtype.UUID        `json:"context_id"`
+	ContextLabel      *string            `json:"context_label"`
+	ContextSlug       *string            `json:"context_slug"`
+	SentAsOrg         bool               `json:"sent_as_org"`
 	SenderUsername    string             `json:"sender_username"`
 	SenderDisplayName *string            `json:"sender_display_name"`
 }
@@ -216,6 +225,11 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 			&i.ReadAt,
 			&i.DeletedAt,
 			&i.EditedAt,
+			&i.ContextType,
+			&i.ContextID,
+			&i.ContextLabel,
+			&i.ContextSlug,
+			&i.SentAsOrg,
 			&i.SenderUsername,
 			&i.SenderDisplayName,
 		); err != nil {
@@ -230,7 +244,7 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 }
 
 const getDMMessageByID = `-- name: GetDMMessageByID :one
-SELECT id, conversation_id, sender_id, body, created_at, read_at, deleted_at, edited_at FROM dm_messages WHERE id = $1 AND conversation_id = $2
+SELECT id, conversation_id, sender_id, body, created_at, read_at, deleted_at, edited_at, context_type, context_id, context_label, context_slug, sent_as_org FROM dm_messages WHERE id = $1 AND conversation_id = $2
 `
 
 type GetDMMessageByIDParams struct {
@@ -250,6 +264,11 @@ func (q *Queries) GetDMMessageByID(ctx context.Context, arg GetDMMessageByIDPara
 		&i.ReadAt,
 		&i.DeletedAt,
 		&i.EditedAt,
+		&i.ContextType,
+		&i.ContextID,
+		&i.ContextLabel,
+		&i.ContextSlug,
+		&i.SentAsOrg,
 	)
 	return i, err
 }
@@ -283,7 +302,7 @@ INSERT INTO dm_conversations (participant_1_id, participant_2_id) VALUES (LEAST(
 
 ON CONFLICT (participant_1_id, participant_2_id) DO UPDATE
 SET updated_at = now()
-RETURNING id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at
+RETURNING id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at, conversation_type, org_id
 `
 
 type GetOrCreateConversationParams struct {
@@ -305,6 +324,71 @@ func (q *Queries) GetOrCreateConversation(ctx context.Context, arg GetOrCreateCo
 		&i.P2UnreadCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ConversationType,
+		&i.OrgID,
+	)
+	return i, err
+}
+
+const getOrCreateOrgConversation = `-- name: GetOrCreateOrgConversation :one
+INSERT INTO dm_conversations (participant_1_id, org_id, conversation_type)
+VALUES ($1, $2, 'org')
+ON CONFLICT (participant_1_id, org_id) WHERE conversation_type = 'org'
+DO UPDATE SET updated_at = now()
+RETURNING id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at, conversation_type, org_id
+`
+
+type GetOrCreateOrgConversationParams struct {
+	Participant1ID pgtype.UUID `json:"participant_1_id"`
+	OrgID          pgtype.UUID `json:"org_id"`
+}
+
+// 000942: one (external user, org) conversation — sender is participant_1,
+// participant_2 stays NULL (org side = all members).
+func (q *Queries) GetOrCreateOrgConversation(ctx context.Context, arg GetOrCreateOrgConversationParams) (DmConversation, error) {
+	row := q.db.QueryRow(ctx, getOrCreateOrgConversation, arg.Participant1ID, arg.OrgID)
+	var i DmConversation
+	err := row.Scan(
+		&i.ID,
+		&i.Participant1ID,
+		&i.Participant2ID,
+		&i.LastMessageAt,
+		&i.LastMessagePreview,
+		&i.P1UnreadCount,
+		&i.P2UnreadCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ConversationType,
+		&i.OrgID,
+	)
+	return i, err
+}
+
+const getOrgConversationByParticipants = `-- name: GetOrgConversationByParticipants :one
+SELECT id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at, conversation_type, org_id FROM dm_conversations
+WHERE conversation_type = 'org' AND participant_1_id = $1 AND org_id = $2
+`
+
+type GetOrgConversationByParticipantsParams struct {
+	Participant1ID pgtype.UUID `json:"participant_1_id"`
+	OrgID          pgtype.UUID `json:"org_id"`
+}
+
+func (q *Queries) GetOrgConversationByParticipants(ctx context.Context, arg GetOrgConversationByParticipantsParams) (DmConversation, error) {
+	row := q.db.QueryRow(ctx, getOrgConversationByParticipants, arg.Participant1ID, arg.OrgID)
+	var i DmConversation
+	err := row.Scan(
+		&i.ID,
+		&i.Participant1ID,
+		&i.Participant2ID,
+		&i.LastMessageAt,
+		&i.LastMessagePreview,
+		&i.P1UnreadCount,
+		&i.P2UnreadCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ConversationType,
+		&i.OrgID,
 	)
 	return i, err
 }
@@ -409,21 +493,71 @@ func (q *Queries) GetPendingMessageRequests(ctx context.Context, arg GetPendingM
 	return items, nil
 }
 
+const getServiceListingContext = `-- name: GetServiceListingContext :one
+SELECT c.id, c.author_id, c.title, c.slug, sm.org_id
+FROM contents c
+LEFT JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.id = $1
+ AND c.content_type = 'service_listing'
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+`
+
+type GetServiceListingContextRow struct {
+	ID       pgtype.UUID `json:"id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+	Title    string      `json:"title"`
+	Slug     string      `json:"slug"`
+	OrgID    pgtype.UUID `json:"org_id"`
+}
+
+// Validates a service_listing DM context (000941/000942): the listing must
+// be published; org-owned listings route to an org conversation (org_id
+// from service_listing_meta) instead of a personal DM. Returns the
+// display snapshot for context_label/context_slug.
+func (q *Queries) GetServiceListingContext(ctx context.Context, id pgtype.UUID) (GetServiceListingContextRow, error) {
+	row := q.db.QueryRow(ctx, getServiceListingContext, id)
+	var i GetServiceListingContextRow
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorID,
+		&i.Title,
+		&i.Slug,
+		&i.OrgID,
+	)
+	return i, err
+}
+
 const getUserConversations = `-- name: GetUserConversations :many
 SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
  dc.last_message_at, dc.last_message_preview,
  dc.p1_unread_count, dc.p2_unread_count, dc.created_at, dc.updated_at,
- (CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END)::text AS other_username,
- COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
-          CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END)::text AS other_display_name,
- COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
- (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END)::int AS unread_count
+ dc.conversation_type, dc.org_id, o.name::text AS org_name, o.slug::text AS org_slug,
+ -- other_* for org convs: the external user (p1) sees the ORG as the
+ -- other party; org members see the external user (normal p1 branch).
+ (CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = $1 THEN o.slug
+       WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username, o.slug)
+       ELSE COALESCE(u1.public_username, u1.username, o.slug) END)::text AS other_username,
+ COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = $1 THEN o.name
+               WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
+          CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END, o.name)::text AS other_display_name,
+ COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = $1 THEN o.avatar_url
+               WHEN dc.participant_1_id = $1 THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
+ (CASE
+    WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count
+    WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
+      WHERE dm.conversation_id = dc.id AND dm.deleted_at IS NULL AND NOT dm.sent_as_org
+        AND dm.created_at > COALESCE(ors.last_read_at, '-infinity'::timestamptz))
+    ELSE dc.p2_unread_count END)::int AS unread_count
 FROM dm_conversations dc
 JOIN users u1 ON u1.id = dc.participant_1_id
-JOIN users u2 ON u2.id = dc.participant_2_id
+LEFT JOIN users u2 ON u2.id = dc.participant_2_id
 LEFT JOIN user_profiles p1 ON p1.user_id = u1.id
 LEFT JOIN user_profiles p2 ON p2.user_id = u2.id
-WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1)
+LEFT JOIN organizations o ON o.id = dc.org_id
+LEFT JOIN organization_members om ON om.organization_id = dc.org_id AND om.user_id = $1
+LEFT JOIN dm_org_read_state ors ON ors.conversation_id = dc.id AND ors.member_user_id = $1
+WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1 OR om.user_id IS NOT NULL)
  -- Section 48: a conversation backed by a PENDING dm_request stays out of
  -- the recipient's main inbox until they accept — it lives under Requests.
  AND NOT EXISTS (
@@ -432,10 +566,16 @@ WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1)
     AND dr.recipient_id = $1
     AND dr.status = 'pending')
  AND ($2::text <> 'unread' OR
-      (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END) > 0)
+      (CASE
+        WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count
+        WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
+          WHERE dm.conversation_id = dc.id AND dm.deleted_at IS NULL AND NOT dm.sent_as_org
+            AND dm.created_at > COALESCE(ors.last_read_at, '-infinity'::timestamptz))
+        ELSE dc.p2_unread_count END) > 0)
  AND ($3::text = '' OR
       (CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END) ILIKE '%' || $3 || '%' OR
       COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END, '') ILIKE '%' || $3 || '%' OR
+      COALESCE(o.name, '') ILIKE '%' || $3 || '%' OR
       COALESCE(dc.last_message_preview, '') ILIKE '%' || $3 || '%')
  AND (NOT $4::bool OR
       ($5::text = 'recent' AND
@@ -445,7 +585,12 @@ WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1)
         (COALESCE(dc.last_message_at, dc.created_at), dc.id) >
         ($6::timestamptz, $7::uuid)) OR
       ($5::text = 'unread' AND
-        ((CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END), dc.id) <
+        ((CASE
+          WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count
+          WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
+            WHERE dm.conversation_id = dc.id AND dm.deleted_at IS NULL AND NOT dm.sent_as_org
+              AND dm.created_at > COALESCE(ors.last_read_at, '-infinity'::timestamptz))
+          ELSE dc.p2_unread_count END), dc.id) <
         ($8::bigint, $7::uuid)) OR
       ($5::text = 'name' AND
         (COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
@@ -453,7 +598,12 @@ WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1)
         ($9::text, $7::uuid)))
 ORDER BY
  (CASE WHEN $5::text = 'unread' THEN
-   (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END) END) DESC NULLS LAST,
+   (CASE
+     WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count
+     WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
+       WHERE dm.conversation_id = dc.id AND dm.deleted_at IS NULL AND NOT dm.sent_as_org
+         AND dm.created_at > COALESCE(ors.last_read_at, '-infinity'::timestamptz))
+     ELSE dc.p2_unread_count END) END) DESC NULLS LAST,
  (CASE WHEN $5::text = 'unread' THEN dc.id END) DESC NULLS LAST,
  (CASE WHEN $5::text = 'name' THEN
    COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
@@ -490,6 +640,10 @@ type GetUserConversationsRow struct {
 	P2UnreadCount      int32              `json:"p2_unread_count"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ConversationType   string             `json:"conversation_type"`
+	OrgID              pgtype.UUID        `json:"org_id"`
+	OrgName            string             `json:"org_name"`
+	OrgSlug            string             `json:"org_slug"`
 	OtherUsername      string             `json:"other_username"`
 	OtherDisplayName   string             `json:"other_display_name"`
 	OtherAvatarUrl     string             `json:"other_avatar_url"`
@@ -539,6 +693,10 @@ func (q *Queries) GetUserConversations(ctx context.Context, arg GetUserConversat
 			&i.P2UnreadCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ConversationType,
+			&i.OrgID,
+			&i.OrgName,
+			&i.OrgSlug,
 			&i.OtherUsername,
 			&i.OtherDisplayName,
 			&i.OtherAvatarUrl,
@@ -609,18 +767,59 @@ func (q *Queries) IncrementUnreadCount(ctx context.Context, arg IncrementUnreadC
 }
 
 const insertDMMessage = `-- name: InsertDMMessage :exec
-INSERT INTO dm_messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)
+INSERT INTO dm_messages (conversation_id, sender_id, body, context_type, context_id, context_label, context_slug, sent_as_org)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type InsertDMMessageParams struct {
 	ConversationID pgtype.UUID `json:"conversation_id"`
 	SenderID       pgtype.UUID `json:"sender_id"`
 	Body           string      `json:"body"`
+	ContextType    *string     `json:"context_type"`
+	ContextID      pgtype.UUID `json:"context_id"`
+	ContextLabel   *string     `json:"context_label"`
+	ContextSlug    *string     `json:"context_slug"`
+	SentAsOrg      bool        `json:"sent_as_org"`
 }
 
 func (q *Queries) InsertDMMessage(ctx context.Context, arg InsertDMMessageParams) error {
-	_, err := q.db.Exec(ctx, insertDMMessage, arg.ConversationID, arg.SenderID, arg.Body)
+	_, err := q.db.Exec(ctx, insertDMMessage,
+		arg.ConversationID,
+		arg.SenderID,
+		arg.Body,
+		arg.ContextType,
+		arg.ContextID,
+		arg.ContextLabel,
+		arg.ContextSlug,
+		arg.SentAsOrg,
+	)
 	return err
+}
+
+const listOrgMembers = `-- name: ListOrgMembers :many
+SELECT user_id FROM organization_members
+WHERE organization_id = $1
+`
+
+// Members who can act on the org side of an org conversation (000942).
+func (q *Queries) ListOrgMembers(ctx context.Context, organizationID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listOrgMembers, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var user_id pgtype.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markMessagesRead = `-- name: MarkMessagesRead :exec
@@ -714,6 +913,23 @@ type UpdateMessageRequestStatusParams struct {
 
 func (q *Queries) UpdateMessageRequestStatus(ctx context.Context, arg UpdateMessageRequestStatusParams) error {
 	_, err := q.db.Exec(ctx, updateMessageRequestStatus, arg.Status, arg.ID)
+	return err
+}
+
+const upsertDMOrgReadState = `-- name: UpsertDMOrgReadState :exec
+INSERT INTO dm_org_read_state (conversation_id, member_user_id, last_read_at)
+VALUES ($1, $2, now())
+ON CONFLICT (conversation_id, member_user_id)
+DO UPDATE SET last_read_at = now()
+`
+
+type UpsertDMOrgReadStateParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	MemberUserID   pgtype.UUID `json:"member_user_id"`
+}
+
+func (q *Queries) UpsertDMOrgReadState(ctx context.Context, arg UpsertDMOrgReadStateParams) error {
+	_, err := q.db.Exec(ctx, upsertDMOrgReadState, arg.ConversationID, arg.MemberUserID)
 	return err
 }
 

@@ -1741,6 +1741,8 @@ type DmConversation struct {
 	P2UnreadCount      int32              `json:"p2_unread_count"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ConversationType   string             `json:"conversation_type"`
+	OrgID              pgtype.UUID        `json:"org_id"`
 }
 
 type DmMessage struct {
@@ -1752,6 +1754,17 @@ type DmMessage struct {
 	ReadAt         pgtype.Timestamptz `json:"read_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	EditedAt       pgtype.Timestamptz `json:"edited_at"`
+	ContextType    *string            `json:"context_type"`
+	ContextID      pgtype.UUID        `json:"context_id"`
+	ContextLabel   *string            `json:"context_label"`
+	ContextSlug    *string            `json:"context_slug"`
+	SentAsOrg      bool               `json:"sent_as_org"`
+}
+
+type DmOrgReadState struct {
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	MemberUserID   pgtype.UUID        `json:"member_user_id"`
+	LastReadAt     pgtype.Timestamptz `json:"last_read_at"`
 }
 
 type DmRequest struct {
@@ -3467,6 +3480,41 @@ type RoadmapItem struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ReleaseID      pgtype.UUID        `json:"release_id"`
+}
+
+type RoadmapRelease struct {
+	ID         pgtype.UUID        `json:"id"`
+	Surface    string             `json:"surface"`
+	Version    string             `json:"version"`
+	Slug       string             `json:"slug"`
+	Title      *string            `json:"title"`
+	Summary    *string            `json:"summary"`
+	Body       *string            `json:"body"`
+	Status     string             `json:"status"`
+	IsEsr      bool               `json:"is_esr"`
+	ReleasedAt pgtype.Timestamptz `json:"released_at"`
+	EolAt      pgtype.Timestamptz `json:"eol_at"`
+	SortOrder  int32              `json:"sort_order"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type RoadmapReleaseEntry struct {
+	ID          pgtype.UUID        `json:"id"`
+	ReleaseID   pgtype.UUID        `json:"release_id"`
+	ItemID      pgtype.UUID        `json:"item_id"`
+	CommitSha   *string            `json:"commit_sha"`
+	CommitUrl   *string            `json:"commit_url"`
+	CommitType  string             `json:"commit_type"`
+	Scope       *string            `json:"scope"`
+	IsBreaking  bool               `json:"is_breaking"`
+	Title       string             `json:"title"`
+	AuthorName  *string            `json:"author_name"`
+	CommittedAt pgtype.Timestamptz `json:"committed_at"`
+	SortOrder   int32              `json:"sort_order"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type RoadmapVote struct {

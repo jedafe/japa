@@ -1763,6 +1763,40 @@ func (q *Queries) GetUserProfileID(ctx context.Context, userID pgtype.UUID) (pgt
 	return id, err
 }
 
+const getUserProfileIDsByUserIDs = `-- name: GetUserProfileIDsByUserIDs :many
+SELECT id, user_id
+FROM user_profiles
+WHERE user_id = ANY($1::uuid[])
+`
+
+type GetUserProfileIDsByUserIDsRow struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Batched counterpart of GetUserProfileID — resolves user_profiles.id for a
+// set of users so callers can batch-read user_profile custom_field_values
+// (entity_type='user_profile', entity_id=profile id).
+func (q *Queries) GetUserProfileIDsByUserIDs(ctx context.Context, userIds []pgtype.UUID) ([]GetUserProfileIDsByUserIDsRow, error) {
+	rows, err := q.db.Query(ctx, getUserProfileIDsByUserIDs, userIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserProfileIDsByUserIDsRow
+	for rows.Next() {
+		var i GetUserProfileIDsByUserIDsRow
+		if err := rows.Scan(&i.ID, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserReadersByCountry = `-- name: GetUserReadersByCountry :many
 SELECT
  COALESCE(NULLIF(ucv.country_code, ''), '')::text AS country_code,

@@ -45,9 +45,11 @@ WHERE i.status = ANY(@statuses::text[]) AND i.deleted_at IS NULL
 ORDER BY i.is_flagship DESC, i.sort_order ASC, i.vote_count DESC, i.created_at DESC;
 
 -- name: ListRoadmapChangelog :many
-SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color
+SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+       r.version AS release_version, r.slug AS release_slug
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
+LEFT JOIN roadmap_releases r ON r.id = i.release_id AND r.status = 'published' AND r.deleted_at IS NULL
 WHERE i.status = 'shipped' AND i.deleted_at IS NULL
 ORDER BY i.shipped_at DESC;
 
@@ -95,6 +97,7 @@ UPDATE roadmap_items SET
     sort_order = @sort_order, is_flagship = @is_flagship,
     target_window = sqlc.narg(target_window),
     feature_flag_key = sqlc.narg(feature_flag_key),
+    release_id = sqlc.narg(release_id),
     approved_by = sqlc.narg(approved_by),
     updated_at = now()
 WHERE id = @id
@@ -258,3 +261,195 @@ INSERT INTO contents (
     '{}'::jsonb, sqlc.narg(content_hash), false, 'published', 'public',
     1, now()
 ) RETURNING id;
+
+-- =====================
+-- Roadmap releases (ADR-135)
+-- =====================
+
+-- name: ListPublicRoadmapReleases :many
+-- Published releases for the public timeline; superseded_at = next
+-- release's released_at per surface (LEAD window) — the band end when
+-- eol_at is unset.
+SELECT r.*,
+    LEAD(r.released_at) OVER (PARTITION BY r.surface ORDER BY r.released_at) AS superseded_at,
+    (SELECT count(*) FROM roadmap_items i
+     WHERE i.release_id = r.id AND i.deleted_at IS NULL AND i.status = 'shipped') AS item_count
+FROM roadmap_releases r
+WHERE r.status = 'published' AND r.deleted_at IS NULL
+ORDER BY r.surface, r.released_at DESC;
+
+-- name: GetRoadmapReleaseBySlug :one
+-- Plain row fetch — superseded_at is only needed by the timeline list
+-- (LEAD must run over the whole surface set, not a post-WHERE single row).
+SELECT * FROM roadmap_releases
+WHERE slug = @slug AND status IN ('published','yanked') AND deleted_at IS NULL;
+
+-- name: ListRoadmapReleaseItems :many
+SELECT i.id, i.slug, i.title, i.summary, i.shipped_at, i.vote_count,
+       c.name AS category_name, c.color AS category_color
+FROM roadmap_items i
+LEFT JOIN roadmap_categories c ON c.id = i.category_id
+WHERE i.release_id = @release_id AND i.status = 'shipped' AND i.deleted_at IS NULL
+  AND (@scope::text = '' OR EXISTS (
+        SELECT 1 FROM roadmap_release_entries e
+        WHERE e.item_id = i.id AND e.scope = @scope))
+ORDER BY i.shipped_at DESC;
+
+-- name: ListAdminRoadmapReleases :many
+SELECT r.*,
+    (SELECT count(*) FROM roadmap_items i
+     WHERE i.release_id = r.id AND i.deleted_at IS NULL) AS item_count
+FROM roadmap_releases r
+WHERE (@include_deleted::bool OR r.deleted_at IS NULL)
+  AND (@surface::text = '' OR r.surface = @surface)
+  AND (@status::text = '' OR r.status = @status)
+ORDER BY r.created_at DESC
+LIMIT @page_size OFFSET @page_offset;
+
+-- name: CountAdminRoadmapReleases :one
+SELECT count(*) FROM roadmap_releases r
+WHERE (@include_deleted::bool OR r.deleted_at IS NULL)
+  AND (@surface::text = '' OR r.surface = @surface)
+  AND (@status::text = '' OR r.status = @status);
+
+-- name: GetRoadmapReleaseByID :one
+SELECT * FROM roadmap_releases WHERE id = @id;
+
+-- name: GetRoadmapReleaseIDBySlug :one
+-- Existence check ignoring soft deletes — the slug UNIQUE covers deleted
+-- rows too, so slug dedupe must see them to avoid 23505.
+SELECT id FROM roadmap_releases WHERE slug = @slug;
+
+-- name: CreateRoadmapRelease :one
+INSERT INTO roadmap_releases
+    (surface, version, slug, title, summary, body, status, is_esr,
+     released_at, eol_at, sort_order)
+VALUES (@surface, @version, @slug, sqlc.narg(title), sqlc.narg(summary),
+        sqlc.narg(body), @status, @is_esr,
+        sqlc.narg(released_at), sqlc.narg(eol_at), @sort_order)
+RETURNING *;
+
+-- name: UpdateRoadmapRelease :one
+UPDATE roadmap_releases SET
+    version = @version, slug = @slug,
+    title = sqlc.narg(title), summary = sqlc.narg(summary),
+    body = sqlc.narg(body), surface = @surface, is_esr = @is_esr,
+    released_at = sqlc.narg(released_at), eol_at = sqlc.narg(eol_at),
+    sort_order = @sort_order, updated_at = now()
+WHERE id = @id
+RETURNING *;
+
+-- name: SetRoadmapReleaseStatus :one
+UPDATE roadmap_releases SET
+    status = @status,
+    released_at = CASE WHEN @status = 'published' AND released_at IS NULL
+                       THEN now() ELSE released_at END,
+    updated_at = now()
+WHERE id = @id
+RETURNING *;
+
+-- name: SoftDeleteRoadmapRelease :exec
+UPDATE roadmap_releases SET deleted_at = now(), updated_at = now()
+WHERE id = @id AND deleted_at IS NULL;
+
+-- name: RestoreRoadmapRelease :exec
+UPDATE roadmap_releases SET deleted_at = NULL, updated_at = now()
+WHERE id = @id;
+
+-- name: HardDeleteRoadmapRelease :exec
+DELETE FROM roadmap_releases WHERE id = @id AND deleted_at IS NOT NULL;
+
+-- name: ClearRoadmapReleaseItems :exec
+UPDATE roadmap_items SET release_id = NULL, updated_at = now()
+WHERE release_id = @release_id;
+
+-- name: SetRoadmapItemRelease :execrows
+-- Only shipped items are attachable — 0 rows means the item is missing,
+-- not shipped, or deleted; the service maps that to ErrItemNotShipped.
+UPDATE roadmap_items SET release_id = @release_id, updated_at = now()
+WHERE id = @item_id AND status = 'shipped' AND deleted_at IS NULL;
+
+-- name: ListShippedItemIDsInWindow :many
+-- attach_items window mode: shipped items inside a shipped_at window.
+SELECT id FROM roadmap_items
+WHERE status = 'shipped' AND deleted_at IS NULL
+  AND (sqlc.narg(since)::timestamptz IS NULL OR shipped_at >= sqlc.narg(since)::timestamptz)
+  AND (sqlc.narg(until)::timestamptz IS NULL OR shipped_at < sqlc.narg(until)::timestamptz);
+
+-- name: ListRoadmapReleaseSlugs :many
+SELECT slug, updated_at FROM roadmap_releases
+WHERE status = 'published' AND deleted_at IS NULL
+ORDER BY updated_at DESC;
+
+-- =====================
+-- Release entries (commit log)
+-- =====================
+
+-- name: InsertReleaseEntry :execrows
+-- 0 rows = sha already ingested (dedupe). NULL sha always inserts.
+INSERT INTO roadmap_release_entries
+    (release_id, commit_sha, commit_url, commit_type, scope, is_breaking,
+     title, author_name, committed_at)
+VALUES (NULL, sqlc.narg(commit_sha), sqlc.narg(commit_url), @commit_type,
+        sqlc.narg(scope), @is_breaking, @title,
+        sqlc.narg(author_name), sqlc.narg(committed_at))
+ON CONFLICT DO NOTHING;
+
+-- name: ListRoadmapReleaseEntries :many
+-- Public-type entries for a release ordered by commit_type — the
+-- frontend groups them into sections. ?scope= filter when non-empty.
+SELECT * FROM roadmap_release_entries
+WHERE release_id = @release_id
+  AND commit_type IN ('feature','fix','ui','performance','security',
+                      'translation','accessibility')
+  AND (@scope::text = '' OR scope = @scope)
+ORDER BY commit_type, committed_at DESC;
+
+-- name: ListPublicUnreleasedEntries :many
+SELECT * FROM roadmap_release_entries
+WHERE release_id IS NULL
+  AND commit_type IN ('feature','fix','ui','performance','security',
+                      'translation','accessibility')
+  AND (@scope::text = '' OR scope = @scope)
+ORDER BY committed_at DESC
+LIMIT 200;
+
+-- name: CountUnreleasedEntries :one
+-- Public-type count only — backs the "In development" card and must
+-- match what ListPublicUnreleasedEntries renders.
+SELECT count(*) FROM roadmap_release_entries
+WHERE release_id IS NULL
+  AND commit_type IN ('feature','fix','ui','performance','security',
+                      'translation','accessibility');
+
+-- name: AssignUnreleasedEntries :execrows
+-- Publish absorb: sweep the whole queue into the release.
+UPDATE roadmap_release_entries SET release_id = @release_id
+WHERE release_id IS NULL;
+
+-- name: ListAdminReleaseEntries :many
+SELECT * FROM roadmap_release_entries
+WHERE (@unreleased::bool = false OR release_id IS NULL)
+  AND (@commit_type::text = '' OR commit_type = @commit_type)
+  AND (@scope::text = '' OR scope = @scope)
+ORDER BY committed_at DESC NULLS LAST
+LIMIT @page_size OFFSET @page_offset;
+
+-- name: CountAdminReleaseEntries :one
+SELECT count(*) FROM roadmap_release_entries
+WHERE (@unreleased::bool = false OR release_id IS NULL)
+  AND (@commit_type::text = '' OR commit_type = @commit_type)
+  AND (@scope::text = '' OR scope = @scope);
+
+-- name: GetReleaseEntryByID :one
+SELECT * FROM roadmap_release_entries WHERE id = @id;
+
+-- name: UpdateReleaseEntry :one
+UPDATE roadmap_release_entries SET
+    commit_type = @commit_type, title = @title,
+    scope = sqlc.narg(scope), item_id = sqlc.narg(item_id)
+WHERE id = @id
+RETURNING *;
+
+-- name: DeleteReleaseEntry :exec
+DELETE FROM roadmap_release_entries WHERE id = @id;
