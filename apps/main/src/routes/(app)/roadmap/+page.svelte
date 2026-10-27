@@ -11,7 +11,7 @@
 	import VoteButton from '$lib/components/roadmap/VoteButton.svelte';
 	import RoadmapCard from '$lib/components/roadmap/RoadmapCard.svelte';
 	import StatusSelect from '$lib/components/roadmap/StatusSelect.svelte';
-	import { Map as MapIcon, History, Send, Rocket, TriangleAlert, Inbox } from 'lucide-svelte';
+	import { Map as MapIcon, History, Send, Rocket, TriangleAlert, Inbox, Package } from 'lucide-svelte';
 	import type { RoadmapBoardItem } from '$lib/types';
 
 	let { data } = $props();
@@ -82,6 +82,13 @@
 			>
 				<History class="h-4 w-4" />
 				{t('roadmap.view_changelog', 'Changelog')}
+			</a>
+			<a
+				href="/roadmap/releases"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				<Package class="h-4 w-4" />
+				{t('roadmap.view_releases', 'Releases')}
 			</a>
 			<a
 				href="/roadmap/submit"
