@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { apiFetch } from '$lib/api/client';
+	import { api } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
@@ -37,9 +37,9 @@
 		const endAt = Date.now();
 		const q = `startAt=${startAt}&endAt=${endAt}&timezone=UTC`;
 		const [s, pv, m] = await Promise.all([
-			apiFetch(`/analytics/umami/websites/${siteId}/stats?${q}`),
-			apiFetch(`/analytics/umami/websites/${siteId}/pageviews?${q}&unit=day`),
-			apiFetch(`/analytics/umami/websites/${siteId}/metrics?${q}&type=url`)
+			api(`/analytics/umami/websites/${siteId}/stats?${q}`),
+			api(`/analytics/umami/websites/${siteId}/pageviews?${q}&unit=day`),
+			api(`/analytics/umami/websites/${siteId}/metrics?${q}&type=url`)
 		]);
 		stats = data<Stats>(s);
 		const pvd = data<{ pageviews: Point[] }>(pv);
@@ -50,7 +50,7 @@
 	}
 
 	onMount(async () => {
-		const res = await apiFetch('/analytics/umami/websites?pageSize=50');
+		const res = await api('/analytics/umami/websites?pageSize=50');
 		const list = data<{ data: Website[] }>(res);
 		websites = list?.data ?? [];
 		siteId = websites.find((w) => w.domain === 'japa.to')?.id ?? websites[0]?.id ?? '';
