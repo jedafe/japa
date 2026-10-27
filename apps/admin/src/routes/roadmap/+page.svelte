@@ -7,7 +7,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { roadmapAdminApi, roadmapCategoriesAdminApi, featureFlagsAdminApi } from '$lib/api';
+	import { roadmapAdminApi, roadmapCategoriesAdminApi, roadmapReleasesAdminApi, featureFlagsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Pencil, Trash2, Trash, RotateCcw, ArrowRightLeft } from 'lucide-svelte';
@@ -26,6 +26,7 @@
 		is_flagship: boolean;
 		target_window: string | null;
 		feature_flag_key: string | null;
+		release_id: string | null;
 		vote_count: number;
 		submitted_by: string | null;
 		shipped_at: string | null;
@@ -91,6 +92,21 @@
 	// to the public /feature-flags/details endpoint so the picker still works.
 	let flagOptions = $state<Array<{ value: string; label: string }>>([]);
 
+	// Release options feed the release_id select — the link is only valid on
+	// shipped items (enforced server-side; the field stays enabled and the
+	// API error surfaces on save).
+	let releaseOptions = $state<Array<{ value: string; label: string }>>([]);
+
+	async function loadReleaseOptions() {
+		const res = await roadmapReleasesAdminApi.list('page_size=100');
+		if (res.ok) {
+			releaseOptions = (
+				(res.data as { releases?: Array<{ id: string; version: string; surface: string }> })
+					?.releases ?? []
+			).map((r) => ({ value: r.id, label: `${r.surface} · ${r.version}` }));
+		}
+	}
+
 	async function loadFlagOptions() {
 		if (hasPermission('admin.feature_flags.manage')) {
 			const res = await featureFlagsAdminApi.list();
@@ -114,6 +130,7 @@
 	$effect(() => {
 		loadCategoryOptions();
 		loadFlagOptions();
+		loadReleaseOptions();
 	});
 
 	// ── State-action confirmation modals ───────────────────────────────────
@@ -321,6 +338,21 @@
 				'roadmap.feature_flag_hint',
 				'Link a feature flag to derive this item’s status from the flag’s rollout phase.'
 			)
+		},
+		{
+			key: 'release_id',
+			label: t('roadmap.release_id', 'Release'),
+			type: 'select',
+			// "" detaches on PATCH; only shipped items may attach (ADR-135).
+			options: [
+				{ value: '', label: t('roadmap.no_release', 'No release') },
+				...releaseOptions
+			],
+			placeholder: t('roadmap.no_release', 'No release'),
+			help: t('roadmap.release_hint', 'Group this shipped item under a published release.'),
+			disabledWhen: (editing: { status?: string } | null) =>
+				editing != null && editing.status !== 'shipped',
+			lockedHelp: t('roadmap.release_locked', 'Only shipped items can be attached to a release.')
 		}
 	]);
 
@@ -334,7 +366,8 @@
 			sort_order: Number(body.sort_order ?? 0),
 			is_flagship: !!body.is_flagship,
 			target_window: String(body.target_window ?? '').trim(),
-			feature_flag_key: String(body.feature_flag_key ?? '').trim()
+			feature_flag_key: String(body.feature_flag_key ?? '').trim(),
+			release_id: String(body.release_id ?? '')
 		};
 	}
 

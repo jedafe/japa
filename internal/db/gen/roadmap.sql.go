@@ -1588,6 +1588,7 @@ func (q *Queries) ListRoadmapReleaseEntries(ctx context.Context, arg ListRoadmap
 
 const listRoadmapReleaseItems = `-- name: ListRoadmapReleaseItems :many
 SELECT i.id, i.slug, i.title, i.summary, i.shipped_at, i.vote_count,
+       i.feature_flag_key,
        c.name AS category_name, c.color AS category_color
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id
@@ -1604,14 +1605,15 @@ type ListRoadmapReleaseItemsParams struct {
 }
 
 type ListRoadmapReleaseItemsRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Slug          string             `json:"slug"`
-	Title         string             `json:"title"`
-	Summary       *string            `json:"summary"`
-	ShippedAt     pgtype.Timestamptz `json:"shipped_at"`
-	VoteCount     int32              `json:"vote_count"`
-	CategoryName  *string            `json:"category_name"`
-	CategoryColor *string            `json:"category_color"`
+	ID             pgtype.UUID        `json:"id"`
+	Slug           string             `json:"slug"`
+	Title          string             `json:"title"`
+	Summary        *string            `json:"summary"`
+	ShippedAt      pgtype.Timestamptz `json:"shipped_at"`
+	VoteCount      int32              `json:"vote_count"`
+	FeatureFlagKey *string            `json:"feature_flag_key"`
+	CategoryName   *string            `json:"category_name"`
+	CategoryColor  *string            `json:"category_color"`
 }
 
 func (q *Queries) ListRoadmapReleaseItems(ctx context.Context, arg ListRoadmapReleaseItemsParams) ([]ListRoadmapReleaseItemsRow, error) {
@@ -1630,6 +1632,7 @@ func (q *Queries) ListRoadmapReleaseItems(ctx context.Context, arg ListRoadmapRe
 			&i.Summary,
 			&i.ShippedAt,
 			&i.VoteCount,
+			&i.FeatureFlagKey,
 			&i.CategoryName,
 			&i.CategoryColor,
 		); err != nil {

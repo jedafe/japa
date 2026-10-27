@@ -286,6 +286,7 @@ WHERE slug = @slug AND status IN ('published','yanked') AND deleted_at IS NULL;
 
 -- name: ListRoadmapReleaseItems :many
 SELECT i.id, i.slug, i.title, i.summary, i.shipped_at, i.vote_count,
+       i.feature_flag_key,
        c.name AS category_name, c.color AS category_color
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id

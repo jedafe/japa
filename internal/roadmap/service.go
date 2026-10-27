@@ -826,6 +826,16 @@ func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.R
 	// the stored status is replaced by the flag's current phase-derived
 	// status. Unknown keys are rejected with unknown_feature_flag.
 	var flagKey *string
+	var releaseID pgtype.UUID
+
+	// release_id on create is validated up front but only applied when the
+	// item lands on shipped — the attach gate is SetRoadmapItemRelease's
+	// WHERE status='shipped', same as the update path (ADR-135).
+	if in.ReleaseID != nil && *in.ReleaseID != "" {
+		if err := releaseID.Scan(*in.ReleaseID); err != nil {
+			return gen.RoadmapItem{}, fmt.Errorf("%w: invalid release_id", errpkg.ErrInvalid)
+		}
+	}
 
 	if in.FeatureFlagKey != nil {
 		if key := strings.TrimSpace(*in.FeatureFlagKey); key != "" {
@@ -909,6 +919,19 @@ func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.R
 		} else {
 			item = stamped
 			s.enqueueShipNotify(item)
+		}
+	}
+
+	// Attach to a release when the create landed on shipped — a non-shipped
+	// item silently skips (the admin form disables the field pre-ship).
+	if releaseID.Valid && ItemStatus(item.Status) == StatusShipped {
+		if _, err := s.store.write.SetRoadmapItemRelease(ctx, gen.SetRoadmapItemReleaseParams{
+			ReleaseID: releaseID, ItemID: item.ID,
+		}); err != nil {
+			slog.Error("roadmap release attach failed on create", "item_id", item.ID, "error", err)
+		} else {
+			item.ReleaseID = releaseID
+			s.invalidateReleases(ctx)
 		}
 	}
 

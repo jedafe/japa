@@ -5592,6 +5592,7 @@ export interface RoadmapReleaseItem {
 	summary: string | null;
 	shipped_at: string | null;
 	vote_count: number;
+	feature_flag_key: string | null;
 	category_name: string | null;
 	category_color: string | null;
 }

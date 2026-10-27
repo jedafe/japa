@@ -20,6 +20,9 @@
 		for (const e of rel?.entries ?? []) {
 			if (e.scope) s.add(e.scope);
 		}
+		for (const i of rel?.items ?? []) {
+			if (i.feature_flag_key) s.add(i.feature_flag_key);
+		}
 		return [...s].sort();
 	});
 
