@@ -1,55 +1,122 @@
 <script lang="ts">
-	import { env } from '$env/dynamic/public';
-	import { ExternalLink } from 'lucide-svelte';
+	import { apiFetch } from '$lib/api/client';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { onMount } from 'svelte';
 
-	// Self-hosted Umami dashboard embedded in the Control Panel (§40).
-	// The iframe provides quick access; the link opens the dashboard in a new tab
-	// in case the iframe is blocked by X-Frame-Options in a given deployment.
-	const umamiUrl = $derived((env.PUBLIC_JC_UMAMI_URL ?? '').replace(/\/$/, ''));
-	const dashboardUrl = $derived(umamiUrl ? `${umamiUrl}/dashboard` : '');
+	// Native Umami dashboard — the Go API proxies /api/v1/analytics/umami/*
+	// to the self-hosted Umami instance (service creds stay server-side).
 
-	let frameError = $state(false);
+	interface Website { id: string; name: string; domain: string }
+	interface Metric { value: number; change: number }
+	interface Stats { pageviews: Metric; visitors: Metric; visits: Metric; bounces: Metric; totaltime: Metric }
+	interface Point { x: string; y: number }
+	interface MetricRow { x: string; y: number }
+
+	const DAY = 86400000;
+	let websites = $state<Website[]>([]);
+	let siteId = $state('');
+	let days = $state(7);
+	let stats = $state<Stats | null>(null);
+	let series = $state<Point[]>([]);
+	let topPages = $state<MetricRow[]>([]);
+	let loading = $state(false);
+	let error = $state('');
+
+	function data<T>(res: any): T | null {
+		if (!res) return null;
+		if ('data' in res) return res.data as T;
+		return res as T;
+	}
+
+	async function load() {
+		if (!siteId) return;
+		loading = true;
+		error = '';
+		const startAt = Date.now() - days * DAY;
+		const endAt = Date.now();
+		const q = `startAt=${startAt}&endAt=${endAt}&timezone=UTC`;
+		const [s, pv, m] = await Promise.all([
+			apiFetch(`/analytics/umami/websites/${siteId}/stats?${q}`),
+			apiFetch(`/analytics/umami/websites/${siteId}/pageviews?${q}&unit=day`),
+			apiFetch(`/analytics/umami/websites/${siteId}/metrics?${q}&type=url`)
+		]);
+		stats = data<Stats>(s);
+		const pvd = data<{ pageviews: Point[] }>(pv);
+		series = pvd?.pageviews ?? [];
+		topPages = (data<MetricRow[]>(m) ?? []).slice(0, 10);
+		if (!stats && !pvd) error = 'Analytics unavailable — check the Umami proxy configuration.';
+		loading = false;
+	}
+
+	onMount(async () => {
+		const res = await apiFetch('/analytics/umami/websites?pageSize=50');
+		const list = data<{ data: Website[] }>(res);
+		websites = list?.data ?? [];
+		siteId = websites.find((w) => w.domain === 'japa.to')?.id ?? websites[0]?.id ?? '';
+		await load();
+	});
+
+	const maxY = $derived(Math.max(1, ...series.map((p) => p.y)));
+	const points = $derived(
+		series.map((p, i) => `${(i / Math.max(1, series.length - 1)) * 100},${40 - (p.y / maxY) * 38}`).join(' ')
+	);
+	const fmt = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : `${Math.round(n)}`);
 </script>
 
-<PageHeader title={t('analytics.title', 'Analytics')} description={t('analytics.description', 'Umami page-view dashboard. Login with the Umami admin credentials if the dashboard is not already authenticated.')} />
+<PageHeader title={t('analytics.title', 'Analytics')} description={t('analytics.description', 'Page-view analytics from the self-hosted Umami instance.')} />
 
 <div class="space-y-4">
-	{#if dashboardUrl}
-		<a
-			href={dashboardUrl}
-			target="_blank"
-			rel="noopener noreferrer"
-			class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
-		>
-			{t('analytics.open_dashboard', 'Open Umami dashboard')}
-			<ExternalLink class="size-4 rtl:-scale-x-100" />
-		</a>
+	<div class="flex flex-wrap items-center gap-3">
+		<select bind:value={siteId} onchange={load} class="border-border-card bg-background rounded-md border px-3 py-2 text-sm">
+			{#each websites as w}<option value={w.id}>{w.name} — {w.domain}</option>{/each}
+		</select>
+		<select bind:value={days} onchange={load} class="border-border-card bg-background rounded-md border px-3 py-2 text-sm">
+			<option value={1}>24h</option><option value={7}>7d</option><option value={30}>30d</option><option value={90}>90d</option>
+		</select>
+		{#if loading}<span class="text-muted-foreground text-sm">Loading…</span>{/if}
+	</div>
 
-		{#if frameError}
-			<div class="border-border-card rounded-lg border p-6">
-				<p class="text-muted-foreground text-sm">
-					{t('analytics.embed_failed', 'The dashboard could not be embedded (blocked by the browser or Umami is unreachable). Use the button above to open it in a new tab.')}
-				</p>
-			</div>
-		{:else}
-			<div class="border-border-card overflow-hidden rounded-lg border">
-				<iframe
-					src={dashboardUrl}
-					title={t('analytics.iframe_title', 'Umami analytics dashboard')}
-					class="h-[calc(100vh-14rem)] min-h-[480px] w-full bg-background"
-					sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-					loading="lazy"
-					onerror={() => (frameError = true)}
-				></iframe>
+	{#if error}
+		<div class="border-border-card rounded-lg border p-6"><p class="text-muted-foreground text-sm">{error}</p></div>
+	{:else if stats}
+		<div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
+			{#each [
+				['Pageviews', stats.pageviews], ['Visitors', stats.visitors], ['Visits', stats.visits],
+				['Bounce rate', stats.bounces], ['Avg. time', stats.totaltime]
+			] as [label, m]}
+				<div class="border-border-card rounded-lg border p-4">
+					<p class="text-muted-foreground text-xs">{label}</p>
+					<p class="mt-1 text-xl font-semibold">
+						{label === 'Bounce rate' ? `${Math.round(m.value)}%` : label === 'Avg. time' ? `${Math.round(m.value)}s` : fmt(m.value)}
+					</p>
+					{#if m.change !== 0}<p class="text-xs" class:text-green-500={m.change > 0} class:text-red-500={m.change < 0}>{m.change > 0 ? '+' : ''}{m.change} prev</p>{/if}
+				</div>
+			{/each}
+		</div>
+
+		<div class="border-border-card rounded-lg border p-4">
+			<p class="text-muted-foreground mb-2 text-sm">Pageviews</p>
+			{#if series.length}
+				<svg viewBox="0 0 100 42" preserveAspectRatio="none" class="h-40 w-full">
+					<polyline points={points} fill="none" stroke="var(--color-accent, #6366f1)" stroke-width="0.7" vector-effect="non-scaling-stroke" />
+				</svg>
+				<div class="text-muted-foreground flex justify-between text-xs">
+					<span>{new Date(series[0].x).toLocaleDateString()}</span>
+					<span>{new Date(series[series.length - 1].x).toLocaleDateString()}</span>
+				</div>
+			{/if}
+		</div>
+
+		{#if topPages.length}
+			<div class="border-border-card rounded-lg border p-4">
+				<p class="text-muted-foreground mb-2 text-sm">Top pages</p>
+				<table class="w-full text-sm">
+					{#each topPages as r}
+						<tr class="border-border-card border-t"><td class="truncate py-1.5 pr-4 font-mono text-xs">{r.x}</td><td class="py-1.5 text-right tabular-nums">{r.y}</td></tr>
+					{/each}
+				</table>
 			</div>
 		{/if}
-	{:else}
-		<div class="border-border-card rounded-lg border p-6">
-			<p class="text-muted-foreground text-sm">
-				{t('analytics.not_configured', 'Umami is not configured. Set the Umami URL and site ID environment variables to enable this dashboard.')}
-			</p>
-		</div>
 	{/if}
 </div>

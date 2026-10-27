@@ -31,6 +31,7 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/ama"
 	"github.com/jedafe/japa/internal/analytics"
+	"github.com/jedafe/japa/internal/umami"
 	"github.com/jedafe/japa/internal/appeals"
 	"github.com/jedafe/japa/internal/appointmentalert"
 	"github.com/jedafe/japa/internal/arrivalchecklist"
@@ -4819,6 +4820,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/members", orgHandlers.ListPublicMembers)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/content", contentHandlers.ListByOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/analytics", orgHandlers.GetOrganizationAnalytics)
+			if umamiProxy := umami.NewProxy(); umamiProxy.Enabled() {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.analytics.view")).Get("/analytics/umami/*", umamiProxy.ServeHTTP)
+			}
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/media", mediaHandlers.ListByOrganization)
 			// Organization deal submissions (§55) — org member-role gated inside the handler.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
