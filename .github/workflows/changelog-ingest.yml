@@ -13,9 +13,12 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    # API vars/secrets live under the Production environment.
+    environment: Production
     steps:
       - name: Ingest commits into release entries
         env:
+          # PUBLIC_JC_API_URL already carries the /api/v1 suffix.
           API_BASE: ${{ vars.PUBLIC_JC_API_URL }}
           INGEST_KEY: ${{ secrets.JC_CHANGELOG_INGEST_KEY }}
         run: |
@@ -24,5 +27,5 @@ jobs:
           jq '{commits: .commits}' "$GITHUB_EVENT_PATH" \
           | jq -s '{jsonrpc:"2.0",id:1,method:"tools/call",
               params:{name:"roadmap.entries.ingest",arguments:.[0]}}' \
-          | curl -fsS -X POST "$API_BASE/api/v1/mcp" \
+          | curl -fsS -X POST "$API_BASE/mcp" \
             -H "X-API-Key: $INGEST_KEY" -H "Content-Type: application/json" -d @-

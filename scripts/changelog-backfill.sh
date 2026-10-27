@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backfill roadmap release entries from git history.
-# Usage: JC_API_BASE=https://api.japa.to JC_INGEST_KEY=<key> ./scripts/changelog-backfill.sh ["3 months ago"]
-# (JC_API_BASE matches the repo's PUBLIC_JC_API_URL variable value.)
+# Usage: JC_API_BASE=https://api.japa.to/api/v1 JC_INGEST_KEY=<key> ./scripts/changelog-backfill.sh ["3 months ago"]
+# JC_API_BASE matches the repo's PUBLIC_JC_API_URL variable (carries /api/v1).
 #
 # Emits git log in the GitHub push-event commit shape and posts batches of
 # 100 to roadmap.entries.ingest via the MCP bridge. Commits are delimited
@@ -39,7 +39,7 @@ for i in range(0, len(commits), 100):
   # Batches can exceed argv limits — wrap via stdin, not --argjson.
   echo "$batch" | jq '{jsonrpc:"2.0",id:1,method:"tools/call",
     params:{name:"roadmap.entries.ingest",arguments:.}}' |
-  curl -fsS -X POST "$JC_API_BASE/api/v1/mcp" \
+  curl -fsS -X POST "$JC_API_BASE/mcp" \
     -H "X-API-Key: $JC_INGEST_KEY" -H "Content-Type: application/json" -d @-
   echo
 done
