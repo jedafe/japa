@@ -28,7 +28,7 @@ on:
 #
 # Staging deploy webhooks live on the `staging` environment's secrets:
 #   COOLIFY_WEBHOOK_API_STAGING, _MAIN_, _ADMIN_, _CONTROL_, _ACADEMY_,
-#   _DOCS_, _TOOLS_STAGING
+#   _DOCS_
 #
 # Production is a separate manual workflow (deploy-production.yml).
 
@@ -137,7 +137,6 @@ jobs:
           PUBLIC_ADMIN_ORIGIN: ${{ vars.PUBLIC_ADMIN_ORIGIN }}
           PUBLIC_DOCS_ORIGIN: ${{ vars.PUBLIC_DOCS_ORIGIN }}
           PUBLIC_JC_ACADEMY_ORIGIN: ${{ vars.PUBLIC_JC_ACADEMY_ORIGIN }}
-          PUBLIC_JC_TOOLS_ORIGIN: ${{ vars.PUBLIC_JC_TOOLS_ORIGIN }}
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then
             echo "args=" >> "$GITHUB_OUTPUT"; exit 0
@@ -145,7 +144,7 @@ jobs:
           A=""
           for v in PUBLIC_JC_API_URL PUBLIC_JC_WS_URL PUBLIC_JC_ENV PUBLIC_JC_SITE_URL \
                    PUBLIC_JC_GLITCHTIP_DSN PUBLIC_MAIN_ORIGIN PUBLIC_ADMIN_ORIGIN \
-                   PUBLIC_DOCS_ORIGIN PUBLIC_JC_ACADEMY_ORIGIN PUBLIC_JC_TOOLS_ORIGIN; do
+                   PUBLIC_DOCS_ORIGIN PUBLIC_JC_ACADEMY_ORIGIN; do
             A="$A --build-arg $v=${!v}"
           done
           echo "args=$A" >> "$GITHUB_OUTPUT"

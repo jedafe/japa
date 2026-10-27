@@ -240,7 +240,6 @@ services:
         PUBLIC_JC_WS_URL: ws://localhost:8080/api/v1/ws
         PUBLIC_JC_ACADEMY_ORIGIN: http://localhost:3003
         PUBLIC_DOCS_ORIGIN: http://localhost:3004
-        PUBLIC_JC_TOOLS_ORIGIN: http://localhost:3005
     ports:
       - "127.0.0.1:3000:3000"
     environment:
