@@ -8,9 +8,11 @@ package umami
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -34,12 +36,28 @@ type Proxy struct {
 }
 
 // NewProxy builds a proxy from JC_UMAMI_* environment variables.
+//
+// JC_UMAMI_DIAL optionally overrides the dial target (e.g.
+// "coolify-proxy:443"). Deployed containers cannot hairpin to the host's
+// public IP, so on the Coolify network the proxy dials Traefik internally
+// while keeping umami.japa.to for TLS SNI and the Host header.
 func NewProxy() *Proxy {
+	dial := os.Getenv("JC_UMAMI_DIAL")
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if dial != "" && strings.HasSuffix(addr, ":443") {
+				addr = dial
+			}
+			return dialer.DialContext(ctx, network, addr)
+		},
+	}
 	return &Proxy{
 		base:   strings.TrimSuffix(os.Getenv("JC_UMAMI_URL"), "/"),
 		user:   os.Getenv("JC_UMAMI_USERNAME"),
 		pass:   os.Getenv("JC_UMAMI_PASSWORD"),
-		client: &http.Client{Timeout: 20 * time.Second},
+		client: &http.Client{Timeout: 20 * time.Second, Transport: transport},
 	}
 }
 
