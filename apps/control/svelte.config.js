@@ -53,6 +53,9 @@ const config = {
 							'img-src': ['self', 'data:', 'blob:', 'https:'],
 							'font-src': ['self', 'data:'],
 							'connect-src': ['self', ...connectOrigins],
+							// /analytics embeds the Umami dashboard — the parent-side
+							// counterpart to Umami's frame-ancestors.
+							'frame-src': ['self', ...(umamiOrigin ? [umamiOrigin] : [])],
 							'media-src': ['self', 'https:', 'blob:'],
 							'worker-src': ['self'],
 							'manifest-src': ['self'],
