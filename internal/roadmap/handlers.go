@@ -27,7 +27,9 @@ import (
 
 // Handlers holds dependencies for roadmap HTTP handlers.
 type Handlers struct {
-	Service *Service
+	Service  *Service
+	SiteURL  string // set at wiring time — used by the releases RSS feed
+	SiteName string
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -74,6 +76,12 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "unknown_feature_flag", "feature_flag_key does not match a known feature flag")
 	case errors.Is(err, ErrFlagAlreadyLinked):
 		errpkg.WriteError(w, http.StatusConflict, "flag_already_linked", "Another roadmap item is already linked to this feature flag")
+	case errors.Is(err, ErrItemNotShipped):
+		errpkg.WriteError(w, http.StatusConflict, "item_not_shipped", "Only shipped roadmap items can be attached to a release")
+	case errors.Is(err, ErrInvalidReleaseVersion):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_version", "Mobile releases must use semver (e.g. v2.4.0)")
+	case errors.Is(err, ErrInvalidCommitType):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_commit_type", "Unknown commit_type")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}

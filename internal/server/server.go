@@ -624,6 +624,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// General Tags subsystem (Sections 08, 49) — distinct from forum_tags.
 	// Composes contentService + followService directly.
 	tagsService := tags.NewService(database)
+	// Metadata-worker keywords can be the first writer of source keywords —
+	// materialize their directory tags there too, not only on propose/approve.
+	worker.RegisterSourceTagEnsurer(sourceTagEnsurerAdapter{svc: tagsService})
 	tagsHandlers := tags.NewHandlers(tagsService, contentService, followService)
 	// Wire the RBAC resolver so AddTagModerator/RemoveTagModerator can flush
 	// the TARGET user's permission cache after the mutation (Rule 6).
@@ -1003,8 +1006,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Public Product Roadmap subsystem (Section 113, ADR-127).
 	roadmapService := roadmap.NewServiceWithEnqueuer(database, taskEnqueuer)
 	roadmapService.SetSettings(settingsService)
-	roadmapService.SetValkey(vkClient.Redis()) // jc:roadmap:board cache
+	roadmapService.SetValkey(vkClient.Redis()) // jc:roadmap:board + jc:roadmap:releases caches
 	roadmapHandlers := roadmap.NewHandlers(roadmapService)
+	roadmapHandlers.SiteURL = cfg.SiteURL   // releases RSS feed (ADR-135)
+	roadmapHandlers.SiteName = cfg.SiteName
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
 	couponService := coupons.NewServiceWithEnqueuer(database, taskEnqueuer)
@@ -3133,6 +3138,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelHandlers.SetContentStore(contentService)
 	intelHandlers.SetReportService(reportsService)
 	intelHandlers.SetTagService(tagsService)
+	intelHandlers.SetSourceDecisionNotifier(sourceDecisionNotifierAdapter{svc: notificationService})
 	// Intel-channels §2 preview probe: POST /sources/probe. The prober's
 	// outbound client is the fetcher safetransport (redirect SSRF guard +
 	// shared pool); the handler adds an entry-URL private-IP check and a
@@ -5175,6 +5181,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 					Get("/roadmap/items/{slug}", roadmapHandlers.GetItem)
 
+				// §113 versioned releases (ADR-135) — static segments
+				// registered before the {slug} wildcard.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+					Get("/roadmap/releases", roadmapHandlers.ListReleases)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+					Get("/roadmap/releases/feed.xml", roadmapHandlers.GetReleasesFeed)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+					Get("/roadmap/releases/unreleased", roadmapHandlers.GetUnreleasedEntries)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+					Get("/roadmap/releases/{slug}", roadmapHandlers.GetRelease)
+
 				// Member actions — votes + community submissions.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.vote"), mw.RateLimit(vkClient.Redis(), "moderate")).
 					Post("/roadmap/items/{id}/vote", roadmapHandlers.CastVote)
@@ -5214,6 +5231,34 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/roadmap/categories/{id}", roadmapHandlers.AdminUpdateCategory)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
 					Delete("/admin/roadmap/categories/{id}", roadmapHandlers.AdminDeleteCategory)
+
+				// Release management (ADR-135).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.view")).
+					Get("/admin/roadmap/releases", roadmapHandlers.AdminListReleases)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Post("/admin/roadmap/releases", roadmapHandlers.AdminCreateRelease)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.view")).
+					Get("/admin/roadmap/releases/{id}", roadmapHandlers.AdminGetRelease)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Patch("/admin/roadmap/releases/{id}", roadmapHandlers.AdminUpdateRelease)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.delete"), rbac.RequireForceDelete(rbacResolver)).
+					Delete("/admin/roadmap/releases/{id}", roadmapHandlers.AdminDeleteRelease)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Post("/admin/roadmap/releases/{id}/restore", roadmapHandlers.AdminRestoreRelease)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.moderate")).
+					Patch("/admin/roadmap/releases/{id}/status", roadmapHandlers.AdminSetReleaseStatus)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Put("/admin/roadmap/releases/{id}/items", roadmapHandlers.AdminReplaceReleaseItems)
+
+				// Release commit entries — CI ingest + triage queue.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Post("/admin/roadmap/releases/entries/ingest", roadmapHandlers.AdminIngestEntries)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.view")).
+					Get("/admin/roadmap/releases/entries", roadmapHandlers.AdminListEntries)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Patch("/admin/roadmap/releases/entries/{id}", roadmapHandlers.AdminUpdateEntry)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Delete("/admin/roadmap/releases/entries/{id}", roadmapHandlers.AdminDeleteEntry)
 			})
 
 			// i18n Translation management (admin) — catalog: /admin/i18n/*.
@@ -9063,6 +9108,63 @@ func (a adsNotificationAdapter) DispatchNotification(
 	_, err := a.svc.DispatchNotification(ctx, recipientID, nType, subjectTitle,
 		actorID, subjectType, subjectID, subjectURL, actorName, actorAvatar)
 	return err
+}
+
+// sourceTagEnsurerAdapter adapts tags.Service to the worker's
+// SourceTagEnsurer port — materializes directory tags for keywords the
+// metadata worker writes post-approval. Mirrors handlers.createSourceTags:
+// single-token keywords only (multi-word strings are not sluggable chips),
+// skip existing tags, swallow per-tag failures.
+type sourceTagEnsurerAdapter struct {
+	svc *tags.Service
+}
+
+func (a sourceTagEnsurerAdapter) EnsureSourceTags(ctx context.Context, keywords []string) {
+	for _, kw := range keywords {
+		kw = strings.TrimSpace(kw)
+		if kw == "" || strings.ContainsAny(kw, " \t\n\r") {
+			continue
+		}
+
+		slug := content.Slugify(kw)
+		if slug == "" || slug == "untitled" {
+			continue
+		}
+
+		if existing, err := a.svc.ResolveTagSlugs(ctx, []string{slug}); err == nil && len(existing) > 0 {
+			continue
+		}
+
+		if _, cerr := a.svc.CreateTag(ctx, tags.CreateTagInput{
+			Name:     kw,
+			Slug:     slug,
+			IsSystem: false,
+		}); cerr != nil {
+			slog.Debug("intel: worker source tag creation failed", "slug", slug, "error", cerr)
+		}
+	}
+}
+
+// sourceDecisionNotifierAdapter adapts notifications.Service to the intel
+// handlers' sourceDecisionNotifier port — tells a source's proposer whether
+// their submission was approved or rejected. Fire-and-forget per Rule 8.
+type sourceDecisionNotifierAdapter struct {
+	svc *notifications.Service
+}
+
+func (a sourceDecisionNotifierAdapter) NotifySourceDecision(ctx context.Context, proposerID pgtype.UUID, sourceName, slug string, approved bool) {
+	var zeroUUID pgtype.UUID
+	title := "Source proposal approved"
+	body := sourceName + " was approved and is now live in the sources directory."
+	actionURL := "/sources/" + slug
+	if !approved {
+		title = "Source proposal rejected"
+		body = sourceName + " was reviewed and rejected."
+		actionURL = "/sources/submit"
+	}
+	if err := a.svc.CreateNotification(ctx, proposerID, "intel.source_decision", "system", zeroUUID, "intel_source", zeroUUID, title, body, actionURL); err != nil {
+		slog.Warn("intel: source decision notification failed", "proposer_id", proposerID.String(), "approved", approved, "error", err)
+	}
 }
 
 // adsBalanceChecker adapts wallet.Service.GetBalance to the
