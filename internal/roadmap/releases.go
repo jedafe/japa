@@ -288,10 +288,17 @@ func ParseConventionalCommit(subject string) (commitType, scope, title string, b
 // possible. Order: exact flag key → {scope}.enabled → feature.{scope} →
 // longest-prefix file-path map (system_settings roadmap.commit_scope_paths)
 // → raw scope string (display-only chip).
-func (s *Service) ResolveScope(ctx context.Context, scope string, files []string) string {
+// flagKeys is the preloaded set of existing flag keys — pass nil to load
+// on demand (single-call use; IngestCommits preloads once per batch to
+// avoid an N+1 of per-commit flag lookups).
+func (s *Service) ResolveScope(ctx context.Context, scope string, files []string, flagKeys map[string]bool) string {
 	if scope != "" {
 		for _, candidate := range []string{scope, scope + ".enabled", "feature." + scope} {
-			if _, err := s.store.read.GetFeatureFlagRowByKey(ctx, candidate); err == nil {
+			if flagKeys != nil {
+				if flagKeys[candidate] {
+					return candidate
+				}
+			} else if _, err := s.store.read.GetFeatureFlagRowByKey(ctx, candidate); err == nil {
 				return candidate
 			}
 		}
@@ -753,6 +760,16 @@ func (s *Service) AttachItemsByWindow(ctx context.Context, releaseID pgtype.UUID
 // IngestCommits parses each commit, resolves scope, and inserts a deduped
 // entry into the unreleased queue. Returns created/skipped counts.
 func (s *Service) IngestCommits(ctx context.Context, commits []GitHubCommit) (created, skipped int, err error) {
+	// Preload the flag-key set once — ResolveScope would otherwise run up
+	// to three feature_flags lookups per commit (~300 queries per batch).
+	var flagKeys map[string]bool
+	if flags, ferr := s.store.read.ListFeatureFlags(ctx); ferr == nil {
+		flagKeys = make(map[string]bool, len(flags))
+		for _, f := range flags {
+			flagKeys[f.Key] = true
+		}
+	}
+
 	for _, c := range commits {
 		subject := c.Message
 		if idx := strings.Index(subject, "\n"); idx >= 0 {
@@ -767,7 +784,7 @@ func (s *Service) IngestCommits(ctx context.Context, commits []GitHubCommit) (cr
 			continue
 		}
 		files := append(append(append([]string{}, c.Added...), c.Modified...), c.Removed...)
-		resolved := s.ResolveScope(ctx, scope, files)
+		resolved := s.ResolveScope(ctx, scope, files, flagKeys)
 
 		var sha *string
 		if c.ID != "" {
@@ -866,7 +883,7 @@ func (s *Service) AdminUpdateEntry(ctx context.Context, id pgtype.UUID, in Entry
 		CommitType: commitType, Title: title, Scope: scope, ItemID: itemID, ID: id,
 	})
 	if err != nil {
-		return gen.RoadmapReleaseEntry{}, fmt.Errorf("updating entry: %w", err)
+		return gen.RoadmapReleaseEntry{}, mapWriteErr(err)
 	}
 	s.invalidateReleases(ctx)
 	return row, nil

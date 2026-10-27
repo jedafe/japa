@@ -9,6 +9,8 @@ set -euo pipefail
 SINCE="${1:-3 months ago}"
 : "${JC_API_BASE:?set JC_API_BASE}" "${JC_INGEST_KEY:?set JC_INGEST_KEY}"
 
+cd "$(git rev-parse --show-toplevel)"
+
 git log --since="$SINCE" --pretty=format:'%H%x1f%s%x1f%an%x1f%aI%x1f' --name-only |
 python3 -c '
 import sys, json
