@@ -4266,6 +4266,59 @@ type TicketType struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Tip struct {
+	ID                      pgtype.UUID        `json:"id"`
+	SenderUserID            pgtype.UUID        `json:"sender_user_id"`
+	ExternalSenderName      *string            `json:"external_sender_name"`
+	RecipientType           string             `json:"recipient_type"`
+	RecipientUserID         pgtype.UUID        `json:"recipient_user_id"`
+	RecipientOrganizationID pgtype.UUID        `json:"recipient_organization_id"`
+	ContentID               pgtype.UUID        `json:"content_id"`
+	Method                  string             `json:"method"`
+	PointsAmount            int64              `json:"points_amount"`
+	CreditsAmount           int64              `json:"credits_amount"`
+	FiatAmount              *int64             `json:"fiat_amount"`
+	FiatCurrency            *string            `json:"fiat_currency"`
+	FeeAmount               int64              `json:"fee_amount"`
+	NetCredits              int64              `json:"net_credits"`
+	PaymentID               pgtype.UUID        `json:"payment_id"`
+	OcContributionID        *string            `json:"oc_contribution_id"`
+	Message                 *string            `json:"message"`
+	IsAnonymous             bool               `json:"is_anonymous"`
+	Status                  string             `json:"status"`
+	IdempotencyKey          *string            `json:"idempotency_key"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+}
+
+type TipExternalLink struct {
+	ID            pgtype.UUID        `json:"id"`
+	TipSettingsID pgtype.UUID        `json:"tip_settings_id"`
+	Kind          string             `json:"kind"`
+	Label         string             `json:"label"`
+	Url           string             `json:"url"`
+	Position      int32              `json:"position"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type TipSetting struct {
+	ID                  pgtype.UUID        `json:"id"`
+	OwnerType           string             `json:"owner_type"`
+	OwnerID             pgtype.UUID        `json:"owner_id"`
+	TipsEnabled         bool               `json:"tips_enabled"`
+	AcceptPoints        bool               `json:"accept_points"`
+	AcceptCredits       bool               `json:"accept_credits"`
+	AcceptFiat          bool               `json:"accept_fiat"`
+	AcceptExternal      bool               `json:"accept_external"`
+	OcCollectiveSlug    *string            `json:"oc_collective_slug"`
+	OcApiTokenEncrypted *string            `json:"oc_api_token_encrypted"`
+	OcWebhookSecret     *string            `json:"oc_webhook_secret"`
+	MinTipAmount        int64              `json:"min_tip_amount"`
+	ThankYouMessage     *string            `json:"thank_you_message"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
 type TotpCredential struct {
 	ID              pgtype.UUID        `json:"id"`
 	UserID          pgtype.UUID        `json:"user_id"`
