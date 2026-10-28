@@ -4,12 +4,14 @@ class JcTextField extends StatelessWidget {
   final String label;
   final TextEditingController? controller;
   final bool obscureText;
+  final String? hint;
 
   const JcTextField({
     super.key,
     required this.label,
     this.controller,
     this.obscureText = false,
+    this.hint,
   });
 
   @override
@@ -17,7 +19,7 @@ class JcTextField extends StatelessWidget {
     return TextField(
       controller: controller,
       obscureText: obscureText,
-      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), helperText: hint),
     );
   }
 }

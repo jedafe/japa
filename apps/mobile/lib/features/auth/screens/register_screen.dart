@@ -52,11 +52,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            JcTextField(label: t('auth.username'), controller: _username),
+            JcTextField(label: t('auth.username'), controller: _username, hint: t('auth.username_hint', '3–30 characters — letters, numbers, underscores.')),
             const SizedBox(height: 16),
-            JcTextField(label: t('auth.email'), controller: _email),
+            JcTextField(label: t('auth.email'), controller: _email, hint: t('auth.email_hint', 'Used for sign-in and account emails.')),
             const SizedBox(height: 16),
-            JcTextField(label: t('auth.password'), controller: _password, obscureText: true),
+            JcTextField(label: t('auth.password'), controller: _password, obscureText: true, hint: t('auth.password_hint', 'At least 8 characters with upper & lower case letters and a number.')),
             if (state.error != null) Text(state.error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             JcButton(
