@@ -38,10 +38,10 @@ func TestVerifyToken(t *testing.T) {
 func TestListContributionsFiltersKinds(t *testing.T) {
 	nodes := []map[string]any{
 		{"id": "oc1", "type": "CREDIT", "kind": "CONTRIBUTION", "createdAt": "2026-10-01T00:00:00Z",
-			"amount": map[string]any{"valueInCents": 2500, "currency": "USD"},
+			"amount":      map[string]any{"valueInCents": 2500, "currency": "USD"},
 			"fromAccount": map[string]any{"name": "Donor", "slug": "donor"}},
 		{"id": "oc2", "type": "CREDIT", "kind": "HOST_FEE_SHARE", "createdAt": "2026-10-01T00:00:00Z",
-			"amount": map[string]any{"valueInCents": 99, "currency": "USD"},
+			"amount":      map[string]any{"valueInCents": 99, "currency": "USD"},
 			"fromAccount": map[string]any{"name": "Host", "slug": "host"}},
 	}
 	srv := gqlServer(t, map[string]any{"account": map[string]any{

@@ -151,11 +151,11 @@ type transactionsResponse struct {
 		Transactions struct {
 			TotalCount int `json:"totalCount"`
 			Nodes      []struct {
-				ID          string    `json:"id"`
-				Type        string    `json:"type"`
-				Kind        string    `json:"kind"`
-				CreatedAt   time.Time `json:"createdAt"`
-				Amount      struct {
+				ID        string    `json:"id"`
+				Type      string    `json:"type"`
+				Kind      string    `json:"kind"`
+				CreatedAt time.Time `json:"createdAt"`
+				Amount    struct {
 					ValueInCents int64  `json:"valueInCents"`
 					Currency     string `json:"currency"`
 				} `json:"amount"`

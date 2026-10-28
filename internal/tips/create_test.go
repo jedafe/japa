@@ -48,7 +48,7 @@ func mustUID(s string) pgtype.UUID {
 
 func enabledRecipient(fs *fakeStore, owner Owner) gen.TipSetting {
 	row := gen.TipSetting{
-		ID: mustUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+		ID:        mustUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
 		OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
 		AcceptPoints: true, AcceptCredits: true, AcceptFiat: true,
 	}

@@ -102,21 +102,21 @@ func PlatformOwner() Owner {
 // Settings is the service-level view of a tip_settings row. The OC token
 // ciphertext never leaves the service — HasOCToken derives presence.
 type Settings struct {
-	ID                pgtype.UUID `json:"id"`
-	OwnerType         string      `json:"owner_type"`
-	OwnerID           pgtype.UUID `json:"owner_id"`
-	TipsEnabled       bool        `json:"tips_enabled"`
-	AcceptPoints      bool        `json:"accept_points"`
-	AcceptCredits     bool        `json:"accept_credits"`
-	AcceptFiat        bool        `json:"accept_fiat"`
-	AcceptExternal    bool        `json:"accept_external"`
-	OCCollectiveSlug  *string     `json:"oc_collective_slug,omitempty"`
-	HasOCToken        bool        `json:"has_oc_token"`
-	OCWebhookURL      *string     `json:"oc_webhook_url,omitempty"`
-	MinTipAmount      int64       `json:"min_tip_amount"`
-	ThankYouMessage   *string     `json:"thank_you_message,omitempty"`
-	row               gen.TipSetting
-	hasRow            bool
+	ID               pgtype.UUID `json:"id"`
+	OwnerType        string      `json:"owner_type"`
+	OwnerID          pgtype.UUID `json:"owner_id"`
+	TipsEnabled      bool        `json:"tips_enabled"`
+	AcceptPoints     bool        `json:"accept_points"`
+	AcceptCredits    bool        `json:"accept_credits"`
+	AcceptFiat       bool        `json:"accept_fiat"`
+	AcceptExternal   bool        `json:"accept_external"`
+	OCCollectiveSlug *string     `json:"oc_collective_slug,omitempty"`
+	HasOCToken       bool        `json:"has_oc_token"`
+	OCWebhookURL     *string     `json:"oc_webhook_url,omitempty"`
+	MinTipAmount     int64       `json:"min_tip_amount"`
+	ThankYouMessage  *string     `json:"thank_you_message,omitempty"`
+	row              gen.TipSetting
+	hasRow           bool
 }
 
 // UpdateSettingsInput is the owner-editable settings patch. Nil fields keep
@@ -160,26 +160,26 @@ type PublicConfig struct {
 
 // Tip is the service-level tip record.
 type Tip struct {
-	ID                 pgtype.UUID `json:"id"`
-	SenderUserID       pgtype.UUID `json:"sender_user_id,omitempty"`
-	SenderName         string      `json:"sender_name"`
-	RecipientType      string      `json:"recipient_type"`
-	RecipientUserID    pgtype.UUID `json:"recipient_user_id,omitempty"`
-	RecipientOrgID     pgtype.UUID `json:"recipient_organization_id,omitempty"`
-	RecipientName      string      `json:"recipient_name,omitempty"`
-	ContentID          pgtype.UUID `json:"content_id,omitempty"`
-	Method             string      `json:"method"`
-	PointsAmount       int64       `json:"points_amount"`
-	CreditsAmount      int64       `json:"credits_amount"`
-	FiatAmount         *int64      `json:"fiat_amount,omitempty"`
-	FiatCurrency       *string     `json:"fiat_currency,omitempty"`
-	FeeAmount          int64       `json:"fee_amount"`
-	NetCredits         int64       `json:"net_credits"`
-	PaymentID          pgtype.UUID `json:"payment_id,omitempty"`
-	Message            *string     `json:"message,omitempty"`
-	IsAnonymous        bool        `json:"is_anonymous"`
-	Status             string      `json:"status"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ID              pgtype.UUID        `json:"id"`
+	SenderUserID    pgtype.UUID        `json:"sender_user_id,omitempty"`
+	SenderName      string             `json:"sender_name"`
+	RecipientType   string             `json:"recipient_type"`
+	RecipientUserID pgtype.UUID        `json:"recipient_user_id,omitempty"`
+	RecipientOrgID  pgtype.UUID        `json:"recipient_organization_id,omitempty"`
+	RecipientName   string             `json:"recipient_name,omitempty"`
+	ContentID       pgtype.UUID        `json:"content_id,omitempty"`
+	Method          string             `json:"method"`
+	PointsAmount    int64              `json:"points_amount"`
+	CreditsAmount   int64              `json:"credits_amount"`
+	FiatAmount      *int64             `json:"fiat_amount,omitempty"`
+	FiatCurrency    *string            `json:"fiat_currency,omitempty"`
+	FeeAmount       int64              `json:"fee_amount"`
+	NetCredits      int64              `json:"net_credits"`
+	PaymentID       pgtype.UUID        `json:"payment_id,omitempty"`
+	Message         *string            `json:"message,omitempty"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	Status          string             `json:"status"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 // CreateTipInput is the POST /tips payload.

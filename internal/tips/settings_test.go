@@ -69,7 +69,9 @@ func (f *fakeStore) getSettingsByOCWebhookSecret(context.Context, string) (gen.T
 }
 func (f *fakeStore) setOCCredentials(context.Context, gen.SetOCCredentialsParams) error { return nil }
 func (f *fakeStore) clearOCCredentials(context.Context, string, pgtype.UUID) error      { return nil }
-func (f *fakeStore) listSettingsWithOCToken(context.Context) ([]gen.TipSetting, error)  { return nil, nil }
+func (f *fakeStore) listSettingsWithOCToken(context.Context) ([]gen.TipSetting, error) {
+	return nil, nil
+}
 
 func (f *fakeStore) createLink(_ context.Context, p gen.CreateTipExternalLinkParams) (gen.TipExternalLink, error) {
 	row := gen.TipExternalLink{TipSettingsID: p.TipSettingsID, Kind: p.Kind, Label: p.Label, Url: p.Url, Position: p.Position}
@@ -84,7 +86,9 @@ func (f *fakeStore) listLinks(_ context.Context, id pgtype.UUID) ([]gen.TipExter
 	return f.links[id], nil
 }
 
-func (f *fakeStore) getTip(context.Context, pgtype.UUID) (gen.Tip, error) { return gen.Tip{}, ErrNotFound }
+func (f *fakeStore) getTip(context.Context, pgtype.UUID) (gen.Tip, error) {
+	return gen.Tip{}, ErrNotFound
+}
 func (f *fakeStore) getTipByIdempotencyKey(context.Context, pgtype.UUID, string) (gen.Tip, error) {
 	if f.hasIdemTip {
 		return f.idemTip, nil
@@ -104,7 +108,7 @@ func (f *fakeStore) insertTip(_ context.Context, p gen.InsertTipParams) (gen.Tip
 	f.inserted = append(f.inserted, p)
 	return gen.Tip{Method: p.Method, Status: p.Status}, nil
 }
-func (f *fakeStore) updateTipStatus(context.Context, pgtype.UUID, string) error      { return nil }
+func (f *fakeStore) updateTipStatus(context.Context, pgtype.UUID, string) error       { return nil }
 func (f *fakeStore) attachTipPayment(context.Context, pgtype.UUID, pgtype.UUID) error { return nil }
 func (f *fakeStore) settleTip(context.Context, pgtype.UUID, int64) error              { return nil }
 
@@ -114,7 +118,7 @@ func (f *fakeStore) listTipsSent(context.Context, pgtype.UUID, int32, int32) ([]
 func (f *fakeStore) listTipsReceived(context.Context, pgtype.UUID, int32, int32) ([]gen.Tip, error) {
 	return nil, nil
 }
-func (f *fakeStore) countTipsReceived(context.Context, pgtype.UUID) (int32, error)    { return 0, nil }
+func (f *fakeStore) countTipsReceived(context.Context, pgtype.UUID) (int32, error) { return 0, nil }
 func (f *fakeStore) sumTipperPointsToday(context.Context, pgtype.UUID) (int64, error) {
 	return f.pointsToday, nil
 }
@@ -133,7 +137,9 @@ func (f *fakeStore) adminTipStats(context.Context, pgtype.Timestamptz) (gen.Admi
 func (f *fakeStore) getUserDisplayNames(context.Context, []pgtype.UUID) ([]gen.GetUserDisplayNamesRow, error) {
 	return nil, nil
 }
-func (f *fakeStore) isMentor(context.Context, pgtype.UUID) (bool, error) { return f.mentor, f.mentorErr }
+func (f *fakeStore) isMentor(context.Context, pgtype.UUID) (bool, error) {
+	return f.mentor, f.mentorErr
+}
 func (f *fakeStore) getCurrencyByCode(context.Context, string) (gen.Currency, error) {
 	return gen.Currency{}, ErrNotFound
 }

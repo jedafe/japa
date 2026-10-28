@@ -533,7 +533,7 @@ type ocWebhookPayload struct {
 	Type string `json:"type"`
 	Data struct {
 		Order struct {
-			ID         string `json:"id"`
+			ID          string `json:"id"`
 			TotalAmount struct {
 				ValueInCents int64  `json:"valueInCents"`
 				Currency     string `json:"currency"`
