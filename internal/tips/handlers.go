@@ -346,6 +346,85 @@ func (h *Handlers) DeleteOrgTipLink(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// --- Open Collective connect ---------------------------------------------------
+
+type ocConnectRequest struct {
+	CollectiveSlug string `json:"collective_slug"`
+	APIToken       string `json:"api_token"`
+}
+
+// ConnectMyOC handles PUT /api/v1/me/tip-settings/opencollective.
+func (h *Handlers) ConnectMyOC(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var in ocConnectRequest
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	st, err := h.service.ConnectOC(r.Context(), UserOwner(user.UserID), user.UserID, in.CollectiveSlug, in.APIToken)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
+}
+
+// DisconnectMyOC handles DELETE /api/v1/me/tip-settings/opencollective.
+func (h *Handlers) DisconnectMyOC(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if err := h.service.DisconnectOC(r.Context(), UserOwner(user.UserID), user.UserID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ConnectOrgOC handles PUT /api/v1/organizations/{id}/tip-settings/opencollective.
+func (h *Handlers) ConnectOrgOC(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	orgID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	var in ocConnectRequest
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	st, err := h.service.ConnectOC(r.Context(), OrgOwner(orgID), user.UserID, in.CollectiveSlug, in.APIToken)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
+}
+
+// DisconnectOrgOC handles DELETE /api/v1/organizations/{id}/tip-settings/opencollective.
+func (h *Handlers) DisconnectOrgOC(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	orgID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := h.service.DisconnectOC(r.Context(), OrgOwner(orgID), user.UserID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- Public config ------------------------------------------------------------
 
 // PublicUserTipConfig handles GET /api/v1/users/{username}/tip-config.

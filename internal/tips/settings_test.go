@@ -17,6 +17,9 @@ import (
 type fakeStore struct {
 	settings     map[string]gen.TipSetting
 	links        map[pgtype.UUID][]gen.TipExternalLink
+	ocTips       map[string]gen.Tip
+	inserted     []gen.InsertTipParams
+	emailToUser  map[string]pgtype.UUID
 	mentor       bool
 	mentorErr    error
 	orgOwner     pgtype.UUID
@@ -25,7 +28,12 @@ type fakeStore struct {
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{settings: map[string]gen.TipSetting{}, links: map[pgtype.UUID][]gen.TipExternalLink{}}
+	return &fakeStore{
+		settings:    map[string]gen.TipSetting{},
+		links:       map[pgtype.UUID][]gen.TipExternalLink{},
+		ocTips:      map[string]gen.Tip{},
+		emailToUser: map[string]pgtype.UUID{},
+	}
 }
 
 func key(t string, id pgtype.UUID) string { return t + ":" + id.String() }
@@ -78,10 +86,14 @@ func (f *fakeStore) getTipByIdempotencyKey(context.Context, pgtype.UUID, string)
 func (f *fakeStore) getTipByPaymentID(context.Context, pgtype.UUID) (gen.Tip, error) {
 	return gen.Tip{}, ErrNotFound
 }
-func (f *fakeStore) getTipByOCContributionID(context.Context, string) (gen.Tip, error) {
+func (f *fakeStore) getTipByOCContributionID(_ context.Context, ocID string) (gen.Tip, error) {
+	if t, ok := f.ocTips[ocID]; ok {
+		return t, nil
+	}
 	return gen.Tip{}, ErrNotFound
 }
 func (f *fakeStore) insertTip(_ context.Context, p gen.InsertTipParams) (gen.Tip, error) {
+	f.inserted = append(f.inserted, p)
 	return gen.Tip{Method: p.Method, Status: p.Status}, nil
 }
 func (f *fakeStore) updateTipStatus(context.Context, pgtype.UUID, string) error      { return nil }
@@ -119,6 +131,12 @@ func (f *fakeStore) getContentAuthorID(context.Context, pgtype.UUID) (pgtype.UUI
 	return pgtype.UUID{}, ErrNotFound
 }
 func (f *fakeStore) getUserIDByUsername(context.Context, string) (pgtype.UUID, error) {
+	return pgtype.UUID{}, ErrNotFound
+}
+func (f *fakeStore) getUserIDByEmail(_ context.Context, email string) (pgtype.UUID, error) {
+	if id, ok := f.emailToUser[email]; ok {
+		return id, nil
+	}
 	return pgtype.UUID{}, ErrNotFound
 }
 func (f *fakeStore) getOrgOwnerID(context.Context, pgtype.UUID) (pgtype.UUID, error) {

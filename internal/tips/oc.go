@@ -1,0 +1,178 @@
+// oc.go — §125 Open Collective integration: collective connect/disconnect,
+// contribution import (dedupe by oc_contribution_id), and the scheduled
+// collective sweep used by the tips:oc_sync task.
+package tips
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/crypto"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// ConnectOC links an owner's Open Collective collective. A personal API token
+// is verified against OC before being stored AES-256-GCM encrypted (same
+// treatment as BYOK keys); a slug-only connect renders as a plain outbound
+// link without sync. A fresh webhook secret is generated on every connect.
+func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUID, slug, token string) (*Settings, error) {
+	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
+		return nil, err
+	}
+	if slug == "" {
+		return nil, ErrInvalidLink
+	}
+
+	var encrypted *string
+	if token != "" {
+		if s.oc == nil {
+			return nil, ErrOCNotConnected
+		}
+		if _, err := s.oc.VerifyToken(ctx, token); err != nil {
+			return nil, fmt.Errorf("%w: token verification failed", ErrInvalidLink)
+		}
+		enc, err := crypto.Encrypt(token)
+		if err != nil {
+			return nil, fmt.Errorf("encrypting OC token: %w", err)
+		}
+		encrypted = &enc
+	}
+
+	// Ensure the settings row exists so the UPDATE lands.
+	st, err := s.GetSettings(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	if !st.hasRow {
+		if _, err := s.UpsertSettings(ctx, owner, UpdateSettingsInput{}); err != nil {
+			return nil, err
+		}
+	}
+
+	secretBytes := make([]byte, 16)
+	if _, err := rand.Read(secretBytes); err != nil {
+		return nil, fmt.Errorf("generating webhook secret: %w", err)
+	}
+	secret := hex.EncodeToString(secretBytes)
+
+	if err := s.store.setOCCredentials(ctx, gen.SetOCCredentialsParams{
+		OwnerType:           owner.Type,
+		OwnerID:             owner.ID,
+		OcCollectiveSlug:    &slug,
+		OcApiTokenEncrypted: encrypted,
+		OcWebhookSecret:     &secret,
+	}); err != nil {
+		return nil, err
+	}
+
+	out, err := s.GetSettings(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DisconnectOC removes the collective link and stored token.
+func (s *Service) DisconnectOC(ctx context.Context, owner Owner, actorID pgtype.UUID) error {
+	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
+		return err
+	}
+	return s.store.clearOCCredentials(ctx, owner.Type, owner.ID)
+}
+
+// ImportContribution records one OC contribution as a completed tip.
+// Idempotent on oc_contribution_id; sender_user_id stays NULL when no
+// platform account matches the OC contributor email.
+func (s *Service) ImportContribution(ctx context.Context, owner Owner, c OCContribution) (bool, error) {
+	if _, err := s.store.getTipByOCContributionID(ctx, c.ID); err == nil {
+		return false, nil // already imported
+	} else if !errors.Is(err, ErrNotFound) {
+		return false, err
+	}
+
+	var senderID pgtype.UUID
+	if c.FromEmail != "" {
+		if id, err := s.store.getUserIDByEmail(ctx, c.FromEmail); err == nil {
+			senderID = id
+		}
+	}
+
+	params := gen.InsertTipParams{
+		SenderUserID:       senderID,
+		RecipientType:      owner.Type,
+		Method:             MethodOpenCollective,
+		FiatAmount:         &c.AmountCents,
+		FiatCurrency:       &c.Currency,
+		OcContributionID:   &c.ID,
+		ExternalSenderName: strPtrOrNil(c.FromName),
+		Status:             StatusCompleted,
+	}
+	if owner.Type == RecipientUser {
+		params.RecipientUserID = owner.ID
+	} else if owner.Type == RecipientOrganization {
+		params.RecipientOrganizationID = owner.ID
+	}
+
+	if _, err := s.store.insertTip(ctx, params); err != nil {
+		return false, fmt.Errorf("importing OC contribution: %w", err)
+	}
+	return true, nil
+}
+
+// SyncAll iterates settings rows holding an OC token and imports new
+// contributions for each collective. Called by the tips:oc_sync task
+// (queue 'low'); per-owner failures are logged and skipped so one bad
+// collective can't stall the sweep.
+func (s *Service) SyncAll(ctx context.Context) error {
+	if s.oc == nil {
+		return nil
+	}
+	rows, err := s.store.listSettingsWithOCToken(ctx)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := s.syncOne(ctx, row); err != nil {
+			slog.Warn("tips: oc sync failed", "owner", row.OwnerType+":"+row.OwnerID.String(), "error", err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) syncOne(ctx context.Context, row gen.TipSetting) error {
+	if row.OcCollectiveSlug == nil || row.OcApiTokenEncrypted == nil {
+		return nil
+	}
+	token, err := crypto.Decrypt(*row.OcApiTokenEncrypted)
+	if err != nil {
+		return fmt.Errorf("decrypting OC token: %w", err)
+	}
+	owner := Owner{Type: row.OwnerType, ID: row.OwnerID}
+
+	for offset := 0; ; offset += 100 {
+		contribs, err := s.oc.ListContributions(ctx, *row.OcCollectiveSlug, token, 100, offset)
+		if err != nil {
+			return err
+		}
+		for _, c := range contribs {
+			if _, err := s.ImportContribution(ctx, owner, OCContribution{
+				ID:          c.ID,
+				AmountCents: c.AmountCents,
+				Currency:    c.Currency,
+				FromName:    c.FromName,
+				FromSlug:    c.FromSlug,
+				FromEmail:   c.FromEmail,
+			}); err != nil {
+				return err
+			}
+		}
+		if len(contribs) < 100 {
+			return nil
+		}
+	}
+}

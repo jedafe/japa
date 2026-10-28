@@ -163,6 +163,7 @@ import (
 	"github.com/jedafe/japa/internal/visaroutes"
 	"github.com/jedafe/japa/internal/visatimeline"
 	"github.com/jedafe/japa/internal/visitor"
+	"github.com/jedafe/japa/internal/opencollective"
 	"github.com/jedafe/japa/internal/tips"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/wallet/payout"
@@ -958,6 +959,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tipsService.SetSettings(settingsService)
 	tipsService.SetPermChecker(tipsPermAdapter{rbac: rbacResolver})
 	tipsService.SetOrgChecker(tipsOrgAdapter{svc: orgService})
+	tipsService.SetOCClient(tipsOCAdapter{client: opencollective.New()})
 	tipsService.SetSiteURL(cfg.SiteURL)
 	tipsHandlers := tips.NewHandlers(tipsService)
 
@@ -5068,12 +5070,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/tip-settings/links", tipsHandlers.CreateMyTipLink)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/tip-settings/links/{id}", tipsHandlers.UpdateMyTipLink)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/tip-settings/links/{id}", tipsHandlers.DeleteMyTipLink)
+				r.With(features.Gate(featureChecker, "tips.opencollective")).Group(func(r chi.Router) {
+					r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/tip-settings/opencollective", tipsHandlers.ConnectMyOC)
+					r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/tip-settings/opencollective", tipsHandlers.DisconnectMyOC)
+				})
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/tip-settings", tipsHandlers.GetOrgTipSettings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Put("/organizations/{id}/tip-settings", tipsHandlers.UpdateOrgTipSettings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Post("/organizations/{id}/tip-settings/links", tipsHandlers.CreateOrgTipLink)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Patch("/organizations/{id}/tip-settings/links/{lid}", tipsHandlers.UpdateOrgTipLink)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Delete("/organizations/{id}/tip-settings/links/{lid}", tipsHandlers.DeleteOrgTipLink)
+				r.With(features.Gate(featureChecker, "tips.opencollective")).Group(func(r chi.Router) {
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Put("/organizations/{id}/tip-settings/opencollective", tipsHandlers.ConnectOrgOC)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Delete("/organizations/{id}/tip-settings/opencollective", tipsHandlers.DisconnectOrgOC)
+				})
 
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Get("/users/{username}/tip-config", tipsHandlers.PublicUserTipConfig)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService), mw.RateLimit(vkClient.Redis(), "loose")).Get("/organizations/{id}/donation-config", tipsHandlers.PublicOrgTipConfig)

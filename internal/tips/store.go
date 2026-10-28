@@ -48,6 +48,7 @@ type tipStore interface {
 	getCurrencyByCode(ctx context.Context, code string) (gen.Currency, error)
 	getContentAuthorID(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error)
 	getUserIDByUsername(ctx context.Context, username string) (pgtype.UUID, error)
+	getUserIDByEmail(ctx context.Context, email string) (pgtype.UUID, error)
 	getOrgOwnerID(ctx context.Context, orgID pgtype.UUID) (pgtype.UUID, error)
 
 	// settleWalletTip atomically debits sender + credits recipient on the
@@ -251,6 +252,14 @@ func (s *Store) getUserIDByUsername(ctx context.Context, username string) (pgtyp
 		return pgtype.UUID{}, mapNotFound(err, ErrNotFound)
 	}
 	return row.UserID, nil
+}
+
+func (s *Store) getUserIDByEmail(ctx context.Context, email string) (pgtype.UUID, error) {
+	id, err := s.read.GetUserIDByEmail(ctx, email)
+	if err != nil {
+		return pgtype.UUID{}, mapNotFound(err, ErrNotFound)
+	}
+	return id, nil
 }
 
 func (s *Store) getOrgOwnerID(ctx context.Context, orgID pgtype.UUID) (pgtype.UUID, error) {
