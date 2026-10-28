@@ -98,13 +98,19 @@
 				class="mt-4 space-y-3"
 			>
 				<input
+					id="unsubscribe-email"
 					type="email"
 					name="email"
 					value={data.email}
 					placeholder={t('newsletter.email_placeholder', 'Your email')}
+					aria-label={t('auth.fields.email', 'Email')}
+					aria-describedby="unsubscribe-email-hint"
 					required
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 				/>
+				<p id="unsubscribe-email-hint" class="text-xs text-[var(--color-muted)]">
+					{t('newsletter.email_hint', 'The address currently subscribed to our newsletter.')}
+				</p>
 				<button
 					type="submit"
 					disabled={submitting}

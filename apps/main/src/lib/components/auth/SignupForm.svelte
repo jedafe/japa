@@ -105,12 +105,15 @@
 			type="email"
 			autocomplete="email"
 			bind:value={email}
-			placeholder={t('auth.fields.email')}
+			placeholder={t('auth.fields.email_placeholder', 'you@example.com')}
 			aria-label={t('auth.fields.email')}
 			aria-invalid={errors.email ? 'true' : undefined}
-			aria-describedby={errors.email ? 'signup-email-error' : undefined}
+			aria-describedby={errors.email ? 'signup-email-hint signup-email-error' : 'signup-email-hint'}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
+		<p id="signup-email-hint" class="text-xs text-[var(--color-muted)]">
+			{t('auth.signup.email_hint', 'Used for sign-in and receipts — we never share it.')}
+		</p>
 		{#if errors.email}<p id="signup-email-error" class="text-sm text-red-500">{t(errors.email)}</p>{/if}
 	</div>
 
@@ -121,12 +124,15 @@
 			type="text"
 			autocomplete="username"
 			bind:value={username}
-			placeholder={t('auth.fields.username')}
+			placeholder={t('auth.fields.username_placeholder', 'e.g. ada_lovelace')}
 			aria-label={t('auth.fields.username')}
 			aria-invalid={errors.username ? 'true' : undefined}
-			aria-describedby={errors.username ? 'signup-username-error' : undefined}
+			aria-describedby={errors.username ? 'signup-username-hint signup-username-error' : 'signup-username-hint'}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
+		<p id="signup-username-hint" class="text-xs text-[var(--color-muted)]">
+			{t('auth.fields.username_hint', '3–30 characters — letters, numbers and underscores. This is your public handle.')}
+		</p>
 		{#if errors.username}<p id="signup-username-error" class="text-sm text-red-500">{t(errors.username)}</p>{/if}
 	</div>
 
@@ -137,6 +143,7 @@
 		showStrength
 		error={errors.password ?? ''}
 		autocomplete="new-password"
+		hint={t('auth.fields.new_password_hint', 'At least 8 characters with upper & lower case letters and a number.')}
 		hideLabel
 	/>
 

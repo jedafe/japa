@@ -13,7 +13,8 @@
 		error = '',
 		autocomplete = 'current-password',
 		placeholder = '',
-		hideLabel = false
+		hideLabel = false,
+		hint = ''
 	}: {
 		value: string;
 		id: string;
@@ -25,6 +26,8 @@
 		/** Visually hides the label (kept for screen readers) — the
 		 *  placeholder alone conveys the field, e.g. on auth pages. */
 		hideLabel?: boolean;
+		/** Helper text shown below the field, linked via aria-describedby. */
+		hint?: string;
 	} = $props();
 
 	let visible = $state(false);
@@ -57,7 +60,7 @@
 			placeholder={placeholder || label}
 			aria-label={label}
 			aria-invalid={error ? 'true' : undefined}
-			aria-describedby={error ? `${id}-error` : undefined}
+			aria-describedby={[hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(' ') || undefined}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 pe-10 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
 		<button
@@ -87,6 +90,10 @@
 			</div>
 			<span class="text-xs text-[var(--color-muted)]">{t(strengthLabel)}</span>
 		</div>
+	{/if}
+
+	{#if hint}
+		<p id="{id}-hint" class="text-xs text-[var(--color-muted)]">{hint}</p>
 	{/if}
 
 	{#if error}

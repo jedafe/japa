@@ -71,10 +71,14 @@
 				type="email"
 				autocomplete="email"
 				bind:value={email}
+				placeholder={t('auth.fields.email_placeholder', 'you@example.com')}
 				aria-invalid={errors.email ? 'true' : undefined}
-				aria-describedby={errors.email ? 'forgot-email-error' : undefined}
+				aria-describedby={errors.email ? 'forgot-email-hint forgot-email-error' : 'forgot-email-hint'}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 			/>
+			<p id="forgot-email-hint" class="text-xs text-[var(--color-muted)]">
+				{t('auth.forgot_password.email_hint', "We'll email a reset link if an account exists for it.")}
+			</p>
 			{#if errors.email}<p id="forgot-email-error" class="text-sm text-red-500">{t(errors.email)}</p>{/if}
 		</div>
 
