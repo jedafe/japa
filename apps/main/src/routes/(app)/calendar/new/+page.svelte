@@ -1,4 +1,5 @@
-<script lang="ts">
+<script la
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.desc_hint', 'What people need to know — links and deadlines help.')}</p>ng="ts">
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -218,6 +219,7 @@
 						onSelect={(item) => (destinationSpaceId = item.id)}
 						onClear={() => (destinationSpaceId = '')}
 					/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.destination_hint', 'The country this event applies to.')}</p>
 				</div>
 				<div>
 					<label for="origin_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
@@ -233,6 +235,7 @@
 						onSelect={(item) => (originSpaceId = item.id)}
 						onClear={() => (originSpaceId = '')}
 					/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.origin_hint', 'Optional — restrict to a specific origin country.')}</p>
 				</div>
 			</div>
 
@@ -249,6 +252,7 @@
 					placeholder={t('calendar.new.placeholder_title', 'e.g. UK visa application window opens')}
 					class={inputClass}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.title_hint', 'A short event name shown on the calendar.')}</p>
 			</div>
 
 			<!-- Category -->
@@ -286,12 +290,14 @@
 						{t('calendar.new.label_occurs_at', 'Starts')} <span class="text-red-500" aria-hidden="true">*</span>
 					</label>
 					<input id="occurs_at" type="datetime-local" bind:value={occursAt} class={inputClass} />
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.occurs_hint', 'When the event starts (your local time).')}</p>
 				</div>
 				<div>
 					<label for="ends_at" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_ends_at', 'Ends (optional)')}
 					</label>
 					<input id="ends_at" type="datetime-local" bind:value={endsAt} class={inputClass} />
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.ends_hint', 'Optional — when the event ends.')}</p>
 				</div>
 			</div>
 
@@ -308,6 +314,7 @@
 						placeholder={t('calendar.new.placeholder_recurrence', 'e.g. annual')}
 						class={inputClass}
 					/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.recurrence_hint', 'How often it repeats — e.g. annual, monthly.')}</p>
 				{/if}
 			</div>
 
@@ -323,6 +330,7 @@
 					placeholder={t('calendar.new.placeholder_source', 'https://official-source.example/…')}
 					class={inputClass}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.source_hint', 'Link to the official announcement — required for verification.')}</p>
 				<p class="mt-1 text-xs text-[var(--color-muted)]">
 					{t('calendar.new.source_help', 'Must link to a verifiable official source.')}
 				</p>

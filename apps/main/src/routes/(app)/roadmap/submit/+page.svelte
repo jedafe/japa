@@ -172,6 +172,7 @@
 					class={inputClass}
 					required
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('roadmap.submit.title_hint', 'A short name for your request.')}</p>
 			</div>
 
 			<div class="flex flex-col gap-1.5">
@@ -199,6 +200,7 @@
 					placeholder={t('roadmap.submit.field_summary_placeholder', 'One or two sentences shown on the board card')}
 					class={inputClass}
 				></textarea>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('roadmap.submit.summary_hint', 'One or two sentences shown on the board card.')}</p>
 			</div>
 
 			<div class="flex flex-col gap-1.5">
@@ -212,6 +214,7 @@
 					placeholder={t('roadmap.submit.field_body_placeholder', 'Describe the feature, who it helps, and why it matters')}
 					class={inputClass}
 				></textarea>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('roadmap.submit.body_hint', 'Describe the feature, who it helps, and why it matters.')}</p>
 			</div>
 
 			{#if errorKey}

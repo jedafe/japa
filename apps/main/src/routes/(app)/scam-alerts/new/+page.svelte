@@ -1,4 +1,5 @@
-<script lang="ts">
+<script la
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.desc_hint', 'Describe what happened, how it worked, and warning signs.')}</p>ng="ts">
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -171,6 +172,7 @@
 					onSelect={(item) => (destinationSpaceId = item.id)}
 					onClear={() => (destinationSpaceId = '')}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.destination_hint', 'The country the scam targets.')}</p>
 			</div>
 			<div class="flex flex-col gap-1.5">
 				<label for="origin_space_id" class="text-sm font-medium text-[var(--color-text)]">
@@ -187,6 +189,7 @@
 					onSelect={(item) => (originSpaceId = item.id)}
 					onClear={() => (originSpaceId = '')}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.origin_hint', 'The community the scammer pretends to be from or targets.')}</p>
 			</div>
 		</div>
 
@@ -202,6 +205,7 @@
 				placeholder={t('scam_alerts.placeholder_scam_type', 'Select scam type')}
 				onValueChange={(v) => (scamType = v as ScamType)}
 			/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.type_hint', 'The kind of scam — e.g. fake job, visa fraud.')}</p>
 		</div>
 
 		<!-- Origin community -->
@@ -218,6 +222,7 @@
 				maxlength={200}
 				class={inputClass}
 			/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.community_hint', 'Optional — the community being impersonated.')}</p>
 		</div>
 
 		<!-- Platform used -->
@@ -233,6 +238,7 @@
 				clearable
 				onValueChange={(v) => (platformUsed = v as ScamPlatform | '')}
 			/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.platform_hint', 'Where the scam happened — e.g. WhatsApp, a website.')}</p>
 		</div>
 
 		<!-- Approximate date + amount range -->
@@ -263,6 +269,7 @@
 					maxlength={100}
 					class={inputClass}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.amount_hint', 'Optional — how much was lost or asked for.')}</p>
 			</div>
 		</div>
 

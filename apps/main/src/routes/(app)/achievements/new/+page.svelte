@@ -1,4 +1,5 @@
-<script lang="ts">
+<script la
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('achievements.body_hint', 'Tell the story — what happened and what it means to you.')}</p>ng="ts">
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Create achievement form. Submits via the browser API client (POST /achievements,
 	// auth required). On success navigates to the new achievement's detail page.
@@ -177,6 +178,7 @@
 					onSelect={(item) => (destinationSpaceId = item.id)}
 					onClear={() => (destinationSpaceId = '')}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('achievements.destination_hint', 'The country this achievement is about.')}</p>
 			</div>
 			<div class="flex flex-col gap-1.5">
 				<label for="origin_country" class="text-sm font-medium text-[var(--color-text)]">
@@ -192,6 +194,7 @@
 					onSelect={(item) => (originSpaceId = item.id)}
 					onClear={() => (originSpaceId = '')}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('achievements.origin_hint', 'Where you started from.')}</p>
 			</div>
 		</div>
 
@@ -208,6 +211,7 @@
 				placeholder={t('achievements.title_placeholder', 'e.g. Visa approved!')}
 				class={inputClass}
 			/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('achievements.title_hint', 'A short, celebratory headline.')}</p>
 		</div>
 
 		<AiBodyField
