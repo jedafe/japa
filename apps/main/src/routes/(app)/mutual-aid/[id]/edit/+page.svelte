@@ -1,4 +1,5 @@
-<script lang="ts">
+<script la
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.desc_hint', 'Details: what, where, when, and how to reach you.')}</p>ng="ts">
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 	import { t, siteName} from '$lib/i18n';
 	import { goto } from '$app/navigation';
@@ -120,6 +121,7 @@
 				placeholder={t('mutual_aid.field_title_placeholder', 'Brief summary of what you need or offer')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.title_hint', 'One line — what you need or what you are offering.')}</p>
 		</div>
 
 		<!-- Description -->
@@ -154,6 +156,7 @@
 					...pinMarketsFirst(data.countries, destinationMarkets(data.siteSettings), (c) => c.geo_code).map((c) => ({ value: c.id, label: c.name }))
 				]}
 			/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.destination_hint', 'The country where help is needed or offered.')}</p>
 		</div>
 
 		<!-- City (read-only — same reason as destination. BUG-005.) -->

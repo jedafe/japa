@@ -114,6 +114,7 @@
 				{t('planning_groups.field_name', 'Group name')}
 			</label>
 			<input id="pg-name" type="text" required bind:value={name} class={inputClass} maxlength="100" />
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.name_hint', 'A name others recognize — e.g. route + intake.')}</p>
 		</div>
 
 		<AiBodyField
@@ -129,6 +130,7 @@
 			placeholder={t('planning_groups.field_description_placeholder', 'What is this group about?')}
 			rows={3}
 		/>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.desc_hint', 'What the group plans together and who should join.')}</p>
 
 		<div class="flex flex-col gap-1.5">
 			<label for="pg-dest" class="text-sm font-medium text-[var(--color-text)]">
@@ -144,6 +146,7 @@
 				onSelect={(item) => (destinationSpaceId = item.id)}
 				onClear={() => (destinationSpaceId = '')}
 			/>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.destination_hint', 'The destination country this group is planning for.')}</p>
 		</div>
 
 		<div class="grid grid-cols-2 gap-4">
@@ -152,12 +155,14 @@
 					{t('planning_groups.field_visa_category', 'Visa category (optional)')}
 				</label>
 				<input id="pg-visa" type="text" bind:value={visa_category} class={inputClass} maxlength="50" />
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.visa_hint', 'The visa type or route — e.g. Student, Work.')}</p>
 			</div>
 			<div class="flex flex-col gap-1.5">
 				<label for="pg-window" class="text-sm font-medium text-[var(--color-text)]">
 					{t('planning_groups.field_departure_window', 'Departure window (optional)')}
 				</label>
 				<input id="pg-window" type="text" bind:value={target_departure_window} class={inputClass} maxlength="50" />
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.window_hint', 'The intake or window you are targeting — e.g. Q3 2026.')}</p>
 			</div>
 		</div>
 
@@ -175,12 +180,14 @@
 					oninput={(e) => (max_members = Number(e.currentTarget.value) || 15)}
 					class={inputClass}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.max_hint', 'Optional — cap on group size.')}</p>
 			</div>
 			<div class="flex flex-col gap-1.5">
 				<label for="pg-expires" class="text-sm font-medium text-[var(--color-text)]">
 					{t('planning_groups.field_expires_at', 'Expiry date (optional)')}
 				</label>
 				<input id="pg-expires" type="date" bind:value={expiresAt} class={inputClass} />
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.expires_hint', 'Optional — when the group closes to new members.')}</p>
 			</div>
 		</div>
 

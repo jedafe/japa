@@ -1,4 +1,5 @@
-<script lang="ts">
+<script la
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('achievements.body_hint', 'Tell the story — what happened and what it means to you.')}</p>ng="ts">
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Edit achievement form. Pre-fills from the SSR-loaded achievement and
 	// submits PATCH /achievements/{id} (by content id) via the browser API
@@ -161,6 +162,7 @@
 				oninput={(e) => (title = e.currentTarget.value)}
 				class={inputClass}
 			/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('achievements.title_hint', 'A short, celebratory headline.')}</p>
 		</div>
 
 		<AiBodyField
@@ -189,6 +191,7 @@
 				options={milestoneOpts}
 				onValueChange={(v) => (milestoneType = v as AchievementMilestoneType)}
 			/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('achievements.milestone_hint', 'The kind of milestone — e.g. visa approved, landed.')}</p>
 		</div>
 
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -207,6 +210,7 @@
 					onSelect={(item) => (destinationSpaceId = item.id)}
 					onClear={() => (destinationSpaceId = '')}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('achievements.destination_hint', 'The country this achievement is about.')}</p>
 			</div>
 			<div class="flex flex-col gap-1.5">
 				<label for="origin_country" class="text-sm font-medium text-[var(--color-text)]">
@@ -222,6 +226,7 @@
 					onSelect={(item) => (originSpaceId = item.id)}
 					onClear={() => (originSpaceId = '')}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('achievements.origin_hint', 'Where you started from.')}</p>
 			</div>
 		</div>
 
