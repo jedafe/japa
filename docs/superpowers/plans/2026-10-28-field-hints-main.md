@@ -21,8 +21,9 @@
 - **a11y:** hint `<span>` gets `id="{field-id}-hint"`; the control gets `aria-describedby="{field-id}-hint"`. When the field also has an error element, use `aria-describedby={error ? '{id}-hint {id}-error' : '{id}-hint'}`. If a control has no `id`, add one (kebab-case, unique in file).
 - **Style:** match each file's existing markup — most fields use `text-xs`/`text-sm` with `text-[var(--color-muted)]`; hint renders BELOW the control (and below any error message goes after the hint).
 - **No new components** except the `hint` prop on `PasswordField` (Task 1). Custom components like `AutocompleteSelect` get the hint `<span>` at the callsite.
-- **Verify:** `cd apps/main && bun run check`. The repo may have pre-existing svelte-check errors — run it BEFORE your first edit and record the error count; the pass is clean only if your changes add ZERO new errors.
+- **Verify:** `cd apps/main && bun run check`. Baseline recorded 2026-10-28: **0 errors, 14 warnings** (all unused-CSS warnings in `routes/(app)/roadmap/releases/*`). The pass is clean only if your changes add ZERO new errors.
 - **en.json:** keys appear roughly sorted/grouped — insert new keys adjacent to their group.
+- **Enumeration must include custom field components:** many fields wrap `AutocompleteSelect`, `DestinationSelector`, `PasswordField`, or a `<select>`-like component inside `<label>` with NO raw `<input>` tag — grep each file for `<label` as well as `<input|<textarea|<select` and inspect label children.
 
 ## Canonical pattern (every task applies this)
 
@@ -109,9 +110,9 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ### Task 3: Settings hub — monetization, keys & flow dialogs
 
-**Files:** `src/lib/components/hub/settings/sections/`: `NewsletterSection.svelte`, `ApiKeysSection.svelte`, `AIKeysSection.svelte`, `AffiliateSection.svelte`, `SubscriptionSection.svelte`, `MentorSection.svelte`, `DangerSection.svelte`; `flows/`: `ChangePasswordForm.svelte`, `TotpEnrollFlow.svelte`, `DeleteAccountDialog.svelte`, `ApiKeyRevealDialog.svelte`; `wallet/`: `WalletPurchaseTab.svelte`, `WalletConvertTab.svelte`, `WalletWithdrawTab.svelte`. Keys: `en.json` under each section's existing group.
+**Files:** `src/lib/components/hub/settings/sections/`: `NewsletterSection.svelte`, `ApiKeysSection.svelte`, `AIKeysSection.svelte`, `AffiliateSection.svelte`, `SubscriptionSection.svelte`, `MentorSection.svelte`, `DangerSection.svelte`; `flows/`: `ChangePasswordForm.svelte`, `TotpEnrollFlow.svelte`, `DeleteAccountDialog.svelte`, `ApiKeyRevealDialog.svelte`; `wallet/`: `WalletPurchaseTab.svelte`, `WalletConvertTab.svelte`, `WalletWithdrawTab.svelte`, `WalletDetailsTab.svelte`. Keys: `en.json` under each section's existing group.
 
-- [ ] **Step 1: Enumerate** all fields in the 14 files.
+- [ ] **Step 1: Enumerate** all fields in the 15 files.
 - [ ] **Step 2: Apply pattern.** Copy examples: API key name = "A label so you remember what this key is for." Wallet withdraw address/amount = format + minimum/fee note where the backend exposes one (use generic copy otherwise, e.g. "Amount in wallet credits to withdraw."). `ChangePasswordForm` reuses `PasswordField` with its `hint` prop. `DeleteAccountDialog` confirm field: "Type DELETE to confirm." `TotpEnrollFlow` code field reuses the TOTP hint style from Task 1.
 - [ ] **Step 3: Keys → `en.json`.**
 - [ ] **Step 4:** `bun run check` — zero new errors.
@@ -129,7 +130,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ### Task 5: Create panel, spaces & editors
 
-**Files:** `src/lib/components/create/panel/`: `CreateJourneyPanel.svelte`, `CreateSeoPanel.svelte`, `CreateSettingsPanel.svelte`, `SeriesCreationModal.svelte`; `src/lib/components/create/editors/`: `ComparisonBuilder.svelte`, `ListBuilder.svelte`; `src/lib/components/create/`: `TagInput.svelte`, `VideoField.svelte`, `CustomFieldGroup.svelte`; `src/lib/components/spaces/`: `SpaceCreationModal.svelte`, `SpaceSettings.svelte`, `SpaceCombobox.svelte`; `src/lib/components/shell/SidebarWidgetRenderer.svelte`; `src/routes/(app)/dashboard/spaces/+page.svelte`. Keys: `en.json`.
+**Files:** `src/lib/components/create/panel/`: `CreateJourneyPanel.svelte`, `CreateSeoPanel.svelte`, `CreateSettingsPanel.svelte`, `SeriesCreationModal.svelte`; `src/lib/components/create/editors/`: `ComparisonBuilder.svelte`, `ListBuilder.svelte`; `src/lib/components/create/`: `TagInput.svelte`, `VideoField.svelte`, `CustomFieldGroup.svelte`; `src/lib/components/spaces/`: `SpaceCreationModal.svelte`, `SpaceSettings.svelte`, `SpaceCombobox.svelte`; `src/lib/components/create/CreateShell.svelte`; `src/lib/components/shell/SidebarWidgetRenderer.svelte`; `src/routes/(app)/dashboard/spaces/+page.svelte`. Keys: `en.json`.
 
 - [ ] **Step 1: Enumerate** fields.
 - [ ] **Step 2: Apply pattern.** SEO panel: title/slug/description get length/format hints ("55–60 chars shows fully in search results."). `TagInput`: "Press Enter to add a tag." `VideoField`: accepted URL formats. `SpaceCombobox`: "Search spaces or type to create." Settings panel toggles get one-line effect notes.
@@ -139,7 +140,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ### Task 6: Community feature pages
 
-**Files:** `src/routes/(app)/achievements/{+page,new/+page,[slug]/edit/+page}.svelte`, `ama/{new,[id]/edit}/+page.svelte`, `calendar/{+page,new,[id]/edit}/+page.svelte`, `forum/{[category]/new,[slug]}/+page.svelte`, `japa-stage/me/+page.svelte`, `mutual-aid/{+page,new,[id]/edit}/+page.svelte`, `planning-groups/{+page,new,[id],[id]/edit}/+page.svelte`, `roadmap/submit/+page.svelte`, `scam-alerts/{+page,new,[id]/edit}/+page.svelte`, `stories/+page.svelte`, `feedback/+page.svelte`, `tags/{+page,[slug]}/+page.svelte`, `spaces/{+page,[slug]}/+page.svelte`, `wiki/[space_slug]/{create,[page_slug]}/+page.svelte`, `src/lib/components/wiki/SuggestEdit.svelte`, `WikiRollupPanel.svelte`. Keys: `en.json`.
+**Files:** `src/routes/(app)/achievements/{+page,new/+page,[slug]/edit/+page}.svelte`, `ama/{new,[id]/edit}/+page.svelte`, `calendar/{+page,new,[id]/edit}/+page.svelte`, `forum/{[category]/new,[slug]}/+page.svelte`, `japa-stage/{+page,me/+page}.svelte`, `mutual-aid/{+page,new,[id]/edit}/+page.svelte`, `planning-groups/{+page,new,[id],[id]/edit}/+page.svelte`, `roadmap/submit/+page.svelte`, `scam-alerts/{+page,new,[id]/edit}/+page.svelte`, `stories/+page.svelte`, `feedback/+page.svelte`, `tags/{+page,[slug]}/+page.svelte`, `spaces/{+page,[slug]}/+page.svelte`, `wiki/[space_slug]/{create,[page_slug]}/+page.svelte`, `src/lib/components/wiki/SuggestEdit.svelte`, `WikiRollupPanel.svelte`. Keys: `en.json`.
 
 - [ ] **Step 1: Enumerate.** Forum reply box + comment-like inputs = composer → placeholder only. `new`/`edit` page fields = full pattern.
 - [ ] **Step 2: Apply pattern.** Examples: scam-alert URL field = "Link to the listing or profile if you have one." Event date/time = timezone note. Wiki page title = "Use a clear, searchable title — it becomes the URL slug."
@@ -149,7 +150,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ### Task 7: Marketplace, org, jobs & services
 
-**Files:** `src/lib/components/deals/DealForm.svelte`, `src/lib/components/marketplace/{MentorshipRequestDialog,MessageDialog,BookingDialog}.svelte`, `src/lib/components/messages/BookingDetailPane.svelte`, `src/lib/components/jobs/JobGeoFields.svelte`, `src/lib/components/services/{ServiceContentEditor,ServiceTierEditor}.svelte`, `src/routes/(app)/deal/[provider]/+page.svelte`, `(marketplace)/services/+page.svelte`, `jobs/{+page,create,[slug],[slug]/edit}/+page.svelte`, `services/{new,[slug]/edit}/+page.svelte`, `org/{+page,new,[slug]/coupons,[slug]/jobs/[jobId],[slug]/service-bookings}/+page.svelte`, `me/{applications,import}/+page.svelte`, `dashboard/organizations/{+page,[id],[id]/ads}/+page.svelte`, `dashboard/tickets/{new,[id]}/+page.svelte`. Keys: `en.json`.
+**Files:** `src/lib/components/deals/DealForm.svelte`, `src/lib/components/marketplace/{MentorshipRequestDialog,MessageDialog,BookingDialog}.svelte`, `src/lib/components/messages/BookingDetailPane.svelte`, `src/lib/components/jobs/JobGeoFields.svelte`, `src/lib/components/services/{ServiceContentEditor,ServiceTierEditor}.svelte`, `src/routes/(app)/deal/[provider]/+page.svelte`, `deals/new/+page.svelte`, `(marketplace)/services/+page.svelte`, `jobs/{+page,create,[slug],[slug]/edit}/+page.svelte`, `services/{new,[slug]/edit}/+page.svelte`, `org/{+page,new,[slug]/coupons,[slug]/jobs/[jobId],[slug]/service-bookings}/+page.svelte`, `me/{applications,import}/+page.svelte`, `dashboard/organizations/{+page,[id],[id]/ads}/+page.svelte`, `dashboard/tickets/{new,[id]}/+page.svelte`. Keys: `en.json`.
 
 - [ ] **Step 1: Enumerate** — booking/mentorship message textareas are form fields (get hints); any search/filter inputs get placeholder only.
 - [ ] **Step 2: Apply pattern.** Examples: job salary fields = currency/range hint; coupon code = "Uppercase letters and numbers, e.g. JAPA20." Service tier price/delivery = unit hints. Ticket subject/body = support-context hints.
@@ -159,7 +160,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ### Task 8: Tools pages
 
-**Files:** all under `src/routes/(app)/tools/`: `cost-of-living`, `credential-checker`, `crs-calculator`, `eca-guide`, `language-test`, `pof-calculator`, `processing-tracker/{+page,my-applications}`, `remittance`, `sop-generator`, `travel`, `visa-routes`, `arrival-checklist`, `attestation-guide`, `community-locator`, `currency-converter`, `cv-formatter`, `embassy-alerter`, `readiness`, `visa-checklist` — each `+page.svelte`. Keys: `en.json` under `tools.<tool>.*`.
+**Files:** all under `src/routes/(app)/tools/`: `cost-of-living`, `credential-checker`, `crs-calculator`, `eca-guide`, `language-test`, `pof-calculator`, `processing-tracker/{+page,my-applications}`, `remittance`, `sop-generator`, `travel`, `visa-routes`, `arrival-checklist`, `attestation-guide`, `community-locator`, `currency-converter`, `cv-formatter`, `embassy-alerter`, `readiness`, `visa-checklist`, `housing-guide`, `tax-calculator` — each `+page.svelte`, plus the shared field component `src/lib/components/tools/DestinationSelector.svelte`. Keys: `en.json` under `tools.<tool>.*`.
 
 - [ ] **Step 1: Enumerate** all tool form fields.
 - [ ] **Step 2: Apply pattern.** Tool inputs are question-like fields — hints explain what the value drives: e.g. CRS calculator age = "Your age on the day you'd submit an Express Entry profile." POF amount = "Funds in your account, in CAD." remittance amount = source-currency note.
@@ -169,7 +170,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ### Task 9: AI, studio, sources & remaining surfaces
 
-**Files:** `src/lib/ai/{AddAiKeyDialog,EditAiKeyDialog,AiBodyField,AiDraftPanel}.svelte`, `src/lib/components/compare/AiQuickPanel.svelte`, `src/lib/components/studio/{ImportPanel,ContentManagerView,PromptRightPanel}.svelte`, `src/lib/components/source/{ProposeSourceForm,SourceEditDialog}.svelte`, `src/lib/components/reviews/ReviewForm.svelte`, `src/lib/components/ui/LiteralSuggest.svelte`, `src/lib/components/hub/dashboard/views/{AnalyticsView,RelationshipsView}.svelte`, routes: `sources/+page`, `scholarships/{+page,[guide_id],saved}/+page`, `universities/{+page,[slug]}/+page`, `visa-timelines/{+page,my}/+page`, `compare/+page`, `comparisons/+page`, `dashboard/media/+page`, `series/+page`, `deals/+page`, `messages/requests/+page`, `studio/{videos,moderation}/+page`, `search/+page`. Keys: `en.json`.
+**Files:** `src/lib/ai/{AddAiKeyDialog,EditAiKeyDialog,AiBodyField,AiDraftPanel,AiModelVoicePicker,ChatTemplatePanel}.svelte`, `src/lib/components/compare/AiQuickPanel.svelte`, `src/lib/components/studio/{ImportPanel,ContentManagerView,PromptRightPanel,PromptBuilder}.svelte`, `src/lib/components/source/{ProposeSourceForm,SourceEditDialog}.svelte`, `src/lib/components/reviews/ReviewForm.svelte`, `src/lib/components/ui/LiteralSuggest.svelte`, `src/lib/components/hub/dashboard/views/{AnalyticsView,RelationshipsView}.svelte`, routes: `sources/+page`, `scholarships/{+page,[guide_id],saved}/+page`, `universities/{+page,[slug]}/+page`, `visa-timelines/{+page,my}/+page`, `compare/+page`, `comparisons/+page`, `dashboard/media/+page`, `series/+page`, `deals/+page`, `messages/requests/+page`, `studio/{videos,moderation}/+page`, `search/+page`. Keys: `en.json`.
 
 - [ ] **Step 1: Enumerate** — `search/+page` and filter inputs are exclusions (placeholder only); `AiBodyField`/`AiDraftPanel`/`PromptRightPanel` prompt textareas are AI composers → placeholder only, no helper. `AddAiKeyDialog`/`EditAiKeyDialog` fields get full pattern.
 - [ ] **Step 2: Apply pattern** to the genuine form fields (source propose/edit, review form, AI key name+key fields, import forms, media metadata fields). Example: AI key field = "Stored encrypted — used only for your AI features."
