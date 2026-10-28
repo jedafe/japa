@@ -12,6 +12,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -35,12 +36,9 @@ func testDB(t *testing.T) *db.DB {
 	return d
 }
 
-var dbTestCounter int
-
 func newUser(t *testing.T, ctx context.Context, d *db.DB, role string) pgtype.UUID {
 	t.Helper()
-	dbTestCounter++
-	uname := fmt.Sprintf("tiptester_%s_%d", role, dbTestCounter)
+	uname := fmt.Sprintf("tiptester_%s_%d", role, time.Now().UnixNano())
 	var id pgtype.UUID
 	err := d.Writer.QueryRow(ctx,
 		`INSERT INTO users (username, email) VALUES ($1, $2) RETURNING id`,
@@ -99,7 +97,7 @@ func TestDBSettleCreditsTip(t *testing.T) {
 
 	svc := NewService(d)
 	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.fee_percent": 10}}
-	svc.perms = fakePerms{map[string]bool{"tips.send": true}}
+	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 
 	res, err := svc.CreateTip(ctx, sender, CreateTipInput{
 		RecipientType: RecipientUser, RecipientUserID: recip,
@@ -129,7 +127,7 @@ func TestDBSettlePointsNoFee(t *testing.T) {
 
 	svc := NewService(d)
 	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.fee_percent": 50, "tips.points_daily_limit": 0}}
-	svc.perms = fakePerms{map[string]bool{"tips.send": true}}
+	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 
 	_, err := svc.CreateTip(ctx, sender, CreateTipInput{
 		RecipientType: RecipientUser, RecipientUserID: recip,
@@ -152,7 +150,7 @@ func TestDBInsufficientFunds(t *testing.T) {
 
 	svc := NewService(d)
 	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true}}
-	svc.perms = fakePerms{map[string]bool{"tips.send": true}}
+	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 
 	_, err := svc.CreateTip(ctx, sender, CreateTipInput{
 		RecipientType: RecipientUser, RecipientUserID: recip,
@@ -178,7 +176,7 @@ func TestDBIdempotentReplay(t *testing.T) {
 
 	svc := NewService(d)
 	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true}}
-	svc.perms = fakePerms{map[string]bool{"tips.send": true}}
+	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 	in := CreateTipInput{RecipientType: RecipientUser, RecipientUserID: recip, Method: MethodCredits, CreditsAmount: 20}
 
 	r1, err := svc.CreateTip(ctx, sender, in, "idem-key-1")
@@ -216,7 +214,7 @@ func TestDBFiatSettleConversion(t *testing.T) {
 
 	svc := NewService(d)
 	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.fee_percent": 10}}
-	svc.perms = fakePerms{map[string]bool{"tips.send": true}}
+	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 
 	// USD 1000 cents × credits_per_unit, 10% fee → net = gross*0.9.
 	amt := int64(1000)
@@ -275,7 +273,7 @@ func TestDBClawback(t *testing.T) {
 
 	svc := NewService(d)
 	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.fee_percent": 0}}
-	svc.perms = fakePerms{map[string]bool{"tips.send": true}}
+	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 
 	res, err := svc.CreateTip(ctx, sender, CreateTipInput{
 		RecipientType: RecipientUser, RecipientUserID: recip, Method: MethodCredits, CreditsAmount: 50,
@@ -318,7 +316,7 @@ func TestDBConcurrentSameSender(t *testing.T) {
 
 	svc := NewService(d)
 	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true}}
-	svc.perms = fakePerms{map[string]bool{"tips.send": true}}
+	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 
 	// Two concurrent 60-credit tips — the lock serializes them; exactly one
 	// succeeds, the other reports insufficient funds.

@@ -60,7 +60,7 @@ func baseSvc(fs *fakeStore) *Service {
 	return &Service{
 		store:    fs,
 		settings: fakeSettings{m: map[string]any{"tips.enabled": true}},
-		perms:    fakePerms{map[string]bool{"tips.send": true}},
+		perms:    fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}},
 	}
 }
 
@@ -70,7 +70,7 @@ func walletInput() CreateTipInput {
 
 func TestCreateTipFeatureOff(t *testing.T) {
 	fs := newFakeStore()
-	svc := &Service{store: fs, settings: fakeSettings{m: map[string]any{"tips.enabled": false}}, perms: fakePerms{map[string]bool{"tips.send": true}}}
+	svc := &Service{store: fs, settings: fakeSettings{m: map[string]any{"tips.enabled": false}}, perms: fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}}
 	if _, err := svc.CreateTip(context.Background(), senderID, walletInput(), ""); !errors.Is(err, ErrTipsDisabled) {
 		t.Fatalf("got %v", err)
 	}
@@ -134,7 +134,7 @@ func TestCreateTipCreditsSettles(t *testing.T) {
 	svc := &Service{
 		store:    fs,
 		settings: fakeSettings{m: map[string]any{"tips.enabled": true, "tips.fee_percent": 10}},
-		perms:    fakePerms{map[string]bool{"tips.send": true}},
+		perms:    fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}},
 	}
 	res, err := svc.CreateTip(context.Background(), senderID, walletInput(), "")
 	if err != nil {
@@ -162,7 +162,7 @@ func TestCreateTipPointsNoFeeAndDailyCap(t *testing.T) {
 	svc := &Service{
 		store:    fs,
 		settings: fakeSettings{m: map[string]any{"tips.enabled": true, "tips.fee_percent": 50, "tips.points_daily_limit": 500}},
-		perms:    fakePerms{map[string]bool{"tips.send": true}},
+		perms:    fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}},
 	}
 	in := CreateTipInput{RecipientType: RecipientUser, RecipientUserID: recipientID, Method: MethodPoints, PointsAmount: 20}
 	if _, err := svc.CreateTip(context.Background(), senderID, in, ""); !errors.Is(err, ErrDailyPointsLimit) {

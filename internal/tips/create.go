@@ -46,6 +46,19 @@ func (s *Service) CreateTip(ctx context.Context, senderID pgtype.UUID, in Create
 		return CreateTipResult{}, ErrSelfTip
 	}
 
+	// §125 recipient eligibility is role-gated: the wallet owner must hold
+	// tips.receive or be a mentor — checked live so a revoked-permission
+	// recipient's enabled settings row can't keep collecting tips.
+	if owner.Type != RecipientPlatform {
+		ok, err := s.CanReceive(ctx, walletOwner)
+		if err != nil {
+			return CreateTipResult{}, err
+		}
+		if !ok {
+			return CreateTipResult{}, ErrNotEligible
+		}
+	}
+
 	st, err := s.store.getSettings(ctx, owner.Type, owner.ID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -73,8 +86,13 @@ func (s *Service) CreateTip(ctx context.Context, senderID pgtype.UUID, in Create
 // user whose wallet receives credits (org tips land on the org owner;
 // platform tips have no wallet owner).
 func (s *Service) resolveRecipient(ctx context.Context, in CreateTipInput) (Owner, pgtype.UUID, error) {
-	// Content-anchored tip: recipient is the content's author.
+	// Content-anchored tip: recipient is the content's author. A conflicting
+	// recipient_type (platform/organization) is rejected — the donor's choice
+	// can't silently land on a different owner.
 	if in.ContentID.Valid {
+		if in.RecipientType != "" && in.RecipientType != RecipientUser {
+			return Owner{}, pgtype.UUID{}, ErrInvalidRecipient
+		}
 		author, err := s.store.getContentAuthorID(ctx, in.ContentID)
 		if err != nil {
 			return Owner{}, pgtype.UUID{}, ErrNotFound
