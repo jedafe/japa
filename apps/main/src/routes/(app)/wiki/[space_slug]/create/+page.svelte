@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
@@ -334,7 +335,7 @@
 				<label for="wiki-create-category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_category_label', 'Category')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.create.category_hint', 'The category this page belongs to.')}</p>
+				<HintIcon text={t('wiki.create.category_hint', 'The category this page belongs to.')} />
 				<AutocompleteSelect
 					id="wiki-create-category"
 					value={category}
@@ -353,7 +354,7 @@
 						<label for="wiki-create-page" class="block text-sm font-medium text-[var(--color-text)]">
 							{t('wiki.create_page_label', 'Page')}
 						</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.create.page_hint', 'The parent page — leave blank for top level.')}</p>
+						<HintIcon text={t('wiki.create.page_hint', 'The parent page — leave blank for top level.')} />
 						{#if canManageTemplates}
 							<button
 								type="button"
@@ -382,9 +383,7 @@
 					</p>
 					{#if tplOpen && canManageTemplates}
 						<div class="mt-2 space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
-							<p class="text-xs text-[var(--color-muted)]">
-								{t('wiki.new_template_hint', 'Adds a predefined page under this category for every wiki of this type. Use {name} for the space name — e.g. "Prices in {name}".')}
-							</p>
+							<HintIcon text={t('wiki.new_template_hint', 'Adds a predefined page under this category for every wiki of this type. Use {name} for the space name — e.g. "Prices in {name}".')} />
 							<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 								<input
 									type="text"
@@ -432,7 +431,7 @@
 				<label for="wiki-create-title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_title_label', 'Page title')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.create.title_hint', 'The page title shown in the wiki.')}</p>
+				<HintIcon text={t('wiki.create.title_hint', 'The page title shown in the wiki.')} />
 				<input
 					id="wiki-create-title"
 					type="text"

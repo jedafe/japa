@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { Modal } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -366,9 +367,7 @@
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.product_type', 'Product type')}</span>
 			<AutocompleteSelect bind:value={newProductType} options={productTypes} />
-			<span id="affiliate-product-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.affiliate.product_type_hint', 'Which catalog the link should point into.')}
-			</span>
+			<HintIcon id="affiliate-product-hint" text={t('settings.affiliate.product_type_hint', 'Which catalog the link should point into.')} />
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.url')}</span>
@@ -380,9 +379,7 @@
 				value={newUrl}
 				oninput={(e) => (newUrl = e.currentTarget.value)}
 			/>
-			<span id="affiliate-url-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.affiliate.url_hint', 'The page your referral link should land on.')}
-			</span>
+			<HintIcon id="affiliate-url-hint" text={t('settings.affiliate.url_hint', 'The page your referral link should land on.')} />
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.label')}</span>
@@ -394,9 +391,7 @@
 				value={newDescription}
 				oninput={(e) => (newDescription = e.currentTarget.value)}
 			/>
-			<span id="affiliate-label-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.affiliate.label_hint', 'A note to remember where you shared this link.')}
-			</span>
+			<HintIcon id="affiliate-label-hint" text={t('settings.affiliate.label_hint', 'A note to remember where you shared this link.')} />
 		</label>
 		{#if error}<p class="text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
 		<button
@@ -519,9 +514,7 @@
 								value={editDescription}
 								oninput={(e) => (editDescription = e.currentTarget.value)}
 							/>
-							<span id="affiliate-edit-label-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-								{t('settings.affiliate.label_hint', 'A note to remember where you shared this link.')}
-							</span>
+							<HintIcon id="affiliate-edit-label-hint" text={t('settings.affiliate.label_hint', 'A note to remember where you shared this link.')} />
 						</label>
 						<label class="flex items-center gap-2">
 							<input

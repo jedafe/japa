@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// /tools/readiness — admin monitoring + management page for the Japa
 	// Readiness Assessment (Section 71, ADR-071).
 	// Shows score distribution stats, result list with server-side pagination,
@@ -491,9 +492,7 @@
 						class="w-full rounded-lg border p-3 font-mono text-xs"
 						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
 					></textarea>
-					<p class="mt-1 text-xs" style="color: var(--color-muted)">
-						{t('app.tools.curated_roadmap_hint', 'Map of dimension -> ordered roadmap steps. Must be valid JSON.')}
-					</p>
+					<HintIcon text={t('app.tools.curated_roadmap_hint', 'Map of dimension -> ordered roadmap steps. Must be valid JSON.')} />
 				</div>
 
 				<button

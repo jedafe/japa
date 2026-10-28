@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// /community/wiki — admin HITL review queue for wiki page revisions.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
@@ -1543,9 +1544,7 @@
 						{detSaving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 					</Button>
 				</div>
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">
-					{t('app.wiki.data_entity_type_hint', 'Binds this page to a child entity class for community field ops. Empty clears the binding.')}
-				</p>
+				<HintIcon text={t('app.wiki.data_entity_type_hint', 'Binds this page to a child entity class for community field ops. Empty clears the binding.')} />
 			</div>
 		{/if}
 	</div>

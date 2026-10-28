@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { t, locale } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
@@ -854,7 +855,7 @@
 							class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 							bind:value={editSubmissionFeeCredits}
 						/>
-						<p class="mt-1 text-xs text-muted">{t('forms.fee_credits_hint', '0 = free submission')}</p>
+						<HintIcon text={t('forms.fee_credits_hint', '0 = free submission')} />
 					</div>
 					<div class="flex items-center gap-2">
 						<input id="form-active" type="checkbox" bind:checked={editIsActive} class="rounded" />

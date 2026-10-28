@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /reviews — migrated to the EntityPage scaffold. Moderation entity (no create):
 	// View (slide-over), Moderate (page-local Modal → PATCH status), Delete (confirm → DELETE).
@@ -285,7 +286,7 @@
 				<label for="moderateStatus" class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t('reviews.status', 'Status')}
 				</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('reviews.moderateStatus_hint', 'The moderation decision.')}</p>
+				<HintIcon text={t('reviews.moderateStatus_hint', 'The moderation decision.')} />
 				<Select
 					options={[
 						{ value: 'published', label: t('reviews.status_published', 'Published') },
@@ -299,7 +300,7 @@
 				<label for="moderateReason" class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t('reviews.moderate_reason', 'Reason (optional)')}
 				</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('reviews.moderateReason_hint', 'The reason recorded — shown to the reviewer.')}</p>
+				<HintIcon text={t('reviews.moderateReason_hint', 'The reason recorded — shown to the reviewer.')} />
 				<textarea
 					id="moderateReason"
 					rows={2}

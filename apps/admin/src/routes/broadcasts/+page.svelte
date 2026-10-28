@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /broadcasts — migrated to shared components (ActionMenu, FilterPanel,
 	// SlideOver, bulkActionsList). Tabbed page (all/drafts/sent); keeps
@@ -246,17 +247,17 @@
 	<div class="space-y-4">
 		<div>
 			<label for="bc-title" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.title_label', 'Title')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('broadcasts.bc_title_hint', 'The broadcast title admins see.')}</p>
+			<HintIcon text={t('broadcasts.bc_title_hint', 'The broadcast title admins see.')} />
 			<input id="bc-title" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('broadcasts.placeholder_title', 'e.g. Platform Maintenance Notice')} bind:value={newBroadcast.title} />
 		</div>
 		<div>
 			<label for="bc-body" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.message_label', 'Message')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('broadcasts.bc_body_hint', 'The message sent to the audience.')}</p>
+			<HintIcon text={t('broadcasts.bc_body_hint', 'The message sent to the audience.')} />
 			<textarea id="bc-body" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" rows="5" placeholder={t('broadcasts.placeholder_message', 'Write your broadcast message...')} bind:value={newBroadcast.body}></textarea>
 		</div>
 		<div>
 			<label for="bc-audience" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.target_audience_label', 'Target Audience')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('broadcasts.bc_audience_hint', 'Who receives this broadcast.')}</p>
+			<HintIcon text={t('broadcasts.bc_audience_hint', 'Who receives this broadcast.')} />
 			<Select options={audienceOptions} bind:value={newBroadcast.target_audience} />
 		</div>
 		<div class="flex justify-end gap-3 pt-2">

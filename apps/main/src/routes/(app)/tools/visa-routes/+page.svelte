@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack, onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -183,7 +184,7 @@
 			<label for="vr-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('visa_routes.destination', 'Destination country')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.visa_routes.dest_hint', 'The country you want to move to.')}</p>
+			<HintIcon text={t('tools.visa_routes.dest_hint', 'The country you want to move to.')} />
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('visa_routes.select_destination', 'Select a destination country')}

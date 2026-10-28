@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import {
@@ -181,7 +182,7 @@
 				<label for="pt-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 					{t('processing_tracker.destination', 'Destination country')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.pt.dest_hint', 'The country you applied to.')}</p>
+				<HintIcon text={t('tools.pt.dest_hint', 'The country you applied to.')} />
 				<div class="mt-2">
 					<SelectField
 						id="pt-dest"
@@ -204,7 +205,7 @@
 					>
 						{t('processing_tracker.visa_category', 'Visa category')}
 					</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.pt.category_hint', 'The visa class you applied under.')}</p>
+						<HintIcon text={t('tools.pt.category_hint', 'The visa class you applied under.')} />
 					<input
 						id="visa-category"
 						type="text"
@@ -224,7 +225,7 @@
 					>
 						{t('processing_tracker.origin', 'Origin country (optional)')}
 					</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.pt.origin_hint', 'The country you applied from.')}</p>
+						<HintIcon text={t('tools.pt.origin_hint', 'The country you applied from.')} />
 					<SelectField
 						id="origin-dest"
 						value={originDest}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Manage slide-over for an extensions-catalog entry — edits the flag's
 	// config blob (name, description, phase, rollout %, per-surface
 	// visibility/audience/geo rules, show_on_roadmap) via PATCH
@@ -537,9 +538,7 @@
 								bind:value={draft.rollout}
 								class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus mt-1 block w-28 rounded-9px border px-3 py-2 text-sm transition-colors"
 							/>
-							<p class="text-muted-foreground mt-1 text-xs">
-								{t('extensions.rollout_hint', '100 = fully on, 0 = off, 1-99 = gradual rollout.')}
-							</p>
+							<HintIcon text={t('extensions.rollout_hint', '100 = fully on, 0 = off, 1-99 = gradual rollout.')} />
 						</div>
 					</section>
 
@@ -548,9 +547,7 @@
 						<h4 class="text-muted-foreground mb-1 text-xs font-semibold uppercase tracking-wide">
 							{t('extensions.section_visibility', 'Visibility')}
 						</h4>
-						<p class="text-muted-foreground mb-3 text-xs">
-							{t('extensions.visibility_hint', 'Per-surface visibility and optional audience/geo restrictions.')}
-						</p>
+						<HintIcon text={t('extensions.visibility_hint', 'Per-surface visibility and optional audience/geo restrictions.')} />
 						<div class="space-y-2">
 							{#each SURFACES as surface (surface)}
 								{@const rule = draft.surfaces[surface]}
@@ -626,9 +623,7 @@
 														compact
 													/>
 												</div>
-												<p class="text-muted-foreground mt-1 text-xs">
-													{t('extensions.audience_hint', 'Restrict to user groups (group:slug) or permission nodes (perm:node). Empty = everyone.')}
-												</p>
+												<HintIcon text={t('extensions.audience_hint', 'Restrict to user groups (group:slug) or permission nodes (perm:node). Empty = everyone.')} />
 											</div>
 
 											<div>
@@ -697,9 +692,7 @@
 														compact
 													/>
 												</div>
-												<p class="text-muted-foreground mt-1 text-xs">
-													{t('extensions.geo_hint', 'ISO alpha-2 codes. Empty allow-list = all countries; deny always wins.')}
-												</p>
+												<HintIcon text={t('extensions.geo_hint', 'ISO alpha-2 codes. Empty allow-list = all countries; deny always wins.')} />
 											</div>
 
 											<div class="border-border-card flex flex-wrap gap-2 border-t pt-3">
@@ -736,9 +729,7 @@
 							</span>
 							<Switch id="ext-manage-roadmap" bind:checked={draft.showOnRoadmap} />
 						</div>
-						<p class="text-muted-foreground mt-1 text-xs">
-							{t('extensions.show_on_roadmap_hint', 'List this feature on the public roadmap board.')}
-						</p>
+						<HintIcon text={t('extensions.show_on_roadmap_hint', 'List this feature on the public roadmap board.')} />
 						<div class="mt-3 flex items-center gap-2 text-sm">
 							<Route class="text-muted-foreground size-4" />
 							{#if ext.linked_roadmap_slug}
@@ -750,9 +741,7 @@
 								<span class="text-muted-foreground">{t('extensions.no_roadmap_link', 'No roadmap item linked')}</span>
 							{/if}
 						</div>
-						<p class="text-muted-foreground mt-1 text-xs">
-							{t('extensions.roadmap_link_hint', 'Link or unlink items from the admin roadmap editor.')}
-						</p>
+						<HintIcon text={t('extensions.roadmap_link_hint', 'Link or unlink items from the admin roadmap editor.')} />
 					</section>
 				</div>
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/98-service-directory.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -447,7 +448,7 @@
 					placeholder={t('services.title_placeholder', 'e.g. Immigration Lawyer — UK Visa Applications')}
 					class={inputClass}
 				/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.title_hint', 'Your service headline — profession + specialty works best.')}</p>
+					<HintIcon text={t('services.title_hint', 'Your service headline — profession + specialty works best.')} />
 			</div>
 
 			<!-- Body -->
@@ -464,14 +465,14 @@
 				placeholder={t('services.description_placeholder', 'Describe the service you offer…')}
 				rows={5}
 			/>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.desc_hint', 'Describe what you offer, your experience and what is included.')}</p>
+			<HintIcon text={t('services.desc_hint', 'Describe what you offer, your experience and what is included.')} />
 
 			<!-- Category -->
 			<div>
 				<label for="category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('services.field_category', 'Service category')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.category_hint', 'The service category — helps people find you.')}</p>
+				<HintIcon text={t('services.category_hint', 'The service category — helps people find you.')} />
 				<Autocomplete
 					id="category"
 					placeholder={t('services.field_category', 'Service category')}
@@ -500,13 +501,13 @@
 						onSelect={(item) => (destinationSpaceId = item.id)}
 						onClear={() => (destinationSpaceId = '')}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.dest_hint', 'The country this service is offered in.')}</p>
+						<HintIcon text={t('services.dest_hint', 'The country this service is offered in.')} />
 				</div>
 				<div>
 					<label for="city" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('services.field_city', 'City')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.city_hint', 'Optional — the city you operate in.')}</p>
+					<HintIcon text={t('services.city_hint', 'Optional — the city you operate in.')} />
 					<Autocomplete
 						id="city"
 						placeholder={destinationSpaceId
@@ -543,9 +544,7 @@
 					placeholder={t('services.origin_placeholder', 'e.g. Nigerian, Ghanaian')}
 					class={inputClass}
 				/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">
-					{t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.')}
-				</p>
+				<HintIcon text={t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.')} />
 			</div>
 
 			<!-- §98 org assignment — org-less listings only; once linked the
@@ -566,7 +565,7 @@
 						onSelect={(item) => (orgId = item.id)}
 						onClear={() => (orgId = '')}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.org_hint', 'List under an organization, or as a personal listing.')}</p>
+						<HintIcon text={t('services.org_hint', 'List under an organization, or as a personal listing.')} />
 					<p class="mt-1 text-xs text-[var(--color-muted)]">
 						{t(
 							'services.org_hint',
@@ -602,7 +601,7 @@
 						placeholder={t('services.website_placeholder', 'https://example.com')}
 						class={inputClass}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.website_hint', 'Optional — your site or portfolio link.')}</p>
+						<HintIcon text={t('services.website_hint', 'Optional — your site or portfolio link.')} />
 				</div>
 				<div>
 					<label for="booking" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -615,7 +614,7 @@
 						placeholder={t('services.booking_placeholder', 'https://booking.example.com')}
 						class={inputClass}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.booking_hint', 'Optional — direct link where clients book you.')}</p>
+						<HintIcon text={t('services.booking_hint', 'Optional — direct link where clients book you.')} />
 				</div>
 			</div>
 
@@ -631,7 +630,7 @@
 					placeholder={t('services.price_placeholder', 'e.g. £50–£150/hr')}
 					class={inputClass}
 				/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.price_hint', 'Rough pricing — e.g. £50–£150/hr or a flat fee.')}</p>
+					<HintIcon text={t('services.price_hint', 'Rough pricing — e.g. £50–£150/hr or a flat fee.')} />
 			</div>
 
 			<!-- §114 featured image — contents.featured_image_id via
@@ -684,7 +683,7 @@
 							<label for="pkg-mode" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 								{t('services.pkg_purchase_mode', 'Purchase mode')}
 							</label>
-							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.pkg_mode_hint', 'How clients pay — direct booking or inquiry first.')}</p>
+							<HintIcon text={t('services.pkg_mode_hint', 'How clients pay — direct booking or inquiry first.')} />
 							<Autocomplete
 								id="pkg-mode"
 								placeholder={t('services.pkg_purchase_mode', 'Purchase mode')}
@@ -724,7 +723,7 @@
 						<label for="pkg-price-per" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 							{t('services.pkg_price_per', 'Price is per')}
 						</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.pkg_per_hint', 'What the price covers — per person, package or group.')}</p>
+						<HintIcon text={t('services.pkg_per_hint', 'What the price covers — per person, package or group.')} />
 						<Autocomplete
 							id="pkg-price-per"
 							placeholder={t('services.pkg_price_per', 'Price is per')}

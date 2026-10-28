@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: docs/superpowers/specs/2026-09-20-intel-channels-curation-design.md §5
 	// Public source proposal form body. Submits to POST /api/v1/sources/propose
 	// and renders category/source-kind options from the backend metadata
@@ -292,7 +293,7 @@
 			<label class="mb-1 block text-sm font-medium" for="psf-name">
 				{t('sources.submit.name', 'Source name')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.name_hint', 'The official name of the source.')}</p>
+			<HintIcon text={t('sources.submit.name_hint', 'The official name of the source.')} />
 			<input id="psf-name" name="name" bind:value={name} class={inputClass()} placeholder="DAAD Scholarships" disabled={loading} />
 		</div>
 
@@ -300,7 +301,7 @@
 			<label class="mb-1 block text-sm font-medium" for="psf-source-url">
 				{t('sources.submit.source_url', 'Source URL')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.url_hint', 'The main URL — where the data is published.')}</p>
+			<HintIcon text={t('sources.submit.url_hint', 'The main URL — where the data is published.')} />
 			<div class="flex items-start gap-2">
 				<input
 					id="psf-source-url"
@@ -449,7 +450,7 @@
 			<label class="mb-1 block text-sm font-medium" for="psf-domain">
 				{t('sources.submit.domain', 'Domain (optional)')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.domain_hint', 'The domain, e.g. daad.de — used for matching.')}</p>
+			<HintIcon text={t('sources.submit.domain_hint', 'The domain, e.g. daad.de — used for matching.')} />
 			<input
 				id="psf-domain"
 				name="domain"
@@ -528,7 +529,7 @@
 				<label class="mb-1 block text-sm font-medium" for="psf-source-kind">
 					{t('sources.submit.source_kind', 'Source kind')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.kind_hint', 'What kind of source — database, list, feed.')}</p>
+				<HintIcon text={t('sources.submit.kind_hint', 'What kind of source — database, list, feed.')} />
 				<AutocompleteSelect id="psf-source-kind" name="source_kind" bind:value={sourceKind} options={kindOptions} disabled={loading} />
 			</div>
 		{/if}
@@ -537,7 +538,7 @@
 			<label class="mb-1 block text-sm font-medium" for="psf-description">
 				{t('sources.submit.description_label', 'Description')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.desc_hint', 'What this source covers and why it should be added.')}</p>
+			<HintIcon text={t('sources.submit.desc_hint', 'What this source covers and why it should be added.')} />
 			<textarea
 				id="psf-description"
 				name="description"

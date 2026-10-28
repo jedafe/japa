@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -150,7 +151,7 @@
 				<label for="destination_space_id" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_destination', 'Destination country')} <span class="text-red-500">*</span>
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.destination_hint', 'The country the scam targets.')}</p>
+				<HintIcon text={t('scam_alerts.destination_hint', 'The country the scam targets.')} />
 				<Autocomplete
 					id="destination_space_id"
 					placeholder={t('scam_alerts.placeholder_destination', 'Select destination country')}
@@ -167,7 +168,7 @@
 				<label for="origin_space_id" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_origin_country', 'Origin country')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.origin_hint', 'The community the scammer pretends to be from or targets.')}</p>
+				<HintIcon text={t('scam_alerts.origin_hint', 'The community the scammer pretends to be from or targets.')} />
 				<Autocomplete
 					id="origin_space_id"
 					placeholder={t('scam_alerts.placeholder_origin_country', 'Select origin country')}
@@ -187,7 +188,7 @@
 			<label for="scam_type" class="text-sm font-medium text-[var(--color-text)]">
 				{t('scam_alerts.field_scam_type', 'Scam type')} <span class="text-red-500">*</span>
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.type_hint', 'The kind of scam — e.g. fake job, visa fraud.')}</p>
+			<HintIcon text={t('scam_alerts.type_hint', 'The kind of scam — e.g. fake job, visa fraud.')} />
 			<AutocompleteSelect
 				id="scam_type"
 				value={scamType}
@@ -201,7 +202,7 @@
 			<label for="origin_community" class="text-sm font-medium text-[var(--color-text)]">
 				{t('scam_alerts.field_origin_community', 'Origin community')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.community_hint', 'Optional — the community being impersonated.')}</p>
+			<HintIcon text={t('scam_alerts.community_hint', 'Optional — the community being impersonated.')} />
 			<input
 				id="origin_community"
 				type="text"
@@ -218,7 +219,7 @@
 			<label for="platform_used" class="text-sm font-medium text-[var(--color-text)]">
 				{t('scam_alerts.field_platform', 'Platform used')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.platform_hint', 'Where the scam happened — e.g. WhatsApp, a website.')}</p>
+			<HintIcon text={t('scam_alerts.platform_hint', 'Where the scam happened — e.g. WhatsApp, a website.')} />
 			<AutocompleteSelect
 				id="platform_used"
 				value={platformUsed}
@@ -235,7 +236,7 @@
 				<label for="approximate_date" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_date', 'Approximate date')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.date_hint', 'Roughly when it happened.')}</p>
+				<HintIcon text={t('scam_alerts.date_hint', 'Roughly when it happened.')} />
 				<input
 					id="approximate_date"
 					type="date"
@@ -249,7 +250,7 @@
 				<label for="amount_range" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_amount', 'Amount range')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.amount_hint', 'Optional — how much was lost or asked for.')}</p>
+				<HintIcon text={t('scam_alerts.amount_hint', 'Optional — how much was lost or asked for.')} />
 				<input
 					id="amount_range"
 					type="text"
@@ -277,7 +278,7 @@
 			placeholder={t('scam_alerts.placeholder_description', 'Describe what happened, how the scam worked, and any warning signs…')}
 			rows={6}
 		/>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scam_alerts.desc_hint', 'Describe what happened, how it worked, and warning signs.')}</p>
+			<HintIcon text={t('scam_alerts.desc_hint', 'Describe what happened, how it worked, and warning signs.')} />
 
 		<!-- Reported to authorities -->
 		<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">

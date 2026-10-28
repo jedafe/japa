@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /roadmap — EntityPage scaffold (§113). Items table with status/category
 	// filters, soft-delete restore + hard delete, and a "Change Status" state
@@ -616,9 +617,7 @@
 				{STATUS_OPTIONS.find((s) => s.value === row.status)?.label ?? row.status}
 			</p>
 			{#if row.feature_flag_key}
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">
-					{t('roadmap.status_derived_hint', 'Status is derived from the linked feature flag — change the flag’s phase to move it.')}
-				</p>
+				<HintIcon text={t('roadmap.status_derived_hint', 'Status is derived from the linked feature flag — change the flag’s phase to move it.')} />
 			{/if}
 		</div>
 		{#if row.summary}

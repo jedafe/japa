@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /email-templates — migrated to the EntityPage scaffold.
 	//
@@ -283,8 +284,8 @@
 			<label for="et-test-email" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.test_email', 'Test Email Address')}
 			</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_test_email_hint', 'Where the test email is sent.')}</p>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.test_email_hint', 'Where the test email is sent.')}</span>
+			<HintIcon text={t('email_templates.et_test_email_hint', 'Where the test email is sent.')} />
+			<HintIcon text={t('email_templates.test_email_hint', 'Where the test email is sent.')} />
 			<input
 				id="et-test-email"
 				type="email"
@@ -399,8 +400,8 @@
 			<label for="et-subject" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.subject', 'Subject')}
 			</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_subject_hint', 'The email subject line recipients see.')}</p>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.subject_hint', 'The email subject line recipients see.')}</span>
+			<HintIcon text={t('email_templates.et_subject_hint', 'The email subject line recipients see.')} />
+			<HintIcon text={t('email_templates.subject_hint', 'The email subject line recipients see.')} />
 			<input
 				id="et-subject"
 				type="text"
@@ -414,8 +415,8 @@
 			<label for="et-body" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.body', 'Body (HTML)')}
 			</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_body_hint', 'Email body HTML — test before publishing.')}</p>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.body_hint', 'The main content body.')}</span>
+			<HintIcon text={t('email_templates.et_body_hint', 'Email body HTML — test before publishing.')} />
+			<HintIcon text={t('email_templates.body_hint', 'The main content body.')} />
 			<Tabs
 				tabs={[
 					{ value: 'edit', label: t('email_templates.tab_edit', 'Edit') },
@@ -451,8 +452,8 @@
 			<label for="et-plain" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.plain_text', 'Plain Text Body')}
 			</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_plain_hint', 'Plain-text fallback for mail clients that block HTML.')}</p>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.plain_hint', 'Plain-text fallback for mail clients that block HTML.')}</span>
+			<HintIcon text={t('email_templates.et_plain_hint', 'Plain-text fallback for mail clients that block HTML.')} />
+			<HintIcon text={t('email_templates.plain_hint', 'Plain-text fallback for mail clients that block HTML.')} />
 			<textarea
 				id="et-plain"
 				bind:value={value.plain_text_body}
@@ -473,8 +474,8 @@
 			<label for="et-active" class="text-sm font-medium" style="color: var(--color-foreground)">
 				{t('common.active', 'Active')}
 			</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_active_hint', 'Inactive templates are not sent.')}</p>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('common.active_hint', 'Inactive records are hidden or disabled.')}</span>
+			<HintIcon text={t('email_templates.et_active_hint', 'Inactive templates are not sent.')} />
+			<HintIcon text={t('common.active_hint', 'Inactive records are hidden or disabled.')} />
 		</div>
 
 		{#if editing && canManageTemplates}

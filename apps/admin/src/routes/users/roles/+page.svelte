@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /users/roles — migrated to the EntityPage scaffold.
 	//
@@ -200,7 +201,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="role-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.roles.name', 'Name')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('users.roles.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
+			<HintIcon text={t('users.roles.name_hint', 'The name shown in admin lists and on the site where public.')} />
 			<input
 				id="role-name"
 				type="text"

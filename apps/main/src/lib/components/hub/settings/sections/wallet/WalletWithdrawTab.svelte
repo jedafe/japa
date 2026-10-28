@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
@@ -249,9 +250,7 @@
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 						placeholder={t('wallet.withdraw.enter_amount', 'Enter credit amount')}
 					/>
-					<p id="withdraw-amount-hint" class="mt-1 text-xs text-[var(--color-muted)]">
-						{t('wallet.withdraw.amount_hint', 'Credits to send to your payout method — fees are calculated below.')}
-					</p>
+					<HintIcon id="withdraw-amount-hint" text={t('wallet.withdraw.amount_hint', 'Credits to send to your payout method — fees are calculated below.')} />
 					{#if minWithdraw > 0}
 						<p class="mt-1 text-xs text-[var(--color-muted)]">
 							{t('wallet.withdraw.minimum', 'Minimum {n} credits').replace('{n}', minWithdraw.toLocaleString())}
@@ -268,9 +267,7 @@
 						bind:value={selectedCurrency}
 						options={currencies.map((c) => ({ value: c.code, label: `${c.name ?? c.code} (${c.symbol})` }))}
 					/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">
-						{t('wallet.withdraw.currency_hint', 'The currency you want to be paid in.')}
-					</p>
+					<HintIcon text={t('wallet.withdraw.currency_hint', 'The currency you want to be paid in.')} />
 				</div>
 			</div>
 
@@ -290,9 +287,7 @@
 							}))
 						]}
 					/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">
-						{t('wallet.withdraw.method_hint', 'One of your saved payout methods.')}
-					</p>
+					<HintIcon text={t('wallet.withdraw.method_hint', 'One of your saved payout methods.')} />
 				</div>
 			{:else}
 				<p class="mt-4 rounded-[var(--radius)] bg-[var(--color-warning)]/10 px-3 py-2 text-sm text-[var(--color-warning)]">
@@ -386,9 +381,7 @@
 					bind:value={newProvider}
 					options={withdrawalProviders.map((p) => ({ value: p, label: p }))}
 				/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">
-					{t('wallet.withdraw.method_provider_hint', 'The service or network that pays you out.')}
-				</p>
+				<HintIcon text={t('wallet.withdraw.method_provider_hint', 'The service or network that pays you out.')} />
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="method-currency">{t('wallet.withdraw.method_currency', 'Currency / Coin')}</label>
@@ -399,9 +392,7 @@
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					placeholder={t('wallet.withdraw.method_currency_placeholder', 'e.g. usdttrc20')}
 				/>
-				<p id="method-currency-hint" class="mt-1 text-xs text-[var(--color-muted)]">
-					{t('wallet.withdraw.method_currency_hint', 'Currency code the provider expects, e.g. usdttrc20 or ngn.')}
-				</p>
+				<HintIcon id="method-currency-hint" text={t('wallet.withdraw.method_currency_hint', 'Currency code the provider expects, e.g. usdttrc20 or ngn.')} />
 			</div>
 			<div class="sm:col-span-2">
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="method-account">{t('wallet.withdraw.method_account', 'Account / Address')}</label>
@@ -412,9 +403,7 @@
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					placeholder={t('wallet.withdraw.method_account_placeholder', 'Wallet address, email, or account number')}
 				/>
-				<p id="method-account-hint" class="mt-1 text-xs text-[var(--color-muted)]">
-					{t('wallet.withdraw.method_account_hint', 'Where the payout goes — double-check it, withdrawals cannot be reversed.')}
-				</p>
+				<HintIcon id="method-account-hint" text={t('wallet.withdraw.method_account_hint', 'Where the payout goes — double-check it, withdrawals cannot be reversed.')} />
 			</div>
 			<div class="sm:col-span-2">
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="method-label">{t('wallet.withdraw.method_label', 'Label')}</label>
@@ -425,9 +414,7 @@
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					placeholder={t('wallet.withdraw.method_label_placeholder', 'My USDT TRC20 wallet')}
 				/>
-				<p id="method-label-hint" class="mt-1 text-xs text-[var(--color-muted)]">
-					{t('wallet.withdraw.method_label_hint', 'A name to recognize this payout method later.')}
-				</p>
+				<HintIcon id="method-label-hint" text={t('wallet.withdraw.method_label_hint', 'A name to recognize this payout method later.')} />
 			</div>
 		</div>
 

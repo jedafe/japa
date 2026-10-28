@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { campaignsAdminApi, api, type Campaign, type CampaignItem } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -246,7 +247,7 @@
 				options={personas.map((persona) => ({ value: persona.id, label: persona.label }))}
 				class="w-full"
 			/>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('campaigns.persona_pool_hint', 'Hold Ctrl/Cmd to select multiple. Leave empty to use all active personas.')}</p>
+			<HintIcon text={t('campaigns.persona_pool_hint', 'Hold Ctrl/Cmd to select multiple. Leave empty to use all active personas.')} />
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
@@ -360,7 +361,7 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('campaigns.items', 'Items')}</p>
 				{#if items.length === 0}
-					<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('campaigns.items_detail_hint', 'Open the campaign to see individual items.')}</p>
+					<HintIcon text={t('campaigns.items_detail_hint', 'Open the campaign to see individual items.')} />
 				{:else}
 					<div class="mt-2 space-y-2">
 						{#each items as item (item.id)}

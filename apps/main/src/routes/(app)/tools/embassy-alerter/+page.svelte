@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack, onMount } from 'svelte';
 	import { t, siteName, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -325,7 +326,7 @@
 			>
 				{t('geo.destination', 'Destination:')}
 			</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.embassy.dest_hint', 'The country whose embassy alerts you want.')}</p>
+				<HintIcon text={t('tools.embassy.dest_hint', 'The country whose embassy alerts you want.')} />
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('geo.select_destination', 'Select a country…')}

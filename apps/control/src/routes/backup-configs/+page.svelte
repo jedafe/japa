@@ -1,5 +1,6 @@
 <!-- RBAC CRUD: Backup Configs management -->
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
@@ -558,7 +559,7 @@
 					<label for="bc-name" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.name', 'Name')}
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('backup_configs.name_hint', 'A label for this backup job.')}</p>
+					<HintIcon text={t('backup_configs.name_hint', 'A label for this backup job.')} />
 					<input
 						id="bc-name"
 						type="text"
@@ -571,7 +572,7 @@
 					<label for="bc-schedule" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.schedule', 'Schedule')}
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('backup_configs.schedule_hint', 'How often the backup runs.')}</p>
+					<HintIcon text={t('backup_configs.schedule_hint', 'How often the backup runs.')} />
 					<Autocomplete
 						id="bc-schedule"
 						placeholder={t('backup_configs.schedule', 'Select schedule...')}
@@ -602,7 +603,7 @@
 					<label for="backup-targets" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.what_to_backup', 'What to Backup')}
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('backup_configs.targets_hint', 'What to include — database, media, config.')}</p>
+					<HintIcon text={t('backup_configs.targets_hint', 'What to include — database, media, config.')} />
 
 					{#if selectedTargetLabels.length > 0}
 						<div class="mb-2 flex flex-wrap gap-1.5">
@@ -634,9 +635,7 @@
 						selectedId={null}
 						onSelect={(item) => addBackupTarget(item.id)}
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">
-						{t('backup_configs.what_to_backup_hint', 'Select which components to include in the backup.')}
-					</p>
+					<HintIcon text={t('backup_configs.what_to_backup_hint', 'Select which components to include in the backup.')} />
 				</div>
 				<div>
 					<label for="bc-storage" class="text-foreground mb-1 block text-sm font-medium">
@@ -663,9 +662,7 @@
 						class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 						placeholder="/backups or s3://my-bucket/backups"
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">
-						{t('backup_configs.destination_hint', 'Local path or cloud storage URL')}
-					</p>
+					<HintIcon text={t('backup_configs.destination_hint', 'Local path or cloud storage URL')} />
 				</div>
 				<div>
 					<label for="bc-retention" class="text-foreground mb-1 block text-sm font-medium">

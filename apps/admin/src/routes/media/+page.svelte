@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /media — migrated to the EntityPage scaffold.
 	// Moderation entity: read-only list (no create from EntityPage) with state actions
@@ -1161,7 +1162,7 @@
 		<div class="space-y-4">
 			<div>
 				<label for="media-upload-files" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_files', 'Files')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('media.media_upload_files_hint', 'The files to upload — multiple allowed.')}</p>
+				<HintIcon text={t('media.media_upload_files_hint', 'The files to upload — multiple allowed.')} />
 				<input
 					id="media-upload-files"
 					type="file"
@@ -1193,7 +1194,7 @@
 			{/if}
 			<div>
 				<label for="media-upload-group" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('media.media_upload_group_hint', 'Restrict to a user group — optional.')}</p>
+				<HintIcon text={t('media.media_upload_group_hint', 'Restrict to a user group — optional.')} />
 				<AutocompleteSelect
 					id="media-upload-group"
 					bind:value={uploadUserGroupId}
@@ -1203,7 +1204,7 @@
 			</div>
 			<div>
 				<label for="media-upload-alt" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('media.media_upload_alt_hint', 'Alt text for accessibility — optional.')}</p>
+				<HintIcon text={t('media.media_upload_alt_hint', 'Alt text for accessibility — optional.')} />
 				<input
 					id="media-upload-alt"
 					type="text"
@@ -1360,7 +1361,7 @@
 				<label for="edit-caption" class="mb-1 block text-sm font-medium text-foreground">
 					{t('app.media.field_title', 'Title / Caption')}
 				</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('media.edit_caption_hint', 'The caption shown with this media.')}</p>
+				<HintIcon text={t('media.edit_caption_hint', 'The caption shown with this media.')} />
 				<input
 					id="edit-caption"
 					type="text"
@@ -1373,7 +1374,7 @@
 				<label for="edit-alt" class="mb-1 block text-sm font-medium text-foreground">
 					{t('app.media.field_alt_text', 'Alt Text')}
 				</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('media.edit_alt_hint', 'Alt text for accessibility.')}</p>
+				<HintIcon text={t('media.edit_alt_hint', 'Alt text for accessibility.')} />
 				<textarea
 					id="edit-alt"
 					bind:value={editAltText}
@@ -1381,7 +1382,7 @@
 					placeholder={t('app.media.alt_placeholder', 'Accessibility description for screen readers...')}
 					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
 				></textarea>
-				<p class="mt-1 text-xs text-muted">{t('app.media.alt_hint', 'Used by screen readers and SEO. Describe the image content.')}</p>
+				<HintIcon text={t('app.media.alt_hint', 'Used by screen readers and SEO. Describe the image content.')} />
 			</div>
 		</div>
 		<div class="mt-4 flex justify-end gap-2">

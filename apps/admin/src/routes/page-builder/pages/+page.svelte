@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /page-builder/pages — migrated to the EntityPage scaffold.
 	// List + page metadata CRUD via EntityPage; state actions (publish/archive)
@@ -552,9 +553,7 @@
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('page_builder.publish_confirm', 'Publish page')} <strong>{actionTarget.title}</strong>?
 		</p>
-		<p class="mt-2 text-sm" style="color: var(--color-muted)">
-			{t('page_builder.publish_hint', 'This will make the page publicly visible.')}
-		</p>
+		<HintIcon text={t('page_builder.publish_hint', 'This will make the page publicly visible.')} />
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showPublishConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
@@ -570,9 +569,7 @@
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('page_builder.archive_confirm', 'Archive page')} <strong>{actionTarget.title}</strong>?
 		</p>
-		<p class="mt-2 text-sm" style="color: var(--color-warning)">
-			{t('page_builder.archive_hint', 'Archived pages are hidden from the public site.')}
-		</p>
+		<HintIcon text={t('page_builder.archive_hint', 'Archived pages are hidden from the public site.')} />
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showArchiveConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>

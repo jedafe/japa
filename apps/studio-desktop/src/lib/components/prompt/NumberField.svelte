@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	interface Props {
 		label: string;
 		value: number;
@@ -36,5 +37,5 @@
 		max={max ?? undefined}
 		oninput={handleInput}
 	/>
-	{#if hint}<span class="mt-1 block text-xs text-muted">{hint}</span>{/if}
+	{#if hint}<HintIcon text={hint} />{/if}
 </label>

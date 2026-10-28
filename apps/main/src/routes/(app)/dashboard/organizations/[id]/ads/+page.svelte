@@ -2,6 +2,7 @@
 <!-- Self-serve ads dashboard: list campaigns, create new campaigns, view stats.
      Calls /org/{org_id}/ads/* endpoints (§61 API Routes). -->
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -330,7 +331,7 @@
 					<label for="ad-name" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.campaign_name', 'Campaign Name')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.name_hint', 'Internal name for this campaign — not shown to users.')}</p>
+					<HintIcon text={t('org_ads.name_hint', 'Internal name for this campaign — not shown to users.')} />
 					<input id="ad-name" class={inputClass} type="text" bind:value={formName} required />
 				</div>
 
@@ -338,7 +339,7 @@
 					<label for="ad-slot" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.slot_type', 'Ad Slot')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.slot_hint', 'Where the ad appears — feed, sidebar, banner.')}</p>
+					<HintIcon text={t('org_ads.slot_hint', 'Where the ad appears — feed, sidebar, banner.')} />
 					<AutocompleteSelect
 						id="ad-slot"
 						bind:value={formSlotTypeId}
@@ -356,7 +357,7 @@
 					<label for="ad-duration" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.duration_days', 'Duration (days)')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.duration_hint', 'How many days the campaign runs.')}</p>
+					<HintIcon text={t('org_ads.duration_hint', 'How many days the campaign runs.')} />
 					<input
 						id="ad-duration"
 						class={inputClass}
@@ -371,7 +372,7 @@
 					<label for="ad-start" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.start_date', 'Start Date')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.start_hint', 'When the campaign begins.')}</p>
+					<HintIcon text={t('org_ads.start_hint', 'When the campaign begins.')} />
 					<input id="ad-start" class={inputClass} type="date" bind:value={formStartDate} />
 				</div>
 
@@ -379,7 +380,7 @@
 					<label for="ad-headline" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.headline', 'Headline')} *
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.headline_hint', 'The main text users see.')}</p>
+					<HintIcon text={t('org_ads.headline_hint', 'The main text users see.')} />
 					<input id="ad-headline" class={inputClass} type="text" bind:value={formHeadline} required />
 				</div>
 
@@ -387,7 +388,7 @@
 					<label for="ad-body" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.body', 'Body text')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.body_hint', 'Supporting copy under the headline.')}</p>
+					<HintIcon text={t('org_ads.body_hint', 'Supporting copy under the headline.')} />
 					<textarea id="ad-body" class={inputClass} rows="3" bind:value={formBody}></textarea>
 				</div>
 
@@ -395,7 +396,7 @@
 					<label for="ad-cta" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.cta', 'Call to action')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.cta_hint', 'The button text — e.g. Learn More.')}</p>
+					<HintIcon text={t('org_ads.cta_hint', 'The button text — e.g. Learn More.')} />
 					<input id="ad-cta" class={inputClass} type="text" bind:value={formCta} placeholder={t('org_ads.cta_ph', 'Learn More')} />
 				</div>
 
@@ -403,7 +404,7 @@
 					<label for="ad-image" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.image_url', 'Image URL')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.image_hint', 'Direct image URL for the creative.')}</p>
+					<HintIcon text={t('org_ads.image_hint', 'Direct image URL for the creative.')} />
 					<input id="ad-image" class={inputClass} type="url" bind:value={formImageUrl} placeholder="https://..." />
 				</div>
 
@@ -411,7 +412,7 @@
 					<label for="ad-geo" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.target_geo', 'Target countries (ISO codes, comma-separated)')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.geo_hint', 'Country codes to target — e.g. NG, GB, US.')}</p>
+					<HintIcon text={t('org_ads.geo_hint', 'Country codes to target — e.g. NG, GB, US.')} />
 					<input id="ad-geo" class={inputClass} type="text" bind:value={formTargetGeo} placeholder="NG, GB, US" />
 				</div>
 
@@ -419,7 +420,7 @@
 					<label for="ad-freq" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.freq_cap', 'Frequency cap / user / day')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.freq_hint', 'How often the ad shows per viewer.')}</p>
+					<HintIcon text={t('org_ads.freq_hint', 'How often the ad shows per viewer.')} />
 					<input id="ad-freq" class={inputClass} type="number" min="0" bind:value={formFreqCap} />
 				</div>
 
@@ -427,7 +428,7 @@
 					<label for="ad-url" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.target_url', 'Target URL')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.url_hint', 'Where clicks land.')}</p>
+					<HintIcon text={t('org_ads.url_hint', 'Where clicks land.')} />
 					<input
 						id="ad-url"
 						class={inputClass}

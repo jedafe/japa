@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
@@ -316,7 +317,7 @@
 			<!-- Marital status -->
 			<div>
 				<label class={labelCls} for="marital">{t('crs_calculator.marital', 'Marital status')}</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.crs.marital_hint', 'Your status affects how points are calculated.')}</p>
+				<HintIcon text={t('tools.crs.marital_hint', 'Your status affects how points are calculated.')} />
 				<AutocompleteSelect
 					id="marital"
 					value={maritalStatus}
@@ -331,35 +332,35 @@
 			<!-- Age -->
 			<div>
 				<label class={labelCls} for="age">{t('crs_calculator.age', 'Age')}</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.crs.age_hint', 'Your age on the day you would submit an Express Entry profile.')}</p>
+				<HintIcon text={t('tools.crs.age_hint', 'Your age on the day you would submit an Express Entry profile.')} />
 				<input id="age" type="number" bind:value={age} min="17" max="120" class={inputCls} />
 			</div>
 
 			<!-- Education -->
 			<div>
 				<label class={labelCls} for="education">{t('crs_calculator.education', 'Highest education')}</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.crs.education_hint', 'Your highest completed credential.')}</p>
+				<HintIcon text={t('tools.crs.education_hint', 'Your highest completed credential.')} />
 				<AutocompleteSelect id="education" bind:value={education} options={educationOptions} />
 			</div>
 
 			<!-- Canadian experience -->
 			<div>
 				<label class={labelCls} for="canadianExp">{t('crs_calculator.canadian_exp', 'Canadian work experience (years)')}</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.crs.canadian_exp_hint', 'Years of skilled work inside Canada.')}</p>
+				<HintIcon text={t('tools.crs.canadian_exp_hint', 'Years of skilled work inside Canada.')} />
 				<input id="canadianExp" type="number" bind:value={canadianExp} min="0" max="60" class={inputCls} />
 			</div>
 
 			<!-- Foreign experience -->
 			<div>
 				<label class={labelCls} for="foreignExp">{t('crs_calculator.foreign_exp', 'Foreign work experience (years)')}</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.crs.foreign_exp_hint', 'Years of skilled work outside Canada.')}</p>
+				<HintIcon text={t('tools.crs.foreign_exp_hint', 'Years of skilled work outside Canada.')} />
 				<input id="foreignExp" type="number" bind:value={foreignExp} min="0" max="60" class={inputCls} />
 			</div>
 
 			<!-- Canadian education -->
 			<div>
 				<label class={labelCls} for="canadianEdu">{t('crs_calculator.canadian_edu', 'Canadian education')}</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.crs.canadian_edu_hint', 'Degrees earned at Canadian institutions.')}</p>
+				<HintIcon text={t('tools.crs.canadian_edu_hint', 'Degrees earned at Canadian institutions.')} />
 				<AutocompleteSelect
 					id="canadianEdu"
 					bind:value={canadianEducation}
@@ -375,7 +376,7 @@
 			</legend>
 			<div class="mb-3 sm:max-w-xs">
 				<label class={subLabelCls} for="firstLang">{t('crs_calculator.first_lang_select', 'Language')}</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.crs.lang_hint', 'Your strongest official-language test result.')}</p>
+				<HintIcon text={t('tools.crs.lang_hint', 'Your strongest official-language test result.')} />
 				<AutocompleteSelect
 					id="firstLang"
 					bind:value={firstLanguage}
@@ -492,9 +493,7 @@
 					{t('crs_calculator.certificate', 'Certificate of qualification (trade)')}
 				</label>
 			</div>
-			<p class="mt-2 text-xs text-[var(--color-muted)]">
-				{t('crs_calculator.french_hint', 'French test results entered above also count toward francophone bonus points automatically.')}
-			</p>
+			<HintIcon text={t('crs_calculator.french_hint', 'French test results entered above also count toward francophone bonus points automatically.')} />
 		</fieldset>
 
 		<div class="mt-5">
@@ -636,9 +635,7 @@
 		{/if}
 	{:else}
 		<div class="mt-6 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] p-4 text-center">
-			<p class="mb-3 text-sm text-[var(--color-muted)]">
-				{t('crs_calculator.signin_hint', 'Sign in to save your score history and track changes over time.')}
-			</p>
+			<HintIcon text={t('crs_calculator.signin_hint', 'Sign in to save your score history and track changes over time.')} />
 			<a
 				href="/login?redirect={encodeURIComponent(page.url.pathname)}"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"

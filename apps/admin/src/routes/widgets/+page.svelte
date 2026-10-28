@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /widgets — Page Builder widget_configurations CRUD (Section 16).
 	// Uses EntityPage with a formSnippet because the config field is
@@ -367,7 +368,7 @@
 			<label for="widget-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('widgets.name', 'Name')} *
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('widgets.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
+			<HintIcon text={t('widgets.name_hint', 'The name shown in admin lists and on the site where public.')} />
 			<input
 				id="widget-name"
 				type="text"
@@ -383,7 +384,7 @@
 			<label for="widget-type" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('widgets.type', 'Type')} *
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('widgets.type_hint', 'The type — controls how it’s handled.')}</span>
+			<HintIcon text={t('widgets.type_hint', 'The type — controls how it’s handled.')} />
 			<AutocompleteSelect
 				id="widget-type"
 				bind:value={value.widget_type}
@@ -403,7 +404,7 @@
 			<label for="widget-ttl" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				Cache TTL (seconds)
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.ttl_hint', 'Cache lifetime — higher values reduce load.')}</span>
+			<HintIcon text={t('admin.ttl_hint', 'Cache lifetime — higher values reduce load.')} />
 			<input
 				id="widget-ttl"
 				type="number"

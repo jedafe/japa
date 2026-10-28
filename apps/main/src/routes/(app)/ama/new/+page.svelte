@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -140,7 +141,7 @@
 			<label for="host_dest_country_id" class="text-sm font-medium text-[var(--color-text)]">
 				{t('ama.field_destination', 'Destination country')} <span class="text-red-500">*</span>
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ama.destination_hint', 'The country your experience relates to.')}</p>
+			<HintIcon text={t('ama.destination_hint', 'The country your experience relates to.')} />
 			<Autocomplete
 				placeholder={t('ama.placeholder_destination', 'Select destination country')}
 				emptyMessage={t('common.no_results', 'No results found')}
@@ -158,7 +159,7 @@
 			<label for="title" class="text-sm font-medium text-[var(--color-text)]">
 				{t('ama.field_title', 'AMA title')} <span class="text-red-500">*</span>
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ama.title_hint', 'Format: Ask a [profession] who [did the thing].')}</p>
+			<HintIcon text={t('ama.title_hint', 'Format: Ask a [profession] who [did the thing].')} />
 			<input
 				id="title"
 				type="text"
@@ -184,7 +185,7 @@
 			placeholder={t('ama.placeholder_intro', 'Introduce yourself and the kind of questions you can answer…')}
 			rows={5}
 		/>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ama.intro_hint', 'Your background and the topics you can answer — builds trust.')}</p>
+			<HintIcon text={t('ama.intro_hint', 'Your background and the topics you can answer — builds trust.')} />
 
 		<!-- Host profession + years abroad -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -192,7 +193,7 @@
 				<label for="host_profession" class="text-sm font-medium text-[var(--color-text)]">
 					{t('ama.field_profession', 'Profession')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ama.profession_hint', 'Your profession — helps users know who they are asking.')}</p>
+				<HintIcon text={t('ama.profession_hint', 'Your profession — helps users know who they are asking.')} />
 				<input
 					id="host_profession"
 					type="text"
@@ -206,7 +207,7 @@
 				<label for="host_years_abroad" class="text-sm font-medium text-[var(--color-text)]">
 					{t('ama.field_years_abroad', 'Years abroad')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ama.years_hint', 'How many years you have lived abroad.')}</p>
+				<HintIcon text={t('ama.years_hint', 'How many years you have lived abroad.')} />
 				<input
 					id="host_years_abroad"
 					type="number"
@@ -224,7 +225,7 @@
 			<label for="open_duration_hours" class="text-sm font-medium text-[var(--color-text)]">
 				{t('ama.field_duration', 'Session duration (hours)')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ama.duration_hint', 'How long the AMA stays open for questions, in hours.')}</p>
+			<HintIcon text={t('ama.duration_hint', 'How long the AMA stays open for questions, in hours.')} />
 			<input
 				id="open_duration_hours"
 				type="number"

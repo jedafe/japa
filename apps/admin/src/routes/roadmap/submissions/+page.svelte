@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /roadmap/submissions — pending community submissions triage queue (§113).
 	// Readonly EntityPage; Approve/Decline drive the lifecycle state machine
@@ -169,9 +170,7 @@
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('roadmap.decline_confirm', 'Are you sure you want to decline')} <strong>{actionTarget.title}</strong>?
 		</p>
-		<p class="mt-2 text-sm" style="color: var(--color-muted)">
-			{t('roadmap.decline_hint', 'Declined submissions are hidden from the public board.')}
-		</p>
+		<HintIcon text={t('roadmap.decline_hint', 'Declined submissions are hidden from the public board.')} />
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showDeclineConfirm = false)} disabled={acting}>

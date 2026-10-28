@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
@@ -619,7 +620,7 @@
 					<label for="cron-type" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.job_type', 'Job Type')}
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('cron.type_hint', 'The task this job runs.')}</p>
+					<HintIcon text={t('cron.type_hint', 'The task this job runs.')} />
 					<Autocomplete
 						id="cron-type"
 						placeholder={t('cron.select_task_type', 'Select a task type...')}
@@ -632,15 +633,13 @@
 						onClear={() => (editForm.type = '')}
 						inputClass="font-mono"
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">
-						{t('cron.job_type_hint', 'The Asynq task type to execute')}
-					</p>
+					<HintIcon text={t('cron.job_type_hint', 'The Asynq task type to execute')} />
 				</div>
 				<div>
 					<label for="cron-schedule-preset" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.schedule', 'Schedule')}
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('cron.schedule_hint', 'How often the job runs.')}</p>
+					<HintIcon text={t('cron.schedule_hint', 'How often the job runs.')} />
 					<Autocomplete
 						id="cron-schedule-preset"
 						placeholder={t('cron.select_schedule', 'Select a schedule...')}
@@ -673,7 +672,7 @@
 					<label for="cron-payload" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.payload', 'Payload')} (JSON)
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('cron.payload_hint', 'Optional JSON payload passed to the task.')}</p>
+					<HintIcon text={t('cron.payload_hint', 'Optional JSON payload passed to the task.')} />
 					<textarea
 						id="cron-payload"
 						bind:value={editForm.payload}

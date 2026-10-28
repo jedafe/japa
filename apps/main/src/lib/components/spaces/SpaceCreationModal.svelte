@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/05-geo-first-space-system.md
 	// Simplified member space creation modal. Members choose a flat list of
 	// selectable space types (default: community), enter a name, and the
@@ -246,7 +247,7 @@
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							disabled={submitting}
 						/>
-						<p id="space-name-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('spaces.name_hint', 'The public name people see and search for.')}</p>
+						<HintIcon id="space-name-hint" text={t('spaces.name_hint', 'The public name people see and search for.')} />
 						{#if nameSearchLoading}
 							<div class="absolute end-3 top-[26px]">
 								<Loader2 size={14} class="animate-spin text-[var(--color-muted)]" />
@@ -279,7 +280,7 @@
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							disabled={submitting}
 						/>
-						<p id="space-slug-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('spaces.slug_hint', 'URL-safe identifier — auto-generated from the name.')}</p>
+						<HintIcon id="space-slug-hint" text={t('spaces.slug_hint', 'URL-safe identifier — auto-generated from the name.')} />
 					</div>
 
 					<div>
@@ -293,7 +294,7 @@
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							disabled={submitting}
 						></textarea>
-						<p id="space-desc-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('spaces.desc_hint', 'A short description — what this space is for.')}</p>
+						<HintIcon id="space-desc-hint" text={t('spaces.desc_hint', 'A short description — what this space is for.')} />
 					</div>
 
 					<div>

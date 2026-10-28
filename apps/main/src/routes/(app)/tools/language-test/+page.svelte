@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -493,7 +494,7 @@
 									<label for="story-score" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
 										{t('language_test.final_score', 'Final score')} *
 									</label>
-									<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.lang_test.score_hint', 'Your test score — e.g. IELTS 7.5.')}</p>
+									<HintIcon text={t('tools.lang_test.score_hint', 'Your test score — e.g. IELTS 7.5.')} />
 									<input
 										id="story-score"
 										type="text"
@@ -506,7 +507,7 @@
 									<label for="story-level" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
 										{t('language_test.starting_level', 'Starting level')}
 									</label>
-									<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.lang_test.level_hint', 'Your level — e.g. B1, CLB 8.')}</p>
+									<HintIcon text={t('tools.lang_test.level_hint', 'Your level — e.g. B1, CLB 8.')} />
 									<input
 										id="story-level"
 										type="text"
@@ -519,7 +520,7 @@
 									<label for="story-weeks" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
 										{t('language_test.prep_weeks', 'Prep duration (weeks)')}
 									</label>
-									<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.lang_test.weeks_hint', 'How many weeks you prepared.')}</p>
+									<HintIcon text={t('tools.lang_test.weeks_hint', 'How many weeks you prepared.')} />
 									<input
 										id="story-weeks"
 										type="number"
@@ -532,7 +533,7 @@
 									<label for="story-resources" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
 										{t('language_test.resources_used', 'Resources used (comma-separated)')}
 									</label>
-									<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.lang_test.resources_hint', 'What you studied with — courses, books, channels.')}</p>
+									<HintIcon text={t('tools.lang_test.resources_hint', 'What you studied with — courses, books, channels.')} />
 									<input
 										id="story-resources"
 										type="text"

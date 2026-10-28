@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -361,12 +362,12 @@
 						<label for="sf-name" class={labelClass}>
 							{t('intel.field_name', 'Name')} <span class="text-destructive">*</span>
 						</label>
-						<p class="text-muted-foreground mt-1 text-xs">{t('intel.source_name_hint', 'The official name of the source.')}</p>
+						<HintIcon text={t('intel.source_name_hint', 'The official name of the source.')} />
 						<input id="sf-name" type="text" bind:value={form.name} class={inputClass} placeholder="e.g. DAAD Scholarships" />
 					</div>
 					<div>
 						<label for="sf-domain" class={labelClass}>{t('intel.field_domain', 'Domain')}</label>
-						<p class="text-muted-foreground mt-1 text-xs">{t('intel.domain_hint', 'The domain, e.g. daad.de — used for matching.')}</p>
+						<HintIcon text={t('intel.domain_hint', 'The domain, e.g. daad.de — used for matching.')} />
 						<input id="sf-domain" type="text" bind:value={form.domain} class={inputClass} placeholder="daad.de" />
 					</div>
 				</div>
@@ -376,19 +377,19 @@
 						<label for="sf-url" class={labelClass}>
 							{t('intel.field_source_url', 'Source URL')} <span class="text-destructive">*</span>
 						</label>
-						<p class="text-muted-foreground mt-1 text-xs">{t('intel.source_url_hint', 'The main URL the source is fetched from.')}</p>
+						<HintIcon text={t('intel.source_url_hint', 'The main URL the source is fetched from.')} />
 						<input id="sf-url" type="url" bind:value={form.source_url} class={inputClass} placeholder="https://www.daad.de/en/" />
 					</div>
 					<div>
 						<label for="sf-logo" class={labelClass}>{t('intel.field_logo_url', 'Logo URL')}</label>
-						<p class="text-muted-foreground mt-1 text-xs">{t('intel.logo_hint', 'Direct image URL for the source logo.')}</p>
+						<HintIcon text={t('intel.logo_hint', 'Direct image URL for the source logo.')} />
 						<input id="sf-logo" type="url" bind:value={form.logo_url} class={inputClass} placeholder="https://daad.de/logo.png" />
 					</div>
 				</div>
 
 				<div>
 					<label for="sf-description" class={labelClass}>{t('intel.field_description', 'Description')}</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('intel.desc_hint', 'What this source publishes.')}</p>
+					<HintIcon text={t('intel.desc_hint', 'What this source publishes.')} />
 					<textarea id="sf-description" bind:value={form.description} class={inputClass} rows={2} placeholder={t('intel.field_description_placeholder', 'What this source publishes')}></textarea>
 				</div>
 
@@ -412,9 +413,7 @@
 
 				<div>
 					<span class={labelClass}>{t('intel.field_categories', 'Categories')}</span>
-					<p class="text-muted-foreground mt-1 text-xs">
-						{t('intel.field_categories_hint', 'Every domain this source publishes — the first selection is stored as the primary category.')}
-					</p>
+					<HintIcon text={t('intel.field_categories_hint', 'Every domain this source publishes — the first selection is stored as the primary category.')} />
 					{#if categoryChecklist.length > 0}
 						<div class="mt-2 grid max-h-40 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto sm:grid-cols-3">
 							{#each categoryChecklist as c (c.value)}
@@ -480,9 +479,7 @@
 				</div>
 
 				{#if form.source_type === 'video'}
-					<p class="text-muted-foreground -mt-1 text-xs">
-						{t('intel.type_video_hint', 'Video platform URLs register as a channel subscription (video_channel) — the channel sync imports uploads as video content; crawl method/frequency are set to manual.')}
-					</p>
+					<HintIcon text={t('intel.type_video_hint', 'Video platform URLs register as a channel subscription (video_channel) — the channel sync imports uploads as video content; crawl method/frequency are set to manual.')} />
 				{/if}
 
 				<div class="grid grid-cols-2 gap-4">
@@ -534,9 +531,7 @@
 				{#if entityTypeOptions.length > 0}
 					<div>
 						<span class={labelClass}>{t('intel.field_entity_types', 'Extraction domains (entity types)')}</span>
-						<p class="text-muted-foreground mt-1 text-xs">
-							{t('intel.field_entity_types_hint', 'Leave empty to extract under the category-derived type only. Check the domains a mixed source publishes to extract each of them.')}
-						</p>
+						<HintIcon text={t('intel.field_entity_types_hint', 'Leave empty to extract under the category-derived type only. Check the domains a mixed source publishes to extract each of them.')} />
 						<div class="mt-2 grid max-h-40 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto">
 							{#each entityTypeOptions as et}
 								<label class="flex cursor-pointer items-center gap-2 text-sm">

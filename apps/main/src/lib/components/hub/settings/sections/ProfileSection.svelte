@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
@@ -162,7 +163,7 @@
 			</div>
 			<div>
 				<p class="text-sm font-medium text-[var(--color-text)]">{t('settings.profile.avatar', 'Avatar')}</p>
-				<p class="text-xs text-[var(--color-muted)]">{t('settings.profile.avatar_hint', 'Click the camera to upload')}</p>
+				<HintIcon text={t('settings.profile.avatar_hint', 'Click the camera to upload')} />
 			</div>
 		</div>
 
@@ -203,9 +204,7 @@
 			value={form.values.display_name}
 			oninput={(e) => form.set({ display_name: e.currentTarget.value })}
 		/>
-		<span id="profile-display-name-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-			{t('settings.profile.name_hint', 'Your public name — shown on posts and your profile.')}
-		</span>
+		<HintIcon id="profile-display-name-hint" text={t('settings.profile.name_hint', 'Your public name — shown on posts and your profile.')} />
 	</label>
 	<label class="block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.bio')}</span>
@@ -218,9 +217,7 @@
 			value={form.values.bio}
 			oninput={(e) => form.set({ bio: e.currentTarget.value })}
 		></textarea>
-		<span id="profile-bio-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-			{t('settings.profile.bio_hint', 'Shown on your public profile — a few lines is plenty.')}
-		</span>
+		<HintIcon id="profile-bio-hint" text={t('settings.profile.bio_hint', 'Shown on your public profile — a few lines is plenty.')} />
 	</label>
 	<label class="mt-3 block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.website', 'Website')}</span>
@@ -233,9 +230,7 @@
 			value={form.values.website_url}
 			oninput={(e) => form.set({ website_url: e.currentTarget.value })}
 		/>
-		<span id="profile-website-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-			{t('settings.profile.website_hint', 'Your personal site or portfolio, linked from your profile.')}
-		</span>
+		<HintIcon id="profile-website-hint" text={t('settings.profile.website_hint', 'Your personal site or portfolio, linked from your profile.')} />
 	</label>
 
 	<div class="mt-4 grid grid-cols-1 gap-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2">
@@ -247,9 +242,7 @@
 				ariaLabel={t('settings.profile.profession', 'Profession')}
 				onValueChange={(v) => form.set({ profession: v ?? '' })}
 			/>
-			<span id="profile-profession-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.profile.profession_hint', 'Pick from the list or type your own.')}
-			</span>
+			<HintIcon id="profile-profession-hint" text={t('settings.profile.profession_hint', 'Pick from the list or type your own.')} />
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.education', 'Education')}</span>
@@ -259,9 +252,7 @@
 				ariaLabel={t('settings.profile.education', 'Education')}
 				onValueChange={(v) => form.set({ education: v ?? '' })}
 			/>
-			<span id="profile-education-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.profile.education_hint', 'Your highest completed level — pick from the list or type your own.')}
-			</span>
+			<HintIcon id="profile-education-hint" text={t('settings.profile.education_hint', 'Your highest completed level — pick from the list or type your own.')} />
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.date_of_birth', 'Date of birth')}</span>
@@ -275,9 +266,7 @@
 				value={form.values.date_of_birth}
 				oninput={(e) => form.set({ date_of_birth: e.currentTarget.value })}
 			/>
-			<span id="profile-dob-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.profile.date_of_birth_hint', 'Used for age-based eligibility checks in tools.')}
-			</span>
+			<HintIcon id="profile-dob-hint" text={t('settings.profile.date_of_birth_hint', 'Used for age-based eligibility checks in tools.')} />
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.gender', 'Gender')}</span>
@@ -287,9 +276,7 @@
 				ariaLabel={t('settings.profile.gender', 'Gender')}
 				onValueChange={(v) => form.set({ gender: v ?? '' })}
 			/>
-			<span id="profile-gender-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.profile.gender_hint', 'Optional — you can leave this as "Prefer not to say".')}
-			</span>
+			<HintIcon id="profile-gender-hint" text={t('settings.profile.gender_hint', 'Optional — you can leave this as "Prefer not to say".')} />
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.marital_status', 'Marital status')}</span>
@@ -299,9 +286,7 @@
 				ariaLabel={t('settings.profile.marital_status', 'Marital status')}
 				onValueChange={(v) => form.set({ marital_status: v ?? '' })}
 			/>
-			<span id="profile-marital-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.profile.marital_status_hint', 'Optional — used only for household-based tools like POF calculations.')}
-			</span>
+			<HintIcon id="profile-marital-hint" text={t('settings.profile.marital_status_hint', 'Optional — used only for household-based tools like POF calculations.')} />
 		</label>
 	</div>
 </SettingsSection>

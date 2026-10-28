@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// §22 Appeals — reusable appeal submission control. Mount wherever a
 	// rejected/appealable decision is surfaced (service claims, ownership
 	// claims, video channel claims, moderation decisions). Submits
@@ -222,9 +223,7 @@
 								aria-describedby="appeal-reason-hint"
 								class="field-input !h-auto py-2.5"
 							></textarea>
-							<p id="appeal-reason-hint" class="mt-1 text-xs text-[var(--color-muted)]">
-								{t('appeals.reason_hint', 'Be specific — cite the policy or evidence that supports your case.')}
-							</p>
+							<HintIcon id="appeal-reason-hint" text={t('appeals.reason_hint', 'Be specific — cite the policy or evidence that supports your case.')} />
 							<p class="text-end text-[11px] text-[var(--color-muted)]">{reason.length} / {MAX_REASON}</p>
 						</div>
 					</div>

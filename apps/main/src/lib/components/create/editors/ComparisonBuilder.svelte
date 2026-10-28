@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { Plus, X, AlertCircle, Table as TableIcon, ChevronDown } from 'lucide-svelte';
@@ -511,9 +512,9 @@
 			</table>
 		</div>
 		{#if dimensions.length === 0}
-			<p class="hint">{t('create.comparison.add_dimension_hint', 'Add a dimension to start filling in values.')}</p>
+			<HintIcon text={t('create.comparison.add_dimension_hint', 'Add a dimension to start filling in values.')} />
 		{:else if items.length === 0}
-			<p class="hint">{t('create.comparison.add_item_hint', 'Add an item to start comparing.')}</p>
+			<HintIcon text={t('create.comparison.add_item_hint', 'Add an item to start comparing.')} />
 		{/if}
 	{:else}
 		<div class="empty-state">
@@ -739,12 +740,6 @@
 	.remove-btn:hover {
 		color: #dc2626;
 		background: color-mix(in srgb, #ef4444 10%, transparent);
-	}
-
-	.hint {
-		font-size: 0.8125rem;
-		color: var(--color-muted);
-		padding: 8px 0;
 	}
 
 	.empty-state {

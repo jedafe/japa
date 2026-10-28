@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { aiAdminApi, type AiTool, type AiUsageSummary } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -236,7 +237,7 @@
 		<div class="space-y-4">
 			<div>
 				<label for="tool-name" class="mb-1 block text-sm font-medium">{t('ai.tool_name')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('ai.tool_name_hint', 'The tool name shown to the AI.')}</p>
+				<HintIcon text={t('ai.tool_name_hint', 'The tool name shown to the AI.')} />
 				<input
 					id="tool-name"
 					type="text"
@@ -250,7 +251,7 @@
 			</div>
 			<div>
 				<label for="tool-desc" class="mb-1 block text-sm font-medium">{t('ai.description')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('ai.tool_desc_hint', 'What the tool does — the AI uses this to decide when to call it.')}</p>
+				<HintIcon text={t('ai.tool_desc_hint', 'What the tool does — the AI uses this to decide when to call it.')} />
 				<textarea
 					id="tool-desc"
 					class="w-full rounded-md border px-3 py-2 text-sm"
@@ -261,7 +262,7 @@
 			</div>
 			<div>
 				<label for="tool-perm" class="mb-1 block text-sm font-medium">{t('ai.required_permission', 'Required permission')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('ai.tool_perm_hint', 'The permission required.')}</p>
+				<HintIcon text={t('ai.tool_perm_hint', 'The permission required.')} />
 				<input
 					id="tool-perm"
 					type="text"
@@ -279,7 +280,7 @@
 					class="rounded"
 				/>
 				<label for="tool-enabled" class="text-sm">{t('ai.enabled')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('ai.tool_enabled_hint', 'Turn off to disable without deleting.')}</p>
+				<HintIcon text={t('ai.tool_enabled_hint', 'Turn off to disable without deleting.')} />
 			</div>
 		</div>
 		{#snippet footer()}

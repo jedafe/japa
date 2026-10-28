@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { clsx, type ClassValue } from 'clsx';
 	import type { FieldDef } from './index';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
@@ -58,7 +59,7 @@
 		{@const helpText = fieldDisabled && field.lockedHelp ? field.lockedHelp : field.help}
 		<div class="flex flex-col gap-1">
 			<label for={field.key} class="text-sm font-medium" style="color: var(--color-foreground)">
-				{field.label}{#if field.required}<span style="color: var(--color-danger)">*</span>{/if}
+				{field.label}{#if field.required}<span style="color: var(--color-danger)">*</span>{/if}{#if helpText}<HintIcon text={helpText} />{/if}
 			</label>
 
 			{#if field.type === 'textarea'}
@@ -154,9 +155,6 @@
 				/>
 			{/if}
 
-			{#if helpText}
-				<span class="text-xs" style="color: var(--color-muted)">{helpText}</span>
-			{/if}
 
 			{#if errors[field.key]}
 				<span class="text-xs" style="color: var(--color-danger)">{errors[field.key]}</span>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -691,7 +692,7 @@ import { contentHref } from '$lib/utils/contentLink';
 					<form onsubmit={createPoll} class="space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
 						<div>
 							<label for="poll-question" class="mb-1 block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_question', 'Poll question')}</label>
-							<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('forum.poll_question_hint', 'The question members vote on.')}</p>
+							<HintIcon text={t('forum.poll_question_hint', 'The question members vote on.')} />
 							<input id="poll-question" type="text" bind:value={pollQuestion} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" placeholder={t('forum.poll_question_placeholder', 'Ask a question…')} />
 						</div>
 						<div class="flex items-center gap-2">

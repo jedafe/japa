@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -150,7 +151,7 @@
 								placeholder={t('jobs.employer_notes', 'Employer notes')}
 								class="min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]"
 							/>
-								<p class="mt-1 text-xs text-[var(--color-muted)]">{t('jobs.employer_notes_hint', 'Private notes only you see — e.g. salary offered.')}</p>
+								<HintIcon text={t('jobs.employer_notes_hint', 'Private notes only you see — e.g. salary offered.')} />
 							<button
 								type="submit"
 								class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] hover:opacity-90"

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// AddAiKeyDialog — attach a personal AI provider key (BYOK). The
 	// "Get an API key →" link opens the provider's admin-configured
 	// affiliate signup_url and fires the referral-click counter.
@@ -97,7 +98,7 @@
 				bind:value={providerId}
 				options={providerOptions}
 			/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ai.byok.provider_hint', 'Which AI service this key is for.')}</p>
+				<HintIcon text={t('ai.byok.provider_hint', 'Which AI service this key is for.')} />
 			{#if providers.length === 0}
 				<p class="mt-1.5 text-sm text-[var(--color-muted)]">{t('ai.byok.no_providers', 'No AI providers are available right now.')}</p>
 			{/if}
@@ -128,7 +129,7 @@
 				placeholder="sk-…"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ai.byok.key_hint', 'Stored encrypted — used only for your AI features.')}</p>
+				<HintIcon text={t('ai.byok.key_hint', 'Stored encrypted — used only for your AI features.')} />
 		</div>
 
 		<div>

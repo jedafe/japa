@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /plans — migrated to the EntityPage scaffold.
 	//
@@ -332,9 +333,7 @@
 <!-- Manage Tracks Modal (page-local sub-flow) -->
 <Modal bind:open={showTracksModal} title={t('plans.manage_tracks_title', 'Manage Tracks — {name}').replace('{name}', tracksPlanName)} size="lg">
 	<div class="space-y-3">
-		<p class="text-xs" style="color: var(--color-muted)">
-			{t('plans.tracks_hint', 'Select which courses are included in this subscription plan. When no tracks are selected, the plan includes ALL tracks (Pro = all).')}
-		</p>
+		<HintIcon text={t('plans.tracks_hint', 'Select which courses are included in this subscription plan. When no tracks are selected, the plan includes ALL tracks (Pro = all).')} />
 		{#if loadingTracks}
 			<p class="text-sm" style="color: var(--color-muted)">{t('plans.loading_tracks', 'Loading tracks...')}</p>
 		{:else}
@@ -466,7 +465,7 @@
 	<div class="space-y-3">
 		<div>
 			<label for="plan-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.name', 'Name')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
+			<HintIcon text={t('plans.name_hint', 'The name shown in admin lists and on the site where public.')} />
 			<input
 				id="plan-name"
 				type="text"
@@ -481,7 +480,7 @@
 		</div>
 		<div>
 			<label for="plan-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.slug', 'Slug')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}</span>
+			<HintIcon text={t('plans.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')} />
 			<input
 				id="plan-slug"
 				type="text"
@@ -493,7 +492,7 @@
 		</div>
 		<div>
 			<label for="plan-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.description', 'Description')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.desc_hint', 'Shown in detail views — keep it concise.')}</span>
+			<HintIcon text={t('plans.desc_hint', 'Shown in detail views — keep it concise.')} />
 			<textarea
 				id="plan-desc"
 				class="w-full rounded-md border px-3 py-2 text-sm"
@@ -580,7 +579,7 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="plan-monthly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.monthly_kobo', 'Monthly (in kobo/cents)')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.monthly_hint', 'Monthly price in kobo or cents — the smallest currency unit.')}</span>
+			<HintIcon text={t('plans.monthly_hint', 'Monthly price in kobo or cents — the smallest currency unit.')} />
 				<input
 					id="plan-monthly"
 					type="number"
@@ -592,7 +591,7 @@
 			</div>
 			<div>
 				<label for="plan-yearly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.yearly_kobo', 'Yearly (in kobo/cents)')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.yearly_hint', 'Yearly price in kobo or cents — usually discounted vs monthly.')}</span>
+			<HintIcon text={t('plans.yearly_hint', 'Yearly price in kobo or cents — usually discounted vs monthly.')} />
 				<input
 					id="plan-yearly"
 					type="number"
@@ -607,12 +606,12 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="plan-currency" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.currency', 'Currency')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.currency_hint', 'ISO currency code, e.g. NGN or USD.')}</span>
+			<HintIcon text={t('plans.currency_hint', 'ISO currency code, e.g. NGN or USD.')} />
 				<Select options={currencyOptions} bind:value={value.currency} />
 			</div>
 			<div>
 				<label for="plan-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.status', 'Status')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.status_hint', 'The record state — controls visibility and actions.')}</span>
+			<HintIcon text={t('plans.status_hint', 'The record state — controls visibility and actions.')} />
 				<Select options={statuses} bind:value={value.status} />
 			</div>
 		</div>
@@ -620,7 +619,7 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="plan-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.tier_hint', 'The tier — e.g. free, partner, premium.')}</span>
+			<HintIcon text={t('plans.tier_hint', 'The tier — e.g. free, partner, premium.')} />
 				<Select options={tierOptions} bind:value={value.tier} />
 			</div>
 			<div class="flex items-end gap-2 pb-2">
@@ -628,14 +627,14 @@
 				<label for="plan-highlight" class="flex items-center gap-1 text-sm">
 					<Star class="h-3.5 w-3.5" /> {t('plans.highlighted', 'Highlighted')}
 				</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.highlight_hint', 'Highlighted plans stand out in listings.')}</span>
+			<HintIcon text={t('plans.highlight_hint', 'Highlighted plans stand out in listings.')} />
 			</div>
 		</div>
 
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="plan-sort" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.sort_order', 'Sort Order')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.sort_hint', 'Lower numbers appear first.')}</span>
+			<HintIcon text={t('plans.sort_hint', 'Lower numbers appear first.')} />
 				<input
 					id="plan-sort"
 					type="number"

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 	// Password input with show/hide toggle and optional strength meter (signup).
 	import { t } from '$lib/i18n/store.svelte';
@@ -93,7 +94,7 @@
 	{/if}
 
 	{#if hint}
-		<p id="{id}-hint" class="text-xs text-[var(--color-muted)]">{hint}</p>
+		<HintIcon id="{id}-hint" text={hint} />
 	{/if}
 
 	{#if error}

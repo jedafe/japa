@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
@@ -302,7 +303,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="group-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.name', 'Name')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('users.group_name_hint', 'The group name shown in the admin.')}</p>
+			<HintIcon text={t('users.group_name_hint', 'The group name shown in the admin.')} />
 			<input
 				id="group-name"
 				type="text"
@@ -314,7 +315,7 @@
 		</div>
 		<div>
 			<label for="group-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.description_label', 'Description')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('users.group_desc_hint', 'What this group is for.')}</p>
+			<HintIcon text={t('users.group_desc_hint', 'What this group is for.')} />
 			<textarea
 				id="group-desc"
 				rows="2"

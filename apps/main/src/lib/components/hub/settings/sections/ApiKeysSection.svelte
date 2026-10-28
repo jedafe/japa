@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	/**
 	 * API Keys settings — Section 50 (Developer).
 	 *
@@ -216,9 +217,7 @@
 				value={newName}
 				oninput={(e) => (newName = e.currentTarget.value)}
 			/>
-			<span id="apikey-name-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.apikeys.name_hint', 'A label so you remember what this key is for.')}
-			</span>
+			<HintIcon id="apikey-name-hint" text={t('settings.apikeys.name_hint', 'A label so you remember what this key is for.')} />
 		</label>
 
 		<!-- Scope multi-select -->
@@ -258,9 +257,7 @@
 				onSelect={(item) => addScope(item.id)}
 				disabled={creating}
 			/>
-			<span class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('settings.apikeys.scopes_hint', 'The API endpoints this key can access — pick each permission it needs.')}
-			</span>
+			<HintIcon text={t('settings.apikeys.scopes_hint', 'The API endpoints this key can access — pick each permission it needs.')} />
 		</div>
 
 		{#if error}<p class="text-xs text-[var(--color-danger)]">{error}</p>{/if}
@@ -275,7 +272,7 @@
 
 	<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('settings.apikeys.connect_extension')}</p>
-		<p id="apikey-install-hint" class="mb-3 text-xs text-[var(--color-muted)]">{t('settings.apikeys.connect_extension_hint')}</p>
+		<HintIcon id="apikey-install-hint" text={t('settings.apikeys.connect_extension_hint')} />
 		<input
 			type="text"
 			bind:value={installId}

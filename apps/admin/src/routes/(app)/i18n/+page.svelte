@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { api, i18nAdminApiExtended } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -381,7 +382,7 @@
 	{#if activeTab === 'translations'}
 		<div class="mb-4 flex items-center gap-3">
 			<label for="locale-select" class="text-sm font-medium text-foreground-alt">{t('app.i18n.language', 'Language')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('i18n.locale_select_hint', 'The locale to edit.')}</p>
+			<HintIcon text={t('i18n.locale_select_hint', 'The locale to edit.')} />
 			<Select
 				options={languages.map((l) => ({ value: l.code, label: l.name }))}
 				value={selectedLocale}
@@ -427,7 +428,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="lang-code" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.language_code', 'Language Code')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('i18n.lang_code_hint', 'The locale code — e.g. en, fr.')}</p>
+			<HintIcon text={t('i18n.lang_code_hint', 'The locale code — e.g. en, fr.')} />
 			<input
 				id="lang-code"
 				type="text"
@@ -438,7 +439,7 @@
 		</div>
 		<div>
 			<label for="lang-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.language_name', 'Language Name')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('i18n.lang_name_hint', 'The language name.')}</p>
+			<HintIcon text={t('i18n.lang_name_hint', 'The language name.')} />
 			<input
 				id="lang-name"
 				type="text"
@@ -449,7 +450,7 @@
 		</div>
 		<div>
 			<label for="lang-flag" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.flag_emoji_optional', 'Flag Emoji (optional)')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('i18n.lang_flag_hint', 'The flag emoji shown next to the locale.')}</p>
+			<HintIcon text={t('i18n.lang_flag_hint', 'The flag emoji shown next to the locale.')} />
 			<input
 				id="lang-flag"
 				type="text"
@@ -476,12 +477,12 @@
 		<div class="space-y-4">
 			<div>
 				<label for="edit-key" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.key', 'Key')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('i18n.edit_key_hint', 'The translation key — do not rename lightly.')}</p>
+				<HintIcon text={t('i18n.edit_key_hint', 'The translation key — do not rename lightly.')} />
 				<p id="edit-key" class="rounded-lg bg-surface px-3 py-2 font-mono text-xs text-foreground-alt">{editingString.key}</p>
 			</div>
 			<div>
 				<label for="edit-value" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.value', 'Value')} ({editingString.locale})</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('i18n.edit_value_hint', 'The translated text.')}</p>
+				<HintIcon text={t('i18n.edit_value_hint', 'The translated text.')} />
 				<textarea
 					id="edit-value"
 					rows="4"

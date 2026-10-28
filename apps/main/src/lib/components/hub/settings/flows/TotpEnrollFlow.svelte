@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	/**
 	 * TOTP 2FA enrollment flow — Section 02 (Authentication & Sessions).
 	 *
@@ -188,9 +189,7 @@
 				value={code}
 				oninput={(e) => (code = e.currentTarget.value.replace(/\D/g, ''))}
 			/>
-			<span id="totp-enroll-code-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-				{t('auth.totp.code_help')}
-			</span>
+			<HintIcon id="totp-enroll-code-hint" text={t('auth.totp.code_help')} />
 		</label>
 		<div class="flex gap-2">
 			<button
@@ -239,9 +238,7 @@
 							value={disableCode}
 							oninput={(e) => (disableCode = e.currentTarget.value.replace(/\D/g, ''))}
 						/>
-						<span id="totp-disable-code-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-							{t('auth.totp.code_help')}
-						</span>
+						<HintIcon id="totp-disable-code-hint" text={t('auth.totp.code_help')} />
 					</label>
 					{#if error}<p class="mb-3 text-xs text-[var(--color-danger)]">{error}</p>{/if}
 					<div class="flex justify-end gap-2">

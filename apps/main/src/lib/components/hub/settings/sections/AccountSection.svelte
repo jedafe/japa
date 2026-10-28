@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -74,9 +75,7 @@
 			value={form.values.email}
 			oninput={(e) => form.set({ email: e.currentTarget.value })}
 		/>
-		<span id="account-email-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-			{t('settings.account.email_hint', 'Used for sign-in and account emails.')}
-		</span>
+		<HintIcon id="account-email-hint" text={t('settings.account.email_hint', 'Used for sign-in and account emails.')} />
 		{#if form.values.email !== profile?.email}
 			<span class="mt-1 block text-xs text-[var(--color-muted)]">
 				{t('settings.account.email_reverify', 'Changing your email requires re-verification.')}
@@ -93,9 +92,7 @@
 			value={form.values.username}
 			oninput={(e) => form.set({ username: e.currentTarget.value })}
 		/>
-		<span id="account-username-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-			{t('settings.account.username_hint', '3–30 characters — letters, numbers and underscores. This is your public handle.')}
-		</span>
+		<HintIcon id="account-username-hint" text={t('settings.account.username_hint', '3–30 characters — letters, numbers and underscores. This is your public handle.')} />
 	</label>
 	<div class="block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.account.theme')}</span>
@@ -105,9 +102,7 @@
 			ariaLabel={t('settings.account.theme')}
 			onValueChange={(v) => form.set({ theme: (v as ThemeName) || 'light' })}
 		/>
-		<span id="account-theme-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-			{t('settings.account.theme_hint', 'Applies immediately — System follows your device setting.')}
-		</span>
+		<HintIcon id="account-theme-hint" text={t('settings.account.theme_hint', 'Applies immediately — System follows your device setting.')} />
 	</div>
 
 	<!-- §07 Verification Requests: profile verification entry point. -->

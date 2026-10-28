@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack, onDestroy } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -244,7 +245,7 @@
 			<label for="cvf-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('cv_formatter.select_destination', 'Destination')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.cv.dest_hint', 'CV conventions differ by country — pick yours.')}</p>
+			<HintIcon text={t('tools.cv.dest_hint', 'CV conventions differ by country — pick yours.')} />
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('cv_formatter.select_destination_placeholder', 'Select destination country')}
@@ -347,7 +348,7 @@
 						<label for="output-format" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 							{t('cv_formatter.output_format', 'Format:')}
 						</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.cv.format_hint', 'The file format for the formatted CV.')}</p>
+						<HintIcon text={t('tools.cv.format_hint', 'The file format for the formatted CV.')} />
 						<AutocompleteSelect
 							id="output-format"
 							bind:value={outputFormat}
@@ -418,9 +419,7 @@
 							{#if fileError}
 								<p class="mt-2 text-sm text-[var(--color-error)]">{fileError}</p>
 							{/if}
-							<p class="mt-2 text-xs text-[var(--color-muted)]">
-								{t('cv_formatter.file_hint', 'Max 10 MB. Text is extracted on the server.')}
-							</p>
+							<HintIcon text={t('cv_formatter.file_hint', 'Max 10 MB. Text is extracted on the server.')} />
 						</div>
 					{/if}
 

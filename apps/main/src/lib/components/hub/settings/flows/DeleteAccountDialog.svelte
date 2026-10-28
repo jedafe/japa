@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { Modal } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
 	import { deleteAccount } from '$lib/api/hub';
@@ -56,9 +57,7 @@
 				value={typed}
 				oninput={(e) => (typed = e.currentTarget.value)}
 			/>
-			<p id="delete-confirm-hint" class="mb-4 mt-1 text-xs text-[var(--color-muted)]">
-				{t('settings.danger.delete_confirm_hint', 'Type your username exactly as shown to enable deletion.')}
-			</p>
+			<HintIcon id="delete-confirm-hint" text={t('settings.danger.delete_confirm_hint', 'Type your username exactly as shown to enable deletion.')} />
 		{#if error}<p class="mb-4 text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
 		<div class="flex justify-end gap-2">
 			<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">

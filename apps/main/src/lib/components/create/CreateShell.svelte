@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, replaceState } from '$app/navigation';
@@ -532,7 +533,7 @@
 						markDirty();
 					}}
 				/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('create.type_hint', 'What kind of content you are creating — picks the right editor.')}</p>
+					<HintIcon text={t('create.type_hint', 'What kind of content you are creating — picks the right editor.')} />
 			</div>
 		</div>
 
@@ -541,7 +542,7 @@
 				<label for="guide-category" class="guide-category-label">
 					{t('create.guide.category_label')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('create.category_hint', 'The topic category this guide belongs to.')}</p>
+				<HintIcon text={t('create.category_hint', 'The topic category this guide belongs to.')} />
 				<Autocomplete
 					id="guide-category"
 					placeholder={t('create.guide.category_placeholder')}

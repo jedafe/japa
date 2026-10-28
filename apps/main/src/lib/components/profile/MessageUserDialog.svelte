@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// "Message" on the profile — starts (or reuses) a DM conversation with
 	// the member via POST /dm/conversations, then deep-links into
 	// /messages?c={id}. Guests get the login prompt (MessageDialog pattern).
@@ -63,9 +64,7 @@
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				aria-describedby="message-body-hint"
 			></textarea>
-			<p id="message-body-hint" class="text-xs text-[var(--color-muted)]">
-				{t('services.message_hint', 'Introduce yourself and say what you need — max 2,000 characters.')}
-			</p>
+			<HintIcon id="message-body-hint" text={t('services.message_hint', 'Introduce yourself and say what you need — max 2,000 characters.')} />
 			{#if sendError}
 				<p role="alert" class="text-sm text-[var(--color-danger)]">{sendError}</p>
 			{/if}

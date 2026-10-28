@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §4 — prompt builder
 	// main window in composer idiom: composer-header (title + content type),
 	// guide-category Autocomplete, TitleField, generated prompt preview.
@@ -156,7 +157,7 @@
 				values.guide_category = '';
 			}}
 		/>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.prompts.content_type_hint', 'The kind of content the AI should draft.')}</p>
+			<HintIcon text={t('studio.prompts.content_type_hint', 'The kind of content the AI should draft.')} />
 	</div>
 </div>
 
@@ -165,7 +166,7 @@
 		<label for="guide-category" class="guide-category-label">
 			{t('studio.prompts.guide_category', 'Guide category')}
 		</label>
-		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.prompts.category_hint', 'The guide category this prompt targets.')}</p>
+		<HintIcon text={t('studio.prompts.category_hint', 'The guide category this prompt targets.')} />
 		<Autocomplete
 			id="guide-category"
 			placeholder={t('studio.prompts.guide_category', 'Guide category')}

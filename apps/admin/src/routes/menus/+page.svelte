@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /menus — migrated to the EntityPage scaffold.
 	//
@@ -723,7 +724,7 @@ loadPermissionNodes();
 					inputClass="font-mono"
 				/>
 			</div>
-			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.permission_node_hint', 'Optional. Restrict this item to users with the given permission node.')}</p>
+			<HintIcon text={t('menus.permission_node_hint', 'Optional. Restrict this item to users with the given permission node.')} />
 		</div>
 		{#if menuItems.length > 0}
 			<div class="col-span-2">
@@ -766,7 +767,7 @@ loadPermissionNodes();
 		</div>
 		<label class="block col-span-2">
 			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.required_groups', 'Required User Groups')}</span>
-			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.required_groups_hint', 'Item is visible only to users in at least one selected group. Leave empty for everyone.')}</p>
+			<HintIcon text={t('menus.required_groups_hint', 'Item is visible only to users in at least one selected group. Leave empty for everyone.')} />
 			<div class="mt-1 space-y-2">
 				{#if selectedGroupObjs.length > 0}
 					<div class="flex flex-wrap items-center gap-1">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /tags — migrated to the EntityPage scaffold (Task 9).
 	//
@@ -564,7 +565,7 @@
 			<label for="tag-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.name", "Name")}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
+			<HintIcon text={t('admin.name_hint', 'The name shown in admin lists and on the site where public.')} />
 			<input
 				id="tag-name"
 				type="text"
@@ -581,7 +582,7 @@
 			<label for="tag-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.slug", "Slug")}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}</span>
+			<HintIcon text={t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')} />
 			<input
 				id="tag-slug"
 				type="text"
@@ -602,7 +603,7 @@
 			>
 				{t("tags.description", "Description")}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.description_hint', 'Shown in detail views — keep it concise.')}</span>
+			<HintIcon text={t('admin.description_hint', 'Shown in detail views — keep it concise.')} />
 			<textarea
 				id="tag-description"
 				rows="2"
@@ -616,7 +617,7 @@
 			<label for="tag-rules" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.rules", "Rules")}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.rules_hint', 'Matching rules — one per line.')}</span>
+			<HintIcon text={t('admin.rules_hint', 'Matching rules — one per line.')} />
 			<textarea
 				id="tag-rules"
 				rows="3"
@@ -792,7 +793,7 @@
 			<label for="tag-is-system" class="text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.is_system", "System tag (cannot be deleted)")}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.is_system_hint', 'System records cannot be deleted or renamed.')}</span>
+			<HintIcon text={t('admin.is_system_hint', 'System records cannot be deleted or renamed.')} />
 		</div>
 	</div>
 

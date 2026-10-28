@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { api } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
@@ -732,7 +733,7 @@
 					<label for="create-name" class="text-foreground block text-sm font-medium">
 						{t('api_keys.name')} <span class="text-destructive">*</span>
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.name_hint', 'A label so you remember what this key is for.')}</p>
+					<HintIcon text={t('api_keys.name_hint', 'A label so you remember what this key is for.')} />
 					<input
 						id="create-name"
 						type="text"
@@ -746,7 +747,7 @@
 					<label for="create-scopes" class="text-foreground block text-sm font-medium">
 						{t('api_keys.scopes')}
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.scopes_hint', 'The API endpoints this key can access — pick each permission it needs.')}</p>
+					<HintIcon text={t('api_keys.scopes_hint', 'The API endpoints this key can access — pick each permission it needs.')} />
 					<div class="mt-1 flex flex-wrap gap-1.5">
 						{#each createForm.scopes as scope}
 							<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium">
@@ -766,14 +767,14 @@
 						selectedId={null}
 						onSelect={(item) => { if (!createForm.scopes.includes(item.id)) createForm.scopes = [...createForm.scopes, item.id]; }}
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.scopes_hint')}</p>
+					<HintIcon text={t('api_keys.scopes_hint')} />
 				</div>
 
 				<div>
 					<label for="create-tier" class="text-foreground block text-sm font-medium">
 						{t('api_keys.rate_limit_tier')}
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.tier_hint', 'The rate-limit tier for this key.')}</p>
+					<HintIcon text={t('api_keys.tier_hint', 'The rate-limit tier for this key.')} />
 					<AutocompleteSelect
 						bind:value={createForm.rate_limit_tier}
 						options={tierOptions}
@@ -792,7 +793,7 @@
 						bind:value={createForm.expires_at}
 						class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.expires_hint')}</p>
+					<HintIcon text={t('api_keys.expires_hint')} />
 				</div>
 			</div>
 
@@ -918,7 +919,7 @@
 						selectedId={null}
 						onSelect={(item) => { if (!editForm.scopes.includes(item.id)) editForm.scopes = [...editForm.scopes, item.id]; }}
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.scopes_hint')}</p>
+					<HintIcon text={t('api_keys.scopes_hint')} />
 				</div>
 
 				<div>

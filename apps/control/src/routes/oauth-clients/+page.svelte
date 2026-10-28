@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
@@ -350,12 +351,12 @@
 			<form onsubmit={(e) => { e.preventDefault(); createClient(); }} class="space-y-4">
 				<div>
 					<label for="oauth-name" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.name_label', 'Name')}</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('oauth_clients.name_hint', 'The app or service name.')}</p>
+					<HintIcon text={t('oauth_clients.name_hint', 'The app or service name.')} />
 					<input id="oauth-name" type="text" bind:value={createName} required class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm" placeholder="My App" />
 				</div>
 				<div>
 					<label for="oauth-provider" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.provider_label', 'Provider')}</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('oauth_clients.provider_hint', 'Which OAuth service — e.g. Google, Apple.')}</p>
+					<HintIcon text={t('oauth_clients.provider_hint', 'Which OAuth service — e.g. Google, Apple.')} />
 					<AutocompleteSelect
 						id="oauth-provider"
 						bind:value={createProvider}
@@ -368,20 +369,18 @@
 				</div>
 				<div>
 					<label for="oauth-client-id" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_id_label', 'Client ID')}</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('oauth_clients.client_id_hint', 'From the provider developer console.')}</p>
+					<HintIcon text={t('oauth_clients.client_id_hint', 'From the provider developer console.')} />
 					<input id="oauth-client-id" type="text" bind:value={createClientId} required class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="xxxxxxxxxx.apps.googleusercontent.com" />
 				</div>
 				<div>
 					<label for="oauth-client-secret" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_secret_label', 'Client Secret')}</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('oauth_clients.client_secret_hint', 'Stored encrypted — never shown again.')}</p>
+					<HintIcon text={t('oauth_clients.client_secret_hint', 'Stored encrypted — never shown again.')} />
 					<input id="oauth-client-secret" type="password" bind:value={createClientSecret} required autocomplete="new-password" class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="GOCSPX-xxxxxxxxxxxxx" />
-					<p class="text-muted-foreground mt-1 text-xs">
-						{t('oauth_clients.client_secret_hint', 'Used to authenticate with the OAuth provider. Stored encrypted. Revealed once after creation.')}
-					</p>
+					<HintIcon text={t('oauth_clients.client_secret_hint', 'Used to authenticate with the OAuth provider. Stored encrypted. Revealed once after creation.')} />
 				</div>
 				<div>
 					<label for="oauth-redirect" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.redirect_uri_label', 'Redirect URI')}</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('oauth_clients.redirect_hint', 'Must match exactly what is registered with the provider.')}</p>
+					<HintIcon text={t('oauth_clients.redirect_hint', 'Must match exactly what is registered with the provider.')} />
 					<input id="oauth-redirect" type="text" bind:value={createRedirectUri} class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm" placeholder="https://example.com/auth/callback" />
 				</div>
 				<div class="flex justify-end gap-2 pt-2">

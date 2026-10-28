@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { Clapperboard, CheckCircle2, AlertCircle, Loader2, Video, Search, ListVideo, RefreshCw } from 'lucide-svelte';
 	import { EmptyState, RelativeTime } from '$lib/components/ui';
@@ -235,7 +236,7 @@
 						<label for="source_url" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.source_url', 'YouTube URL')}
 						</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.videos.url_hint', 'Paste a YouTube video URL to import.')}</p>
+						<HintIcon text={t('studio.videos.url_hint', 'Paste a YouTube video URL to import.')} />
 						<input
 							id="source_url"
 							name="source_url"
@@ -248,7 +249,7 @@
 						<label for="query" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.query', 'Search keyword')}
 						</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.videos.query_hint', 'A keyword or phrase to search for.')}</p>
+						<HintIcon text={t('studio.videos.query_hint', 'A keyword or phrase to search for.')} />
 						<input
 							id="query"
 							name="query"
@@ -267,7 +268,7 @@
 						<label for="target_username" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.target_username', 'Target username (optional)')}
 						</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.videos.username_hint', 'The account handle to pull videos from.')}</p>
+						<HintIcon text={t('studio.videos.username_hint', 'The account handle to pull videos from.')} />
 						<input
 							id="target_username"
 							name="target_username"

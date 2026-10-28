@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -249,7 +250,7 @@
 					<label for="post-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t('app.blog.field_title', 'Title')}
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('blog.post_title_hint', 'The post title shown in listings.')}</p>
+					<HintIcon text={t('blog.post_title_hint', 'The post title shown in listings.')} />
 					<input
 						id="post-title"
 						type="text"
@@ -265,7 +266,7 @@
 					<label for="post-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t('app.blog.field_slug', 'Slug')}
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('blog.post_slug_hint', 'URL-safe identifier — auto-generated from the title.')}</p>
+					<HintIcon text={t('blog.post_slug_hint', 'URL-safe identifier — auto-generated from the title.')} />
 					<input
 						id="post-slug"
 						type="text"
@@ -280,7 +281,7 @@
 					<label for="post-body" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t('app.blog.field_content', 'Content (HTML)')}
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('blog.post_body_hint', 'The post content.')}</p>
+					<HintIcon text={t('blog.post_body_hint', 'The post content.')} />
 					<textarea
 						id="post-body"
 						bind:value={bodyHtml}
@@ -296,7 +297,7 @@
 						<label for="post-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('app.blog.field_status', 'Status')}
 						</label>
-						<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('blog.post_status_hint', 'Draft or published state.')}</p>
+						<HintIcon text={t('blog.post_status_hint', 'Draft or published state.')} />
 						<AutocompleteSelect
 							id="post-status"
 							bind:value={status}
@@ -310,7 +311,7 @@
 						<label for="post-visibility" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('app.blog.field_visibility', 'Visibility')}
 						</label>
-						<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('blog.post_visibility_hint', 'Who can see this post.')}</p>
+						<HintIcon text={t('blog.post_visibility_hint', 'Who can see this post.')} />
 						<AutocompleteSelect
 							id="post-visibility"
 							bind:value={visibility}

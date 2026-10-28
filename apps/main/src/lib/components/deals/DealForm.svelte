@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 	// Shared deal (coupon) form: staff create/edit via /admin/coupons and
 	// organization submissions via /organizations/{id}/deals.
@@ -311,7 +312,7 @@
 							onSelect={(i) => (np.category = i.id)}
 							onFreeTextBlur={(q) => (np.category = q)}
 						/>
-							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.provider_category_hint', 'The category this provider operates in.')}</p>
+							<HintIcon text={t('deal.form.provider_category_hint', 'The category this provider operates in.')} />
 					</div>
 					<div>
 						<label for="np-base-url" class={labelClass}>
@@ -362,7 +363,7 @@
 				placeholder={t('deal.form.title_placeholder', 'e.g. 20% off airport transfers')}
 				class={inputClass}
 			/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.title_hint', 'The deal headline users see — include the discount.')}</p>
+				<HintIcon text={t('deal.form.title_hint', 'The deal headline users see — include the discount.')} />
 		</div>
 		<div>
 			<label for="deal-slug" class={labelClass}>{t('deal.form.slug', 'Slug')}</label>
@@ -373,7 +374,7 @@
 				oninput={onSlugInput}
 				class={inputClass}
 			/>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.slug_hint', 'URL-safe identifier — auto-generated from the title.')}</p>
+			<HintIcon text={t('deal.form.slug_hint', 'URL-safe identifier — auto-generated from the title.')} />
 		</div>
 		<div>
 			<label for="deal-code" class={labelClass}>{t('deal.form.code', 'Coupon code')}</label>
@@ -384,7 +385,7 @@
 				placeholder={t('deal.form.code_placeholder', 'Optional — e.g. SAVE20')}
 				class={inputClass}
 			/>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.code_hint', 'The code users enter at checkout — e.g. JAPA20.')}</p>
+			<HintIcon text={t('deal.form.code_hint', 'The code users enter at checkout — e.g. JAPA20.')} />
 		</div>
 	</div>
 

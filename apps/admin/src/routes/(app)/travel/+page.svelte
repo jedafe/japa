@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /travel — Travel Search providers (Section 67, ADR-085).
 	// Migrated to the EntityPage scaffold. Uses `formSnippet` for structured
@@ -267,7 +268,7 @@
 			<label for="travel-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.name', 'Name')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('travel.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
+			<HintIcon text={t('travel.name_hint', 'The name shown in admin lists and on the site where public.')} />
 			<input
 				id="travel-name"
 				type="text"
@@ -281,7 +282,7 @@
 			<label for="travel-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.slug', 'Slug')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('travel.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}</span>
+			<HintIcon text={t('travel.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')} />
 			<input
 				id="travel-slug"
 				type="text"
@@ -297,7 +298,7 @@
 			<label for="travel-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.type', 'Provider Type')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('travel.type_hint', 'The type — controls how it’s handled.')}</span>
+			<HintIcon text={t('travel.type_hint', 'The type — controls how it’s handled.')} />
 			<Autocomplete
 				id="travel-type"
 				class="w-full"
@@ -329,7 +330,7 @@
 				<label for="travel-api-endpoint" class="mb-1 block text-xs" style="color: var(--color-muted)">
 					{t('travel.api_endpoint', 'Endpoint URL')}
 				</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('travel.api_endpoint_hint', 'The API endpoint this calls — full URL.')}</span>
+			<HintIcon text={t('travel.api_endpoint_hint', 'The API endpoint this calls — full URL.')} />
 				<input
 					id="travel-api-endpoint"
 					type="url"
@@ -343,7 +344,7 @@
 				<label for="travel-api-key" class="mb-1 block text-xs" style="color: var(--color-muted)">
 					{t('travel.api_key', 'API Key')}
 				</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('travel.api_key_hint', 'Stored encrypted — never shown again after saving.')}</span>
+			<HintIcon text={t('travel.api_key_hint', 'Stored encrypted — never shown again after saving.')} />
 				<input
 					id="travel-api-key"
 					type="text"
@@ -367,9 +368,7 @@
 				})}
 			</div>
 			{#if editing}
-				<p class="text-xs" style="color: var(--color-muted)">
-					{t('travel.api_config_hint', 'Leave blank to keep existing credentials. Any value entered here replaces them.')}
-				</p>
+				<HintIcon text={t('travel.api_config_hint', 'Leave blank to keep existing credentials. Any value entered here replaces them.')} />
 			{/if}
 		</div>
 		<div>
@@ -384,9 +383,7 @@
 					(value.affiliate_pairs as ConfigPair[] | undefined)?.splice(i, 1),
 				addLabel: t('travel.add_param', 'Add parameter')
 			})}
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">
-				{t('travel.affiliate_hint', 'Appended to booking links as URL parameters (e.g. aff_id, aff_sub).')}
-			</p>
+			<HintIcon text={t('travel.affiliate_hint', 'Appended to booking links as URL parameters (e.g. aff_id, aff_sub).')} />
 		</div>
 		<div class="flex items-center gap-2">
 			<!-- New providers default to active (the create handler treats an
@@ -401,7 +398,7 @@
 			<label for="travel-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('travel.active', 'Active')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('travel.active_hint', 'Inactive routes are hidden from searches.')}</span>
+			<HintIcon text={t('travel.active_hint', 'Inactive routes are hidden from searches.')} />
 		</div>
 	</div>
 {/snippet}

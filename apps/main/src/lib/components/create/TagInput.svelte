@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { X, Search } from 'lucide-svelte';
 	import { searchHits } from '$lib/api/create';
@@ -147,7 +148,7 @@
 					}, 150);
 				}}
 			/>
-			<p id="tag-input-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.tag_hint', 'Type and press Enter to add a tag.')}</p>
+			<HintIcon id="tag-input-hint" text={t('create.tag_hint', 'Type and press Enter to add a tag.')} />
 		</div>
 	</div>
 

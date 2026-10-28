@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Booking dialog (§114 marketplace, spec §3.3) — the booking form
 	// extracted from services/[slug] + tier radio picker and coupon
 	// price-preview on top.
@@ -537,7 +538,7 @@
 							autocomplete="off"
 							class="{inputCls} flex-1"
 						/>
-							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.coupon_hint', 'Enter a discount code if you have one.')}</p>
+							<HintIcon text={t('services.coupon_hint', 'Enter a discount code if you have one.')} />
 						<button
 							type="button"
 							onclick={applyCoupon}
@@ -626,7 +627,7 @@
 					placeholder={t('services.book_note_ph', 'Questions, requirements, context…')}
 					class="{inputCls} w-full"
 				></textarea>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.book_note_hint', 'Anything the provider should know — requirements, questions.')}</p>
+					<HintIcon text={t('services.book_note_hint', 'Anything the provider should know — requirements, questions.')} />
 			</div>
 
 			{#if isPaid}
@@ -662,7 +663,7 @@
 							placeholder={t('services.book_email_ph', 'you@example.com')}
 							class="{inputCls} w-full"
 						/>
-							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.book_email_hint', 'Booking confirmations are sent here.')}</p>
+							<HintIcon text={t('services.book_email_hint', 'Booking confirmations are sent here.')} />
 					</div>
 				</div>
 			{/if}

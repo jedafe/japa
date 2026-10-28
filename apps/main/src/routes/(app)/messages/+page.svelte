@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack, onMount, tick } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -803,7 +804,7 @@
 				class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
 				>{t('messages.recipient', 'To')}</label
 			>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('messages.dm_recipient_hint', 'Who receives this message — start typing to search.')}</p>
+				<HintIcon text={t('messages.dm_recipient_hint', 'Who receives this message — start typing to search.')} />
 			<Autocomplete
 				placeholder={t('messages.recipient_placeholder', 'Search people by name or @username')}
 				ariaLabel={t('messages.recipient', 'To')}

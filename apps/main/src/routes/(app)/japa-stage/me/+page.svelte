@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 	// My Japa Stage. Server-preloaded via GET /me/japa-stage; updates go through
@@ -204,7 +205,7 @@
 			<label for="intent" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_intent.label', 'Journey type')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('japa_stage.intent_hint', 'What you are planning — move, visit, study.')}</p>
+			<HintIcon text={t('japa_stage.intent_hint', 'What you are planning — move, visit, study.')} />
 			<AutocompleteSelect
 				id="intent"
 				value={intent}
@@ -217,7 +218,7 @@
 			<label for="stage" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.current_stage', 'Current stage')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('japa_stage.stage_hint', 'Where you are in the process right now.')}</p>
+			<HintIcon text={t('japa_stage.stage_hint', 'Where you are in the process right now.')} />
 			<AutocompleteSelect
 				id="stage"
 				value={stage}
@@ -233,7 +234,7 @@
 			<label for="dest" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.dest_country', 'Destination country')}
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('japa_stage.dest_hint', 'The country you are heading to.')}</p>
+			<HintIcon text={t('japa_stage.dest_hint', 'The country you are heading to.')} />
 			<Autocomplete
 				placeholder={t('japa_stage.dest_placeholder', 'e.g. Canada')}
 				emptyMessage={t('common.no_results', 'No results found')}

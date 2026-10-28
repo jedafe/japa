@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -448,13 +449,13 @@
 	<div class="space-y-4">
 		<div>
 			<label class="text-sm font-medium" for="edit-subject">{t('tickets.subject', 'Subject')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('tickets.edit_subject_hint', 'The subject the user sees.')}</p>
+			<HintIcon text={t('tickets.edit_subject_hint', 'The subject the user sees.')} />
 			<input id="edit-subject" bind:value={editForm.subject} class="mt-1 w-full rounded-lg border border-border bg-background p-2 text-sm" />
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label class="text-sm font-medium" for="edit-status">{t('common.status', 'Status')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('tickets.edit_status_hint', 'The ticket state.')}</p>
+				<HintIcon text={t('tickets.edit_status_hint', 'The ticket state.')} />
 				<AutocompleteSelect
 					id="edit-status"
 					bind:value={editForm.status}
@@ -464,7 +465,7 @@
 			</div>
 			<div>
 				<label class="text-sm font-medium" for="edit-priority">{t('tickets.priority', 'Priority')}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('tickets.edit_priority_hint', 'Higher priority tickets surface first.')}</p>
+				<HintIcon text={t('tickets.edit_priority_hint', 'Higher priority tickets surface first.')} />
 				<AutocompleteSelect
 					id="edit-priority"
 					bind:value={editForm.priority}
@@ -475,7 +476,7 @@
 		</div>
 		<div>
 			<label class="text-sm font-medium" for="edit-assignee">{t('tickets.assignee', 'Assignee')}</label>
-			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('tickets.edit_assignee_hint', 'The admin handling this ticket.')}</p>
+			<HintIcon text={t('tickets.edit_assignee_hint', 'The admin handling this ticket.')} />
 			<input id="edit-assignee" bind:value={editForm.assigned_to} class="mt-1 w-full rounded-lg border border-border bg-background p-2 text-sm" placeholder={t('tickets.detail.assignee_placeholder', 'User ID or username')} />
 		</div>
 	</div>

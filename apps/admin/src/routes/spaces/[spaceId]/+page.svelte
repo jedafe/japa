@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
@@ -300,7 +301,7 @@
 <Modal bind:open={showAddModal} title={t("spaces.add_moderator", "Add Moderator")}>
 	<div>
 		<label for="mod-user" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spaces.user", "User")}</label>
-		<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.mod_user_hint', 'The user to grant moderator rights.')}</p>
+		<HintIcon text={t('spaces.mod_user_hint', 'The user to grant moderator rights.')} />
 		<div class="mt-1">
 			<Autocomplete
 				id="mod-user"

@@ -19,7 +19,19 @@ class JcTextField extends StatelessWidget {
     return TextField(
       controller: controller,
       obscureText: obscureText,
-      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), helperText: hint),
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        suffixIcon: hint == null
+            ? null
+            : Tooltip(
+                message: hint!,
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Icon(Icons.help_outline, size: 18),
+                ),
+              ),
+      ),
     );
   }
 }

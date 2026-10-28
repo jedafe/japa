@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -371,7 +372,7 @@
 					<label for="rem-send" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('remittance.send', 'Send')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.remittance.send_hint', 'The amount you are sending.')}</p>
+					<HintIcon text={t('tools.remittance.send_hint', 'The amount you are sending.')} />
 					<div class="mt-1">
 						<Autocomplete
 							placeholder="—"
@@ -390,7 +391,7 @@
 					<label for="rem-recv" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('remittance.receive', 'Receive')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.remittance.recv_hint', 'What the recipient gets — updates from live rates.')}</p>
+					<HintIcon text={t('tools.remittance.recv_hint', 'What the recipient gets — updates from live rates.')} />
 					<div class="mt-1">
 						<Autocomplete
 							placeholder="—"
@@ -700,7 +701,7 @@
 								<label for="alert-rate" class="block text-xs text-[var(--color-muted)]">
 									{t('remittance.target_rate', 'Target rate')} ({sendCurrency}→{receiveCurrency})
 								</label>
-								<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.remittance.alert_hint', 'We notify you when the rate reaches this.')}</p>
+								<HintIcon text={t('tools.remittance.alert_hint', 'We notify you when the rate reaches this.')} />
 								<input
 									id="alert-rate"
 									type="number"

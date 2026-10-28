@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Modal dialog for creating a new blog series (POST /series).
 	// Mirrors SpaceCreationModal — uses bits-ui Dialog, auto-generates slug
 	// from title, and calls onCreated on success instead of navigating.
@@ -81,7 +82,7 @@
 						disabled={submitting}
 						aria-describedby="series-title-hint"
 					/>
-					<p id="series-title-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.series.title_hint', 'The public name of the series.')}</p>
+					<HintIcon id="series-title-hint" text={t('create.series.title_hint', 'The public name of the series.')} />
 				</div>
 
 				<div>
@@ -95,7 +96,7 @@
 						disabled={submitting}
 						aria-describedby="series-slug-hint"
 					/>
-					<p id="series-slug-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.series.slug_hint', 'URL-safe identifier — auto-generated from the title.')}</p>
+					<HintIcon id="series-slug-hint" text={t('create.series.slug_hint', 'URL-safe identifier — auto-generated from the title.')} />
 				</div>
 
 				<div>
@@ -109,7 +110,7 @@
 						disabled={submitting}
 						aria-describedby="series-desc-hint"
 					/>
-					<p id="series-desc-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.series.desc_hint', 'Optional — what this series is about.')}</p>
+					<HintIcon id="series-desc-hint" text={t('create.series.desc_hint', 'Optional — what this series is about.')} />
 				</div>
 
 				{#if error}

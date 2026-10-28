@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /academy/revenue-splits — read-only audit viewer migrated to EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
@@ -171,7 +172,7 @@
 		<label for="date-from" class="text-sm" style="color: var(--color-muted)">
 			{t('common.from', 'From')}
 		</label>
-		<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('academy.date_from_hint', 'Start of the date range.')}</p>
+		<HintIcon text={t('academy.date_from_hint', 'Start of the date range.')} />
 		<input
 			id="date-from"
 			type="date"
@@ -185,7 +186,7 @@
 		<label for="date-to" class="text-sm" style="color: var(--color-muted)">
 			{t('common.to', 'To')}
 		</label>
-		<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('academy.date_to_hint', 'End of the date range.')}</p>
+		<HintIcon text={t('academy.date_to_hint', 'End of the date range.')} />
 		<input
 			id="date-to"
 			type="date"

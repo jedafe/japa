@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
@@ -193,7 +194,7 @@
 					<label for="name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.name", "Name")} <span style="color: var(--color-danger)">*</span>
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.name_hint', 'The name shown in admin lists.')}</p>
+					<HintIcon text={t('spaces.name_hint', 'The name shown in admin lists.')} />
 					<input
 						id="name"
 						type="text"
@@ -208,7 +209,7 @@
 					<label for="slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.slug", "Slug")} <span style="color: var(--color-danger)">*</span>
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}</p>
+					<HintIcon text={t('spaces.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')} />
 					<input
 						id="slug"
 						type="text"
@@ -224,7 +225,7 @@
 					<label for="space-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.space_type", "Space Type")} <span style="color: var(--color-danger)">*</span>
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.space_type_hint', 'The kind of space — e.g. country, city, community.')}</p>
+					<HintIcon text={t('spaces.space_type_hint', 'The kind of space — e.g. country, city, community.')} />
 					<Autocomplete
 						id="space-type"
 						placeholder={t("spaces.select_type", "Select a type")}
@@ -241,7 +242,7 @@
 					<label for="level" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.level", "Level")} <span style="color: var(--color-danger)">*</span>
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.level_hint', 'The space level in the geo hierarchy.')}</p>
+					<HintIcon text={t('spaces.level_hint', 'The space level in the geo hierarchy.')} />
 					<Autocomplete
 						id="level"
 						placeholder={t("spaces.level", "Level")}
@@ -258,7 +259,7 @@
 					<label for="parent-id" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.parent_id", "Parent Space")}
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.parent_id_hint', 'The parent space this nests under.')}</p>
+					<HintIcon text={t('spaces.parent_id_hint', 'The parent space this nests under.')} />
 					<Autocomplete
 						id="parent-id"
 						placeholder={t("spaces.parent_placeholder", "Search primary spaces")}
@@ -274,7 +275,7 @@
 					<label for="preset-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.preset_name", "Permission Preset")}
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.preset_name_hint', 'A starter preset — prefills type and settings.')}</p>
+					<HintIcon text={t('spaces.preset_name_hint', 'A starter preset — prefills type and settings.')} />
 					<Autocomplete
 						id="preset-name"
 						placeholder={t("spaces.preset_none", "None (use defaults)")}
@@ -292,7 +293,7 @@
 				<label for="description" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 					{t("spaces.description", "Description")}
 				</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.description_hint', 'Short description shown on the record.')}</p>
+				<HintIcon text={t('spaces.description_hint', 'Short description shown on the record.')} />
 				<textarea
 					id="description"
 					class="w-full rounded-lg border px-3 py-2 text-sm"

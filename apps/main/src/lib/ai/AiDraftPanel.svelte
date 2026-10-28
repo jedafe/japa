@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { Sparkles, X, Loader2, RefreshCw, Check } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api, type ClientResult } from '$lib/api/client';
@@ -615,9 +616,7 @@
 							bind:value={assistMaxWords}
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 						/>
-						<p class="text-[10px] text-[var(--color-muted)]">
-							{t('ai.assist.summarize_hint', 'The result is applied to the meta description field.')}
-						</p>
+						<HintIcon text={t('ai.assist.summarize_hint', 'The result is applied to the meta description field.')} />
 					</div>
 				{:else if assistAction === 'translate'}
 					<div class="flex flex-col gap-1">

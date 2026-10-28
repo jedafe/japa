@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { onMount, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { beforeNavigate } from '$app/navigation';
@@ -304,7 +305,7 @@
 
 				<div class="field">
 					<label class="field-label" for="doc-category">{t('new_page.field_category', 'Category')}</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('new_page.category_hint', 'The top-level section this page lives in.')}</p>
+					<HintIcon text={t('new_page.category_hint', 'The top-level section this page lives in.')} />
 					<Autocomplete
 						id="doc-category"
 						placeholder={t('new_page.category_placeholder', 'e.g. Guides')}
@@ -324,7 +325,7 @@
 
 				<div class="field">
 					<label class="field-label" for="doc-subcategory">{t('new_page.field_subcategory', 'Subcategory')}</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('new_page.subcategory_hint', 'Optional — a nested grouping under the category.')}</p>
+					<HintIcon text={t('new_page.subcategory_hint', 'Optional — a nested grouping under the category.')} />
 					<Autocomplete
 						id="doc-subcategory"
 						disabled={!category.trim()}
@@ -345,7 +346,7 @@
 
 				<div class="field">
 					<label class="field-label" for="doc-parent">{t('new_page.field_parent', 'Parent page')}</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('new_page.parent_hint', 'Optional — nest this page under another.')}</p>
+					<HintIcon text={t('new_page.parent_hint', 'Optional — nest this page under another.')} />
 					<Autocomplete
 						id="doc-parent"
 						placeholder={t('new_page.no_parent', '— Top level —')}
@@ -357,9 +358,7 @@
 						onSelect={(item) => (parentId = item.id)}
 						onClear={() => (parentId = '')}
 					/>
-					<span class="field-hint">
-						{t('new_page.parent_hint', 'A non-published parent hides this page from the nav until it publishes.')}
-					</span>
+					<HintIcon text={t('new_page.parent_hint', 'A non-published parent hides this page from the nav until it publishes.')} />
 				</div>
 
 				<label class="field">
@@ -381,9 +380,7 @@
 							<option value={s}>{t(`new_page.status.${s}`, s)}</option>
 						{/each}
 					</select>
-					<span class="field-hint">
-						{t('new_page.status_hint', 'Draft stays private. In review queues it for a reviewer. Approve/publish run the review steps for you.')}
-					</span>
+					<HintIcon text={t('new_page.status_hint', 'Draft stays private. In review queues it for a reviewer. Approve/publish run the review steps for you.')} />
 				</label>
 			</div>
 

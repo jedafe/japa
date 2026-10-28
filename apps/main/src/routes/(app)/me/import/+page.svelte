@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { Download, FileUp, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
@@ -103,7 +104,7 @@
 					<label for="source_type" class="block text-xs font-medium text-[var(--color-muted)]">
 						{t('import.source_type', 'Source type')}
 					</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('import.source_type_hint', 'Where this data comes from — CSV, API, manual.')}</p>
+					<HintIcon text={t('import.source_type_hint', 'Where this data comes from — CSV, API, manual.')} />
 					<!-- Hidden field keeps the SvelteKit form action payload intact. -->
 					<input type="hidden" name="source_type" value={sourceType} />
 					<Autocomplete
@@ -123,7 +124,7 @@
 						<label for="source_url" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('import.source_url', 'Source URL')}
 						</label>
-						<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('import.source_url_hint', 'The URL to import from — full URL including https://.')}</p>
+						<HintIcon text={t('import.source_url_hint', 'The URL to import from — full URL including https://.')} />
 						<input
 							id="source_url"
 							name="source_url"

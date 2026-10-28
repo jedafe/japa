@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// /data-imports — Platform Data Import (Section 67).
 	// Migrated to the EntityPage scaffold per apps/admin/AGENTS.md.
 	// Non-standard CRUD: no edit, custom create form (select/file-url),
@@ -367,7 +368,7 @@
 			<label for="import-name" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.import_name', 'Import Name')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
+			<HintIcon text={t('app.data_imports.name_hint', 'The name shown in admin lists and on the site where public.')} />
 			<input
 				id="import-name"
 				type="text"
@@ -382,14 +383,14 @@
 				<label for="import-type" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('app.data_imports.data_type', 'Data Type')}
 				</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.type_hint', 'The type — controls how it’s handled.')}</span>
+			<HintIcon text={t('app.data_imports.type_hint', 'The type — controls how it’s handled.')} />
 				<Select bind:value={value.type} options={importTypes} />
 			</div>
 			<div>
 				<label for="import-format" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('app.data_imports.format', 'Format')}
 				</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.format_hint', 'The expected format — e.g. CSV or JSON.')}</span>
+			<HintIcon text={t('app.data_imports.format_hint', 'The expected format — e.g. CSV or JSON.')} />
 				<Select bind:value={value.format} options={importFormatOptions} />
 			</div>
 		</div>
@@ -397,14 +398,14 @@
 			<label for="import-mode" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.mode', 'Mode')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.mode_hint', 'How this behaves — pick the closest fit.')}</span>
+			<HintIcon text={t('app.data_imports.mode_hint', 'How this behaves — pick the closest fit.')} />
 			<Select bind:value={value.mode} options={importModeOptions} />
 		</div>
 		<div>
 			<label for="import-file-url" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.file_url', 'File URL')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.file_url_hint', 'Direct file URL — must be publicly reachable.')}</span>
+			<HintIcon text={t('app.data_imports.file_url_hint', 'Direct file URL — must be publicly reachable.')} />
 			<input
 				id="import-file-url"
 				type="text"
@@ -413,9 +414,7 @@
 				placeholder="/uploads/import-file.csv"
 				bind:value={value.file_url}
 			/>
-			<p class="mt-1 text-xs text-muted">
-				{t('app.data_imports.file_url_hint', 'Path to the uploaded file. Upload the file first via the Media uploader, then paste the path here.')}
-			</p>
+			<HintIcon text={t('app.data_imports.file_url_hint', 'Path to the uploaded file. Upload the file first via the Media uploader, then paste the path here.')} />
 		</div>
 		<div class="rounded-lg border p-3 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
 			{t('app.data_imports.form_help', 'In "create" mode, rows that conflict with existing records are skipped. In "upsert" mode, existing records are updated and new ones are inserted.')}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /onboarding/templates — Onboarding template CRUD (Section 09).
 	// Templates are configurable onboarding step sequences stored as jsonb.
@@ -240,7 +241,7 @@
 			<label for="tpl-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.name', 'Name')} <span style="color: var(--color-danger)">*</span>
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
+			<HintIcon text={t('onboarding.templates.name_hint', 'The name shown in admin lists and on the site where public.')} />
 			<input
 				id="tpl-name"
 				type="text"
@@ -255,7 +256,7 @@
 			<label for="tpl-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.description', 'Description')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.desc_hint', 'Shown in detail views — keep it concise.')}</span>
+			<HintIcon text={t('onboarding.templates.desc_hint', 'Shown in detail views — keep it concise.')} />
 			<textarea
 				id="tpl-desc"
 				rows="2"
@@ -269,7 +270,7 @@
 			<label for="tpl-steps" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.steps', 'Steps (JSON)')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.steps_hint', 'The ordered steps — one per line.')}</span>
+			<HintIcon text={t('onboarding.templates.steps_hint', 'The ordered steps — one per line.')} />
 			<textarea
 				id="tpl-steps"
 				rows="10"
@@ -293,7 +294,7 @@
 			<label for="tpl-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('onboarding.templates.active', 'Active')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.active_hint', 'Inactive templates are hidden from onboarding.')}</span>
+			<HintIcon text={t('onboarding.templates.active_hint', 'Inactive templates are hidden from onboarding.')} />
 		</div>
 	</div>
 {/snippet}

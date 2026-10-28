@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { DataTable } from "$lib/components/ui/data-table";
@@ -252,7 +253,7 @@
 			</div>
 			<div>
 				<label for="fail-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("academy.failureReason", "Failure Reason")}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('academy.fail_reason_hint', 'Why the payout failed — recorded for audit.')}</p>
+				<HintIcon text={t('academy.fail_reason_hint', 'Why the payout failed — recorded for audit.')} />
 				<textarea id="fail-reason" bind:value={failReason} rows={3} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("academy.failureReasonPlaceholder", "Reason for failure...")}></textarea>
 			</div>
 		</div>

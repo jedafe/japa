@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	/**
 	 * Language & Timezone settings — Phase 18.09.
 	 *
@@ -202,9 +203,7 @@
 			selectedLabel={selectedLanguageLabel}
 			onSelect={(item) => form.set({ language: item.id })}
 		/>
-		<p class="mt-1.5 text-xs text-[var(--color-muted)]">
-			{t('settings.language.language_hint', 'Interface language — applies across the whole app after saving.')}
-		</p>
+		<HintIcon text={t('settings.language.language_hint', 'Interface language — applies across the whole app after saving.')} />
 	</label>
 
 	<label class="block">
@@ -220,9 +219,7 @@
 			selectedLabel={form.values.timezone || null}
 			onSelect={(item) => form.set({ timezone: item.id })}
 		/>
-		<p class="mt-1.5 text-xs text-[var(--color-muted)]">
-			{t('settings.language.timezone_hint', 'Times will be displayed in your selected timezone.')}
-		</p>
+		<HintIcon text={t('settings.language.timezone_hint', 'Times will be displayed in your selected timezone.')} />
 	</label>
 
 	{#if countries.length > 0}
@@ -240,9 +237,7 @@
 				onSelect={(item) => saveContentCountry(item.id)}
 				onClear={() => saveContentCountry('')}
 			/>
-			<p class="mt-1.5 text-xs text-[var(--color-muted)]">
-				{t('settings.language.content_country_hint', 'Personalizes your feed and search results. Leave on auto to use your detected location.')}
-			</p>
+			<HintIcon text={t('settings.language.content_country_hint', 'Personalizes your feed and search results. Leave on auto to use your detected location.')} />
 			{#if countryError}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{countryError}</p>{/if}
 		</label>
 	{/if}

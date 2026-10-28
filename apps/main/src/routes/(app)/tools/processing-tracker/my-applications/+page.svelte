@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { t, i18n } from '$lib/i18n';
@@ -278,7 +279,7 @@
 					<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-dest">
 						{t('processing_tracker.destination', 'Destination country')} *
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('processing_tracker.dest_hint', 'The country you applied to.')}</p>
+					<HintIcon text={t('processing_tracker.dest_hint', 'The country you applied to.')} />
 					<DestinationSelector {destinations} bind:selectedId={newDestId} />
 				</div>
 				<div class="grid sm:grid-cols-2 gap-4">
@@ -286,7 +287,7 @@
 						<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-visa">
 							{t('processing_tracker.visa_category', 'Visa category')} *
 						</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('processing_tracker.visa_hint', 'The visa type — e.g. Student, Skilled Worker.')}</p>
+						<HintIcon text={t('processing_tracker.visa_hint', 'The visa type — e.g. Student, Skilled Worker.')} />
 						<input
 							id="new-visa"
 							bind:value={newVisaCategory}
@@ -299,7 +300,7 @@
 						<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-consulate">
 							{t('processing_tracker.consulate', 'Consulate (optional)')}
 						</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('processing_tracker.consulate_hint', 'The consulate or office handling your application.')}</p>
+						<HintIcon text={t('processing_tracker.consulate_hint', 'The consulate or office handling your application.')} />
 						<input
 							id="new-consulate"
 							bind:value={newConsulate}
@@ -313,7 +314,7 @@
 						<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-method">
 							{t('processing_tracker.method', 'Application method')}
 						</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('processing_tracker.method_hint', 'How you applied — online, in person, via agent.')}</p>
+						<HintIcon text={t('processing_tracker.method_hint', 'How you applied — online, in person, via agent.')} />
 						<AutocompleteSelect
 							id="new-method"
 							bind:value={newMethod}

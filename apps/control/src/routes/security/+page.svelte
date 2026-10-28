@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
@@ -769,7 +770,7 @@
 
 				<div class="mb-4">
 					<label for="cidr-input" class="text-foreground mb-1 block text-sm font-medium">{t('security.cidr_label')}</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('security.cidr_hint', 'IP range in CIDR notation — e.g. 10.0.0.0/8.')}</p>
+					<HintIcon text={t('security.cidr_hint', 'IP range in CIDR notation — e.g. 10.0.0.0/8.')} />
 					<input
 						id="cidr-input"
 						type="text"
@@ -781,7 +782,7 @@
 
 				<div class="mb-4">
 					<label for="block-type-select" class="text-foreground mb-1 block text-sm font-medium">{t('security.block_type_label')}</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('security.block_type_hint', 'The kind of block — IP, user-agent, or pattern.')}</p>
+					<HintIcon text={t('security.block_type_hint', 'The kind of block — IP, user-agent, or pattern.')} />
 					<AutocompleteSelect
 						bind:value={blockType}
 						options={blockTypeItems}
@@ -795,7 +796,7 @@
 					<label for="reason-input" class="text-foreground mb-1 block text-sm font-medium">
 						{t('security.reason_label')} <span class="text-muted-foreground">{t('security.reason_optional')}</span>
 					</label>
-					<p class="text-muted-foreground mt-1 text-xs">{t('security.reason_hint', 'Internal note explaining this block.')}</p>
+					<HintIcon text={t('security.reason_hint', 'Internal note explaining this block.')} />
 					<input
 						id="reason-input"
 						type="text"

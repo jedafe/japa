@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { Modal } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
@@ -102,9 +103,7 @@
 								value={deactivatePassword}
 								oninput={(e) => (deactivatePassword = e.currentTarget.value)}
 							/>
-							<span id="deactivate-password-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
-								{t('settings.danger.deactivate_password_hint', 'Enter your current password to confirm deactivation.')}
-							</span>
+							<HintIcon id="deactivate-password-hint" text={t('settings.danger.deactivate_password_hint', 'Enter your current password to confirm deactivation.')} />
 						</label>
 						{#if deactivateError}<p class="mb-4 text-xs text-[var(--color-danger,#dc2626)]">{deactivateError}</p>{/if}
 						<div class="flex justify-end gap-2">

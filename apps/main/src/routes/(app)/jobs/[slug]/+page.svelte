@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t, i18n, siteName} from '$lib/i18n';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import { page } from '$app/state';
@@ -665,9 +666,7 @@
 							{t('jobs.expired_apply_body', 'The application deadline for this job has passed.')}
 						</p>
 					{:else if externalApplyUrl}
-						<p class="mb-3 text-sm text-[var(--color-muted)]">
-							{t('jobs.apply_external_hint', 'This job is listed externally. Apply on the employer site.')}
-						</p>
+						<HintIcon text={t('jobs.apply_external_hint', 'This job is listed externally. Apply on the employer site.')} />
 						<a
 							href={externalApplyUrl}
 							target="_blank"

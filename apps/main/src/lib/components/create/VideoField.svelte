@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// §106 video composer field — resolves an external video URL or uploads a
 	// video file, then links the resulting video_sources row to the draft.
 	// On success it fills title/description/featured image and asks the parent
@@ -135,7 +136,7 @@
 				{#if busy}<Loader2 size={14} class="animate-spin" />{/if}
 				{t('create.video.resolve', 'Resolve')}
 			</button>
-				<p id="video-url-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.video.url_hint', 'We fetch the video details automatically once you paste the link.')}</p>
+				<HintIcon id="video-url-hint" text={t('create.video.url_hint', 'We fetch the video details automatically once you paste the link.')} />
 </div>
 	{:else}
 		<div class="video-row">

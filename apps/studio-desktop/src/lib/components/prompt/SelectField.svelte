@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import type { SelectOption } from '$lib/types/prompt';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
@@ -26,5 +27,5 @@
 			: options}
 		onValueChange={(v) => onchange?.(v)}
 	/>
-	{#if hint}<span class="mt-1 block text-xs text-muted">{hint}</span>{/if}
+	{#if hint}<HintIcon text={hint} />{/if}
 </label>

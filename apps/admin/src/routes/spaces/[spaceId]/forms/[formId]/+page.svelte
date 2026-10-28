@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -290,7 +291,7 @@
 			<div class="space-y-4">
 				<div>
 					<label for="edit-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_label')}</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.edit_name_hint', 'The name shown in admin lists.')}</p>
+					<HintIcon text={t('spaces.edit_name_hint', 'The name shown in admin lists.')} />
 					<input
 						id="edit-name"
 						type="text"
@@ -302,7 +303,7 @@
 				</div>
 				<div>
 					<label for="edit-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.description_label')}</label>
-					<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.edit_desc_hint', 'Short description shown on the record.')}</p>
+					<HintIcon text={t('spaces.edit_desc_hint', 'Short description shown on the record.')} />
 					<textarea
 						id="edit-desc"
 						class="w-full rounded-md border px-3 py-2 text-sm"

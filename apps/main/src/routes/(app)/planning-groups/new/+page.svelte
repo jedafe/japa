@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 	// Create planning group form. Submits via the browser API client (POST
 	// /planning-groups), then redirects to the new group's detail page.
@@ -125,7 +126,7 @@
 					placeholder={t('planning_groups.field_name_placeholder', 'e.g. Canada Student Visa Q3 2026')}
 					class={inputClass}
 				/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.name_hint', 'A name others recognize — e.g. route + intake.')}</p>
+					<HintIcon text={t('planning_groups.name_hint', 'A name others recognize — e.g. route + intake.')} />
 			</div>
 
 			<AiBodyField
@@ -141,7 +142,7 @@
 				placeholder={t('planning_groups.field_description_placeholder', 'What is this group about?')}
 				rows={4}
 			/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.desc_hint', 'What the group plans together and who should join.')}</p>
+				<HintIcon text={t('planning_groups.desc_hint', 'What the group plans together and who should join.')} />
 
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div class="flex flex-col gap-1.5">
@@ -158,7 +159,7 @@
 						onSelect={(item) => (destinationSpaceId = item.id)}
 						onClear={() => (destinationSpaceId = '')}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.destination_hint', 'The destination country this group is planning for.')}</p>
+						<HintIcon text={t('planning_groups.destination_hint', 'The destination country this group is planning for.')} />
 				</div>
 
 				<div class="flex flex-col gap-1.5">
@@ -173,7 +174,7 @@
 						placeholder={t('planning_groups.field_visa_placeholder', 'e.g. Student')}
 						class={inputClass}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.visa_hint', 'The visa type or route — e.g. Student, Work.')}</p>
+						<HintIcon text={t('planning_groups.visa_hint', 'The visa type or route — e.g. Student, Work.')} />
 				</div>
 			</div>
 
@@ -190,7 +191,7 @@
 						placeholder={t('planning_groups.field_window_placeholder', 'e.g. Q3 2026')}
 						class={inputClass}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.window_hint', 'The intake or window you are targeting — e.g. Q3 2026.')}</p>
+						<HintIcon text={t('planning_groups.window_hint', 'The intake or window you are targeting — e.g. Q3 2026.')} />
 				</div>
 
 				<div class="flex flex-col gap-1.5">

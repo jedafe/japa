@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
@@ -587,7 +588,7 @@
 			</p>
 			<div class="mt-3">
 				<label for="suspend-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.suspend_reason", "Reason")}</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('users.suspend_reason_hint', 'The reason recorded — shown to the user where noted.')}</p>
+				<HintIcon text={t('users.suspend_reason_hint', 'The reason recorded — shown to the user where noted.')} />
 				<textarea
 					id="suspend-reason"
 					rows="2"
@@ -614,7 +615,7 @@
 	</p>
 	<div class="mb-3">
 		<label for="warn-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.warn_violation", "Violation Type")}</label>
-		<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('users.warn_violation_hint', 'The rule violated.')}</p>
+		<HintIcon text={t('users.warn_violation_hint', 'The rule violated.')} />
 		<Autocomplete
 			id="warn-violation"
 			placeholder={t("users.warn_violation_ph", "Select violation type")}

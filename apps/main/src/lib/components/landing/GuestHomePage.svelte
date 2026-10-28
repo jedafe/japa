@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
@@ -563,7 +564,7 @@
 				class="newsletter-input"
 				required
 			/>
-			<p id="guest-newsletter-hint" class="newsletter-hint">{t('landing.home.newsletter_hint', 'Weekly digest and updates — unsubscribe anytime.')}</p>
+			<HintIcon id="guest-newsletter-hint" text={t('landing.home.newsletter_hint', 'Weekly digest and updates — unsubscribe anytime.')} />
 			<button type="submit" class="newsletter-btn" disabled={newsletterStatus === 'loading'}>
 				{t('landing.home.newsletter_cta', 'Subscribe Now')}
 				<ArrowRight class="rtl:-scale-x-100" size={18} />

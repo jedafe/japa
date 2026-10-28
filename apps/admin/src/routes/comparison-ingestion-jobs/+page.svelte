@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { DataTable } from '$lib/components/ui/data-table';
@@ -149,7 +150,7 @@
 				<label for="content-id" class="block text-sm font-medium" style="color: var(--color-foreground)">
 					{t('ingestion_jobs.content_id', 'Comparison')}
 				</label>
-				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison.content_id_hint', 'The content this job ingests.')}</p>
+				<HintIcon text={t('comparison.content_id_hint', 'The content this job ingests.')} />
 				<input
 					id="content-id"
 					type="text"

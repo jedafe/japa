@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	// Submit-a-request form (auth required — guests are redirected to login by
 	// the server load). Posts to /roadmap/submissions which creates a
@@ -172,7 +173,7 @@
 					class={inputClass}
 					required
 				/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('roadmap.submit.title_hint', 'A short name for your request.')}</p>
+					<HintIcon text={t('roadmap.submit.title_hint', 'A short name for your request.')} />
 			</div>
 
 			<div class="flex flex-col gap-1.5">
@@ -200,7 +201,7 @@
 					placeholder={t('roadmap.submit.field_summary_placeholder', 'One or two sentences shown on the board card')}
 					class={inputClass}
 				></textarea>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('roadmap.submit.summary_hint', 'One or two sentences shown on the board card.')}</p>
+					<HintIcon text={t('roadmap.submit.summary_hint', 'One or two sentences shown on the board card.')} />
 			</div>
 
 			<div class="flex flex-col gap-1.5">
@@ -214,7 +215,7 @@
 					placeholder={t('roadmap.submit.field_body_placeholder', 'Describe the feature, who it helps, and why it matters')}
 					class={inputClass}
 				></textarea>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('roadmap.submit.body_hint', 'Describe the feature, who it helps, and why it matters.')}</p>
+					<HintIcon text={t('roadmap.submit.body_hint', 'Describe the feature, who it helps, and why it matters.')} />
 			</div>
 
 			{#if errorKey}

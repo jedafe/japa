@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { invalidateAll } from '$app/navigation';
@@ -84,9 +85,7 @@
 				placeholder={currency ? `${currency.symbol} ${currency.code}` : preferredCode || t('settings.wallet.currency_default', 'Default')}
 				onValueChange={(v) => v && changeCurrency(v)}
 			/>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">
-				{t('settings.wallet.currency_hint', 'Used to display wallet balances and prices.')}
-			</p>
+			<HintIcon text={t('settings.wallet.currency_hint', 'Used to display wallet balances and prices.')} />
 			{#if error}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
 		</div>
 	{/if}

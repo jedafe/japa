@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
 	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -277,9 +278,7 @@
 			<h2 class="text-sm font-semibold capitalize text-[var(--color-text)]">
 				{t(`bookings.status_${noteFor.status}`, noteFor.status)} — {noteFor.booking.listing_title}
 			</h2>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">
-				{t('bookings.org_note_hint', 'Optional note shown to the traveller.')}
-			</p>
+			<HintIcon text={t('bookings.org_note_hint', 'Optional note shown to the traveller.')} />
 			<textarea
 				bind:value={noteText}
 				rows="3"

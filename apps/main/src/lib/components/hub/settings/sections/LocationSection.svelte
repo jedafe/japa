@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	/**
 	 * Location settings — ADR-064a.
 	 *
@@ -597,9 +598,7 @@
 			{/if}
 		</div>
 
-		<p class="mt-1.5 text-xs text-[var(--color-muted)]">
-			{t('settings.location.origin_hint', 'Where you are from. Used to personalize content for your origin community.')}
-		</p>
+		<HintIcon text={t('settings.location.origin_hint', 'Where you are from. Used to personalize content for your origin community.')} />
 		{#if originError}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{originError}</p>{/if}
 	</div>
 
@@ -623,9 +622,7 @@
 				<span class="absolute end-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
 			{/if}
 		</div>
-		<p class="mt-1.5 text-xs text-[var(--color-muted)]">
-			{t('settings.location.dest_hint', 'Where you are relocating to or planning to move. Used to surface relevant tools and guides.')}
-		</p>
+		<HintIcon text={t('settings.location.dest_hint', 'Where you are relocating to or planning to move. Used to surface relevant tools and guides.')} />
 		{#if destError}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{destError}</p>{/if}
 	</div>
 

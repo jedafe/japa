@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { untrack } from 'svelte';
 	import type { DataSource } from '$lib/types/jce';
@@ -183,7 +184,7 @@
 		{#if validation.entity_id}
 			<p class="mt-1 text-xs" style="color: var(--color-danger)">{validation.entity_id}</p>
 		{:else}
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('data_sources.entity_id_hint', 'Optional UUID of an entity this source applies to')}</p>
+			<HintIcon text={t('data_sources.entity_id_hint', 'Optional UUID of an entity this source applies to')} />
 		{/if}
 	</div>
 
@@ -202,7 +203,7 @@
 		{#if validation.config}
 			<p class="mt-1 text-xs" style="color: var(--color-danger)">{validation.config}</p>
 		{:else}
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('data_sources.config_hint', 'Optional JSON configuration object')}</p>
+			<HintIcon text={t('data_sources.config_hint', 'Optional JSON configuration object')} />
 		{/if}
 	</div>
 </div>

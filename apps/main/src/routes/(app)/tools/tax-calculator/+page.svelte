@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -193,7 +194,7 @@
 					<label for="tc-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('tax_calculator.destination', 'Destination:')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.tax.dest_hint', 'The country you will pay tax in.')}</p>
+					<HintIcon text={t('tools.tax.dest_hint', 'The country you will pay tax in.')} />
 					<div class="mt-2">
 						<Autocomplete
 							placeholder={t('geo.select_destination', 'Select a country…')}
@@ -213,7 +214,7 @@
 					<label for="tc-origin" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('tax_calculator.origin', 'Origin:')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.tax.origin_hint', 'Where you are coming from — affects treaties.')}</p>
+					<HintIcon text={t('tools.tax.origin_hint', 'Where you are coming from — affects treaties.')} />
 					<div class="mt-2">
 						<Autocomplete
 							placeholder={t('tax_calculator.select_origin', 'Select origin country…')}
@@ -234,7 +235,7 @@
 				<label for="employment" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 					{t('tax_calculator.employment_status', 'Employment status:')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.tax.employment_hint', 'Your employment situation.')}</p>
+				<HintIcon text={t('tools.tax.employment_hint', 'Your employment situation.')} />
 				<AutocompleteSelect
 					id="employment"
 					value={employmentStatus}

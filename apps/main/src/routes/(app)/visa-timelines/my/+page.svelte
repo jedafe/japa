@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -316,7 +317,7 @@
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="flex flex-col gap-1">
 						<label for="c-origin" class={labelClass}>{t('visa_timelines.origin', 'Origin')}</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('visa_timelines.origin_hint', 'The country you applied from.')}</p>
+						<HintIcon text={t('visa_timelines.origin_hint', 'The country you applied from.')} />
 						<Autocomplete
 							placeholder={t('visa_timelines.origin', 'Origin')}
 							emptyMessage={t('common.no_results', 'No results found')}
@@ -330,7 +331,7 @@
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-dest" class={labelClass}>{t('visa_timelines.destination', 'Destination')} *</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('visa_timelines.destination_hint', 'The country you applied to.')}</p>
+						<HintIcon text={t('visa_timelines.destination_hint', 'The country you applied to.')} />
 						<Autocomplete
 							placeholder={t('visa_timelines.destination', 'Destination')}
 							emptyMessage={t('common.no_results', 'No results found')}
@@ -344,12 +345,12 @@
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-visa" class={labelClass}>{t('visa_timelines.visa_category', 'Visa category')} *</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('visa_timelines.visa_hint', 'The visa type — e.g. student, work.')}</p>
+						<HintIcon text={t('visa_timelines.visa_hint', 'The visa type — e.g. student, work.')} />
 						<input id="c-visa" type="text" bind:value={cVisa} class={inputClass} placeholder={t('visa_timelines.visa_placeholder', 'e.g. student')} />
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-consulate" class={labelClass}>{t('visa_timelines.consulate', 'Consulate')}</label>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('visa_timelines.consulate_hint', 'The consulate or office handling your application.')}</p>
+						<HintIcon text={t('visa_timelines.consulate_hint', 'The consulate or office handling your application.')} />
 						<input id="c-consulate" type="text" bind:value={cConsulate} class={inputClass} placeholder={t('visa_timelines.consulate_placeholder', 'e.g. Lagos')} />
 					</div>
 					<div class="flex flex-col gap-1">

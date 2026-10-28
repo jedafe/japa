@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 	import { t } from '$lib/i18n';
@@ -295,7 +296,7 @@
 							placeholder={t('planning_groups.milestone_placeholder', 'Add a milestone…')}
 							class={inputClass}
 						/>
-							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.milestone_hint', 'A shared deadline or step for the group.')}</p>
+							<HintIcon text={t('planning_groups.milestone_hint', 'A shared deadline or step for the group.')} />
 						<button
 							type="submit"
 							disabled={milestoneLoading || !milestoneTitle.trim()}

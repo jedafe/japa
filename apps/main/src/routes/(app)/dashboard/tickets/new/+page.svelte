@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/38-tickets.md (user portal)
 	// Full-page new-ticket form. Submits via the browser API client (POST /tickets),
 	// then redirects to the new ticket's thread view. The type selector is a
@@ -115,7 +116,7 @@
 						typeId = '';
 					}}
 				/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tickets.type_hint', 'What kind of help you need — support, billing, bug.')}</p>
+					<HintIcon text={t('tickets.type_hint', 'What kind of help you need — support, billing, bug.')} />
 			</div>
 		{/if}
 
@@ -171,7 +172,7 @@
 				placeholder={t('tickets.field_email_optional')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 			/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tickets.email_hint', 'Optional — a different contact email for replies.')}</p>
+				<HintIcon text={t('tickets.email_hint', 'Optional — a different contact email for replies.')} />
 		</div>
 
 		<div class="flex justify-end gap-2">

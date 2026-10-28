@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import { onMount, untrack } from 'svelte';
@@ -482,14 +483,14 @@
 				</div>
 				<div>
 					<p class="text-sm font-medium text-[var(--color-text)]">{t('spaces.settings_logo', 'Logo')}</p>
-					<p class="text-xs text-[var(--color-muted)]">{t('spaces.settings_logo_hint', 'Click the camera to upload or pick from library')}</p>
+					<HintIcon text={t('spaces.settings_logo_hint', 'Click the camera to upload or pick from library')} />
 				</div>
 			</div>
 
 			<!-- Header image -->
 			<div class="mb-5">
 				<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('spaces.settings_header', 'Header image')}</p>
-				<p class="mb-2 text-xs text-[var(--color-muted)]">{t('spaces.settings_header_hint', 'A banner image shown at the top of the space page')}</p>
+				<HintIcon text={t('spaces.settings_header_hint', 'A banner image shown at the top of the space page')} />
 				<div class="relative overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-subtle)]">
 					{#if headerUrl}
 						<img src={headerUrl} alt={t('spaces.settings_header', 'Header image')} class="h-32 w-full object-cover" />
@@ -546,7 +547,7 @@
 					bind:value={name}
 					class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				/>
-			<p id="ss-name-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('spaces.settings_name_hint', 'The public name of this space.')}</p>
+			<HintIcon id="ss-name-hint" text={t('spaces.settings_name_hint', 'The public name of this space.')} />
 			</div>
 			<div class="mb-4">
 				<label for="space-description" class="mb-1 block text-xs text-[var(--color-muted)]">
@@ -560,7 +561,7 @@
 				class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				aria-describedby="ss-desc-hint"
 			></textarea>
-			<p id="ss-desc-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('spaces.settings_desc_hint', 'Shown on the space page — what members can expect.')}</p>
+			<HintIcon id="ss-desc-hint" text={t('spaces.settings_desc_hint', 'Shown on the space page — what members can expect.')} />
 			</div>
 		<div>
 			<span class="mb-1 block text-xs text-[var(--color-muted)]">
@@ -580,9 +581,7 @@
 				<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
 					{t('spaces.settings_presets', 'Permission presets')}
 				</legend>
-				<p class="mb-3 text-xs text-[var(--color-muted)]">
-					{t('spaces.settings_presets_hint', 'Apply a preset to quickly set all permission axes at once. You can still fine-tune individual permissions below.')}
-				</p>
+				<HintIcon text={t('spaces.settings_presets_hint', 'Apply a preset to quickly set all permission axes at once. You can still fine-tune individual permissions below.')} />
 				{#if presetError}
 					<p class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{presetError}</p>
 				{/if}
@@ -614,9 +613,7 @@
 			<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
 				{t('spaces.settings_visibility', 'Who can view this space')}
 			</legend>
-			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{t('spaces.settings_visibility_hint', 'Controls who can see this space and its content.')}
-			</p>
+			<HintIcon text={t('spaces.settings_visibility_hint', 'Controls who can see this space and its content.')} />
 			{#each visibilityOptions as opt}
 				<label class="mb-2 flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text)]">
 					<input type="radio" name="visibility" value={opt.value} bind:group={visibility} class="mt-0.5" />
@@ -630,9 +627,7 @@
 			<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
 				{t('spaces.settings_posting', 'Who can post')}
 			</legend>
-			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{t('spaces.settings_posting_hint', 'Minimum role required to create content in this space.')}
-			</p>
+			<HintIcon text={t('spaces.settings_posting_hint', 'Minimum role required to create content in this space.')} />
 			<AutocompleteSelect bind:value={postingPerm} options={permOptions} />
 		</fieldset>
 
@@ -656,9 +651,7 @@
 			<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
 				{t('spaces.settings_joining', 'Who can join')}
 			</legend>
-			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{t('spaces.settings_joining_hint', 'Controls how users become members of this space.')}
-			</p>
+			<HintIcon text={t('spaces.settings_joining_hint', 'Controls how users become members of this space.')} />
 			<AutocompleteSelect bind:value={joiningPerm} options={joiningOptions} />
 		</fieldset>
 
@@ -667,9 +660,7 @@
 			<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
 				{t('spaces.settings_keywords', 'Auto-assign keywords')}
 			</legend>
-			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{t('spaces.settings_keywords_hint', 'When someone creates content without selecting a space, the system checks the title for these keywords. If a keyword matches, the content is automatically assigned to this space. Separate keywords with commas. Only applies to primary spaces (country, state, city) and public spaces.')}
-			</p>
+			<HintIcon text={t('spaces.settings_keywords_hint', 'When someone creates content without selecting a space, the system checks the title for these keywords. If a keyword matches, the content is automatically assigned to this space. Separate keywords with commas. Only applies to primary spaces (country, state, city) and public spaces.')} />
 			<input
 				type="text"
 				bind:value={keywords}

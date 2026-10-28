@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -107,7 +108,7 @@
 			<label for="title" class="text-sm font-medium text-[var(--color-text)]">
 				{t('ama.field_title', 'AMA title')} <span class="text-red-500">*</span>
 			</label>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ama.title_hint', 'Format: Ask a [profession] who [did the thing].')}</p>
+			<HintIcon text={t('ama.title_hint', 'Format: Ask a [profession] who [did the thing].')} />
 			<input
 				id="title"
 				type="text"
@@ -133,7 +134,7 @@
 			placeholder={t('ama.placeholder_intro', 'Introduce yourself and the kind of questions you can answer…')}
 			rows={5}
 		/>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ama.intro_hint', 'Your background and the topics you can answer — builds trust.')}</p>
+			<HintIcon text={t('ama.intro_hint', 'Your background and the topics you can answer — builds trust.')} />
 
 		<!-- Anonymous -->
 		<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">

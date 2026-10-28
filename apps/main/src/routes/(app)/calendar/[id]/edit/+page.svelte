@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -186,7 +187,7 @@
 				<label for="title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_title', 'Title')} <span class="text-red-500">*</span>
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.title_hint', 'A short event name shown on the calendar.')}</p>
+				<HintIcon text={t('calendar.new.title_hint', 'A short event name shown on the calendar.')} />
 				<input
 					id="title"
 					type="text"
@@ -209,14 +210,14 @@
 				placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
 				rows={5}
 			/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.desc_hint', 'What people need to know — links and deadlines help.')}</p>
+				<HintIcon text={t('calendar.new.desc_hint', 'What people need to know — links and deadlines help.')} />
 
 			<!-- Category -->
 			<div>
 				<label for="category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_category', 'Category')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.category_hint', 'What kind of event — deadline, window, meetup.')}</p>
+				<HintIcon text={t('calendar.new.category_hint', 'What kind of event — deadline, window, meetup.')} />
 				<AutocompleteSelect
 					id="category"
 					value={category}
@@ -231,7 +232,7 @@
 					<label for="dest" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_destination', 'Destination country')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.destination_hint', 'The country this event applies to.')}</p>
+					<HintIcon text={t('calendar.new.destination_hint', 'The country this event applies to.')} />
 					<Autocomplete
 						placeholder={t('calendar.new.placeholder_destination', 'Select a country')}
 						emptyMessage={t('common.no_results', 'No results found')}
@@ -247,7 +248,7 @@
 					<label for="origin" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_origin', 'Origin country (optional)')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.origin_hint', 'Optional — restrict to a specific origin country.')}</p>
+					<HintIcon text={t('calendar.new.origin_hint', 'Optional — restrict to a specific origin country.')} />
 					<Autocomplete
 						placeholder={t('calendar.new.placeholder_origin', 'Leave blank for all origins')}
 						emptyMessage={t('common.no_results', 'No results found')}
@@ -267,7 +268,7 @@
 					<label for="occurs_at" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_occurs_at', 'Starts')} <span class="text-red-500">*</span>
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.occurs_hint', 'When the event starts (your local time).')}</p>
+					<HintIcon text={t('calendar.new.occurs_hint', 'When the event starts (your local time).')} />
 					<input
 						id="occurs_at"
 						type="datetime-local"
@@ -279,7 +280,7 @@
 					<label for="ends_at" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_ends_at', 'Ends (optional)')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.ends_hint', 'Optional — when the event ends.')}</p>
+					<HintIcon text={t('calendar.new.ends_hint', 'Optional — when the event ends.')} />
 					<input
 						id="ends_at"
 						type="datetime-local"
@@ -305,7 +306,7 @@
 					<label for="recurrence_pattern" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_recurrence_pattern', 'Recurrence pattern')}
 					</label>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.recurrence_hint', 'How often it repeats — e.g. annual, monthly.')}</p>
+					<HintIcon text={t('calendar.new.recurrence_hint', 'How often it repeats — e.g. annual, monthly.')} />
 					<input
 						id="recurrence_pattern"
 						type="text"
@@ -321,7 +322,7 @@
 				<label for="source_url" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_source', 'Official source URL')} <span class="text-red-500">*</span>
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.source_hint', 'Link to the official announcement — required for verification.')}</p>
+				<HintIcon text={t('calendar.new.source_hint', 'Link to the official announcement — required for verification.')} />
 				<input
 					id="source_url"
 					type="url"
