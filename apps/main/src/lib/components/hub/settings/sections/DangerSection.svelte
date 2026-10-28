@@ -97,10 +97,14 @@
 							<input
 								type="password"
 								autocomplete="current-password"
+								aria-describedby="deactivate-password-hint"
 								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 								value={deactivatePassword}
 								oninput={(e) => (deactivatePassword = e.currentTarget.value)}
 							/>
+							<span id="deactivate-password-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+								{t('settings.danger.deactivate_password_hint', 'Enter your current password to confirm deactivation.')}
+							</span>
 						</label>
 						{#if deactivateError}<p class="mb-4 text-xs text-[var(--color-danger,#dc2626)]">{deactivateError}</p>{/if}
 						<div class="flex justify-end gap-2">

@@ -366,6 +366,9 @@
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.product_type', 'Product type')}</span>
 			<AutocompleteSelect bind:value={newProductType} options={productTypes} />
+			<span id="affiliate-product-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.affiliate.product_type_hint', 'Which catalog the link should point into.')}
+			</span>
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.url')}</span>
@@ -373,18 +376,27 @@
 				type="url"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				placeholder="https://"
+				aria-describedby="affiliate-url-hint"
 				value={newUrl}
 				oninput={(e) => (newUrl = e.currentTarget.value)}
 			/>
+			<span id="affiliate-url-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.affiliate.url_hint', 'The page your referral link should land on.')}
+			</span>
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.label')}</span>
 			<input
 				type="text"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+				placeholder={t('settings.affiliate.label_placeholder', 'e.g. Twitter bio link')}
+				aria-describedby="affiliate-label-hint"
 				value={newDescription}
 				oninput={(e) => (newDescription = e.currentTarget.value)}
 			/>
+			<span id="affiliate-label-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.affiliate.label_hint', 'A note to remember where you shared this link.')}
+			</span>
 		</label>
 		{#if error}<p class="text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
 		<button
@@ -503,9 +515,13 @@
 							<input
 								type="text"
 								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+								aria-describedby="affiliate-edit-label-hint"
 								value={editDescription}
 								oninput={(e) => (editDescription = e.currentTarget.value)}
 							/>
+							<span id="affiliate-edit-label-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+								{t('settings.affiliate.label_hint', 'A note to remember where you shared this link.')}
+							</span>
 						</label>
 						<label class="flex items-center gap-2">
 							<input

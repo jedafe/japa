@@ -182,9 +182,13 @@
 						min={minPurchase || 1}
 						bind:value={customAmount}
 						oninput={() => (selectedPackId = '')}
+						aria-describedby="custom-credits-hint"
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 						placeholder={t('wallet.purchase.enter_amount', 'Enter credit amount')}
 					/>
+					<p id="custom-credits-hint" class="mt-1 text-xs text-[var(--color-muted)]">
+						{t('wallet.purchase.credits_hint', 'Number of wallet credits to buy — the price updates as you type.')}
+					</p>
 				</div>
 				<div class="text-end">
 					<p class="text-sm text-[var(--color-muted)]">{t('wallet.purchase.price', 'Price')}</p>

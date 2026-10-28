@@ -183,10 +183,14 @@
 				inputmode="numeric"
 				maxlength="6"
 				placeholder="000000"
+				aria-describedby="totp-enroll-code-hint"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				value={code}
 				oninput={(e) => (code = e.currentTarget.value.replace(/\D/g, ''))}
 			/>
+			<span id="totp-enroll-code-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('auth.totp.code_help')}
+			</span>
 		</label>
 		<div class="flex gap-2">
 			<button
@@ -230,10 +234,14 @@
 							inputmode="numeric"
 							maxlength="6"
 							placeholder="000000"
+							aria-describedby="totp-disable-code-hint"
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 							value={disableCode}
 							oninput={(e) => (disableCode = e.currentTarget.value.replace(/\D/g, ''))}
 						/>
+						<span id="totp-disable-code-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+							{t('auth.totp.code_help')}
+						</span>
 					</label>
 					{#if error}<p class="mb-3 text-xs text-[var(--color-danger)]">{error}</p>{/if}
 					<div class="flex justify-end gap-2">

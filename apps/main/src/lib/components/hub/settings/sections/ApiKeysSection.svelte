@@ -210,10 +210,15 @@
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.apikeys.name')}</span>
 			<input
 				type="text"
+				placeholder={t('settings.apikeys.name_placeholder', 'e.g. CI deploy bot')}
+				aria-describedby="apikey-name-hint"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				value={newName}
 				oninput={(e) => (newName = e.currentTarget.value)}
 			/>
+			<span id="apikey-name-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.apikeys.name_hint', 'A label so you remember what this key is for.')}
+			</span>
 		</label>
 
 		<!-- Scope multi-select -->
@@ -253,6 +258,9 @@
 				onSelect={(item) => addScope(item.id)}
 				disabled={creating}
 			/>
+			<span class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.apikeys.scopes_hint', 'The API endpoints this key can access — pick each permission it needs.')}
+			</span>
 		</div>
 
 		{#if error}<p class="text-xs text-[var(--color-danger)]">{error}</p>{/if}
@@ -267,11 +275,13 @@
 
 	<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('settings.apikeys.connect_extension')}</p>
-		<p class="mb-3 text-xs text-[var(--color-muted)]">{t('settings.apikeys.connect_extension_hint')}</p>
+		<p id="apikey-install-hint" class="mb-3 text-xs text-[var(--color-muted)]">{t('settings.apikeys.connect_extension_hint')}</p>
 		<input
 			type="text"
 			bind:value={installId}
 			placeholder={t('settings.apikeys.install_id')}
+			aria-label={t('settings.apikeys.install_id')}
+			aria-describedby="apikey-install-hint"
 			class="mb-3 w-full max-w-md rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)]"
 		/>
 		<button

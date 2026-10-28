@@ -245,9 +245,13 @@
 						min={minWithdraw || 1}
 						bind:value={amount}
 						oninput={() => (calcResult = null)}
+						aria-describedby="withdraw-amount-hint"
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 						placeholder={t('wallet.withdraw.enter_amount', 'Enter credit amount')}
 					/>
+					<p id="withdraw-amount-hint" class="mt-1 text-xs text-[var(--color-muted)]">
+						{t('wallet.withdraw.amount_hint', 'Credits to send to your payout method — fees are calculated below.')}
+					</p>
 					{#if minWithdraw > 0}
 						<p class="mt-1 text-xs text-[var(--color-muted)]">
 							{t('wallet.withdraw.minimum', 'Minimum {n} credits').replace('{n}', minWithdraw.toLocaleString())}
@@ -264,6 +268,9 @@
 						bind:value={selectedCurrency}
 						options={currencies.map((c) => ({ value: c.code, label: `${c.name ?? c.code} (${c.symbol})` }))}
 					/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">
+						{t('wallet.withdraw.currency_hint', 'The currency you want to be paid in.')}
+					</p>
 				</div>
 			</div>
 
@@ -283,6 +290,9 @@
 							}))
 						]}
 					/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">
+						{t('wallet.withdraw.method_hint', 'One of your saved payout methods.')}
+					</p>
 				</div>
 			{:else}
 				<p class="mt-4 rounded-[var(--radius)] bg-[var(--color-warning)]/10 px-3 py-2 text-sm text-[var(--color-warning)]">
@@ -376,33 +386,48 @@
 					bind:value={newProvider}
 					options={withdrawalProviders.map((p) => ({ value: p, label: p }))}
 				/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">
+					{t('wallet.withdraw.method_provider_hint', 'The service or network that pays you out.')}
+				</p>
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="method-currency">{t('wallet.withdraw.method_currency', 'Currency / Coin')}</label>
 				<input
 					id="method-currency"
 					bind:value={newCurrency}
+					aria-describedby="method-currency-hint"
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					placeholder={t('wallet.withdraw.method_currency_placeholder', 'e.g. usdttrc20')}
 				/>
+				<p id="method-currency-hint" class="mt-1 text-xs text-[var(--color-muted)]">
+					{t('wallet.withdraw.method_currency_hint', 'Currency code the provider expects, e.g. usdttrc20 or ngn.')}
+				</p>
 			</div>
 			<div class="sm:col-span-2">
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="method-account">{t('wallet.withdraw.method_account', 'Account / Address')}</label>
 				<input
 					id="method-account"
 					bind:value={newAccount}
+					aria-describedby="method-account-hint"
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					placeholder={t('wallet.withdraw.method_account_placeholder', 'Wallet address, email, or account number')}
 				/>
+				<p id="method-account-hint" class="mt-1 text-xs text-[var(--color-muted)]">
+					{t('wallet.withdraw.method_account_hint', 'Where the payout goes — double-check it, withdrawals cannot be reversed.')}
+				</p>
 			</div>
 			<div class="sm:col-span-2">
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="method-label">{t('wallet.withdraw.method_label', 'Label')}</label>
 				<input
 					id="method-label"
 					bind:value={newLabel}
+					aria-describedby="method-label-hint"
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					placeholder={t('wallet.withdraw.method_label_placeholder', 'My USDT TRC20 wallet')}
 				/>
+				<p id="method-label-hint" class="mt-1 text-xs text-[var(--color-muted)]">
+					{t('wallet.withdraw.method_label_hint', 'A name to recognize this payout method later.')}
+				</p>
 			</div>
 		</div>
 

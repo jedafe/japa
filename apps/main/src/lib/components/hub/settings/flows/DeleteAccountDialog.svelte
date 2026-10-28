@@ -49,11 +49,16 @@
 			</p>
 			<input
 				type="text"
-				class="mb-4 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				placeholder={username}
+				aria-label={t('settings.danger.delete_confirm_prompt')}
+				aria-describedby="delete-confirm-hint"
 				value={typed}
 				oninput={(e) => (typed = e.currentTarget.value)}
 			/>
+			<p id="delete-confirm-hint" class="mb-4 mt-1 text-xs text-[var(--color-muted)]">
+				{t('settings.danger.delete_confirm_hint', 'Type your username exactly as shown to enable deletion.')}
+			</p>
 		{#if error}<p class="mb-4 text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
 		<div class="flex justify-end gap-2">
 			<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
