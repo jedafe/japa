@@ -482,7 +482,7 @@
 									<label for="ct-user-group" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">
 										{t('comparison_types.user_group', 'User group ID')}
 									</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.user_group_hint', 'The user group id for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.user_group_hint', 'Which user group can fill this data.')}</span>
 									<AutocompleteSelect
 										id="ct-user-group"
 										bind:value={accessForm.user_group_id}
@@ -645,7 +645,7 @@
 							<label for="ct-icon" class="block text-sm font-medium" style="color: var(--color-foreground)">
 								{t('comparison_types.icon', 'Icon')}
 							</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.icon_hint', 'The icon for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.icon_hint', 'Icon name or emoji shown next to the record.')}</span>
 							<input
 								id="ct-icon"
 								type="text"
@@ -658,7 +658,7 @@
 							<label for="ct-item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">
 								{t('comparison_types.item_label', 'Item label')}
 							</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.item_label_hint', 'The item label for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.item_label_hint', 'The display label for this item.')}</span>
 							<input
 								id="ct-item-label"
 								type="text"
@@ -672,7 +672,7 @@
 						<label for="ct-field-group" class="block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('comparison_types.field_group', 'Field group')}
 						</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.field_group_hint', 'The field group for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.field_group_hint', 'The field group this belongs to — drives sectioning.')}</span>
 						{#if editing}
 							<input
 								id="ct-field-group"
@@ -710,7 +710,7 @@
 							<label for="ct-allow-nested" class="text-sm" style="color: var(--color-foreground)">
 								{t('comparison_types.allow_nested_comparisons', 'Allow nested comparisons')}
 							</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.allow_nested_hint', 'The allow nested comparisons for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.allow_nested_hint', 'Whether sub-comparisons can nest under this type.')}</span>
 						</div>
 						{#if Boolean(configObj(value).allow_nested_comparisons)}
 							<div>
@@ -818,7 +818,7 @@
 						<label for="ct-system" class="text-sm" style="color: var(--color-foreground)">
 							{t('comparison_types.system', 'System')}
 						</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.system_hint', 'The system for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison_types.system_hint', 'System types cannot be deleted or renamed.')}</span>
 					</div>
 				</div>
 	</div>

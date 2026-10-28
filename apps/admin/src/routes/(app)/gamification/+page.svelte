@@ -669,25 +669,25 @@
 			</div>
 			<div>
 				<label for="badge-trigger-value" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger_value', 'Trigger Value')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.trigger_value_hint', 'The trigger value for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.trigger_value_hint', 'The value that must match to fire — e.g. the score or count.')}</span>
 				<input id="badge-trigger-value" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.trigger_value} />
 			</div>
 		</div>
 		<div>
 			<label for="badge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity_key', 'Activity Key')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.activity_hint', 'The activity key for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.activity_hint', 'The activity that fires this rule — e.g. post.create.')}</span>
 			<ActivityKeyAutocomplete id="badge-activity" bind:value={value.trigger_activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="badge-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.display_order', 'Display Order')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.order_hint', 'The display order for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.order_hint', 'Ordering position — lower numbers show first.')}</span>
 				<input id="badge-order" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.display_order} />
 			</div>
 			<div class="flex items-center gap-2 pt-6">
 				<input type="checkbox" id="badge-active" bind:checked={value.is_active} />
 				<label for="badge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.active_hint', 'The active for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.active_hint', 'Inactive badges or rules are not awarded.')}</span>
 			</div>
 		</div>
 	</div>
@@ -713,37 +713,37 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="challenge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity', 'Activity Key')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.activity_hint', 'The activity key for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.activity_hint', 'The activity that fires this rule — e.g. post.create.')}</span>
 				<ActivityKeyAutocomplete id="challenge-activity" bind:value={value.activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
 			</div>
 			<div>
 				<label for="challenge-target" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.target', 'Target Count')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.target_hint', 'The target count for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.target_hint', 'How many times the action must occur.')}</span>
 				<input id="challenge-target" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.target_count} />
 			</div>
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="challenge-reward" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.reward', 'Reward Points')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.reward_hint', 'The reward points for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.reward_hint', 'Points granted when this unlocks.')}</span>
 				<input id="challenge-reward" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.reward_points} />
 			</div>
 			<div>
 				<label for="challenge-starts" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.starts', 'Start Date')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.starts_hint', 'The start date for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.starts_hint', 'When the event starts.')}</span>
 				<input id="challenge-starts" type="date" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.starts_at} />
 			</div>
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="challenge-ends" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.ends', 'End Date')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.ends_hint', 'The end date for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.ends_hint', 'When the event ends.')}</span>
 				<input id="challenge-ends" type="date" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.ends_at} />
 			</div>
 			<div class="flex items-center gap-2 pt-6">
 				<input type="checkbox" id="challenge-active" bind:checked={value.is_active} />
 				<label for="challenge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.active_hint', 'The active for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('gamification.active_hint', 'Inactive badges or rules are not awarded.')}</span>
 			</div>
 		</div>
 	</div>

@@ -293,7 +293,7 @@
 			<label for="tpl-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('onboarding.templates.active', 'Active')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.active_hint', 'The active for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.active_hint', 'Inactive templates are hidden from onboarding.')}</span>
 		</div>
 	</div>
 {/snippet}

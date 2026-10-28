@@ -268,6 +268,7 @@
 				value={settings.projectName}
 				oninput={(event) => update('projectName', (event.currentTarget as HTMLInputElement).value)}
 			/>
+				<p class="mt-1 text-xs text-muted-foreground">The name shown in the app header and exports.</p>
 		</label>
 
 		<label class="block text-sm font-medium">
@@ -279,6 +280,7 @@
 				value={settings.baseUrl}
 				oninput={(event) => update('baseUrl', (event.currentTarget as HTMLInputElement).value)}
 			/>
+				<p class="mt-1 text-xs text-muted-foreground">The API server this instance talks to — usually https://api.japa.to.</p>
 		</label>
 
 		<label class="block text-sm font-medium">
@@ -370,6 +372,7 @@
 			/>
 			<span>Enable auto-sync</span>
 		</label>
+					<p class="mt-1 text-xs text-muted-foreground">Automatically sync new posts when you save.</p>
 
 		{#if settings.autoSync}
 			<div class="rounded-lg border border-border bg-surface p-3">

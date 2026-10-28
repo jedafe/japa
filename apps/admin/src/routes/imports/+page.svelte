@@ -455,7 +455,7 @@
 				<label for="import-source-url" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('imports.source_url', 'Source URL')}
 				</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('imports.source_url_hint', 'The source url for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('imports.source_url_hint', 'The URL this data is pulled from — full URL including https://.')}</span>
 				<input
 					id="import-source-url"
 					type="url"

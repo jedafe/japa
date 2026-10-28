@@ -24,7 +24,7 @@
 		{ key: 'slug', label: t('roadmap.slug', 'Slug'), type: 'text', help: t('roadmap.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), placeholder: 'features' },
 		{ key: 'name', label: t('roadmap.name', 'Name'), type: 'text', help: t('roadmap.name_hint', 'The name shown in admin lists and on the site where public.'), placeholder: 'Features', required: true },
 		{ key: 'description', label: t('roadmap.description_label', 'Description'), type: 'textarea', help: t('roadmap.description_hint', 'Shown in detail views — keep it concise.') },
-		{ key: 'color', label: t('roadmap.color', 'Color'), type: 'color', help: t('roadmap.color_hint', 'The display color for this record.') },
+		{ key: 'color', label: t('roadmap.color', 'Color'), type: 'color', help: t('roadmap.color_hint', 'Badge color shown on the roadmap.') },
 		{ key: 'sort_order', label: t('roadmap.sort_order', 'Sort Order'), type: 'number', help: t('roadmap.sort_order_hint', 'Lower numbers appear first.') }
 	];
 

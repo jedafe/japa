@@ -164,7 +164,7 @@
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryUtils.ready;
 		return [
-			{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text', help: t('app.tools.visa_category_hint', 'The visa category for this record.'),},
+			{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text', help: t('app.tools.visa_category_hint', 'The visa category — e.g. study, work, family.'),},
 			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination'), type: 'autocomplete', help: t('app.tools.destination_space_id_hint', 'The destination space this is linked to.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
 			{ key: 'outcome', label: t('app.tools.col_status', 'Status'), type: 'text', help: t('app.tools.outcome_hint', 'The result — approved, denied, withdrawn.') }
 		];

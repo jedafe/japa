@@ -404,7 +404,7 @@
 			<label for="import-file-url" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.file_url', 'File URL')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.file_url_hint', 'The file url for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.file_url_hint', 'Direct file URL — must be publicly reachable.')}</span>
 			<input
 				id="import-file-url"
 				type="text"

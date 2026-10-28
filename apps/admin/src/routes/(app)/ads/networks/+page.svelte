@@ -48,7 +48,7 @@
 	const fields = $derived<FieldDef[]>([
 		{ key: 'provider', label: t('networks.provider', 'Provider'), type: 'select', help: t('networks.provider_hint', 'The external provider or network.'), options: providerOptions, required: true },
 		{ key: 'name', label: t('networks.name', 'Name'), type: 'text', help: t('networks.name_hint', 'The name shown in admin lists and on the site where public.'), placeholder: t('networks.name_placeholder', 'e.g. Production AdSense'), required: true },
-		{ key: 'client_id', label: t('networks.client_id', 'Client ID'), type: 'text', help: t('networks.client_id_hint', 'The client id for this record.'), placeholder: t('networks.client_id_placeholder', 'Optional') },
+		{ key: 'client_id', label: t('networks.client_id', 'Client ID'), type: 'text', help: t('networks.client_id_hint', 'The OAuth client ID from the provider console.'), placeholder: t('networks.client_id_placeholder', 'Optional') },
 		{ key: 'api_key', label: t('networks.api_key', 'API Key'), type: 'password', help: t('networks.api_key_hint', 'Stored encrypted — never shown again after saving.'), placeholder: t('networks.api_key_keep', 'Leave empty to keep current key') },
 		{ key: 'priority', label: t('networks.priority', 'Priority'), type: 'number', help: t('networks.priority_hint', 'Higher priority items show first.'), min: 0 },
 		{ key: 'is_active', label: t('networks.active', 'Active'), type: 'checkbox', help: t('networks.is_active_hint', 'Inactive records are hidden or disabled on the site.') },

@@ -40,7 +40,7 @@
 		{ key: 'source_url', label: t('data_sources.source_url', 'Source URL'), type: 'url', help: t('data_sources.source_url_hint', 'The URL this data was pulled from — used for verification.'),},
 		{ key: 'entity_type', label: t('data_sources.entity_type', 'Entity type'), type: 'text', help: t('data_sources.entity_type_hint', 'The kind of entity this is linked to.') },
 		{ key: 'entity_id', label: t('data_sources.entity_id', 'Entity ID'), type: 'text', help: t('data_sources.entity_id_hint', 'The entity this is linked to.') },
-		{ key: 'dimension_slug', label: t('data_sources.dimension_slug', 'Dimension slug'), type: 'text', help: t('data_sources.dimension_slug_hint', 'The dimension slug for this record.') },
+		{ key: 'dimension_slug', label: t('data_sources.dimension_slug', 'Dimension slug'), type: 'text', help: t('data_sources.dimension_slug_hint', 'The dimension this source feeds — e.g. cost_of_living, safety.') },
 		{ key: 'trust_level', label: t('data_sources.trust_level', 'Trust level'), type: 'number', help: t('data_sources.trust_level_hint', 'Trust level required — higher means more established.') }
 	]);
 

@@ -427,7 +427,7 @@
 				class="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary"
 			/>
 			<label for="export-metadata" class="text-sm font-medium text-foreground-alt">{t('app.data_exports.include_metadata_timestamps_ids', 'Include metadata (timestamps, IDs)')}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_exports.metadata_hint', 'The include metadata (timestamps, ids) for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_exports.metadata_hint', 'Whether export rows include timestamps and record IDs.')}</span>
 		</div>
 	</div>
 {/snippet}

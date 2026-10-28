@@ -1080,6 +1080,7 @@
 						value={newPostTitle}
 						oninput={(event) => (newPostTitle = (event.currentTarget as HTMLInputElement).value)}
 					/>
+						<span class="mt-1 block text-xs text-muted-foreground">The title shown in the editor and used for the file name.</span>
 				</label>
 				<label class="block text-sm font-medium">
 					Content type

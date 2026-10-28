@@ -157,7 +157,7 @@
 	// `fields` drives edit-form seeding; the actual inputs are rendered by the
 	// `formSnippet` below (JSON content textarea with validation feedback).
 	const fields: FieldDef[] = [
-		{ key: 'content_type', label: t('jsonld-templates.content_type', 'Content Type'), type: 'text', help: t('jsonld-templates.content_type_hint', 'The content type for this record.'), required: true },
+		{ key: 'content_type', label: t('jsonld-templates.content_type', 'Content Type'), type: 'text', help: t('jsonld-templates.content_type_hint', 'The content type this JSON-LD template applies to.'), required: true },
 		{ key: 'is_active', label: t('jsonld-templates.status', 'Status'), type: 'checkbox', help: t('jsonld-templates.is_active_hint', 'Inactive records are hidden or disabled on the site.') },
 		{ key: 'content', label: t('jsonld-templates.content', 'JSON-LD Content'), type: 'textarea', help: t('jsonld-templates.content_hint', 'The main content.') }
 	];
@@ -373,7 +373,7 @@
 				<label for="template-is-active" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">
 					{t('jsonld-templates.status', 'Status')}
 				</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('jsonld-templates.is_active_hint', 'The status for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('jsonld-templates.is_active_hint', 'Inactive templates are not rendered.')}</span>
 				<label class="inline-flex items-center gap-2 pt-2">
 					<input id="template-is-active" type="checkbox" class="h-4 w-4 rounded border" bind:checked={value.is_active} />
 					<span class="text-sm" style="color: var(--color-foreground-alt)">

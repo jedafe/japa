@@ -142,7 +142,7 @@
 		countryUtilsName.ready;
 		return [
 			{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination'), type: 'autocomplete', help: t('app.tools.destination_space_name_hint', 'The destination space this is linked to.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsName.fetcher, initialFetcher: countryUtilsName.initialFetcher, getSelectedLabel: countryUtilsName.getSelectedLabel },
-			{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text', help: t('app.tools.visa_category_hint', 'The visa category for this record.') },
+			{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text', help: t('app.tools.visa_category_hint', 'The visa category — e.g. study, work, family.') },
 			{ key: 'applicant_type', label: t('app.tools.col_applicant_type', 'Applicant Type'), type: 'text', help: t('app.tools.applicant_type_hint', 'Who this applies to — e.g. student, worker.') }
 		];
 	});

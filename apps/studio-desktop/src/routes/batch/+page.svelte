@@ -232,6 +232,7 @@
 						placeholder={`e.g.\nCost of Living in Canada\nFinding Housing in Toronto, guide, relocation\n\nJSON: [{"title":"...","content_type":"guide"}]\nCSV: title,content_type,guide_category`}
 						bind:value={rawInput}
 					></textarea>
+						<span class="mt-1 block text-xs text-muted-foreground">Each line or row becomes one batch item — paste a list or a JSON array.</span>
 				</label>
 
 				<div class="flex flex-wrap gap-2">

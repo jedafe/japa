@@ -474,7 +474,7 @@
 				{t('common.active', 'Active')}
 			</label>
 			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_active_hint', 'Inactive templates are not sent.')}</p>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('common.active_hint', 'The active for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('common.active_hint', 'Inactive records are hidden or disabled.')}</span>
 		</div>
 
 		{#if editing && canManageTemplates}

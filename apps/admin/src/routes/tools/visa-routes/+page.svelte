@@ -202,7 +202,7 @@
 		countryReady; // re-derive when the 250 primary geo space countries load
 		return [
 			{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text', help: t('app.tools.name_hint', 'The name shown in admin lists and on the site where public.'),},
-			{ key: 'visa_category', label: t('app.tools.col_visa_type', 'Visa Category'), type: 'text', help: t('app.tools.visa_category_hint', 'The visa category for this record.') },
+			{ key: 'visa_category', label: t('app.tools.col_visa_type', 'Visa Category'), type: 'text', help: t('app.tools.visa_category_hint', 'The visa category — e.g. study, work, family.') },
 			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', help: t('app.tools.destination_space_id_hint', 'The destination space this is linked to.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
 			{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text', help: t('app.tools.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
 			{ key: 'eligibility_summary', label: t('app.tools.col_summary', 'Eligibility Summary'), type: 'textarea', help: t('app.tools.eligibility_summary_hint', 'Free text — multiple lines allowed.') },

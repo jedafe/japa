@@ -56,7 +56,7 @@
 			required: true,
 			help: t('share_platforms.url_template_hint', 'Use {url} and {title} as placeholders.')
 		},
-		{ key: 'color', label: t('share_platforms.color', 'Color'), type: 'text', help: t('share_platforms.color_hint', 'The display color for this record.'), placeholder: '#3b82f6' },
+		{ key: 'color', label: t('share_platforms.color', 'Color'), type: 'text', help: t('share_platforms.color_hint', 'Button or brand color for this platform.'), placeholder: '#3b82f6' },
 		{ key: 'position', label: t('share_platforms.position', 'Position'), type: 'number', help: t('share_platforms.position_hint', 'Ordering position — lower numbers show first.') },
 		{ key: 'enabled', label: t('share_platforms.active', 'Enabled'), type: 'checkbox', help: t('share_platforms.enabled_hint', 'Turn off to disable without deleting.') }
 	];

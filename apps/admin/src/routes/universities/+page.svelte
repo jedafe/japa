@@ -386,12 +386,12 @@
 		</div>
 		<div>
 			<label for="uni-initials" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.initials", "Initials")}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.initials_hint', 'The initials for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.initials_hint', 'Short initials shown when no logo is set — e.g. MIT.')}</span>
 			<input id="uni-initials" type="text" placeholder="UNILAG" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.initials} />
 		</div>
 		<div>
 			<label for="uni-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.country", "Country")}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.country_hint', 'The country for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.country_hint', 'The country this record applies to.')}</span>
 			<Autocomplete
 				id="uni-country"
 				placeholder={t("universities.country_placeholder", "Select country")}
@@ -428,7 +428,7 @@
 		<div class="flex items-center gap-2">
 			<input id="uni-verified" type="checkbox" class="h-4 w-4 rounded" bind:checked={value.verified} />
 			<label for="uni-verified" class="text-sm" style="color: var(--color-foreground)">{t("universities.verified", "Verified")}</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.verified_hint', 'The verified for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.verified_hint', 'Verified records show a badge and rank higher.')}</span>
 		</div>
 	</div>
 

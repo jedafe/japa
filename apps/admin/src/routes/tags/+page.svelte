@@ -792,7 +792,7 @@
 			<label for="tag-is-system" class="text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.is_system", "System tag (cannot be deleted)")}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.is_system_hint', 'The is system for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.is_system_hint', 'System records cannot be deleted or renamed.')}</span>
 		</div>
 	</div>
 

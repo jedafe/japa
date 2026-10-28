@@ -401,7 +401,7 @@
 			<label for="travel-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('travel.active', 'Active')}
 			</label>
-			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('travel.active_hint', 'The active for this record.')}</span>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('travel.active_hint', 'Inactive routes are hidden from searches.')}</span>
 		</div>
 	</div>
 {/snippet}
