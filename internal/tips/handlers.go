@@ -1,0 +1,428 @@
+// handlers.go — HTTP surface for §125 tip settings, external links, and the
+// public tip-config endpoints. Error shape follows
+// conventions/api-response-format.md via errpkg.
+package tips
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
+)
+
+// Handlers exposes the tips HTTP surface.
+type Handlers struct {
+	service *Service
+}
+
+// NewHandlers creates Handlers bound to the service.
+func NewHandlers(service *Service) *Handlers {
+	return &Handlers{service: service}
+}
+
+func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return nil, false
+	}
+	return user, true
+}
+
+func writeTipError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrTipsDisabled):
+		errpkg.WriteError(w, http.StatusForbidden, "tips_disabled", "Tips are disabled")
+	case errors.Is(err, ErrNotEligible):
+		errpkg.WriteError(w, http.StatusForbidden, "tips_not_eligible", "Tips are not enabled for your account")
+	case errors.Is(err, ErrNotAuthorized):
+		errpkg.WriteError(w, http.StatusForbidden, "not_authorized", "Not authorized")
+	case errors.Is(err, ErrRecipientNoTips):
+		errpkg.WriteError(w, http.StatusForbidden, "recipient_no_tips", "This recipient does not accept tips")
+	case errors.Is(err, ErrNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Not found")
+	case errors.Is(err, ErrMethodNotAccepted):
+		errpkg.WriteError(w, http.StatusBadRequest, "method_not_accepted", "Recipient does not accept this tip method")
+	case errors.Is(err, ErrInvalidMethod):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_method", "Invalid tip method")
+	case errors.Is(err, ErrInvalidRecipient):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_recipient", "Invalid tip recipient")
+	case errors.Is(err, ErrInvalidAmount):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "Invalid tip amount")
+	case errors.Is(err, ErrBelowMinimum):
+		errpkg.WriteError(w, http.StatusBadRequest, "below_minimum", "Tip below recipient minimum")
+	case errors.Is(err, ErrAboveMaximum):
+		errpkg.WriteError(w, http.StatusBadRequest, "above_maximum", "Tip above maximum")
+	case errors.Is(err, ErrSelfTip):
+		errpkg.WriteError(w, http.StatusBadRequest, "self_tip", "You cannot tip yourself")
+	case errors.Is(err, ErrInsufficientBalance):
+		errpkg.WriteError(w, http.StatusBadRequest, "insufficient_balance", "Insufficient balance")
+	case errors.Is(err, ErrDailyPointsLimit):
+		errpkg.WriteError(w, http.StatusTooManyRequests, "daily_points_limit", "Daily points tip limit reached")
+	case errors.Is(err, ErrInvalidLink):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_link", "Invalid external link")
+	case errors.Is(err, ErrTooManyLinks):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_links", "Too many external links")
+	case errors.Is(err, ErrOCNotConnected):
+		errpkg.WriteError(w, http.StatusBadRequest, "oc_not_connected", "Open Collective not connected")
+	case errors.Is(err, ErrAlreadySettled):
+		errpkg.WriteError(w, http.StatusConflict, "already_settled", "Tip already settled")
+	case errors.Is(err, ErrInvalidStatus):
+		errpkg.WriteError(w, http.StatusConflict, "invalid_status", "Invalid tip status for this operation")
+	default:
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal", "Internal error")
+	}
+}
+
+func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, name)); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
+func parsePageSize(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_size")
+	if s == "" {
+		return 20
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return 20
+	}
+	if n > 100 {
+		return 100
+	}
+	return int32(n) // #nosec G109
+}
+
+func parsePageOffset(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_offset")
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return int32(n) // #nosec G109 G115
+}
+
+// --- My settings --------------------------------------------------------------
+
+// GetMyTipSettings handles GET /api/v1/me/tip-settings.
+func (h *Handlers) GetMyTipSettings(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	st, err := h.service.GetSettings(r.Context(), UserOwner(user.UserID))
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	links, err := h.service.ListLinks(r.Context(), UserOwner(user.UserID))
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"settings":       st,
+		"external_links": links,
+	}})
+}
+
+// UpdateMyTipSettings handles PUT /api/v1/me/tip-settings.
+func (h *Handlers) UpdateMyTipSettings(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var in UpdateSettingsInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	st, err := h.service.UpdateSettingsFor(r.Context(), UserOwner(user.UserID), user.UserID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
+}
+
+// --- My external links --------------------------------------------------------
+
+// CreateMyTipLink handles POST /api/v1/me/tip-settings/links.
+func (h *Handlers) CreateMyTipLink(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var in LinkInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	link, err := h.service.CreateLink(r.Context(), UserOwner(user.UserID), user.UserID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": link})
+}
+
+// UpdateMyTipLink handles PATCH /api/v1/me/tip-settings/links/{id}.
+func (h *Handlers) UpdateMyTipLink(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	linkID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	var in LinkInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	link, err := h.service.UpdateLink(r.Context(), UserOwner(user.UserID), user.UserID, linkID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": link})
+}
+
+// DeleteMyTipLink handles DELETE /api/v1/me/tip-settings/links/{id}.
+func (h *Handlers) DeleteMyTipLink(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	linkID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := h.service.DeleteLink(r.Context(), UserOwner(user.UserID), user.UserID, linkID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Organization settings ----------------------------------------------------
+
+// GetOrgTipSettings handles GET /api/v1/organizations/{id}/tip-settings.
+func (h *Handlers) GetOrgTipSettings(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	orgID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	owner := OrgOwner(orgID)
+	if err := h.service.ensureWritable(r.Context(), owner, user.UserID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	st, err := h.service.GetSettings(r.Context(), owner)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	links, err := h.service.ListLinks(r.Context(), owner)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"settings":       st,
+		"external_links": links,
+	}})
+}
+
+// UpdateOrgTipSettings handles PUT /api/v1/organizations/{id}/tip-settings.
+func (h *Handlers) UpdateOrgTipSettings(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	orgID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	var in UpdateSettingsInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	st, err := h.service.UpdateSettingsFor(r.Context(), OrgOwner(orgID), user.UserID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
+}
+
+// CreateOrgTipLink handles POST /api/v1/organizations/{id}/tip-settings/links.
+func (h *Handlers) CreateOrgTipLink(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	orgID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	var in LinkInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	link, err := h.service.CreateLink(r.Context(), OrgOwner(orgID), user.UserID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": link})
+}
+
+// UpdateOrgTipLink handles PATCH /api/v1/organizations/{id}/tip-settings/links/{lid}.
+func (h *Handlers) UpdateOrgTipLink(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	orgID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	linkID, ok := scanUUIDParam(w, r, "lid")
+	if !ok {
+		return
+	}
+	var in LinkInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	link, err := h.service.UpdateLink(r.Context(), OrgOwner(orgID), user.UserID, linkID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": link})
+}
+
+// DeleteOrgTipLink handles DELETE /api/v1/organizations/{id}/tip-settings/links/{lid}.
+func (h *Handlers) DeleteOrgTipLink(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	orgID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	linkID, ok := scanUUIDParam(w, r, "lid")
+	if !ok {
+		return
+	}
+	if err := h.service.DeleteLink(r.Context(), OrgOwner(orgID), user.UserID, linkID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Public config ------------------------------------------------------------
+
+// PublicUserTipConfig handles GET /api/v1/users/{username}/tip-config.
+func (h *Handlers) PublicUserTipConfig(w http.ResponseWriter, r *http.Request) {
+	username := chi.URLParam(r, "username")
+	userID, err := h.service.lookupUserIDByUsername(r.Context(), username)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	cfg, err := h.service.PublicConfig(r.Context(), UserOwner(userID))
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cfg})
+}
+
+// PublicOrgTipConfig handles GET /api/v1/organizations/{id}/donation-config.
+func (h *Handlers) PublicOrgTipConfig(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	cfg, err := h.service.PublicConfig(r.Context(), OrgOwner(orgID))
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cfg})
+}
+
+// PublicDonate handles GET /api/v1/donate — the platform donation config.
+func (h *Handlers) PublicDonate(w http.ResponseWriter, r *http.Request) {
+	cfg, err := h.service.PublicConfig(r.Context(), PlatformOwner())
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cfg})
+}
+
+// --- Admin platform settings --------------------------------------------------
+
+// AdminGetDonationSettings handles GET /api/v1/admin/donation-settings.
+func (h *Handlers) AdminGetDonationSettings(w http.ResponseWriter, r *http.Request) {
+	st, err := h.service.GetSettings(r.Context(), PlatformOwner())
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	links, err := h.service.ListLinks(r.Context(), PlatformOwner())
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"settings":       st,
+		"external_links": links,
+	}})
+}
+
+// AdminUpdateDonationSettings handles PUT /api/v1/admin/donation-settings.
+func (h *Handlers) AdminUpdateDonationSettings(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var in UpdateSettingsInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	st, err := h.service.UpdateSettingsFor(r.Context(), PlatformOwner(), user.UserID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
+}

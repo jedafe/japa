@@ -83,6 +83,12 @@ func (s *Service) UpsertSettings(ctx context.Context, owner Owner, in UpdateSett
 	return s.toSettings(row), nil
 }
 
+// lookupUserIDByUsername resolves a username to a user id for the public
+// tip-config endpoint.
+func (s *Service) lookupUserIDByUsername(ctx context.Context, username string) (pgtype.UUID, error) {
+	return s.store.getUserIDByUsername(ctx, username)
+}
+
 // CanReceive reports whether a user may enable tips — tips.receive permission
 // or an active mentor profile (§125 RBAC, implicit mentor grant).
 func (s *Service) CanReceive(ctx context.Context, userID pgtype.UUID) (bool, error) {

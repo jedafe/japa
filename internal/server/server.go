@@ -163,6 +163,7 @@ import (
 	"github.com/jedafe/japa/internal/visaroutes"
 	"github.com/jedafe/japa/internal/visatimeline"
 	"github.com/jedafe/japa/internal/visitor"
+	"github.com/jedafe/japa/internal/tips"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/wallet/payout"
 	"github.com/jedafe/japa/internal/webhooks"
@@ -949,6 +950,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// fees through this payments-side adapter (worker can't import
 	// payments — payments already imports worker for task constants).
 	worker.RegisterServiceBookingFeeRefunder(payments.NewBookingFeeRefunder(paymentService))
+
+	// Tips & Donations subsystem (Section 125). Payment + OC + notifier
+	// seams are wired as they become available; the settings/config surface
+	// works without them.
+	tipsService := tips.NewService(database)
+	tipsService.SetSettings(settingsService)
+	tipsService.SetPermChecker(tipsPermAdapter{rbac: rbacResolver})
+	tipsService.SetOrgChecker(tipsOrgAdapter{svc: orgService})
+	tipsService.SetSiteURL(cfg.SiteURL)
+	tipsHandlers := tips.NewHandlers(tipsService)
 
 	// Wire the wallet activity emitter into the domain services that produce
 	// §64 badge/challenge triggers — without this the activity_events rows are
@@ -5045,6 +5056,31 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/admin/wallet/credit-packs/{id}", walletHandlers.AdminDeleteCreditPack)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.purchases.view_any")).
 					Get("/admin/wallet/purchases", walletHandlers.AdminListCreditPurchases)
+			})
+
+			// Tips & Donations routes (Section 125) — gated by tips.enabled.
+			// Settings mounts ride RequireAuth only: tips.receive eligibility
+			// (perm OR active mentor profile) is enforced inside the service
+			// so the implicit mentor grant isn't blocked at the route layer.
+			r.With(features.Gate(featureChecker, "tips.enabled")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/tip-settings", tipsHandlers.GetMyTipSettings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/tip-settings", tipsHandlers.UpdateMyTipSettings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/tip-settings/links", tipsHandlers.CreateMyTipLink)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/tip-settings/links/{id}", tipsHandlers.UpdateMyTipLink)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/tip-settings/links/{id}", tipsHandlers.DeleteMyTipLink)
+
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/tip-settings", tipsHandlers.GetOrgTipSettings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Put("/organizations/{id}/tip-settings", tipsHandlers.UpdateOrgTipSettings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Post("/organizations/{id}/tip-settings/links", tipsHandlers.CreateOrgTipLink)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Patch("/organizations/{id}/tip-settings/links/{lid}", tipsHandlers.UpdateOrgTipLink)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Delete("/organizations/{id}/tip-settings/links/{lid}", tipsHandlers.DeleteOrgTipLink)
+
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Get("/users/{username}/tip-config", tipsHandlers.PublicUserTipConfig)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService), mw.RateLimit(vkClient.Redis(), "loose")).Get("/organizations/{id}/donation-config", tipsHandlers.PublicOrgTipConfig)
+				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/donate", tipsHandlers.PublicDonate)
+
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/donation-settings", tipsHandlers.AdminGetDonationSettings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Put("/admin/donation-settings", tipsHandlers.AdminUpdateDonationSettings)
 			})
 
 			// Advertising routes (Section 25 — Ad Placement)

@@ -122,13 +122,13 @@ type Settings struct {
 // UpdateSettingsInput is the owner-editable settings patch. Nil fields keep
 // their current values (PUT semantics: body sends all fields).
 type UpdateSettingsInput struct {
-	TipsEnabled     bool
-	AcceptPoints    bool
-	AcceptCredits   bool
-	AcceptFiat      bool
-	AcceptExternal  bool
-	MinTipAmount    int64
-	ThankYouMessage *string
+	TipsEnabled     bool    `json:"tips_enabled"`
+	AcceptPoints    bool    `json:"accept_points"`
+	AcceptCredits   bool    `json:"accept_credits"`
+	AcceptFiat      bool    `json:"accept_fiat"`
+	AcceptExternal  bool    `json:"accept_external"`
+	MinTipAmount    int64   `json:"min_tip_amount"`
+	ThankYouMessage *string `json:"thank_you_message"`
 }
 
 // ExternalLink is a display-only outbound tip option.
