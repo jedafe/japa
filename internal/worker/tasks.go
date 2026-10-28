@@ -80,6 +80,11 @@ const (
 	// booking_created/status_changed fan out org/booker notifications on the
 	// default tier; fee_settle is a financial side effect → critical;
 	// expire_pending is the hourly pending-SLA sweep → low tier.
+	// §125 Tips & Donations
+	TypeTipsSettleFiat     = "tips:settle_fiat"     // credit recipient after donation payment success
+	TypeTipsNotifyReceived = "tips:notify_received" // fan-out tip.received notification
+	TypeTipsOCSync         = "tips:oc_sync"         // poll Open Collective collectives for new contributions
+
 	TypeServiceBookingCreated       = "service:booking_created"
 	TypeServiceBookingStatusChanged = "service:booking_status_changed"
 	TypeServiceBookingFeeSettle     = "service:booking_fee_settle"
@@ -257,6 +262,10 @@ var handlerRegistry = []struct {
 	{TypeServiceBookingStatusChanged, HandleServiceBookingStatusChanged},
 	{TypeServiceBookingFeeSettle, HandleServiceBookingFeeSettle},
 	{TypeServiceBookingExpirePending, HandleServiceBookingExpirePending},
+	// §125 Tips & Donations
+	{TypeTipsSettleFiat, HandleTipsSettleFiat},
+	{TypeTipsNotifyReceived, HandleTipsNotifyReceived},
+	{TypeTipsOCSync, HandleTipsOCSync},
 	// Japa Academy creator economy (ADR-063)
 	{TypeAcademyProcessEnrollment, HandleAcademyProcessEnrollment},
 	{TypeAcademyNotifyInstructorApproved, HandleAcademyNotifyInstructorApproved},

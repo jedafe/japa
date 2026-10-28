@@ -2,12 +2,16 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/opencollective"
 	"github.com/jedafe/japa/internal/organizations"
+	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tips"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // tipsPermAdapter adapts *rbac.RBAC to tips.PermChecker.
@@ -66,4 +70,91 @@ func (a tipsOCAdapter) ListContributions(ctx context.Context, slug, token string
 		})
 	}
 	return out, nil
+}
+
+// tipsPaymentAdapter adapts *payments.Service to tips.PaymentCreator — fiat
+// tips ride §17 with purpose_type='donation'.
+type tipsPaymentAdapter struct {
+	svc *payments.Service
+}
+
+// CreatePayment maps the tips input onto §17 and flattens the result.
+func (a tipsPaymentAdapter) CreatePayment(ctx context.Context, userID pgtype.UUID, in tips.PaymentCreateInput) (tips.PaymentCreateResult, error) {
+	res, err := a.svc.CreatePayment(ctx, userID, payments.CreatePaymentInput{
+		Provider:    in.Provider,
+		PurposeType: in.PurposeType,
+		PurposeID:   in.PurposeID,
+		Amount:      in.Amount,
+		Currency:    in.Currency,
+		Metadata:    in.Metadata,
+	})
+	if err != nil {
+		return tips.PaymentCreateResult{}, err
+	}
+	var providerRef string
+	if res.Payment.ProviderRef != nil {
+		providerRef = *res.Payment.ProviderRef
+	}
+	return tips.PaymentCreateResult{
+		ID:          res.Payment.ID.String(),
+		Provider:    res.Payment.Provider,
+		ProviderRef: providerRef,
+		CheckoutURL: res.CheckoutURL,
+		Status:      res.Payment.Status,
+		Amount:      res.Payment.Amount,
+		Currency:    res.Payment.Currency,
+	}, nil
+}
+
+// tipsNotifierAdapter satisfies tips.Notifier — enqueues the
+// tips:notify_received task (Rule 8 fire-and-forget).
+type tipsNotifierAdapter struct {
+	enq *worker.Enqueuer
+}
+
+// NotifyTipReceived enqueues the fan-out task.
+func (a tipsNotifierAdapter) NotifyTipReceived(ctx context.Context, tipID pgtype.UUID) error {
+	if a.enq == nil {
+		return nil
+	}
+	payload, _ := json.Marshal(map[string]string{"tip_id": tipID.String()})
+	return a.enq.Enqueue(worker.TypeTipsNotifyReceived, payload)
+}
+
+// tipsNotifyDispatchAdapter adapts *notifications.Service to
+// tips.NotificationCreator — the actual dispatch call inside the
+// tips:notify_received task handler.
+type tipsNotifyDispatchAdapter struct {
+	svc *notifications.Service
+}
+
+// CreateNotification delegates to the notifications service.
+func (a tipsNotifyDispatchAdapter) CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error {
+	return a.svc.CreateNotification(ctx, recipientID, nType, actorType, actorID, subjectType, subjectID, title, body, actionURL)
+}
+
+// tipsSettlementAdapter adapts *tips.Service to worker.TipSettlement.
+type tipsSettlementAdapter struct {
+	svc    *tips.Service
+	notify *notifications.Service
+}
+
+// SettleFiatTip delegates.
+func (a tipsSettlementAdapter) SettleFiatTip(ctx context.Context, tipID pgtype.UUID) error {
+	return a.svc.SettleFiatTip(ctx, tipID)
+}
+
+// ClawbackTip delegates.
+func (a tipsSettlementAdapter) ClawbackTip(ctx context.Context, tipID pgtype.UUID) error {
+	return a.svc.ClawbackTip(ctx, tipID)
+}
+
+// NotifyTipReceived delegates, injecting the notifications dispatcher.
+func (a tipsSettlementAdapter) NotifyTipReceived(ctx context.Context, tipID pgtype.UUID) error {
+	return a.svc.NotifyTipReceived(ctx, tipID, tipsNotifyDispatchAdapter{svc: a.notify})
+}
+
+// SyncOC delegates to SyncAll.
+func (a tipsSettlementAdapter) SyncOC(ctx context.Context) error {
+	return a.svc.SyncAll(ctx)
 }

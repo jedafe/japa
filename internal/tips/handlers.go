@@ -504,6 +504,83 @@ func (h *Handlers) CreateTip(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
 }
 
+// --- Admin moderation -----------------------------------------------------------
+
+// AdminRefundTip handles POST /api/v1/admin/tips/{id}/refund — reverses the
+// recipient credit grant and marks the tip refunded (tips.moderate-gated).
+func (h *Handlers) AdminRefundTip(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tipID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := h.service.AdminRefundTip(r.Context(), tipID, user.UserID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "refunded"}})
+}
+
+// --- Inbound Open Collective webhook --------------------------------------------
+
+// ocWebhookPayload is the inbound contribution event. OC's webhook envelope
+// carries a contribution object; we only need its id/amount/fromAccount.
+type ocWebhookPayload struct {
+	Type string `json:"type"`
+	Data struct {
+		Order struct {
+			ID         string `json:"id"`
+			TotalAmount struct {
+				ValueInCents int64  `json:"valueInCents"`
+				Currency     string `json:"currency"`
+			} `json:"totalAmount"`
+			FromAccount struct {
+				Name string `json:"name"`
+				Slug string `json:"slug"`
+			} `json:"fromAccount"`
+		} `json:"order"`
+	} `json:"data"`
+}
+
+// HandleOCWebhook handles POST /api/v1/tips/webhook/opencollective?s=<secret>
+// — per-collective secret in the query identifies the owner (OC has no
+// signature header on webhooks).
+func (h *Handlers) HandleOCWebhook(w http.ResponseWriter, r *http.Request) {
+	secret := r.URL.Query().Get("s")
+	if secret == "" {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Missing webhook secret")
+		return
+	}
+	var payload ocWebhookPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if payload.Type != "order.processed" && payload.Type != "order.thankyou" && payload.Data.Order.ID == "" {
+		w.WriteHeader(http.StatusNoContent) // ignore non-contribution events
+		return
+	}
+	ok, err := h.service.ImportOCWebhook(r.Context(), secret, OCContribution{
+		ID:          payload.Data.Order.ID,
+		AmountCents: payload.Data.Order.TotalAmount.ValueInCents,
+		Currency:    payload.Data.Order.TotalAmount.Currency,
+		FromName:    payload.Data.Order.FromAccount.Name,
+		FromSlug:    payload.Data.Order.FromAccount.Slug,
+	})
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	if !ok {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook secret")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- Public config ------------------------------------------------------------
 
 // PublicUserTipConfig handles GET /api/v1/users/{username}/tip-config.

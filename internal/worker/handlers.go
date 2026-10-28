@@ -720,6 +720,12 @@ func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, p gen.Payment
 				"payment_id", p.ID, "booking_id", p.PurposeID, "error", err)
 		}
 	}
+
+	// §125: a succeeded donation payment settles the pending tip — the
+	// handler converts fiat to recipient credits and marks the tip complete.
+	if p.PurposeType == "donation" && p.PurposeID.Valid {
+		enqueueTipsSettleFiat(p.PurposeID)
+	}
 }
 
 // resolveWebhookPayment locates the payment for a webhook event by its
@@ -1055,6 +1061,14 @@ func reversePaymentSideEffects(ctx context.Context, p gen.Payment) error {
 				}
 			}
 		}
+	case "donation":
+		// §125: a refunded donation tip claws back the recipient's net
+		// credits and marks the tip refunded (idempotent).
+		if p.PurposeID.Valid && tipSettlement != nil {
+			if err := tipSettlement.ClawbackTip(ctx, p.PurposeID); err != nil {
+				return fmt.Errorf("clawback donation tip: %w", err)
+			}
+		}
 	case "service_booking_fee":
 		// §111: a provider-initiated refund (dashboard refund/chargeback
 		// webhook) clawed the platform fee back out-of-band — flip the
@@ -1065,8 +1079,8 @@ func reversePaymentSideEffects(ctx context.Context, p gen.Payment) error {
 			}
 		}
 	// No reversal needed — pro membership refunds affect future
-	// renewal only; donations are non-reversible.
-	case "pro_membership", "donation":
+	// renewal only.
+	case "pro_membership":
 	}
 
 	return nil

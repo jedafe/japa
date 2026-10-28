@@ -87,6 +87,9 @@ var idempotentTasks = map[string]bool{
 	TypeServiceBookingCreated:           true, // §111 — one org notification fan-out per booking
 	TypeServiceBookingStatusChanged:     true, // §111 — dedupe same-status transitions
 	TypeSpaceAutoPopulate:               true, // enrichment fan-out — collapse repeat enqueues for the same space_id
+	TypeTipsSettleFiat:                  true, // §125 — dedupe settle by tip_id payload
+	TypeTipsNotifyReceived:              true, // §125 — one receipt notification per tip
+	TypeTipsOCSync:                      true, // §125 — collapse duplicate sweep enqueues
 	TypeWikiPopulateFacts:               true, // enrichment — collapse repeat fact-fetches for the same space_id
 }
 
@@ -193,6 +196,7 @@ var taskTier = func() map[string]string {
 		TypeNotificationSendPush,      // §77 V2 — push delivery is user-facing-critical
 		TypeEmbassyDispatchAlerts,     // §91 — time-sensitive slot availability (ADR-099)
 		TypeIntelScheduleCrawls,       // §INTEL — cron entry point, must fire immediately (ADR-112)
+		TypeTipsSettleFiat,            // §125 — credit grant on donation payment success
 		TypeIntelInboundEmail,         // §INTEL Phase 3 — provider push deliveries are time-sensitive
 		TypeServiceBookingFeeSettle,   // §111 — platform-fee recognize/refund is money-moving (ADR-123)
 	} {
@@ -303,7 +307,7 @@ var taskTier = func() map[string]string {
 		TypeMaintenancePruneOldFeeds, TypeMaintenancePruneAuditLogs,
 		TypeMaintenancePrunePushTokens, TypeModerationAutoHide,
 		TypeMediaCleanupDeleted, TypeMediaReconcileMissing,
-		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents,
+		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents, TypeTipsOCSync,
 		TypeCouponExpireCheck,
 		TypeSubscriptionExpirySweep, // §17 — webhook-miss safety net
 		TypeAffiliateExpireCheck,
@@ -454,6 +458,10 @@ var taskTypeCatalog = []struct {
 	{TypeServiceBookingStatusChanged, "default", "Notify booker of a service booking status transition"},
 	{TypeServiceBookingFeeSettle, "critical", "Recognize or refund the platform fee for a service booking (idempotent by booking_id)"},
 	{TypeServiceBookingExpirePending, "low", "Hourly sweep — expire pending bookings past their response SLA"},
+	// §125 Tips & Donations
+	{TypeTipsSettleFiat, "critical", "Credit recipient wallet when a donation payment succeeds"},
+	{TypeTipsNotifyReceived, "default", "Notify recipient that a tip was received"},
+	{TypeTipsOCSync, "low", "Scheduled poll — import new Open Collective contributions"},
 	// §113 Public Product Roadmap (ADR-127)
 	{TypeRoadmapShipNotify, "default", "Notify roadmap voters + submitter that an item shipped"},
 	{TypeAssessmentScoreSubmission, "default", "Score a completed readiness assessment, generate roadmap, notify (§71, ADR-071)"},

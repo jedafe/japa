@@ -960,8 +960,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tipsService.SetPermChecker(tipsPermAdapter{rbac: rbacResolver})
 	tipsService.SetOrgChecker(tipsOrgAdapter{svc: orgService})
 	tipsService.SetOCClient(tipsOCAdapter{client: opencollective.New()})
+	tipsService.SetPaymentsService(tipsPaymentAdapter{svc: paymentService})
+	tipsService.SetNotifier(tipsNotifierAdapter{enq: taskEnqueuer})
 	tipsService.SetSiteURL(cfg.SiteURL)
 	tipsHandlers := tips.NewHandlers(tipsService)
+
+	// §125: worker-side settle/clawback/notify/sync seam — handlers live in
+	// internal/worker/tips.go and call back into the service.
+	worker.RegisterTipSettlement(tipsSettlementAdapter{svc: tipsService, notify: notificationService})
 
 	// Wire the wallet activity emitter into the domain services that produce
 	// §64 badge/challenge triggers — without this the activity_events rows are
@@ -5095,7 +5101,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/donation-settings", tipsHandlers.AdminGetDonationSettings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Put("/admin/donation-settings", tipsHandlers.AdminUpdateDonationSettings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).Post("/admin/tips/{id}/refund", tipsHandlers.AdminRefundTip)
 			})
+
+			// §125 inbound Open Collective contribution webhook — per-collective
+			// secret in the query param identifies the owner.
+			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Post("/tips/webhook/opencollective", tipsHandlers.HandleOCWebhook)
 
 			// Advertising routes (Section 25 — Ad Placement)
 			// Admin campaign management
