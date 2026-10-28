@@ -32,7 +32,7 @@
 - Create: `internal/db/queries/tips.sql`
 - Generated: `internal/db/gen/tips.sql.go`, `models.go` (via `make sqlc-gen`)
 
-**Interfaces — produces:** gen queries used by Tasks 2–8: `UpsertTipSettings`, `GetTipSettings`, `GetTipSettingsByOCWebhookSecret`, `ListTipSettingsWithOCToken`, `SetOCCredentials`, `ClearOCCredentials`, `CreateTipExternalLink`, `UpdateTipExternalLink`, `DeleteTipExternalLink`, `ListTipExternalLinks`, `InsertTip`, `GetTip`, `GetTipByPaymentID`, `GetTipByOCContributionID`, `GetTipByIdempotencyKey`, `UpdateTipStatus`, `ListTipsSent`, `ListTipsReceived`, `CountTipsReceived`, `AdminListTips`, `AdminCountTips`, `AdminTipStats`, `SumTipperPointsToday`, `ContentTipSummary`.
+**Interfaces — produces:** gen queries used by Tasks 2–8: `UpsertTipSettings`, `GetTipSettings`, `GetTipSettingsByOCWebhookSecret`, `ListTipSettingsWithOCToken`, `SetOCCredentials`, `ClearOCCredentials`, `CreateTipExternalLink`, `UpdateTipExternalLink`, `DeleteTipExternalLink`, `ListTipExternalLinks`, `InsertTip`, `GetTip`, `GetTipByPaymentID`, `GetTipByOCContributionID`, `GetTipByIdempotencyKey`, `UpdateTipStatus`, `ListTipsSent`, `ListTipsReceived`, `CountTipsReceived`, `AdminListTips`, `AdminCountTips`, `AdminTipStats`, `SumTipperPointsToday`, `ContentTipSummary`, `GetUserDisplayNames`, `IsMentorProfile`.
 
 - [ ] **Step 1: Write the up migration** — schema verbatim from spec §Schema (three tables, all CHECKs, UNIQUE, indexes — including `tip_settings.oc_webhook_secret`) plus seeds:
 
@@ -152,12 +152,12 @@ WHERE id = @id;
 
 -- name: ListTipsSent :many
 SELECT * FROM tips WHERE sender_user_id = @sender_user_id
-ORDER BY created_at DESC LIMIT @limit_count OFFSET @offset_count;
+ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListTipsReceived :many
 SELECT * FROM tips WHERE recipient_type = 'user' AND recipient_user_id = @recipient_user_id
    AND status = 'completed'
-ORDER BY created_at DESC LIMIT @limit_count OFFSET @offset_count;
+ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountTipsReceived :one
 SELECT count(*)::int FROM tips WHERE recipient_type = 'user' AND recipient_user_id = @recipient_user_id AND status = 'completed';
@@ -165,7 +165,7 @@ SELECT count(*)::int FROM tips WHERE recipient_type = 'user' AND recipient_user_
 -- name: SumTipperPointsToday :one
 SELECT COALESCE(sum(points_amount),0)::bigint FROM tips
 WHERE sender_user_id = @sender_user_id AND method = 'points'
-  AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC');
+  AND created_at >= (date_trunc('day', timezone('UTC', now()))) AT TIME ZONE 'UTC';
 
 -- name: ContentTipSummary :one
 SELECT count(*)::int AS tip_count,
@@ -178,7 +178,7 @@ SELECT * FROM tips
 WHERE (@status::text = '' OR status = @status)
   AND (@method::text = '' OR method = @method)
   AND (@recipient_type::text = '' OR recipient_type = @recipient_type)
-ORDER BY created_at DESC LIMIT @limit_count OFFSET @offset_count;
+ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
 -- name: AdminCountTips :one
 SELECT count(*)::int FROM tips
@@ -192,6 +192,14 @@ SELECT count(*)::int AS total,
        COALESCE(sum(fiat_amount) FILTER (WHERE status='completed'),0)::bigint AS fiat_minor_settled,
        count(*) FILTER (WHERE method='opencollective')::int AS oc_count
 FROM tips WHERE created_at >= @since;
+
+-- name: GetUserDisplayNames :many
+SELECT u.id, u.username, up.display_name
+FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE u.id = ANY(@ids::uuid[]);
+
+-- name: IsMentorProfile :one
+SELECT is_mentor FROM user_profiles WHERE user_id = @user_id;
 ```
 
 - [ ] **Step 4: Run migration + regen**
@@ -273,14 +281,16 @@ type CreateTipResult struct { Tip TipDTO; CheckoutURL string } // CheckoutURL on
 type SettingsReader interface { GetIntOr(ctx, key string, fb int) int; GetBoolOr(ctx, key string, fb bool) bool; GetStringOr(ctx, key, fb string) string }
 type BalanceReader interface { /* resolves current ledger balance */ }
 type PermChecker interface { Can(ctx, userID pgtype.UUID, node string) bool } // rbac resolver
-type MentorChecker interface { HasMentorShadow(ctx, userID pgtype.UUID) (bool, error) } // user_profiles.mentor_listing_content_id IS NOT NULL — implement via gen query
+type MentorChecker interface { IsMentor(ctx, userID pgtype.UUID) (bool, error) } // user_profiles.is_mentor — gen query:
+//   -- name: IsMentorProfile :one
+//   SELECT is_mentor FROM user_profiles WHERE user_id = @user_id;
 ```
 
-- [ ] **Step 1: Write failing test** `settings_test.go` — table tests: `PublicConfig` hides `oc_api_token_encrypted` (never serialized, only `has_oc_token`); `effectiveMin(method, settings)` picks per-method floor; `checkReceiveEligibility` passes for perm holder OR mentor-shadow user, fails otherwise; owner validation rejects platform↔user-id mixups.
+- [ ] **Step 1: Write failing test** `settings_test.go` — table tests: `PublicConfig` hides `oc_api_token_encrypted` (never serialized, only `has_oc_token`); `effectiveMin(method, settings)` picks per-method floor; `checkReceiveEligibility` passes for perm holder OR `is_mentor` user, fails otherwise; owner validation rejects platform↔user-id mixups.
 
 - [ ] **Step 2: Run `go test ./internal/tips/` — expect compile fail.**
 
-- [ ] **Step 3: Implement `tips.go` + `store.go` + `settings.go`.** Store embeds `*gen.Queries` read/write split like `wallet.Store`. `settings.go` implements `GetSettings`, `UpsertSettings` (creates row on first save), `PublicConfig(owner)` → `{tips_enabled, methods:[…accepted], min_tip_amount, oc_collective_slug, external_links, thank_you_message}`, `EnsurePlatformSettings` (upsert with `PlatformOwnerID` uuid), link CRUD (`max 10 links`, `kind`/`url` validation, `https?://` only), `CanReceive(ctx,userID)` = `perm(tips.receive) || HasMentorShadow`.
+- [ ] **Step 3: Implement `tips.go` + `store.go` + `settings.go`.** Store embeds `*gen.Queries` read/write split like `wallet.Store`. `settings.go` implements `GetSettings`, `UpsertSettings` (creates row on first save), `PublicConfig(owner)` → `{tips_enabled, methods:[…accepted], min_tip_amount, oc_collective_slug, external_links, thank_you_message}`, `EnsurePlatformSettings` (upsert with `PlatformOwnerID` uuid), link CRUD (`max 10 links`, `kind`/`url` validation, `https?://` only), `CanReceive(ctx,userID)` = `perm(tips.receive) || IsMentorProfile(user_id)`.
 
 - [ ] **Step 4: `go test ./internal/tips/ -v` — PASS. `go build ./...` clean.**
 
@@ -319,8 +329,8 @@ r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/donate", tipsHandlers.Publ
 // admin (tips.moderate or admin.donation_settings — use tips.moderate)
 r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/donation-settings", tipsHandlers.AdminGetDonationSettings)
 r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Put("/admin/donation-settings", tipsHandlers.AdminUpdateDonationSettings)
-// org-scoped (org-admin check inside handler)
-r.With(auth.RequireAuth(kr, vkClient.Redis())).Route("/organizations/{id}/tip-settings", func(r chi.Router) {
+// org-scoped (org-admin check inside handler; requireActiveOrgByID resolves org + 404s inactive)
+r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Route("/organizations/{id}/tip-settings", func(r chi.Router) {
     r.Get("/", tipsHandlers.GetOrgTipSettings)
     r.Put("/", tipsHandlers.UpdateOrgTipSettings)
     r.Post("/links", tipsHandlers.CreateOrgTipLink)
@@ -361,20 +371,26 @@ func (c *Client) VerifyToken(ctx context.Context, token string) (handle string, 
 func (c *Client) ListContributions(ctx context.Context, slug, token string, limit, offset int) ([]Contribution, error)
 ```
 
-GraphQL (POST `{"query": "…", "variables": …}`, `Personal-Token: <token>` header):
+GraphQL (POST `{"query": "…", "variables": …}` to `https://api.opencollective.com/graphql/v2`, `Personal-Token: <token>` header — personal tokens; `Api-Key` is the older header variant, accept either config):
 
 ```graphql
 query($slug: String!, $limit: Int!, $offset: Int!) {
   account(slug: $slug) {
     transactions(type: CREDIT, limit: $limit, offset: $offset,
                  orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes { id createdAt
+      totalCount
+      nodes { id type kind createdAt
               amount { valueInCents currency }
-              fromAccount { name slug emails } }
+              fromAccount { name slug } }
     }
   }
 }
 ```
+
+Import only `kind == "CONTRIBUTION"` nodes (skips host-fee shares/other credit
+kinds). User matching: try adding `emails` to `fromAccount`; if OC returns a
+schema/permission error for that field, retry the same query without it —
+`sender_user_id` stays NULL when no `users.email` match (spec allows NULL).
 
 - [ ] **Step 1: Failing tests** — client test fakes GraphQL JSON (parse + pagination); `ImportContribution` dedupes on `oc_contribution_id` (second import = no-op), matches `sender_user_id` via a `UserByEmail` seam, leaves NULL when unmatched.
 
@@ -405,7 +421,7 @@ query($slug: String!, $limit: Int!, $offset: Int!) {
 
 - [ ] **Step 2: Implement.** Single tx: lock both wallets in deterministic (uuid-ascending) order → debit sender (`spend`, `ledger_type=points|credits`, `source='tip'`) → credit recipient (`earn`, amount−fee) → `InsertTip` status `completed` → commit → enqueue notify (fire-and-forget post-commit). Idempotency: reuse request `Idempotency-Key` ctx value (`middleware.IdempotencyKeyFromContext`) as `idempotency_key`; on re-entry with same key return existing tip (query by sender+key — add `GetTipByIdempotencyKey` query: `SELECT * FROM tips WHERE sender_user_id=@s AND idempotency_key=@k`).
 
-- [ ] **Step 3: Handler** — `POST /api/v1/tips` (auth + `tips.send` + `webhook`-independent `strict` rate limit): parse body, route `points|credits` → `CreateTip`; fiat methods → Task 6; `opencollective`/`external` methods → 400 `invalid_method` (those aren't client-initiated). Feature gate `tips.enabled` → 403 `tips_disabled`.
+- [ ] **Step 3: Handler** — `POST /api/v1/tips` (auth + `tips.send` + `strict` rate limit): enforce `Idempotency-Key` presence (`400 missing_idempotency_key` when `middleware.IdempotencyKeyFromContext(ctx)` is empty — Rule 9); parse body, route `points|credits` → `CreateTip`; fiat methods → Task 6; `opencollective`/`external` methods → 400 `invalid_method` (not client-initiated). Feature gate `tips.enabled` → 403 `tips_disabled`.
 
 - [ ] **Step 4: tests pass; build clean.**
 - [ ] **Step 5: Commit** — `feat(tips): §125 points/credits tip settlement via wallet ledger`
@@ -422,7 +438,7 @@ query($slug: String!, $limit: Int!, $offset: Int!) {
 
 **Interfaces — consumes:** `payments.Service.CreatePayment(ctx, userID, CreatePaymentInput)` (same shape as wallet's `PaymentCreator`: `{Provider, PurposeType, PurposeID, Amount, Currency, Metadata}` → `{ID, CheckoutURL, …}`); `currencies.credits_per_unit` via gen query `GetCurrencyByCode`; `middleware.IdempotencyKeyFromContext`. **Produces:** worker adapter `tips.SettlementAdapter{SettleFiat(ctx, tipID, paymentID)}` satisfying `worker.TipSettlement` interface; `Service.RefundTip(ctx, tipID, adminID)`.
 
-- [ ] **Step 1: Failing tests** — fiat `CreateTip` creates pending tip + calls PaymentCreator with `purpose_type='donation'`, `purpose_id=tip.id`, returns `CheckoutURL`; `SettleFiatTip` computes `net = fiat_amount / 10^exp × credits_per_unit × (1 − fee%)` (table: USD 1000¢ @ 10 cr/$ @10% → 9 credits; JPY ¥5000 @ 0.5/¥ → 2500×0.5 credits); idempotent (already `completed` → no-op, no second ledger entry); `RefundTip` on completed tip → clawback ledger entry + status `refunded`; refund on pending → error.
+- [ ] **Step 1: Failing tests** — fiat `CreateTip` creates pending tip + calls PaymentCreator with `purpose_type='donation'`, `purpose_id=tip.id`, returns `CheckoutURL`; `SettleFiatTip` computes `net = fiat_amount / 10^exp × credits_per_unit × (1 − fee%)` (table: USD 1000¢ @ `credits_per_unit=10` @ fee 10% → 100 gross → **90 net**; JPY ¥5000 @ `credits_per_unit=2`, fee 0 → **10000 net**); idempotent (already `completed` → no-op, no second ledger entry); `RefundTip` on completed tip → clawback ledger entry + status `refunded`; refund on pending → error.
 
 - [ ] **Step 2: Implement `fiat.go`.** Provider set = `stripe|paystack|nowpayments|manual_transfer` (validate against `tips.method` CHECK). Bounds: `tips.min_fiat_minor`/`tips.max_fiat_minor`. On `payments` success the payment row is attached to tip (`payment_id`). Currency exponent map: keep tiny `currencyExponent(code) int` (NGN,USD,EUR,GBP→2; JPY→0; default 2) — no new table.
 
@@ -500,7 +516,7 @@ r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolv
 - Modify: `internal/features/registry.go` — `{Key:"tips.enabled", Label:"Tips & Donations", Category:"Commerce", SettingsCategory:"tips", Default:false}`, `{Key:"tips.opencollective", Label:"Open Collective Tips", Category:"Commerce", Default:false}`
 - Modify: `internal/tips/notify.go` (new) — `NotifyReceived` building `tip.received` notification via `notifications.Service.CreateNotification`
 - Modify: `internal/control/settings_catalog.go` — `tips.fee_percent`, `tips.points_daily_limit`, `tips.min_fiat_minor`, `tips.max_fiat_minor`, `tips.oc_sync_interval_minutes`, `tips.oc_platform_collective`, `tips.oc_platform_token` (`Sensitive:true, Panel:"control"`)
-- Modify: `.jeos/conventions/api-routes-catalog.md`, `system-settings-catalog.md`, `valkey-keys-catalog.md`, `.jeos/sections/11-job-queue-asynq.md`, `.jeos/JEOS.md` index row `| 125 | sections/125-donations-tips.md | … |`
+- Modify: `.jeos/conventions/api-routes-catalog.md`, `system-settings-catalog.md`, `valkey-keys-catalog.md`, `permission-key-naming.md` (`tips.send|receive|moderate`), `.jeos/schemas/MIGRATION-ORDER.md` (000948 entry), `.jeos/sections/11-job-queue-asynq.md`, `.jeos/JEOS.md` index row `| 125 | sections/125-donations-tips.md | … |`
 - Modify: `internal/server/server.go` — full service construction: `tipsService := tips.NewService(database)` + `SetSettings`, `SetPermChecker(rbacResolver-adapter)`, `SetPaymentsService(paymentsService)`, `SetOCClient(opencollective.NewClient())`, `SetNotifier`, `SetEnqueuer`; `worker.RegisterTipSettler(tips.NewSettlementAdapter(tipsService))`
 
 - [ ] **Step 1: Wire service in server.go** — placement next to `walletService` block (~line 904); adapters declared file-local like `walletCacheInvalidator`.
