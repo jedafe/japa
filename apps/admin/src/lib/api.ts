@@ -1926,6 +1926,16 @@ export const sharePlatformsAdminApi = {
 		api(`/share-platforms/${key}`, { method: 'DELETE' }),
 };
 
+// §125 Tips & Donations admin API.
+export const tipsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/tips${params ? `?${params}` : ''}`),
+	stats: (days = 30) => api<unknown>(`/admin/tips/stats?days=${days}`),
+	refund: (id: string) => api<unknown>(`/admin/tips/${id}/refund`, { method: 'POST' }),
+	getDonationSettings: () => api<unknown>('/admin/donation-settings'),
+	updateDonationSettings: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/donation-settings', { method: 'PUT', body }),
+};
+
 // ── Video (§106, ADR-117) — admin CRUD for sources, imports, and claims ───
 
 export const videoSourcesAdminApi = {

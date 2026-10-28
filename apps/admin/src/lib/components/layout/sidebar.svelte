@@ -18,7 +18,7 @@
 		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard,
 		Package, Receipt, PanelLeft,
 		Brain, Wand, Trophy, Plane, Banknote, Megaphone,
-		FileUp, LayoutGrid, Boxes,
+		FileUp, LayoutGrid, Boxes, HandCoins,
 		BookOpenText, ShieldAlert, LifeBuoy, Target,
 		CalendarDays, Newspaper, Award, Building2,
 		Route, ListChecks, BadgeCheck, Home,
@@ -115,7 +115,8 @@
 			{ path: "/roadmap/categories", label: t("nav.roadmap_categories", "Roadmap Categories"), icon: Tags, permission: "roadmap.edit" },
 			{ path: "/roadmap/releases", label: t("nav.roadmap_releases", "Releases"), icon: Package, permission: "roadmap.view" },
 			{ path: "/roadmap/releases/entries", label: t("nav.roadmap_entries", "Changelog Entries"), icon: ListChecks, permission: "roadmap.edit" },
-	{ path: "/imports", label: t("nav.imports", "Content Imports"), icon: FileUp, permission: "import.manage" }
+	{ path: "/imports", label: t("nav.imports", "Content Imports"), icon: FileUp, permission: "import.manage" },
+			{ path: "/tips", label: t("nav.tips", "Tips"), icon: HandCoins, permission: "tips.moderate" }
 			]
 		},
 		{

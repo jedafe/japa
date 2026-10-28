@@ -133,6 +133,7 @@
 		'/organisations/claims': 'admin.moderation',
 		'/reactions': 'content.reaction_types.manage',
 		'/share-platforms': 'content.reaction_types.manage',
+		'/tips': 'tips.moderate',
 		'/imports': 'import.manage',
 		'/media': 'media.view_all',
 		'/tickets': 'tickets.admin',

@@ -9,6 +9,7 @@ import ConnectedSection from './sections/ConnectedSection.svelte';
 import ConnectedAppsSection from './sections/ConnectedAppsSection.svelte';
 import AffiliateSection from './sections/AffiliateSection.svelte';
 import WalletSection from './sections/WalletSection.svelte';
+import TipsSection from './sections/TipsSection.svelte';
 import SubscriptionSection from './sections/SubscriptionSection.svelte';
 import PaymentsSection from './sections/PaymentsSection.svelte';
 import SecuritySection from './sections/SecuritySection.svelte';
@@ -63,6 +64,7 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'api-keys', labelKey: 'settings.nav.api_keys', icon: 'key', group: 'developer', backendReady: true, component: ApiKeysSection },
 	{ slug: 'affiliate', labelKey: 'settings.nav.affiliate', icon: 'share-2', group: 'developer', backendReady: true, component: AffiliateSection, featureFlag: 'feature.affiliate_program' },
 	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'wallet', backendReady: true, component: WalletSection, featureFlag: 'feature.wallet' },
+	{ slug: 'tips', labelKey: 'settings.nav.tips', icon: 'gift', group: 'wallet', backendReady: true, component: TipsSection, featureFlag: 'tips.enabled' },
 	{ slug: 'subscription', labelKey: 'settings.nav.subscription', icon: 'credit-card', group: 'billing', backendReady: true, component: SubscriptionSection },
 	{ slug: 'payments', labelKey: 'settings.nav.payments', icon: 'receipt', group: 'billing', backendReady: true, component: PaymentsSection },
 	{ slug: 'danger', labelKey: 'settings.nav.danger', icon: 'alert-triangle', group: 'danger', backendReady: true, component: DangerSection }

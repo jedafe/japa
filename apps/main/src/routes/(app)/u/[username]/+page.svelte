@@ -12,6 +12,7 @@
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
 	import MessageUserDialog from '$lib/components/profile/MessageUserDialog.svelte';
+	import TipButton from '$lib/components/tips/TipButton.svelte';
 	import VideoGrid from '$lib/components/profile/VideoGrid.svelte';
 	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SearchInput } from '$lib/components/ui';
 	import { openLightbox } from '$lib/lightbox.svelte';
@@ -791,6 +792,9 @@
 			{initiallyFollowing}
 			onChange={() => invalidate(`/api/v1/users/${user.username}`)}
 		/>
+		{#if data.features?.['tips.enabled']}
+			<TipButton recipientType="user" recipientKey={user.username} recipientId={user.id} recipientName={user.display_name ?? user.username} />
+		{/if}
 	{/if}
 	{#snippet menuItems()}
 		{#if isAuthenticated && !isOwnProfile}
