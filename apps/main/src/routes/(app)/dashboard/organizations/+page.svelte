@@ -189,6 +189,7 @@
 						placeholder={t('organizations.new.name_placeholder', 'Organization name')}
 						required
 					/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.name_hint', 'The public name of your organization.')}</p>
 				</label>
 				<label class="flex flex-col gap-1.5">
 					<span class="text-sm font-medium text-[var(--color-text)]">{t('organizations.new.field_slug', 'Slug')}</span>
@@ -199,6 +200,7 @@
 						placeholder={t('organizations.new.slug_placeholder', 'organization-slug')}
 						required
 					/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.slug_hint', 'URL-safe identifier — auto-generated from the name.')}</p>
 					<span class="text-xs text-[var(--color-muted)]">{t('organizations.new.slug_hint', 'Used in the URL: /org/your-slug')}</span>
 				</label>
 			</div>
@@ -206,11 +208,13 @@
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('organizations.new.field_tagline', 'Tagline')}</span>
 				<input class={inputClass} value={tagline} oninput={(e) => (tagline = e.currentTarget.value)} placeholder={t('organizations.new.tagline_placeholder', 'A short tagline')} />
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.tagline_hint', 'One line — what the organization does.')}</p>
 			</label>
 
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('organizations.new.field_description', 'Description')}</span>
 				<textarea class={inputClass} rows={4} value={description} oninput={(e) => (description = e.currentTarget.value)} placeholder={t('organizations.new.description_placeholder', 'Describe the organization…')}></textarea>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.desc_hint', 'Describe the organization, services and audience.')}</p>
 			</label>
 
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -230,6 +234,7 @@
 						onSelect={(item) => { countryCode = item.id; }}
 						onClear={() => { countryCode = ''; }}
 					/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.country_hint', 'Where the organization is based.')}</p>
 				</label>
 				<label class="flex flex-col gap-1.5">
 					<span class="text-sm font-medium text-[var(--color-text)]">{t('organizations.new.field_type', 'Organization type')}</span>
