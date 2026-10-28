@@ -125,7 +125,6 @@
 						.replace('{n}', currentCurrency.credits_per_unit?.toLocaleString() ?? '0')}
 				</p>
 			{/if}
-			<HintIcon text={t('settings.wallet.purchase_currency_hint', 'Change your preferred currency on the Details tab.')} />
 		</div>
 
 		{#if sortedPacks.length > 0}

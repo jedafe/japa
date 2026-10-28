@@ -642,7 +642,6 @@
 		{/if}
 	{:else}
 		<div class="mt-6 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] p-4 text-center">
-			<HintIcon text={t('crs_calculator.signin_hint', 'Sign in to save your score history and track changes over time.')} />
 			<a
 				href="/login?redirect={encodeURIComponent(page.url.pathname)}"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"

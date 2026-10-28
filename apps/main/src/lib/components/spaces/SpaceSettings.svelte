@@ -483,14 +483,12 @@
 				</div>
 				<div>
 					<p class="text-sm font-medium text-[var(--color-text)]">{t('spaces.settings_logo', 'Logo')}</p>
-					<HintIcon text={t('spaces.settings_logo_hint', 'Click the camera to upload or pick from library')} />
 				</div>
 			</div>
 
 			<!-- Header image -->
 			<div class="mb-5">
 				<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('spaces.settings_header', 'Header image')}</p>
-				<HintIcon text={t('spaces.settings_header_hint', 'A banner image shown at the top of the space page')} />
 				<div class="relative overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-subtle)]">
 					{#if headerUrl}
 						<img src={headerUrl} alt={t('spaces.settings_header', 'Header image')} class="h-32 w-full object-cover" />
@@ -613,7 +611,6 @@
 			<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
 				{t('spaces.settings_visibility', 'Who can view this space')}
 			</legend>
-			<HintIcon text={t('spaces.settings_visibility_hint', 'Controls who can see this space and its content.')} />
 			{#each visibilityOptions as opt}
 				<label class="mb-2 flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text)]">
 					<input type="radio" name="visibility" value={opt.value} bind:group={visibility} class="mt-0.5" />

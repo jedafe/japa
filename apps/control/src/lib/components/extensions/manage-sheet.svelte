@@ -623,7 +623,6 @@
 														compact
 													/>
 												</div>
-												<HintIcon text={t('extensions.audience_hint', 'Restrict to user groups (group:slug) or permission nodes (perm:node). Empty = everyone.')} />
 											</div>
 
 											<div>
@@ -692,7 +691,6 @@
 														compact
 													/>
 												</div>
-												<HintIcon text={t('extensions.geo_hint', 'ISO alpha-2 codes. Empty allow-list = all countries; deny always wins.')} />
 											</div>
 
 											<div class="border-border-card flex flex-wrap gap-2 border-t pt-3">
@@ -729,7 +727,6 @@
 							</span>
 							<Switch id="ext-manage-roadmap" bind:checked={draft.showOnRoadmap} />
 						</div>
-						<HintIcon text={t('extensions.show_on_roadmap_hint', 'List this feature on the public roadmap board.')} />
 						<div class="mt-3 flex items-center gap-2 text-sm">
 							<Route class="text-muted-foreground size-4" />
 							{#if ext.linked_roadmap_slug}
@@ -741,7 +738,6 @@
 								<span class="text-muted-foreground">{t('extensions.no_roadmap_link', 'No roadmap item linked')}</span>
 							{/if}
 						</div>
-						<HintIcon text={t('extensions.roadmap_link_hint', 'Link or unlink items from the admin roadmap editor.')} />
 					</section>
 				</div>
 

@@ -272,7 +272,6 @@
 
 	<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('settings.apikeys.connect_extension')}</p>
-		<HintIcon id="apikey-install-hint" text={t('settings.apikeys.connect_extension_hint')} />
 		<input
 			type="text"
 			bind:value={installId}

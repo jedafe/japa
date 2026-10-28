@@ -148,7 +148,6 @@
 					}, 150);
 				}}
 			/>
-			<HintIcon id="tag-input-hint" text={t('create.tag_hint', 'Type and press Enter to add a tag.')} />
 		</div>
 	</div>
 

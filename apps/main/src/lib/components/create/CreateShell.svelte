@@ -533,7 +533,6 @@
 						markDirty();
 					}}
 				/>
-					<HintIcon text={t('create.type_hint', 'What kind of content you are creating — picks the right editor.')} />
 			</div>
 		</div>
 

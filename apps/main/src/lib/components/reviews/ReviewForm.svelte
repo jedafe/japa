@@ -91,7 +91,6 @@
 		placeholder={t('reviews.title_placeholder')}
 		class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 	/>
-		<HintIcon text={t('reviews.title_hint', 'Optional headline for your review.')} />
 
 	<textarea
 		value={body}
@@ -100,7 +99,6 @@
 		placeholder={t('reviews.body_placeholder')}
 		class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 	></textarea>
-		<HintIcon text={t('reviews.body_hint', 'Share your honest experience — what helped, what did not.')} />
 
 	{#if errorKey}
 		<p class="text-sm text-[var(--color-danger)]" role="alert">{t(errorKey)}</p>

@@ -361,7 +361,6 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('campaigns.items', 'Items')}</p>
 				{#if items.length === 0}
-					<HintIcon text={t('campaigns.items_detail_hint', 'Open the campaign to see individual items.')} />
 				{:else}
 					<div class="mt-2 space-y-2">
 						{#each items as item (item.id)}

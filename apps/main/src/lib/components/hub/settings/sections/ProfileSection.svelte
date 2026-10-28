@@ -163,7 +163,6 @@
 			</div>
 			<div>
 				<p class="text-sm font-medium text-[var(--color-text)]">{t('settings.profile.avatar', 'Avatar')}</p>
-				<HintIcon text={t('settings.profile.avatar_hint', 'Click the camera to upload')} />
 			</div>
 		</div>
 

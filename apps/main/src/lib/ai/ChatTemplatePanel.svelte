@@ -976,7 +976,6 @@
 							/>
 						{:else}
 							<input type="text" class="tpl-input" bind:value={values.content_type} />
-							<HintIcon text={t('ai.templates.content_type_hint', 'The content type this template generates.')} />
 						{/if}
 					</div>
 
@@ -1001,7 +1000,6 @@
 								}}
 								allowFreeText
 							/>
-								<HintIcon text={t('ai.templates.guide_cat_hint', 'Optional — the guide category to write for.')} />
 						</div>
 					{/if}
 

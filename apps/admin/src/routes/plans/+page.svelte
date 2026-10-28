@@ -333,7 +333,6 @@
 <!-- Manage Tracks Modal (page-local sub-flow) -->
 <Modal bind:open={showTracksModal} title={t('plans.manage_tracks_title', 'Manage Tracks — {name}').replace('{name}', tracksPlanName)} size="lg">
 	<div class="space-y-3">
-		<HintIcon text={t('plans.tracks_hint', 'Select which courses are included in this subscription plan. When no tracks are selected, the plan includes ALL tracks (Pro = all).')} />
 		{#if loadingTracks}
 			<p class="text-sm" style="color: var(--color-muted)">{t('plans.loading_tracks', 'Loading tracks...')}</p>
 		{:else}

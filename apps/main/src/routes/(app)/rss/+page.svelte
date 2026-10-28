@@ -109,7 +109,6 @@
 		<h2 class="mb-3 text-sm font-semibold tracking-wide text-[var(--color-muted)] uppercase">
 			{t('rss.section.topics', 'Topic feeds')}
 		</h2>
-		<HintIcon text={t('rss.section.topics_hint', 'One feed per content type — subscribe to just what you follow.')} />
 		<div class="flex flex-col gap-2">
 			{#each typeFeeds as feed (feed.path)}
 				{@render feedRow(feed)}
@@ -142,7 +141,6 @@
 		<h2 class="mb-3 text-sm font-semibold tracking-wide text-[var(--color-muted)] uppercase">
 			{t('rss.section.spaces', 'Space feeds')}
 		</h2>
-		<HintIcon text={t('rss.section.spaces_hint', 'Every public space has a feed at /spaces/{space}/feed.xml.')} />
 		{#if data.spaces.length > 0}
 			<div class="flex flex-col gap-2">
 				{#each data.spaces as space (space.slug)}
@@ -162,7 +160,6 @@
 		<h2 class="mb-3 text-sm font-semibold tracking-wide text-[var(--color-muted)] uppercase">
 			{t('rss.section.tags', 'Tag feeds')}
 		</h2>
-		<HintIcon text={t('rss.section.tags_hint', 'Every tag has a feed at /tags/{tag}/feed.xml.')} />
 		{#if data.tags.length > 0}
 			<div class="flex flex-col gap-2">
 				{#each data.tags as tag (tag.slug)}

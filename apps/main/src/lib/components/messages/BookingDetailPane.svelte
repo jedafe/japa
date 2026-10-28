@@ -669,7 +669,6 @@
 </Modal>
 
 <Modal bind:open={declineOpen} title={t('bookings.decline_title', 'Decline request')} size="md">
-	<HintIcon text={t('bookings.respond_note_hint', 'Add an optional note for the other person.')} />
 	<textarea
 		bind:value={declineNote}
 		rows="3"
@@ -699,7 +698,6 @@
 	title={t('bookings.cancel_mentorship', 'Cancel mentorship')}
 	size="md"
 >
-	<HintIcon text={t('bookings.respond_note_hint', 'Add an optional note for the other person.')} />
 	<textarea
 		bind:value={cancelNote}
 		rows="3"

@@ -512,9 +512,7 @@
 			</table>
 		</div>
 		{#if dimensions.length === 0}
-			<HintIcon text={t('create.comparison.add_dimension_hint', 'Add a dimension to start filling in values.')} />
 		{:else if items.length === 0}
-			<HintIcon text={t('create.comparison.add_item_hint', 'Add an item to start comparing.')} />
 		{/if}
 	{:else}
 		<div class="empty-state">

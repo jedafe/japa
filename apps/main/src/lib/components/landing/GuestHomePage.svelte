@@ -564,7 +564,6 @@
 				class="newsletter-input"
 				required
 			/>
-			<HintIcon id="guest-newsletter-hint" text={t('landing.home.newsletter_hint', 'Weekly digest and updates — unsubscribe anytime.')} />
 			<button type="submit" class="newsletter-btn" disabled={newsletterStatus === 'loading'}>
 				{t('landing.home.newsletter_cta', 'Subscribe Now')}
 				<ArrowRight class="rtl:-scale-x-100" size={18} />

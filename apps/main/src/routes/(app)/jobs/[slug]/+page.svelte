@@ -666,7 +666,6 @@
 							{t('jobs.expired_apply_body', 'The application deadline for this job has passed.')}
 						</p>
 					{:else if externalApplyUrl}
-						<HintIcon text={t('jobs.apply_external_hint', 'This job is listed externally. Apply on the employer site.')} />
 						<a
 							href={externalApplyUrl}
 							target="_blank"

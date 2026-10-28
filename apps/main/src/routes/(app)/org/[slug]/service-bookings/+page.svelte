@@ -278,7 +278,6 @@
 			<h2 class="text-sm font-semibold capitalize text-[var(--color-text)]">
 				{t(`bookings.status_${noteFor.status}`, noteFor.status)} — {noteFor.booking.listing_title}
 			</h2>
-			<HintIcon text={t('bookings.org_note_hint', 'Optional note shown to the traveller.')} />
 			<textarea
 				bind:value={noteText}
 				rows="3"
