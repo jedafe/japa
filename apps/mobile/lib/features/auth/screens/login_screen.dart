@@ -53,9 +53,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            JcTextField(label: t('auth.email'), controller: _username, hint: t('auth.email_hint', 'The email you signed up with.')),
+            JcTextField(label: t('auth.email'), controller: _username, hint: t('auth.email_hint')),
             const SizedBox(height: 16),
-            JcTextField(label: t('auth.password'), controller: _password, obscureText: true, hint: t('auth.password_hint', 'Your account password.')),
+            JcTextField(label: t('auth.password'), controller: _password, obscureText: true, hint: t('auth.password_hint')),
             if (state.error != null) Text(state.error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             JcButton(

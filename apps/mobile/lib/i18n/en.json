@@ -138,5 +138,9 @@
   "report.reason.illegal_content": "Illegal content",
   "report.reason.self_harm": "Self-harm",
   "report.reason.copyright": "Copyright infringement",
-  "report.reason.other": "Other"
+  "report.reason.other": "Other",
+  "auth.email_hint": "Used for sign-in and account emails.",
+  "auth.password_hint": "At least 8 characters with upper & lower case letters and a number.",
+  "auth.username_hint": "3–30 characters — letters, numbers, underscores.",
+  "auth.totp_code_hint": "Open your authenticator app and enter the 6-digit code."
 }
