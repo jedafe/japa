@@ -803,6 +803,7 @@
 				class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
 				>{t('messages.recipient', 'To')}</label
 			>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('messages.dm_recipient_hint', 'Who receives this message — start typing to search.')}</p>
 			<Autocomplete
 				placeholder={t('messages.recipient_placeholder', 'Search people by name or @username')}
 				ariaLabel={t('messages.recipient', 'To')}

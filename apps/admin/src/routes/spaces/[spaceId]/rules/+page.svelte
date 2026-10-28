@@ -253,6 +253,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="rule-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_rules.title_label')}</label>
+			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.rule_title_hint', 'The rule title members see.')}</p>
 			<input
 				id="rule-title"
 				type="text"
@@ -264,6 +265,7 @@
 		</div>
 		<div>
 			<label for="rule-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_rules.description_label')} <span style="color: var(--color-danger)">*</span></label>
+			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.rule_desc_hint', 'The full rule text.')}</p>
 			<textarea
 				id="rule-desc"
 				class="w-full rounded-md border px-3 py-2 text-sm"

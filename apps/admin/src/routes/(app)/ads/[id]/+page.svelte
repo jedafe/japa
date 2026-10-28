@@ -380,10 +380,12 @@
 					<div class="space-y-3">
 						<div>
 							<label for="edit-name" class="mb-1 block text-sm font-medium">{t('ads.campaign_name', 'Campaign Name')}</label>
+							<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('org_ads.edit_name_hint', 'The name shown in admin lists.')}</p>
 							<input id="edit-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={editName} />
 						</div>
 						<div>
 							<label for="edit-budget" class="mb-1 block text-sm font-medium">{t('ads.budget', 'Budget (credits)')}</label>
+							<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('org_ads.edit_budget_hint', 'Campaign budget in credits.')}</p>
 							<input id="edit-budget" type="number" min="0" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={editBudget} placeholder="1000" />
 						</div>
 						<div class="flex justify-end gap-2">

@@ -417,10 +417,12 @@
 		<div class="space-y-4">
 			<div>
 				<label for="edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.name')}</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.edit_name_hint', 'The name shown in admin lists.')}</p>
 				<input id="edit-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editName} />
 			</div>
 			<div>
 				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.visibility')}</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.edit_type_hint', 'The type — controls how it is handled.')}</p>
 				<Autocomplete
 					id="edit-type"
 					placeholder={t("spaces.visibility", "Visibility")}

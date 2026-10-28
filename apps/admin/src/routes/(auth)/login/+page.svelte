@@ -94,6 +94,7 @@
 		<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="space-y-4">
 			<div>
 				<label for="email" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.email')}</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('auth.login.email_hint', 'Your admin account email.')}</p>
 				<input
 					id="email"
 					type="email"
@@ -107,6 +108,7 @@
 
 			<div>
 				<label for="password" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.password')}</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('auth.login.password_hint', 'Your admin account password.')}</p>
 				<input
 					id="password"
 					type="password"

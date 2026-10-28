@@ -143,6 +143,7 @@
 		<div class="space-y-4">
 			<div>
 				<label for="form-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_label')} *</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.form_name_hint', 'The form name admins and users see.')}</p>
 				<input
 					id="form-name"
 					type="text"
@@ -154,6 +155,7 @@
 			</div>
 			<div>
 				<label for="form-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.description_label')}</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('spaces.form_desc_hint', 'What this form collects.')}</p>
 				<textarea
 					id="form-desc"
 					class="w-full rounded-md border px-3 py-2 text-sm"

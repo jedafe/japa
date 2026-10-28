@@ -300,6 +300,7 @@
 			<p class="text-sm" style="color: var(--color-muted)">{t("academy.approve_confirm", "Approve")} <strong>{target.display_name}</strong>?</p>
 			<div>
 				<label for="approve-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.tier", "Tier")}</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('academy.approve_tier_hint', 'The instructor tier — e.g. partner, premium.')}</p>
 				<AutocompleteSelect
 					id="approve-tier"
 					bind:value={approveTier}
@@ -309,6 +310,7 @@
 			</div>
 			<div>
 				<label for="approve-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.commission_override", "Commission Override (%) — optional")}</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('academy.approve_commission_hint', 'Percent — leave blank to use the tier default.')}</p>
 				<input id="approve-commission" type="number" step="0.01" min="0" max="100" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="e.g. 70" bind:value={approveCommission} />
 			</div>
 		</div>
@@ -380,6 +382,7 @@
 			<p class="text-sm" style="color: var(--color-muted)">{t("academy.update_tier_for", "Update tier for")} <strong>{target.display_name}</strong></p>
 			<div>
 				<label for="edit-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.tier", "Tier")}</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('academy.edit_tier_hint', 'The instructor tier — e.g. partner, premium.')}</p>
 				<AutocompleteSelect
 					id="edit-tier"
 					bind:value={editTier}
@@ -389,6 +392,7 @@
 			</div>
 			<div>
 				<label for="edit-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.commission_override", "Commission Override (%) — optional")}</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('academy.edit_commission_hint', 'Percent — leave blank to use the tier default.')}</p>
 				<input id="edit-commission" type="number" step="0.01" min="0" max="100" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="e.g. 70" bind:value={editCommission} />
 			</div>
 		</div>

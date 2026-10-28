@@ -149,6 +149,7 @@
 				<label for="content-id" class="block text-sm font-medium" style="color: var(--color-foreground)">
 					{t('ingestion_jobs.content_id', 'Comparison')}
 				</label>
+				<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('comparison.content_id_hint', 'The content this job ingests.')}</p>
 				<input
 					id="content-id"
 					type="text"

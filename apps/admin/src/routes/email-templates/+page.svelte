@@ -283,6 +283,7 @@
 			<label for="et-test-email" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.test_email', 'Test Email Address')}
 			</label>
+			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_test_email_hint', 'Where the test email is sent.')}</p>
 			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.test_email_hint', 'Where the test email is sent.')}</span>
 			<input
 				id="et-test-email"
@@ -398,6 +399,7 @@
 			<label for="et-subject" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.subject', 'Subject')}
 			</label>
+			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_subject_hint', 'The email subject line recipients see.')}</p>
 			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.subject_hint', 'The email subject line recipients see.')}</span>
 			<input
 				id="et-subject"
@@ -412,6 +414,7 @@
 			<label for="et-body" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.body', 'Body (HTML)')}
 			</label>
+			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_body_hint', 'Email body HTML — test before publishing.')}</p>
 			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.body_hint', 'The main content body.')}</span>
 			<Tabs
 				tabs={[
@@ -448,6 +451,7 @@
 			<label for="et-plain" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.plain_text', 'Plain Text Body')}
 			</label>
+			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_plain_hint', 'Plain-text fallback for mail clients that block HTML.')}</p>
 			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.plain_hint', 'Plain-text fallback for mail clients that block HTML.')}</span>
 			<textarea
 				id="et-plain"
@@ -469,6 +473,7 @@
 			<label for="et-active" class="text-sm font-medium" style="color: var(--color-foreground)">
 				{t('common.active', 'Active')}
 			</label>
+			<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.et_active_hint', 'Inactive templates are not sent.')}</p>
 			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('common.active_hint', 'The active for this record.')}</span>
 		</div>
 

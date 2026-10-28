@@ -171,6 +171,7 @@
 		<label for="date-from" class="text-sm" style="color: var(--color-muted)">
 			{t('common.from', 'From')}
 		</label>
+		<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('academy.date_from_hint', 'Start of the date range.')}</p>
 		<input
 			id="date-from"
 			type="date"
@@ -184,6 +185,7 @@
 		<label for="date-to" class="text-sm" style="color: var(--color-muted)">
 			{t('common.to', 'To')}
 		</label>
+		<p class="mt-1 block text-xs" style="color: var(--color-muted)">{t('academy.date_to_hint', 'End of the date range.')}</p>
 		<input
 			id="date-to"
 			type="date"
