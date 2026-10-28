@@ -66,16 +66,20 @@ func (s *Service) UpsertSettings(ctx context.Context, owner Owner, in UpdateSett
 	if in.MinTipAmount < 0 {
 		return Settings{}, ErrInvalidAmount
 	}
+	if in.OCCollectiveSlug != nil && *in.OCCollectiveSlug != "" && !ocSlugPattern.MatchString(*in.OCCollectiveSlug) {
+		return Settings{}, ErrInvalidLink
+	}
 	row, err := s.store.upsertSettings(ctx, gen.UpsertTipSettingsParams{
-		OwnerType:       owner.Type,
-		OwnerID:         owner.ID,
-		TipsEnabled:     in.TipsEnabled,
-		AcceptPoints:    in.AcceptPoints,
-		AcceptCredits:   in.AcceptCredits,
-		AcceptFiat:      in.AcceptFiat,
-		AcceptExternal:  in.AcceptExternal,
-		MinTipAmount:    in.MinTipAmount,
-		ThankYouMessage: in.ThankYouMessage,
+		OwnerType:        owner.Type,
+		OwnerID:          owner.ID,
+		TipsEnabled:      in.TipsEnabled,
+		AcceptPoints:     in.AcceptPoints,
+		AcceptCredits:    in.AcceptCredits,
+		AcceptFiat:       in.AcceptFiat,
+		AcceptExternal:   in.AcceptExternal,
+		OcCollectiveSlug: in.OCCollectiveSlug,
+		MinTipAmount:     in.MinTipAmount,
+		ThankYouMessage:  in.ThankYouMessage,
 	})
 	if err != nil {
 		return Settings{}, err
@@ -147,24 +151,46 @@ func (s *Service) UpdateSettingsFor(ctx context.Context, owner Owner, actorID pg
 	return s.UpsertSettings(ctx, owner, in)
 }
 
-// acceptedMethods derives the public method list from a settings row.
-func acceptedMethods(st Settings) []string {
+// acceptedMethods derives the public method list from a settings row. The
+// platform owner has no wallet — points/credits are never advertised for it
+// (fiat-only settlement). Fiat methods are filtered to providers actually
+// configured at boot when a ProviderLister seam is injected.
+func (s *Service) acceptedMethods(owner Owner, st Settings) []string {
 	out := make([]string, 0, 4)
-	if st.AcceptPoints {
-		out = append(out, MethodPoints)
-	}
-	if st.AcceptCredits {
-		out = append(out, MethodCredits)
+	if owner.Type != RecipientPlatform {
+		if st.AcceptPoints {
+			out = append(out, MethodPoints)
+		}
+		if st.AcceptCredits {
+			out = append(out, MethodCredits)
+		}
 	}
 	if st.AcceptFiat {
 		for m := range fiatMethods {
-			out = append(out, m)
+			if s.providerConfigured(m) {
+				out = append(out, m)
+			}
 		}
 	}
 	if st.OCCollectiveSlug != nil && *st.OCCollectiveSlug != "" {
 		out = append(out, MethodOpenCollective)
 	}
 	return out
+}
+
+// providerConfigured reports whether a fiat method's §17 provider was
+// registered at boot. With no ProviderLister seam (unit tests) all methods
+// are reported as configured.
+func (s *Service) providerConfigured(method string) bool {
+	if s.providers == nil {
+		return true
+	}
+	for _, p := range s.providers.ProviderNames() {
+		if p == method {
+			return true
+		}
+	}
+	return false
 }
 
 // PublicConfig returns the unauthenticated view of a recipient's tip config.
@@ -174,12 +200,24 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 		return PublicConfig{}, err
 	}
 	cfg := PublicConfig{MinTipAmount: st.MinTipAmount}
+	if s.settings != nil {
+		cfg.FiatCurrency = s.settings.GetStringOr(ctx, "wallet.default_currency", "NGN")
+	}
 	if !st.TipsEnabled {
 		return cfg, nil
 	}
 	cfg.Enabled = true
-	cfg.Methods = acceptedMethods(st)
+	cfg.Methods = s.acceptedMethods(owner, st)
 	cfg.OCCollectiveSlug = st.OCCollectiveSlug
+	// Platform collective falls back to the control-panel setting when the
+	// platform tip_settings row carries no slug (§125 Open Collective).
+	if owner.Type == RecipientPlatform && s.settings != nil &&
+		(cfg.OCCollectiveSlug == nil || *cfg.OCCollectiveSlug == "") {
+		if slug := s.settings.GetStringOr(ctx, "tips.oc_platform_collective", ""); slug != "" {
+			cfg.OCCollectiveSlug = &slug
+			cfg.Methods = append(cfg.Methods, MethodOpenCollective)
+		}
+	}
 	cfg.ThankYouMessage = st.ThankYouMessage
 	if st.AcceptExternal && st.hasRow {
 		links, err := s.listLinks(ctx, st.ID)
@@ -201,7 +239,7 @@ func validateLinkInput(in LinkInput) error {
 	if !validLinkKinds[in.Kind] {
 		return ErrInvalidLink
 	}
-	if strings.TrimSpace(in.Label) == "" {
+	if strings.TrimSpace(in.Label) == "" || len(in.Label) > 100 || len(in.URL) > 2048 {
 		return ErrInvalidLink
 	}
 	u, err := url.Parse(in.URL)
@@ -248,7 +286,14 @@ func (s *Service) CreateLink(ctx context.Context, owner Owner, actorID pgtype.UU
 		return ExternalLink{}, err
 	}
 	if !st.hasRow {
-		return ExternalLink{}, ErrNotFound
+		// First-time configuration — materialize the settings row so the
+		// link has a parent (previously a 404 dead end in the UI).
+		if _, err := s.UpsertSettings(ctx, owner, UpdateSettingsInput{}); err != nil {
+			return ExternalLink{}, err
+		}
+		if st, err = s.GetSettings(ctx, owner); err != nil || !st.hasRow {
+			return ExternalLink{}, ErrNotFound
+		}
 	}
 	existing, err := s.listLinks(ctx, st.ID)
 	if err != nil {

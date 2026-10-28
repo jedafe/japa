@@ -14,6 +14,7 @@ export interface TipConfig {
 	enabled: boolean;
 	methods: string[];
 	min_tip_amount?: number;
+	fiat_currency?: string;
 	thank_you_message?: string | null;
 	oc_collective_slug?: string | null;
 	external_links?: TipExternalLink[];
@@ -41,6 +42,7 @@ export interface Tip {
 	recipient_type: string;
 	recipient_user_id?: string | null;
 	recipient_org_id?: string | null;
+	recipient_name?: string;
 	content_id?: string | null;
 	method: string;
 	points_amount?: number;

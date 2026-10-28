@@ -2,6 +2,7 @@
 	// PageSpeed dashboard — backed by GET/POST /admin/pagespeed (PSI proxy;
 	// the Google API key stays server-side and reports cache for 30m).
 	import { api } from '$lib/api';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { onDestroy } from 'svelte';
 
 	let alive = true;
@@ -138,10 +139,14 @@
 			<div class="scan-row">
 				<input class="input" type="url" placeholder="https://japa.to/…" bind:value={scanUrl}
 					onkeydown={(e) => e.key === 'Enter' && scan()} />
-				<select class="input sel" bind:value={scanStrategy}>
-					<option value="mobile">mobile</option>
-					<option value="desktop">desktop</option>
-				</select>
+				<AutocompleteSelect
+					bind:value={scanStrategy}
+					class="w-40 shrink-0"
+					options={[
+						{ value: 'mobile', label: 'mobile' },
+						{ value: 'desktop', label: 'desktop' }
+					]}
+				/>
 				<button class="btn" onclick={scan} disabled={scanning || !scanUrl.trim()}>
 					{scanning ? 'Scanning…' : 'Scan'}
 				</button>

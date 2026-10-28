@@ -10,6 +10,8 @@
 	import type { DocPage } from '$lib/types';
 	import type { ExistingPage } from '$lib/server/docs-author';
 
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+
 	interface FormValues {
 		error?: string;
 		message?: string;
@@ -250,11 +252,11 @@
 
 		<label class="ef-field">
 			<span class="ef-label">{t('new_page.field_status', 'Review status')}</span>
-			<select name="review_status" class="ef-input" bind:value={editStatus}>
-				{#each statuses as s (s)}
-					<option value={s}>{t(`new_page.status.${s}`, s)}</option>
-				{/each}
-			</select>
+			<AutocompleteSelect
+				name="review_status"
+				bind:value={editStatus}
+				options={statuses.map((s) => ({ value: s, label: t(`new_page.status.${s}`, s) }))}
+			/>
 		</label>
 	</div>
 

@@ -54,7 +54,7 @@ func (s *Store) getContentsBySlugs(ctx context.Context, requesterID pgtype.UUID,
 //
 
 func (s *Store) getExploreFeed(ctx context.Context, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetExploreFeedRow, error) {
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
@@ -75,7 +75,7 @@ func (s *Store) getExploreFeed(ctx context.Context, visitorCountryCode, visitorR
 //
 
 func (s *Store) getPrimaryFeed(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
@@ -97,7 +97,7 @@ func (s *Store) getPrimaryFeed(ctx context.Context, userID pgtype.UUID, sort str
 //
 
 func (s *Store) getSpaceFeed(ctx context.Context, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
@@ -120,7 +120,7 @@ func (s *Store) getSpaceFeed(ctx context.Context, spaceID, viewerID pgtype.UUID,
 //
 
 func (s *Store) getProfileFeed(ctx context.Context, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
@@ -138,15 +138,21 @@ func (s *Store) getProfileFeed(ctx context.Context, authorID, viewerID pgtype.UU
 	return rows, nil
 }
 
-// getTopFeed returns top published content from the 7-day rolling window.
+// getTopFeed returns top published content from the rolling windowDays
+// window (feed.top_window_days system_setting, resolved by the caller).
 //
 
-func (s *Store) getTopFeed(ctx context.Context, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetTopFeedRow, error) {
-	if limit <= 0 || limit > MaxPageSize {
+func (s *Store) getTopFeed(ctx context.Context, visitorCountryCode, visitorRegion string, windowDays, limit, offset int32) ([]gen.GetTopFeedRow, error) {
+	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
+	if windowDays <= 0 {
+		windowDays = 7
+	}
+
 	rows, err := s.read.GetTopFeed(ctx, gen.GetTopFeedParams{
+		TopWindowDays:      windowDays,
 		VisitorCountryCode: &visitorCountryCode,
 		VisitorRegion:      &visitorRegion,
 		PageLimit:          limit,
@@ -163,7 +169,7 @@ func (s *Store) getTopFeed(ctx context.Context, visitorCountryCode, visitorRegio
 //
 
 func (s *Store) getRisingFeed(ctx context.Context, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetRisingFeedRow, error) {
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 

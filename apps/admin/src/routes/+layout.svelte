@@ -51,15 +51,20 @@
 	$effect(() => {
 		const url = faviconForTheme(theme.current);
 		if (!url) return;
-		let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-		if (!link) {
-			link = document.createElement('link');
+		// Update every icon link — the app.html fallbacks carry
+		// prefers-color-scheme media attributes, so mutating only the
+		// first link would leave the bundled icon winning in dark mode.
+		const links = document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]');
+		if (links.length === 0) {
+			const link = document.createElement('link');
 			link.rel = 'icon';
+			link.href = url;
 			document.head.appendChild(link);
+			return;
 		}
-		link.href = url;
 		const ext = url.split('.').pop()?.toLowerCase();
-		link.type = ext === 'svg' ? 'image/svg+xml' : ext === 'ico' ? 'image/x-icon' : 'image/png';
+		const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'ico' ? 'image/x-icon' : 'image/png';
+		links.forEach((link) => { link.href = url; link.type = mime; });
 	});
 
 	onMount(async () => {
@@ -134,6 +139,7 @@
 		'/reactions': 'content.reaction_types.manage',
 		'/share-platforms': 'content.reaction_types.manage',
 		'/tips': 'tips.moderate',
+		'/donation-settings': 'tips.moderate',
 		'/imports': 'import.manage',
 		'/media': 'media.view_all',
 		'/tickets': 'tickets.admin',

@@ -334,6 +334,7 @@ type ContentSearcher interface {
 type settingsReader interface {
 	GetIntOr(ctx context.Context, key string, fallback int) int
 	GetFloatOr(ctx context.Context, key string, fallback float64) float64
+	GetBoolOr(ctx context.Context, key string, fallback bool) bool
 }
 
 // NewService creates a Service backed by the given database pool.

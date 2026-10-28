@@ -10,6 +10,7 @@
 		marketplaceIcon,
 		MARKETPLACE_ICON_NAMES
 	} from '$lib/components/marketplace/marketplaceIcon';
+	import { SelectField } from '$lib/components/ui';
 
 	interface Props {
 		tiers: EditableTier[];
@@ -24,6 +25,15 @@
 	// Client cap mirrors the seeded default service_packages.tiers.max_count=5;
 	// the backend re-validates against the live setting.
 	const MAX_TIERS = 5;
+
+	const iconOptions = $derived([
+		{ value: '', label: t('services.icon_none', 'No icon') },
+		...MARKETPLACE_ICON_NAMES.map((n) => ({ value: n, label: n }))
+	]);
+	const tierCurrencyOptions = $derived([
+		{ value: '', label: t('services.tier_currency_inherit', 'Package currency') },
+		...currencies.map((c) => ({ value: c.code, label: c.code }))
+	]);
 
 	function add() {
 		tiers = [
@@ -55,17 +65,13 @@
 		>
 			<Preview size={14} class="text-[var(--color-primary)]" />
 		</span>
-		<select
-			value={value}
-			onchange={(e) => onpick(e.currentTarget.value)}
-			class="{inputClass} w-auto min-w-0 flex-1 sm:flex-none"
-			aria-label={t('services.icon_pick', 'Icon')}
-		>
-			<option value="">{t('services.icon_none', 'No icon')}</option>
-			{#each MARKETPLACE_ICON_NAMES as name (name)}
-				<option value={name}>{name}</option>
-			{/each}
-		</select>
+		<SelectField
+			{value}
+			onValueChange={onpick}
+			options={iconOptions}
+			ariaLabel={t('services.icon_pick', 'Icon')}
+			class="w-auto min-w-0 flex-1 sm:flex-none"
+		/>
 	</div>
 {/snippet}
 
@@ -135,16 +141,13 @@
 								class="{inputClass} sm:w-32"
 								aria-label={t('services.tier_price_ph', 'Tier price')}
 							/>
-							<select
-								bind:value={tier.currency}
-								class="{inputClass} sm:w-40"
-								aria-label={t('services.tier_currency', 'Tier currency')}
-							>
-								<option value="">{t('services.tier_currency_inherit', 'Package currency')}</option>
-								{#each currencies as c (c.code)}
-									<option value={c.code}>{c.code}</option>
-								{/each}
-							</select>
+							<SelectField
+								value={tier.currency}
+								onValueChange={(v) => (tier.currency = v)}
+								options={tierCurrencyOptions}
+								ariaLabel={t('services.tier_currency', 'Tier currency')}
+								class="sm:w-40"
+							/>
 						</div>
 						<textarea
 							bind:value={tier.featuresText}

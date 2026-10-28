@@ -34,14 +34,17 @@ export function faviconUrl(): string {
 	return (settings['appearance.favicon_url'] as string | undefined) || '';
 }
 
-/** Theme-specific favicon URL — appearance.favicon_url_{theme} with
- * appearance.favicon_url fallback. */
+/** Theme-specific favicon URL — appearance.favicon_url_dark overrides the
+ * base favicon_url in dark mode; light always uses the base key. */
 export function faviconForTheme(theme: 'light' | 'dark'): string {
-	return (
-		(settings[`appearance.favicon_url_${theme}`] as string | undefined) ||
-		(settings['appearance.favicon_url'] as string | undefined) ||
-		''
-	);
+	if (theme === 'dark') {
+		return (
+			(settings['appearance.favicon_url_dark'] as string | undefined) ||
+			(settings['appearance.favicon_url'] as string | undefined) ||
+			''
+		);
+	}
+	return (settings['appearance.favicon_url'] as string | undefined) || '';
 }
 
 /** Fetch public site settings once. Safe to call from any layout onMount. */

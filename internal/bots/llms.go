@@ -47,10 +47,39 @@ func writeLinkSection(sb *strings.Builder, heading string, links []Link) {
 		sb.WriteString(sanitizeLLMsTitle(link.Title))
 		sb.WriteString("](")
 		sb.WriteString(link.URL)
-		sb.WriteString(")\n")
+		sb.WriteString(")")
+
+		if d := sanitizeLLMsTitle(link.Description); d != "" {
+			sb.WriteString(": ")
+			sb.WriteString(d)
+		}
+
+		sb.WriteString("\n")
 	}
 
 	sb.WriteString("\n")
+}
+
+// writeFeaturedSection inlines article bodies — llms-full.txt's substance,
+// per the convention that the "full" file carries content, not just links.
+func writeFeaturedSection(sb *strings.Builder, heading string, items []FeaturedItem) {
+	if len(items) == 0 {
+		return
+	}
+
+	sb.WriteString("## ")
+	sb.WriteString(heading)
+	sb.WriteString("\n\n")
+
+	for _, it := range items {
+		sb.WriteString("### [")
+		sb.WriteString(sanitizeLLMsTitle(it.Title))
+		sb.WriteString("](")
+		sb.WriteString(it.URL)
+		sb.WriteString(")\n\n")
+		sb.WriteString(it.Body)
+		sb.WriteString("\n\n")
+	}
 }
 
 // GenerateLLMsTxt produces the brief /llms.txt: header, curated top-level
@@ -76,6 +105,7 @@ func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string
 	writeLinkSection(&sb, "Recent Posts", data.RecentPosts)
 	writeLinkSection(&sb, "Topics", data.Tags)
 	writeLinkSection(&sb, "Spaces", data.Spaces)
+	writeFeaturedSection(&sb, "Featured Content", data.Featured)
 	writeLinkSection(&sb, "Optional", data.Optional)
 
 	return sb.String()
@@ -180,6 +210,11 @@ func LLMsHandler(store *Store, rdb *valkey.Client, settings intSettingsReader, s
 			data.RecentPosts = absolutizeLinks(data.RecentPosts, base)
 			data.Tags = absolutizeLinks(data.Tags, base)
 			data.Spaces = absolutizeLinks(data.Spaces, base)
+			for i := range data.Featured {
+				if strings.HasPrefix(data.Featured[i].URL, "/") {
+					data.Featured[i].URL = base + data.Featured[i].URL
+				}
+			}
 			data.Optional = discoveryLinks(base, false)
 			txt = GenerateLLMsFullTxt(siteName, siteDescription, data)
 		} else {

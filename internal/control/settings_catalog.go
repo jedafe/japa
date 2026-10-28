@@ -79,11 +79,11 @@ var settingsCatalog = map[string]settingMeta{
 	"content.edit_lock_ttl_seconds":    {Type: "int", DefaultValue: "120", Description: "Editor lock TTL in seconds.", Panel: "admin"},
 	"comments.edit_window_minutes":     {Type: "int", DefaultValue: "60", Description: "Comment edit window.", Panel: "admin"},
 	"forum.edit_window_minutes":        {Type: "int", DefaultValue: "30", Description: "Editable window (minutes) after posting a forum thread/reply.", Panel: "admin"},
-	// Admin handler stores these under the "content" namespace (key prefix
-	// "content.") so catalog them with the matching key to prevent uncatalogued
-	// DB entries from leaking into the control panel.
-	"content.comments.edit_window_minutes": {Type: "int", DefaultValue: "60", Description: "Comment edit window (stored under content.* by admin handler).", Panel: "admin"},
-	"content.forum.edit_window_minutes":    {Type: "int", DefaultValue: "30", Description: "Forum edit window (stored under content.* by admin handler).", Panel: "admin"},
+	// The admin handler once stored the comment/forum edit windows under the
+	// "content." namespace (content.comments.edit_window_minutes,
+	// content.forum.edit_window_minutes) — dead keys nothing read. The admin
+	// defs now persist via StorageKey to the canonical keys above and the
+	// stale rows are dropped by migration 000950.
 	// Spaces
 	"spaces.bubble_depth":                   {Type: "int", DefaultValue: "2", Description: "How many levels posts bubble up the space hierarchy.", Panel: "admin"},
 	"spaces.max_pinned_posts":               {Type: "int", DefaultValue: "5", Description: "Max pinned posts per space.", Panel: "admin"},
@@ -320,7 +320,10 @@ var settingsCatalog = map[string]settingMeta{
 	"appearance.logo_dark_height":  {Type: "int", DefaultValue: "0", Min: 0, Description: "Intrinsic height (px) of the dark-theme logo.", Public: true, Panel: "admin"},
 	"appearance.favicon_url":       {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image; empty = use default favicon.svg.", Public: true, Panel: "admin"},
 	"appearance.favicon_url_dark":  {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image for dark theme; falls back to favicon_url.", Public: true, Panel: "admin"},
-	"appearance.favicon_url_light": {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image for light theme; falls back to favicon_url.", Public: true, Panel: "admin"},
+	// appearance.favicon_url_light removed (redundant): the base favicon_url
+	// already serves as the light-theme default — a light override could
+	// never take effect with only two themes. Mirrors logo_url, which has
+	// no _light variant either.
 	"appearance.primary_color":     {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex).", Public: true, Panel: "admin"},
 	"appearance.auth_brand_slides": {Type: "json", DefaultValue: "[]", Description: "Carousel slides for the auth brand panel: [{image, headline, subheading}].", Public: true, Panel: "admin"},
 	// Extended site theming — all Public so every SSR surface (main, docs,
@@ -365,9 +368,9 @@ var settingsCatalog = map[string]settingMeta{
 	"pwa.background_color":       {Type: "string", DefaultValue: "#ffffff", Description: "Manifest background_color (splash/launch screen).", Public: true, Panel: "admin"},
 	"pwa.display":                {Type: "string", DefaultValue: "standalone", Description: "Manifest display mode.", Options: `[{"value":"standalone","label":"Standalone"},{"value":"minimal-ui","label":"Minimal UI"},{"value":"browser","label":"Browser"},{"value":"fullscreen","label":"Fullscreen"}]`, Public: true, Panel: "admin"},
 	"pwa.start_url":              {Type: "string", DefaultValue: "/", Description: "Manifest start_url for the main app (docs falls back to /docs when '/').", Public: true, Panel: "admin"},
-	"pwa.icon_192":               {Type: "string", DefaultValue: "", Description: "Media URL for the 192px manifest icon; empty = bundled /icon-192.png.", Public: true, Panel: "admin"},
-	"pwa.icon_512":               {Type: "string", DefaultValue: "", Description: "Media URL for the 512px manifest icon; empty = bundled /favicon.png.", Public: true, Panel: "admin"},
-	"pwa.maskable_icon":          {Type: "string", DefaultValue: "", Description: "Media URL for the maskable (purpose:maskable) icon; empty = bundled /icon-maskable-512.png.", Public: true, Panel: "admin"},
+	"pwa.icon_192":               {Type: "string", DefaultValue: "", Description: "Media URL for the 192px manifest icon; empty falls back to appearance.favicon_url, then bundled /icon-192.png.", Public: true, Panel: "admin"},
+	"pwa.icon_512":               {Type: "string", DefaultValue: "", Description: "Media URL for the 512px manifest icon; empty falls back to appearance.favicon_url, then bundled /favicon.png.", Public: true, Panel: "admin"},
+	"pwa.maskable_icon":          {Type: "string", DefaultValue: "", Description: "Media URL for the maskable (purpose:maskable) icon; empty falls back to appearance.favicon_url, then bundled /icon-maskable-512.png.", Public: true, Panel: "admin"},
 	"pwa.shortcuts":              {Type: "json", DefaultValue: "[]", Description: "Manifest shortcut list [{name, url, icons?}] for the main app manifest.", Public: true, Panel: "admin"},
 	"pwa.screenshots":            {Type: "json", DefaultValue: "[]", Description: "Manifest screenshots [{src, sizes, type, label?}] for richer install UI.", Public: true, Panel: "admin"},
 	"pwa.categories":             {Type: "csv", DefaultValue: "social", Description: "Manifest categories.", Public: true, Panel: "admin"},
@@ -390,15 +393,18 @@ var settingsCatalog = map[string]settingMeta{
 	"docs.dev_resources":      {Type: "json", DefaultValue: "[]", Description: "Docs portal developer-resource cards: [{label, url, description?, icon?}]. Absent falls back to the built-in defaults.", Public: true, Panel: "admin"},
 	"docs.categories":         {Type: "json", DefaultValue: "[]", Description: "Managed docs-portal category catalog: [{name, description?, icon?, subcategories[]}]. Curates display order/card metadata/subcategory suggestions; page-level taxonomy stays free-text.", Public: true, Panel: "admin"},
 	// Content settings (§14, content type system).
-	"content.allow_anonymous_posts": {Type: "bool", DefaultValue: "false", Description: "Whether anonymous (logged-out) users can create posts.", Panel: "admin"},
+	// content.allow_anonymous_posts removed (dead key): every content-create
+	// route sits behind RequireAuth + the content.create permission — there
+	// is no guest-posting path for it to gate.
 	// Default mirrors the media upload-context allowlist so a materialized
 	// default is a no-op; the runtime gate only narrows the base allowlist.
 	// Options are limited to extensions the media context can actually
 	// permit (document types belong to the document upload context).
-	"content.allowed_upload_types":   {Type: "csv", DefaultValue: "jpeg,jpg,png,gif,webp,svg,pdf,mp4,webm,mov,mp3,ogg,wav,m4a", Description: "Comma-separated allowed file extensions for content uploads.", Options: `[{"value":"jpeg","label":"JPEG"},{"value":"jpg","label":"JPG"},{"value":"png","label":"PNG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"},{"value":"pdf","label":"PDF"},{"value":"mp4","label":"MP4"},{"value":"webm","label":"WebM"},{"value":"mov","label":"MOV"},{"value":"mp3","label":"MP3"},{"value":"ogg","label":"OGG"},{"value":"wav","label":"WAV"},{"value":"m4a","label":"M4A"}]`, Panel: "admin"},
-	"content.max_upload_size_mb":     {Type: "int", DefaultValue: "5", Description: "Maximum upload file size in MB for content attachments.", Panel: "admin"},
+	"content.allowed_upload_types": {Type: "csv", DefaultValue: "jpeg,jpg,png,gif,webp,svg,pdf,mp4,webm,mov,mp3,ogg,wav,m4a", Description: "Comma-separated allowed file extensions for content uploads.", Options: `[{"value":"jpeg","label":"JPEG"},{"value":"jpg","label":"JPG"},{"value":"png","label":"PNG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"},{"value":"pdf","label":"PDF"},{"value":"mp4","label":"MP4"},{"value":"webm","label":"WebM"},{"value":"mov","label":"MOV"},{"value":"mp3","label":"MP3"},{"value":"ogg","label":"OGG"},{"value":"wav","label":"WAV"},{"value":"m4a","label":"M4A"}]`, Panel: "admin"},
+	// content.max_upload_size_mb removed (dead duplicate): uploads share the
+	// single media.max_upload_mb cap, already surfaced under Media settings.
 	"content.posts_per_page":         {Type: "int", DefaultValue: "12", Description: "Number of posts per page in feed/list views.", Panel: "admin"},
-	"content.require_content_review": {Type: "bool", DefaultValue: "true", Description: "Whether new content requires admin review before publishing.", Panel: "admin"},
+	"content.require_content_review": {Type: "bool", DefaultValue: "false", Description: "Whether new content requires admin review before publishing.", Panel: "admin"},
 	// Security settings (§02, authentication).
 	// Note: security.lockout_duration_minutes and security.require_email_verification
 	// were removed as dead keys — bruteforce backoff is computed from
@@ -435,10 +441,12 @@ var settingsCatalog = map[string]settingMeta{
 	"seo.sitemap.user_min_posts":          {Type: "int", DefaultValue: "1", Min: 0, Description: "Minimum published content count for a user profile to be included in the sitemap (Section 43 quality gate).", Panel: "admin"},
 	"seo.sitemap.tag_min_content":         {Type: "int", DefaultValue: "1", Min: 0, Description: "Minimum content count for a tag page to be included in the sitemap (Section 43 quality gate).", Panel: "admin"},
 	// User profile settings.
-	"users.allowed_avatar_types":       {Type: "csv", DefaultValue: "png,jpg,jpeg,gif,webp,svg", Description: "Comma-separated allowed file extensions for user avatars.", Options: `[{"value":"png","label":"PNG"},{"value":"jpg","label":"JPG"},{"value":"jpeg","label":"JPEG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"}]`, Panel: "admin"},
-	"users.allow_social_login":         {Type: "bool", DefaultValue: "false", Description: "Whether OAuth social login providers are enabled.", Panel: "admin"},
-	"users.require_profile_completion": {Type: "bool", DefaultValue: "false", Description: "Whether users must complete their profile before posting.", Panel: "admin"},
-	"users.max_avatar_size_mb":         {Type: "int", DefaultValue: "5", Description: "Max user avatar file size in MB.", Panel: "admin"},
+	"users.allowed_avatar_types": {Type: "csv", DefaultValue: "png,jpg,jpeg,gif,webp,svg", Description: "Comma-separated allowed file extensions for user avatars.", Options: `[{"value":"png","label":"PNG"},{"value":"jpg","label":"JPG"},{"value":"jpeg","label":"JPEG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"}]`, Panel: "admin"},
+	"users.allow_social_login":   {Type: "bool", DefaultValue: "true", Description: "Whether OAuth social login providers are enabled.", Panel: "admin"},
+	// users.require_profile_completion removed (dead key): no posting/access
+	// gate consults it — profile completeness only drives next-actions nudges.
+	// users.max_avatar_size_mb removed (dead duplicate): avatar uploads share
+	// the media.max_upload_mb cap.
 
 	// ---------------------------------------------------------------------------
 	// V2 Settings (JEOS §§60–78, ADRs 061–086)

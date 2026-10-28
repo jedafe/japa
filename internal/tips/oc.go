@@ -10,11 +10,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
 )
+
+// ocSlugPattern bounds collective slugs to OC's URL-safe charset — the slug
+// is interpolated into outbound opencollective.com URLs.
+var ocSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`)
 
 // ConnectOC links an owner's Open Collective collective. A personal API token
 // is verified against OC before being stored AES-256-GCM encrypted (same
@@ -24,17 +29,27 @@ func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUI
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return nil, err
 	}
-	if slug == "" {
+	if !ocSlugPattern.MatchString(slug) {
 		return nil, ErrInvalidLink
 	}
 
-	var encrypted *string
+		var encrypted *string
 	if token != "" {
 		if s.oc == nil {
 			return nil, ErrOCNotConnected
 		}
 		if _, err := s.oc.VerifyToken(ctx, token); err != nil {
 			return nil, fmt.Errorf("%w: token verification failed", ErrInvalidLink)
+		}
+		// The token must belong to an account that administers/members the
+		// collective — otherwise anyone could attach a popular collective and
+		// import its donations as their own tips.
+		ok, err := s.oc.VerifyCollectiveAccess(ctx, token, slug)
+		if err != nil {
+			return nil, fmt.Errorf("verifying collective access: %w", err)
+		}
+		if !ok {
+			return nil, fmt.Errorf("%w: token has no access to this collective", ErrInvalidLink)
 		}
 		enc, err := crypto.Encrypt(token)
 		if err != nil {
@@ -54,11 +69,19 @@ func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUI
 		}
 	}
 
-	secretBytes := make([]byte, 16)
-	if _, err := rand.Read(secretBytes); err != nil {
-		return nil, fmt.Errorf("generating webhook secret: %w", err)
+	// Reuse an existing webhook secret — regenerating it silently breaks a
+	// webhook the owner already configured in the OC dashboard.
+	secret := ""
+	if st.row.OcWebhookSecret != nil {
+		secret = *st.row.OcWebhookSecret
 	}
-	secret := hex.EncodeToString(secretBytes)
+	if secret == "" {
+		secretBytes := make([]byte, 16)
+		if _, err := rand.Read(secretBytes); err != nil {
+			return nil, fmt.Errorf("generating webhook secret: %w", err)
+		}
+		secret = hex.EncodeToString(secretBytes)
+	}
 
 	if err := s.store.setOCCredentials(ctx, gen.SetOCCredentialsParams{
 		OwnerType:           owner.Type,
@@ -155,6 +178,18 @@ func (s *Service) SyncAll(ctx context.Context) error {
 			slog.Warn("tips: oc sync failed", "owner", row.OwnerType+":"+row.OwnerID.String(), "error", err)
 		}
 	}
+	// Platform collective: slug + token live in sensitive system_settings
+	// (tips.oc_platform_collective / tips.oc_platform_token), not on a
+	// tip_settings row — sync it as the platform owner.
+	if s.settings != nil && s.oc != nil {
+		slug := s.settings.GetStringOr(ctx, "tips.oc_platform_collective", "")
+		token := s.settings.GetStringOr(ctx, "tips.oc_platform_token", "")
+		if slug != "" && token != "" {
+			if err := s.syncCollective(ctx, PlatformOwner(), slug, token); err != nil {
+				slog.Warn("tips: platform oc sync failed", "error", err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -166,26 +201,54 @@ func (s *Service) syncOne(ctx context.Context, row gen.TipSetting) error {
 	if err != nil {
 		return fmt.Errorf("decrypting OC token: %w", err)
 	}
-	owner := Owner{Type: row.OwnerType, ID: row.OwnerID}
+	return s.syncCollective(ctx, Owner{Type: row.OwnerType, ID: row.OwnerID}, *row.OcCollectiveSlug, token)
+}
 
+// syncCollective pages a collective's CREDIT transactions and imports new
+// contributions under a per-owner sync lock.
+func (s *Service) syncCollective(ctx context.Context, owner Owner, slug, token string) error {
+	// jc:tips:oc_sync_lock:{owner_id} — one sync per owner at a time. Nil
+	// locker (tests) proceeds unlocked. Unlock releases on completion so the
+	// next cron cycle isn't delayed by the TTL; only released when TryLock
+	// actually acquired — a fail-open path must never delete another
+	// process's lock.
+	lockKey := "tips:oc_sync_lock:" + owner.ID.String()
+	if s.locker != nil {
+		ok, err := s.locker.TryLock(ctx, lockKey, 900)
+		if err == nil {
+			if !ok {
+				return nil
+			}
+			defer func() { _ = s.locker.Unlock(ctx, lockKey) }()
+		}
+	}
+
+	// Transactions arrive newest-first. Once a full page yields zero new
+	// imports everything older is already deduped — stop instead of walking
+	// the collective's entire history every cycle.
 	for offset := 0; ; offset += 100 {
-		contribs, err := s.oc.ListContributions(ctx, *row.OcCollectiveSlug, token, 100, offset)
+		contribs, err := s.oc.ListContributions(ctx, slug, token, 100, offset)
 		if err != nil {
 			return err
 		}
+		newCount := 0
 		for _, c := range contribs {
-			if _, err := s.ImportContribution(ctx, owner, OCContribution{
+			imported, err := s.ImportContribution(ctx, owner, OCContribution{
 				ID:          c.ID,
 				AmountCents: c.AmountCents,
 				Currency:    c.Currency,
 				FromName:    c.FromName,
 				FromSlug:    c.FromSlug,
 				FromEmail:   c.FromEmail,
-			}); err != nil {
+			})
+			if err != nil {
 				return err
 			}
+			if imported {
+				newCount++
+			}
 		}
-		if len(contribs) < 100 {
+		if len(contribs) < 100 || newCount == 0 {
 			return nil
 		}
 	}

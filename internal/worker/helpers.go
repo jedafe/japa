@@ -46,3 +46,17 @@ func getEnvInt(key string, fallback int) int {
 
 	return n
 }
+
+// saturateInt32 clamps an int to the int32 range so int→int32 conversions
+// at trust boundaries can never wrap on 64-bit platforms (gosec G115).
+// Negative inputs clamp to 0. Mirrors internal/media's helper.
+func saturateInt32(v int) int32 {
+	if v < 0 {
+		return 0
+	}
+	const maxInt32 = int64(1<<31 - 1)
+	if int64(v) > maxInt32 {
+		return int32(maxInt32)
+	}
+	return int32(v)
+}

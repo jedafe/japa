@@ -29,6 +29,9 @@ type settleWalletParams struct {
 	message         string
 	isAnonymous     bool
 	idempotencyKey  string
+	// pointsDailyLimit caps a sender's UTC-day points tips (0 = unlimited).
+	// Enforced inside the tx under the sender's wallet lock.
+	pointsDailyLimit int64
 }
 
 // lockWalletUsers acquires the per-user advisory locks in uuid order so two
@@ -83,6 +86,18 @@ func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.
 	}
 	if senderBal < p.gross {
 		return gen.Tip{}, ErrInsufficientBalance
+	}
+
+	// §125 daily anti-laundering cap — evaluated under the sender's wallet
+	// advisory lock so concurrent points tips can't race past the limit.
+	if p.pointsDailyLimit > 0 {
+		today, err := qtx.SumTipperPointsToday(ctx, p.senderID)
+		if err != nil {
+			return gen.Tip{}, fmt.Errorf("reading daily points total: %w", err)
+		}
+		if today+p.gross > p.pointsDailyLimit {
+			return gen.Tip{}, ErrDailyPointsLimit
+		}
 	}
 
 	// Insert the tip first — its generated id becomes the ledger reference.
@@ -257,11 +272,31 @@ func (s *Store) clawbackTip(ctx context.Context, tipID pgtype.UUID, walletOwnerI
 		return ErrInvalidStatus
 	}
 
-	if tip.NetCredits > 0 && walletOwnerID.Valid {
-		if err := lockWalletUsers(ctx, tx, walletOwnerID); err != nil {
-			return err
-		}
-		bal, err := latestBalance(ctx, qtx, walletOwnerID, "credits")
+	// The recipient received value in the ledger matching the method —
+	// points tips credit the points ledger (points_amount, fee-free);
+	// credits/fiat/OC tips credit the credits ledger (net_credits). Claw
+	// back from the same ledger or a refunded points tip would refund the
+	// sender while the recipient keeps the value.
+	clawLedger := "credits"
+	clawAmount := tip.NetCredits
+	if tip.Method == MethodPoints {
+		clawLedger = "points"
+		clawAmount = tip.PointsAmount
+	}
+
+	var lockIDs []pgtype.UUID
+	if clawAmount > 0 && walletOwnerID.Valid {
+		lockIDs = append(lockIDs, walletOwnerID)
+	}
+	if tip.SenderUserID.Valid && (tip.Method == MethodPoints || tip.Method == MethodCredits) {
+		lockIDs = append(lockIDs, tip.SenderUserID)
+	}
+	if err := lockWalletUsers(ctx, tx, lockIDs...); err != nil {
+		return err
+	}
+
+	if clawAmount > 0 && walletOwnerID.Valid {
+		bal, err := latestBalance(ctx, qtx, walletOwnerID, clawLedger)
 		if err != nil {
 			return fmt.Errorf("reading recipient balance: %w", err)
 		}
@@ -270,15 +305,50 @@ func (s *Store) clawbackTip(ctx context.Context, tipID pgtype.UUID, walletOwnerI
 		key := "tip:cl:" + tipID.String()
 		if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 			UserID:           walletOwnerID,
-			LedgerType:       "credits",
+			LedgerType:       clawLedger,
 			Operation:        "clawback",
-			Amount:           -tip.NetCredits,
-			ResultingBalance: bal - tip.NetCredits,
+			Amount:           -clawAmount,
+			ResultingBalance: bal - clawAmount,
 			Source:           &source,
 			Reference:        &ref,
 			IdempotencyKey:   &key,
 		}); err != nil {
 			return fmt.Errorf("clawing back recipient credits: %w", err)
+		}
+	}
+
+	// Wallet-method refunds return the sender's spend in the same ledger
+	// type — previously a "refund" only clawed back the recipient and the
+	// sender's points/credits were lost permanently.
+	if tip.SenderUserID.Valid {
+		var refundAmount int64
+		ledgerType := tip.Method
+		switch tip.Method {
+		case MethodPoints:
+			refundAmount = tip.PointsAmount
+		case MethodCredits:
+			refundAmount = tip.CreditsAmount
+		}
+		if refundAmount > 0 {
+			bal, err := latestBalance(ctx, qtx, tip.SenderUserID, ledgerType)
+			if err != nil {
+				return fmt.Errorf("reading sender balance: %w", err)
+			}
+			source := LedgerSourceTip
+			ref := tipID.String()
+			key := "tip:sr:" + tipID.String()
+			if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+				UserID:           tip.SenderUserID,
+				LedgerType:       ledgerType,
+				Operation:        "refund",
+				Amount:           refundAmount,
+				ResultingBalance: bal + refundAmount,
+				Source:           &source,
+				Reference:        &ref,
+				IdempotencyKey:   &key,
+			}); err != nil {
+				return fmt.Errorf("refunding sender: %w", err)
+			}
 		}
 	}
 

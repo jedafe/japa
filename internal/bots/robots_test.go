@@ -58,8 +58,8 @@ func TestGenerateRobotsTxt_LimitedBots(t *testing.T) {
 		t.Error("expected Crawl-delay for limited bot")
 	}
 
-	if !strings.Contains(txt, "Disallow: /admin/") {
-		t.Error("expected Disallow: /admin/ for limited bot")
+	if !strings.Contains(txt, "Disallow: /admin") {
+		t.Error("expected Disallow: /admin for limited bot")
 	}
 }
 

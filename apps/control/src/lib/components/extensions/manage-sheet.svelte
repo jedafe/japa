@@ -437,6 +437,7 @@
 			class="data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 fixed inset-0 z-50 bg-black/60"
 		/>
 		<Dialog.Content
+			data-slideover-content
 			class="border-border-card bg-background-alt data-[state=open]:animate-in data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right fixed inset-y-0 end-0 z-50 flex h-full w-full max-w-[560px] flex-col border-s shadow-xl duration-300"
 			onInteractOutside={(e) => {
 				// Autocomplete dropdowns portal to document.body to escape this

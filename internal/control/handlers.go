@@ -3315,8 +3315,12 @@ var supportedOAuthProviders = []map[string]string{
 	{"key": "facebook", "label": "Facebook", "description": "Facebook Login"},
 }
 
-func oauthClientsKey(ctx context.Context) string {
-	return valkey.MustKey("oauth_clients:%s", pgtype.UUID{}.String())
+// oauthClientsKey is the shared Valkey key holding the JSON array of
+// Control-managed OAuth client entries. Must match the catalog entry
+// jc:oauth_clients — the auth engine (internal/auth/oauth.go) reads this
+// same key to resolve providers without a redeploy.
+func oauthClientsKey() string {
+	return valkey.MustKey("oauth_clients")
 }
 
 const oauthClientSecretMasked = "••••••••" // #nosec
@@ -3333,7 +3337,7 @@ func (h *Handlers) ListOAuthClients(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw, err := h.Valkey.Get(r.Context(), oauthClientsKey(r.Context())).Result()
+	raw, err := h.Valkey.Get(r.Context(), oauthClientsKey()).Result()
 	if err != nil || raw == "" {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
@@ -3561,7 +3565,7 @@ func (h *Handlers) loadOAuthClients(r *http.Request) []oauthClientEntry {
 		return []oauthClientEntry{}
 	}
 
-	raw, err := h.Valkey.Get(r.Context(), oauthClientsKey(r.Context())).Result()
+	raw, err := h.Valkey.Get(r.Context(), oauthClientsKey()).Result()
 	if err != nil || raw == "" {
 		return []oauthClientEntry{}
 	}
@@ -3587,7 +3591,7 @@ func (h *Handlers) saveOAuthClients(r *http.Request, clients []oauthClientEntry)
 		return err
 	}
 
-	return h.Valkey.Set(r.Context(), oauthClientsKey(r.Context()), string(data), 0).Err()
+	return h.Valkey.Set(r.Context(), oauthClientsKey(), string(data), 0).Err()
 }
 
 // ---------------------------------------------------------------------------

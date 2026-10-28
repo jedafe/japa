@@ -5,6 +5,7 @@
 	// Emitted objects keep alphabetical key order so the settings page's
 	// JSON.stringify dirty check matches the API's sorted-key serialization.
 	import { t } from '$lib/stores/i18n.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-svelte';
 
 	export interface LinkItem {
@@ -136,17 +137,13 @@
 					oninput={(e) => setField(i, 'url', (e.target as HTMLInputElement).value)}
 				/>
 				{#if showIcon}
-					<select
+					<AutocompleteSelect
 						value={it.icon ?? 'link'}
-						class="h-9 w-28 rounded-md border px-2 py-1.5 text-sm"
-						style="border-color: var(--color-border); background: var(--color-bg); color: var(--color-foreground)"
-						disabled={disabled}
-						onchange={(e) => setField(i, 'icon', (e.target as HTMLSelectElement).value)}
-					>
-						{#each ICON_OPTIONS as opt (opt)}
-							<option value={opt}>{opt}</option>
-						{/each}
-					</select>
+						class="w-28"
+						{disabled}
+						onValueChange={(v) => setField(i, 'icon', v)}
+						options={ICON_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+					/>
 				{/if}
 				<button
 					type="button"

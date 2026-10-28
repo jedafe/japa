@@ -132,9 +132,13 @@ export function buildWebManifest(settings: Settings, app: ManifestAppOptions): W
 		hexColor(settings, 'appearance.primary_color') ||
 		'#3b49df';
 
-	const icon192 = str(settings, 'pwa.icon_192') || '/icon-192.png';
-	const icon512 = str(settings, 'pwa.icon_512') || '/favicon.png';
-	const maskable = str(settings, 'pwa.maskable_icon') || '/icon-maskable-512.png';
+	// Icons fall back to the custom favicon (appearance.favicon_url) before
+	// the bundled assets — one brand mark should propagate to the installed
+	// app unless the admin uploads a dedicated manifest icon.
+	const favicon = str(settings, 'appearance.favicon_url');
+	const icon192 = str(settings, 'pwa.icon_192') || favicon || '/icon-192.png';
+	const icon512 = str(settings, 'pwa.icon_512') || favicon || '/favicon.png';
+	const maskable = str(settings, 'pwa.maskable_icon') || favicon || '/icon-maskable-512.png';
 
 	const rawDisplay = str(settings, 'pwa.display');
 	const display = VALID_DISPLAY.has(rawDisplay) ? rawDisplay : 'standalone';

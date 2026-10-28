@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/features"
@@ -12,7 +13,9 @@ import (
 	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tips"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // tipsPermAdapter adapts *rbac.RBAC to tips.PermChecker.
@@ -55,6 +58,11 @@ type tipsOCAdapter struct {
 // VerifyToken delegates to the OC client.
 func (a tipsOCAdapter) VerifyToken(ctx context.Context, token string) (string, error) {
 	return a.client.VerifyToken(ctx, token)
+}
+
+// VerifyCollectiveAccess delegates to the OC client.
+func (a tipsOCAdapter) VerifyCollectiveAccess(ctx context.Context, token, slug string) (bool, error) {
+	return a.client.VerifyCollectiveAccess(ctx, token, slug)
 }
 
 // ListContributions delegates and maps onto the tips-side struct.
@@ -133,6 +141,35 @@ type tipsNotifyDispatchAdapter struct {
 // CreateNotification delegates to the notifications service.
 func (a tipsNotifyDispatchAdapter) CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error {
 	return a.svc.CreateNotification(ctx, recipientID, nType, actorType, actorID, subjectType, subjectID, title, body, actionURL)
+}
+
+// tipsProviderAdapter reports which §17 providers were configured at boot —
+// public tip-configs only advertise usable fiat methods.
+func (a tipsPaymentAdapter) ProviderNames() []string {
+	names := a.svc.ProviderNames()
+	return names
+}
+
+// tipsSyncLockAdapter implements tips.SyncLocker over Valkey SET NX EX
+// (jc:tips:oc_sync_lock:{owner_id} per the keys catalog).
+type tipsSyncLockAdapter struct {
+	rdb valkeycompat.Cmdable
+}
+
+// TryLock returns true when the caller holds the new lock.
+func (a tipsSyncLockAdapter) TryLock(ctx context.Context, key string, ttlSeconds int) (bool, error) {
+	if a.rdb == nil {
+		return true, nil
+	}
+	return a.rdb.SetNX(ctx, valkey.MustKey("%s", key), "1", time.Duration(ttlSeconds)*time.Second).Result()
+}
+
+// Unlock deletes the lock key — only call after TryLock returned true.
+func (a tipsSyncLockAdapter) Unlock(ctx context.Context, key string) error {
+	if a.rdb == nil {
+		return nil
+	}
+	return a.rdb.Del(ctx, valkey.MustKey("%s", key)).Err()
 }
 
 // tipsSettlementAdapter adapts *tips.Service to worker.TipSettlement.

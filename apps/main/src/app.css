@@ -557,3 +557,16 @@ a {
 	direction: ltr;
 	unicode-bidi: isolate;
 }
+
+/* Mobile: every form field spans the full column width — including fields
+ * inside filter panels/dropdowns. flex-basis 100% still shrinks to share a
+ * row with a sibling control (flex items shrink from the 100% basis), so
+ * inline "field + button" rows keep working. */
+@media (max-width: 639.98px) {
+	input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="image"]):not([type="submit"]):not([type="button"]):not([type="reset"]),
+	select,
+	textarea,
+	.autocomplete-field {
+		width: 100%;
+	}
+}

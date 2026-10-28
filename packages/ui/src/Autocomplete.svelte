@@ -9,7 +9,12 @@
 	//
 	// CSS custom properties use fallback chains covering each app's token
 	// dialect (--color-* family vs control's --background/--muted set).
+	//
+	// On mobile (<640px — the same breakpoint UrlTabs collapses at) the
+	// anchored dropdown is replaced by a bottom-sheet Dialog holding its
+	// own search field + option list, matching the mobile tab picker.
 	import { untrack } from 'svelte';
+	import { Dialog } from 'bits-ui';
 	import { Check, X } from 'lucide-svelte';
 
 	export interface AutocompleteItem {
@@ -135,6 +140,49 @@
 	let adding = $state(false);
 	let addError = $state<string | null>(null);
 
+	// Mobile mode — matches the `sm:` breakpoint used by UrlTabs.
+	let isMobile = $state(false);
+	let sheetInputEl = $state<HTMLInputElement | null>(null);
+
+	$effect(() => {
+		const mq = window.matchMedia('(max-width: 639.98px)');
+		const sync = () => (isMobile = mq.matches);
+		sync();
+		mq.addEventListener('change', sync);
+		return () => mq.removeEventListener('change', sync);
+	});
+
+	// Focus the sheet's search field once the dialog mounts — keeps the
+	// on-screen keyboard anchored to the input inside the sheet.
+	$effect(() => {
+		if (isMobile && open && sheetInputEl) sheetInputEl.focus();
+	});
+
+	// Keep the sheet above the on-screen keyboard: keyboards shrink the
+	// *visual* viewport while bottom:0 anchors to the layout viewport, so
+	// without this the sheet slides behind the keyboard. Lift it by the
+	// overlap and cap its height to what remains visible.
+	let keyboardOffset = $state(0);
+	let sheetMaxH = $state(0);
+	$effect(() => {
+		if (!open || !isMobile) return;
+		const vv = window.visualViewport;
+		if (!vv) return;
+		const update = () => {
+			keyboardOffset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+			sheetMaxH = Math.min(vv.height - 24, window.innerHeight * 0.7);
+		};
+		update();
+		vv.addEventListener('resize', update);
+		vv.addEventListener('scroll', update);
+		return () => {
+			vv.removeEventListener('resize', update);
+			vv.removeEventListener('scroll', update);
+			keyboardOffset = 0;
+			sheetMaxH = 0;
+		};
+	});
+
 	// Dropdown position (fixed, relative to viewport). dropUp is the
 	// *effective* direction — `openUp` forces upward, otherwise it is
 	// auto-detected from the space below vs above the field.
@@ -172,6 +220,8 @@
 	// Click-outside handler
 	function onWindowClick(e: MouseEvent) {
 		if (!focused) return;
+		// The bottom-sheet Dialog manages its own dismissal on mobile.
+		if (isMobile && open) return;
 		const target = e.target as Node;
 		// Check if the click is inside the field or the teleported dropdown.
 		if (fieldEl?.contains(target) || dropdownEl?.contains(target)) return;
@@ -217,9 +267,10 @@
 		dropdownLeft = rect.left + window.scrollX;
 	}
 
-	// Reposition the dropdown on scroll/resize while open.
+	// Reposition the dropdown on scroll/resize while open. The mobile sheet
+	// is viewport-anchored — no tracking needed.
 	$effect(() => {
-		if (!open) return;
+		if (!open || isMobile) return;
 		updateDropdownPosition();
 		const onScroll = () => updateDropdownPosition();
 		window.addEventListener('scroll', onScroll, true);
@@ -237,7 +288,7 @@
 	});
 
 	async function open_() {
-		if (disabled) return;
+		if (disabled || open) return;
 		open = true;
 		onfocus?.();
 		// In free-text mode, keep the current query so the user can continue
@@ -287,6 +338,10 @@
 
 	function onFocus() {
 		focused = true;
+		// Mobile: the sheet opens from the wrapper tap or keyboard
+		// (Enter/Space/arrows), never implicitly on focus — bits-ui
+		// restores focus here when the sheet closes and must not reopen.
+		if (isMobile) return;
 		open_();
 	}
 
@@ -304,7 +359,9 @@
 		// Close after focus transfer completes — prevents stale dropdowns
 		// when clicking another Autocomplete instance.
 		setTimeout(() => {
-			if (!focused) {
+			// On mobile the blur is focus moving into the open sheet —
+			// keep it alive; the Dialog's own dismissal closes it.
+			if (!focused && !(isMobile && open)) {
 				// Allow free-text entry when no option was selected.
 				if (allowFreeText && !selectedId && query.trim()) {
 					onSelect({ id: query.trim(), label: query.trim() });
@@ -313,6 +370,16 @@
 				close();
 			}
 		}, 0);
+	}
+
+	// Mobile sheet dismissal — mirrors the blur-commit semantics desktop
+	// uses for free-text fields, then tears everything down.
+	function closeSheet() {
+		if (freeText && onFreeTextBlur && !picking) onFreeTextBlur(query);
+		focused = false;
+		if (freeText) query = ''; // prevents the blur timeout double-committing
+		close();
+		inputEl?.blur();
 	}
 
 	// Debounced search — fires fetcher after the user stops typing.
@@ -423,6 +490,15 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		// Mobile keyboard entry — opens the sheet explicitly; plain focus
+		// must stay inert so bits-ui's focus-restore can't reopen it.
+		if (isMobile && !open) {
+			if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+				e.preventDefault();
+				open_();
+			}
+			return;
+		}
 		if (!open) return;
 		const items = query.trim().length > 0 ? results : initialResults;
 		if (e.key === 'ArrowDown') {
@@ -465,11 +541,18 @@
 			// reaches this wrapper instead of the input. Forward focus so the
 			// dropdown opens; ignore clicks on the chip's clear button.
 			if (!(e.target as HTMLElement).closest('.autocomplete-chip-clear')) {
+				// Mobile opens the bottom sheet directly — focusing the
+				// (readonly) input would just make bits-ui's focus-restore
+				// bounce it open again on dismiss.
+				if (isMobile) {
+					open_();
+					return;
+				}
 				inputEl?.focus();
 			}
 		}}
 	>
-		{#if selectedId && !focused && !freeText}
+		{#if selectedId && !(focused && !isMobile) && !freeText}
 			<div class="autocomplete-chip">
 				{#if selectedBadge}<span class="autocomplete-badge">{selectedBadge}</span>{/if}
 				<span class="autocomplete-chip-label">{selectedDisplay}</span>
@@ -493,16 +576,17 @@
 			placeholder={selectedId && !focused ? '' : placeholder}
 			aria-label={ariaLabel ?? placeholder}
 			{disabled}
+			readonly={isMobile}
 			bind:this={inputEl}
 			bind:value={query}
 			onfocus={onFocus}
 			onblur={onBlur}
 			onkeydown={handleKeydown}
 			role="combobox"
-			aria-expanded={showDropdown}
+			aria-expanded={isMobile ? open : showDropdown}
 			aria-autocomplete="list"
 			aria-controls={listId}
-			aria-haspopup="listbox"
+			aria-haspopup={isMobile ? 'dialog' : 'listbox'}
 		/>
 
 		{#if loading || loadingInitial}
@@ -511,7 +595,124 @@
 	</div>
 </div>
 
-{#if showDropdown}
+<!-- The option list is shared between the desktop anchored dropdown and
+     the mobile bottom sheet. -->
+{#snippet optionsList()}
+	{#if loadingInitial}
+		<div class="autocomplete-empty">{loadingLabel}</div>
+	{:else if query.trim().length > 0 && !(freeText && query === selectedLabel)}
+		<!-- Search results -->
+		{#if !loading && results.length === 0}
+			<div class="autocomplete-empty">{emptyMessage}</div>
+			{#if onAdd && query.trim()}
+				{#if addError}<div class="autocomplete-empty autocomplete-add-error">{addError}</div>{/if}
+				<button
+					type="button"
+					class="autocomplete-option"
+					disabled={adding}
+					onmousedown={async (e) => { e.preventDefault(); await handleAdd(); }}
+				>
+					{#if adding}<span class="autocomplete-spinner" aria-label={loadingLabel}></span>{/if}
+					{(addActionLabel ?? 'Add "{query}"').replace('{query}', query.trim())}
+				</button>
+			{/if}
+		{:else}
+			{#each results as item, i (item.id)}
+				<button
+					type="button"
+					class="autocomplete-option"
+					class:selected={item.id === selectedId}
+					class:active={i === activeIndex}
+					role="option"
+					aria-selected={item.id === selectedId}
+					onmousedown={(e) => { e.preventDefault(); pick(item); }}
+					onmouseenter={() => (activeIndex = i)}
+				>
+					<span class="autocomplete-option-label">
+						{item.label}
+						{#if item.sublabel}
+							<span class="autocomplete-option-sub">{item.sublabel}</span>
+						{/if}
+					</span>
+					{#if item.id === selectedId}
+						<Check size={14} class="autocomplete-check" />
+					{/if}
+				</button>
+			{/each}
+		{/if}
+	{:else if initialResults.length > 0}
+		<!-- Initial suggestions (no query typed) -->
+		{#each initialResults as item, i (item.id)}
+			<button
+				type="button"
+				class="autocomplete-option"
+				class:selected={item.id === selectedId}
+				class:active={i === activeIndex}
+				role="option"
+				aria-selected={item.id === selectedId}
+				onmousedown={(e) => { e.preventDefault(); pick(item); }}
+				onmouseenter={() => (activeIndex = i)}
+			>
+				<span class="autocomplete-option-label">
+					{item.label}
+					{#if item.sublabel}
+						<span class="autocomplete-option-sub">{item.sublabel}</span>
+					{/if}
+				</span>
+				{#if item.id === selectedId}
+					<Check size={14} class="autocomplete-check" />
+				{/if}
+			</button>
+		{/each}
+	{/if}
+{/snippet}
+
+{#if isMobile}
+	<!-- Mobile: a bottom-sheet Dialog with its own search field, matching
+	     the UrlTabs mobile picker. Kept mounted + bound so bits-ui runs its
+	     normal close cleanup (focus restore, scroll lock); dismissal goes
+	     through closeSheet so free-text commits mirror the blur path. -->
+	<Dialog.Root bind:open onOpenChange={(o) => { if (!o) closeSheet(); }}>
+		<Dialog.Portal>
+			<Dialog.Overlay
+				class="fixed inset-0 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out"
+				style="z-index: 99998"
+			/>
+			<Dialog.Content
+				class="fixed inset-x-0 flex flex-col rounded-t-[12px] border border-b-0 border-[var(--color-border)] bg-[var(--color-surface,var(--background))] p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-xl"
+				style="z-index: 99999; bottom: {keyboardOffset}px; max-height: {sheetMaxH > 0
+					? `${sheetMaxH}px`
+					: '70vh'};"
+			>
+				<Dialog.Title class="sr-only">{ariaLabel ?? placeholder}</Dialog.Title>
+				<div class="autocomplete-sheet-field">
+					<input
+						type="text"
+						bind:this={sheetInputEl}
+						bind:value={query}
+						{placeholder}
+						aria-label={ariaLabel ?? placeholder}
+						onkeydown={handleKeydown}
+						class="autocomplete-input {inputClass}"
+						role="combobox"
+						aria-autocomplete="list"
+						aria-controls={listId}
+						aria-expanded="true"
+					/>
+					{#if loading || loadingInitial}
+						<span class="autocomplete-spinner" aria-label={loadingLabel}></span>
+					{/if}
+				</div>
+				<div class="autocomplete-options autocomplete-sheet-options" id={listId} role="listbox">
+					{@render optionsList()}
+					{#if !loading && !loadingInitial && initialResults.length === 0 && query.trim().length === 0}
+						<div class="autocomplete-empty">{emptyMessage}</div>
+					{/if}
+				</div>
+			</Dialog.Content>
+		</Dialog.Portal>
+	</Dialog.Root>
+{:else if showDropdown}
 	<!-- The dropdown is teleported via the `portal` action so it is not
 	     clipped by ancestor overflow:hidden containers (e.g. bits-ui
 	     Dialog content). pointer-events:auto re-enables it because
@@ -526,73 +727,7 @@
 		role="listbox"
 	>
 		<div class="autocomplete-options" id={listId}>
-			{#if loadingInitial}
-				<div class="autocomplete-empty">{loadingLabel}</div>
-			{:else if query.trim().length > 0 && !(freeText && query === selectedLabel)}
-				<!-- Search results -->
-				{#if !loading && results.length === 0}
-					<div class="autocomplete-empty">{emptyMessage}</div>
-					{#if onAdd && query.trim()}
-						{#if addError}<div class="autocomplete-empty autocomplete-add-error">{addError}</div>{/if}
-						<button
-							type="button"
-							class="autocomplete-option"
-							disabled={adding}
-							onmousedown={async (e) => { e.preventDefault(); await handleAdd(); }}
-						>
-							{#if adding}<span class="autocomplete-spinner" aria-label={loadingLabel}></span>{/if}
-							{(addActionLabel ?? 'Add "{query}"').replace('{query}', query.trim())}
-						</button>
-					{/if}
-				{:else}
-					{#each results as item, i (item.id)}
-						<button
-							type="button"
-							class="autocomplete-option"
-							class:selected={item.id === selectedId}
-							class:active={i === activeIndex}
-							role="option"
-							aria-selected={item.id === selectedId}
-							onmousedown={(e) => { e.preventDefault(); pick(item); }}
-							onmouseenter={() => (activeIndex = i)}
-						>
-							<span class="autocomplete-option-label">
-								{item.label}
-								{#if item.sublabel}
-									<span class="autocomplete-option-sub">{item.sublabel}</span>
-								{/if}
-							</span>
-							{#if item.id === selectedId}
-								<Check size={14} class="autocomplete-check" />
-							{/if}
-						</button>
-					{/each}
-				{/if}
-			{:else if initialResults.length > 0}
-				<!-- Initial suggestions (no query typed) -->
-				{#each initialResults as item, i (item.id)}
-					<button
-						type="button"
-						class="autocomplete-option"
-						class:selected={item.id === selectedId}
-						class:active={i === activeIndex}
-						role="option"
-						aria-selected={item.id === selectedId}
-						onmousedown={(e) => { e.preventDefault(); pick(item); }}
-						onmouseenter={() => (activeIndex = i)}
-					>
-						<span class="autocomplete-option-label">
-							{item.label}
-							{#if item.sublabel}
-								<span class="autocomplete-option-sub">{item.sublabel}</span>
-							{/if}
-						</span>
-						{#if item.id === selectedId}
-							<Check size={14} class="autocomplete-check" />
-						{/if}
-					</button>
-				{/each}
-			{/if}
+			{@render optionsList()}
 		</div>
 	</div>
 {/if}
@@ -740,6 +875,30 @@
 		max-height: 220px;
 		overflow-y: auto;
 		padding: 4px;
+	}
+
+	/* Mobile bottom-sheet — styled like the field so the in-sheet search
+	   input reads as the same control. */
+	.autocomplete-sheet-field {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
+		height: 2.5rem;
+		padding: 0 12px;
+		border: 1px solid var(--color-border-input, var(--color-border));
+		border-radius: var(--radius-input, var(--radius, var(--radius-md, var(--radius-card, 9px))));
+		background: var(--color-surface, var(--background, var(--color-background)));
+		color: var(--color-text, var(--color-foreground));
+		font-size: 0.875rem;
+	}
+	.autocomplete-sheet-options {
+		flex: 1;
+		min-height: 0;
+		max-height: none;
+		margin-top: 4px;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	:global(.autocomplete-option) {

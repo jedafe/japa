@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -161,8 +162,9 @@ func TestHandleCallback_ProviderErrorParam_RedirectsToLogin(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/oauth/{provider}/callback", h.HandleCallback)
 
-	// Valid state cookie, but provider returns error param
-	state := "test-state"
+	// Valid state cookie (provider-bound "{provider}.{token}"), but provider
+	// returns error param
+	state := "google.test-state"
 	req := httptest.NewRequest(http.MethodGet, "/oauth/google/callback?error=access_denied&state="+state, nil)
 	req.AddCookie(&http.Cookie{Name: "jc_oauth_state", Value: state})
 
@@ -187,7 +189,7 @@ func TestHandleCallback_MissingCode_RedirectsToLogin(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/oauth/{provider}/callback", h.HandleCallback)
 
-	state := "test-state"
+	state := "google.test-state"
 	req := httptest.NewRequest(http.MethodGet, "/oauth/google/callback?state="+state, nil)
 	req.AddCookie(&http.Cookie{Name: "jc_oauth_state", Value: state})
 
@@ -202,6 +204,55 @@ func TestHandleCallback_MissingCode_RedirectsToLogin(t *testing.T) {
 	loc := rec.Header().Get("Location")
 	if loc != "http://localhost:3000/login?oauth_error=missing_code" {
 		t.Errorf("Location = %q, want missing_code redirect", loc)
+	}
+}
+
+func TestHandleCallback_PostFormParams_RedirectsToLogin(t *testing.T) {
+	t.Parallel()
+
+	h := newOAuthTestHandlers("http://localhost:3000")
+	r := chi.NewRouter()
+	r.Post("/oauth/{provider}/callback", h.HandleCallback)
+
+	// Sign in with Apple posts form fields (response_mode=form_post).
+	// A provider error in the body must surface as oauth_error, same as GET.
+	body := "state=google.test-state&error=access_denied"
+	req := httptest.NewRequest(http.MethodPost, "/oauth/google/callback", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "jc_oauth_state", Value: "google.test-state"})
+
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+
+	loc := rec.Header().Get("Location")
+	if loc != "http://localhost:3000/login?oauth_error=oauth_error" {
+		t.Errorf("Location = %q, want oauth_error redirect", loc)
+	}
+}
+
+func TestHandleCallback_CrossProviderState_RedirectsToLogin(t *testing.T) {
+	t.Parallel()
+
+	h := newOAuthTestHandlers("http://localhost:3000")
+	r := chi.NewRouter()
+	r.Get("/oauth/{provider}/callback", h.HandleCallback)
+
+	// A state minted for github must not validate at the google callback.
+	state := "github.test-state"
+	req := httptest.NewRequest(http.MethodGet, "/oauth/google/callback?code=x&state="+state, nil)
+	req.AddCookie(&http.Cookie{Name: "jc_oauth_state", Value: state})
+
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if loc := rec.Header().Get("Location"); loc != "http://localhost:3000/login?oauth_error=invalid_state" {
+		t.Errorf("Location = %q, want invalid_state redirect", loc)
 	}
 }
 
@@ -223,7 +274,7 @@ func TestHandleInitiate_SetsStateAndRedirectCookies(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	var stateCookie, redirectCookie *http.Cookie
+	var stateCookie, redirectCookie, verifierCookie *http.Cookie
 
 	for _, c := range rec.Result().Cookies() {
 		switch c.Name {
@@ -231,19 +282,27 @@ func TestHandleInitiate_SetsStateAndRedirectCookies(t *testing.T) {
 			stateCookie = c
 		case "jc_oauth_redirect":
 			redirectCookie = c
+		case "jc_oauth_verifier":
+			verifierCookie = c
 		}
 	}
 
 	if stateCookie == nil {
 		t.Error("jc_oauth_state cookie not set")
-	} else if stateCookie.Value == "" {
-		t.Error("jc_oauth_state cookie value is empty")
+	} else if !strings.HasPrefix(stateCookie.Value, "google.") {
+		t.Errorf("jc_oauth_state = %q, want google. prefix", stateCookie.Value)
+	}
+
+	if verifierCookie == nil {
+		t.Error("jc_oauth_verifier cookie not set")
+	} else if verifierCookie.Value == "" {
+		t.Error("jc_oauth_verifier cookie value is empty")
 	}
 
 	if redirectCookie == nil {
 		t.Error("jc_oauth_redirect cookie not set")
-	} else if redirectCookie.Value != "/dashboard" {
-		t.Errorf("jc_oauth_redirect = %q, want /dashboard", redirectCookie.Value)
+	} else if redirectCookie.Value != "%2Fdashboard" {
+		t.Errorf("jc_oauth_redirect = %q, want %%2Fdashboard (url-escaped)", redirectCookie.Value)
 	}
 }
 
@@ -292,8 +351,8 @@ func TestHandleInitiate_DefaultRedirectToRoot(t *testing.T) {
 		t.Fatal("jc_oauth_redirect cookie not set")
 	}
 
-	if redirectCookie.Value != "/" {
-		t.Errorf("jc_oauth_redirect = %q, want /", redirectCookie.Value)
+	if redirectCookie.Value != "%2F" {
+		t.Errorf("jc_oauth_redirect = %q, want %%2F (url-escaped /)", redirectCookie.Value)
 	}
 }
 
@@ -360,12 +419,12 @@ func TestClearOAuthCookies(t *testing.T) {
 	h.clearOAuthCookies(rec)
 
 	cookies := rec.Result().Cookies()
-	if len(cookies) != 2 {
-		t.Fatalf("expected 2 cleared cookies, got %d", len(cookies))
+	if len(cookies) != 3 {
+		t.Fatalf("expected 3 cleared cookies, got %d", len(cookies))
 	}
 
 	for _, c := range cookies {
-		if c.Name != "jc_oauth_state" && c.Name != "jc_oauth_redirect" {
+		if c.Name != "jc_oauth_state" && c.Name != "jc_oauth_redirect" && c.Name != "jc_oauth_verifier" {
 			t.Errorf("unexpected cookie %q", c.Name)
 		}
 
@@ -380,17 +439,21 @@ func TestClearOAuthCookies(t *testing.T) {
 type mockOAuthStore struct {
 	oauthAccounts map[string]*OAuthAccount // key: provider:providerUserID
 	usersByEmail  map[string]*User         // key: email
+	usersByID     map[string]*User         // key: user id (hex/uuid form)
 	linkCalls     int
 }
+
+var _ OAuthStore = (*mockOAuthStore)(nil)
 
 func newMockOAuthStore() *mockOAuthStore {
 	return &mockOAuthStore{
 		oauthAccounts: make(map[string]*OAuthAccount),
 		usersByEmail:  make(map[string]*User),
+		usersByID:     make(map[string]*User),
 	}
 }
 
-func (m *mockOAuthStore) GetOAuthAccount(_ context.Context, _ pgtype.UUID, provider, providerUserID string) (*OAuthAccount, error) {
+func (m *mockOAuthStore) GetOAuthAccount(_ context.Context, provider, providerUserID string) (*OAuthAccount, error) {
 	if acct, ok := m.oauthAccounts[provider+":"+providerUserID]; ok {
 		return acct, nil
 	}
@@ -398,17 +461,26 @@ func (m *mockOAuthStore) GetOAuthAccount(_ context.Context, _ pgtype.UUID, provi
 	return nil, errAccountNotFound
 }
 
-func (m *mockOAuthStore) GetOAuthAccountByUser(_ context.Context, _, _ pgtype.UUID, _ string) (*OAuthAccount, error) {
-	return nil, errAccountNotFound
-}
-
-func (m *mockOAuthStore) LinkOAuthAccount(_ context.Context, _, _ pgtype.UUID, _, _ string) error {
+func (m *mockOAuthStore) LinkOAuthAccount(_ context.Context, userID pgtype.UUID, provider, providerUserID string) error {
 	m.linkCalls++
+	m.oauthAccounts[provider+":"+providerUserID] = &OAuthAccount{
+		UserID:         userID,
+		Provider:       provider,
+		ProviderUserID: providerUserID,
+	}
 	return nil
 }
 
-func (m *mockOAuthStore) GetUserByEmail(_ context.Context, _ pgtype.UUID, email string) (*User, error) {
+func (m *mockOAuthStore) GetUserByEmail(_ context.Context, email string) (*User, error) {
 	if u, ok := m.usersByEmail[email]; ok {
+		return u, nil
+	}
+
+	return nil, errUserNotFound
+}
+
+func (m *mockOAuthStore) GetUserByID(_ context.Context, userID pgtype.UUID) (*User, error) {
+	if u, ok := m.usersByID[userID.String()]; ok {
 		return u, nil
 	}
 

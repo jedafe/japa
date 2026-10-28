@@ -288,6 +288,14 @@ func (s *Store) gdprExportUserWalletLedger(ctx context.Context, userID pgtype.UU
 	return exportJSONSlice(ctx, s.read.GdprExportUserWalletLedger, userID)
 }
 
+func (s *Store) gdprExportTipsSent(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportTipsSent, userID)
+}
+
+func (s *Store) gdprExportTipsReceived(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportTipsReceived, userID)
+}
+
 func (s *Store) gdprExportUserActivityEvents(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserActivityEvents, userID)
 }

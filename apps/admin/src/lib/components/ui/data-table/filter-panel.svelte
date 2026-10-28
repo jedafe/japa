@@ -42,7 +42,7 @@
     <Accordion.Content class="space-y-3 px-3 pb-3">
       <div class="flex flex-wrap gap-3">
         {#each filters as filter (filter.key)}
-          <div class={filter.type === 'autocomplete' ? 'w-64' : 'w-44'}>
+          <div class={filter.type === 'autocomplete' ? 'w-full sm:w-64' : 'w-full sm:w-44'}>
             {#if filter.type === 'text'}
               <label for={`filter-${filter.key}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">
                 {filter.label}

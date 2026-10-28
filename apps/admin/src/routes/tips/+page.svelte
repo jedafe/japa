@@ -12,6 +12,7 @@
 		id: string;
 		sender_name?: string;
 		recipient_type: string;
+		recipient_name?: string;
 		method: string;
 		points_amount?: number;
 		credits_amount?: number;
@@ -69,9 +70,12 @@
 			{
 				key: 'sender_name',
 				label: t('tips.sender', 'Sender'),
-				render: (v: string, row: TipRow) => (row.is_anonymous ? `<em>${t('tips.anonymous', 'Someone')}</em>` : v || '—')
+				// §125: admins always see the real sender — anonymity only
+				// masks public surfaces. The flag is shown as a marker.
+				render: (v: string, row: TipRow) =>
+					(v || '—') + (row.is_anonymous ? ` <em class="text-muted-foreground">(${t('tips.anon_flag', 'anonymous')})</em>` : '')
 			},
-			{ key: 'recipient_type', label: t('tips.recipient', 'Recipient') },
+			{ key: 'recipient_name', label: t('tips.recipient', 'Recipient'), render: (v: string, row: TipRow) => v || row.recipient_type },
 			{
 				key: 'amount',
 				label: t('tips.amount', 'Amount'),

@@ -4311,7 +4311,7 @@ func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, countryCode *s
 }
 
 const listTopSpacesForLLMsTxt = `-- name: ListTopSpacesForLLMsTxt :many
-SELECT s.name, s.slug, s.member_count, s.post_count,
+SELECT s.name, s.slug, s.member_count, s.post_count, COALESCE(s.description, '') AS description,
  COALESCE(fc.forum_count, 0) AS forum_count,
  COALESCE(qc.question_count, 0) AS question_count
 FROM spaces s
@@ -4338,6 +4338,7 @@ type ListTopSpacesForLLMsTxtRow struct {
 	Slug          string `json:"slug"`
 	MemberCount   int32  `json:"member_count"`
 	PostCount     int32  `json:"post_count"`
+	Description   string `json:"description"`
 	ForumCount    int64  `json:"forum_count"`
 	QuestionCount int64  `json:"question_count"`
 }
@@ -4361,6 +4362,7 @@ func (q *Queries) ListTopSpacesForLLMsTxt(ctx context.Context) ([]ListTopSpacesF
 			&i.Slug,
 			&i.MemberCount,
 			&i.PostCount,
+			&i.Description,
 			&i.ForumCount,
 			&i.QuestionCount,
 		); err != nil {

@@ -1337,10 +1337,10 @@ const getTopFeed = `-- name: GetTopFeed :many
 WITH content_geo AS (
  SELECT cs.content_id,
  COALESCE(MAX(CASE
- WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'city' THEN 5
- WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'state' THEN 4
- WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'country' THEN 3
- WHEN COALESCE(cp.region, sp.region, s.region) = $4 THEN 2
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'city' THEN 5
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'state' THEN 4
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'country' THEN 3
+ WHEN COALESCE(cp.region, sp.region, s.region) = $5 THEN 2
  ELSE 1
  END), 1) AS geo_proximity
  FROM content_spaces cs
@@ -1400,7 +1400,7 @@ LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
- AND c.created_at > now() - interval '7 days'
+ AND c.created_at > now() - make_interval(days := $1::int)
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
@@ -1411,10 +1411,11 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.reaction_count DESC
-LIMIT $2 OFFSET $1
+LIMIT $3 OFFSET $2
 `
 
 type GetTopFeedParams struct {
+	TopWindowDays      int32   `json:"top_window_days"`
 	PageOffset         int32   `json:"page_offset"`
 	PageLimit          int32   `json:"page_limit"`
 	VisitorCountryCode *string `json:"visitor_country_code"`
@@ -1464,9 +1465,11 @@ type GetTopFeedRow struct {
 	GeoProximity                  interface{}        `json:"geo_proximity"`
 }
 
-// Top content in 7-day rolling window (for top sort), ranked by geo proximity.
+// Top content in a rolling N-day window (for top sort; the window comes from
+// the feed.top_window_days system_setting), ranked by geo proximity.
 func (q *Queries) GetTopFeed(ctx context.Context, arg GetTopFeedParams) ([]GetTopFeedRow, error) {
 	rows, err := q.db.Query(ctx, getTopFeed,
+		arg.TopWindowDays,
 		arg.PageOffset,
 		arg.PageLimit,
 		arg.VisitorCountryCode,
@@ -1656,13 +1659,14 @@ func (q *Queries) ListSourcesByContentIDs(ctx context.Context, contentIds []pgty
 }
 
 const pruneOldFeeds = `-- name: PruneOldFeeds :exec
-DELETE FROM feeds WHERE created_at < now() - interval '30 days'
+DELETE FROM feeds WHERE created_at < now() - make_interval(days := $1::int)
 `
 
 // Intentionally global (no the id filter): this is a retention prune that
-// runs weekly across the platform. Ref: Section 32, asynq-tasks catalog.
-func (q *Queries) PruneOldFeeds(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, pruneOldFeeds)
+// runs weekly across the platform. The retention age comes from the
+// feed.prune_interval_days system_setting. Ref: Section 32, asynq-tasks catalog.
+func (q *Queries) PruneOldFeeds(ctx context.Context, days int32) error {
+	_, err := q.db.Exec(ctx, pruneOldFeeds, days)
 	return err
 }
 

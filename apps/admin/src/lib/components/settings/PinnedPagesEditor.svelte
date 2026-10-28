@@ -271,18 +271,13 @@
 					<label class="mb-1 block text-xs" style="color: var(--color-muted)" for="pin-icon-{i}">
 						{t('settings.docs_pin_icon', 'Icon')}
 					</label>
-					<select
+					<AutocompleteSelect
 						id="pin-icon-{i}"
 						value={pin.icon}
-						class="h-9 w-full rounded-md border px-2.5 py-1.5 text-sm"
-						style="border-color: var(--color-border); background: var(--color-bg); color: var(--color-foreground)"
-						disabled={disabled}
-						onchange={(e) => setIcon(i, (e.target as HTMLSelectElement).value)}
-					>
-						{#each PIN_ICON_OPTIONS as opt (opt)}
-							<option value={opt}>{opt}</option>
-						{/each}
-					</select>
+						{disabled}
+						onValueChange={(v) => setIcon(i, v)}
+						options={PIN_ICON_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+					/>
 				</div>
 			</div>
 		</div>

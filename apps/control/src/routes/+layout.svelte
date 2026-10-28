@@ -84,15 +84,21 @@
 	$effect(() => {
 		const url = faviconForTheme(getTheme());
 		if (!url) return;
-		let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-		if (!link) {
-			link = document.createElement('link');
-			link.rel = 'icon';
-			document.head.appendChild(link);
-		}
-		link.href = url;
+		// Update every icon link — the app.html fallbacks carry
+		// prefers-color-scheme media attributes, so mutating only the
+		// first link would leave the bundled icon winning in dark mode.
+		const links = document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]');
 		const ext = url.split('.').pop()?.toLowerCase();
-		link.type = ext === 'svg' ? 'image/svg+xml' : ext === 'ico' ? 'image/x-icon' : 'image/png';
+		const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'ico' ? 'image/x-icon' : 'image/png';
+		if (links.length === 0) {
+			const link = document.createElement('link');
+			link.rel = 'icon';
+			link.href = url;
+			link.type = mime;
+			document.head.appendChild(link);
+			return;
+		}
+		links.forEach((link) => { link.href = url; link.type = mime; });
 	});
 
 	onMount(() => {

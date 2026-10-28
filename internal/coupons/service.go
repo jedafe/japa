@@ -38,6 +38,19 @@ type Service struct {
 	db       *db.DB
 	enqueuer Enqueuer
 	vk       valkeycompat.Cmdable
+	settings settingsReader
+}
+
+// settingsReader is the subset of config.Settings the coupons service uses
+// for hot-reloadable commission defaults. Defined locally to keep the
+// dependency graph clean.
+type settingsReader interface {
+	GetFloatOr(ctx context.Context, key string, fallback float64) float64
+}
+
+// SetSettings injects the hot-reloadable settings reader.
+func (s *Service) SetSettings(sr settingsReader) {
+	s.settings = sr
 }
 
 // NewService is an exported function.
@@ -1117,10 +1130,15 @@ func (s *Service) RecordAffiliateCommission(ctx context.Context, in RecordAffili
 		return gen.AffiliateContentCommission{}, fmt.Errorf("affiliate: provider not found: %w", err)
 	}
 
-	// 3. Compute the author share.
+	// 3. Compute the author share. Providers without an explicit
+	// author_commission_pct fall back to the platform default —
+	// affiliate.author_commission_default (Rule 3) — not zero.
 	pctVal, err := provider.AuthorCommissionPct.Float64Value()
 	if err != nil || !pctVal.Valid {
-		pctVal.Float64 = 0
+		pctVal.Float64 = 25
+		if s.settings != nil {
+			pctVal.Float64 = s.settings.GetFloatOr(ctx, "affiliate.author_commission_default", 25)
+		}
 	}
 
 	authorPct := pctVal.Float64

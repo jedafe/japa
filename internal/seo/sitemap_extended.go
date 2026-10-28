@@ -43,11 +43,34 @@ func (h *SitemapHandler) ServeUniversitiesSitemap(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Universities are auto-seeded wiki spaces — member gating is meaningless
+	// for them, but spaces with no content activity are thin pages. Gate on
+	// content (posts + forums + questions) against the same space_min_posts
+	// threshold the spaces sitemap uses.
+	cfg := h.sitemapQualityConfig(r.Context())
+	minContent := cfg.MinPosts
+	if minContent < 0 {
+		minContent = bots.DefaultSitemapQualityConfig().MinPosts
+	}
+
+	// minContent == 0 disables the gate (list all active universities).
+	gate := ``
+	args := []any{}
+	if minContent > 0 {
+		gate = ` AND s.post_count + (
+		       SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+		       WHERE c.space_id = s.id AND c.status = 'published'
+		         AND c.deleted_at IS NULL AND c.visibility = 'public'
+		   ) >= $1`
+		args = append(args, minContent)
+	}
+
 	rows, err := h.reader.Query(r.Context(), `SELECT s.slug, s.updated_at
 		 FROM spaces s
 		 JOIN space_types st ON st.id = s.space_type_id AND st.slug = 'university'
-		 WHERE s.status = 'active' AND s.deleted_at IS NULL AND s.visibility = 'public'
-		 ORDER BY s.updated_at DESC`)
+		 WHERE s.status = 'active' AND s.deleted_at IS NULL AND s.visibility = 'public'`+
+		gate+`
+		 ORDER BY s.updated_at DESC`, args...)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return

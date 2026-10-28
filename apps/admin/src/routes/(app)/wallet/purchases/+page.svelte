@@ -9,6 +9,7 @@
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Search } from 'lucide-svelte';
 
@@ -118,12 +119,15 @@
 				<div>
 					<label class="mb-1 block text-sm font-medium" for="filter-currency">{t('app.wallet.filter_currency', 'Currency')}</label>
 					{#if currencies.length > 0}
-						<select id="filter-currency" bind:value={filters.currency} class="w-40 rounded-md border border-input bg-surface px-3 py-2 text-sm">
-							<option value="">{t('common.all', 'All')}</option>
-							{#each currencies as c (c.code)}
-								<option value={c.code}>{currencyLabel(c.code, currencies)}</option>
-							{/each}
-						</select>
+						<AutocompleteSelect
+							id="filter-currency"
+							bind:value={filters.currency}
+							class="w-40"
+							options={[
+								{ value: '', label: t('common.all', 'All') },
+								...currencies.map((c) => ({ value: c.code, label: currencyLabel(c.code, currencies) }))
+							]}
+						/>
 					{:else}
 						<input id="filter-currency" type="text" bind:value={filters.currency} class="w-24 rounded-md border border-input bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.purchases.ph_usd', 'USD')} />
 					{/if}

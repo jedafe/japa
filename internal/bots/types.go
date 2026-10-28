@@ -104,6 +104,17 @@ const (
 type Link struct {
 	Title string
 	URL   string
+	// Description is an optional one-line summary rendered as
+	// "- [Title](url): description" per the llms.txt convention.
+	Description string
+}
+
+// FeaturedItem is a content entry inlined into llms-full.txt — the file's
+// actual substance rather than another link.
+type FeaturedItem struct {
+	Title string
+	URL   string
+	Body  string
 }
 
 // LLMsBriefData holds the sections of the brief /llms.txt file.
@@ -119,4 +130,5 @@ type LLMsData struct {
 	Tags        []Link
 	Spaces      []Link
 	Optional    []Link
+	Featured    []FeaturedItem
 }

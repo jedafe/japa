@@ -45,6 +45,7 @@ type tipStore interface {
 	adminCountTips(ctx context.Context, p gen.AdminCountTipsParams) (int32, error)
 	adminTipStats(ctx context.Context, since pgtype.Timestamptz) (gen.AdminTipStatsRow, error)
 	getUserDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetUserDisplayNamesRow, error)
+	getOrgDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetOrgDisplayNamesRow, error)
 	isMentor(ctx context.Context, userID pgtype.UUID) (bool, error)
 	getCurrencyByCode(ctx context.Context, code string) (gen.Currency, error)
 	getContentAuthorID(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error)
@@ -227,6 +228,10 @@ func (s *Store) adminTipStats(ctx context.Context, since pgtype.Timestamptz) (ge
 
 func (s *Store) getUserDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetUserDisplayNamesRow, error) {
 	return s.read.GetUserDisplayNames(ctx, ids)
+}
+
+func (s *Store) getOrgDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetOrgDisplayNamesRow, error) {
+	return s.read.GetOrgDisplayNames(ctx, ids)
 }
 
 func (s *Store) isMentor(ctx context.Context, userID pgtype.UUID) (bool, error) {

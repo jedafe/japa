@@ -8,6 +8,7 @@
 	// < subcategories) so the settings page's JSON.stringify dirty check
 	// matches the API's sorted-key serialization.
 	import { t } from '$lib/stores/i18n.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-svelte';
 
 	export interface CategoryItem {
@@ -188,18 +189,14 @@
 					disabled={disabled}
 					oninput={(e) => setField(i, 'name', (e.target as HTMLInputElement).value)}
 				/>
-				<select
+				<AutocompleteSelect
 					value={row.icon}
-					class="h-9 w-28 shrink-0 rounded-md border px-2 py-1.5 text-sm"
-					style="border-color: var(--color-border); background: var(--color-bg); color: var(--color-foreground)"
-					disabled={disabled}
-					title={t('settings.category_icon', 'Icon')}
-					onchange={(e) => setField(i, 'icon', (e.target as HTMLSelectElement).value)}
-				>
-					{#each ICON_OPTIONS as opt (opt)}
-						<option value={opt}>{opt}</option>
-					{/each}
-				</select>
+					class="w-28 shrink-0"
+					{disabled}
+					ariaLabel={t('settings.category_icon', 'Icon')}
+					onValueChange={(v) => setField(i, 'icon', v)}
+					options={ICON_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+				/>
 				<button
 					type="button"
 					class="rounded p-1 disabled:opacity-30"

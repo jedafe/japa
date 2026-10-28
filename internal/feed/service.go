@@ -186,12 +186,24 @@ func (s *Service) FanOutPost(_ context.Context, contentID, spaceID pgtype.UUID, 
 	return nil
 }
 
+// maxPageSize resolves the configured feed page-size cap
+// (feed.max_page_size, BUG-012, Rule 3) — the compiled MaxPageSize is the
+// fallback when settings are unwired or the value is non-positive.
+func (s *Service) maxPageSize(ctx context.Context) int32 {
+	if s.settings != nil {
+		if v := s.settings.GetIntOr(ctx, "feed.max_page_size", MaxPageSize); v > 0 {
+			return toInt32(v)
+		}
+	}
+	return MaxPageSize
+}
+
 // GetFeed returns paginated feed items for the specified timeline and sort.
 // timeline: "explore", "primary", "space", "profile"
 // sort: "latest", "top", "rising", "relevant"
 func (s *Service) GetFeed(ctx context.Context, timeline string, userID, spaceID, authorID *pgtype.UUID, sort string, limit, offset int32, visitorCountryCode, visitorRegion string) ([]FeedItem, error) {
 	// Clamp pagination limits.
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 || limit > s.maxPageSize(ctx) {
 		limit = DefaultPageSize
 	}
 
@@ -399,9 +411,18 @@ func firstTipTapImageSrc(body []byte) string {
 
 // getExploreFeed returns the explore feed with the given sort mode.
 func (s *Service) getExploreFeed(ctx context.Context, sort, visitorCountryCode, visitorRegion string, limit, offset int32) ([]FeedItem, error) {
+	// Rolling window for the "top" sort — hot-reloadable via
+	// feed.top_window_days (BUG-011, Rule 3).
+	topWindowDays := int32(7)
+	if s.settings != nil {
+		if v := s.settings.GetIntOr(ctx, "feed.top_window_days", 7); v > 0 {
+			topWindowDays = toInt32(v)
+		}
+	}
+
 	switch sort {
 	case SortTop:
-		rows, err := s.store.getTopFeed(ctx, visitorCountryCode, visitorRegion, limit, offset)
+		rows, err := s.store.getTopFeed(ctx, visitorCountryCode, visitorRegion, topWindowDays, limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -420,7 +441,7 @@ func (s *Service) getExploreFeed(ctx context.Context, sort, visitorCountryCode, 
 		// requires a $user_embedding). Fall back to the top feed (7-day
 		// rolling window) as the closest relevance proxy for guests.
 		// The for-you feed handles true pgvector relevance for authed users.
-		rows, err := s.store.getTopFeed(ctx, visitorCountryCode, visitorRegion, limit, offset)
+		rows, err := s.store.getTopFeed(ctx, visitorCountryCode, visitorRegion, topWindowDays, limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -708,7 +729,7 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 // Public/members content is returned; private content is only returned for the
 // author or someone with can_see_private.
 func (s *Service) GetRoadmapFeed(ctx context.Context, requesterID pgtype.UUID, slugs []string, limit, offset int32) ([]FeedItem, error) {
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 || limit > s.maxPageSize(ctx) {
 		limit = DefaultPageSize
 	}
 
@@ -730,7 +751,7 @@ func (s *Service) GetRoadmapFeed(ctx context.Context, requesterID pgtype.UUID, s
 // destination-, stage-, and visa-relevant content first while preserving the
 // roadmap's overall order as a tie-breaker.
 func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, requesterID pgtype.UUID, slugs []string, limit, offset int32, vc *visitor.VisitorContext) ([]FeedItem, error) {
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 || limit > s.maxPageSize(ctx) {
 		limit = DefaultPageSize
 	}
 
@@ -762,8 +783,8 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, requesterID pgt
 	}
 
 	fetchLimit := int32(len(merged)) // #nosec
-	if fetchLimit > MaxPageSize {
-		fetchLimit = MaxPageSize
+	if max := s.maxPageSize(ctx); fetchLimit > max {
+		fetchLimit = max
 	}
 
 	rows, err := s.store.getContentsBySlugs(ctx, requesterID, merged, fetchLimit, 0)
@@ -1156,7 +1177,9 @@ func interfaceToFloat64(v interface{}) float64 {
 	return 0
 }
 
-// For-You feed bounds and cache tuning (v1 constants).
+// For-You feed bounds and cache tuning. These are the compiled fallbacks —
+// each is hot-reloadable via the matching feed.for_you_* system_settings key
+// (Rule 3).
 const (
 	forYouWindowDaysDefault = 30
 	forYouAffinityCap       = 300
@@ -1216,7 +1239,7 @@ func (s *Service) GetForYouFeed(
 	ctx context.Context, userID pgtype.UUID, sortMode string, limit, offset int32,
 	vc *visitor.VisitorContext,
 ) ([]FeedItem, error) {
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 || limit > s.maxPageSize(ctx) {
 		limit = DefaultPageSize
 	}
 
@@ -1276,12 +1299,32 @@ func (s *Service) GetForYouFeed(
 	// Use the shared cache helper with distributed lock stampede protection
 	// (BUG-008). On cache miss, the lock holder loads affinity, fetches
 	// candidates, and ranks them; concurrent requests wait for the result.
-	// Read cache TTL and window days from system_settings (Rule 3).
+	// Read cache TTL, window days, and candidate-pool caps from
+	// system_settings (Rule 3).
 	cacheTTL := forYouCacheTTLDefault
 
 	windowDays := forYouWindowDaysDefault
+
+	affinityCap := int32(forYouAffinityCap)
+	velocityCap := int32(forYouVelocityCap)
+	candidateCap := int32(forYouCandidateCap)
+
 	if s.settings != nil {
 		windowDays = s.settings.GetIntOr(ctx, "feed.for_you_window_days", forYouWindowDaysDefault)
+
+		if v := s.settings.GetIntOr(ctx, "feed.for_you_cache_ttl_seconds", int(cacheTTL.Seconds())); v > 0 {
+			cacheTTL = time.Duration(v) * time.Second
+		}
+
+		if v := s.settings.GetIntOr(ctx, "feed.for_you_affinity_cap", forYouAffinityCap); v > 0 {
+			affinityCap = toInt32(v)
+		}
+		if v := s.settings.GetIntOr(ctx, "feed.for_you_velocity_cap", forYouVelocityCap); v > 0 {
+			velocityCap = toInt32(v)
+		}
+		if v := s.settings.GetIntOr(ctx, "feed.for_you_candidate_cap", forYouCandidateCap); v > 0 {
+			candidateCap = toInt32(v)
+		}
 	}
 
 	ranked, err := vkcache.GetOrComputeCompat(ctx, s.vk, key, cacheTTL, func(ctx context.Context) ([]FeedItem, error) {
@@ -1302,9 +1345,9 @@ func (s *Service) GetForYouFeed(
 			AuthorIds:          authorIDs,
 			SpaceIds:           spaceIDs,
 			TagIds:             tagIDs,
-			AffinityLimit:      forYouAffinityCap,
-			VelocityLimit:      forYouVelocityCap,
-			CandidateCap:       forYouCandidateCap,
+			AffinityLimit:      affinityCap,
+			VelocityLimit:      velocityCap,
+			CandidateCap:       candidateCap,
 			VisitorCountryCode: &visitorCountryCode,
 			VisitorRegion:      &visitorRegion,
 		})

@@ -136,12 +136,19 @@ func (h *Handlers) optionalUser(r *http.Request) *auth.AuthenticatedUser {
 // "Posts Per Page" setting actually affect feed pagination across the site.
 // Ref: conventions/system-settings-catalog.md (content.posts_per_page).
 func (h *Handlers) parsePageSize(r *http.Request) int32 {
+	maxSize := int32(MaxPageSize)
+	if h.settings != nil {
+		if v := h.settings.GetIntOr(r.Context(), "feed.max_page_size", int(MaxPageSize)); v > 0 {
+			maxSize = toInt32(v)
+		}
+	}
+
 	defaultSize := int32(defaultPageSize)
 
 	if h.settings != nil {
 		if v := h.settings.GetIntOr(r.Context(), "content.posts_per_page", int(defaultPageSize)); v > 0 {
-			if v > int(MaxPageSize) {
-				v = int(MaxPageSize)
+			if toInt32(v) > maxSize {
+				v = int(maxSize)
 			}
 
 			defaultSize = toInt32(v)
@@ -150,8 +157,8 @@ func (h *Handlers) parsePageSize(r *http.Request) int32 {
 
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		if defaultSize > MaxPageSize {
-			return MaxPageSize
+		if defaultSize > maxSize {
+			return maxSize
 		}
 
 		return defaultSize
@@ -162,8 +169,8 @@ func (h *Handlers) parsePageSize(r *http.Request) int32 {
 		return defaultSize
 	}
 
-	if n > MaxPageSize {
-		return MaxPageSize
+	if toInt32(n) > maxSize {
+		return maxSize
 	}
 
 	return toInt32(n)

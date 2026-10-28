@@ -6,6 +6,7 @@ package tips
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -47,6 +48,28 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 	if currency == "" {
 		currency = "NGN"
 	}
+	// Validate the currency up front — an unknown code would create a tip +
+	// payment that can never settle (getCurrencyByCode fails inside the
+	// settle task and retries to the DLQ).
+	cur, err := s.store.getCurrencyByCode(ctx, currency)
+	if err != nil {
+		return CreateTipResult{}, ErrInvalidAmount
+	}
+
+	// Quote the conversion + fee at create time so the sender's promised
+	// amount is what settles — settle uses the stored net rather than live
+	// settings (§125 formula, applied once).
+	var feeCredits, netCredits int64
+	{
+		exp := currencyExponent(currency)
+		div := int64(1)
+		for i := 0; i < exp; i++ {
+			div *= 10
+		}
+		gross := amount * int64(cur.CreditsPerUnit) / div
+		feeCredits = gross * int64(s.feePercent(ctx)) / 100
+		netCredits = gross - feeCredits
+	}
 
 	tip, err := s.store.insertTip(ctx, gen.InsertTipParams{
 		SenderUserID:            senderID,
@@ -57,6 +80,8 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 		Method:                  in.Method,
 		FiatAmount:              &amount,
 		FiatCurrency:            &currency,
+		FeeAmount:               feeCredits,
+		NetCredits:              netCredits,
 		Message:                 strPtrOrNil(in.Message),
 		IsAnonymous:             in.IsAnonymous,
 		Status:                  StatusPending,
@@ -98,7 +123,9 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 
 	var paymentID pgtype.UUID
 	if err := paymentID.Scan(pay.ID); err == nil {
-		_ = s.store.attachTipPayment(ctx, tip.ID, paymentID)
+		if err := s.store.attachTipPayment(ctx, tip.ID, paymentID); err != nil {
+			slog.Warn("tips: failed to attach payment to tip", "tip_id", tip.ID.String(), "payment_id", pay.ID, "error", err)
+		}
 	}
 
 	return CreateTipResult{Tip: tipFromRow(tip), CheckoutURL: pay.CheckoutURL}, nil

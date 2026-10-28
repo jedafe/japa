@@ -44,21 +44,31 @@ func (s *Service) ContentTipSummary(ctx context.Context, contentID pgtype.UUID) 
 }
 
 // AdminListTips filters the full ledger for moderation.
-func (s *Service) AdminListTips(ctx context.Context, status, method string, page, limit int32) ([]Tip, int32, error) {
+func (s *Service) AdminListTips(ctx context.Context, status, method, recipientType, q string, page, limit int32) ([]Tip, int32, error) {
 	rows, err := s.store.adminListTips(ctx, gen.AdminListTipsParams{
-		Status: status, Method: method,
+		Status: status, Method: method, RecipientType: recipientType, Q: q,
 		PageLimit: limit, PageOffset: (page - 1) * limit,
 	})
 	if err != nil {
 		return nil, 0, err
 	}
 	total, err := s.store.adminCountTips(ctx, gen.AdminCountTipsParams{
-		Status: status, Method: method,
+		Status: status, Method: method, RecipientType: recipientType, Q: q,
 	})
 	if err != nil {
 		return nil, 0, err
 	}
 	return s.hydrateTips(ctx, rows, false), total, nil
+}
+
+// GetTip returns a single hydrated tip (admin detail view — real sender).
+func (s *Service) GetTip(ctx context.Context, tipID pgtype.UUID) (Tip, error) {
+	row, err := s.store.getTip(ctx, tipID)
+	if err != nil {
+		return Tip{}, err
+	}
+	out := s.hydrateTips(ctx, []gen.Tip{row}, false)
+	return out[0], nil
 }
 
 // AdminTipStats returns aggregate stats since the given cutoff.
@@ -74,17 +84,34 @@ func (s *Service) hydrateTips(ctx context.Context, rows []gen.Tip, maskAnonymous
 		return out
 	}
 
-	// Batch-resolve sender names.
+	// Batch-resolve sender names and recipient names.
 	seen := map[string]bool{}
+	orgSeen := map[string]bool{}
 	var ids []pgtype.UUID
+	var orgIDs []pgtype.UUID
 	for _, r := range rows {
 		k := r.SenderUserID.String()
 		if r.SenderUserID.Valid && !seen[k] {
 			seen[k] = true
 			ids = append(ids, r.SenderUserID)
 		}
+		if r.RecipientUserID.Valid {
+			rk := r.RecipientUserID.String()
+			if !seen[rk] {
+				seen[rk] = true
+				ids = append(ids, r.RecipientUserID)
+			}
+		}
+		if r.RecipientOrganizationID.Valid {
+			ok := r.RecipientOrganizationID.String()
+			if !orgSeen[ok] {
+				orgSeen[ok] = true
+				orgIDs = append(orgIDs, r.RecipientOrganizationID)
+			}
+		}
 	}
 	names := map[string]string{}
+	orgNames := map[string]string{}
 	if len(ids) > 0 {
 		if rows2, err := s.store.getUserDisplayNames(ctx, ids); err == nil {
 			for _, n := range rows2 {
@@ -96,11 +123,30 @@ func (s *Service) hydrateTips(ctx context.Context, rows []gen.Tip, maskAnonymous
 			}
 		}
 	}
+	if len(orgIDs) > 0 {
+		if rows2, err := s.store.getOrgDisplayNames(ctx, orgIDs); err == nil {
+			for _, n := range rows2 {
+				orgNames[n.ID.String()] = n.Name
+			}
+		}
+	}
 
 	for _, r := range rows {
 		t := tipFromRow(r)
 		if name, ok := names[r.SenderUserID.String()]; ok {
 			t.SenderName = name
+		}
+		switch r.RecipientType {
+		case RecipientUser:
+			if name, ok := names[r.RecipientUserID.String()]; ok {
+				t.RecipientName = name
+			}
+		case RecipientOrganization:
+			if name, ok := orgNames[r.RecipientOrganizationID.String()]; ok {
+				t.RecipientName = name
+			}
+		case RecipientPlatform:
+			t.RecipientName = "JapaConnect"
 		}
 		if t.IsAnonymous && maskAnonymous {
 			t.SenderName = "Someone"

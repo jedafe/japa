@@ -299,7 +299,8 @@ ORDER BY
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetTopFeed :many
--- Top content in 7-day rolling window (for top sort), ranked by geo proximity.
+-- Top content in a rolling N-day window (for top sort; the window comes from
+-- the feed.top_window_days system_setting), ranked by geo proximity.
 WITH content_geo AS (
  SELECT cs.content_id,
  COALESCE(MAX(CASE
@@ -366,7 +367,7 @@ LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
- AND c.created_at > now() - interval '7 days'
+ AND c.created_at > now() - make_interval(days := @top_window_days::int)
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
@@ -665,8 +666,9 @@ LIMIT 20;
 
 -- name: PruneOldFeeds :exec
 -- Intentionally global (no the id filter): this is a retention prune that
--- runs weekly across the platform. Ref: Section 32, asynq-tasks catalog.
-DELETE FROM feeds WHERE created_at < now() - interval '30 days';
+-- runs weekly across the platform. The retention age comes from the
+-- feed.prune_interval_days system_setting. Ref: Section 32, asynq-tasks catalog.
+DELETE FROM feeds WHERE created_at < now() - make_interval(days := @days::int);
 
 -- name: ListSourcesByContentIDs :many
 -- Batch source attribution lookup for feed items. Returns one row per content

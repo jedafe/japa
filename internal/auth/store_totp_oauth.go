@@ -179,32 +179,15 @@ func (s *OAuthStoreImpl) GetOAuthAccount(ctx context.Context, provider, provider
 	return &acct, nil
 }
 
-// GetOAuthAccountByUser retrieves a linked OAuth account by user ID and provider.
-func (s *OAuthStoreImpl) GetOAuthAccountByUser(ctx context.Context, userID pgtype.UUID, provider string) (*OAuthAccount, error) {
-	query := `
-		SELECT id, user_id, provider, provider_user_id
-		FROM oauth_accounts
-		WHERE user_id = $1 AND provider = $2
-		LIMIT 1
-	`
-
-	var acct OAuthAccount
-
-	err := s.db.Reader.QueryRow(ctx, query, userID, provider).Scan(
-		&acct.ID, &acct.UserID, &acct.Provider, &acct.ProviderUserID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("querying OAuth account by user: %w", err)
-	}
-
-	return &acct, nil
-}
-
-// LinkOAuthAccount creates a new OAuth account linkage.
+// LinkOAuthAccount creates a new OAuth account linkage. ON CONFLICT DO
+// NOTHING keeps the call idempotent — callers verify the resolved owner via
+// GetOAuthAccount afterwards so a (provider, provider_user_id) link pointing
+// at a different user surfaces as a conflict, not a silent session grant.
 func (s *OAuthStoreImpl) LinkOAuthAccount(ctx context.Context, userID pgtype.UUID, provider, providerUserID string) error {
 	query := `
 		INSERT INTO oauth_accounts (user_id, provider, provider_user_id)
-		VALUES ($1, $2, $3, $4)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING
 	`
 
 	_, err := s.db.Writer.Exec(ctx, query, userID, provider, providerUserID)
@@ -232,6 +215,29 @@ func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, email string) (*Use
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying user by email: %w", err)
+	}
+
+	return &u, nil
+}
+
+// GetUserByID looks up a user by primary key — the OAuth callback needs the
+// full status/bot/email-verification fields to enforce the same login gates
+// as the password path (§02, ADR-068).
+func (s *OAuthStoreImpl) GetUserByID(ctx context.Context, userID pgtype.UUID) (*User, error) {
+	query := `
+		SELECT id, email, password_hash, username, profile_type, status, email_verified_at, is_bot
+		FROM users
+		WHERE id = $1
+		LIMIT 1
+	`
+
+	var u User
+
+	err := s.db.Reader.QueryRow(ctx, query, userID).Scan(
+		&u.ID, &u.Email, &u.PasswordHash, &u.Username, &u.ProfileType, &u.Status, &u.EmailVerifiedAt, &u.IsBot,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying user by id: %w", err)
 	}
 
 	return &u, nil

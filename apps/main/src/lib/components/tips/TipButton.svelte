@@ -5,7 +5,6 @@
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { t } from '$lib/i18n';
-	import { getAccessToken } from '$lib/api/token.svelte';
 	import { getUserTipConfig, getOrgTipConfig, type TipConfig } from '$lib/api/tips';
 	import TipDialog from './TipDialog.svelte';
 	import { Gift } from 'lucide-svelte';
@@ -25,6 +24,7 @@
 	let loading = $state(false);
 	let config = $state<TipConfig | null>(null);
 	let fetched = $state(false);
+	let unavailable = $state(false);
 
 	async function ensureConfig(): Promise<TipConfig | null> {
 		if (!fetched) {
@@ -42,10 +42,16 @@
 
 	async function click() {
 		const cfg = await ensureConfig();
-		if (cfg) open = true;
+		if (cfg) {
+			open = true;
+		} else {
+			unavailable = true;
+			setTimeout(() => (unavailable = false), 2500);
+		}
 	}
 </script>
 
+<span class="relative inline-flex">
 <button
 	type="button"
 	onclick={click}
@@ -59,6 +65,12 @@
 	<Gift class={compact ? 'size-[18px]' : 'size-4'} />
 	{#if !compact}{t('tips.title')}{/if}
 </button>
+{#if unavailable}
+	<span class="absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-surface px-2 py-1 text-xs text-foreground shadow-md border border-border">
+		{t('tips.unavailable', 'Tips are not available here')}
+	</span>
+{/if}
+</span>
 
 {#if config}
 	<TipDialog

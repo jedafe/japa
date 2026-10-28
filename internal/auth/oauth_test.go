@@ -295,7 +295,7 @@ func TestGoogleProvider_AuthURL(t *testing.T) {
 		redirectURL:  "http://localhost:8080/callback",
 	}
 
-	url := p.AuthURL("test-state")
+	url := p.AuthURL("test-state", "")
 	if url == "" {
 		t.Error("expected non-empty auth URL")
 	}
@@ -322,7 +322,7 @@ func TestGitHubProvider_AuthURL(t *testing.T) {
 		redirectURL:  "http://localhost:8080/callback",
 	}
 
-	url := p.AuthURL("test-state")
+	url := p.AuthURL("test-state", "")
 	if url == "" {
 		t.Error("expected non-empty auth URL")
 	}
@@ -363,7 +363,7 @@ func TestAppleProvider_AuthURL(t *testing.T) {
 		redirectURL:   "http://localhost:8080/callback",
 	}
 
-	authURL := p.AuthURL("test-state")
+	authURL := p.AuthURL("test-state", "")
 	if authURL == "" {
 		t.Error("expected non-empty auth URL")
 	}
@@ -398,7 +398,7 @@ func TestFacebookProvider_AuthURL(t *testing.T) {
 		redirectURL: "http://localhost:8080/callback",
 	}
 
-	authURL := p.AuthURL("test-state")
+	authURL := p.AuthURL("test-state", "")
 	if authURL == "" {
 		t.Error("expected non-empty auth URL")
 	}

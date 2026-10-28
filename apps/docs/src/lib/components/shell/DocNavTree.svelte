@@ -30,7 +30,7 @@
 	const collapsedFavicon = $derived(
 		((theme.resolved === 'dark'
 			? (page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url_dark']
-			: (page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url_light']) ??
+			: undefined) ??
 			(page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url'] ??
 			'/favicon.svg')
 	);

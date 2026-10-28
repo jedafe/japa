@@ -3,6 +3,8 @@ package bots
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -233,11 +235,66 @@ func ContentURLPath(contentType, slug string) string {
 	return model.LinkPathFor(contentType) + slug
 }
 
+// Emission caps for llms-full.txt — a curated directory, not a URL dump.
+// The sitemap is the exhaustive index; these sections exist to orient an
+// agent, not to enumerate the site.
+const (
+	llmsMaxIndexPosts = 200
+	llmsMaxTags       = 50
+	llmsMaxSpaces     = 50
+	llmsFeaturedBody  = 4000
+	llmsExcerptLen    = 200
+)
+
+var (
+	markdownImageRe = regexp.MustCompile(`!\[([^\]]*)\]\([^)]*\)`)
+	markdownLinkRe  = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+	htmlTagRe       = regexp.MustCompile(`<[^>]+>`)
+	markdownPunctRe = regexp.MustCompile("[#*_`~>]+")
+	literalRe       = regexp.MustCompile(`\{\{[^{}]*\}\}`)
+)
+
+// excerpt cleans a body fragment into a single-line link description:
+// markdown syntax flattened to plain text, then truncated by runes so
+// multilingual titles/bodies aren't split mid-rune.
+func excerpt(s string) string {
+	s = markdownImageRe.ReplaceAllString(s, "$1")
+	s = markdownLinkRe.ReplaceAllString(s, "$1")
+	s = htmlTagRe.ReplaceAllString(s, " ")
+	s = markdownPunctRe.ReplaceAllString(s, "")
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > llmsExcerptLen {
+		s = strings.TrimSpace(string(r[:llmsExcerptLen])) + "…"
+	}
+
+	return s
+}
+
+// cleanFeaturedBody normalizes an inlined article body for llms-full.txt:
+// collapsed blank-line runs and a length cap so one post can't dominate
+// the file. Truncates by runes (multilingual content).
+func cleanFeaturedBody(s string) string {
+	// §14 literals ({{...}} placeholders) are unresolved at this layer —
+	// strip them so raw tokens never leak into the file.
+	s = literalRe.ReplaceAllString(s, "")
+	s = strings.TrimSpace(s)
+	for strings.Contains(s, "\n\n\n") {
+		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
+	}
+
+	if r := []rune(s); len(r) > llmsFeaturedBody {
+		s = strings.TrimSpace(string(r[:llmsFeaturedBody])) + "\n\n_(truncated)_"
+	}
+
+	return s
+}
+
 // GetLLMsData fetches the data needed for llms.txt generation: recent
-// published + indexable posts, the top tags, and top active public spaces.
-// Posts and spaces pass through the same Section 43 quality gates as the
-// sitemaps (IsContentIndexableByType / IsSpaceIndexable) using cfg — if it
-// isn't good enough for Google, it isn't advertised to AI crawlers either.
+// published + indexable posts, the top tags, top active public spaces, and
+// featured long-form content for inlining. Posts and spaces pass through
+// the same Section 43 quality gates as the sitemaps
+// (IsContentIndexableByType / IsSpaceIndexable) using cfg — if it isn't
+// good enough for Google, it isn't advertised to AI crawlers either.
 // Returned links are root-relative; the handler absolutizes them.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (s *Store) GetLLMsData(ctx context.Context, cfg SitemapQualityConfig) (LLMsData, error) {
@@ -248,6 +305,10 @@ func (s *Store) GetLLMsData(ctx context.Context, cfg SitemapQualityConfig) (LLMs
 
 	recentPosts := make([]Link, 0, len(posts))
 	for _, p := range posts {
+		if len(recentPosts) >= llmsMaxIndexPosts {
+			break
+		}
+
 		if p.Slug == "" {
 			continue
 		}
@@ -270,7 +331,49 @@ func (s *Store) GetLLMsData(ctx context.Context, cfg SitemapQualityConfig) (LLMs
 			continue
 		}
 
-		recentPosts = append(recentPosts, Link{Title: p.Title, URL: ContentURLPath(p.ContentType, p.Slug)})
+		recentPosts = append(recentPosts, Link{
+			Title:       p.Title,
+			URL:         ContentURLPath(p.ContentType, p.Slug),
+			Description: excerpt(p.Excerpt),
+		})
+	}
+
+	// Featured content is additive — its query failing shouldn't take the
+	// whole file down; log and continue with an empty section.
+	featured, err := s.read.ListFeaturedContentForLLMsTxt(ctx)
+	if err != nil {
+		slog.Warn("llms: featured content query failed, skipping section", "error", err)
+		featured = nil
+	}
+
+	featuredItems := make([]FeaturedItem, 0, len(featured))
+	for _, p := range featured {
+		if p.Slug == "" || strings.TrimSpace(p.Body) == "" {
+			continue
+		}
+
+		isQuestion := p.IsQuestion != nil && *p.IsQuestion
+		if !IsContentIndexableByType(ContentIndexableInput{
+			ContentType:   p.ContentType,
+			Status:        "published",
+			Visibility:    p.Visibility,
+			WordCount:     int(p.WordCount),
+			CommentCount:  int(p.CommentCount),
+			ShareCount:    int(p.ShareCount),
+			ReactionCount: int(p.ReactionCount),
+			ReplyCount:    int(p.ReplyCount),
+			IsQuestion:    isQuestion,
+			Solved:        p.Solved,
+			SeoIndexable:  p.SeoIndexable,
+		}, cfg) {
+			continue
+		}
+
+		featuredItems = append(featuredItems, FeaturedItem{
+			Title: p.Title,
+			URL:   ContentURLPath(p.ContentType, p.Slug),
+			Body:  cleanFeaturedBody(p.Body),
+		})
 	}
 
 	tags, err := s.read.ListTopTagsForLLMsTxt(ctx)
@@ -280,11 +383,15 @@ func (s *Store) GetLLMsData(ctx context.Context, cfg SitemapQualityConfig) (LLMs
 
 	tagLinks := make([]Link, 0, len(tags))
 	for _, tg := range tags {
+		if len(tagLinks) >= llmsMaxTags {
+			break
+		}
+
 		if tg.Slug == "" {
 			continue
 		}
 
-		tagLinks = append(tagLinks, Link{Title: tg.Name, URL: "/tags/" + tg.Slug})
+		tagLinks = append(tagLinks, Link{Title: tg.Name, URL: "/tags/" + tg.Slug, Description: excerpt(tg.Description)})
 	}
 
 	spaces, err := s.read.ListTopSpacesForLLMsTxt(ctx)
@@ -294,6 +401,10 @@ func (s *Store) GetLLMsData(ctx context.Context, cfg SitemapQualityConfig) (LLMs
 
 	spaceLinks := make([]Link, 0, len(spaces))
 	for _, sp := range spaces {
+		if len(spaceLinks) >= llmsMaxSpaces {
+			break
+		}
+
 		if sp.Slug == "" {
 			continue
 		}
@@ -305,12 +416,13 @@ func (s *Store) GetLLMsData(ctx context.Context, cfg SitemapQualityConfig) (LLMs
 			continue
 		}
 
-		spaceLinks = append(spaceLinks, Link{Title: sp.Name, URL: "/spaces/" + sp.Slug})
+		spaceLinks = append(spaceLinks, Link{Title: sp.Name, URL: "/spaces/" + sp.Slug, Description: excerpt(sp.Description)})
 	}
 
 	return LLMsData{
 		RecentPosts: recentPosts,
 		Tags:        tagLinks,
 		Spaces:      spaceLinks,
+		Featured:    featuredItems,
 	}, nil
 }

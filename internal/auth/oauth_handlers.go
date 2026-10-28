@@ -14,9 +14,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/email"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -33,6 +36,9 @@ type OAuthHandlers struct {
 	Queries             *gen.Queries
 	KeyRot              *KeyRotation
 	Settings            SettingsReader        // Hot-reloadable system settings for refresh token TTL
+	Clients             OAuthClientStore      // Optional — Control-managed provider credentials (jc:oauth_clients)
+	AsynqClient         *asynq.Client         // Optional — welcome/verification emails on OAuth registration
+	SiteName            string                // Brand name for email templates
 	FrontendBaseURL     string                // Public frontend base URL (JC_SITE_URL) for post-OAuth redirects
 	CookieDomain        string                // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
 	SecureCookies       bool                  // When true, session cookies are marked Secure (production / TLS)
@@ -82,12 +88,88 @@ func (h *OAuthHandlers) maybeCreateUserSource(ctx context.Context, userID pgtype
 	}
 }
 
-// oauthRedirectCookie is the short-lived cookie holding the frontend path to
-// redirect to after a successful OAuth callback. Stored alongside jc_oauth_state.
-const oauthRedirectCookie = "jc_oauth_redirect"
+// Short-lived cookies carrying OAuth flow state between initiate and callback:
+//   - jc_oauth_state: "{provider}.{token}" CSRF token — the provider prefix
+//     binds the state to one provider so a state minted for google cannot be
+//     replayed against the github callback.
+//   - jc_oauth_redirect: URL-escaped post-login frontend path (escaped because
+//     raw paths can contain bytes that are invalid in cookie values).
+//   - jc_oauth_verifier: PKCE code verifier for providers that support it.
+const (
+	oauthStateCookie    = "jc_oauth_state"
+	oauthRedirectCookie = "jc_oauth_redirect"
+	oauthVerifierCookie = "jc_oauth_verifier"
+)
+
+// socialLoginAllowed reports whether the users.allow_social_login system
+// setting permits social login right now. It is evaluated on both initiate
+// AND callback — a provider flow in flight when the admin disables the
+// setting must not complete. Fails CLOSED: a settings-read error disables
+// social login rather than silently bypassing an admin lockout.
+func (h *OAuthHandlers) socialLoginAllowed(ctx context.Context) bool {
+	if h.Settings == nil {
+		return true
+	}
+
+	allowed, err := h.Settings.GetSettingBool(ctx, "users.allow_social_login")
+
+	return err == nil && allowed
+}
+
+// resolveProvider returns the OAuthProvider for a normalized provider name.
+// Env-configured credentials win; otherwise a Control-managed client entry
+// (jc:oauth_clients) is consulted so operators can configure providers
+// without a redeploy.
+func (h *OAuthHandlers) resolveProvider(ctx context.Context, providerName string) OAuthProvider {
+	if p := h.Config.NewProvider(providerName); p != nil {
+		return p
+	}
+
+	if h.Clients != nil {
+		cfg, err := h.Clients.GetClientConfig(ctx, providerName)
+		if err != nil {
+			slog.Warn("oauth: dynamic client lookup failed", "provider", providerName, "error", err)
+			return nil
+		}
+
+		if cfg != nil {
+			return cfg.NewProvider(h.Config.RedirectBase)
+		}
+	}
+
+	return nil
+}
 
 // SetDefaultFolderProvider injects the default bookmark folder seeder.
 func (h *OAuthHandlers) SetDefaultFolderProvider(p DefaultFolderProvider) { h.DefaultFolderSetter = p }
+
+// flowSameSite returns the SameSite mode for OAuth flow cookies. Sign in
+// with Apple completes via a cross-site POST (response_mode=form_post) and
+// SameSite=Lax cookies are withheld on cross-site POST navigations — Apple
+// flows need SameSite=None, which browsers only accept together with Secure.
+// When SecureCookies is off (local dev) Apple falls back to Lax and its
+// form_post flow cannot complete — acceptable, Apple needs HTTPS anyway.
+func (h *OAuthHandlers) flowSameSite(providerName string) http.SameSite {
+	if providerName == "apple" && h.SecureCookies {
+		return http.SameSiteNoneMode
+	}
+
+	return http.SameSiteLaxMode
+}
+
+// setOAuthFlowCookie writes a short-lived OAuth flow cookie.
+func (h *OAuthHandlers) setOAuthFlowCookie(w http.ResponseWriter, name, value string, sameSite http.SameSite) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		Domain:   h.CookieDomain,
+		MaxAge:   600, // 10 minutes
+		HttpOnly: true,
+		Secure:   h.SecureCookies,
+		SameSite: sameSite,
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
+}
 
 // HandleInitiate handles POST /api/v1/auth/oauth/{provider}/initiate.
 // Validates the provider, generates a CSRF state token, stores it in a
@@ -100,24 +182,24 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	// (admin-configurable in the Settings → Users page). When disabled, all
 	// OAuth providers are rejected at initiation so the setting actually
 	// affects the site. Ref: conventions/system-settings-catalog.md
-	if h.Settings != nil {
-		if allowed, err := h.Settings.GetSettingBool(r.Context(), "users.allow_social_login"); err == nil && !allowed {
-			errpkg.WriteError(w, http.StatusForbidden, "social_login_disabled",
-				"Social login is disabled")
-			return
-		}
+	if !h.socialLoginAllowed(r.Context()) {
+		errpkg.WriteError(w, http.StatusForbidden, "social_login_disabled",
+			"Social login is disabled")
+		return
 	}
 
-	providerName := chi.URLParam(r, "provider")
+	// Normalize the route param: provider matching, storage keys and
+	// usernames all assume lowercase ("google", not "Google").
+	providerName := strings.ToLower(chi.URLParam(r, "provider"))
 
-	provider := h.Config.NewProvider(providerName)
+	provider := h.resolveProvider(r.Context(), providerName)
 	if provider == nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_provider",
 			"OAuth provider is not configured or not supported")
 		return
 	}
 
-	state, err := GenerateOAuthState()
+	token, err := GenerateOAuthState()
 	if err != nil {
 		slog.Error("generate OAuth state", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "state_error", "Failed to initiate OAuth")
@@ -125,17 +207,23 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The state value embeds the provider name so a state minted for one
+	// provider cannot be replayed at another provider's callback.
+	state := providerName + "." + token
+
+	sameSite := h.flowSameSite(providerName)
+
 	// Store state in a short-lived cookie for CSRF validation on callback.
-	http.SetCookie(w, &http.Cookie{
-		Name:     "jc_oauth_state",
-		Value:    state,
-		Path:     "/",
-		Domain:   h.CookieDomain,
-		MaxAge:   600, // 10 minutes
-		HttpOnly: true,
-		Secure:   h.SecureCookies,
-		SameSite: http.SameSiteLaxMode,
-	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
+	h.setOAuthFlowCookie(w, oauthStateCookie, state, sameSite)
+
+	// PKCE: generate a verifier and pass the S256 challenge to the provider.
+	// Providers that don't support PKCE ignore the challenge, but the
+	// verifier cookie is cheap and harmless in that case.
+	var codeChallenge string
+	if verifier, verr := GeneratePKCEVerifier(); verr == nil {
+		codeChallenge = pkceChallenge(verifier)
+		h.setOAuthFlowCookie(w, oauthVerifierCookie, verifier, sameSite)
+	}
 
 	// Store the requested redirect path so the callback can forward the user
 	// to the right frontend page after success. Defaults to "/".
@@ -157,77 +245,171 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 
 	redirect = safeRedirectTarget(redirect, h.Config.RedirectBase)
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     oauthRedirectCookie,
-		Value:    redirect,
-		Path:     "/",
-		Domain:   h.CookieDomain,
-		MaxAge:   600, // 10 minutes
-		HttpOnly: true,
-		Secure:   h.SecureCookies,
-		SameSite: http.SameSiteLaxMode,
-	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
+	// Escape the value: raw paths can contain bytes that are invalid inside
+	// a cookie value; the callback unescapes before use. PathEscape (not
+	// QueryEscape) is used deliberately — it encodes spaces as %20 rather
+	// than '+', so the value round-trips identically through the frontend
+	// proxy's decodeURIComponent/re-encode without a '+' vs space ambiguity.
+	h.setOAuthFlowCookie(w, oauthRedirectCookie, url.PathEscape(redirect), sameSite)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]string{"auth_url": provider.AuthURL(state)},
+		"data": map[string]string{"auth_url": provider.AuthURL(state, codeChallenge)},
 	})
 }
 
-// HandleCallback handles GET /api/v1/auth/oauth/{provider}/callback.
+// oauthCallbackParams extracts the provider's callback parameters. Standard
+// OAuth callbacks arrive as GET with query parameters; Sign in with Apple
+// uses response_mode=form_post and POSTs the same fields (plus an optional
+// "user" JSON object carrying the name on first authorization).
+func oauthCallbackParams(r *http.Request) (state, code, errParam, errDesc, userJSON string) {
+	if r.Method == http.MethodPost {
+		_ = r.ParseForm()
+
+		// r.Form merges URL query and body params — covers proxies that
+		// leave params in the query string even on form_post.
+		return r.Form.Get("state"), r.Form.Get("code"),
+			r.Form.Get("error"), r.Form.Get("error_description"),
+			r.Form.Get("user")
+	}
+
+	q := r.URL.Query()
+
+	return q.Get("state"), q.Get("code"), q.Get("error"), q.Get("error_description"), ""
+}
+
+// oauthLoginAllowed enforces the same account gates as password login
+// (§02, §22, ADR-068): is_bot persona accounts are refused, 'deleted' and
+// other terminal statuses are hard-stopped, and the platform email-
+// verification requirement applies (with the same super_admin bypass).
+// When the provider attests the email the account already has, the link
+// doubles as proof of ownership and the account is marked verified.
+func (h *OAuthHandlers) oauthLoginAllowed(w http.ResponseWriter, r *http.Request, user *User, info *OAuthUserInfo) bool {
+	if user.IsBot {
+		slog.Warn("oauth login blocked: is_bot account", "user_id", user.ID, "provider", info.Provider)
+		h.redirectOAuthError(w, r, "invalid_account")
+		return false
+	}
+
+	if !loginAllowedStatus(user.Status) {
+		h.redirectOAuthError(w, r, "account_inactive")
+		return false
+	}
+
+	// Opportunistic verification: the provider attesting the very email on
+	// the account is at least as strong a proof as our own link — mark it.
+	if h.Queries != nil && !user.EmailVerifiedAt.Valid && info.EmailVerified && strings.EqualFold(info.Email, user.Email) {
+		if err := h.Queries.MarkEmailVerifiedByUserID(r.Context(), user.ID); err != nil {
+			slog.Warn("oauth: failed to mark provider-verified email", "user_id", user.ID, "error", err)
+		} else {
+			user.EmailVerifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+		}
+	}
+
+	if EmailVerifyRequired(r.Context(), h.Settings) && !user.EmailVerifiedAt.Valid {
+		isSuperAdmin := false
+		if h.Queries != nil {
+			if ok, err := h.Queries.IsUserInGroup(r.Context(), gen.IsUserInGroupParams{
+				UserID:    user.ID,
+				GroupSlug: "super_admin",
+			}); err == nil {
+				isSuperAdmin = ok
+			}
+		}
+
+		if !isSuperAdmin {
+			h.redirectOAuthError(w, r, "email_not_verified")
+			return false
+		}
+	}
+
+	return true
+}
+
+// resolveLinkOwner re-reads oauth_accounts after a link attempt and reports
+// whether the provider identity now resolves to the expected user. When it
+// resolves to a DIFFERENT user (the provider account was already linked
+// elsewhere), the merge must not issue a session — otherwise one provider
+// identity could sign into two accounts depending on lookup order.
+func (h *OAuthHandlers) resolveLinkOwner(ctx context.Context, provider, providerUserID string, userID pgtype.UUID) bool {
+	linked, err := h.Store.GetOAuthAccount(ctx, provider, providerUserID)
+	if err != nil || linked == nil {
+		return false
+	}
+
+	return linked.UserID == userID
+}
+
+// HandleCallback handles GET|POST /api/v1/auth/oauth/{provider}/callback.
 // Validates the CSRF state, exchanges the code for user info, creates or
 // links the account per Section 02, sets session cookies, and redirects
 // to the frontend. New users redirect to /onboarding; returning users to
 // the stored redirect path (default /). Errors redirect to /login with
-// an oauth_error query parameter.
+// an oauth_error query parameter. POST is required because Sign in with
+// Apple responds with response_mode=form_post.
 func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	providerName := chi.URLParam(r, "provider")
+	providerName := strings.ToLower(chi.URLParam(r, "provider"))
 
-	provider := h.Config.NewProvider(providerName)
+	if !h.socialLoginAllowed(r.Context()) {
+		h.redirectOAuthError(w, r, "social_login_disabled")
+		return
+	}
+
+	provider := h.resolveProvider(r.Context(), providerName)
 	if provider == nil {
 		h.redirectOAuthError(w, r, "unsupported_provider")
 		return
 	}
 
-	// Validate CSRF state
-	stateCookie, err := r.Cookie("jc_oauth_state")
+	callbackState, code, errParam, errDesc, userJSON := oauthCallbackParams(r)
+
+	// Validate CSRF state — the cookie carries "{provider}.{token}" so a
+	// state minted for a different provider is rejected outright.
+	stateCookie, err := r.Cookie(oauthStateCookie)
 	if err != nil || stateCookie.Value == "" {
 		h.redirectOAuthError(w, r, "missing_state")
 		return
 	}
 
-	callbackState := r.URL.Query().Get("state")
-	if !ValidateOAuthState(stateCookie.Value, callbackState) {
+	if !strings.HasPrefix(stateCookie.Value, providerName+".") ||
+		!ValidateOAuthState(stateCookie.Value, callbackState) {
 		h.redirectOAuthError(w, r, "invalid_state")
 		return
 	}
 
-	// Clear the state + redirect cookies (read redirect before clearing).
+	// Clear the flow cookies (read redirect + verifier before clearing).
 	// Re-validate the path even though it was validated at initiation —
 	// the cookie could have been tampered with between the two requests.
 	redirectPath := "/"
 	if rc, err := r.Cookie(oauthRedirectCookie); err == nil && rc.Value != "" {
-		redirectPath = safeRedirectTarget(rc.Value, h.Config.RedirectBase)
+		if unescaped, uerr := url.PathUnescape(rc.Value); uerr == nil {
+			redirectPath = safeRedirectTarget(unescaped, h.Config.RedirectBase)
+		}
+	}
+
+	var codeVerifier string
+	if vc, err := r.Cookie(oauthVerifierCookie); err == nil {
+		codeVerifier = vc.Value
 	}
 
 	h.clearOAuthCookies(w)
 
 	// Check for provider error
-	if errParam := r.URL.Query().Get("error"); errParam != "" {
-		desc := r.URL.Query().Get("error_description")
-		slog.Warn("OAuth provider error", "provider", providerName, "error", errParam, "description", desc)
+	if errParam != "" {
+		slog.Warn("OAuth provider error", "provider", providerName, "error", errParam, "description", errDesc)
 		h.redirectOAuthError(w, r, "oauth_error")
 
 		return
 	}
 
-	code := r.URL.Query().Get("code")
 	if code == "" {
 		h.redirectOAuthError(w, r, "missing_code")
 		return
 	}
 
-	// Exchange code for user info
-	userInfo, err := provider.Exchange(r.Context(), code)
+	// Exchange code for user info. The state cookie value is passed as the
+	// expected nonce — providers that echo a nonce (Apple id_token) must
+	// return this exact value, binding the token to this browser's flow.
+	userInfo, err := provider.Exchange(r.Context(), code, codeVerifier, stateCookie.Value)
 	if err != nil {
 		slog.Error("OAuth exchange failed", "provider", providerName, "error", err)
 		h.redirectOAuthError(w, r, "oauth_exchange_failed")
@@ -235,10 +417,48 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if userInfo.ProviderUserID == "" {
+		slog.Error("OAuth provider returned empty subject", "provider", providerName)
+		h.redirectOAuthError(w, r, "oauth_exchange_failed")
+
+		return
+	}
+
+	// Apple sends the user's name once, in the form_post "user" field, on
+	// first authorization — it is absent from every later response.
+	if providerName == "apple" && userInfo.Name == "" && userJSON != "" {
+		var u struct {
+			Name *struct {
+				FirstName string `json:"firstName"`
+				LastName  string `json:"lastName"`
+			} `json:"name"`
+		}
+		if json.Unmarshal([]byte(userJSON), &u) == nil && u.Name != nil {
+			userInfo.Name = strings.TrimSpace(u.Name.FirstName + " " + u.Name.LastName)
+		}
+	}
+
+	// Normalize the provider email once: users.email is stored lowercase
+	// (registration normalizes), so lookups and inserts must agree.
+	userInfo.Email = strings.ToLower(strings.TrimSpace(userInfo.Email))
+
 	// Try to find existing linked account — returning user.
 	existing, err := h.Store.GetOAuthAccount(r.Context(), providerName, userInfo.ProviderUserID)
 	if err == nil && existing != nil {
-		h.issueSessionAndRedirect(w, r, existing.UserID, redirectPath, false)
+		user, uerr := h.Store.GetUserByID(r.Context(), existing.UserID)
+		if uerr != nil || user == nil {
+			slog.Error("oauth linked account has no user row", "user_id", existing.UserID, "error", uerr)
+			h.redirectOAuthError(w, r, "account_unavailable")
+
+			return
+		}
+
+		if !h.oauthLoginAllowed(w, r, user, userInfo) {
+			return
+		}
+
+		h.issueSessionAndRedirect(w, r, user.ID, redirectPath)
+
 		return
 	}
 
@@ -250,23 +470,20 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if userInfo.Email != "" {
 		user, err := h.Store.GetUserByEmail(r.Context(), userInfo.Email)
 		if err == nil && user != nil {
-			// ADR-068 §1: AI persona backing accounts cannot log in via any
-			// auth flow, including OAuth. Block is_bot accounts explicitly.
-			if user.IsBot {
-				slog.Warn("oauth login blocked: is_bot account",
-					"user_id", user.ID, "provider", providerName)
-				h.redirectOAuthError(w, r, "invalid_account")
+			if !userInfo.EmailVerified {
+				// Provider did not verify the email: do NOT merge, no
+				// session issued. Return the generic oauth_error — a
+				// distinct code would let anyone probe "does an account
+				// exist for this email" by attaching that address
+				// unverified at a lax provider (e.g. GitHub).
+				slog.Warn("oauth merge refused: unverified provider email",
+					"provider", providerName, "user_id", user.ID)
+				h.redirectOAuthError(w, r, "oauth_error")
 
 				return
 			}
 
-			if !userInfo.EmailVerified {
-				// Provider did not verify the email: do NOT merge. Send
-				// the user to verify ownership first; no session issued.
-				slog.Warn("oauth merge refused: unverified provider email",
-					"provider", providerName, "user_id", user.ID)
-				h.redirectOAuthPendingLink(w, r)
-
+			if !h.oauthLoginAllowed(w, r, user, userInfo) {
 				return
 			}
 
@@ -274,7 +491,18 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 				slog.Error("link OAuth account", "error", linkErr)
 			}
 
-			h.issueSessionAndRedirect(w, r, user.ID, redirectPath, false)
+			if !h.resolveLinkOwner(r.Context(), providerName, userInfo.ProviderUserID, user.ID) {
+				// The provider identity is already linked to a different
+				// account (or the link failed) — refuse rather than sign
+				// this user in on a contested identity.
+				slog.Warn("oauth link conflict: provider identity owned by another user",
+					"provider", providerName, "user_id", user.ID)
+				h.redirectOAuthError(w, r, "link_conflict")
+
+				return
+			}
+
+			h.issueSessionAndRedirect(w, r, user.ID, redirectPath)
 
 			return
 		}
@@ -306,7 +534,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		target += "?redirect=" + url.QueryEscape(redirectPath)
 	}
 
-	h.issueSessionAndRedirect(w, r, userID, target, true)
+	h.issueSessionAndRedirect(w, r, userID, target)
 }
 
 // createOAuthUser creates a new OAuth-only user (password_hash = NULL) with a
@@ -360,8 +588,21 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo
 		// owner — grant it super_admin membership on first registration.
 		PromoteOwnerIfMatch(ctx, h.OwnerPromoter, h.OwnerEmail, info.Email, userID)
 
+		// A provider-verified email is proof of ownership — mark the account
+		// verified so auth.email.verify_required doesn't revoke the session
+		// at the first refresh (§02).
+		if info.EmailVerified {
+			if verr := h.Queries.MarkEmailVerifiedByUserID(ctx, userID); verr != nil {
+				slog.Warn("oauth register: failed to mark provider-verified email", "error", verr)
+			}
+		}
+
 		if linkErr := h.Store.LinkOAuthAccount(ctx, userID, providerName, info.ProviderUserID); linkErr != nil {
 			return pgtype.UUID{}, fmt.Errorf("link OAuth account: %w", linkErr)
+		}
+
+		if !h.resolveLinkOwner(ctx, providerName, info.ProviderUserID, userID) {
+			return pgtype.UUID{}, errors.New("oauth link did not resolve to the new user")
 		}
 
 		// §50 Pre-seed default bookmark folders. Non-fatal: logged on failure.
@@ -373,6 +614,15 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo
 
 		// v2 source directory: auto-create a canonical source for publisher users.
 		h.maybeCreateUserSource(ctx, userID, candidate)
+
+		// Transactional emails (fire-and-forget, Golden Rule 8): welcome for
+		// every signup — parity with password Register — and a verification
+		// link only when the provider could not attest the address.
+		h.sendWelcomeEmail(info.Email, candidate)
+
+		if !info.EmailVerified {
+			h.sendVerificationEmail(ctx, userID, info.Email, candidate)
+		}
 
 		return userID, nil
 	}
@@ -429,9 +679,9 @@ func randomSuffix(n int) (string, error) {
 
 // issueSessionAndRedirect mints an access token, sets jc_token + jc_refresh
 // cookies, updates last_login_at, and redirects the browser to the frontend.
-// isNew controls the redirect target: new users go to /onboarding (passed as
-// redirectPath by the caller); returning users go to redirectPath.
-func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.Request, userID pgtype.UUID, redirectPath string, _ bool) {
+// redirectPath is the final target — callers pass /onboarding for new users
+// and the stored redirect path for returning users.
+func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.Request, userID pgtype.UUID, redirectPath string) {
 	if h.Queries != nil {
 		if err := h.Queries.UpdateLastLoginAt(r.Context(),
 
@@ -539,23 +789,9 @@ func (h *OAuthHandlers) redirectOAuthError(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
-// redirectOAuthPendingLink redirects to the frontend login page signalling
-// the OAuth email needs verification before it can be linked to an existing
-// account. No session is issued and no account is merged — the user must
-// prove ownership of the email first.
-func (h *OAuthHandlers) redirectOAuthPendingLink(w http.ResponseWriter, r *http.Request) {
-	base := strings.TrimRight(h.FrontendBaseURL, "/")
-	if base == "" {
-		base = ""
-	}
-
-	target := base + "/login?verified_email_required=1"
-	http.Redirect(w, r, target, http.StatusFound)
-}
-
-// clearOAuthCookies expires the state and redirect cookies.
+// clearOAuthCookies expires the OAuth flow cookies.
 func (h *OAuthHandlers) clearOAuthCookies(w http.ResponseWriter) {
-	for _, name := range []string{"jc_oauth_state", oauthRedirectCookie} {
+	for _, name := range []string{oauthStateCookie, oauthRedirectCookie, oauthVerifierCookie} {
 		http.SetCookie(w, &http.Cookie{
 			Name:     name,
 			Value:    "",
@@ -619,4 +855,117 @@ func safeRedirectTarget(path, allowedOrigin string) string {
 	}
 
 	return "/"
+}
+
+// HandleProviders handles GET /api/v1/auth/oauth/providers — the public list
+// of configured social-login providers so the frontend renders buttons only
+// for providers that can actually complete a flow (env-configured plus
+// enabled Control-managed client entries).
+func (h *OAuthHandlers) HandleProviders(w http.ResponseWriter, r *http.Request) {
+	// Respect the social-login gate — a disabled feature should render no
+	// buttons, matching what the initiate endpoint would reject anyway.
+	if !h.socialLoginAllowed(r.Context()) {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []string{}})
+		return
+	}
+
+	seen := map[string]bool{}
+	providers := []string{}
+
+	for _, p := range h.Config.SupportedProviders() {
+		if !seen[p] {
+			seen[p] = true
+			providers = append(providers, p)
+		}
+	}
+
+	if h.Clients != nil {
+		if configs, err := h.Clients.ListClientConfigs(r.Context()); err == nil {
+			for _, c := range configs {
+				p := strings.ToLower(c.Provider)
+				if !seen[p] && c.NewProvider(h.Config.RedirectBase) != nil {
+					seen[p] = true
+					providers = append(providers, p)
+				}
+			}
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
+}
+
+// sendWelcomeEmail enqueues the welcome email for a new OAuth registration —
+// parity with the password Register path. Fire-and-forget (Golden Rule 8).
+func (h *OAuthHandlers) sendWelcomeEmail(to, username string) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	welcomePayload, _ := json.Marshal(map[string]interface{}{
+		"to":            to,
+		"template_slug": "welcome",
+		"template_data": map[string]string{
+			"user_name": username,
+		},
+		"template_site_name": h.SiteName,
+	})
+
+	task := asynq.NewTask(worker.TypeEmailSend, welcomePayload)
+	opts := append(worker.TaskOpts(worker.TypeEmailSend), asynq.MaxRetry(3))
+	if _, err := h.AsynqClient.Enqueue(task, opts...); err != nil {
+		slog.Warn("oauth register: failed to enqueue welcome email", "error", err)
+	}
+}
+
+// sendVerificationEmail issues a verification token and enqueues the
+// verify-your-email message for OAuth signups whose provider could not
+// attest the address — without it they can never satisfy
+// auth.email.verify_required. Fire-and-forget; failures only log.
+func (h *OAuthHandlers) sendVerificationEmail(ctx context.Context, userID pgtype.UUID, to, username string) {
+	if h.AsynqClient == nil || h.Queries == nil {
+		return
+	}
+
+	base := strings.TrimRight(h.FrontendBaseURL, "/")
+	if base == "" {
+		slog.Error("oauth register: cannot send verification email without a site URL")
+		return
+	}
+
+	token, hash, err := GenerateVerificationToken()
+	if err != nil {
+		slog.Error("oauth register: failed to generate verification token", "error", err)
+		return
+	}
+
+	expiresAt := time.Now().Add(VerificationTokenTTL)
+	if err := h.Queries.CreateEmailVerification(ctx, gen.CreateEmailVerificationParams{
+		UserID:    userID,
+		Email:     to,
+		TokenHash: hash,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
+		slog.Error("oauth register: failed to store verification token", "error", err)
+		return
+	}
+
+	siteName := h.SiteName
+	if siteName == "" {
+		siteName = "App"
+	}
+
+	htmlBody, err := email.RenderEmailVerification(email.TemplateData{
+		SiteName:   siteName,
+		SiteURL:    base,
+		UserName:   username,
+		ActionURL:  fmt.Sprintf("%s/auth/verify-email?token=%s", base, token),
+		Expiry:     "24 hours",
+		SupportURL: base + "/support",
+	})
+	if err != nil {
+		slog.Error("oauth register: failed to render verification email", "error", err)
+		return
+	}
+
+	enqueueEmailTask(h.AsynqClient, to, "Verify Your Email", htmlBody, true)
 }

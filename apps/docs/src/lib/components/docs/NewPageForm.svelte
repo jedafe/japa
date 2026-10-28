@@ -15,6 +15,8 @@
 	import type { ExistingPage } from '$lib/server/docs-author';
 	import type { SeoMeta } from '$lib/seo/meta';
 
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+
 	interface FormValues {
 		title?: string;
 		slug?: string;
@@ -373,11 +375,11 @@
 
 				<label class="field">
 					<span class="field-label">{t('new_page.field_status', 'Review status')}</span>
-					<select name="review_status" class="field-input" bind:value={reviewStatus}>
-						{#each statusChoices as s (s)}
-							<option value={s}>{t(`new_page.status.${s}`, s)}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						name="review_status"
+						bind:value={reviewStatus}
+						options={statusChoices.map((s) => ({ value: s, label: t(`new_page.status.${s}`, s) }))}
+					/>
 					<span class="field-hint">
 						{t('new_page.status_hint', 'Draft stays private. In review queues it for a reviewer. Approve/publish run the review steps for you.')}
 					</span>

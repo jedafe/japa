@@ -181,7 +181,7 @@
 	let faviconUrl = $derived(
 		((theme.resolved === 'dark'
 			? (data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined)
-			: (data.siteSettings?.['appearance.favicon_url_light'] as string | undefined)) ??
+			: undefined) ??
 			(data.siteSettings?.['appearance.favicon_url'] as string | undefined) ?? '')
 	);
 

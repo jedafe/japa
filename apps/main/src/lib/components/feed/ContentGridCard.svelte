@@ -19,6 +19,7 @@
 	let { item }: Props = $props();
 
 	const authed = $derived(!!page.data.isAuthed);
+	const tipsEnabled = $derived(!!page.data.features?.['tips.enabled']);
 	const canonicalHref = $derived(contentHref(item));
 	const shareUrl = $derived(`${page.url.origin}${canonicalHref}`);
 	const isVideo = $derived(item.content_type === 'video' || !!item.video_source_id);
@@ -240,7 +241,7 @@
 					class="group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
 				/>
 
-				{#if item.author_username}
+				{#if item.author_username && tipsEnabled}
 					<TipButton
 						recipientType="user"
 						recipientKey={item.author_username}

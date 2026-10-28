@@ -59,26 +59,26 @@
 	let faviconUrl = $derived(
 		((theme.resolved === 'dark'
 			? (data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined)
-			: (data.siteSettings?.['appearance.favicon_url_light'] as string | undefined)) ??
+			: undefined) ??
 			(data.siteSettings?.['appearance.favicon_url'] as string | undefined) ?? '')
 	);
 	$effect(() => {
-		if (faviconUrl) {
-			let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-			if (!link) {
-				link = document.createElement('link');
-				link.rel = 'icon';
-				document.head.appendChild(link);
-			}
+		if (!faviconUrl) return;
+		// Update every icon link — the app.html fallbacks carry
+		// prefers-color-scheme media attributes, so mutating only the
+		// first link would leave the bundled icon winning in dark mode.
+		const links = document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]');
+		const ext = faviconUrl.split('.').pop()?.toLowerCase();
+		const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'ico' ? 'image/x-icon' : 'image/png';
+		if (links.length === 0) {
+			const link = document.createElement('link');
+			link.rel = 'icon';
 			link.href = faviconUrl;
-			// Infer type from extension; default to image/png for uploaded favicons.
-			const ext = faviconUrl.split('.').pop()?.toLowerCase();
-			link.type =
-				ext === 'svg' ? 'image/svg+xml' :
-				ext === 'ico' ? 'image/x-icon' :
-				ext === 'png' ? 'image/png' :
-				'image/png';
+			link.type = mime;
+			document.head.appendChild(link);
+			return;
 		}
+		links.forEach((link) => { link.href = faviconUrl; link.type = mime; });
 	});
 
 	// hreflang alternates are injected server-side by hooks.server.ts with

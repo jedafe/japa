@@ -9,7 +9,6 @@ import (
 	"github.com/jedafe/japa/internal/brand"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -49,6 +48,21 @@ type SettingDef struct {
 	// surface (e.g. docs.categories on /docs/categories) rather than the
 	// generic settings page.
 	Hidden bool `json:"-"`
+	// StorageKey overrides the system_settings row this definition reads and
+	// writes when it differs from category+"."+Key — for settings grouped
+	// under an admin category whose canonical key lives in another namespace
+	// (e.g. "Comment Edit Window" under Content stores to
+	// comments.edit_window_minutes, the key the comments service reads).
+	StorageKey string `json:"-"`
+}
+
+// settingStorageKey resolves the system_settings row a definition persists
+// to — StorageKey when set, otherwise the conventional category+"."+Key.
+func settingStorageKey(category string, s SettingDef) string {
+	if s.StorageKey != "" {
+		return s.StorageKey
+	}
+	return category + "." + s.Key
 }
 
 // SettingCategory groups related settings with display metadata.
@@ -343,7 +357,6 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "logo_url_dark", Label: "Logo URL (Dark)", Type: "media", Accept: "image/*", Description: "Optional dark-theme logo; falls back to Logo URL"},
 			{Key: "favicon_url", Label: "Favicon URL", Type: "media", Accept: "image/*"},
 			{Key: "favicon_url_dark", Label: "Favicon URL (Dark)", Type: "media", Accept: "image/*", Description: "Optional dark-theme favicon; falls back to Favicon URL"},
-			{Key: "favicon_url_light", Label: "Favicon URL (Light)", Type: "media", Accept: "image/*", Description: "Optional light-theme favicon; falls back to Favicon URL"},
 			{
 				Key:         "auth_brand_slides",
 				Label:       "Auth Brand Slides",
@@ -397,8 +410,9 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "Users",
 		Settings: []SettingDef{
 			{Key: "allow_social_login", Label: "Allow Social Login", Type: "toggle"},
-			{Key: "require_profile_completion", Label: "Require Profile Completion", Type: "toggle"},
-			{Key: "max_avatar_size_mb", Label: "Max Avatar Size (MB)", Type: "number"},
+			// require_profile_completion / max_avatar_size_mb removed (dead
+			// controls): no gate consults the former and avatar uploads share
+			// media.max_upload_mb.
 			{Key: "allowed_avatar_types", Label: "Allowed Avatar Types", Type: "multiselect", Options: []string{"jpeg", "jpg", "png", "gif", "webp", "svg"}},
 			{Key: "username_cooldown_days", Label: "Username Cooldown Days", Type: "number", Description: "Minimum days between username changes (§50)", Value: 30},
 		},
@@ -408,17 +422,22 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "Content",
 		Settings: []SettingDef{
 			{Key: "posts_per_page", Label: "Posts Per Page", Type: "number"},
-			{Key: "allow_anonymous_posts", Label: "Allow Anonymous Posts", Type: "toggle"},
+			// allow_anonymous_posts removed (dead control): content create is
+			// behind RequireAuth + content.create — no guest-posting path
+			// exists to gate. max_upload_size_mb removed (dead duplicate):
+			// uploads share media.max_upload_mb under Media settings.
 			{Key: "require_content_review", Label: "Require Content Review", Type: "toggle"},
-			{Key: "max_upload_size_mb", Label: "Max Upload Size (MB)", Type: "number"},
 			{Key: "allowed_upload_types", Label: "Allowed Upload Types", Type: "multiselect", Options: []string{"jpeg", "jpg", "png", "gif", "webp", "svg", "pdf", "mp4", "webm", "mov", "mp3", "ogg", "wav", "m4a"}},
 			{Key: "link_preview.blacklist", Label: "Link Preview Blacklist", Type: "textarea", Placeholder: `["example.com", "spam.com"]`},
 			{Key: "edit_lock_ttl_seconds", Label: "Edit Lock TTL (seconds)", Type: "number", Description: "Editor lock TTL in seconds"},
 			{Key: "edit_window_minutes", Label: "Edit Window (minutes)", Type: "number", Description: "Content edit window (24hr default)"},
 			{Key: "max_tags", Label: "Max Tags", Type: "number", Description: "Max tags per content item"},
 			{Key: "min_length", Label: "Min Content Length", Type: "number", Description: "Minimum content body length"},
-			{Key: "comments.edit_window_minutes", Label: "Comment Edit Window (min)", Type: "number"},
-			{Key: "forum.edit_window_minutes", Label: "Forum Edit Window (min)", Type: "number"},
+			// These two store to the canonical comments.*/forum.* keys the
+			// comments and forum services read — without StorageKey the writes
+			// would land on dead content.* duplicates that nothing reads.
+			{Key: "comments.edit_window_minutes", Label: "Comment Edit Window (min)", Type: "number", StorageKey: "comments.edit_window_minutes"},
+			{Key: "forum.edit_window_minutes", Label: "Forum Edit Window (min)", Type: "number", StorageKey: "forum.edit_window_minutes"},
 			{Key: "pagination.style", Label: "Pagination Style", Type: "text", Description: "Default feed/list pagination style: `infinite_scroll`|`load_more`|`pagination`", Value: "infinite_scroll"},
 		},
 	},
@@ -490,31 +509,22 @@ var defaultSettings = map[string]SettingCategory{
 			// ai_content_moderation (use moderation.ai_auto_flag_threshold in
 			// the Moderation category). None had a backend consumer.
 			{Key: "monthly_budget_usd", Label: "Monthly Budget (USD)", Type: "number", Description: "Alert threshold for AI spend"},
-			{Key: "japabot_enabled", Label: "JapaBot Enabled", Type: "toggle"},
+			// japabot_enabled removed: reachability is owned by the
+			// feature.japabot feature flag (Control Panel → Extensions), same
+			// as agent.enabled — the system_settings row is only a deprecated
+			// nil-checker fallback, not an editable control.
 			{Key: "content_assist_enabled", Label: "Content Assist Enabled", Type: "toggle"},
 			{Key: "humanize.enabled", Label: "Humanize Enabled", Type: "toggle", Description: "Global toggle for AI text humanization (natural-language style injection)", Value: false},
 			{Key: "humanize.level", Label: "Humanize Level", Type: "text", Description: "Humanization intensity: low | medium | high", Value: "medium"},
 		},
 	},
-	"agent": {
-		Key:   "agent",
-		Label: "AI Agent",
-		Settings: []SettingDef{
-			{Key: "enabled", Label: "Agent Enabled", Type: "toggle", Value: true, Description: "Global AI agent toggle"},
-			{Key: "max_tool_calls", Label: "Max Tool Calls", Type: "number", Value: 20, Description: "Max tool calls per agent request"},
-			{Key: "timeout_seconds", Label: "Timeout (seconds)", Type: "number", Value: 60, Description: "Agent request timeout"},
-			{Key: "rate_limit_per_day", Label: "Rate Limit Per Day", Type: "number", Value: 50, Description: "Max agent requests per user per day"},
-			{Key: "daily_budget_usd", Label: "Daily Budget (USD)", Type: "number", Value: 5.00, Description: "Per-user daily AI spend hard cap; 0 disables"},
-			{Key: "cost_limit_per_request_usd", Label: "Cost Limit Per Request (USD)", Type: "number", Value: 0.50, Description: "Per-request cost limit"},
-			{Key: "temperature", Label: "LLM Temperature", Type: "number", Value: 0.3, Description: "Sampling temperature (0.0–2.0)"},
-			{Key: "guest_enabled", Label: "Guest Agent Enabled", Type: "toggle", Value: false, Description: "Allow guest (unauthenticated) agent prompts"},
-			{Key: "default_persona_id", Label: "Default Persona ID", Type: "text", Description: "Default AI persona for draft authorship"},
-			{Key: "external_search_provider", Label: "External Search Provider", Type: "select", Options: []string{"tavily", "brave", "none"}, Value: "tavily", Description: "Pre-search provider"},
-			{Key: "presearch_full_threshold", Label: "Pre-search Full Threshold", Type: "number", Value: 0.85, Description: "Relevance threshold for FULL pre-search"},
-			{Key: "bulk_create_max_items", Label: "Bulk Create Max Items", Type: "number", Value: 50, Description: "Max items per content.bulk_create"},
-			{Key: "bulk_publish_max_items", Label: "Bulk Publish Max Items", Type: "number", Value: 50, Description: "Max items per content.bulk_publish"},
-		},
-	},
+	// NOTE: The "agent" category was removed. Every agent.* key is classified
+	// Panel "control" in internal/control/settings_catalog.go (§103, ADR-111)
+	// and is managed under Control Panel → System Settings, so listing them
+	// here duplicated the same system_settings rows in both UIs. agent.enabled
+	// is additionally a deprecated reachability toggle owned by the
+	// feature.ai_agent feature flag (Control Panel → Extensions), not an
+	// editable system setting.
 	// NOTE: The "advanced" category was removed. debug_mode / log_level are
 	// process-startup concerns configured via JC_* env vars (Rule 3); they cannot
 	// be hot-reloaded from system_settings. cache_ttl_seconds / rate_limit_per_minute
@@ -726,7 +736,7 @@ var defaultSettings = map[string]SettingCategory{
 var settingCategoryOrder = []string{
 	"general", "auth", "feed", "security",
 	"appearance", "users", "content",
-	"media", "seo", "ai", "agent",
+	"media", "seo", "ai",
 	"spaces", "moderation", "wallet", "payment", "api", "ads",
 	"notifications", "tickets", "audit", "i18n", "gdpr",
 	"search", "affiliate",
@@ -803,7 +813,11 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 	// (§58, Rule 16).
 	currencyCodes := h.currencySettingCodes(ctx)
 
-	// Build a map of stored values keyed by the short key (after the dot).
+	// Build a map of stored values keyed by the full dot-notation key
+	// (e.g. "general.site_name"). Keying by the full key — not the suffix
+	// after the first dot — keeps cross-namespace lookups unambiguous: a
+	// setting whose StorageKey lives in another namespace resolves to its
+	// own row, and two keys that merely share a suffix cannot collide.
 	stored := make(map[string]any)
 
 	for rows.Next() {
@@ -813,12 +827,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&fullKey, &value); err != nil {
 			continue
 		}
-		// The stored key is dot-notation (e.g. "general.site_name");
-		// the short key is the part after the first dot.
-		parts := strings.SplitN(fullKey, ".", 2)
-		if len(parts) == 2 {
-			stored[parts[1]] = value
-		}
+		stored[fullKey] = value
 	}
 
 	// Assemble the response by iterating over defined categories in order,
@@ -849,7 +858,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 			// keys with no default at all stay "unset" (their default IS unset).
 			s.DefaultValue = s.Value
 
-			if val, exists := stored[s.Key]; exists {
+			if val, exists := stored[settingStorageKey(catKey, s)]; exists {
 				s.Overridden = true
 				if s.Masked {
 					s.Value = "***"
@@ -941,10 +950,12 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build a set of valid keys for this category so we can reject unknown keys.
-	validKeys := make(map[string]bool, len(def.Settings))
+	// Build a key→definition map so unknown keys are rejected and each
+	// accepted key resolves to its storage row (StorageKey when the canonical
+	// key lives outside this category's namespace).
+	defsByKey := make(map[string]SettingDef, len(def.Settings))
 	for _, s := range def.Settings {
-		validKeys[s.Key] = true
+		defsByKey[s.Key] = s
 	}
 
 	ctx := r.Context()
@@ -957,7 +968,8 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	isPublic := make(map[string]bool, len(updates))
 
 	for key, value := range updates {
-		if !validKeys[key] {
+		settingDef, known := defsByKey[key]
+		if !known {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
 			return
 		}
@@ -969,7 +981,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Section 57: custom CSS/JS have size caps (50 KB / 100 KB raw value).
-		fullKey := category + "." + key
+		fullKey := settingStorageKey(category, settingDef)
 
 		if category == "site" {
 			// Two-person approval for custom JS: only a super_admin may set
@@ -1089,10 +1101,15 @@ func (h *Handlers) ResetSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Every catalog key in the category is deleted — including Hidden keys,
 	// which are still category-scoped customizations even though they render
-	// on a dedicated surface.
+	// on a dedicated surface. Settings with a StorageKey outside the
+	// category namespace drop that row plus the legacy category-scoped
+	// alias left by writes that predated the override.
 	keys := make([]string, 0, len(def.Settings))
 	for _, s := range def.Settings {
-		keys = append(keys, category+"."+s.Key)
+		keys = append(keys, settingStorageKey(category, s))
+		if legacy := category + "." + s.Key; s.StorageKey != "" && legacy != s.StorageKey {
+			keys = append(keys, legacy)
+		}
 	}
 
 	ctx := r.Context()
@@ -1173,11 +1190,13 @@ func (h *Handlers) ResetSetting(w http.ResponseWriter, r *http.Request) {
 	// still category-scoped customizations even though they render on a
 	// dedicated surface (same rule as the category-wide reset).
 	var defValue any
+	var foundDef SettingDef
 	found := false
 
 	for _, s := range def.Settings {
 		if s.Key == key {
 			defValue = s.Value
+			foundDef = s
 			found = true
 			break
 		}
@@ -1188,10 +1207,17 @@ func (h *Handlers) ResetSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fullKey := category + "." + key
+	// Drop the canonical storage row plus the legacy category-scoped alias —
+	// writes that predated a StorageKey override left rows under
+	// category.key that must not resurrect the old effective value.
+	fullKey := settingStorageKey(category, foundDef)
+	deleteKeys := []string{fullKey}
+	if legacy := category + "." + key; legacy != fullKey {
+		deleteKeys = append(deleteKeys, legacy)
+	}
 	ctx := r.Context()
 
-	if err := h.Settings.DeleteSettingsBatch(ctx, []string{fullKey}); err != nil {
+	if err := h.Settings.DeleteSettingsBatch(ctx, deleteKeys); err != nil {
 		slog.Error("admin: failed to reset setting", "category", category, "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to reset setting")
 		return

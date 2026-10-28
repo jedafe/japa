@@ -1,7 +1,6 @@
 <script lang="ts">
 	// /me/tips — sent & received tip history (§125).
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
-	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { listTipsSent, listTipsReceived, type Tip } from '$lib/api/tips';
 	import { Loader2 } from 'lucide-svelte';
@@ -10,11 +9,13 @@
 	let items = $state<Tip[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let page = $state(1);
+	const pageSize = 20;
 
 	async function load() {
 		loading = true;
 		error = null;
-		const res = tab === 'received' ? await listTipsReceived() : await listTipsSent();
+		const res = tab === 'received' ? await listTipsReceived(page, pageSize) : await listTipsSent(page, pageSize);
 		loading = false;
 		if (res.error) {
 			error = res.error.message;
@@ -23,9 +24,9 @@
 		items = res.data ?? [];
 	}
 
-	onMount(load);
 	$effect(() => {
 		tab;
+		page;
 		load();
 	});
 
@@ -43,10 +44,10 @@
 	<h1 class="mb-4 text-2xl font-bold">{t('tips.history_title')}</h1>
 
 	<div class="mb-4 flex gap-2">
-		<button onclick={() => (tab = 'received')} class="rounded-lg border px-3 py-1.5 text-sm {tab === 'received' ? 'border-primary bg-primary/5 font-medium' : 'border-border'}">
+		<button onclick={() => { tab = 'received'; page = 1; }} class="rounded-lg border px-3 py-1.5 text-sm {tab === 'received' ? 'border-primary bg-primary/5 font-medium' : 'border-border'}">
 			{t('tips.received')}
 		</button>
-		<button onclick={() => (tab = 'sent')} class="rounded-lg border px-3 py-1.5 text-sm {tab === 'sent' ? 'border-primary bg-primary/5 font-medium' : 'border-border'}">
+		<button onclick={() => { tab = 'sent'; page = 1; }} class="rounded-lg border px-3 py-1.5 text-sm {tab === 'sent' ? 'border-primary bg-primary/5 font-medium' : 'border-border'}">
 			{t('tips.sent')}
 		</button>
 	</div>
@@ -63,7 +64,7 @@
 				<li class="flex items-center justify-between px-4 py-3">
 					<div class="min-w-0">
 						<p class="truncate text-sm font-medium">
-							{tab === 'received' ? tip.sender_name || 'Someone' : tip.recipient_type}
+							{tab === 'received' ? tip.sender_name || 'Someone' : tip.recipient_name || tip.recipient_type}
 						</p>
 						{#if tip.message}<p class="truncate text-xs text-muted-foreground">{tip.message}</p>{/if}
 					</div>
@@ -74,5 +75,16 @@
 				</li>
 			{/each}
 		</ul>
+		<div class="mt-4 flex items-center justify-between">
+			<button onclick={() => { if (page > 1) page -= 1; }} disabled={page === 1}
+				class="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40">
+				{t('tips.prev', 'Previous')}
+			</button>
+			<span class="text-sm text-muted-foreground">{page}</span>
+			<button onclick={() => { if (items.length === pageSize) page += 1; }} disabled={items.length < pageSize}
+				class="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40">
+				{t('tips.next', 'Next')}
+			</button>
+		</div>
 	{/if}
 </div>

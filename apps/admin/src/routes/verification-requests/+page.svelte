@@ -2,6 +2,7 @@
 	// §07 Verification Requests — admin review queue.
 	// Two-step flow: approve/reject records the review only; "Grant badge"
 	// on approved rows calls POST /admin/{organizations|users}/{id}/verify.
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Button } from "$lib/components/ui/button";
@@ -119,18 +120,26 @@
 {#if successMessage}<p class="mb-3 rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-600" role="status">{successMessage}</p>{/if}
 
 <div class="mb-4 flex gap-3">
-	<select bind:value={statusFilter} class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm">
-		<option value="pending">Pending</option>
-		<option value="approved">Approved</option>
-		<option value="rejected">Rejected</option>
-		<option value="withdrawn">Withdrawn</option>
-		<option value="">All</option>
-	</select>
-	<select bind:value={entityFilter} class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm">
-		<option value="">All entities</option>
-		<option value="organization">Organization</option>
-		<option value="user">User</option>
-	</select>
+	<AutocompleteSelect
+		bind:value={statusFilter}
+		class="w-40"
+		options={[
+			{ value: 'pending', label: t('vreq.status_pending', 'Pending') },
+			{ value: 'approved', label: t('vreq.status_approved', 'Approved') },
+			{ value: 'rejected', label: t('vreq.status_rejected', 'Rejected') },
+			{ value: 'withdrawn', label: t('vreq.status_withdrawn', 'Withdrawn') },
+			{ value: '', label: t('common.all', 'All') }
+		]}
+	/>
+	<AutocompleteSelect
+		bind:value={entityFilter}
+		class="w-44"
+		options={[
+			{ value: '', label: t('vreq.all_entities', 'All entities') },
+			{ value: 'organization', label: t('vreq.entity_organization', 'Organization') },
+			{ value: 'user', label: t('vreq.entity_user', 'User') }
+		]}
+	/>
 </div>
 
 {#if loading}
@@ -227,10 +236,14 @@
 <Modal open={showGrantModal} onclose={() => (showGrantModal = false)} title={t("vreq.grant", "Grant verification badge")}>
 	<label class="block text-sm">
 		{t("vreq.grant_type", "Badge type")}
-		<select bind:value={grantType} class="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-			<option value="">{t("vreq.grant_type_none", "— none —")}</option>
-			{#each types as ty}<option value={ty}>{ty.replaceAll("_", " ")}</option>{/each}
-		</select>
+		<AutocompleteSelect
+			bind:value={grantType}
+			class="mt-1"
+			options={[
+				{ value: '', label: t("vreq.grant_type_none", "— none —") },
+				...types.map((ty) => ({ value: ty, label: ty.replaceAll("_", " ") }))
+			]}
+		/>
 	</label>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => (showGrantModal = false)}>{t("common.cancel", "Cancel")}</Button>

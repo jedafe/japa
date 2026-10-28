@@ -144,29 +144,7 @@ func (h *SitemapHandler) baseURL(r *http.Request) string {
 // is unavailable or a key is unset.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (h *SitemapHandler) sitemapQualityConfig(ctx context.Context) bots.SitemapQualityConfig {
-	cfg := bots.DefaultSitemapQualityConfig()
-	if h.settings == nil {
-		return cfg
-	}
-
-	cfg.MinMembers = h.settings.GetIntOr(ctx, "seo.sitemap.space_min_members", cfg.MinMembers)
-	cfg.MinPosts = h.settings.GetIntOr(ctx, "seo.sitemap.space_min_posts", cfg.MinPosts)
-	cfg.MinForums = h.settings.GetIntOr(ctx, "seo.sitemap.space_min_forums", cfg.MinForums)
-	cfg.MinQuestions = h.settings.GetIntOr(ctx, "seo.sitemap.space_min_questions", cfg.MinQuestions)
-	cfg.MinWords = h.settings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
-	cfg.BlogMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
-	cfg.StoryMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.story_min_words", cfg.StoryMinWords)
-	cfg.ListMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.list_min_words", cfg.ListMinWords)
-	cfg.ForumMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
-	cfg.DiscussionMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
-	cfg.GuideMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
-	cfg.ComparisonMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
-	cfg.BlogMinEngagement = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
-	cfg.ForumMinReplies = h.settings.GetIntOr(ctx, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
-	cfg.QuestionMinAnswers = h.settings.GetIntOr(ctx, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
-	cfg.DiscussionMinComments = h.settings.GetIntOr(ctx, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
-
-	return cfg
+	return bots.LoadSitemapQualityConfig(ctx, h.settings)
 }
 
 // urlset is the root XML element for sitemaps.
@@ -443,7 +421,22 @@ func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	rows, err := h.reader.Query(r.Context(), `SELECT slug FROM tags  ORDER BY name`)
+	// Only tags with real content — empty tag pages are thin URLs.
+	// 0 disables the gate (list all tags); negative falls back to default.
+	cfg := h.sitemapQualityConfig(r.Context())
+	minContent := cfg.TagMinContent
+	if minContent < 0 {
+		minContent = bots.DefaultSitemapQualityConfig().TagMinContent
+	}
+
+	query := `SELECT slug FROM tags ORDER BY name`
+	args := []any{}
+	if minContent > 0 {
+		query = `SELECT slug FROM tags WHERE content_count >= $1 ORDER BY name`
+		args = append(args, minContent)
+	}
+
+	rows, err := h.reader.Query(r.Context(), query, args...)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -671,14 +664,33 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 	// Users map to groups through user_group_memberships (not a users.user_group_id
 	// column). A user is indexable when they have no group or belong to at least
 	// one group with allow_search_indexing = true — matching the Section 26 gate
-	// while tolerating multi-group users.
+	// while tolerating multi-group users. The seo.sitemap.user_min_posts gate
+	// additionally requires published content — profiles with nothing on them
+	// are thin pages that burn crawl budget.
+	cfg := h.sitemapQualityConfig(r.Context())
+	minPosts := cfg.UserMinPosts
+	if minPosts < 0 {
+		minPosts = bots.DefaultSitemapQualityConfig().UserMinPosts
+	}
+
+	// minPosts == 0 disables the gate (list all indexable users).
+	postsGate := ``
+	args := []any{}
+	if minPosts > 0 {
+		postsGate = ` AND (SELECT count(*) FROM contents c
+		        WHERE c.author_id = u.id AND c.status = 'published'
+		          AND c.deleted_at IS NULL) >= $1`
+		args = append(args, minPosts)
+	}
+
 	rows, err := h.reader.Query(r.Context(), `SELECT u.username, u.updated_at FROM users u
-		 WHERE u.status = 'active'
+		 WHERE u.status = 'active' AND u.deleted_at IS NULL
 		   AND (NOT EXISTS (SELECT 1 FROM user_group_memberships ugm WHERE ugm.user_id = u.id)
 		     OR EXISTS (SELECT 1 FROM user_group_memberships ugm
 		                JOIN user_groups ug ON ug.id = ugm.group_id
-		                WHERE ugm.user_id = u.id AND ug.allow_search_indexing))
-		 ORDER BY u.updated_at DESC`)
+		                WHERE ugm.user_id = u.id AND ug.allow_search_indexing))`+
+		postsGate+`
+		 ORDER BY u.updated_at DESC`, args...)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return

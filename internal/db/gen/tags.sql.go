@@ -671,15 +671,16 @@ func (q *Queries) ListTagsPaginated(ctx context.Context, arg ListTagsPaginatedPa
 }
 
 const listTopTagsForLLMsTxt = `-- name: ListTopTagsForLLMsTxt :many
-SELECT t.name, t.slug
+SELECT t.name, t.slug, COALESCE(t.description, '') AS description
 FROM tags t
 ORDER BY t.content_count DESC, t.name ASC
 LIMIT 100
 `
 
 type ListTopTagsForLLMsTxtRow struct {
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
 }
 
 // Bounded, popularity-ordered tag list for llms-full.txt "Topics" section.
@@ -693,7 +694,7 @@ func (q *Queries) ListTopTagsForLLMsTxt(ctx context.Context) ([]ListTopTagsForLL
 	var items []ListTopTagsForLLMsTxtRow
 	for rows.Next() {
 		var i ListTopTagsForLLMsTxtRow
-		if err := rows.Scan(&i.Name, &i.Slug); err != nil {
+		if err := rows.Scan(&i.Name, &i.Slug, &i.Description); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

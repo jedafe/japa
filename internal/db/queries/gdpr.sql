@@ -1489,3 +1489,22 @@ FROM (
 UPDATE moderation_appeals
 SET reason = '[erased]', resolution_note = NULL, updated_at = now()
 WHERE user_id = $1;
+
+-- §125 tips: retain the financial ledger rows but pseudonymize the sender
+-- side — sender_user_id + external_sender_name cleared. The recipient side
+-- keeps pointing at the (separately anonymized) users row, matching §19's
+-- wallet/payment handling.
+-- name: AnonymizeTipsForUser :exec
+UPDATE tips SET sender_user_id = NULL, external_sender_name = NULL
+WHERE sender_user_id = $1;
+
+-- name: DeleteTipSettingsForUser :exec
+DELETE FROM tip_settings WHERE owner_type = 'user' AND owner_id = $1;
+
+-- name: GdprExportTipsSent :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM tips WHERE sender_user_id = @user_id ORDER BY created_at DESC) t;
+
+-- name: GdprExportTipsReceived :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM tips WHERE recipient_user_id = @user_id ORDER BY created_at DESC) t;

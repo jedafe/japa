@@ -1779,7 +1779,13 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 // enqueueEmail enqueues an email delivery task via Asynq. Failures are logged but not returned.
 // When isHTML is true, the worker sends the body as text/html; otherwise as text/plain.
 func (h *AuthHandlers) enqueueEmail(to, subject, body string, isHTML bool) {
-	if h.AsynqClient == nil {
+	enqueueEmailTask(h.AsynqClient, to, subject, body, isHTML)
+}
+
+// enqueueEmailTask is the shared fire-and-forget email enqueue used by both
+// the password auth handlers and the OAuth social-login handlers.
+func enqueueEmailTask(client *asynq.Client, to, subject, body string, isHTML bool) {
+	if client == nil {
 		slog.Warn("auth: enqueueEmail called without asynq client", "to", to)
 		return
 	}
@@ -1797,7 +1803,7 @@ func (h *AuthHandlers) enqueueEmail(to, subject, body string, isHTML bool) {
 
 	task := asynq.NewTask(worker.TypeEmailSend, payload)
 	// Use QueueForTask to route to the correct tier (default for emails).
-	if _, err := h.AsynqClient.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend)), asynq.Unique(1*time.Hour)); err != nil {
+	if _, err := client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend)), asynq.Unique(1*time.Hour)); err != nil {
 		slog.Error("auth: failed to enqueue email", "to", to, "error", err)
 	}
 }

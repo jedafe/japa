@@ -134,6 +134,9 @@ func (f *fakeStore) adminCountTips(context.Context, gen.AdminCountTipsParams) (i
 func (f *fakeStore) adminTipStats(context.Context, pgtype.Timestamptz) (gen.AdminTipStatsRow, error) {
 	return gen.AdminTipStatsRow{}, nil
 }
+func (f *fakeStore) getOrgDisplayNames(context.Context, []pgtype.UUID) ([]gen.GetOrgDisplayNamesRow, error) {
+	return nil, nil
+}
 func (f *fakeStore) getUserDisplayNames(context.Context, []pgtype.UUID) ([]gen.GetUserDisplayNamesRow, error) {
 	return nil, nil
 }
@@ -165,6 +168,9 @@ func (f *fakeStore) getOrgOwnerID(context.Context, pgtype.UUID) (pgtype.UUID, er
 	return f.orgOwner, nil
 }
 func (f *fakeStore) settleWalletTip(_ context.Context, p settleWalletParams) (gen.Tip, error) {
+	if p.pointsDailyLimit > 0 && f.pointsToday+p.gross > p.pointsDailyLimit {
+		return gen.Tip{}, ErrDailyPointsLimit
+	}
 	f.settled = append(f.settled, p)
 	return gen.Tip{Method: p.method, Status: StatusCompleted}, nil
 }
@@ -315,9 +321,10 @@ func TestLinkValidation(t *testing.T) {
 	svc := &Service{store: fs, perms: fakePerms{map[string]bool{"tips.receive": true}}}
 	owner := UserOwner(actor)
 
-	// No settings row yet — links require a settings row.
-	if _, err := svc.CreateLink(context.Background(), owner, actor, LinkInput{Kind: "paypal", Label: "x", URL: "https://paypal.me/x"}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
+	// First link auto-materializes the settings row — must fail on the
+	// invalid-URL validation, not on a missing row.
+	if _, err := svc.CreateLink(context.Background(), owner, actor, LinkInput{Kind: "paypal", Label: "x", URL: "notaurl"}); !errors.Is(err, ErrInvalidLink) {
+		t.Fatalf("expected ErrInvalidLink, got %v", err)
 	}
 
 	if _, err := svc.UpsertSettings(context.Background(), owner, UpdateSettingsInput{TipsEnabled: true}); err != nil {

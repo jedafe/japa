@@ -1509,7 +1509,7 @@ WHERE cfv.entity_type = 'space'
 -- returned non-active spaces.) Carries the bots.IsSpaceIndexable gate
 -- inputs so llms.txt honors the same seo.sitemap.* thresholds as the
 -- spaces sitemap.
-SELECT s.name, s.slug, s.member_count, s.post_count,
+SELECT s.name, s.slug, s.member_count, s.post_count, COALESCE(s.description, '') AS description,
  COALESCE(fc.forum_count, 0) AS forum_count,
  COALESCE(qc.question_count, 0) AS question_count
 FROM spaces s

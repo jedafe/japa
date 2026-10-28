@@ -1336,6 +1336,16 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("deleting user blocks: %w", err)
 		}
 
+		// §125: tips are financial records — retained, but the sender side is
+		// pseudonymized (sender_user_id + external_sender_name cleared) and the
+		// user's tip_settings + external links are deleted with the account.
+		if err := q.AnonymizeTipsForUser(ctx, userID); err != nil {
+			return fmt.Errorf("anonymizing tips: %w", err)
+		}
+		if err := q.DeleteTipSettingsForUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting tip settings: %w", err)
+		}
+
 		// BE-2: delete user_mutes where the user is the muter or muted party.
 		// Mute relationships are user-owned feed-filter config and must not
 		// survive anonymization. Ref: Section 52, Section 15.
@@ -2265,6 +2275,8 @@ type UserDataExport struct {
 	TagModerators               []map[string]interface{} `json:"tag_moderators"`
 	ConsentRecords              []map[string]interface{} `json:"consent_records"`
 	WalletLedger                []map[string]interface{} `json:"wallet_ledger"`
+	TipsSent                    []map[string]interface{} `json:"tips_sent"`
+	TipsReceived                []map[string]interface{} `json:"tips_received"`
 	ActivityEvents              []map[string]interface{} `json:"activity_events"`
 	AcademyLessonProgress       []map[string]interface{} `json:"academy_lesson_progress"`
 	AcademyCertificates         []map[string]interface{} `json:"academy_certificates"`
@@ -2653,6 +2665,18 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		export.WalletLedger = rows
 	} else {
 		slog.Warn("failed to collect wallet_ledger for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §125 tip history (sent + received) — right-to-export coverage.
+	if rows, err := s.store.gdprExportTipsSent(ctx, userID); err == nil {
+		export.TipsSent = rows
+	} else {
+		slog.Warn("failed to collect tips sent for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportTipsReceived(ctx, userID); err == nil {
+		export.TipsReceived = rows
+	} else {
+		slog.Warn("failed to collect tips received for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Activity events for the user (BUG-008 — previously missing from export).

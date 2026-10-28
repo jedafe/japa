@@ -4,6 +4,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+
 	// Native Umami dashboard — the Go API proxies /api/v1/analytics/umami/*
 	// to the self-hosted Umami instance (service creds stay server-side).
 
@@ -68,12 +70,16 @@
 
 <div class="space-y-4">
 	<div class="flex flex-wrap items-center gap-3">
-		<select bind:value={siteId} onchange={load} class="border-border-card bg-background rounded-md border px-3 py-2 text-sm">
-			{#each websites as w}<option value={w.id}>{w.name} — {w.domain}</option>{/each}
-		</select>
-		<select bind:value={days} onchange={load} class="border-border-card bg-background rounded-md border px-3 py-2 text-sm">
-			<option value={1}>24h</option><option value={7}>7d</option><option value={30}>30d</option><option value={90}>90d</option>
-		</select>
+		<AutocompleteSelect
+			bind:value={siteId}
+			onValueChange={() => load()}
+			options={websites.map((w) => ({ value: w.id, label: `${w.name} — ${w.domain}` }))}
+		/>
+		<AutocompleteSelect
+			value={String(days)}
+			onValueChange={(v) => { days = Number(v); load(); }}
+			options={[1, 7, 30, 90].map((d) => ({ value: String(d), label: d === 1 ? '24h' : `${d}d` }))}
+		/>
 		{#if loading}<span class="text-muted-foreground text-sm">Loading…</span>{/if}
 	</div>
 

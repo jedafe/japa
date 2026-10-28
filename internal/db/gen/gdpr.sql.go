@@ -306,6 +306,20 @@ func (q *Queries) AnonymizeRevenueSplitsForInstructor(ctx context.Context, userI
 	return result.RowsAffected(), nil
 }
 
+const anonymizeTipsForUser = `-- name: AnonymizeTipsForUser :exec
+UPDATE tips SET sender_user_id = NULL, external_sender_name = NULL
+WHERE sender_user_id = $1
+`
+
+// §125 tips: retain the financial ledger rows but pseudonymize the sender
+// side — sender_user_id + external_sender_name cleared. The recipient side
+// keeps pointing at the (separately anonymized) users row, matching §19's
+// wallet/payment handling.
+func (q *Queries) AnonymizeTipsForUser(ctx context.Context, senderUserID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeTipsForUser, senderUserID)
+	return err
+}
+
 const anonymizeUser = `-- name: AnonymizeUser :exec
 UPDATE users
 SET username = 'Deleted User',
@@ -747,6 +761,15 @@ DELETE FROM ticket_comments WHERE user_id = $1
 // ticket_comments.user_id has no CASCADE; delete the user's ticket comments.
 func (q *Queries) DeleteTicketCommentsByUser(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTicketCommentsByUser, userID)
+	return err
+}
+
+const deleteTipSettingsForUser = `-- name: DeleteTipSettingsForUser :exec
+DELETE FROM tip_settings WHERE owner_type = 'user' AND owner_id = $1
+`
+
+func (q *Queries) DeleteTipSettingsForUser(ctx context.Context, ownerID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTipSettingsForUser, ownerID)
 	return err
 }
 
@@ -1355,6 +1378,30 @@ FROM (
 
 func (q *Queries) GdprExportRevenueSplits(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportRevenueSplits, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportTipsReceived = `-- name: GdprExportTipsReceived :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, points_amount, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at FROM tips WHERE recipient_user_id = $1 ORDER BY created_at DESC) t
+`
+
+func (q *Queries) GdprExportTipsReceived(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportTipsReceived, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportTipsSent = `-- name: GdprExportTipsSent :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, points_amount, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at FROM tips WHERE sender_user_id = $1 ORDER BY created_at DESC) t
+`
+
+func (q *Queries) GdprExportTipsSent(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportTipsSent, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

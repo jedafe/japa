@@ -11,7 +11,8 @@ VALUES (@owner_type, @owner_id, @tips_enabled, @accept_points, @accept_credits,
 ON CONFLICT (owner_type, owner_id) DO UPDATE SET
     tips_enabled = @tips_enabled, accept_points = @accept_points,
     accept_credits = @accept_credits, accept_fiat = @accept_fiat,
-    accept_external = @accept_external, oc_collective_slug = @oc_collective_slug,
+    accept_external = @accept_external,
+    oc_collective_slug = COALESCE(@oc_collective_slug, tip_settings.oc_collective_slug),
     oc_api_token_encrypted = COALESCE(@oc_api_token_encrypted, tip_settings.oc_api_token_encrypted),
     min_tip_amount = @min_tip_amount, thank_you_message = @thank_you_message,
     updated_at = now()
@@ -99,8 +100,11 @@ ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 SELECT count(*)::int FROM tips WHERE recipient_type = 'user' AND recipient_user_id = @recipient_user_id AND status = 'completed';
 
 -- name: SumTipperPointsToday :one
+-- Only completed tips count — a refunded tip returned the points, so it
+-- must not keep eating the sender's daily anti-laundering cap.
 SELECT COALESCE(sum(points_amount),0)::bigint FROM tips
 WHERE sender_user_id = @sender_user_id AND method = 'points'
+  AND status = 'completed'
   AND created_at >= (date_trunc('day', timezone('UTC', now()))) AT TIME ZONE 'UTC';
 
 -- name: ContentTipSummary :one
@@ -110,17 +114,21 @@ SELECT count(*)::int AS tip_count,
 FROM tips WHERE content_id = @content_id AND status = 'completed';
 
 -- name: AdminListTips :many
-SELECT * FROM tips
-WHERE (@status::text = '' OR status = @status)
-  AND (@method::text = '' OR method = @method)
-  AND (@recipient_type::text = '' OR recipient_type = @recipient_type)
-ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
+SELECT t.* FROM tips t
+WHERE (@status::text = '' OR t.status = @status)
+  AND (@method::text = '' OR t.method = @method)
+  AND (@recipient_type::text = '' OR t.recipient_type = @recipient_type)
+  AND (@q::text = '' OR t.external_sender_name ILIKE '%' || @q || '%'
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || @q || '%'))
+ORDER BY t.created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
 -- name: AdminCountTips :one
-SELECT count(*)::int FROM tips
-WHERE (@status::text = '' OR status = @status)
-  AND (@method::text = '' OR method = @method)
-  AND (@recipient_type::text = '' OR recipient_type = @recipient_type);
+SELECT count(*)::int FROM tips t
+WHERE (@status::text = '' OR t.status = @status)
+  AND (@method::text = '' OR t.method = @method)
+  AND (@recipient_type::text = '' OR t.recipient_type = @recipient_type)
+  AND (@q::text = '' OR t.external_sender_name ILIKE '%' || @q || '%'
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || @q || '%'));
 
 -- name: AdminTipStats :one
 SELECT count(*)::int AS total,
@@ -133,6 +141,9 @@ FROM tips WHERE created_at >= @since;
 SELECT u.id, u.username, up.display_name
 FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE u.id = ANY(@ids::uuid[]);
+
+-- name: GetOrgDisplayNames :many
+SELECT o.id, o.name FROM organizations o WHERE o.id = ANY(@ids::uuid[]);
 
 -- name: IsMentorProfile :one
 SELECT COALESCE(is_mentor, false) FROM user_profiles WHERE user_id = @user_id;

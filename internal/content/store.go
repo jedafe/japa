@@ -525,6 +525,16 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		input.Status = StatusInReview
 	}
 
+	// content.require_content_review gates every content type behind the
+	// in_review moderation queue when enabled (Rule 3). Moderator/admin
+	// callers bypass via input.SkipStoryModeration — the HTTP handler sets
+	// it on every create, not just stories.
+	if !input.SkipStoryModeration &&
+		(input.Status == StatusPublished || input.Status == StatusScheduled) &&
+		s.requireContentReview(ctx) {
+		input.Status = StatusInReview
+	}
+
 	if input.Visibility == "" {
 		input.Visibility = VisibilityPublic
 	}
@@ -1195,6 +1205,14 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	// moderator callers set SkipStoryModeration to publish directly.
 	if existing.ContentType == TypeStory && !input.SkipStoryModeration &&
 		(input.Status == StatusPublished || input.Status == StatusScheduled) {
+		input.Status = StatusInReview
+	}
+
+	// content.require_content_review gates every content type behind the
+	// in_review moderation queue when enabled (Rule 3), same as create.
+	if !input.SkipStoryModeration &&
+		(input.Status == StatusPublished || input.Status == StatusScheduled) &&
+		s.requireContentReview(ctx) {
 		input.Status = StatusInReview
 	}
 
@@ -1886,6 +1904,14 @@ func (s *Service) GetContentRevision(ctx context.Context, id, contentID pgtype.U
 	}
 
 	return revision, nil
+}
+
+// requireContentReview reports whether the platform forces publish/schedule
+// writes through the in_review moderation queue
+// (content.require_content_review, Rule 3). Falls back to false when the
+// settings reader is unwired.
+func (s *Service) requireContentReview(ctx context.Context) bool {
+	return s.settings != nil && s.settings.GetBoolOr(ctx, "content.require_content_review", false)
 }
 
 // ---------------------------------------------------------------------------

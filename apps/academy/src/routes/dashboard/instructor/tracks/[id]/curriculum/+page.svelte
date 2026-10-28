@@ -31,6 +31,8 @@
 	} from 'lucide-svelte';
 	import type { Curriculum, CurriculumModule, CurriculumLesson, QuizEditQuestion, LessonType } from '$lib/types';
 
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+
 	const trackId = page.params.id;
 
 	let curriculum = $state<Curriculum | null>(null);
@@ -701,11 +703,11 @@
 								</label>
 								<label class="block">
 									<span class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">{t('curriculum.lesson_type', 'Type')}</span>
-									<select bind:value={lessonForm.lesson_type} onchange={onLessonTypeChange} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]">
-										{#each lessonTypeOptions as opt (opt.value)}
-											<option value={opt.value}>{opt.label}</option>
-										{/each}
-									</select>
+									<AutocompleteSelect
+										value={lessonForm.lesson_type}
+										onValueChange={(v) => { lessonForm.lesson_type = v as LessonType; onLessonTypeChange(); }}
+										options={lessonTypeOptions.map((o) => ({ value: o.value, label: o.label }))}
+									/>
 								</label>
 								<label class="block">
 									<span class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">{t('curriculum.duration', 'Duration (minutes)')}</span>

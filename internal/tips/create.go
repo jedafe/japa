@@ -46,10 +46,13 @@ func (s *Service) CreateTip(ctx context.Context, senderID pgtype.UUID, in Create
 		return CreateTipResult{}, ErrSelfTip
 	}
 
-	// §125 recipient eligibility is role-gated: the wallet owner must hold
-	// tips.receive or be a mentor — checked live so a revoked-permission
-	// recipient's enabled settings row can't keep collecting tips.
-	if owner.Type != RecipientPlatform {
+	// §125 recipient eligibility is role-gated for member recipients: the
+	// wallet owner must hold tips.receive or be a mentor — checked live so a
+	// revoked-permission recipient's enabled settings row can't keep
+	// collecting tips. Organizations opt in via their own org-admin-managed
+	// settings row (spec's 'organization' grant), so the org owner's personal
+	// tier is not a gate. Platform requires no check.
+	if owner.Type == RecipientUser {
 		ok, err := s.CanReceive(ctx, walletOwner)
 		if err != nil {
 			return CreateTipResult{}, err
@@ -57,6 +60,10 @@ func (s *Service) CreateTip(ctx context.Context, senderID pgtype.UUID, in Create
 		if !ok {
 			return CreateTipResult{}, ErrNotEligible
 		}
+	}
+
+	if len(in.Message) > maxTipMessageLen {
+		return CreateTipResult{}, ErrInvalidAmount
 	}
 
 	st, err := s.store.getSettings(ctx, owner.Type, owner.ID)
@@ -157,18 +164,12 @@ func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, own
 		return CreateTipResult{}, ErrBelowMinimum
 	}
 
-	// Points tips enforce the daily anti-laundering cap.
+	// Points tips enforce the daily anti-laundering cap. The check runs
+	// inside the settlement tx under the sender's wallet advisory lock —
+	// an unlocked pre-check would let concurrent requests race past it.
+	var dailyPointsLimit int64
 	if in.Method == MethodPoints && s.settings != nil {
-		limit := int64(s.settings.GetIntOr(ctx, "tips.points_daily_limit", 500))
-		if limit > 0 {
-			today, err := s.store.sumTipperPointsToday(ctx, senderID)
-			if err != nil {
-				return CreateTipResult{}, err
-			}
-			if today+amount > limit {
-				return CreateTipResult{}, ErrDailyPointsLimit
-			}
-		}
+		dailyPointsLimit = int64(s.settings.GetIntOr(ctx, "tips.points_daily_limit", 500))
 	}
 
 	// Fee applies to credits (and fiat) only — points pass through whole.
@@ -193,6 +194,7 @@ func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, own
 		message:         in.Message,
 		isAnonymous:     in.IsAnonymous,
 		idempotencyKey:  idemKey,
+		pointsDailyLimit: dailyPointsLimit,
 	})
 	if err != nil {
 		// tips_idem_unique (000949): a concurrent same-key request that won

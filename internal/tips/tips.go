@@ -45,6 +45,10 @@ const PlatformOwnerID = "00000000-0000-0000-0000-000000000000"
 // maxExternalLinks caps outbound links per owner (spec: display-only links).
 const maxExternalLinks = 10
 
+// maxTipMessageLen bounds the free-text note attached to a tip — client-side
+// maxlength=280, enforced server-side against raw-JSON abuse.
+const maxTipMessageLen = 500
+
 var (
 	ErrTipsDisabled        = errors.New("tips are disabled")
 	ErrRecipientNoTips     = errors.New("recipient does not accept tips")
@@ -123,13 +127,16 @@ type Settings struct {
 // UpdateSettingsInput is the owner-editable settings patch. Nil fields keep
 // their current values (PUT semantics: body sends all fields).
 type UpdateSettingsInput struct {
-	TipsEnabled     bool    `json:"tips_enabled"`
-	AcceptPoints    bool    `json:"accept_points"`
-	AcceptCredits   bool    `json:"accept_credits"`
-	AcceptFiat      bool    `json:"accept_fiat"`
-	AcceptExternal  bool    `json:"accept_external"`
-	MinTipAmount    int64   `json:"min_tip_amount"`
-	ThankYouMessage *string `json:"thank_you_message"`
+	TipsEnabled      bool    `json:"tips_enabled"`
+	AcceptPoints     bool    `json:"accept_points"`
+	AcceptCredits    bool    `json:"accept_credits"`
+	AcceptFiat       bool    `json:"accept_fiat"`
+	AcceptExternal   bool    `json:"accept_external"`
+	MinTipAmount     int64   `json:"min_tip_amount"`
+	ThankYouMessage  *string `json:"thank_you_message"`
+	// OCCollectiveSlug is optional — only meaningful on the platform row via
+	// admin donation-settings; nil preserves the stored value (COALESCE).
+	OCCollectiveSlug *string `json:"oc_collective_slug,omitempty"`
 }
 
 // ExternalLink is a display-only outbound tip option.
@@ -154,6 +161,7 @@ type PublicConfig struct {
 	Enabled          bool           `json:"enabled"`
 	Methods          []string       `json:"methods"`
 	MinTipAmount     int64          `json:"min_tip_amount"`
+	FiatCurrency     string         `json:"fiat_currency,omitempty"`
 	OCCollectiveSlug *string        `json:"oc_collective_slug,omitempty"`
 	ExternalLinks    []ExternalLink `json:"external_links"`
 	ThankYouMessage  *string        `json:"thank_you_message,omitempty"`
@@ -224,6 +232,21 @@ type PaymentCreator interface {
 	CreatePayment(ctx context.Context, userID pgtype.UUID, input PaymentCreateInput) (PaymentCreateResult, error)
 }
 
+// ProviderLister reports which §17 payment providers are actually configured
+// at boot — public tip-configs only advertise usable fiat methods.
+type ProviderLister interface {
+	ProviderNames() []string
+}
+
+// SyncLocker takes a short-lived distributed lock (Valkey SET NX EX) so one
+// OC sync runs per owner at a time. Nil seam → sync proceeds unlocked.
+// Unlock releases the lock early so a completed sync doesn't hold it until
+// TTL expiry; callers must only Unlock after a successful TryLock.
+type SyncLocker interface {
+	TryLock(ctx context.Context, key string, ttlSeconds int) (bool, error)
+	Unlock(ctx context.Context, key string) error
+}
+
 // PaymentCreateInput mirrors payments.CreatePaymentInput.
 type PaymentCreateInput struct {
 	Provider    string
@@ -260,6 +283,9 @@ type Notifier interface {
 // OCClient is the Open Collective GraphQL API boundary (internal/opencollective).
 type OCClient interface {
 	VerifyToken(ctx context.Context, token string) (string, error)
+	// VerifyCollectiveAccess reports whether the token-holder administers or
+	// is a member of the given collective — guards contribution-import spoofing.
+	VerifyCollectiveAccess(ctx context.Context, token, slug string) (bool, error)
 	ListContributions(ctx context.Context, slug, token string, limit, offset int) ([]OCContribution, error)
 }
 
@@ -281,16 +307,19 @@ type tipEnqueuer interface {
 // Service coordinates tip settings, settlement, and history. Transactional
 // boundaries (wallet ledger pairs) live inside *Store; tests fake tipStore.
 type Service struct {
-	store    tipStore
-	settings SettingsReader
-	perms    PermChecker
-	payments PaymentCreator
-	features FeatureChecker
-	orgs     OrgRoleChecker
-	oc       OCClient
-	notifier Notifier
-	enqueuer tipEnqueuer
-	siteURL  string
+	store     tipStore
+	settings  SettingsReader
+	perms     PermChecker
+	payments  PaymentCreator
+	providers ProviderLister
+	features  FeatureChecker
+	orgs      OrgRoleChecker
+	oc        OCClient
+	notifier  Notifier
+	enqueuer  tipEnqueuer
+	locker    SyncLocker
+	clawNotifier NotificationCreator
+	siteURL   string
 }
 
 // SetSettings injects the global system_settings reader.
@@ -301,6 +330,17 @@ func (s *Service) SetPermChecker(p PermChecker) { s.perms = p }
 
 // SetPaymentsService injects the §17 payment creator for fiat tips.
 func (s *Service) SetPaymentsService(p PaymentCreator) { s.payments = p }
+
+// SetProviderLister injects the configured-provider reporter for public
+// fiat-method filtering.
+func (s *Service) SetProviderLister(p ProviderLister) { s.providers = p }
+
+// SetSyncLocker injects the distributed lock used by OC collective sync.
+func (s *Service) SetSyncLocker(l SyncLocker) { s.locker = l }
+
+// SetClawbackNotifier injects the synchronous notification creator used to
+// tell recipients their tip was refunded and their wallet debited.
+func (s *Service) SetClawbackNotifier(n NotificationCreator) { s.clawNotifier = n }
 
 // SetOrgChecker injects the organizations role/owner seam.
 func (s *Service) SetOrgChecker(o OrgRoleChecker) { s.orgs = o }

@@ -132,6 +132,40 @@ func (c *Client) VerifyToken(ctx context.Context, token string) (string, error) 
 	return out.LoggedInAccount.Slug, nil
 }
 
+// VerifyCollectiveAccess reports whether the token-holder's account has a
+// membership (any role) in the given collective — used to prove collective
+// association before enabling contribution sync for a tip recipient.
+func (c *Client) VerifyCollectiveAccess(ctx context.Context, token, slug string) (bool, error) {
+	const q = `query { loggedInAccount { memberOf { nodes { account { slug } role } } } }`
+	var data json.RawMessage
+	if err := c.do(ctx, token, q, nil, &data); err != nil {
+		return false, err
+	}
+	var out struct {
+		LoggedInAccount *struct {
+			MemberOf struct {
+				Nodes []struct {
+					Account struct {
+						Slug string `json:"slug"`
+					} `json:"account"`
+				} `json:"nodes"`
+			} `json:"memberOf"`
+		} `json:"loggedInAccount"`
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return false, fmt.Errorf("opencollective: decoding membership: %w", err)
+	}
+	if out.LoggedInAccount == nil {
+		return false, ErrUnauthorized
+	}
+	for _, n := range out.LoggedInAccount.MemberOf.Nodes {
+		if n.Account.Slug == slug {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 const contributionsQuery = `query($slug: String!, $limit: Int!, $offset: Int!) {
   account(slug: $slug) {
     transactions(type: CREDIT, limit: $limit, offset: $offset,

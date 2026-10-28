@@ -534,3 +534,17 @@ input[type="search"]:focus-visible {
 	direction: ltr;
 	unicode-bidi: isolate;
 }
+
+/* Mobile: form fields span the full column width. Scoped to form
+ * containers so dense layouts that intentionally share a line keep working. */
+@media (max-width: 639.98px) {
+	:is(form, [data-slideover-content])
+		:is(
+			input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="image"]):not([type="submit"]):not([type="button"]):not([type="reset"]),
+			select,
+			textarea,
+			.autocomplete-field
+		) {
+		width: 100%;
+	}
+}

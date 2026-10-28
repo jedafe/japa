@@ -6,6 +6,7 @@
 	// (publish optionally absorbs the unreleased entry queue).
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { roadmapReleasesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -260,11 +261,7 @@
 		</p>
 		<label class="flex flex-col gap-1 text-sm">
 			{t('common.status', 'Status')}
-			<select bind:value={statusChoice} class="rounded border border-border bg-surface px-2 py-1.5">
-				{#each STATUS_OPTIONS as o}
-					<option value={o.value}>{o.label}</option>
-				{/each}
-			</select>
+			<AutocompleteSelect bind:value={statusChoice} options={STATUS_OPTIONS} />
 		</label>
 		{#if statusChoice === 'published'}
 			<label class="flex items-center gap-2 text-sm">

@@ -12,6 +12,8 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+
 	interface SeedParam {
 		key: string;
 		label: string;
@@ -204,12 +206,16 @@
 						</div>
 						<div>
 							<label class={labelCls} for="seed-op-task-{i}">{t('seeds_editor.task_type', 'Task type')}</label>
-							<select id="seed-op-task-{i}" class={inputCls} bind:value={op.task_type} onchange={emit} {disabled}>
-								<option value="">{t('seeds_editor.no_task', '— none (display/CLI only) —')}</option>
-								{#each taskTypes as tt (tt.type)}
-									<option value={tt.type}>{tt.type}</option>
-								{/each}
-							</select>
+							<AutocompleteSelect
+								id="seed-op-task-{i}"
+								{disabled}
+								value={op.task_type}
+								onValueChange={(v) => { op.task_type = v; emit(); }}
+								options={[
+								{ value: '', label: t('seeds_editor.no_task', '— none (display/CLI only) —') },
+								...taskTypes.map((tt) => ({ value: tt.type, label: tt.type }))
+								]}
+							/>
 						</div>
 					</div>
 					<div>
@@ -254,27 +260,27 @@
 								{@const declKeys = schemaFor(op).map((p) => p.key)}
 								<div class="mb-1.5 grid grid-cols-[1fr_1fr_90px_64px_1fr_28px] items-center gap-1.5">
 									{#if declKeys.length}
-										<select
-											class="{inputCls} font-mono"
-											value={param.key}
-											onchange={(e) => pickParamKey(param, op, (e.target as HTMLSelectElement).value)}
+										<AutocompleteSelect
 											{disabled}
-										>
-											<option value="">{t('seeds_editor.pick_key', 'pick param…')}</option>
-											{#each declKeys as k (k)}
-												<option value={k} selected={param.key === k}>{k}</option>
-											{/each}
-											{#if param.key && !declKeys.includes(param.key)}
-												<option value={param.key} selected>{param.key} (custom)</option>
-											{/if}
-										</select>
+											inputClass="font-mono"
+											value={param.key}
+											onValueChange={(v) => pickParamKey(param, op, v)}
+											options={[
+											{ value: '', label: t('seeds_editor.pick_key', 'pick param…') },
+											...declKeys.map((k) => ({ value: k, label: k })),
+											...(param.key && !declKeys.includes(param.key) ? [{ value: param.key, label: `${param.key} (custom)` }] : [])
+											]}
+										/>
 									{:else}
 										<input class="{inputCls} font-mono" placeholder="key" bind:value={param.key} oninput={emit} {disabled} />
 									{/if}
 									<input class={inputCls} placeholder="label" bind:value={param.label} oninput={emit} {disabled} />
-									<select class={inputCls} bind:value={param.type} onchange={emit} {disabled}>
-										{#each paramTypes as pt (pt)}<option value={pt}>{pt}</option>{/each}
-									</select>
+									<AutocompleteSelect
+										{disabled}
+										value={param.type}
+										onValueChange={(v) => { param.type = v; emit(); }}
+										options={paramTypes.map((pt) => ({ value: pt, label: pt }))}
+									/>
 									<label class="text-muted-foreground flex items-center justify-center gap-1 text-xs">
 										<input type="checkbox" bind:checked={param.required} onchange={emit} {disabled} />
 										req

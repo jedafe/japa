@@ -6,6 +6,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Plus, X } from 'lucide-svelte';
 
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+
 	interface Props {
 		value: { all?: any[]; any?: any[] };
 	}
@@ -84,27 +86,23 @@
 		{#each groups[group] as p, i}
 			{@const spec = specByName.get(p.predicate)}
 			<div class="border-border mb-2 flex flex-wrap items-center gap-2 rounded-[var(--radius)] border p-2">
-				<select
+				<AutocompleteSelect
 					value={p.predicate}
-					onchange={(e) => changeName(group, i, (e.target as HTMLSelectElement).value)}
-					class="border-border bg-background rounded-[var(--radius)] border px-2 py-1 font-mono text-xs"
-				>
-					{#each specs as s}
-						<option value={s.name}>{s.name}</option>
-					{/each}
-				</select>
+					onValueChange={(v) => changeName(group, i, v)}
+					inputClass="font-mono"
+					compact
+					options={specs.map((s) => ({ value: s.name, label: s.name }))}
+				/>
 				{#each spec?.args ?? [] as arg}
 					<label class="flex items-center gap-1 text-xs">
 						<span class="text-muted-foreground font-mono">{arg.key}{arg.required ? '*' : ''}</span>
 						{#if arg.type === 'bool'}
-							<select
+							<AutocompleteSelect
 								value={argVal(p, arg.key) || 'true'}
-								onchange={(e) => setArg(group, i, arg.key, (e.target as HTMLSelectElement).value, 'bool')}
-								class="border-border bg-background rounded-[var(--radius)] border px-1.5 py-1 text-xs"
-							>
-								<option value="true">true</option>
-								<option value="false">false</option>
-							</select>
+								onValueChange={(v) => setArg(group, i, arg.key, v, 'bool')}
+								compact
+								options={[{ value: 'true', label: 'true' }, { value: 'false', label: 'false' }]}
+							/>
 						{:else}
 							<input
 								type={arg.type === 'number' ? 'number' : 'text'}

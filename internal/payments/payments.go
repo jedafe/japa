@@ -192,3 +192,13 @@ func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any
 func (s *Service) SetProvider(p Provider) {
 	s.providers[p.Name()] = p
 }
+
+// ProviderNames returns the names of every provider registered at boot —
+// consumers (e.g. §125 tip configs) advertise only usable fiat methods.
+func (s *Service) ProviderNames() []string {
+	names := make([]string, 0, len(s.providers))
+	for n := range s.providers {
+		names = append(names, n)
+	}
+	return names
+}

@@ -197,10 +197,70 @@ func TestGenerateLLMsFullTxt_EmptyData(t *testing.T) {
 
 	txt := GenerateLLMsFullTxt("Test", "Desc", LLMsData{})
 
-	for _, unwanted := range []string{"## Recent Posts", "## Topics", "## Spaces", "## Optional"} {
+	for _, unwanted := range []string{"## Recent Posts", "## Topics", "## Spaces", "## Optional", "## Featured Content"} {
 		if strings.Contains(txt, unwanted) {
 			t.Errorf("should not have %s section when empty", unwanted)
 		}
+	}
+}
+
+func TestGenerateLLMsTxt_LinkDescriptions(t *testing.T) {
+	t.Parallel()
+
+	data := LLMsBriefData{
+		TopLinks: []Link{
+			{Title: "Blog", URL: "https://japa.to/blog", Description: "Stories and guides"},
+			{Title: "Forum", URL: "https://japa.to/forum"},
+		},
+	}
+
+	txt := GenerateLLMsTxt("Test", "Desc", data)
+
+	if !strings.Contains(txt, "- [Blog](https://japa.to/blog): Stories and guides") {
+		t.Error("expected link with description")
+	}
+
+	if !strings.Contains(txt, "- [Forum](https://japa.to/forum)\n") {
+		t.Error("expected bare link without description suffix")
+	}
+}
+
+func TestGenerateLLMsFullTxt_FeaturedContent(t *testing.T) {
+	t.Parallel()
+
+	data := LLMsData{
+		Featured: []FeaturedItem{
+			{Title: "Visa Guide", URL: "https://japa.to/guide/visa", Body: "Full article text here."},
+		},
+	}
+
+	txt := GenerateLLMsFullTxt("Test", "Desc", data)
+
+	if !strings.Contains(txt, "## Featured Content") {
+		t.Error("expected Featured Content section")
+	}
+
+	if !strings.Contains(txt, "### [Visa Guide](https://japa.to/guide/visa)") {
+		t.Error("expected featured item heading link")
+	}
+
+	if !strings.Contains(txt, "Full article text here.") {
+		t.Error("expected inlined body")
+	}
+}
+
+func TestCleanFeaturedBody(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("x", 5000)
+	got := cleanFeaturedBody("\n\n" + long + "\n\n\n\n")
+
+	if len(got) > 4200 {
+		t.Errorf("expected body capped near %d chars, got %d", llmsFeaturedBody, len(got))
+	}
+
+	if !strings.HasSuffix(got, "_(truncated)_") {
+		t.Error("expected truncation marker")
 	}
 }
 

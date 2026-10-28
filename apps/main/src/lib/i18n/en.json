@@ -6376,4 +6376,17 @@
   "wiki.view_more_prices": "View more {section} prices",
   "wiki.wiki_only_banner_body": "{name} is a wiki-only place — guides and facts live here instead of a community feed.",
   "wiki.wiki_only_banner_title": "This place lives on the wiki"
+,
+  "tips.below_minimum": "Below the recipient minimum",
+  "tips.failed": "Tip failed — try again",
+  "tips.history": "Tip history",
+  "tips.invalid_amount": "Enter a valid amount",
+  "tips.next": "Next",
+  "tips.oc_webhook_copy": "Copy webhook URL",
+  "tips.prev": "Previous",
+  "tips.support_platform": "Support the platform",
+  "tips.transfer_pending": "Tip created — complete the payment to settle it.",
+  "tips.transfer_pending_hint": "The tip is recorded once the payment is confirmed.",
+  "tips.unavailable": "Tips are not available here",
+  "tips.view_history": "View tip history"
 }

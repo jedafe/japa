@@ -8,7 +8,7 @@
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import { BadgePercent, Plus, Loader2, AlertCircle, Pencil, PauseCircle, PlayCircle, Trash2, X } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, SelectField } from '$lib/components/ui';
 	import { discountLabel } from '$lib/marketplace';
 	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 	import type { OrgCoupon, OrgCouponInput } from '$lib/types';
@@ -283,34 +283,48 @@
 					</div>
 					<div>
 						<label for="cp-type" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_type', 'Discount type')}</label>
-						<select id="cp-type" bind:value={draft.discountType} class={inputClass}>
-							<option value="percent">{t('coupons.type_percent', 'Percent off')}</option>
-							<option value="fixed">{t('coupons.type_fixed', 'Fixed amount off')}</option>
-						</select>
+						<SelectField
+							id="cp-type"
+							value={draft.discountType}
+							onValueChange={(v) => (draft.discountType = v as CouponDraft['discountType'])}
+							options={[
+								{ value: 'percent', label: t('coupons.type_percent', 'Percent off') },
+								{ value: 'fixed', label: t('coupons.type_fixed', 'Fixed amount off') }
+							]}
+						/>
 					</div>
 					<div>
 						<label for="cp-value" class="mb-1 block text-xs font-medium text-[var(--color-text)]">
 							{draft.discountType === 'percent' ? t('coupons.f_value_pct', 'Percent (1–100)') : t('coupons.f_value_fixed', 'Amount')} <span class="text-red-500">*</span>
 						</label>
-						<div class="flex gap-2">
+						<div class="flex flex-wrap gap-2">
 							<input id="cp-value" type="number" min="0" step={draft.discountType === 'percent' ? '1' : '0.01'} bind:value={draft.discountValue} class={inputClass} />
 							{#if draft.discountType === 'fixed'}
-								<select bind:value={draft.currency} class="{inputClass} w-28 shrink-0" aria-label={t('coupons.f_currency', 'Currency')}>
-									<option value="">{t('coupons.f_currency', 'Currency')}</option>
-									{#each currencies as c (c.code)}
-										<option value={c.code}>{c.code}</option>
-									{/each}
-								</select>
+								<SelectField
+									value={draft.currency}
+									onValueChange={(v) => (draft.currency = v)}
+									options={[
+										{ value: '', label: t('coupons.f_currency', 'Currency') },
+										...currencies.map((c) => ({ value: c.code, label: c.code }))
+									]}
+									ariaLabel={t('coupons.f_currency', 'Currency')}
+									class="w-28 shrink-0"
+								/>
 							{/if}
 						</div>
 					</div>
 					<div>
 						<label for="cp-applies" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_applies', 'Applies to')}</label>
-						<select id="cp-applies" bind:value={draft.appliesTo} class={inputClass}>
-							<option value="both">{t('coupons.applies_both', 'Services & packages')}</option>
-							<option value="package">{t('coupons.applies_package', 'Packages only')}</option>
-							<option value="service">{t('coupons.applies_service', 'Services only')}</option>
-						</select>
+						<SelectField
+							id="cp-applies"
+							value={draft.appliesTo}
+							onValueChange={(v) => (draft.appliesTo = v)}
+							options={[
+								{ value: 'both', label: t('coupons.applies_both', 'Services & packages') },
+								{ value: 'package', label: t('coupons.applies_package', 'Packages only') },
+								{ value: 'service', label: t('coupons.applies_service', 'Services only') }
+							]}
+						/>
 					</div>
 					<div>
 						<label for="cp-minspend" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_minspend', 'Minimum spend (optional)')}</label>

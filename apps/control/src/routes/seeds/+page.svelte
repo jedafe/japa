@@ -5,6 +5,8 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+
 	type SeedParam = {
 		key: string;
 		label: string;
@@ -139,25 +141,19 @@
 											<span class="text-destructive" aria-hidden="true">*</span>
 										{/if}
 									</label>
-									<select
+									<AutocompleteSelect
 										id={inputId}
-										class="border-border-input bg-background text-foreground w-full rounded-5px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover"
-										required={param.required}
 										value={String(values[op.kind]?.[param.key] ?? '')}
-										onchange={(e) => {
-											values[op.kind] ??= {};
-											values[op.kind][param.key] = (e.target as HTMLSelectElement).value;
+										onValueChange={(v) => {
+										values[op.kind] ??= {};
+										values[op.kind][param.key] = v;
 										}}
-									>
-										<option value="" disabled={param.required}>
-											{param.required
-												? t('seeds.select_placeholder', 'Select…')
-												: t('seeds.select_default', '(default)')}
-										</option>
-										{#each param.options as option (option)}
-											<option value={option}>{option}</option>
-										{/each}
-									</select>
+										placeholder={param.required ? t('seeds.select_placeholder', 'Select…') : t('seeds.select_default', '(default)')}
+										options={[
+										...(param.required ? [] : [{ value: '', label: t('seeds.select_default', '(default)') }]),
+										...param.options.map((o) => ({ value: o, label: o }))
+										]}
+									/>
 								</div>
 							{:else}
 								<div>

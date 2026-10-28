@@ -964,8 +964,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tipsService.SetOrgChecker(tipsOrgAdapter{svc: orgService})
 	tipsService.SetOCClient(tipsOCAdapter{client: opencollective.New()})
 	tipsService.SetPaymentsService(tipsPaymentAdapter{svc: paymentService})
+	tipsService.SetProviderLister(tipsPaymentAdapter{svc: paymentService})
 	tipsService.SetFeatureChecker(tipsFeatureAdapter{checker: featureChecker})
 	tipsService.SetNotifier(tipsNotifierAdapter{enq: taskEnqueuer})
+	tipsService.SetSyncLocker(tipsSyncLockAdapter{rdb: vkClient.Redis()})
+	tipsService.SetClawbackNotifier(tipsNotifyDispatchAdapter{svc: notificationService})
 	tipsService.SetSiteURL(cfg.SiteURL)
 	tipsHandlers := tips.NewHandlers(tipsService)
 
@@ -1038,7 +1041,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
 	couponService := coupons.NewServiceWithEnqueuer(database, taskEnqueuer)
-	couponService.SetCache(vkClient.Redis()) // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{page_size} caching (§55)
+	couponService.SetCache(vkClient.Redis())   // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{page_size} caching (§55)
+	couponService.SetSettings(settingsService) // affiliate.author_commission_default fallback (Rule 3)
 	couponHandlers := coupons.NewHandlers(couponService)
 	couponHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in coupons responses
 	couponHandlers.SetOrgResolver(orgService)          // §55 org deal submissions
@@ -5106,7 +5110,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/donate", tipsHandlers.PublicDonate)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.send"),
-					mw.RateLimit(vkClient.Redis(), "strict"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/tips", tipsHandlers.CreateTip)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/tips/sent", tipsHandlers.ListMyTipsSent)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/tips/received", tipsHandlers.ListMyTipsReceived)
@@ -5114,6 +5118,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/tips", tipsHandlers.AdminListTips)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/tips/stats", tipsHandlers.AdminTipStats)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/tips/{id}", tipsHandlers.AdminGetTip)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/donation-settings", tipsHandlers.AdminGetDonationSettings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Put("/admin/donation-settings", tipsHandlers.AdminUpdateDonationSettings)
@@ -5122,7 +5127,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				// §125 inbound Open Collective contribution webhook —
 				// per-collective secret in the query param identifies the owner.
-				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Post("/tips/webhook/opencollective", tipsHandlers.HandleOCWebhook)
+				r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/tips/webhook/opencollective", tipsHandlers.HandleOCWebhook)
 			})
 
 			// Advertising routes (Section 25 — Ad Placement)

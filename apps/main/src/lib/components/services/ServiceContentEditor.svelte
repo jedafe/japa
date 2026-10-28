@@ -18,6 +18,7 @@
 		marketplaceIcon,
 		MARKETPLACE_ICON_NAMES
 	} from '$lib/components/marketplace/marketplaceIcon';
+	import { SelectField } from '$lib/components/ui';
 
 	export interface IconEntry {
 		icon: string;
@@ -86,17 +87,16 @@
 		>
 			<Preview size={14} class="text-[var(--color-primary)]" />
 		</span>
-		<select
-			value={value}
-			onchange={(e) => onpick(e.currentTarget.value)}
-			class="{inputClass} w-auto min-w-0 flex-1 sm:flex-none"
-			aria-label={label}
-		>
-			<option value="">{t('services.icon_none', 'No icon')}</option>
-			{#each MARKETPLACE_ICON_NAMES as name (name)}
-				<option value={name}>{name}</option>
-			{/each}
-		</select>
+		<SelectField
+			{value}
+			onValueChange={onpick}
+			options={[
+				{ value: '', label: t('services.icon_none', 'No icon') },
+				...MARKETPLACE_ICON_NAMES.map((n) => ({ value: n, label: n }))
+			]}
+			ariaLabel={label}
+			class="w-auto min-w-0 flex-1 sm:flex-none"
+		/>
 	</div>
 {/snippet}
 

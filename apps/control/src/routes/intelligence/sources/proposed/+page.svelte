@@ -12,6 +12,8 @@
 	import { RefreshCw, Database, Eye, CheckCircle, XCircle } from 'lucide-svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+
 	// ProbeReport mirrors probe.Report (intel-channels Phase 1, spec §2) —
 	// emitted by sourceToFullEntry so reviewers can see what the probe
 	// detected before approving the source.
@@ -588,17 +590,12 @@
 						{t('common.close', 'Close')}
 					</button>
 					{#if canManage && detailSource}
-						<select
+						<AutocompleteSelect
 							bind:value={approveTrust}
-							class="border-border-input bg-background-alt text-foreground rounded-9px border px-2 py-2 text-sm disabled:opacity-50"
 							disabled={!!approving}
-							aria-label={t('intel.field_trust_level', 'Trust')}
-							title={t('intel.trust_picker_hint', 'Trust level to assign on approval')}
-						>
-							{#each trustOptions as o}
-								<option value={o.value}>{t('intel.trust_as', 'Trust: {label}').replace('{label}', o.label)}</option>
-							{/each}
-						</select>
+							ariaLabel={t('intel.field_trust_level', 'Trust')}
+							options={trustOptions.map((o) => ({ value: o.value, label: t('intel.trust_as', 'Trust: {label}').replace('{label}', o.label) }))}
+						/>
 						<button
 							class="border-destructive/40 text-destructive hover:bg-destructive/10 rounded-9px border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 							disabled={!!approving}

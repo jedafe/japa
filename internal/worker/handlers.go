@@ -5199,7 +5199,9 @@ func HandleMaintenanceCheckExpiredBoosts(ctx context.Context, _ *asynq.Task) err
 	return nil
 }
 
-// HandleMaintenancePruneOldFeeds deletes feeds rows older than 30 days.
+// HandleMaintenancePruneOldFeeds deletes feeds rows older than the
+// per-platform 'feed.prune_interval_days' system_settings value (default 30).
+// Ref: conventions/system-settings-catalog.md (feed.prune_interval_days).
 func HandleMaintenancePruneOldFeeds(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_old_feeds — pruning old feed entries")
 
@@ -5207,7 +5209,14 @@ func HandleMaintenancePruneOldFeeds(ctx context.Context, _ *asynq.Task) error {
 		return errors.New("maintenance:prune_old_feeds: database pool not registered")
 	}
 
-	if err := gen.New(dbPool.Writer).PruneOldFeeds(ctx); err != nil {
+	days := int32(30)
+	if appSettings != nil {
+		if v := appSettings.GetIntOr(ctx, "feed.prune_interval_days", 30); v > 0 {
+			days = int32(v) // #nosec G115
+		}
+	}
+
+	if err := gen.New(dbPool.Writer).PruneOldFeeds(ctx, days); err != nil {
 		slog.Error("maintenance:prune_old_feeds failed", "error", err)
 		return err
 	}

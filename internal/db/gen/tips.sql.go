@@ -12,37 +12,48 @@ import (
 )
 
 const adminCountTips = `-- name: AdminCountTips :one
-SELECT count(*)::int FROM tips
-WHERE ($1::text = '' OR status = $1)
-  AND ($2::text = '' OR method = $2)
-  AND ($3::text = '' OR recipient_type = $3)
+SELECT count(*)::int FROM tips t
+WHERE ($1::text = '' OR t.status = $1)
+  AND ($2::text = '' OR t.method = $2)
+  AND ($3::text = '' OR t.recipient_type = $3)
+  AND ($4::text = '' OR t.external_sender_name ILIKE '%' || $4 || '%'
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || $4 || '%'))
 `
 
 type AdminCountTipsParams struct {
 	Status        string `json:"status"`
 	Method        string `json:"method"`
 	RecipientType string `json:"recipient_type"`
+	Q             string `json:"q"`
 }
 
 func (q *Queries) AdminCountTips(ctx context.Context, arg AdminCountTipsParams) (int32, error) {
-	row := q.db.QueryRow(ctx, adminCountTips, arg.Status, arg.Method, arg.RecipientType)
+	row := q.db.QueryRow(ctx, adminCountTips,
+		arg.Status,
+		arg.Method,
+		arg.RecipientType,
+		arg.Q,
+	)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
 }
 
 const adminListTips = `-- name: AdminListTips :many
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, points_amount, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at FROM tips
-WHERE ($1::text = '' OR status = $1)
-  AND ($2::text = '' OR method = $2)
-  AND ($3::text = '' OR recipient_type = $3)
-ORDER BY created_at DESC LIMIT $5 OFFSET $4
+SELECT t.id, t.sender_user_id, t.external_sender_name, t.recipient_type, t.recipient_user_id, t.recipient_organization_id, t.content_id, t.method, t.points_amount, t.credits_amount, t.fiat_amount, t.fiat_currency, t.fee_amount, t.net_credits, t.payment_id, t.oc_contribution_id, t.message, t.is_anonymous, t.status, t.idempotency_key, t.created_at, t.updated_at FROM tips t
+WHERE ($1::text = '' OR t.status = $1)
+  AND ($2::text = '' OR t.method = $2)
+  AND ($3::text = '' OR t.recipient_type = $3)
+  AND ($4::text = '' OR t.external_sender_name ILIKE '%' || $4 || '%'
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || $4 || '%'))
+ORDER BY t.created_at DESC LIMIT $6 OFFSET $5
 `
 
 type AdminListTipsParams struct {
 	Status        string `json:"status"`
 	Method        string `json:"method"`
 	RecipientType string `json:"recipient_type"`
+	Q             string `json:"q"`
 	PageOffset    int32  `json:"page_offset"`
 	PageLimit     int32  `json:"page_limit"`
 }
@@ -52,6 +63,7 @@ func (q *Queries) AdminListTips(ctx context.Context, arg AdminListTipsParams) ([
 		arg.Status,
 		arg.Method,
 		arg.RecipientType,
+		arg.Q,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -231,6 +243,35 @@ type DeleteTipExternalLinkParams struct {
 func (q *Queries) DeleteTipExternalLink(ctx context.Context, arg DeleteTipExternalLinkParams) error {
 	_, err := q.db.Exec(ctx, deleteTipExternalLink, arg.ID, arg.TipSettingsID)
 	return err
+}
+
+const getOrgDisplayNames = `-- name: GetOrgDisplayNames :many
+SELECT o.id, o.name FROM organizations o WHERE o.id = ANY($1::uuid[])
+`
+
+type GetOrgDisplayNamesRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+}
+
+func (q *Queries) GetOrgDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]GetOrgDisplayNamesRow, error) {
+	rows, err := q.db.Query(ctx, getOrgDisplayNames, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetOrgDisplayNamesRow
+	for rows.Next() {
+		var i GetOrgDisplayNamesRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getTip = `-- name: GetTip :one
@@ -785,9 +826,12 @@ func (q *Queries) SettleTip(ctx context.Context, arg SettleTipParams) error {
 const sumTipperPointsToday = `-- name: SumTipperPointsToday :one
 SELECT COALESCE(sum(points_amount),0)::bigint FROM tips
 WHERE sender_user_id = $1 AND method = 'points'
+  AND status = 'completed'
   AND created_at >= (date_trunc('day', timezone('UTC', now()))) AT TIME ZONE 'UTC'
 `
 
+// Only completed tips count — a refunded tip returned the points, so it
+// must not keep eating the sender's daily anti-laundering cap.
 func (q *Queries) SumTipperPointsToday(ctx context.Context, senderUserID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, sumTipperPointsToday, senderUserID)
 	var column_1 int64
@@ -857,7 +901,8 @@ VALUES ($1, $2, $3, $4, $5,
 ON CONFLICT (owner_type, owner_id) DO UPDATE SET
     tips_enabled = $3, accept_points = $4,
     accept_credits = $5, accept_fiat = $6,
-    accept_external = $7, oc_collective_slug = $8,
+    accept_external = $7,
+    oc_collective_slug = COALESCE($8, tip_settings.oc_collective_slug),
     oc_api_token_encrypted = COALESCE($9, tip_settings.oc_api_token_encrypted),
     min_tip_amount = $10, thank_you_message = $11,
     updated_at = now()

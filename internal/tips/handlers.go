@@ -638,13 +638,29 @@ func (h *Handlers) ContentTipSummary(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) AdminListTips(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	method := r.URL.Query().Get("method")
+	recipientType := r.URL.Query().Get("recipient_type")
+	q := r.URL.Query().Get("q")
 	page, limit := parsePageOffset(r), parsePageSize(r)
-	tips, total, err := h.service.AdminListTips(r.Context(), status, method, page/limit+1, limit)
+	tips, total, err := h.service.AdminListTips(r.Context(), status, method, recipientType, q, page/limit+1, limit)
 	if err != nil {
 		writeTipError(w, err)
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tips, "meta": map[string]any{"total": total}})
+}
+
+// AdminGetTip handles GET /api/v1/admin/tips/{id} — single hydrated record.
+func (h *Handlers) AdminGetTip(w http.ResponseWriter, r *http.Request) {
+	tipID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	tip, err := h.service.GetTip(r.Context(), tipID)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tip})
 }
 
 // AdminTipStats handles GET /api/v1/admin/tips/stats — 30-day window by

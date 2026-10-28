@@ -29,6 +29,9 @@ type SitemapQualityConfig struct {
 	ForumMinReplies       int
 	QuestionMinAnswers    int
 	DiscussionMinComments int
+	// Entity-level gates for the users/tags sitemaps.
+	UserMinPosts  int
+	TagMinContent int
 }
 
 // DefaultSitemapQualityConfig returns the spec fallback defaults for sitemap
@@ -67,6 +70,8 @@ func DefaultSitemapQualityConfig() SitemapQualityConfig {
 		ForumMinReplies:       2,
 		QuestionMinAnswers:    2,
 		DiscussionMinComments: 0,
+		UserMinPosts:          1,
+		TagMinContent:         1,
 	}
 }
 
@@ -289,6 +294,8 @@ func LoadSitemapQualityConfig(ctx context.Context, settings intSettingsReader) S
 	cfg.ForumMinReplies = settings.GetIntOr(ctx, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
 	cfg.QuestionMinAnswers = settings.GetIntOr(ctx, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
 	cfg.DiscussionMinComments = settings.GetIntOr(ctx, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
+	cfg.UserMinPosts = settings.GetIntOr(ctx, "seo.sitemap.user_min_posts", cfg.UserMinPosts)
+	cfg.TagMinContent = settings.GetIntOr(ctx, "seo.sitemap.tag_min_content", cfg.TagMinContent)
 
 	return cfg
 }

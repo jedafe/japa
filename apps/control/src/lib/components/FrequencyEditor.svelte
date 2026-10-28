@@ -2,6 +2,8 @@
      ({mode, max_impressions, cooldown_hours, snooze_default_hours}) as
      typed inputs instead of raw JSON. -->
 <script lang="ts">
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+
 	interface Props {
 		value: Record<string, unknown>;
 	}
@@ -27,14 +29,12 @@
 <div class="grid grid-cols-2 gap-3">
 	<label class="block text-sm">
 		Mode
-		<select
+		<AutocompleteSelect
 			value={typeof value?.mode === 'string' ? value.mode : 'recurring'}
-			onchange={(e) => set('mode', (e.target as HTMLSelectElement).value)}
-			class="border-border bg-background mt-1 w-full rounded-[var(--radius)] border px-3 py-1.5"
-		>
-			<option value="recurring">recurring</option>
-			<option value="once">once</option>
-		</select>
+			onValueChange={(v) => set('mode', v)}
+			class="mt-1"
+			options={[{ value: 'recurring', label: 'recurring' }, { value: 'once', label: 'once' }]}
+		/>
 	</label>
 	{#each FIELDS as f}
 		<label class="block text-sm">

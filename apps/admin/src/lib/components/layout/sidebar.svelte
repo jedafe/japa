@@ -116,7 +116,8 @@
 			{ path: "/roadmap/releases", label: t("nav.roadmap_releases", "Releases"), icon: Package, permission: "roadmap.view" },
 			{ path: "/roadmap/releases/entries", label: t("nav.roadmap_entries", "Changelog Entries"), icon: ListChecks, permission: "roadmap.edit" },
 	{ path: "/imports", label: t("nav.imports", "Content Imports"), icon: FileUp, permission: "import.manage" },
-			{ path: "/tips", label: t("nav.tips", "Tips"), icon: HandCoins, permission: "tips.moderate" }
+			{ path: "/tips", label: t("nav.tips", "Tips"), icon: HandCoins, permission: "tips.moderate" },
+			{ path: "/donation-settings", label: t("nav.donation_settings", "Donation Settings"), icon: HandCoins, permission: "tips.moderate" }
 			]
 		},
 		{

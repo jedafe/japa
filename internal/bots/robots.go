@@ -25,10 +25,10 @@ const (
 // so it stays unanchored. Crawlers that don't understand "$" simply skip
 // those lines — never over-block.
 var defaultDisallowPaths = []string{
-	"/api/",
-	"/admin/",
-	"/content/",
-	"/r/",
+	"/api",
+	"/admin",
+	"/content",
+	"/r$", "/r/",
 	"/search",
 	"/settings",
 	"/messages",

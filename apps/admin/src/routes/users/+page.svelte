@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
@@ -666,10 +667,14 @@
 	</p>
 	<label class="mt-3 block text-sm">
 		{t("users.verify_type", "Badge type")}
-		<select bind:value={verifyType} class="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-			<option value="">{t("users.verify_type_none", "— none —")}</option>
-			{#each verificationTypes as ty}<option value={ty}>{ty.replaceAll("_", " ")}</option>{/each}
-		</select>
+		<AutocompleteSelect
+			bind:value={verifyType}
+			class="mt-1"
+			options={[
+				{ value: '', label: t("users.verify_type_none", "— none —") },
+				...verificationTypes.map((ty) => ({ value: ty, label: ty.replaceAll("_", " ") }))
+			]}
+		/>
 	</label>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showVerifyModal = false)}>{t("common.cancel", "Cancel")}</Button>

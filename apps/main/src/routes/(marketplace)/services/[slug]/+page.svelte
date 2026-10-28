@@ -205,6 +205,7 @@
 		isMentorship && !!service && service.author_id === data.currentUserId
 	);
 	const packagesEnabled = $derived(!!page.data.features?.['service_packages.enabled']);
+	const tipsEnabled = $derived(!!page.data.features?.['tips.enabled']);
 	const mentorshipEnabled = $derived(!!page.data.features?.['mentorship.enabled']);
 	// Guests still get the CTA — MentorshipRequestDialog renders a login
 	// prompt (same pattern as BookingDialog). Authed viewers need
@@ -1068,7 +1069,7 @@
 											</span>
 										{/snippet}
 									</UserHoverCard>
-									{#if service.author_id !== data.currentUserId}
+									{#if service.author_id !== data.currentUserId && tipsEnabled}
 										<TipButton
 											recipientType="user"
 											recipientKey={mentor.username}

@@ -9,9 +9,13 @@ package auth
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +30,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/valkey"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // OAuthProvider defines the operations each OAuth provider must implement.
@@ -33,9 +39,13 @@ type OAuthProvider interface {
 	// Name returns the provider identifier (e.g. "google", "github").
 	Name() string
 	// AuthURL returns the authorization URL the user should be redirected to.
-	AuthURL(state string) string
-	// Exchange exchanges an authorization code for user info.
-	Exchange(ctx context.Context, code string) (*OAuthUserInfo, error)
+	// codeChallenge is the PKCE S256 challenge — providers that support PKCE
+	// include it; the rest ignore it.
+	AuthURL(state, codeChallenge string) string
+	// Exchange exchanges an authorization code for user info. codeVerifier is
+	// the PKCE verifier matching the challenge sent in AuthURL; nonce is the
+	// anti-replay value the provider was asked to echo back (Apple id_token).
+	Exchange(ctx context.Context, code, codeVerifier, nonce string) (*OAuthUserInfo, error)
 }
 
 // OAuthUserInfo holds the minimal user information returned by a provider.
@@ -55,9 +65,9 @@ type OAuthUserInfo struct {
 // OAuthStore defines the database operations for OAuth account management.
 type OAuthStore interface {
 	GetOAuthAccount(ctx context.Context, provider, providerUserID string) (*OAuthAccount, error)
-	GetOAuthAccountByUser(ctx context.Context, userID pgtype.UUID, provider string) (*OAuthAccount, error)
 	LinkOAuthAccount(ctx context.Context, userID pgtype.UUID, provider, providerUserID string) error
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	GetUserByID(ctx context.Context, userID pgtype.UUID) (*User, error)
 }
 
 // OAuthAccount represents a linked OAuth provider account.
@@ -122,6 +132,7 @@ var oauthHTTPClient = &http.Client{
 // NewProvider creates an OAuthProvider for the given provider name.
 // Returns nil if the provider is not configured or not supported.
 func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
+	base := strings.TrimRight(c.RedirectBase, "/")
 	switch strings.ToLower(provider) {
 	case "google":
 		if c.GoogleClientID == "" || c.GoogleClientSecret == "" {
@@ -131,7 +142,7 @@ func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
 		return &googleProvider{
 			clientID:     c.GoogleClientID,
 			clientSecret: c.GoogleClientSecret,
-			redirectURL:  c.RedirectBase + "/api/v1/auth/oauth/google/callback",
+			redirectURL:  base + "/api/v1/auth/oauth/google/callback",
 		}
 	case "github":
 		if c.GitHubClientID == "" || c.GitHubClientSecret == "" {
@@ -141,7 +152,7 @@ func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
 		return &githubProvider{
 			clientID:     c.GitHubClientID,
 			clientSecret: c.GitHubClientSecret,
-			redirectURL:  c.RedirectBase + "/api/v1/auth/oauth/github/callback",
+			redirectURL:  base + "/api/v1/auth/oauth/github/callback",
 		}
 	case "apple":
 		if c.AppleClientID == "" || c.AppleTeamID == "" || c.AppleKeyID == "" {
@@ -153,7 +164,7 @@ func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
 			teamID:        c.AppleTeamID,
 			keyID:         c.AppleKeyID,
 			privateKeyPEM: c.ApplePrivateKeyPEM,
-			redirectURL:   c.RedirectBase + "/api/v1/auth/oauth/apple/callback",
+			redirectURL:   base + "/api/v1/auth/oauth/apple/callback",
 		}
 	case "facebook":
 		if c.FacebookAppID == "" || c.FacebookAppSecret == "" {
@@ -163,7 +174,7 @@ func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
 		return &facebookProvider{
 			appID:       c.FacebookAppID,
 			appSecret:   c.FacebookAppSecret,
-			redirectURL: c.RedirectBase + "/api/v1/auth/oauth/facebook/callback",
+			redirectURL: base + "/api/v1/auth/oauth/facebook/callback",
 		}
 	default:
 		return nil
@@ -180,29 +191,39 @@ type googleProvider struct {
 
 func (g *googleProvider) Name() string { return "google" }
 
-func (g *googleProvider) AuthURL(state string) string {
+func (g *googleProvider) AuthURL(state, codeChallenge string) string {
 	params := url.Values{
 		"client_id":     {g.clientID},
 		"redirect_uri":  {g.redirectURL},
 		"response_type": {"code"},
 		"scope":         {"openid email profile"},
 		"state":         {state},
-		"access_type":   {"offline"},
-		"prompt":        {"consent"},
+	}
+
+	// PKCE (RFC 7636): Google supports S256 challenges for confidential
+	// clients — binds the token exchange to this browser session.
+	if codeChallenge != "" {
+		params.Set("code_challenge", codeChallenge)
+		params.Set("code_challenge_method", "S256")
 	}
 
 	return "https://accounts.google.com/o/oauth2/v2/auth?" + params.Encode()
 }
 
-func (g *googleProvider) Exchange(ctx context.Context, code string) (*OAuthUserInfo, error) {
+func (g *googleProvider) Exchange(ctx context.Context, code, codeVerifier, _ string) (*OAuthUserInfo, error) {
 	// Exchange code for tokens
-	tokenResp, err := exchangeCode(ctx, "https://oauth2.googleapis.com/token", url.Values{
+	params := url.Values{
 		"code":          {code},
 		"client_id":     {g.clientID},
 		"client_secret": {g.clientSecret},
 		"redirect_uri":  {g.redirectURL},
 		"grant_type":    {"authorization_code"},
-	})
+	}
+	if codeVerifier != "" {
+		params.Set("code_verifier", codeVerifier)
+	}
+
+	tokenResp, err := exchangeCode(ctx, "https://oauth2.googleapis.com/token", params)
 	if err != nil {
 		return nil, fmt.Errorf("google token exchange: %w", err)
 	}
@@ -257,7 +278,7 @@ type githubProvider struct {
 
 func (g *githubProvider) Name() string { return "github" }
 
-func (g *githubProvider) AuthURL(state string) string {
+func (g *githubProvider) AuthURL(state, codeChallenge string) string {
 	params := url.Values{
 		"client_id":    {g.clientID},
 		"redirect_uri": {g.redirectURL},
@@ -265,17 +286,28 @@ func (g *githubProvider) AuthURL(state string) string {
 		"state":        {state},
 	}
 
+	// PKCE: GitHub OAuth Apps support S256 challenges.
+	if codeChallenge != "" {
+		params.Set("code_challenge", codeChallenge)
+		params.Set("code_challenge_method", "S256")
+	}
+
 	return "https://github.com/login/oauth/authorize?" + params.Encode()
 }
 
-func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserInfo, error) {
+func (g *githubProvider) Exchange(ctx context.Context, code, codeVerifier, _ string) (*OAuthUserInfo, error) {
 	// Exchange code for access token
-	tokenResp, err := exchangeCode(ctx, "https://github.com/login/oauth/access_token", url.Values{
+	params := url.Values{
 		"code":          {code},
 		"client_id":     {g.clientID},
 		"client_secret": {g.clientSecret},
 		"redirect_uri":  {g.redirectURL},
-	})
+	}
+	if codeVerifier != "" {
+		params.Set("code_verifier", codeVerifier)
+	}
+
+	tokenResp, err := exchangeCode(ctx, "https://github.com/login/oauth/access_token", params)
 	if err != nil {
 		return nil, fmt.Errorf("github token exchange: %w", err)
 	}
@@ -313,9 +345,32 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 		return nil, fmt.Errorf("decoding github user: %w", err)
 	}
 
-	// GitHub may not return email in the /user response; fetch from emails endpoint
-	if user.Email == "" {
-		user.Email, user.Verified = fetchGitHubEmail(ctx, tokenResp.AccessToken)
+	// The public email on /user carries no verification flag, so its
+	// presence alone can never authorize a merge. Resolve verification
+	// through /user/emails in all cases: match the public address when one
+	// is present, otherwise fall back to the primary address. Only a
+	// GitHub-verified address authorizes an account merge.
+	emails := fetchGitHubEmails(ctx, tokenResp.AccessToken)
+
+	switch {
+	case user.Email != "":
+		for _, e := range emails {
+			if strings.EqualFold(e.Email, user.Email) {
+				user.Verified = e.Verified
+				break
+			}
+		}
+	default:
+		for _, e := range emails {
+			if e.Primary {
+				user.Email, user.Verified = e.Email, e.Verified
+				break
+			}
+		}
+
+		if user.Email == "" && len(emails) > 0 {
+			user.Email, user.Verified = emails[0].Email, emails[0].Verified
+		}
 	}
 
 	return &OAuthUserInfo{
@@ -327,14 +382,20 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 	}, nil
 }
 
-// fetchGitHubEmail fetches the primary email from the GitHub emails API,
-// returning the address and whether GitHub marks it verified. Only a
-// verified + primary address counts as verified: an unverified primary (or
-// a verified non-primary fallback) must NOT authorize an account merge.
-func fetchGitHubEmail(ctx context.Context, accessToken string) (string, bool) {
+// githubEmail is one entry from the GitHub /user/emails endpoint.
+type githubEmail struct {
+	Email    string `json:"email"`
+	Primary  bool   `json:"primary"`
+	Verified bool   `json:"verified"`
+}
+
+// fetchGitHubEmails fetches the account's email list from the GitHub emails
+// API. Returns nil on any transport or decode failure — callers treat a nil
+// list as "verification unknown", never as verified.
+func fetchGitHubEmails(ctx context.Context, accessToken string) []githubEmail {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user/emails", nil)
 	if err != nil {
-		return "", false
+		return nil
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -342,36 +403,21 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) (string, bool) {
 
 	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
-		return "", false
+		return nil
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", false
+		return nil
 	}
 
-	var emails []struct {
-		Email    string `json:"email"`
-		Primary  bool   `json:"primary"`
-		Verified bool   `json:"verified"`
-	}
-
+	var emails []githubEmail
 	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
-		return "", false
+		return nil
 	}
 
-	for _, e := range emails {
-		if e.Primary {
-			return e.Email, e.Verified
-		}
-	}
-
-	if len(emails) > 0 {
-		return emails[0].Email, emails[0].Verified
-	}
-
-	return "", false
+	return emails
 }
 
 // --- Apple Provider (Sign in with Apple) ---
@@ -407,7 +453,7 @@ type appleProvider struct {
 
 func (a *appleProvider) Name() string { return "apple" }
 
-func (a *appleProvider) AuthURL(state string) string {
+func (a *appleProvider) AuthURL(state, _ string) string {
 	params := url.Values{
 		"client_id":     {a.clientID},
 		"redirect_uri":  {a.redirectURL},
@@ -415,12 +461,15 @@ func (a *appleProvider) AuthURL(state string) string {
 		"scope":         {"name email"},
 		"state":         {state},
 		"response_mode": {"form_post"},
+		// Anti-replay: Apple echoes this nonce inside the signed id_token;
+		// parseIDToken verifies it against the state cookie value.
+		"nonce": {state},
 	}
 
 	return "https://appleid.apple.com/auth/authorize?" + params.Encode()
 }
 
-func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserInfo, error) {
+func (a *appleProvider) Exchange(ctx context.Context, code, _, nonce string) (*OAuthUserInfo, error) {
 	clientSecret, err := a.generateClientSecret()
 	if err != nil {
 		return nil, fmt.Errorf("apple client secret generation: %w", err)
@@ -472,8 +521,16 @@ func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserIn
 		return nil, fmt.Errorf("apple token exchange error: %s — %s", tokenResp.Error, tokenResp.ErrorDesc)
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("apple token endpoint returned %d: %s", resp.StatusCode, body)
+	}
+
+	if tokenResp.IDToken == "" {
+		return nil, errors.New("apple token response missing id_token")
+	}
+
 	// Apple returns user info in the ID token JWT — decode it to extract email and sub
-	claims, err := a.parseIDToken(tokenResp.IDToken)
+	claims, err := a.parseIDToken(tokenResp.IDToken, nonce)
 	if err != nil {
 		return nil, fmt.Errorf("parsing apple id token: %w", err)
 	}
@@ -495,13 +552,16 @@ type appleIDTokenClaims struct {
 	Subject        string `json:"sub"`
 	Email          string `json:"email"`
 	IsPrivateEmail bool   `json:"is_private_email"`
+	Nonce          string `json:"nonce"`
 	jwt.RegisteredClaims
 }
 
 // parseIDToken parses and verifies Apple's ID token against Apple's JWKS endpoint.
 // Keys are fetched from https://appleid.apple.com/auth/keys, cached for up to 1 hour,
-// and refreshed on demand when the token's kid is not found in the cache.
-func (a *appleProvider) parseIDToken(idToken string) (*appleIDTokenClaims, error) {
+// and refreshed on demand when the token's kid is not found in the cache. When
+// expectedNonce is non-empty the token's nonce claim must match it — this binds
+// the id_token to the state minted at initiate and defeats replay.
+func (a *appleProvider) parseIDToken(idToken, expectedNonce string) (*appleIDTokenClaims, error) {
 	httpClient := a.httpClient
 	if httpClient == nil {
 		httpClient = oauthHTTPClient // SEC-006: hardened client, not DefaultClient
@@ -571,6 +631,10 @@ func (a *appleProvider) parseIDToken(idToken string) (*appleIDTokenClaims, error
 		return nil, errors.New("token missing subject")
 	}
 
+	if expectedNonce != "" && subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(expectedNonce)) != 1 {
+		return nil, errors.New("token nonce mismatch")
+	}
+
 	return &claims, nil
 }
 
@@ -636,6 +700,10 @@ func fetchAppleJWKS(httpClient *http.Client) (map[string]interface{}, error) {
 	}
 
 	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Apple JWKS endpoint returned %d", resp.StatusCode)
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -739,7 +807,7 @@ type facebookProvider struct {
 
 func (f *facebookProvider) Name() string { return "facebook" }
 
-func (f *facebookProvider) AuthURL(state string) string {
+func (f *facebookProvider) AuthURL(state, _ string) string {
 	params := url.Values{
 		"client_id":     {f.appID},
 		"redirect_uri":  {f.redirectURL},
@@ -751,7 +819,7 @@ func (f *facebookProvider) AuthURL(state string) string {
 	return "https://www.facebook.com/v18.0/dialog/oauth?" + params.Encode()
 }
 
-func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUserInfo, error) {
+func (f *facebookProvider) Exchange(ctx context.Context, code, _, _ string) (*OAuthUserInfo, error) {
 	// Exchange code for access token
 	tokenURL := "https://graph.facebook.com/v18.0/oauth/access_token" // #nosec G101 -- Facebook OAuth token endpoint URL, not a credential
 	params := url.Values{
@@ -791,8 +859,21 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 		return nil, fmt.Errorf("facebook token exchange error: %s — %s", tokenResp.Error, tokenResp.ErrorDesc)
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("facebook token endpoint returned %d: %s", resp.StatusCode, body)
+	}
+
+	if tokenResp.AccessToken == "" {
+		return nil, errors.New("facebook token response missing access_token")
+	}
+
+	// appsecret_proof binds the Graph call to this app — required when the
+	// app has "Require App Secret" enabled, harmless otherwise.
+	proof := hmacSHA256Hex(f.appSecret, tokenResp.AccessToken)
+
 	// Fetch user info from Graph API
-	userURL := "https://graph.facebook.com/v18.0/me?fields=id,email,name&access_token=" + url.QueryEscape(tokenResp.AccessToken)
+	userURL := "https://graph.facebook.com/v18.0/me?fields=id,email,name&access_token=" +
+		url.QueryEscape(tokenResp.AccessToken) + "&appsecret_proof=" + proof
 
 	userReq, err := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
 	if err != nil {
@@ -876,6 +957,14 @@ func exchangeCode(ctx context.Context, tokenURL string, params url.Values) (*tok
 		return nil, fmt.Errorf("token exchange error: %s — %s", tokenResp.Error, tokenResp.ErrorDesc)
 	}
 
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, body)
+	}
+
+	if tokenResp.AccessToken == "" {
+		return nil, errors.New("token response missing access_token")
+	}
+
 	return &tokenResp, nil
 }
 
@@ -895,4 +984,152 @@ func ValidateOAuthState(expected, received string) bool {
 	}
 
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(received)) == 1
+}
+
+// GeneratePKCEVerifier creates a 43-char base64url PKCE code verifier
+// (RFC 7636 §4.1 — 32 random bytes).
+func GeneratePKCEVerifier() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// pkceChallenge derives the S256 code challenge for a verifier.
+func pkceChallenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// hmacSHA256Hex returns hex(HMAC-SHA256(key=secret, msg=message)) — used for
+// Facebook's appsecret_proof parameter.
+func hmacSHA256Hex(secret, message string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(message))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// --- Control-managed OAuth clients (Valkey) ---
+
+// OAuthClientConfig is a provider credential entry managed through the
+// Control Panel (GET/POST /control/oauth-clients). Entries are persisted as
+// a JSON array in Valkey under jc:oauth_clients.
+// Ref: conventions/valkey-keys-catalog.md (jc:oauth_clients).
+type OAuthClientConfig struct {
+	Provider     string `json:"provider"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri"`
+	Enabled      bool   `json:"enabled"`
+}
+
+// NewProvider builds an OAuthProvider from a Control-managed client entry.
+// Apple is intentionally unsupported here — Sign in with Apple needs
+// team/key/private-key material that only env config can supply, so
+// Apple entries created in Control never resolve.
+func (c OAuthClientConfig) NewProvider(redirectBase string) OAuthProvider {
+	if !c.Enabled || c.ClientID == "" || c.ClientSecret == "" {
+		return nil
+	}
+
+	redirect := c.RedirectURI
+	if redirect == "" {
+		redirect = strings.TrimRight(redirectBase, "/") + "/api/v1/auth/oauth/" + strings.ToLower(c.Provider) + "/callback"
+	}
+
+	switch strings.ToLower(c.Provider) {
+	case "google":
+		return &googleProvider{clientID: c.ClientID, clientSecret: c.ClientSecret, redirectURL: redirect}
+	case "github":
+		return &githubProvider{clientID: c.ClientID, clientSecret: c.ClientSecret, redirectURL: redirect}
+	case "facebook":
+		return &facebookProvider{appID: c.ClientID, appSecret: c.ClientSecret, redirectURL: redirect}
+	default:
+		return nil
+	}
+}
+
+// OAuthClientStore resolves Control-managed OAuth client entries.
+type OAuthClientStore interface {
+	GetClientConfig(ctx context.Context, provider string) (*OAuthClientConfig, error)
+	ListClientConfigs(ctx context.Context) ([]OAuthClientConfig, error)
+}
+
+// valkeyOAuthClientEntry mirrors the JSON shape written by
+// internal/control/handlers.go (oauthClientEntry) — secrets are stored
+// unmasked in Valkey; masking happens only on read-out to the Control UI.
+type valkeyOAuthClientEntry struct {
+	Provider     string `json:"provider"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri"`
+	Enabled      bool   `json:"enabled"`
+}
+
+// ValkeyOAuthClientStore reads Control-managed OAuth clients from the
+// jc:oauth_clients Valkey key.
+type ValkeyOAuthClientStore struct {
+	VK valkeycompat.Cmdable
+}
+
+// NewValkeyOAuthClientStore creates the store; vk may be nil (the store
+// resolves nothing in that case).
+func NewValkeyOAuthClientStore(vk valkeycompat.Cmdable) *ValkeyOAuthClientStore {
+	return &ValkeyOAuthClientStore{VK: vk}
+}
+
+// ListClientConfigs returns every enabled client entry.
+func (s *ValkeyOAuthClientStore) ListClientConfigs(ctx context.Context) ([]OAuthClientConfig, error) {
+	if s.VK == nil {
+		return nil, nil
+	}
+
+	raw, err := s.VK.Get(ctx, valkey.MustKey("oauth_clients")).Result()
+	if err != nil {
+		if errors.Is(err, valkeycompat.Nil) {
+			return nil, nil // key absent — no dynamic clients configured
+		}
+
+		return nil, err
+	}
+
+	if raw == "" {
+		return nil, nil
+	}
+
+	var entries []valkeyOAuthClientEntry
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil, fmt.Errorf("decoding oauth clients: %w", err)
+	}
+
+	configs := make([]OAuthClientConfig, 0, len(entries))
+	for _, e := range entries {
+		configs = append(configs, OAuthClientConfig{
+			Provider:     e.Provider,
+			ClientID:     e.ClientID,
+			ClientSecret: e.ClientSecret,
+			RedirectURI:  e.RedirectURI,
+			Enabled:      e.Enabled,
+		})
+	}
+
+	return configs, nil
+}
+
+// GetClientConfig returns the first enabled entry matching provider.
+func (s *ValkeyOAuthClientStore) GetClientConfig(ctx context.Context, provider string) (*OAuthClientConfig, error) {
+	configs, err := s.ListClientConfigs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range configs {
+		if configs[i].Enabled && strings.EqualFold(configs[i].Provider, provider) {
+			return &configs[i], nil
+		}
+	}
+
+	return nil, nil
 }

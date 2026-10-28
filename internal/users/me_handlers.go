@@ -352,22 +352,45 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider := chi.URLParam(r, "provider")
+	provider := strings.ToLower(chi.URLParam(r, "provider"))
 	if provider == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_provider", "Provider is required")
 		return
 	}
 
-	// Check user has a password set (prevent lockout).
-	hasPassword, err := h.Service.store.userHasPassword(r.Context(), user.UserID)
+	accounts, err := h.Service.ListConnectedAccounts(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if !hasPassword {
-		errpkg.WriteError(w, http.StatusBadRequest, "cannot_disconnect", "Cannot disconnect the only login method. Set a password first.")
+	linked := false
+	for _, a := range accounts {
+		if a.Provider == provider {
+			linked = true
+			break
+		}
+	}
+
+	if !linked {
+		errpkg.WriteError(w, http.StatusNotFound, "account_not_linked", "No connected account for that provider")
 		return
+	}
+
+	// Removing the last usable credential would lock the user out — only
+	// allowed while at least one other login method (a password, or another
+	// linked provider) remains.
+	if len(accounts) <= 1 {
+		hasPassword, err := h.Service.store.userHasPassword(r.Context(), user.UserID)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		if !hasPassword {
+			errpkg.WriteError(w, http.StatusBadRequest, "cannot_disconnect", "Cannot disconnect the only login method. Set a password first.")
+			return
+		}
 	}
 
 	if err := h.Service.DisconnectAccount(r.Context(), user.UserID, provider); err != nil {

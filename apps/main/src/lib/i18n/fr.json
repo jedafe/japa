@@ -6353,4 +6353,17 @@
   "wiki.view_more_prices": "Voir plus de prix {section}",
   "wiki.wiki_only_banner_body": "{name} est un lieu wiki uniquement — les guides et informations sont ici plutôt que dans un fil communautaire.",
   "wiki.wiki_only_banner_title": "Ce lieu vit sur le wiki"
+,
+  "tips.below_minimum": "En dessous du minimum du destinataire",
+  "tips.failed": "Échec du pourboire — réessayez",
+  "tips.history": "Historique des pourboires",
+  "tips.invalid_amount": "Saisissez un montant valide",
+  "tips.next": "Suivant",
+  "tips.oc_webhook_copy": "Copier l’URL du webhook",
+  "tips.prev": "Précédent",
+  "tips.support_platform": "Soutenir la plateforme",
+  "tips.transfer_pending": "Pourboire créé — effectuez le paiement pour le valider.",
+  "tips.transfer_pending_hint": "Le pourboire est enregistré une fois le paiement confirmé.",
+  "tips.unavailable": "Les pourboires ne sont pas disponibles ici",
+  "tips.view_history": "Voir l’historique"
 }
