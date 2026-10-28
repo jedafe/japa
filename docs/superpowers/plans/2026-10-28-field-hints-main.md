@@ -192,6 +192,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ## Progress log (execution state)
 
+- **PASS 3 (control) DONE**: 60 helper spans across 17 files + 49 keys in apps/control/src/lib/locales/en.json. svelte-check: 0 errors. Commit: feat(control): add field hints across ops forms.
 - **PASS 2 (admin) DONE**: 536 FieldDef.help props + 94 formSnippet helper spans across 88+16 route files; ~500 keys in apps/admin/src/lib/locales/en.json. svelte-check: 0 errors. Commit: feat(admin): add field hints across entity forms. Remaining passes: control, academy, docs, mobile, studio-desktop, extension.
 
 - Tasks 1–9 DONE & committed. Task 10 sweep done: corrupted scripted insertions reverted+reapplied (label-anchored), duplicate hints removed where pages had pre-existing guidance, svelte-check clean (0 errors / 14 baseline warnings). Remaining intentionally-unhinted files: composers (AiBodyField uses own placeholder prop — fields still show placeholder), search/filter/sort inputs, dynamic admin-authored renderers (CustomFieldGroup, claim-ownership, verification-request, readiness), hidden honeypots, readonly share fields, literal-suggest combobox, Acknowledge checkbox w/ inline label, ApiKeyRevealDialog checkbox. NOT verified: visual spot-check via bun run dev.
