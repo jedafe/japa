@@ -744,10 +744,10 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('app.wiki.col_title', 'Title'), type: 'text' },
-		{ key: 'space_slug', label: t('app.wiki.col_space', 'Space'), type: 'text' },
-		{ key: 'status', label: t('app.wiki.col_status', 'Status'), type: 'text' },
-		{ key: 'excerpt', label: t('app.wiki.detail_excerpt', 'Excerpt'), type: 'textarea' }
+		{ key: 'title', label: t('app.wiki.col_title', 'Title'), type: 'text', help: t('app.wiki.title_hint', 'The title shown in listings and detail views.'),},
+		{ key: 'space_slug', label: t('app.wiki.col_space', 'Space'), type: 'text', help: t('app.wiki.space_slug_hint', 'The space URL slug this belongs to.') },
+		{ key: 'status', label: t('app.wiki.col_status', 'Status'), type: 'text', help: t('app.wiki.status_hint', 'The record state — controls visibility and actions.') },
+		{ key: 'excerpt', label: t('app.wiki.detail_excerpt', 'Excerpt'), type: 'textarea', help: t('app.wiki.excerpt_hint', 'A short teaser shown in listings.') }
 	];
 
 	// ── Dropdown helpers — every dropdown field uses the shared Autocomplete
@@ -819,6 +819,7 @@
 				key: 'dest',
 				label: t('app.wiki.col_destination', 'Destination'),
 				type: 'autocomplete',
+			help: t('app.wiki.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,
@@ -829,6 +830,7 @@
 				key: 'category',
 				label: t('app.wiki.gen_category', 'Category'),
 				type: 'autocomplete',
+			help: t('app.wiki.category_hint', 'The category this belongs to — drives grouping and filters.'),
 				placeholder: t('app.wiki.filter_category_ph', 'Search categories…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: async (q: string) => {
@@ -845,6 +847,7 @@
 				key: 'locked',
 				label: t('app.wiki.col_locked', 'Locked'),
 				type: 'autocomplete',
+			help: t('app.wiki.locked_hint', 'Locked records cannot be edited by regular admins.'),
 				placeholder: t('app.wiki.filter_locked_ph', 'Lock state…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: enumFetcher(LOCKED_OPTIONS),
@@ -855,6 +858,7 @@
 				key: 'featured',
 				label: t('app.wiki.col_featured', 'Featured'),
 				type: 'autocomplete',
+			help: t('app.wiki.featured_hint', 'Featured records get priority placement.'),
 				placeholder: t('app.wiki.col_featured', 'Featured'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: enumFetcher(FEATURED_OPTIONS),
@@ -865,6 +869,7 @@
 				key: 'active',
 				label: t('app.wiki.col_active', 'Active'),
 				type: 'autocomplete',
+			help: t('app.wiki.active_hint', 'Inactive records are hidden or disabled on the site.'),
 				placeholder: t('app.wiki.col_active', 'Active'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: enumFetcher(ACTIVE_OPTIONS),
@@ -877,6 +882,7 @@
 				key: 'status',
 				label: t('app.wiki.col_status', 'Status'),
 				type: 'autocomplete',
+			help: t('app.wiki.status_hint', 'The record state — controls visibility and actions.'),
 				placeholder: t('app.wiki.col_status', 'Status'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: enumFetcher(STATUS_OPTIONS),
@@ -889,6 +895,7 @@
 				key: 'deleted',
 				label: t('app.wiki.filter_deleted', 'Deleted'),
 				type: 'select',
+			help: t('app.wiki.deleted_hint', 'Marks the record deleted without removing the row.'),
 				options: [
 					{ value: 'only', label: t('app.wiki.filter_deleted_only', 'Deleted only') },
 					{ value: 'all', label: t('app.wiki.filter_deleted_all', 'Include deleted') }
@@ -1006,6 +1013,7 @@
 			key: 'kind',
 			label: t('app.wiki.filter_kind', 'Kind'),
 			type: 'autocomplete',
+			help: t('app.wiki.kind_hint', 'The kind or class of this record.'),
 			placeholder: t('app.wiki.filter_kind', 'Kind'),
 			emptyMessage: t('common.no_results', 'No results found'),
 			fetcher: enumFetcher(KIND_OPTIONS),
@@ -1016,6 +1024,7 @@
 			key: 'status',
 			label: t('app.wiki.col_status', 'Status'),
 			type: 'autocomplete',
+			help: t('app.wiki.status_hint', 'The record state — controls visibility and actions.'),
 			placeholder: t('app.wiki.col_status', 'Status'),
 			emptyMessage: t('common.no_results', 'No results found'),
 			fetcher: enumFetcher(STATUS_OPTIONS),
@@ -1026,6 +1035,7 @@
 			key: 'deleted',
 			label: t('app.wiki.filter_deleted', 'Deleted'),
 			type: 'select',
+			help: t('app.wiki.deleted_hint', 'Marks the record deleted without removing the row.'),
 			options: [
 				{ value: 'only', label: t('app.wiki.filter_deleted_only', 'Deleted only') },
 				{ value: 'all', label: t('app.wiki.filter_deleted_all', 'Include deleted') }
@@ -1090,7 +1100,7 @@
 
 	// Minimal FieldDef set — EntityPage requires `fields` even for readonly pages.
 	const revisionFields: FieldDef[] = [
-		{ key: 'summary', label: t('app.wiki.col_summary', 'Summary'), type: 'text' }
+		{ key: 'summary', label: t('app.wiki.col_summary', 'Summary'), type: 'text', help: t('app.wiki.summary_hint', 'A one or two sentence overview shown on cards.') }
 	];
 
 	const revisionBulkActions = $derived.by<BulkAction[]>(() => {

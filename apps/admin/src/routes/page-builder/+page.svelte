@@ -113,12 +113,13 @@
 	// block type registry. Config is built as a $derived so option updates
 	// propagate once the registry loads.
 	const fields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('pageBuilder.name', 'Name'), type: 'text', required: true },
-		{ key: 'slug', label: t('pageBuilder.slug', 'Slug'), type: 'text', placeholder: t('pageBuilder.slug_placeholder', 'auto-generated from name') },
+		{ key: 'name', label: t('pageBuilder.name', 'Name'), type: 'text', help: t('pageBuilder.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
+		{ key: 'slug', label: t('pageBuilder.slug', 'Slug'), type: 'text', help: t('pageBuilder.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), placeholder: t('pageBuilder.slug_placeholder', 'auto-generated from name') },
 		{
 			key: 'component',
 			label: t('pageBuilder.type', 'Type'),
 			type: 'autocomplete',
+			help: t('pageBuilder.component_hint', 'The component used to render this block.'),
 			placeholder: t('pageBuilder.select_type', 'Select a block type'),
 			emptyMessage: t('common.no_results', 'No results found'),
 			fetcher: fetchComponentOptions,
@@ -130,13 +131,14 @@
 			key: 'category',
 			label: t('pageBuilder.category', 'Category'),
 			type: 'autocomplete',
+			help: t('pageBuilder.category_hint', 'The category this belongs to — drives grouping and filters.'),
 			placeholder: t('pageBuilder.select_category', 'Select a category'),
 			emptyMessage: t('common.no_results', 'No results found'),
 			fetcher: fetchCategoryOptions,
 			initialFetcher: fetchCategoryOptionsInitial,
 			getSelectedLabel: getCategorySelectedLabel
 		},
-		{ key: 'is_enabled', label: t('pageBuilder.enabled', 'Enabled'), type: 'checkbox' }
+		{ key: 'is_enabled', label: t('pageBuilder.enabled', 'Enabled'), type: 'checkbox', help: t('pageBuilder.is_enabled_hint', 'Turn off to disable without deleting.') }
 	]);
 
 	const config = $derived<EntityPageConfig>({

@@ -84,10 +84,10 @@
 	let providerController = $state<EntityPageController | undefined>(undefined);
 
 	const providerFields: FieldDef[] = [
-		{ key: 'slug', label: 'Slug', type: 'text', required: true, placeholder: 'wes|iqas|ces' },
-		{ key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'World Education Services' },
-		{ key: 'website', label: 'Website', type: 'url', placeholder: 'https://wes.org' },
-		{ key: 'is_active', label: 'Active', type: 'checkbox' },
+		{ key: 'slug', label: 'Slug', type: 'text', help: t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), required: true, placeholder: 'wes|iqas|ces' },
+		{ key: 'name', label: 'Name', type: 'text', help: t('admin.name_hint', 'The name shown in admin lists and on the site where public.'), required: true, placeholder: 'World Education Services' },
+		{ key: 'website', label: 'Website', type: 'url', help: t('admin.website_hint', 'Full URL including https://.'), placeholder: 'https://wes.org' },
+		{ key: 'is_active', label: 'Active', type: 'checkbox', help: t('admin.is_active_hint', 'Inactive records are hidden or disabled on the site.') },
 	];
 
 	async function loadProviders(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
@@ -134,26 +134,29 @@
 
 	const guideFields = $derived<FieldDef[]>([
 		geoOptions.length > 0
-			? { key: 'destination_space_id', label: 'Destination', type: 'select', required: true,
+			? { key: 'destination_space_id', label: 'Destination', type: 'select',
+			help: t('admin.destination_space_id_hint', 'The destination space this is linked to.'), required: true,
 				options: geoOptions.map((g) => ({ value: g.id, label: g.name })) }
-			: { key: 'destination_space_id', label: 'Destination space ID', type: 'text', required: true },
+			: { key: 'destination_space_id', label: 'Destination space ID', type: 'text', help: t('admin.destination_space_id_hint', 'The destination space this is linked to.'), required: true },
 		providerOptions.length > 0
-			? { key: 'provider_id', label: 'Provider', type: 'select', required: true,
+			? { key: 'provider_id', label: 'Provider', type: 'select',
+			help: t('admin.provider_id_hint', 'The external provider or network.'), required: true,
 				options: providerOptions.map((p) => ({ value: p.id, label: p.name })) }
-			: { key: 'provider_id', label: 'Provider ID', type: 'text', required: true },
-		{ key: 'purpose', label: 'Purpose', type: 'select', required: true, options: [
+			: { key: 'provider_id', label: 'Provider ID', type: 'text', help: t('admin.provider_id_hint', 'The external provider or network.'), required: true },
+		{ key: 'purpose', label: 'Purpose', type: 'select',
+			help: t('admin.purpose_hint', 'What this is for — shown to admins and users.'), required: true, options: [
 			{ value: 'immigration', label: 'Immigration' }, { value: 'study', label: 'Study' },
 			{ value: 'employment', label: 'Employment' }, { value: 'professional_licensure', label: 'Professional licensure' },
 		]},
-		{ key: 'pathway_steps', label: 'Pathway steps (JSON)', type: 'textarea', required: true },
-		{ key: 'documents_required', label: 'Documents required (JSON)', type: 'textarea' },
-		{ key: 'accepted_for', label: 'Accepted for (JSON)', type: 'textarea' },
-		{ key: 'fee_estimate', label: 'Fee estimate', type: 'text' },
+		{ key: 'pathway_steps', label: 'Pathway steps (JSON)', type: 'textarea', help: t('admin.pathway_steps_hint', 'The ordered steps of this pathway.'), required: true },
+		{ key: 'documents_required', label: 'Documents required (JSON)', type: 'textarea', help: t('admin.documents_required_hint', 'Documents applicants must submit.') },
+		{ key: 'accepted_for', label: 'Accepted for (JSON)', type: 'textarea', help: t('admin.accepted_for_hint', 'What this credential is accepted for.') },
+		{ key: 'fee_estimate', label: 'Fee estimate', type: 'text', help: t('admin.fee_estimate_hint', 'Typical fee — e.g. $230 CAD.') },
 		currencies.length > 0
-			? { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions(currencies) }
-			: { key: 'currency', label: 'Currency', type: 'text' },
-		{ key: 'timeline_estimate', label: 'Timeline estimate', type: 'text' },
-		{ key: 'official_url', label: 'Official URL', type: 'url' },
+			? { key: 'currency', label: 'Currency', type: 'select', help: t('admin.currency_hint', 'ISO currency code, e.g. NGN or USD.'), options: currencyOptions(currencies) }
+			: { key: 'currency', label: 'Currency', type: 'text', help: t('admin.currency_hint', 'ISO currency code, e.g. NGN or USD.') },
+		{ key: 'timeline_estimate', label: 'Timeline estimate', type: 'text', help: t('admin.timeline_estimate_hint', 'Typical duration — e.g. 4–6 weeks.') },
+		{ key: 'official_url', label: 'Official URL', type: 'url', help: t('admin.official_url_hint', 'The official government or issuer URL.') },
 	]);
 
 	// pathway_steps / documents_required / accepted_for are jsonb columns —

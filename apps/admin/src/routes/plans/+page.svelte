@@ -136,17 +136,17 @@
 	];
 
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('plans.name', 'Name'), type: 'text' },
-		{ key: 'slug', label: t('plans.slug', 'Slug'), type: 'text' },
-		{ key: 'description', label: t('plans.description', 'Description'), type: 'textarea' },
-		{ key: 'features', label: t('plans.features', 'Features'), type: 'text' },
-		{ key: 'monthly_amount', label: t('plans.monthly', 'Monthly'), type: 'number' },
-		{ key: 'yearly_amount', label: t('plans.yearly', 'Yearly'), type: 'number' },
-		{ key: 'currency', label: t('plans.currency', 'Currency'), type: 'text' },
-		{ key: 'status', label: t('plans.status', 'Status'), type: 'text' },
-		{ key: 'sort_order', label: t('plans.sort_order', 'Sort Order'), type: 'number' },
-		{ key: 'highlighted', label: t('plans.highlighted', 'Highlighted'), type: 'checkbox' },
-		{ key: 'tier', label: t('plans.tier', 'Tier'), type: 'select', options: tierOptions }
+		{ key: 'name', label: t('plans.name', 'Name'), type: 'text', help: t('plans.name_hint', 'The name shown in admin lists and on the site where public.'),},
+		{ key: 'slug', label: t('plans.slug', 'Slug'), type: 'text', help: t('plans.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
+		{ key: 'description', label: t('plans.description', 'Description'), type: 'textarea', help: t('plans.description_hint', 'Shown in detail views — keep it concise.') },
+		{ key: 'features', label: t('plans.features', 'Features'), type: 'text', help: t('plans.features_hint', 'The features for this record.') },
+		{ key: 'monthly_amount', label: t('plans.monthly', 'Monthly'), type: 'number', help: t('plans.monthly_amount_hint', 'Amount per month in the record’s currency.') },
+		{ key: 'yearly_amount', label: t('plans.yearly', 'Yearly'), type: 'number', help: t('plans.yearly_amount_hint', 'Amount per year in the record’s currency.') },
+		{ key: 'currency', label: t('plans.currency', 'Currency'), type: 'text', help: t('plans.currency_hint', 'ISO currency code, e.g. NGN or USD.') },
+		{ key: 'status', label: t('plans.status', 'Status'), type: 'text', help: t('plans.status_hint', 'The record state — controls visibility and actions.') },
+		{ key: 'sort_order', label: t('plans.sort_order', 'Sort Order'), type: 'number', help: t('plans.sort_order_hint', 'Lower numbers appear first.') },
+		{ key: 'highlighted', label: t('plans.highlighted', 'Highlighted'), type: 'checkbox', help: t('plans.highlighted_hint', 'Highlighted records stand out in listings.') },
+		{ key: 'tier', label: t('plans.tier', 'Tier'), type: 'select', help: t('plans.tier_hint', 'The tier — e.g. free, partner, premium.'), options: tierOptions }
 	];
 
 	// Row actions: View (always) + Manage Tracks / Edit / Delete (permission-gated).
@@ -466,6 +466,7 @@
 	<div class="space-y-3">
 		<div>
 			<label for="plan-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.name', 'Name')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
 			<input
 				id="plan-name"
 				type="text"
@@ -480,6 +481,7 @@
 		</div>
 		<div>
 			<label for="plan-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.slug', 'Slug')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}</span>
 			<input
 				id="plan-slug"
 				type="text"
@@ -491,6 +493,7 @@
 		</div>
 		<div>
 			<label for="plan-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.description', 'Description')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.desc_hint', 'Shown in detail views — keep it concise.')}</span>
 			<textarea
 				id="plan-desc"
 				class="w-full rounded-md border px-3 py-2 text-sm"
@@ -577,6 +580,7 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="plan-monthly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.monthly_kobo', 'Monthly (in kobo/cents)')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.monthly_hint', 'The monthly (in kobo/cents) for this record.')}</span>
 				<input
 					id="plan-monthly"
 					type="number"
@@ -588,6 +592,7 @@
 			</div>
 			<div>
 				<label for="plan-yearly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.yearly_kobo', 'Yearly (in kobo/cents)')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.yearly_hint', 'The yearly (in kobo/cents) for this record.')}</span>
 				<input
 					id="plan-yearly"
 					type="number"
@@ -602,10 +607,12 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="plan-currency" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.currency', 'Currency')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.currency_hint', 'The currency for this record.')}</span>
 				<Select options={currencyOptions} bind:value={value.currency} />
 			</div>
 			<div>
 				<label for="plan-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.status', 'Status')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.status_hint', 'The status for this record.')}</span>
 				<Select options={statuses} bind:value={value.status} />
 			</div>
 		</div>
@@ -613,6 +620,7 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="plan-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.tier_hint', 'The tier for this record.')}</span>
 				<Select options={tierOptions} bind:value={value.tier} />
 			</div>
 			<div class="flex items-end gap-2 pb-2">
@@ -620,12 +628,14 @@
 				<label for="plan-highlight" class="flex items-center gap-1 text-sm">
 					<Star class="h-3.5 w-3.5" /> {t('plans.highlighted', 'Highlighted')}
 				</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.highlight_hint', 'The highlighted for this record.')}</span>
 			</div>
 		</div>
 
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="plan-sort" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.sort_order', 'Sort Order')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('plans.sort_hint', 'The sort order for this record.')}</span>
 				<input
 					id="plan-sort"
 					type="number"

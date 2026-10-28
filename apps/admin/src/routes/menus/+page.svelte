@@ -89,10 +89,10 @@
 
 	// `fields` drives EntityForm rendering + edit-form seeding for the MENU entity.
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('menus.name', 'Name'), type: 'text', placeholder: 'e.g., Primary Nav', required: true },
+		{ key: 'name', label: t('menus.name', 'Name'), type: 'text', help: t('menus.name_hint', 'The name shown in admin lists and on the site where public.'), placeholder: 'e.g., Primary Nav', required: true },
 		{ key: 'slug', label: t('menus.slug', 'Slug'), type: 'text', placeholder: 'primary-nav', required: true, readonlyInEdit: true, help: t('menus.slug_immutable', 'Slug cannot be changed after creation') },
-		{ key: 'placement', label: t('menus.placement', 'Placement'), type: 'select', options: placementOptions },
-		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: statusOptions }
+		{ key: 'placement', label: t('menus.placement', 'Placement'), type: 'select', help: t('menus.placement_hint', 'Where this shows on the page.'), options: placementOptions },
+		{ key: 'status', label: t('common.status', 'Status'), type: 'select', help: t('common.status_hint', 'The record state — controls visibility and actions.'), options: statusOptions }
 	];
 
 	const config: EntityPageConfig = {

@@ -236,11 +236,12 @@
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryUtils.ready;
 		return [
-			{ key: 'name', label: t('common.name', 'Name'), type: 'text', required: true },
+			{ key: 'name', label: t('common.name', 'Name'), type: 'text', help: t('common.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
 			{
 				key: 'destination_space_id',
 				label: t('common.country', 'Country'),
 				type: 'autocomplete',
+			help: t('common.destination_space_id_hint', 'The destination space this is linked to.'),
 				required: true,
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
@@ -252,14 +253,15 @@
 				key: 'org_type',
 				label: t('common.type', 'Type'),
 				type: 'select',
+			help: t('common.org_type_hint', 'The kind of organization — agency, school, employer.'),
 				options: orgTypeOptions.map((o) => ({ value: o.value, label: t(`app.community_locator.type_${o.value}`, o.label) }))
 			},
-			{ key: 'origin_community', label: t('common.origin', 'Origin community'), type: 'text' },
+			{ key: 'origin_community', label: t('common.origin', 'Origin community'), type: 'text', help: t('common.origin_community_hint', 'The origin community this applies to.'),},
 			{ key: 'prompt', label: t('app.community_locator.prompt', 'AI prompt'), type: 'textarea', help: t('app.community_locator.prompt_help', 'Optional free-text prompt sent to the content agent.') },
-			{ key: 'address', label: t('common.address', 'Address'), type: 'textarea' },
-			{ key: 'website_url', label: t('common.website', 'Website'), type: 'url' },
-			{ key: 'contact_info', label: t('common.contact', 'Contact'), type: 'text' },
-			{ key: 'meeting_frequency', label: t('common.frequency', 'Meeting frequency'), type: 'text' }
+			{ key: 'address', label: t('common.address', 'Address'), type: 'textarea', help: t('common.address_hint', 'The street address.') },
+			{ key: 'website_url', label: t('common.website', 'Website'), type: 'url', help: t('common.website_url_hint', 'Full URL including https://.') },
+			{ key: 'contact_info', label: t('common.contact', 'Contact'), type: 'text', help: t('common.contact_info_hint', 'How to reach them — email or phone.') },
+			{ key: 'meeting_frequency', label: t('common.frequency', 'Meeting frequency'), type: 'text', help: t('common.meeting_frequency_hint', 'How often the group meets.') }
 		];
 	});
 
@@ -271,6 +273,7 @@
 				key: 'dest',
 				label: t('app.tools.col_destination', 'Destination'),
 				type: 'autocomplete',
+			help: t('app.tools.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,
@@ -281,6 +284,7 @@
 				key: 'status',
 				label: t('common.status', 'Status'),
 				type: 'select',
+			help: t('common.status_hint', 'The record state — controls visibility and actions.'),
 				// Lifecycle enum from the backend store (internal/communitylocator).
 				options: ['pending', 'ai_draft', 'published', 'archived', 'draft'].map((v) => ({
 					value: v,
@@ -291,12 +295,14 @@
 				key: 'type',
 				label: t('common.type', 'Type'),
 				type: 'select',
+			help: t('common.type_hint', 'The type — controls how it’s handled.'),
 				options: orgTypeOptions.map((o) => ({ value: o.value, label: t(`app.community_locator.type_${o.value}`, o.label) }))
 			},
 			{
 				key: 'origin',
 				label: t('common.origin', 'Origin'),
 				type: 'text',
+			help: t('common.origin_hint', 'The origin country or community this applies to.'),
 				placeholder: t('app.community_locator.origin_placeholder', 'e.g. Nigerian')
 			}
 		];

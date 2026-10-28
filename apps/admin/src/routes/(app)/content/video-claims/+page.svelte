@@ -38,6 +38,7 @@
 			key: 'status',
 			label: t('video_claims.status', 'Status'),
 			type: 'select',
+			help: t('video_claims.status_hint', 'The record state — controls visibility and actions.'),
 			options: [
 				{ value: 'approved', label: t('video_claims.approved', 'Approve') },
 				{ value: 'rejected', label: t('video_claims.rejected', 'Reject') },
@@ -49,6 +50,7 @@
 			key: 'resolution_note',
 			label: t('video_claims.resolution_note', 'Resolution Note'),
 			type: 'textarea',
+			help: t('video_claims.resolution_note_hint', 'How the issue was resolved — shown on the record.'),
 			placeholder: t('video_claims.resolution_note_placeholder', 'Optional note for the claimant')
 		}
 	];

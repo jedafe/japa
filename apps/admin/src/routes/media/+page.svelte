@@ -315,8 +315,8 @@
 	// `fields` is required by EntityPage for edit-form seeding; this page is read-only
 	// (no create/edit slide-over), so a minimal metadata field set is declared.
 	const fields: FieldDef[] = [
-		{ key: 'alt_text', label: t('app.media.field_alt_text', 'Alt Text'), type: 'text' },
-		{ key: 'status', label: t('app.media.field_status', 'Status'), type: 'text' }
+		{ key: 'alt_text', label: t('app.media.field_alt_text', 'Alt Text'), type: 'text', help: t('app.media.alt_text_hint', 'The alt text for this record.'),},
+		{ key: 'status', label: t('app.media.field_status', 'Status'), type: 'text', help: t('app.media.status_hint', 'The record state — controls visibility and actions.') }
 	];
 
 	function formatFileSize(bytes: number): string {

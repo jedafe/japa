@@ -30,10 +30,10 @@
 	// is rendered by `formSnippet` below (a JSON textarea), but it MUST appear
 	// here so EntityPage seeds value.steps from the selected row.
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('onboarding.templates.name', 'Name'), type: 'text', required: true, placeholder: 'Default 7-step flow' },
-		{ key: 'description', label: t('onboarding.templates.description', 'Description'), type: 'textarea', placeholder: 'Describe what this template configures…' },
-		{ key: 'steps', label: t('onboarding.templates.steps', 'Steps (JSON)'), type: 'textarea' },
-		{ key: 'is_active', label: t('onboarding.templates.active', 'Active'), type: 'checkbox' }
+		{ key: 'name', label: t('onboarding.templates.name', 'Name'), type: 'text', help: t('onboarding.templates.name_hint', 'The name shown in admin lists and on the site where public.'), required: true, placeholder: 'Default 7-step flow' },
+		{ key: 'description', label: t('onboarding.templates.description', 'Description'), type: 'textarea', help: t('onboarding.templates.description_hint', 'Shown in detail views — keep it concise.'), placeholder: 'Describe what this template configures…' },
+		{ key: 'steps', label: t('onboarding.templates.steps', 'Steps (JSON)'), type: 'textarea', help: t('onboarding.templates.steps_hint', 'The ordered steps — one per line.') },
+		{ key: 'is_active', label: t('onboarding.templates.active', 'Active'), type: 'checkbox', help: t('onboarding.templates.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
 	];
 
 	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a
@@ -240,6 +240,7 @@
 			<label for="tpl-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.name', 'Name')} <span style="color: var(--color-danger)">*</span>
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
 			<input
 				id="tpl-name"
 				type="text"
@@ -254,6 +255,7 @@
 			<label for="tpl-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.description', 'Description')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.desc_hint', 'Shown in detail views — keep it concise.')}</span>
 			<textarea
 				id="tpl-desc"
 				rows="2"
@@ -267,6 +269,7 @@
 			<label for="tpl-steps" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.steps', 'Steps (JSON)')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.steps_hint', 'The ordered steps — one per line.')}</span>
 			<textarea
 				id="tpl-steps"
 				rows="10"
@@ -290,6 +293,7 @@
 			<label for="tpl-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('onboarding.templates.active', 'Active')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('onboarding.templates.active_hint', 'The active for this record.')}</span>
 		</div>
 	</div>
 {/snippet}

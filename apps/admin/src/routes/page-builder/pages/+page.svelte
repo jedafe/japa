@@ -357,11 +357,12 @@
 
 	// ── Form fields ── `fields` drives EntityForm rendering + edit-form seeding.
 	const fields = $derived.by<FieldDef[]>(() => [
-		{ key: 'title', label: t('page_builder.title', 'Title'), type: 'text', required: true },
+		{ key: 'title', label: t('page_builder.title', 'Title'), type: 'text', help: t('page_builder.title_hint', 'The title shown in listings and detail views.'), required: true },
 		{
 			key: 'slug',
 			label: t('page_builder.slug', 'Slug'),
 			type: 'text',
+			help: t('page_builder.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'),
 			placeholder: t('page_builder.slug_hint', 'Auto-generated from title')
 		},
 		{
@@ -381,6 +382,7 @@
 			key: 'status',
 			label: t('page_builder.status', 'Status'),
 			type: 'select',
+			help: t('page_builder.status_hint', 'The record state — controls visibility and actions.'),
 			options: statusOptions.length ? statusOptions : [
 				{ value: 'draft', label: t('page_builder.status_draft', 'Draft') },
 				{ value: 'published', label: t('page_builder.status_published', 'Published') },
@@ -402,6 +404,7 @@
 			key: 'theme_id',
 			label: t('page_builder.theme', 'Theme'),
 			type: 'autocomplete',
+			help: t('page_builder.theme_id_hint', 'The visual theme applied.'),
 			placeholder: t('page_builder.theme_placeholder', 'Search theme…'),
 			emptyMessage: t('common.no_results', 'No results found'),
 			fetcher: fetchThemeOptions,

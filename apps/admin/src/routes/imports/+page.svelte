@@ -179,9 +179,9 @@
 	// standard EntityForm input), but `fields` is still required for the
 	// scaffold to seed the form value object.
 	const fields: FieldDef[] = [
-		{ key: 'user_id', label: t('imports.target_user', 'Target User'), type: 'text', required: true },
-		{ key: 'source_type', label: t('imports.source_type', 'Source Type'), type: 'text', required: true },
-		{ key: 'source_url', label: t('imports.source_url', 'Source URL'), type: 'url' }
+		{ key: 'user_id', label: t('imports.target_user', 'Target User'), type: 'text', help: t('imports.user_id_hint', 'The user account this is attached to.'), required: true },
+		{ key: 'source_type', label: t('imports.source_type', 'Source Type'), type: 'text', help: t('imports.source_type_hint', 'The kind of source this is.'), required: true },
+		{ key: 'source_url', label: t('imports.source_url', 'Source URL'), type: 'url', help: t('imports.source_url_hint', 'The URL this data was pulled from — used for verification.') }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -429,6 +429,7 @@
 			<label for="import-user" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('imports.target_user', 'Target User')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('imports.user_hint', 'The user account this is attached to.')}</span>
 			<UserAutocomplete
 				bind:value={value._username}
 				placeholder={t('imports.user_placeholder', 'Search by username…')}
@@ -442,6 +443,7 @@
 			<label for="import-source-type" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('imports.source_type', 'Source Type')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('imports.source_type_hint', 'The type — controls how it’s handled.')}</span>
 			<Select
 				bind:value={value.source_type}
 				options={sourceTypeOptions}
@@ -453,6 +455,7 @@
 				<label for="import-source-url" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('imports.source_url', 'Source URL')}
 				</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('imports.source_url_hint', 'The source url for this record.')}</span>
 				<input
 					id="import-source-url"
 					type="url"

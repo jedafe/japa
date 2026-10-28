@@ -61,15 +61,16 @@
 	// from `name` (shown as a read-only preview in the legacy modal) and is not submitted, so it
 	// is intentionally omitted from the editable field set.
 	const fields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('pageTemplates.name', 'Name'), type: 'text', required: true },
+		{ key: 'name', label: t('pageTemplates.name', 'Name'), type: 'text', help: t('pageTemplates.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
 		{
 			key: 'page_type',
 			label: t('pageTemplates.category', 'Category'),
 			type: 'select',
+			help: t('pageTemplates.page_type_hint', 'The kind of page this renders as.'),
 			options: categoryOptions,
 			required: true
 		},
-		{ key: 'description', label: t('pageTemplates.description', 'Description'), type: 'textarea' }
+		{ key: 'description', label: t('pageTemplates.description', 'Description'), type: 'textarea', help: t('pageTemplates.description_hint', 'Shown in detail views — keep it concise.') }
 	]);
 
 	const config = $derived<EntityPageConfig>({

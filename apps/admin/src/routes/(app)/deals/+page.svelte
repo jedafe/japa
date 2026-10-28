@@ -210,24 +210,24 @@
 	// `status`, and `details` are included per Section 55 (provider linkage,
 	// verification, moderation status, and deal page content).
 	let fields = $derived<FieldDef[]>([
-		{ key: 'title', label: t('coupons.title_field', 'Title'), type: 'text', required: true, placeholder: 'e.g. 20% off Remitly — first transfer' },
-		{ key: 'slug', label: t('coupons.slug', 'Slug'), type: 'text', placeholder: t('coupons.slug_placeholder', 'Auto-generated from title if blank') },
-		{ key: 'code', label: t('coupons.code', 'Code'), type: 'text', placeholder: t('coupons.code_placeholder', 'Optional — deal offers may not need one') },
-		{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), type: 'select', options: couponTypeOptions, hideInEdit: true },
-		{ key: 'provider_id', label: t('coupons.provider', 'Provider'), type: 'autocomplete', placeholder: t('coupons.provider_placeholder', 'Search provider…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchProviderOptions, initialFetcher: fetchProviderOptionsInitial, getSelectedLabel: getProviderSelectedLabel },
-		{ key: 'discount_type', label: t('coupons.type', 'Discount Type'), type: 'select', options: discountTypeOptions },
-		{ key: 'discount_value', label: t('coupons.value', 'Value'), type: 'number' },
+		{ key: 'title', label: t('coupons.title_field', 'Title'), type: 'text', help: t('coupons.title_hint', 'The title shown in listings and detail views.'), required: true, placeholder: 'e.g. 20% off Remitly — first transfer' },
+		{ key: 'slug', label: t('coupons.slug', 'Slug'), type: 'text', help: t('coupons.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), placeholder: t('coupons.slug_placeholder', 'Auto-generated from title if blank') },
+		{ key: 'code', label: t('coupons.code', 'Code'), type: 'text', help: t('coupons.code_hint', 'The code users or systems enter — keep it short and unique.'), placeholder: t('coupons.code_placeholder', 'Optional — deal offers may not need one') },
+		{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), type: 'select', help: t('coupons.coupon_type_hint', 'How the coupon applies — percent, fixed, or free shipping.'), options: couponTypeOptions, hideInEdit: true },
+		{ key: 'provider_id', label: t('coupons.provider', 'Provider'), type: 'autocomplete', help: t('coupons.provider_id_hint', 'The external provider or network.'), placeholder: t('coupons.provider_placeholder', 'Search provider…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchProviderOptions, initialFetcher: fetchProviderOptionsInitial, getSelectedLabel: getProviderSelectedLabel },
+		{ key: 'discount_type', label: t('coupons.type', 'Discount Type'), type: 'select', help: t('coupons.discount_type_hint', 'How the discount applies — percent, fixed, or free shipping.'), options: discountTypeOptions },
+		{ key: 'discount_value', label: t('coupons.value', 'Value'), type: 'number', help: t('coupons.discount_value_hint', 'The discount amount — percent or currency units.') },
 		currencies.length > 0
-			? { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'select', options: currencyOptions(currencies) }
-			: { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'text', placeholder: 'e.g. NGN, USD' },
-		{ key: 'description', label: t('coupons.description_field', 'Description'), type: 'textarea' },
-		{ key: 'details', label: t('deals.details_json', 'Deal page content (JSON)'), type: 'textarea', placeholder: '{ "summary": "…", "sections": [{ "title": "", "body": "" }], "faq": [{ "q": "", "a": "" }], "trial": { "title": "", "body": "", "url": "" } }' },
-		{ key: 'referral_url', label: t('coupons.referral_url', 'Referral URL'), type: 'url' },
-		{ key: 'terms_url', label: t('coupons.terms_url', 'Terms URL'), type: 'url' },
-		{ key: 'valid_from', label: t('coupons.valid_from', 'Valid From'), type: 'date' },
-		{ key: 'expires_at', label: t('coupons.valid_until', 'Valid Until'), type: 'date' },
-		{ key: 'is_verified', label: t('coupons.verified', 'Verified'), type: 'checkbox' },
-		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: statusOptions }
+			? { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'select', help: t('coupons.currency_hint', 'ISO currency code, e.g. NGN or USD.'), options: currencyOptions(currencies) }
+			: { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'text', help: t('coupons.currency_hint', 'ISO currency code, e.g. NGN or USD.'), placeholder: 'e.g. NGN, USD' },
+		{ key: 'description', label: t('coupons.description_field', 'Description'), type: 'textarea', help: t('coupons.description_hint', 'Shown in detail views — keep it concise.') },
+		{ key: 'details', label: t('deals.details_json', 'Deal page content (JSON)'), type: 'textarea', help: t('deals.details_hint', 'Full details — supports multiple paragraphs.'), placeholder: '{ "summary": "…", "sections": [{ "title": "", "body": "" }], "faq": [{ "q": "", "a": "" }], "trial": { "title": "", "body": "", "url": "" } }' },
+		{ key: 'referral_url', label: t('coupons.referral_url', 'Referral URL'), type: 'url', help: t('coupons.referral_url_hint', 'The affiliate or referral landing URL.') },
+		{ key: 'terms_url', label: t('coupons.terms_url', 'Terms URL'), type: 'url', help: t('coupons.terms_url_hint', 'Full URL to the terms document.') },
+		{ key: 'valid_from', label: t('coupons.valid_from', 'Valid From'), type: 'date', help: t('coupons.valid_from_hint', 'The date this becomes effective.') },
+		{ key: 'expires_at', label: t('coupons.valid_until', 'Valid Until'), type: 'date', help: t('coupons.expires_at_hint', 'After this date the record is treated as expired.') },
+		{ key: 'is_verified', label: t('coupons.verified', 'Verified'), type: 'checkbox', help: t('coupons.is_verified_hint', 'Verified records show a badge and rank higher.') },
+		{ key: 'status', label: t('common.status', 'Status'), type: 'select', help: t('common.status_hint', 'The record state — controls visibility and actions.'), options: statusOptions }
 	]);
 
 	const config = $derived<EntityPageConfig>({

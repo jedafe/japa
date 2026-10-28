@@ -121,10 +121,10 @@
 
 	// `fields` seeds the edit-form value; the actual inputs are in `formSnippet`.
 	const fields: FieldDef[] = [
-		{ key: 'subject', label: t('email_templates.subject', 'Subject'), type: 'text' },
-		{ key: 'html_body', label: t('email_templates.body', 'Body (HTML)'), type: 'textarea' },
-		{ key: 'plain_text_body', label: t('email_templates.plain_text', 'Plain Text Body'), type: 'textarea' },
-		{ key: 'is_active', label: t('common.status', 'Status'), type: 'checkbox' },
+		{ key: 'subject', label: t('email_templates.subject', 'Subject'), type: 'text', help: t('email_templates.subject_hint', 'The email subject line recipients see.'),},
+		{ key: 'html_body', label: t('email_templates.body', 'Body (HTML)'), type: 'textarea', help: t('email_templates.html_body_hint', 'Email body HTML — test before publishing.') },
+		{ key: 'plain_text_body', label: t('email_templates.plain_text', 'Plain Text Body'), type: 'textarea', help: t('email_templates.plain_text_body_hint', 'Plain-text fallback for mail clients that block HTML.') },
+		{ key: 'is_active', label: t('common.status', 'Status'), type: 'checkbox', help: t('common.is_active_hint', 'Inactive records are hidden or disabled on the site.') },
 	];
 
 	// Fetch full template detail (list returns summary only) then open edit/view.
@@ -283,6 +283,7 @@
 			<label for="et-test-email" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.test_email', 'Test Email Address')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.test_email_hint', 'Where the test email is sent.')}</span>
 			<input
 				id="et-test-email"
 				type="email"
@@ -397,6 +398,7 @@
 			<label for="et-subject" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.subject', 'Subject')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.subject_hint', 'The email subject line recipients see.')}</span>
 			<input
 				id="et-subject"
 				type="text"
@@ -410,6 +412,7 @@
 			<label for="et-body" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.body', 'Body (HTML)')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.body_hint', 'The main content body.')}</span>
 			<Tabs
 				tabs={[
 					{ value: 'edit', label: t('email_templates.tab_edit', 'Edit') },
@@ -445,6 +448,7 @@
 			<label for="et-plain" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.plain_text', 'Plain Text Body')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('email_templates.plain_hint', 'Plain-text fallback for mail clients that block HTML.')}</span>
 			<textarea
 				id="et-plain"
 				bind:value={value.plain_text_body}
@@ -465,6 +469,7 @@
 			<label for="et-active" class="text-sm font-medium" style="color: var(--color-foreground)">
 				{t('common.active', 'Active')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('common.active_hint', 'The active for this record.')}</span>
 		</div>
 
 		{#if editing && canManageTemplates}

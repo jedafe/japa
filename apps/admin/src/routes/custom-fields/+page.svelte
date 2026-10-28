@@ -96,12 +96,13 @@
 	// autocomplete whose options are loaded dynamically, so the array is rebuilt when
 	// entityTypeOptions updates (mirrors the /users dynamic-filter pattern).
 	const fields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('fieldGroups.name', 'Name'), type: 'text', required: true },
-		{ key: 'slug', label: t('fieldGroups.slug', 'Slug'), type: 'text' },
+		{ key: 'name', label: t('fieldGroups.name', 'Name'), type: 'text', help: t('fieldGroups.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
+		{ key: 'slug', label: t('fieldGroups.slug', 'Slug'), type: 'text', help: t('fieldGroups.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
 		{
 			key: 'entity_type',
 			label: t('fieldGroups.entity_type', 'Entity Type'),
 			type: 'autocomplete',
+			help: t('fieldGroups.entity_type_hint', 'The kind of entity this is linked to.'),
 			placeholder: t('fieldGroups.entity_type_placeholder', 'Search entity type…'),
 			emptyMessage: t('common.no_results', 'No results found'),
 			fetcher: fetchEntityTypeOptions,
@@ -109,7 +110,7 @@
 			getSelectedLabel: getEntityTypeSelectedLabel,
 			required: true
 		},
-		{ key: 'description', label: t('fieldGroups.description', 'Description'), type: 'textarea' }
+		{ key: 'description', label: t('fieldGroups.description', 'Description'), type: 'textarea', help: t('fieldGroups.description_hint', 'Shown in detail views — keep it concise.') }
 	]);
 
 	const config = $derived<EntityPageConfig>({

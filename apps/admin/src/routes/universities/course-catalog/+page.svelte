@@ -77,15 +77,15 @@
 	}
 
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('courses.title', 'Course Title'), type: 'text', required: true },
-		{ key: 'slug', label: t('courses.slug', 'Slug'), type: 'text', placeholder: t('courses.slug_hint', 'Auto-generated from title if empty') },
-		{ key: 'description', label: t('courses.description', 'Description'), type: 'textarea' },
-		{ key: 'degree_type', label: t('courses.degree_type', 'Degree Type'), type: 'text', placeholder: 'BSc / MSc / MBA / PhD' },
-		{ key: 'department', label: t('courses.department', 'Department'), type: 'text' },
-		{ key: 'field_of_study', label: t('courses.field_of_study', 'Field of Study'), type: 'text' },
-		{ key: 'language', label: t('courses.language', 'Language'), type: 'text', placeholder: 'English' },
-		{ key: 'default_duration_years', label: t('courses.default_duration', 'Default Duration (years)'), type: 'number' },
-		{ key: 'is_published', label: t('courses.published', 'Published'), type: 'checkbox' }
+		{ key: 'title', label: t('courses.title', 'Course Title'), type: 'text', help: t('courses.title_hint', 'The title shown in listings and detail views.'), required: true },
+		{ key: 'slug', label: t('courses.slug', 'Slug'), type: 'text', help: t('courses.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), placeholder: t('courses.slug_hint', 'Auto-generated from title if empty') },
+		{ key: 'description', label: t('courses.description', 'Description'), type: 'textarea', help: t('courses.description_hint', 'Shown in detail views — keep it concise.') },
+		{ key: 'degree_type', label: t('courses.degree_type', 'Degree Type'), type: 'text', help: t('courses.degree_type_hint', 'The type of degree — e.g. BSc, MSc.'), placeholder: 'BSc / MSc / MBA / PhD' },
+		{ key: 'department', label: t('courses.department', 'Department'), type: 'text', help: t('courses.department_hint', 'The faculty or department.') },
+		{ key: 'field_of_study', label: t('courses.field_of_study', 'Field of Study'), type: 'text', help: t('courses.field_of_study_hint', 'The discipline — e.g. Computer Science.') },
+		{ key: 'language', label: t('courses.language', 'Language'), type: 'text', help: t('courses.language_hint', 'The language this content is written in.'), placeholder: 'English' },
+		{ key: 'default_duration_years', label: t('courses.default_duration', 'Default Duration (years)'), type: 'number', help: t('courses.default_duration_years_hint', 'Default program length in years.') },
+		{ key: 'is_published', label: t('courses.published', 'Published'), type: 'checkbox', help: t('courses.is_published_hint', 'Unpublished records are hidden on the site.') }
 	];
 
 	const config = $derived<EntityPageConfig>({

@@ -115,10 +115,10 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'listing_title', label: t('app.service_bookings.col_listing', 'Listing'), type: 'text' },
-		{ key: 'booker_username', label: t('app.service_bookings.col_booker', 'Booker'), type: 'text' },
-		{ key: 'org_name', label: t('app.service_bookings.col_org', 'Organization'), type: 'text' },
-		{ key: 'status', label: t('app.service_bookings.col_status', 'Status'), type: 'text' }
+		{ key: 'listing_title', label: t('app.service_bookings.col_listing', 'Listing'), type: 'text', help: t('app.service_bookings.listing_title_hint', 'The listing or posting title.'),},
+		{ key: 'booker_username', label: t('app.service_bookings.col_booker', 'Booker'), type: 'text', help: t('app.service_bookings.booker_username_hint', 'The traveller who made this booking.') },
+		{ key: 'org_name', label: t('app.service_bookings.col_org', 'Organization'), type: 'text', help: t('app.service_bookings.org_name_hint', 'The organization this belongs to.') },
+		{ key: 'status', label: t('app.service_bookings.col_status', 'Status'), type: 'text', help: t('app.service_bookings.status_hint', 'The record state — controls visibility and actions.') }
 	];
 
 	const filters = $derived.by<FilterDef[]>(() => [

@@ -94,9 +94,9 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'username', label: t('app.tools.col_username', 'Username'), type: 'text' },
-		{ key: 'total_score', label: t('app.tools.col_score', 'Score'), type: 'number' },
-		{ key: 'threshold_label', label: t('app.tools.col_readiness_level', 'Readiness Level'), type: 'text' }
+		{ key: 'username', label: t('app.tools.col_username', 'Username'), type: 'text', help: t('app.tools.username_hint', 'The member handle — e.g. jane or @jane.'),},
+		{ key: 'total_score', label: t('app.tools.col_score', 'Score'), type: 'number', help: t('app.tools.total_score_hint', 'The total score achieved.') },
+		{ key: 'threshold_label', label: t('app.tools.col_readiness_level', 'Readiness Level'), type: 'text', help: t('app.tools.threshold_label_hint', 'Label shown at this threshold.') }
 	];
 
 	const config = $derived<EntityPageConfig>({

@@ -10,6 +10,7 @@
 			key: 'name',
 			label: t('persona_voices.name', 'Name'),
 			type: 'text',
+			help: t('persona_voices.name_hint', 'The name shown in admin lists and on the site where public.'),
 			required: true,
 			placeholder: 'e.g. Professional Travel Blogger'
 		},
@@ -17,6 +18,7 @@
 			key: 'slug',
 			label: t('persona_voices.slug', 'Slug'),
 			type: 'text',
+			help: t('persona_voices.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'),
 			required: true,
 			placeholder: 'e.g. professional-travel-blogger'
 		},
@@ -24,12 +26,14 @@
 			key: 'description',
 			label: t('persona_voices.description_field', 'Description'),
 			type: 'textarea',
+			help: t('persona_voices.description_hint', 'Shown in detail views — keep it concise.'),
 			placeholder: 'Short summary of this voice'
 		},
 		{
 			key: 'voice_prompt',
 			label: t('persona_voices.voice_prompt', 'Voice Prompt'),
 			type: 'textarea',
+			help: t('persona_voices.voice_prompt_hint', 'Spoken instructions for voice output.'),
 			required: true,
 			placeholder: t('persona_voices.voice_prompt_placeholder', 'Describe the voice, personality, and style...')
 		},

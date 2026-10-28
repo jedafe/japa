@@ -69,8 +69,8 @@
 	// `fields` seeds the edit form value; the actual inputs are rendered by the
 	// `formSnippet` below (the searchable permissions grid).
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('users.roles.name', 'Name'), type: 'text', required: true },
-		{ key: 'permissions', label: t('users.roles.permissions', 'Permissions'), type: 'text' }
+		{ key: 'name', label: t('users.roles.name', 'Name'), type: 'text', help: t('users.roles.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
+		{ key: 'permissions', label: t('users.roles.permissions', 'Permissions'), type: 'text', help: t('users.roles.permissions_hint', 'Which admin permissions are required.') }
 	];
 
 	const config: EntityPageConfig = {
@@ -200,6 +200,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="role-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.roles.name', 'Name')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('users.roles.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
 			<input
 				id="role-name"
 				type="text"

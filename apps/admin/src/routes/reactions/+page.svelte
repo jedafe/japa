@@ -42,10 +42,10 @@
 
 	// `fields` drives EntityForm rendering and edit-form seeding.
 	const fields: FieldDef[] = [
-		{ key: 'key', label: t('reactions.key', 'Key'), type: 'text', placeholder: 'like', required: true },
-		{ key: 'label', label: t('reactions.name', 'Name'), type: 'text', placeholder: 'Like', required: true },
-		{ key: 'emoji', label: t('reactions.emoji', 'Emoji'), type: 'text', placeholder: '👍', required: true },
-		{ key: 'enabled', label: t('reactions.active', 'Active'), type: 'checkbox' }
+		{ key: 'key', label: t('reactions.key', 'Key'), type: 'text', help: t('reactions.key_hint', 'The machine key used in code and API responses.'), placeholder: 'like', required: true },
+		{ key: 'label', label: t('reactions.name', 'Name'), type: 'text', help: t('reactions.label_hint', 'The display label shown to users.'), placeholder: 'Like', required: true },
+		{ key: 'emoji', label: t('reactions.emoji', 'Emoji'), type: 'text', help: t('reactions.emoji_hint', 'A single emoji used as the visual marker.'), placeholder: '👍', required: true },
+		{ key: 'enabled', label: t('reactions.active', 'Active'), type: 'checkbox', help: t('reactions.enabled_hint', 'Turn off to disable without deleting.') }
 	];
 
 	const config: EntityPageConfig = {

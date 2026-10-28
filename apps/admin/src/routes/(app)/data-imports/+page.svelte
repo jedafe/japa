@@ -129,11 +129,11 @@
 
 	// ── EntityPage config ─────────────────────────────────────────────────
 	const fields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('app.data_imports.import_name', 'Import Name'), type: 'text', required: true },
-		{ key: 'type', label: t('app.data_imports.data_type', 'Data Type'), type: 'select', options: importTypes },
-		{ key: 'format', label: t('app.data_imports.format', 'Format'), type: 'select', options: importFormatOptions },
-		{ key: 'mode', label: t('app.data_imports.mode', 'Mode'), type: 'select', options: importModeOptions },
-		{ key: 'file_url', label: t('app.data_imports.file_url', 'File URL'), type: 'text', required: true }
+		{ key: 'name', label: t('app.data_imports.import_name', 'Import Name'), type: 'text', help: t('app.data_imports.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
+		{ key: 'type', label: t('app.data_imports.data_type', 'Data Type'), type: 'select', help: t('app.data_imports.type_hint', 'The type — controls how it’s handled.'), options: importTypes },
+		{ key: 'format', label: t('app.data_imports.format', 'Format'), type: 'select', help: t('app.data_imports.format_hint', 'The expected format — e.g. CSV columns or template.'), options: importFormatOptions },
+		{ key: 'mode', label: t('app.data_imports.mode', 'Mode'), type: 'select', help: t('app.data_imports.mode_hint', 'How this behaves — pick the closest fit.'), options: importModeOptions },
+		{ key: 'file_url', label: t('app.data_imports.file_url', 'File URL'), type: 'text', help: t('app.data_imports.file_url_hint', 'Direct file URL — must be publicly reachable.'), required: true }
 	]);
 
 	const config = $derived<EntityPageConfig>({
@@ -367,6 +367,7 @@
 			<label for="import-name" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.import_name', 'Import Name')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
 			<input
 				id="import-name"
 				type="text"
@@ -381,12 +382,14 @@
 				<label for="import-type" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('app.data_imports.data_type', 'Data Type')}
 				</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.type_hint', 'The type — controls how it’s handled.')}</span>
 				<Select bind:value={value.type} options={importTypes} />
 			</div>
 			<div>
 				<label for="import-format" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('app.data_imports.format', 'Format')}
 				</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.format_hint', 'The expected format — e.g. CSV or JSON.')}</span>
 				<Select bind:value={value.format} options={importFormatOptions} />
 			</div>
 		</div>
@@ -394,12 +397,14 @@
 			<label for="import-mode" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.mode', 'Mode')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.mode_hint', 'How this behaves — pick the closest fit.')}</span>
 			<Select bind:value={value.mode} options={importModeOptions} />
 		</div>
 		<div>
 			<label for="import-file-url" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.file_url', 'File URL')}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_imports.file_url_hint', 'The file url for this record.')}</span>
 			<input
 				id="import-file-url"
 				type="text"

@@ -102,14 +102,14 @@
 	];
 
 	const fields: FieldDef[] = [
-		{ key: 'code', label: t('discounts.code', 'Code'), type: 'text', required: true },
-		{ key: 'description', label: t('discounts.description', 'Description'), type: 'text' },
-		{ key: 'discount_type', label: t('discounts.type', 'Type'), type: 'select', options: discountTypeOptions },
-		{ key: 'discount_value', label: t('discounts.value', 'Value'), type: 'number', required: true },
-		{ key: 'applicable_to', label: t('discounts.applicable_to', 'Applies To'), type: 'select', options: applicableToOptions },
-		{ key: 'valid_from', label: t('discounts.valid_from', 'Valid From'), type: 'date' },
-		{ key: 'valid_until', label: t('discounts.valid_until', 'Valid Until'), type: 'date' },
-		{ key: 'max_uses', label: t('discounts.usage_limit', 'Usage Limit'), type: 'number', min: 0 }
+		{ key: 'code', label: t('discounts.code', 'Code'), type: 'text', help: t('discounts.code_hint', 'The code users or systems enter — keep it short and unique.'), required: true },
+		{ key: 'description', label: t('discounts.description', 'Description'), type: 'text', help: t('discounts.description_hint', 'Shown in detail views — keep it concise.') },
+		{ key: 'discount_type', label: t('discounts.type', 'Type'), type: 'select', help: t('discounts.discount_type_hint', 'How the discount applies — percent, fixed, or free shipping.'), options: discountTypeOptions },
+		{ key: 'discount_value', label: t('discounts.value', 'Value'), type: 'number', help: t('discounts.discount_value_hint', 'The discount amount — percent or currency units.'), required: true },
+		{ key: 'applicable_to', label: t('discounts.applicable_to', 'Applies To'), type: 'select', help: t('discounts.applicable_to_hint', 'Pick one option from the list.'), options: applicableToOptions },
+		{ key: 'valid_from', label: t('discounts.valid_from', 'Valid From'), type: 'date', help: t('discounts.valid_from_hint', 'The date this becomes effective.') },
+		{ key: 'valid_until', label: t('discounts.valid_until', 'Valid Until'), type: 'date', help: t('discounts.valid_until_hint', 'The date this stops being valid.') },
+		{ key: 'max_uses', label: t('discounts.usage_limit', 'Usage Limit'), type: 'number', help: t('discounts.max_uses_hint', 'Total times this can be used before it stops working.'), min: 0 }
 	];
 
 	// Custom actions: View Usage + default Edit/Delete (permission-gated).

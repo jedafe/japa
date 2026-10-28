@@ -119,7 +119,7 @@
 
 	// ── Subscriber edit fields (status only — email is read-only) ───────────
 	const subscriberFields = $derived<FieldDef[]>([
-		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: subscriberStatusOptions }
+		{ key: 'status', label: t('common.status', 'Status'), type: 'select', help: t('common.status_hint', 'The record state — controls visibility and actions.'), options: subscriberStatusOptions }
 	]);
 
 	// ── Row actions ─────────────────────────────────────────────────────────

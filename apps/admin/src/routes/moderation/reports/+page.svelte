@@ -208,7 +208,7 @@
 	// `fields` is required by EntityPage for edit-form seeding; this page is
 	// read-only so the form is never shown, but the array must be present.
 	const fields: FieldDef[] = [
-		{ key: 'reason', label: t('moderation.reason', 'Reason'), type: 'text' }
+		{ key: 'reason', label: t('moderation.reason', 'Reason'), type: 'text', help: t('moderation.reason_hint', 'The reason recorded for audit — shown to the affected user where noted.') }
 	];
 
 	// Config built as a $derived so rowActions updates (canManage / status)

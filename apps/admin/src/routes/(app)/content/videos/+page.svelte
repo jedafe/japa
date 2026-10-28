@@ -47,6 +47,7 @@
 			key: 'status',
 			label: t('video_sources.status', 'Status'),
 			type: 'select',
+			help: t('video_sources.status_hint', 'The record state — controls visibility and actions.'),
 			options: [
 				{ value: 'active', label: t('video_sources.status_active', 'Active') },
 				{ value: 'removed', label: t('video_sources.status_removed', 'Removed') }

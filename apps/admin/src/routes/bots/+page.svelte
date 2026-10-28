@@ -80,11 +80,11 @@
 	}
 
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('bots.name', 'Name'), type: 'text', required: true, placeholder: 'e.g., Googlebot' },
-		{ key: 'user_agent_pattern', label: t('app.bots.user_agent_pattern', 'User-Agent Pattern'), type: 'text', required: true, placeholder: 'e.g., Googlebot' },
-		{ key: 'bot_type', label: t('bots.type', 'Type'), type: 'select', options: botTypeOptions },
-		{ key: 'policy', label: t('app.bots.policy', 'Policy'), type: 'select', options: policyOptions },
-		{ key: 'crawl_delay', label: t('app.bots.crawl_delay', 'Crawl Delay (seconds)'), type: 'number', min: 0 }
+		{ key: 'name', label: t('bots.name', 'Name'), type: 'text', help: t('bots.name_hint', 'The name shown in admin lists and on the site where public.'), required: true, placeholder: 'e.g., Googlebot' },
+		{ key: 'user_agent_pattern', label: t('app.bots.user_agent_pattern', 'User-Agent Pattern'), type: 'text', help: t('app.bots.user_agent_pattern_hint', 'User-agent substring used to identify this bot.'), required: true, placeholder: 'e.g., Googlebot' },
+		{ key: 'bot_type', label: t('bots.type', 'Type'), type: 'select', help: t('bots.bot_type_hint', 'The kind of bot — crawler, feed reader, AI.'), options: botTypeOptions },
+		{ key: 'policy', label: t('app.bots.policy', 'Policy'), type: 'select', help: t('app.bots.policy_hint', 'The policy text applied.'), options: policyOptions },
+		{ key: 'crawl_delay', label: t('app.bots.crawl_delay', 'Crawl Delay (seconds)'), type: 'number', help: t('app.bots.crawl_delay_hint', 'A numeric value.'), min: 0 }
 	];
 
 	// Custom actions: View + Edit + Delete (delete hidden for system bots).

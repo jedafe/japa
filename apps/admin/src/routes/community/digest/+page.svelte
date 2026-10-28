@@ -204,8 +204,8 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'cadence', label: t('app.digest.col_cadence', 'Cadence'), type: 'text' },
-		{ key: 'status', label: t('app.digest.col_status', 'Status'), type: 'text' }
+		{ key: 'cadence', label: t('app.digest.col_cadence', 'Cadence'), type: 'text', help: t('app.digest.cadence_hint', 'How often this runs or repeats.'),},
+		{ key: 'status', label: t('app.digest.col_status', 'Status'), type: 'text', help: t('app.digest.status_hint', 'The record state — controls visibility and actions.') }
 	];
 
 	const filters = $derived.by<FilterDef[]>(() => {
@@ -220,6 +220,7 @@
 				key: 'dest',
 				label: t('app.digest.col_destination', 'Destination'),
 				type: 'autocomplete',
+			help: t('app.digest.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

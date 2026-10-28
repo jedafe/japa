@@ -45,9 +45,9 @@
 
 	// `fields` drives EntityForm rendering and edit-form seeding; color uses a plain text input (no native color picker), hex string preserved.
 	const fields: FieldDef[] = [
-		{ key: 'key', label: t('share_platforms.key', 'Key'), type: 'text', placeholder: 'twitter', required: true },
-		{ key: 'label', label: t('share_platforms.label', 'Label'), type: 'text', placeholder: 'Twitter', required: true },
-		{ key: 'icon', label: t('share_platforms.icon', 'Icon'), type: 'text', placeholder: '🐦', required: true },
+		{ key: 'key', label: t('share_platforms.key', 'Key'), type: 'text', help: t('share_platforms.key_hint', 'The machine key used in code and API responses.'), placeholder: 'twitter', required: true },
+		{ key: 'label', label: t('share_platforms.label', 'Label'), type: 'text', help: t('share_platforms.label_hint', 'The display label shown to users.'), placeholder: 'Twitter', required: true },
+		{ key: 'icon', label: t('share_platforms.icon', 'Icon'), type: 'text', help: t('share_platforms.icon_hint', 'Icon name or emoji shown next to the record.'), placeholder: '🐦', required: true },
 		{
 			key: 'url_template',
 			label: t('share_platforms.url_template', 'URL Template'),
@@ -56,9 +56,9 @@
 			required: true,
 			help: t('share_platforms.url_template_hint', 'Use {url} and {title} as placeholders.')
 		},
-		{ key: 'color', label: t('share_platforms.color', 'Color'), type: 'text', placeholder: '#3b82f6' },
-		{ key: 'position', label: t('share_platforms.position', 'Position'), type: 'number' },
-		{ key: 'enabled', label: t('share_platforms.active', 'Enabled'), type: 'checkbox' }
+		{ key: 'color', label: t('share_platforms.color', 'Color'), type: 'text', help: t('share_platforms.color_hint', 'The display color for this record.'), placeholder: '#3b82f6' },
+		{ key: 'position', label: t('share_platforms.position', 'Position'), type: 'number', help: t('share_platforms.position_hint', 'Ordering position — lower numbers show first.') },
+		{ key: 'enabled', label: t('share_platforms.active', 'Enabled'), type: 'checkbox', help: t('share_platforms.enabled_hint', 'Turn off to disable without deleting.') }
 	];
 
 	const config: EntityPageConfig = {

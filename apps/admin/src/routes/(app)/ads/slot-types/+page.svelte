@@ -37,10 +37,10 @@
 
 	// `slot_name` is the display/storage key; the API create/update body expects `name`.
 	const fields: FieldDef[] = [
-		{ key: 'slot_name', label: t('slot_types.name', 'Name'), type: 'text', placeholder: t('slot_types.name_placeholder', 'e.g. Leaderboard Banner'), required: true },
-		{ key: 'description', label: t('slot_types.description', 'Description'), type: 'textarea', placeholder: t('slot_types.desc_placeholder', 'Optional description for this slot type') },
-		{ key: 'max_display_per_page', label: t('slot_types.max_display', 'Max Display Per Page'), type: 'number', min: 0, placeholder: t('slot_types.max_display_placeholder', 'Unlimited') },
-		{ key: 'is_active', label: t('slot_types.active', 'Active'), type: 'checkbox' }
+		{ key: 'slot_name', label: t('slot_types.name', 'Name'), type: 'text', help: t('slot_types.slot_name_hint', 'The ad or content slot this fills.'), placeholder: t('slot_types.name_placeholder', 'e.g. Leaderboard Banner'), required: true },
+		{ key: 'description', label: t('slot_types.description', 'Description'), type: 'textarea', help: t('slot_types.description_hint', 'Shown in detail views — keep it concise.'), placeholder: t('slot_types.desc_placeholder', 'Optional description for this slot type') },
+		{ key: 'max_display_per_page', label: t('slot_types.max_display', 'Max Display Per Page'), type: 'number', help: t('slot_types.max_display_per_page_hint', 'Maximum items shown per page.'), min: 0, placeholder: t('slot_types.max_display_placeholder', 'Unlimited') },
+		{ key: 'is_active', label: t('slot_types.active', 'Active'), type: 'checkbox', help: t('slot_types.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
 	];
 
 	const config: EntityPageConfig = {

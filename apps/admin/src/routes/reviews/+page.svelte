@@ -179,7 +179,7 @@
 
 	// `fields` is required by EntityPage even on readonly pages (used for edit-form seeding).
 	const fields = $derived<FieldDef[]>([
-		{ key: 'status', label: t('reviews.status', 'Status'), type: 'select', options: reviewStatusOptions }
+		{ key: 'status', label: t('reviews.status', 'Status'), type: 'select', help: t('reviews.status_hint', 'The record state — controls visibility and actions.'), options: reviewStatusOptions }
 	]);
 
 	// Config built as a $derived so rowActions/canModerate updates propagate (mirrors /users).

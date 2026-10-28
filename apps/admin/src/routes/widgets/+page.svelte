@@ -58,79 +58,79 @@
 		return {
 			latest_content: [
 				{ key: 'content_type', label: 'Content Type', type: 'select', default: '', options: [{ value: '', label: 'All types' }], help: 'Filter by content type. Leave as "All types" for mixed content.' },
-				{ key: 'sort', label: 'Sort', type: 'select', default: 'recent', options: [{ value: 'recent', label: 'Most Recent' }, { value: 'popular', label: 'Most Viewed' }, { value: 'discussed', label: 'Most Discussed' }] },
+				{ key: 'sort', label: 'Sort', type: 'select', help: t('admin.sort_hint', 'Lower numbers appear first.'), default: 'recent', options: [{ value: 'recent', label: 'Most Recent' }, { value: 'popular', label: 'Most Viewed' }, { value: 'discussed', label: 'Most Discussed' }] },
 				{ key: 'featured', label: 'Featured Only', type: 'checkbox', default: false, help: 'Show only pinned/featured content.' },
 				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
 				{ key: 'limit', label: 'Limit', type: 'number', default: 5, help: 'Max items to return.' },
 			],
 			featured_content: [
 				{ key: 'content_type', label: 'Content Type', type: 'select', default: '', options: [{ value: '', label: 'All types' }], help: 'Filter by content type.' },
-				{ key: 'sort', label: 'Sort', type: 'select', default: 'featured', options: [{ value: 'featured', label: 'Featured Order (admin-curated)' }, { value: 'recent', label: 'Most Recent' }, { value: 'popular', label: 'Most Viewed' }, { value: 'discussed', label: 'Most Discussed' }] },
+				{ key: 'sort', label: 'Sort', type: 'select', help: t('admin.sort_hint', 'Lower numbers appear first.'), default: 'featured', options: [{ value: 'featured', label: 'Featured Order (admin-curated)' }, { value: 'recent', label: 'Most Recent' }, { value: 'popular', label: 'Most Viewed' }, { value: 'discussed', label: 'Most Discussed' }] },
 				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			blog_posts: [
-				{ key: 'sort', label: 'Sort', type: 'select', default: 'recent', options: [{ value: 'recent', label: 'Most Recent' }, { value: 'popular', label: 'Most Viewed' }, { value: 'discussed', label: 'Most Discussed' }] },
+				{ key: 'sort', label: 'Sort', type: 'select', help: t('admin.sort_hint', 'Lower numbers appear first.'), default: 'recent', options: [{ value: 'recent', label: 'Most Recent' }, { value: 'popular', label: 'Most Viewed' }, { value: 'discussed', label: 'Most Discussed' }] },
 				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			forum_threads: [
-				{ key: 'sort', label: 'Sort', type: 'select', default: 'hot', options: [{ value: 'hot', label: 'Hot (vote score)' }, { value: 'recent', label: 'Most Recent' }, { value: 'unanswered', label: 'Unanswered' }] },
+				{ key: 'sort', label: 'Sort', type: 'select', help: t('admin.sort_hint', 'Lower numbers appear first.'), default: 'hot', options: [{ value: 'hot', label: 'Hot (vote score)' }, { value: 'recent', label: 'Most Recent' }, { value: 'unanswered', label: 'Unanswered' }] },
 				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			job_listings: [
 				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			achievements: [
-				{ key: 'milestone_type', label: 'Milestone Type', type: 'select', default: '', options: [{ value: '', label: 'All milestones' }, { value: 'relocation', label: 'Relocation' }, { value: 'career', label: 'Career' }, { value: 'education', label: 'Education' }, { value: 'community', label: 'Community' }] },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'milestone_type', label: 'Milestone Type', type: 'select', help: t('admin.milestone_type_hint', 'The kind of milestone — e.g. visa approved.'), default: '', options: [{ value: '', label: 'All milestones' }, { value: 'relocation', label: 'Relocation' }, { value: 'career', label: 'Career' }, { value: 'education', label: 'Education' }, { value: 'community', label: 'Community' }] },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			academy_tracks: [
-				{ key: 'difficulty', label: 'Difficulty', type: 'select', default: '', options: [{ value: '', label: 'All levels' }, { value: 'beginner', label: 'Beginner' }, { value: 'intermediate', label: 'Intermediate' }, { value: 'advanced', label: 'Advanced' }] },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'difficulty', label: 'Difficulty', type: 'select', help: t('admin.difficulty_hint', 'Pick one option from the list.'), default: '', options: [{ value: '', label: 'All levels' }, { value: 'beginner', label: 'Beginner' }, { value: 'intermediate', label: 'Intermediate' }, { value: 'advanced', label: 'Advanced' }] },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			community_digest: [
 				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 3 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 3 },
 			],
 			reviews: [
-				{ key: 'entity_type', label: 'Entity Type', type: 'select', default: '', options: [{ value: '', label: 'All entities' }, { value: 'content', label: 'Content' }, { value: 'space', label: 'Space' }, { value: 'university', label: 'University' }] },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'entity_type', label: 'Entity Type', type: 'select', help: t('admin.entity_type_hint', 'The kind of entity this is linked to.'), default: '', options: [{ value: '', label: 'All entities' }, { value: 'content', label: 'Content' }, { value: 'space', label: 'Space' }, { value: 'university', label: 'University' }] },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			comparisons: [
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			community_organisations: [
-				{ key: 'org_type', label: 'Organisation Type', type: 'select', default: '', options: [{ value: '', label: 'All types' }, { value: 'association', label: 'Association' }, { value: 'club', label: 'Club' }, { value: 'society', label: 'Society' }, { value: 'network', label: 'Network' }] },
+				{ key: 'org_type', label: 'Organisation Type', type: 'select', help: t('admin.org_type_hint', 'The kind of organization — agency, school, employer.'), default: '', options: [{ value: '', label: 'All types' }, { value: 'association', label: 'Association' }, { value: 'club', label: 'Club' }, { value: 'society', label: 'Society' }, { value: 'network', label: 'Network' }] },
 				{ key: 'origin_community', label: 'Origin Community', type: 'text', default: '', help: 'Filter by origin community name.' },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			mentor_spotlight: [
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
 			newsletter_signup: [
 				{ key: 'list_id', label: 'List ID', type: 'text', default: '', help: 'Newsletter list ID for subscriptions.' },
-				{ key: 'heading', label: 'Heading', type: 'text', default: 'Subscribe to our newsletter' },
-				{ key: 'subtext', label: 'Subtext', type: 'text', default: '' },
-				{ key: 'button_text', label: 'Button Text', type: 'text', default: 'Subscribe' },
-				{ key: 'placeholder', label: 'Placeholder', type: 'text', default: 'Enter your email' },
+				{ key: 'heading', label: 'Heading', type: 'text', help: t('admin.heading_hint', 'The section heading text.'), default: 'Subscribe to our newsletter' },
+				{ key: 'subtext', label: 'Subtext', type: 'text', help: t('admin.subtext_hint', 'Secondary text under the heading.'), default: '' },
+				{ key: 'button_text', label: 'Button Text', type: 'text', help: t('admin.button_text_hint', 'The label on the action button.'), default: 'Subscribe' },
+				{ key: 'placeholder', label: 'Placeholder', type: 'text', help: t('admin.placeholder_hint', 'Placeholder text inside the input.'), default: 'Enter your email' },
 			],
 			custom_html: [
 				{ key: 'html', label: 'HTML Content', type: 'text', default: '', help: 'Raw HTML (sanitized on render).' },
 			],
-			trending_tags: [{ key: 'limit', label: 'Limit', type: 'number', default: 10 }],
+			trending_tags: [{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 10 }],
 			space_members: [
 				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Space UUID (required for space_members).' },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
-			user_leaderboard: [{ key: 'limit', label: 'Limit', type: 'number', default: 10 }],
+			user_leaderboard: [{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 10 }],
 			upcoming_events: [
 				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+				{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 },
 			],
-			featured_spaces: [{ key: 'limit', label: 'Limit', type: 'number', default: 5 }],
+			featured_spaces: [{ key: 'limit', label: 'Limit', type: 'number', help: t('admin.limit_hint', 'Maximum number allowed.'), default: 5 }],
 		};
 	}
 
@@ -222,7 +222,7 @@
 
 	function buildConfig(): EntityPageConfig {
 		const fields: FieldDef[] = [
-			{ key: 'name', label: t('widgets.name', 'Name'), type: 'text', required: true },
+			{ key: 'name', label: t('widgets.name', 'Name'), type: 'text', help: t('widgets.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
 			{
 				key: 'widget_type',
 				label: t('widgets.type', 'Type'),
@@ -237,7 +237,7 @@
 				type: 'number',
 				help: 'How long to cache rendered widget data in Valkey (default 300)'
 			},
-			{ key: 'is_active', label: t('widgets.active', 'Active'), type: 'checkbox' }
+			{ key: 'is_active', label: t('widgets.active', 'Active'), type: 'checkbox', help: t('widgets.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
 		];
 
 		return {
@@ -367,6 +367,7 @@
 			<label for="widget-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('widgets.name', 'Name')} *
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('widgets.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
 			<input
 				id="widget-name"
 				type="text"
@@ -382,6 +383,7 @@
 			<label for="widget-type" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('widgets.type', 'Type')} *
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('widgets.type_hint', 'The type — controls how it’s handled.')}</span>
 			<AutocompleteSelect
 				id="widget-type"
 				bind:value={value.widget_type}
@@ -401,6 +403,7 @@
 			<label for="widget-ttl" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				Cache TTL (seconds)
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.ttl_hint', 'Cache lifetime — higher values reduce load.')}</span>
 			<input
 				id="widget-ttl"
 				type="number"

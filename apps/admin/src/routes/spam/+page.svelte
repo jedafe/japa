@@ -109,9 +109,9 @@
 
 	// ── IP Blocks config ─────────────────────────────────────────────────────
 	const ipFields: FieldDef[] = [
-		{ key: 'cidr', label: t('spam.cidr', 'IP / CIDR'), type: 'text', placeholder: '192.168.1.0/24', required: true },
-		{ key: 'block_type', label: t('spam.block_type', 'Block Type'), type: 'select', options: blockTypeOptions, required: true },
-		{ key: 'reason', label: t('spam.reason', 'Reason'), type: 'text', placeholder: t('spam.reason_placeholder', 'Spam source') },
+		{ key: 'cidr', label: t('spam.cidr', 'IP / CIDR'), type: 'text', help: t('spam.cidr_hint', 'IP range in CIDR notation — e.g. 10.0.0.0/8.'), placeholder: '192.168.1.0/24', required: true },
+		{ key: 'block_type', label: t('spam.block_type', 'Block Type'), type: 'select', help: t('spam.block_type_hint', 'The kind of content block.'), options: blockTypeOptions, required: true },
+		{ key: 'reason', label: t('spam.reason', 'Reason'), type: 'text', help: t('spam.reason_hint', 'The reason recorded for audit — shown to the affected user where noted.'), placeholder: t('spam.reason_placeholder', 'Spam source') },
 		{ key: 'expires_at', label: t('spam.expires', 'Expires At'), type: 'datetime-local', help: t('common.optional', 'optional') }
 	];
 
@@ -193,8 +193,8 @@
 
 	// ── Censored Words config ────────────────────────────────────────────────
 	const cwFields: FieldDef[] = [
-		{ key: 'pattern', label: t('spam.pattern', 'Pattern'), type: 'text', placeholder: t('spam.pattern_placeholder', 'badword'), required: true },
-		{ key: 'action', label: t('spam.action', 'Action'), type: 'select', options: actionOptions, required: true },
+		{ key: 'pattern', label: t('spam.pattern', 'Pattern'), type: 'text', help: t('spam.pattern_hint', 'A matching pattern — regex or wildcard.'), placeholder: t('spam.pattern_placeholder', 'badword'), required: true },
+		{ key: 'action', label: t('spam.action', 'Action'), type: 'select', help: t('spam.action_hint', 'What happens when this runs.'), options: actionOptions, required: true },
 		{ key: 'replacement', label: t('spam.replacement', 'Replacement'), type: 'text', placeholder: '***', help: t('common.optional', 'optional') }
 	];
 

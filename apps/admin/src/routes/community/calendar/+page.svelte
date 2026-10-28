@@ -225,13 +225,13 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('app.calendar.col_title', 'Title'), type: 'text' },
-		{ key: 'occurs_at', label: t('app.calendar.col_start_date', 'Start Date'), type: 'datetime-local' },
-		{ key: 'ends_at', label: t('app.calendar.col_end_date', 'End Date'), type: 'datetime-local' },
-		{ key: 'status', label: t('app.calendar.col_status', 'Status'), type: 'text' },
-		{ key: 'category', label: t('app.calendar.col_category', 'Category'), type: 'text' },
-		{ key: 'source_url', label: t('app.calendar.col_source', 'Source URL'), type: 'url' },
-		{ key: 'description', label: t('app.calendar.detail_description', 'Description'), type: 'textarea' }
+		{ key: 'title', label: t('app.calendar.col_title', 'Title'), type: 'text', help: t('app.calendar.title_hint', 'The title shown in listings and detail views.'),},
+		{ key: 'occurs_at', label: t('app.calendar.col_start_date', 'Start Date'), type: 'datetime-local', help: t('app.calendar.occurs_at_hint', 'When the event starts.') },
+		{ key: 'ends_at', label: t('app.calendar.col_end_date', 'End Date'), type: 'datetime-local', help: t('app.calendar.ends_at_hint', 'When the event ends — leave blank if open-ended.') },
+		{ key: 'status', label: t('app.calendar.col_status', 'Status'), type: 'text', help: t('app.calendar.status_hint', 'The record state — controls visibility and actions.') },
+		{ key: 'category', label: t('app.calendar.col_category', 'Category'), type: 'text', help: t('app.calendar.category_hint', 'The category this belongs to — drives grouping and filters.') },
+		{ key: 'source_url', label: t('app.calendar.col_source', 'Source URL'), type: 'url', help: t('app.calendar.source_url_hint', 'The URL this data was pulled from — used for verification.') },
+		{ key: 'description', label: t('app.calendar.detail_description', 'Description'), type: 'textarea', help: t('app.calendar.description_hint', 'Shown in detail views — keep it concise.') }
 	];
 
 	const filters = $derived.by<FilterDef[]>(() => {
@@ -241,6 +241,7 @@
 				key: 'dest',
 				label: t('app.calendar.col_destination', 'Destination'),
 				type: 'autocomplete',
+			help: t('app.calendar.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

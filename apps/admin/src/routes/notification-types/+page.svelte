@@ -59,14 +59,14 @@
 
 	// `fields` drives EntityForm rendering and edit-form seeding; `key` is immutable on edit.
 	const fields: FieldDef[] = [
-		{ key: 'key', label: t('notification_types.key', 'Key'), type: 'text', placeholder: 'new_comment', required: true, readonlyInEdit: true },
-		{ key: 'label', label: t('notification_types.label', 'Label'), type: 'text', placeholder: 'New Comment', required: true },
-		{ key: 'category', label: t('notification_types.category', 'Category'), type: 'select', options: CATEGORY_OPTIONS, required: true },
-		{ key: 'description', label: t('common.description', 'Description'), type: 'textarea' },
-		{ key: 'enabled', label: t('notification_types.enabled', 'Enabled'), type: 'checkbox' },
-		{ key: 'default_in_app', label: t('notification-types.in_app', 'In-App'), type: 'checkbox' },
-		{ key: 'default_email', label: t('notification-types.email', 'Email'), type: 'checkbox' },
-		{ key: 'default_push', label: t('notification-types.push', 'Push'), type: 'checkbox' }
+		{ key: 'key', label: t('notification_types.key', 'Key'), type: 'text', help: t('notification_types.key_hint', 'The machine key used in code and API responses.'), placeholder: 'new_comment', required: true, readonlyInEdit: true },
+		{ key: 'label', label: t('notification_types.label', 'Label'), type: 'text', help: t('notification_types.label_hint', 'The display label shown to users.'), placeholder: 'New Comment', required: true },
+		{ key: 'category', label: t('notification_types.category', 'Category'), type: 'select', help: t('notification_types.category_hint', 'The category this belongs to — drives grouping and filters.'), options: CATEGORY_OPTIONS, required: true },
+		{ key: 'description', label: t('common.description', 'Description'), type: 'textarea', help: t('common.description_hint', 'Shown in detail views — keep it concise.') },
+		{ key: 'enabled', label: t('notification_types.enabled', 'Enabled'), type: 'checkbox', help: t('notification_types.enabled_hint', 'Turn off to disable without deleting.') },
+		{ key: 'default_in_app', label: t('notification-types.in_app', 'In-App'), type: 'checkbox', help: t('notification-types.default_in_app_hint', 'Show in-app by default for this notification.') },
+		{ key: 'default_email', label: t('notification-types.email', 'Email'), type: 'checkbox', help: t('notification-types.default_email_hint', 'Send email by default for this notification.') },
+		{ key: 'default_push', label: t('notification-types.push', 'Push'), type: 'checkbox', help: t('notification-types.default_push_hint', 'Send push by default for this notification.') }
 	];
 
 	const config: EntityPageConfig = {

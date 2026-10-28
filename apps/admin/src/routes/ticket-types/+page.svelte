@@ -52,16 +52,17 @@
 
 	// `fields` drives EntityForm rendering and edit-form seeding.
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('ticket-types.name', 'Name'), type: 'text', placeholder: 'Bug Report', required: true },
-		{ key: 'slug', label: t('ticket-types.slug', 'Slug'), type: 'text', placeholder: 'bug-report' },
-		{ key: 'description', label: t('ticket-types.description', 'Description'), type: 'textarea' },
+		{ key: 'name', label: t('ticket-types.name', 'Name'), type: 'text', help: t('ticket-types.name_hint', 'The name shown in admin lists and on the site where public.'), placeholder: 'Bug Report', required: true },
+		{ key: 'slug', label: t('ticket-types.slug', 'Slug'), type: 'text', help: t('ticket-types.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), placeholder: 'bug-report' },
+		{ key: 'description', label: t('ticket-types.description', 'Description'), type: 'textarea', help: t('ticket-types.description_hint', 'Shown in detail views — keep it concise.') },
 		{
 			key: 'default_priority',
 			label: t('ticket-types.default_priority', 'Default Priority'),
 			type: 'select',
+			help: t('ticket-types.default_priority_hint', 'Priority used when none is set.'),
 			options: priorities.map((p) => ({ value: p, label: t(`tickets.${p}`, p) }))
 		},
-		{ key: 'is_public', label: t('ticket-types.active', 'Active'), type: 'checkbox' }
+		{ key: 'is_public', label: t('ticket-types.active', 'Active'), type: 'checkbox', help: t('ticket-types.is_public_hint', 'Whether this is visible to non-admin users.') }
 	];
 
 	const config: EntityPageConfig = {

@@ -144,7 +144,7 @@
 	];
 
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('remittance.name', 'Name'), type: 'text', required: true },
+		{ key: 'name', label: t('remittance.name', 'Name'), type: 'text', help: t('remittance.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
 		{
 			key: 'slug',
 			label: t('remittance.slug', 'Slug'),
@@ -154,11 +154,12 @@
 			readonlyInEdit: true,
 			help: t('remittance.slug_hint', 'Immutable after creation.')
 		},
-		{ key: 'website_url', label: t('remittance.website', 'Website URL'), type: 'url', placeholder: 'https://wise.com' },
+		{ key: 'website_url', label: t('remittance.website', 'Website URL'), type: 'url', help: t('remittance.website_url_hint', 'Full URL including https://.'), placeholder: 'https://wise.com' },
 		{
 			key: 'data_source',
 			label: t('remittance.data_source', 'Data Source'),
 			type: 'select',
+			help: t('remittance.data_source_hint', 'Where this data comes from — API, file, manual.'),
 			options: dataSourceOptions,
 			required: true,
 			readonlyInEdit: true
@@ -170,9 +171,9 @@
 			placeholder: '{"api_key": "…"}',
 			help: t('remittance.api_config_hint', 'Provider credentials for API data_source — stored encrypted. Leave empty on edit to keep existing.')
 		},
-		{ key: 'display_order', label: t('remittance.order', 'Display Order'), type: 'number', min: 0 },
-		{ key: 'is_active', label: t('remittance.active', 'Active'), type: 'checkbox' },
-		{ key: 'is_benchmark', label: t('remittance.is_benchmark', 'Benchmark (mid-market reference)'), type: 'checkbox' }
+		{ key: 'display_order', label: t('remittance.order', 'Display Order'), type: 'number', help: t('remittance.display_order_hint', 'Lower numbers appear first.'), min: 0 },
+		{ key: 'is_active', label: t('remittance.active', 'Active'), type: 'checkbox', help: t('remittance.is_active_hint', 'Inactive records are hidden or disabled on the site.') },
+		{ key: 'is_benchmark', label: t('remittance.is_benchmark', 'Benchmark (mid-market reference)'), type: 'checkbox', help: t('remittance.is_benchmark_hint', 'Benchmark rows anchor comparisons.') }
 	];
 
 	const actions: ActionItem[] = [

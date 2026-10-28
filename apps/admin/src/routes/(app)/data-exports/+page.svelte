@@ -166,10 +166,10 @@
 	// inputs and a checkbox that EntityForm supports, but we keep the
 	// custom snippet for layout control).
 	const fields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('app.data_exports.export_name', 'Export Name'), type: 'text', required: true },
-		{ key: 'type', label: t('app.data_exports.data_type', 'Data Type'), type: 'select', options: exportTypes },
-		{ key: 'format', label: t('app.data_exports.format', 'Format'), type: 'select', options: exportFormatOptions },
-		{ key: 'includeMetadata', label: t('app.data_exports.include_metadata_timestamps_ids', 'Include metadata (timestamps, IDs)'), type: 'checkbox' }
+		{ key: 'name', label: t('app.data_exports.export_name', 'Export Name'), type: 'text', help: t('app.data_exports.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
+		{ key: 'type', label: t('app.data_exports.data_type', 'Data Type'), type: 'select', help: t('app.data_exports.type_hint', 'The type — controls how it’s handled.'), options: exportTypes },
+		{ key: 'format', label: t('app.data_exports.format', 'Format'), type: 'select', help: t('app.data_exports.format_hint', 'The expected format — e.g. CSV columns or template.'), options: exportFormatOptions },
+		{ key: 'includeMetadata', label: t('app.data_exports.include_metadata_timestamps_ids', 'Include metadata (timestamps, IDs)'), type: 'checkbox', help: t('app.data_exports.includeMetadata_hint', 'Whether metadata is included in output.') }
 	]);
 
 	const config = $derived<EntityPageConfig>({
@@ -398,6 +398,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="export-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data_exports.export_name', 'Export Name')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_exports.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
 			<input
 				id="export-name"
 				type="text"
@@ -409,10 +410,12 @@
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label for="export-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data_exports.data_type', 'Data Type')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_exports.type_hint', 'The type — controls how it’s handled.')}</span>
 				<Select bind:value={value.type} options={exportTypes} />
 			</div>
 			<div>
 				<label for="export-format" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data_exports.format', 'Format')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_exports.format_hint', 'The expected format — e.g. CSV or JSON.')}</span>
 				<Select bind:value={value.format} options={exportFormatOptions} />
 			</div>
 		</div>
@@ -424,6 +427,7 @@
 				class="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary"
 			/>
 			<label for="export-metadata" class="text-sm font-medium text-foreground-alt">{t('app.data_exports.include_metadata_timestamps_ids', 'Include metadata (timestamps, IDs)')}</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('app.data_exports.metadata_hint', 'The include metadata (timestamps, ids) for this record.')}</span>
 		</div>
 	</div>
 {/snippet}

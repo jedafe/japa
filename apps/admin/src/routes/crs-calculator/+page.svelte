@@ -54,9 +54,9 @@
 	let rulesetController = $state<EntityPageController | undefined>(undefined);
 
 	const rulesetFields: FieldDef[] = [
-		{ key: 'version_label', label: 'Version label', type: 'text', required: true, placeholder: 'IRCC 2025-01' },
-		{ key: 'effective_date', label: 'Effective date', type: 'date', required: true },
-		{ key: 'source_url', label: 'Source URL', type: 'url', placeholder: 'https://canada.ca/...' },
+		{ key: 'version_label', label: 'Version label', type: 'text', help: t('admin.version_label_hint', 'Version shown to users — e.g. Spring 2026.'), required: true, placeholder: 'IRCC 2025-01' },
+		{ key: 'effective_date', label: 'Effective date', type: 'date', help: t('admin.effective_date_hint', 'The date the policy or rate takes effect.'), required: true },
+		{ key: 'source_url', label: 'Source URL', type: 'url', help: t('admin.source_url_hint', 'The URL this data was pulled from — used for verification.'), placeholder: 'https://canada.ca/...' },
 	];
 
 	async function loadRulesets(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
@@ -152,13 +152,13 @@
 	let drawController = $state<EntityPageController | undefined>(undefined);
 
 	const drawFields: FieldDef[] = [
-		{ key: 'draw_number', label: 'Draw #', type: 'number' },
-		{ key: 'draw_date', label: 'Draw date', type: 'date', required: true },
-		{ key: 'category', label: 'Category', type: 'text', required: true, placeholder: 'general|cec|french|trade|stem' },
-		{ key: 'crs_cutoff', label: 'CRS cutoff', type: 'number', required: true },
-		{ key: 'invitations_issued', label: 'ITAs issued', type: 'number', required: true },
-		{ key: 'tie_break_rule', label: 'Tie-break', type: 'text', placeholder: '2025-01-15T12:00:00Z' },
-		{ key: 'source_url', label: 'Source URL', type: 'url' },
+		{ key: 'draw_number', label: 'Draw #', type: 'number', help: t('admin.draw_number_hint', 'The official draw identifier.'),},
+		{ key: 'draw_date', label: 'Draw date', type: 'date', help: t('admin.draw_date_hint', 'The date this draw or lottery happens.'), required: true },
+		{ key: 'category', label: 'Category', type: 'text', help: t('admin.category_hint', 'The category this belongs to — drives grouping and filters.'), required: true, placeholder: 'general|cec|french|trade|stem' },
+		{ key: 'crs_cutoff', label: 'CRS cutoff', type: 'number', help: t('admin.crs_cutoff_hint', 'The minimum CRS score from this draw.'), required: true },
+		{ key: 'invitations_issued', label: 'ITAs issued', type: 'number', help: t('admin.invitations_issued_hint', 'How many invites have been sent.'), required: true },
+		{ key: 'tie_break_rule', label: 'Tie-break', type: 'text', help: t('admin.tie_break_rule_hint', 'How ties are resolved.'), placeholder: '2025-01-15T12:00:00Z' },
+		{ key: 'source_url', label: 'Source URL', type: 'url', help: t('admin.source_url_hint', 'The URL this data was pulled from — used for verification.') },
 	];
 
 	async function loadDraws(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {

@@ -80,12 +80,12 @@
 
 	// ── Form fields (drives EntityForm for create/edit) ─────────────────────
 	const fields: FieldDef[] = [
-		{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text' },
-		{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text' },
-		{ key: 'destination_space_id', label: t('app.tools.col_destination', 'Destination Space ID'), type: 'text' },
-		{ key: 'booking_url', label: t('app.tools.col_booking_url', 'Booking URL'), type: 'url' },
-		{ key: 'poll_interval_seconds', label: t('app.tools.col_poll_interval', 'Poll Interval (s)'), type: 'number' },
-		{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox' }
+		{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text', help: t('app.tools.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'),},
+		{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text', help: t('app.tools.name_hint', 'The name shown in admin lists and on the site where public.') },
+		{ key: 'destination_space_id', label: t('app.tools.col_destination', 'Destination Space ID'), type: 'text', help: t('app.tools.destination_space_id_hint', 'The destination space this is linked to.') },
+		{ key: 'booking_url', label: t('app.tools.col_booking_url', 'Booking URL'), type: 'url', help: t('app.tools.booking_url_hint', 'Where users book — full URL with https://.') },
+		{ key: 'poll_interval_seconds', label: t('app.tools.col_poll_interval', 'Poll Interval (s)'), type: 'number', help: t('app.tools.poll_interval_seconds_hint', 'Seconds between checks — higher saves quota.') },
+		{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox', help: t('app.tools.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
 	];
 
 		// Status filter: the backend handler reads ?active= (boolean), not
@@ -106,6 +106,7 @@
 				key: 'dest',
 				label: t('app.tools.col_destination', 'Destination'),
 				type: 'autocomplete',
+			help: t('app.tools.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

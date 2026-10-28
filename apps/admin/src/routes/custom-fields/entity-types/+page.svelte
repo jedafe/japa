@@ -46,10 +46,11 @@
 			key: 'label',
 			label: t('fieldGroups.label', 'Label'),
 			type: 'text',
+			help: t('fieldGroups.label_hint', 'The display label shown to users.'),
 			placeholder: t('fieldGroups.label_placeholder_et', 'e.g. Event, Project, Course'),
 			required: true
 		},
-		{ key: 'sort_order', label: t('fieldGroups.sort_order', 'Sort Order'), type: 'number' }
+		{ key: 'sort_order', label: t('fieldGroups.sort_order', 'Sort Order'), type: 'number', help: t('fieldGroups.sort_order_hint', 'Lower numbers appear first.') }
 	];
 
 	// Custom row actions: View/Edit/Delete with system-type protection.

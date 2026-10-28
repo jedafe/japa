@@ -83,9 +83,9 @@
 	}
 
 	const programFields: FieldDef[] = [
-		{ key: 'name', label: t('app.mentorship.label.program_name', 'Program Name'), type: 'text', placeholder: t('app.mentorship.placeholder.name', 'e.g. Career Growth Mentorship'), required: true },
-		{ key: 'description', label: t('app.mentorship.label.description', 'Description'), type: 'textarea', placeholder: t('app.mentorship.placeholder.description', 'What is this program about?') },
-		{ key: 'is_active', label: t('app.mentorship.status.active', 'Active'), type: 'checkbox' }
+		{ key: 'name', label: t('app.mentorship.label.program_name', 'Program Name'), type: 'text', help: t('app.mentorship.label.name_hint', 'The name shown in admin lists and on the site where public.'), placeholder: t('app.mentorship.placeholder.name', 'e.g. Career Growth Mentorship'), required: true },
+		{ key: 'description', label: t('app.mentorship.label.description', 'Description'), type: 'textarea', help: t('app.mentorship.label.description_hint', 'Shown in detail views — keep it concise.'), placeholder: t('app.mentorship.placeholder.description', 'What is this program about?') },
+		{ key: 'is_active', label: t('app.mentorship.status.active', 'Active'), type: 'checkbox', help: t('app.mentorship.status.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
 	];
 
 	const programConfig: EntityPageConfig = {
@@ -364,6 +364,7 @@
 			key: 'status',
 			label: t('app.mentorship.columns.status', 'Status'),
 			type: 'select',
+			help: t('app.mentorship.columns.status_hint', 'The record state — controls visibility and actions.'),
 			options: CONNECTION_STATUSES.map((s) => ({ value: s, label: s }))
 		}
 	];

@@ -111,16 +111,17 @@
 	}
 
 	const fields: FieldDef[] = $derived([
-		{ key: 'course_id', label: t('courses.course', 'Course'), type: 'select', required: true, options: courseOptions },
-		{ key: 'university_id', label: t('courses.university', 'University'), type: 'select', required: true, options: universityOptions },
-		{ key: 'slug', label: t('courses.slug', 'Slug'), type: 'text', placeholder: t('courses.offering_slug_hint', 'Auto: {university}-{course} if empty') },
-		{ key: 'tuition', label: t('courses.tuition', 'Tuition'), type: 'number' },
+		{ key: 'course_id', label: t('courses.course', 'Course'), type: 'select', help: t('courses.course_id_hint', 'The course this is attached to.'), required: true, options: courseOptions },
+		{ key: 'university_id', label: t('courses.university', 'University'), type: 'select', help: t('courses.university_id_hint', 'The university this is attached to.'), required: true, options: universityOptions },
+		{ key: 'slug', label: t('courses.slug', 'Slug'), type: 'text', help: t('courses.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), placeholder: t('courses.offering_slug_hint', 'Auto: {university}-{course} if empty') },
+		{ key: 'tuition', label: t('courses.tuition', 'Tuition'), type: 'number', help: t('courses.tuition_hint', 'Tuition amount in the program’s currency.') },
 		currencies.length > 0
 			? { key: 'currency', label: t('courses.currency', 'Currency'), type: 'select', options: currencyOptions(currencies) }
-			: { key: 'currency', label: t('courses.currency', 'Currency'), type: 'text', placeholder: 'USD' },
-		{ key: 'duration_years', label: t('courses.duration', 'Duration (years)'), type: 'number' },
+			: { key: 'currency', label: t('courses.currency', 'Currency'), type: 'text', help: t('courses.currency_hint', 'ISO currency code, e.g. NGN or USD.'), placeholder: 'USD' },
+		{ key: 'duration_years', label: t('courses.duration', 'Duration (years)'), type: 'number', help: t('courses.duration_years_hint', 'Program length in years.') },
 		{
 			key: 'study_mode', label: t('courses.study_mode', 'Study Mode'), type: 'select',
+			help: t('courses.study_mode_hint', 'Full-time, part-time, or online.'),
 			options: [
 				{ value: 'Full-time', label: t('courses.mode_fulltime', 'Full-time') },
 				{ value: 'Part-time', label: t('courses.mode_parttime', 'Part-time') },
@@ -130,9 +131,9 @@
 			]
 		},
 		{ key: 'intake_months', label: t('courses.intake_months', 'Intake Months'), type: 'text', placeholder: 'September, January' },
-		{ key: 'entry_requirements', label: t('courses.entry_requirements', 'Entry Requirements'), type: 'textarea' },
-		{ key: 'accreditation', label: t('courses.accreditation', 'Accreditation'), type: 'text' },
-		{ key: 'is_published', label: t('courses.published', 'Published'), type: 'checkbox' }
+		{ key: 'entry_requirements', label: t('courses.entry_requirements', 'Entry Requirements'), type: 'textarea', help: t('courses.entry_requirements_hint', 'What applicants must have — grades, tests, docs.') },
+		{ key: 'accreditation', label: t('courses.accreditation', 'Accreditation'), type: 'text', help: t('courses.accreditation_hint', 'Accreditation body or status.') },
+		{ key: 'is_published', label: t('courses.published', 'Published'), type: 'checkbox', help: t('courses.is_published_hint', 'Unpublished records are hidden on the site.') }
 	]);
 
 	const config = $derived<EntityPageConfig>({

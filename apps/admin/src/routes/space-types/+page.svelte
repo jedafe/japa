@@ -74,11 +74,11 @@
 	}
 
 	const fields: FieldDef[] = $derived([
-		{ key: 'name', label: t('space-types.name', 'Name'), type: 'text', placeholder: 'University', required: true },
+		{ key: 'name', label: t('space-types.name', 'Name'), type: 'text', help: t('space-types.name_hint', 'The name shown in admin lists and on the site where public.'), placeholder: 'University', required: true },
 		{ key: 'slug', label: t('space-types.slug', 'Slug'), type: 'text', placeholder: 'university', help: t('app.space_types.slug_hint', 'Leave blank to auto-generate from name.'), readonlyInEdit: true },
-		{ key: 'description', label: t('space-types.description', 'Description'), type: 'textarea', placeholder: '' },
-		{ key: 'icon', label: t('space-types.icon_emoji_or_name', 'Icon (emoji or name)'), type: 'text', placeholder: '🎓' },
-		{ key: 'category', label: t('space-types.category', 'Category'), type: 'select', options: formCategoryOptions, required: true }
+		{ key: 'description', label: t('space-types.description', 'Description'), type: 'textarea', help: t('space-types.description_hint', 'Shown in detail views — keep it concise.'), placeholder: '' },
+		{ key: 'icon', label: t('space-types.icon_emoji_or_name', 'Icon (emoji or name)'), type: 'text', help: t('space-types.icon_hint', 'Icon name or emoji shown next to the record.'), placeholder: '🎓' },
+		{ key: 'category', label: t('space-types.category', 'Category'), type: 'select', help: t('space-types.category_hint', 'The category this belongs to — drives grouping and filters.'), options: formCategoryOptions, required: true }
 	]);
 
 	const rowActions = $derived.by<ActionItem[]>(() => {

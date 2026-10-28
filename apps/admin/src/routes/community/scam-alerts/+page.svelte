@@ -177,11 +177,11 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'scam_type', label: t('app.scam_alert.col_scam_type', 'Scam Type'), type: 'text' },
-		{ key: 'status', label: t('app.scam_alert.col_status', 'Status'), type: 'text' },
-		{ key: 'description', label: t('app.scam_alert.detail_description', 'Description'), type: 'textarea' },
-		{ key: 'destination_space_name', label: t('app.scam_alert.col_destination', 'Destination'), type: 'text' },
-		{ key: 'moderator_note', label: t('app.scam_alert.col_moderator_note', 'Moderator Note'), type: 'textarea' }
+		{ key: 'scam_type', label: t('app.scam_alert.col_scam_type', 'Scam Type'), type: 'text', help: t('app.scam_alert.scam_type_hint', 'The kind of scam — e.g. fake job, visa fraud.'),},
+		{ key: 'status', label: t('app.scam_alert.col_status', 'Status'), type: 'text', help: t('app.scam_alert.status_hint', 'The record state — controls visibility and actions.') },
+		{ key: 'description', label: t('app.scam_alert.detail_description', 'Description'), type: 'textarea', help: t('app.scam_alert.description_hint', 'Shown in detail views — keep it concise.') },
+		{ key: 'destination_space_name', label: t('app.scam_alert.col_destination', 'Destination'), type: 'text', help: t('app.scam_alert.destination_space_name_hint', 'The destination space this is linked to.') },
+		{ key: 'moderator_note', label: t('app.scam_alert.col_moderator_note', 'Moderator Note'), type: 'textarea', help: t('app.scam_alert.moderator_note_hint', 'Internal note for the moderation team.') }
 	];
 
 	const filters = $derived.by<FilterDef[]>(() => {
@@ -196,6 +196,7 @@
 				key: 'dest',
 				label: t('app.scam_alert.col_destination', 'Destination'),
 				type: 'autocomplete',
+			help: t('app.scam_alert.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

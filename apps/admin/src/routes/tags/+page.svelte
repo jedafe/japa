@@ -564,6 +564,7 @@
 			<label for="tag-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.name", "Name")}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.name_hint', 'The name shown in admin lists and on the site where public.')}</span>
 			<input
 				id="tag-name"
 				type="text"
@@ -580,6 +581,7 @@
 			<label for="tag-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.slug", "Slug")}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}</span>
 			<input
 				id="tag-slug"
 				type="text"
@@ -600,6 +602,7 @@
 			>
 				{t("tags.description", "Description")}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.description_hint', 'Shown in detail views — keep it concise.')}</span>
 			<textarea
 				id="tag-description"
 				rows="2"
@@ -613,6 +616,7 @@
 			<label for="tag-rules" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.rules", "Rules")}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.rules_hint', 'Matching rules — one per line.')}</span>
 			<textarea
 				id="tag-rules"
 				rows="3"
@@ -788,6 +792,7 @@
 			<label for="tag-is-system" class="text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.is_system", "System tag (cannot be deleted)")}
 			</label>
+			<span class="mt-1 block text-xs" style="color: var(--color-muted)">{t('admin.is_system_hint', 'The is system for this record.')}</span>
 		</div>
 	</div>
 

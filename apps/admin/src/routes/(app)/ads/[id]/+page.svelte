@@ -29,7 +29,9 @@
 		target_url?: string | null;
 		target_geo?: string[];
 		target_space_ids?: string[];
-		content?: { headline?: string; body?: string; cta?: string } | null;
+		is_house?: boolean;
+		organization_id?: string | null;
+		content?: { headline?: string; body?: string; cta?: string; html?: string; image_url?: string; markdown?: string } | null;
 		slot_type_id?: string;
 		created_at?: string;
 	};
@@ -220,14 +222,23 @@
 		<!-- Status & Actions -->
 		<div class="flex flex-wrap items-center gap-3">
 			<Badge class={statusBadgeClass(campaign.status)}>{campaign.status}</Badge>
+			{#if campaign.is_house}
+				<Badge class="bg-info/15 text-info border-info">{t('ads.house_badge', 'house')}</Badge>
+			{/if}
+			{#if campaign.organization_id}
+				<Badge class="bg-surface text-foreground border-border">org: {campaign.organization_id.slice(0, 8)}…</Badge>
+			{/if}
 			{#if canManageAds && campaign.status !== 'completed' && campaign.status !== 'ended'}
 				<Button variant="outline" size="sm" onclick={toggleCampaignStatus}>
 					{#if campaign.status === 'active'}
 						<Pause class="h-3.5 w-3.5" />
 						{t('ads.pause', 'Pause')}
+					{:else if campaign.status === 'pending_review'}
+						<Play class="h-3.5 w-3.5" />
+						{t('ads.approve', 'Approve')}
 					{:else}
 						<Play class="h-3.5 w-3.5" />
-						{t('ads.resume', 'Resume')}
+						{t('ads.activate', 'Activate')}
 					{/if}
 				</Button>
 				<Button variant="outline" size="sm" onclick={confirmEnd} style="color: var(--color-danger)">
@@ -298,6 +309,12 @@
 							<div>
 								<p class="text-xs text-muted">{t('ads.cta', 'Call to Action')}</p>
 								<p class="text-sm font-medium text-foreground">{campaign.content.cta}</p>
+							</div>
+						{/if}
+						{#if campaign.content.image_url}
+							<div>
+								<p class="text-xs text-muted">{t('ads.image', 'Creative image')}</p>
+								<img src={campaign.content.image_url} alt="" class="mt-1 max-h-40 rounded-md border border-border object-cover" />
 							</div>
 						{/if}
 					</div>

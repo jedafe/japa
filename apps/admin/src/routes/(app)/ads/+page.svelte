@@ -80,11 +80,13 @@
 	let searchQuery = $state('');
 	// §25 amendment: house ads are the admin-owned fallback tier — filter the
 	// campaign list to isolate them ('paid' = self-serve + regular campaigns).
-	let houseFilter = $state<'all' | 'paid' | 'house'>('all');
+	let houseFilter = $state<'all' | 'paid' | 'house' | 'pending_review'>('all');
 	const filteredCampaigns = $derived(
 		houseFilter === 'all'
 			? campaigns
-			: campaigns.filter((c) => (houseFilter === 'house') === !!c.is_house)
+			: houseFilter === 'pending_review'
+				? campaigns.filter((c) => c.status === 'pending_review')
+				: campaigns.filter((c) => (houseFilter === 'house') === !!c.is_house)
 	);
 
 	let selectedCampaignIds = $state<Set<string>>(new Set());
@@ -131,7 +133,6 @@
 
 	const boostColumns = $derived([
 		{ key: 'boost_type', label: t('ads.col_boost_type', 'Boost Type'), sortable: true, render: (value: string) => `<span class="text-xs font-medium">${value}</span>` },
-		{ key: 'space_name', label: t('ads.col_space', 'Space'), sortable: true, render: (v: string, row: ActiveBoost) => `<span class="text-sm">${v || (row.space_id ? row.space_id.slice(0, 8) + '...' : '—')}</span>` },
 		{ key: 'organization_name', label: t('ads.col_organization', 'Organization'), sortable: true, render: (v: string, row: ActiveBoost) => `<span class="text-sm">${v || (row.organization_id ? row.organization_id.slice(0, 8) + '...' : '—')}</span>` },
 		{ key: 'start_date', label: t('ads.col_period', 'Period'), render: (_: any, row: any) => `<span class="text-xs text-muted">${row.start_date ?? ''} — ${row.end_date ?? ''}</span>` },
 		{ key: 'status', label: t('ads.col_status', 'Status'), sortable: true, render: (value: string) => statusBadge(value) }
@@ -435,7 +436,8 @@
 			{#each [
 				{ value: 'all', label: t('ads.filter_all', 'All') },
 				{ value: 'paid', label: t('ads.filter_paid', 'Paid') },
-				{ value: 'house', label: t('ads.filter_house', 'House') }
+				{ value: 'house', label: t('ads.filter_house', 'House') },
+				{ value: 'pending_review', label: t('ads.filter_pending', 'Pending review') }
 			] as opt (opt.value)}
 				<button
 					type="button"

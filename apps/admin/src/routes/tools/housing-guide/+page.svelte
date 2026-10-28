@@ -158,8 +158,8 @@
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryUtils.ready;
 		return [
-			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
-			{ key: 'accommodation_type', label: t('app.tools.col_accommodation_type', 'Accommodation Type'), type: 'text' }
+			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', help: t('app.tools.destination_space_id_hint', 'The destination space this is linked to.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
+			{ key: 'accommodation_type', label: t('app.tools.col_accommodation_type', 'Accommodation Type'), type: 'text', help: t('app.tools.accommodation_type_hint', 'The kind of housing — e.g. shared flat, homestay.') }
 		];
 	});
 
@@ -170,6 +170,7 @@
 				key: 'dest',
 				label: t('app.tools.col_destination', 'Destination'),
 				type: 'autocomplete',
+			help: t('app.tools.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

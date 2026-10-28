@@ -139,8 +139,8 @@
 
 	// `fields` is required by EntityPage even on a read-only page (used for edit-form seeding); none are editable here.
 	const fields: FieldDef[] = [
-		{ key: 'entity_type', label: t('moderation.entity_type', 'Entity Type'), type: 'text' },
-		{ key: 'reason', label: t('moderation.appeal_reason', 'Appeal Reason'), type: 'textarea' }
+		{ key: 'entity_type', label: t('moderation.entity_type', 'Entity Type'), type: 'text', help: t('moderation.entity_type_hint', 'The kind of entity this is linked to.'),},
+		{ key: 'reason', label: t('moderation.appeal_reason', 'Appeal Reason'), type: 'textarea', help: t('moderation.reason_hint', 'The reason recorded for audit — shown to the affected user where noted.') }
 	];
 
 	const config = $derived<EntityPageConfig>({

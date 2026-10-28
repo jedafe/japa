@@ -176,7 +176,7 @@
 				priority: Number(priority) || 0
 			};
 			if (targetUrl) body.target_url = targetUrl;
-			if (isHouse) body.is_house = true;
+			if (isHouse) { body.is_house = true; body.status = 'active'; }
 			if (budget && !isHouse) body.budget = Number(budget);
 			if (frequencyCap) body.frequency_cap_per_user = Number(frequencyCap);
 			if (startDate) body.start_date = new Date(startDate).toISOString();
