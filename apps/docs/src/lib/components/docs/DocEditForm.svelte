@@ -211,6 +211,7 @@
 	<div class="ef-grid">
 		<div class="ef-field">
 			<label class="ef-label" for="doc-edit-category">{t('new_page.field_category', 'Category')}</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('new_page.category_hint', 'The top-level section this page lives in.')}</p>
 			<Autocomplete
 				id="doc-edit-category"
 				placeholder={t('new_page.optional', 'Optional')}
@@ -230,6 +231,7 @@
 
 		<div class="ef-field">
 			<label class="ef-label" for="doc-edit-subcategory">{t('new_page.field_subcategory', 'Subcategory')}</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('new_page.subcategory_hint', 'Optional — a nested grouping under the category.')}</p>
 			<Autocomplete
 				id="doc-edit-subcategory"
 				disabled={!editCategory.trim()}
@@ -274,6 +276,7 @@
 			</label>
 			<div class="ef-field">
 				<label class="ef-label" for="doc-edit-parent">{t('new_page.field_parent', 'Parent page')}</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('new_page.parent_hint', 'Optional — nest this page under another.')}</p>
 				<Autocomplete
 					id="doc-edit-parent"
 					placeholder={t('new_page.no_parent', '— Top level —')}
