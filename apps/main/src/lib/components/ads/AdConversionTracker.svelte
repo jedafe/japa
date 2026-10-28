@@ -13,6 +13,9 @@
 	$effect(() => {
 		const cid = page.url.searchParams.get(AD_ATTRIBUTION_PARAM);
 		if (!cid || cid === handled) return;
+		// Only count landings that actually came from a page on this site —
+		// a crafted/shared URL with the param must not mint a conversion.
+		if (!document.referrer.startsWith(window.location.origin)) return;
 		handled = cid;
 
 		const url = new URL(page.url);

@@ -115,8 +115,8 @@ func RegisterEmailGateway(d *email.EmailDispatcher) {
 
 // redisCache is the subset of the valkeycompat.Cmdable API that worker
 // handlers need. Used by HandleRSSRegenerate to cache feeds under
-// jc:cache:feed:rss:{} (universal) and
-// jc:cache:feed:rss:blog:{} (blog-only), and by
+// jc:cache:feed:rss (universal) and
+// jc:cache:feed:rss:blog (blog-only), and by
 // HandleMaintenanceRegenerateLLMsTxt to invalidate llms.txt caches.
 // Also used by the intelligence cron handlers for the scheduler leader
 // lock (jc:intel:scheduler_leader, BUG-13 fix) and by the Task 10
@@ -3593,7 +3593,7 @@ const rssFeedLimit = 20
 // generateRSSForPlatform generates the RSS feed for a single platform using the
 // shared sqlc query (ListRSSFeedItems — the same one internal/rss uses for
 // live requests) and caches the rendered XML in Valkey under
-// jc:cache:feed:rss:{} with a 1-hour TTL (VALKEY-002 compliance).
+// jc:cache:feed:rss with a 1-hour TTL (VALKEY-002 compliance).
 // The live /feed.xml route can read from this cache to avoid a DB hit on
 // every request. Writing to a local file is removed — it was not
 // multi-platform safe.
@@ -3623,11 +3623,11 @@ func generateRSSForPlatform(ctx context.Context, baseURL string) {
 	for _, row := range rows {
 		items = append(items, rssmodel.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, baseURL, "/content/",
+			row.Username, row.PublishedAt, row.CreatedAt, baseURL, rssmodel.LinkPathFor(row.ContentType),
 		))
 	}
 
-	xmlBytes := rssmodel.Render(siteName, baseURL, siteName+" — latest content", "en", items)
+	xmlBytes := rssmodel.Render(siteName, baseURL, siteName+" — latest content", "en", baseURL+"/feed.xml", items)
 
 	cacheKey := valkey.MustKey("cache:feed:rss")
 	if rdb != nil {
@@ -3646,6 +3646,100 @@ func generateRSSForPlatform(ctx context.Context, baseURL string) {
 	// auto_hidden=false) — the same query the live blog handler falls back
 	// to on a cache miss.
 	generateBlogRSSForPlatform(ctx, q, baseURL)
+
+	// Also warm the forum feed — it's a singleton like universal/blog, so
+	// readers never pay the write-on-miss DB cost after each TTL expiry and
+	// deletions drop out on schedule, not just on the next request.
+	generateForumRSSForPlatform(ctx, q, baseURL)
+
+	// And every per-content-type feed (model.TypeFeeds registry).
+	for _, tf := range rssmodel.TypeFeeds() {
+		generateTypeRSSForPlatform(ctx, q, baseURL, tf)
+	}
+}
+
+// generateTypeRSSForPlatform generates one per-type feed
+// (ListRSSFeedItemsByContentType — the same query the live
+// /{prefix}/feed.xml handler uses) and caches it under
+// jc:cache:feed:rss:type:{content_type} (1hr TTL).
+func generateTypeRSSForPlatform(ctx context.Context, q *gen.Queries, baseURL string, tf rssmodel.TypeFeed) {
+	rows, err := q.ListRSSFeedItemsByContentType(ctx, gen.ListRSSFeedItemsByContentTypeParams{
+		ContentType: tf.ContentType,
+		PageLimit:   rssFeedLimit,
+	})
+	if err != nil {
+		slog.Error("task:rss_regenerate: failed to list type feed items", "content_type", tf.ContentType, "error", err)
+		return
+	}
+
+	// §14: resolve {{...}} placeholders before item mapping.
+	resolveLiterals(ctx, &rows)
+
+	items := make([]rssmodel.Item, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, rssmodel.ItemFromRow(
+			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
+			row.Username, row.PublishedAt, row.CreatedAt, baseURL, rssmodel.LinkPathFor(row.ContentType),
+		))
+	}
+
+	xmlBytes := rssmodel.Render(
+		siteName+" — "+tf.Label,
+		baseURL+"/"+tf.Prefix,
+		"Latest "+strings.ToLower(tf.Label)+" on "+siteName+".",
+		"en",
+		baseURL+"/"+tf.Prefix+"/feed.xml",
+		items,
+	)
+
+	cacheKey := valkey.MustKey("cache:feed:rss:type:%s", tf.ContentType)
+	if rdb != nil {
+		if err := rdb.Set(ctx, cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
+			slog.Error("task:rss_regenerate: failed to cache type feed", "content_type", tf.ContentType, "error", err)
+		}
+	}
+
+	slog.Info("task:rss_regenerate: type feed cached", "content_type", tf.ContentType, "item_count", len(items), "cache_key", cacheKey)
+}
+
+// generateForumRSSForPlatform generates the forum feed
+// (ListRSSForumFeedItems — the same query the live /forum/feed.xml handler
+// uses) and caches it under jc:cache:feed:rss:forum (1hr TTL).
+func generateForumRSSForPlatform(ctx context.Context, q *gen.Queries, baseURL string) {
+	rows, err := q.ListRSSForumFeedItems(ctx, rssFeedLimit)
+	if err != nil {
+		slog.Error("task:rss_regenerate: failed to list forum threads", "error", err)
+		return
+	}
+
+	// §14: resolve {{...}} placeholders before item mapping.
+	resolveLiterals(ctx, &rows)
+
+	items := make([]rssmodel.Item, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, rssmodel.ItemFromRow(
+			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
+			row.Username, row.PublishedAt, row.CreatedAt, baseURL, "/forum/",
+		))
+	}
+
+	xmlBytes := rssmodel.Render(
+		siteName+" — Forum",
+		baseURL+"/forum",
+		"Latest discussions from the "+siteName+" community forum.",
+		"en",
+		baseURL+"/forum/feed.xml",
+		items,
+	)
+
+	cacheKey := valkey.MustKey("cache:feed:rss:forum")
+	if rdb != nil {
+		if err := rdb.Set(ctx, cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
+			slog.Error("task:rss_regenerate: failed to cache forum feed", "error", err)
+		}
+	}
+
+	slog.Info("task:rss_regenerate: forum feed cached", "item_count", len(items), "cache_key", cacheKey)
 }
 
 // generateBlogRSSForPlatform generates the blog-only RSS feed and caches it
@@ -3679,7 +3773,7 @@ func generateBlogRSSForPlatform(ctx context.Context, q *gen.Queries, baseURL str
 		items = append(items, rssmodel.Item{
 			Title:       p.Title,
 			Link:        baseURL + "/blog/" + p.Slug,
-			GUID:        rssmodel.GUIDFromID(p.ID),
+			GUID:        rssmodel.NewGUID(rssmodel.GUIDFromID(p.ID), false),
 			Description: desc,
 			PubDate:     pubDate,
 		})
@@ -3690,6 +3784,7 @@ func generateBlogRSSForPlatform(ctx context.Context, q *gen.Queries, baseURL str
 		baseURL+"/blog",
 		siteName+" Blog — latest posts",
 		"en-us",
+		baseURL+"/blog/feed.xml",
 		items,
 	)
 
@@ -5414,6 +5509,9 @@ func archiveReportedEntity(ctx context.Context, entityType, entityIDStr string, 
 
 		if n > 0 {
 			slog.Info("task:moderation:auto_hide: content archived", "content_id", entityIDStr, "report_count", reportCount)
+			// RSS-013: drop the auto-hidden item from cached feeds without
+			// waiting for the hourly cron.
+			scheduleRSSRegenerate(taskEnqueuer)
 		}
 
 	case "comment":

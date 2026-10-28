@@ -57,12 +57,12 @@
 
 	// Split html into segments; an { type:'ad' } marker is inserted after
 	// block `after` and then every `every` blocks (0 = once).
-	function buildSegments(s: string, after: number, every: number): Segment[] {
+	function buildSegments(s: string, after: number, every: number, maxAds: number): Segment[] {
 		const segs: Segment[] = [];
 		const ends = blockEnds(s);
 		let adsInserted = 0;
 		let pos = 0;
-		const maxAds = 2; // slot max_display_per_page=2 — never exceed.
+
 
 		for (const [i, boundary] of ends.entries()) {
 			const blockIdx = i + 1;
@@ -90,8 +90,12 @@
 		Math.max(0, Number(page.data.siteSettings?.['ads.in_article_every'] ?? 6) || 0)
 	);
 
+	const maxAds = $derived(
+		Math.max(1, Number(page.data.siteSettings?.['ads.in_article_max_ads'] ?? 2) || 2)
+	);
+
 	const segments = $derived<Segment[]>(
-		blockEnds(html).length >= firstAt + 1 ? buildSegments(html, firstAt, everyN) : [{ type: 'html', frag: html }]
+		blockEnds(html).length >= firstAt + 1 ? buildSegments(html, firstAt, everyN, maxAds) : [{ type: 'html', frag: html }]
 	);
 </script>
 

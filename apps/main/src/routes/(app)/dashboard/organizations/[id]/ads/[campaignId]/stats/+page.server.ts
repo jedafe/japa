@@ -40,6 +40,7 @@ export const load: PageServerLoad = async (event) => {
 export interface CampaignStats {
 	impressions: number;
 	clicks: number;
+	conversions: number;
 	ctr: number;
 	spent: number;
 	budget_credits: number;

@@ -104,7 +104,8 @@ func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) 
 // HandleListCampaigns lists an org's campaigns.
 // GET /org/{org_id}/ads/campaigns.
 func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	userID, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -116,8 +117,13 @@ func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	page, limit := parsePagination(r)
 
-	campaigns, total, err := h.svc.ListCampaigns(r.Context(), orgID, status, page, limit)
+	campaigns, total, err := h.svc.ListCampaigns(r.Context(), orgID, userID, status, page, limit)
 	if err != nil {
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
@@ -133,7 +139,8 @@ func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 // HandleGetCampaign returns a single campaign detail.
 // GET /org/{org_id}/ads/campaigns/{id}.
 func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	userID, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -147,8 +154,13 @@ func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.svc.GetCampaign(r.Context(), orgID, campaignID)
+	campaign, err := h.svc.GetCampaign(r.Context(), orgID, userID, campaignID)
 	if err != nil {
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
 	}
@@ -159,7 +171,8 @@ func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleUpdateCampaign updates a campaign's creative (pending/paused only).
 // PATCH /org/{org_id}/ads/campaigns/{id}.
 func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	userID, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -183,8 +196,13 @@ func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	campaign, err := h.svc.UpdateCampaignCreative(r.Context(), orgID, campaignID, body.Content, body.TargetURL)
+	campaign, err := h.svc.UpdateCampaignCreative(r.Context(), orgID, userID, campaignID, body.Content, body.TargetURL)
 	if err != nil {
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
 	}
@@ -195,7 +213,8 @@ func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) 
 // HandlePauseCampaign pauses an active campaign.
 // POST /org/{org_id}/ads/campaigns/{id}/pause.
 func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	userID, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -209,8 +228,13 @@ func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.svc.PauseCampaign(r.Context(), orgID, campaignID)
+	campaign, err := h.svc.PauseCampaign(r.Context(), orgID, userID, campaignID)
 	if err != nil {
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "pause_failed", err.Error())
 		return
 	}
@@ -226,7 +250,8 @@ func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleResumeCampaign resumes a paused campaign.
 // POST /org/{org_id}/ads/campaigns/{id}/resume.
 func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	userID, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -240,8 +265,13 @@ func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	campaign, err := h.svc.ResumeCampaign(r.Context(), orgID, campaignID)
+	campaign, err := h.svc.ResumeCampaign(r.Context(), orgID, userID, campaignID)
 	if err != nil {
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "resume_failed", err.Error())
 		return
 	}
@@ -257,7 +287,8 @@ func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) 
 // HandleGetStats returns campaign statistics.
 // GET /org/{org_id}/ads/campaigns/{id}/stats.
 func (h *Handlers) HandleGetStats(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	userID, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -271,13 +302,56 @@ func (h *Handlers) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.svc.GetCampaignStats(r.Context(), orgID, campaignID)
+	stats, err := h.svc.GetCampaignStats(r.Context(), orgID, userID, campaignID)
 	if err != nil {
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": stats})
+}
+
+// HandleEndCampaign ends a stoppable campaign early and refunds the
+// unused escrow remainder (§61 — org stop/cancel path).
+// POST /org/{org_id}/ads/campaigns/{id}/end.
+func (h *Handlers) HandleEndCampaign(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	orgID, ok := scanUUIDParam(w, r, "org_id")
+	if !ok {
+		return
+	}
+
+	campaignID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	campaign, err := h.svc.EndCampaign(r.Context(), orgID, userID, campaignID)
+	if err != nil {
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+			return
+		}
+
+		errpkg.WriteError(w, http.StatusBadRequest, "end_failed", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"id":     campaign.ID.String(),
+			"status": campaign.Status,
+		},
+	})
 }
 
 // --- shared helpers (same pattern as internal/story/handlers.go) ---

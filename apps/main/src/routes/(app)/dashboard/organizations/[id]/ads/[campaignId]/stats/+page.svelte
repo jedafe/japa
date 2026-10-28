@@ -16,7 +16,7 @@
 	const clicks = $derived(stats?.clicks ?? 0);
 	const spent = $derived(stats?.spent ?? 0);
 	const budgetCredits = $derived(stats?.budget_credits ?? campaign?.budget_credits ?? 0);
-	const remainingCredits = $derived(budgetCredits - spent);
+	const remainingCredits = $derived(Math.max(0, budgetCredits - spent));
 
 	function statusBadgeClass(status: string): string {
 		switch (status) {
@@ -70,6 +70,12 @@
 			label: t('org_ads.stats_ctr', 'CTR'),
 			value: `${ctr}%`,
 			color: 'var(--color-success)'
+		},
+		{
+			icon: TrendingUp,
+			label: t('org_ads.stats_conversions', 'Conversions'),
+			value: (stats?.conversions ?? 0).toLocaleString(),
+			color: 'var(--color-info)'
 		},
 		{
 			icon: Wallet,
@@ -132,7 +138,7 @@
 	{/if}
 
 	<!-- Stats cards -->
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
 		{#each statCards as card (card.label)}
 			<div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<div class="flex items-center gap-2" style="color: {card.color}">

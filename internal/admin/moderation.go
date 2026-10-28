@@ -2278,6 +2278,8 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.enqueueRSSRegenerate()
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "removed"})
 }
 
@@ -2299,6 +2301,8 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restore content")
 		return
 	}
+
+	h.enqueueRSSRegenerate()
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
 }
@@ -2375,4 +2379,23 @@ func (h *Handlers) DeleteBroadcast(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
+}
+
+// enqueueRSSRegenerate enqueues rss:regenerate so moderation removals and
+// restores reflect in the RSS feeds without waiting for the hourly cron
+// (RSS-013). Fire-and-forget per Rule 8.
+func (h *Handlers) enqueueRSSRegenerate() {
+	if h.Tasks == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{})
+	if err != nil {
+		slog.Warn("moderation: failed to marshal rss:regenerate payload", "error", err)
+		return
+	}
+
+	if err := h.Tasks.Enqueue("rss:regenerate", payload); err != nil {
+		slog.Warn("moderation: failed to enqueue rss:regenerate", "error", err)
+	}
 }

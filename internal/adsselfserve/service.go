@@ -102,6 +102,7 @@ type CreateCampaignInput struct {
 type CampaignStats struct {
 	Impressions   int64   `json:"impressions"`
 	Clicks        int64   `json:"clicks"`
+	Conversions   int64   `json:"conversions"`
 	CTR           float64 `json:"ctr"`
 	Spent         int64   `json:"spent"`
 	BudgetCredits int     `json:"budget_credits"`
@@ -179,11 +180,10 @@ func (s *Service) ListSlots(ctx context.Context) ([]SlotInfo, error) {
 // // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
 // //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3.
 func (s *Service) CreateCampaign(ctx context.Context, orgID, userID pgtype.UUID, input CreateCampaignInput) (gen.AdCampaign, error) {
-	enabled, err := s.settings.GetSettingBool(ctx, "ads.self_serve_enabled")
-	if err == nil && !enabled {
-		return gen.AdCampaign{}, ErrFeatureDisabled
-	}
-
+	// Reachability is gated upstream by features.Gate(feature.ads) on the
+	// /org/{org_id}/ads/* routes — the legacy ads.self_serve_enabled
+	// system_settings toggle was removed (feature flags are the only
+	// reachability toggles, §42). minDays
 	minDays := s.settings.GetIntOr(ctx, "ads.min_campaign_days", 3)
 	if input.DurationDays < minDays {
 		return gen.AdCampaign{}, fmt.Errorf("%w: must be at least %d days", ErrDurationTooShort, minDays)
@@ -198,12 +198,14 @@ func (s *Service) CreateCampaign(ctx context.Context, orgID, userID pgtype.UUID,
 		return gen.AdCampaign{}, ErrOrganizationNotVerified
 	}
 
-	isMember, err := s.store.IsOrgMember(ctx, orgID, userID)
+	// Campaign funding debits the org owner's wallet — only roles with
+	// spend authority (owner/admin) may create campaigns, not any member.
+	isAdmin, err := s.store.IsOrgAdmin(ctx, orgID, userID)
 	if err != nil {
-		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check org membership: %w", err)
+		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check org admin: %w", err)
 	}
 
-	if !isMember {
+	if !isAdmin {
 		return gen.AdCampaign{}, ErrNotOrgMember
 	}
 
@@ -346,13 +348,37 @@ func (s *Service) CreateCampaign(ctx context.Context, orgID, userID pgtype.UUID,
 	return campaign, nil
 }
 
+// checkOrgMember enforces org membership on every org-scoped read/manage
+// path — the caller supplies org_id freely, so membership (not just the
+// route-level permission node) must be verified per request.
+func (s *Service) checkOrgMember(ctx context.Context, orgID, userID pgtype.UUID) error {
+	isMember, err := s.store.IsOrgMember(ctx, orgID, userID)
+	if err != nil {
+		return fmt.Errorf("adsselfserve: check org membership: %w", err)
+	}
+
+	if !isMember {
+		return ErrNotOrgMember
+	}
+
+	return nil
+}
+
 // GetCampaign returns a single campaign scoped to the org.
-func (s *Service) GetCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+func (s *Service) GetCampaign(ctx context.Context, orgID, userID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+	if err := s.checkOrgMember(ctx, orgID, userID); err != nil {
+		return gen.AdCampaign{}, err
+	}
+
 	return s.store.GetCampaign(ctx, orgID, campaignID)
 }
 
 // ListCampaigns returns a paginated list of an org's campaigns.
-func (s *Service) ListCampaigns(ctx context.Context, orgID pgtype.UUID, status string, page, limit int) ([]gen.AdCampaign, int64, error) {
+func (s *Service) ListCampaigns(ctx context.Context, orgID, userID pgtype.UUID, status string, page, limit int) ([]gen.AdCampaign, int64, error) {
+	if err := s.checkOrgMember(ctx, orgID, userID); err != nil {
+		return nil, 0, err
+	}
+
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -376,7 +402,11 @@ func (s *Service) ListCampaigns(ctx context.Context, orgID pgtype.UUID, status s
 }
 
 // UpdateCampaignCreative updates the creative content of a pending/paused campaign.
-func (s *Service) UpdateCampaignCreative(ctx context.Context, orgID, campaignID pgtype.UUID, content json.RawMessage, targetURL string) (gen.AdCampaign, error) {
+func (s *Service) UpdateCampaignCreative(ctx context.Context, orgID, userID, campaignID pgtype.UUID, content json.RawMessage, targetURL string) (gen.AdCampaign, error) {
+	if err := s.checkOrgMember(ctx, orgID, userID); err != nil {
+		return gen.AdCampaign{}, err
+	}
+
 	var contentArg []byte = content
 
 	var targetURLArg *string
@@ -396,17 +426,52 @@ func (s *Service) UpdateCampaignCreative(ctx context.Context, orgID, campaignID 
 }
 
 // PauseCampaign transitions an active campaign to paused.
-func (s *Service) PauseCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+func (s *Service) PauseCampaign(ctx context.Context, orgID, userID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+	if err := s.checkOrgMember(ctx, orgID, userID); err != nil {
+		return gen.AdCampaign{}, err
+	}
+
 	return s.store.PauseCampaign(ctx, orgID, campaignID)
 }
 
 // ResumeCampaign transitions a paused campaign to active.
-func (s *Service) ResumeCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+func (s *Service) ResumeCampaign(ctx context.Context, orgID, userID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+	if err := s.checkOrgMember(ctx, orgID, userID); err != nil {
+		return gen.AdCampaign{}, err
+	}
+
 	return s.store.ResumeCampaign(ctx, orgID, campaignID)
 }
 
+// EndCampaign transitions a stoppable campaign to ended and enqueues the
+// escrow refund for the unused remainder (§61 — orgs can stop a paid
+// campaign without waiting for an admin).
+func (s *Service) EndCampaign(ctx context.Context, orgID, userID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+	if err := s.checkOrgMember(ctx, orgID, userID); err != nil {
+		return gen.AdCampaign{}, err
+	}
+
+	campaign, err := s.store.EndSelfServeAdCampaign(ctx, orgID, campaignID)
+	if err != nil {
+		return gen.AdCampaign{}, err
+	}
+
+	if s.enqueuer != nil {
+		payload, _ := json.Marshal(map[string]string{"campaign_id": campaignID.String()})
+		if err := s.enqueuer.Enqueue(TaskRefundCampaignCredits, payload); err != nil {
+			slog.Warn("adsselfserve: enqueue refund on end failed", "error", err)
+		}
+	}
+
+	return campaign, nil
+}
+
 // GetCampaignStats returns impression/click/CTR/spend stats for a campaign.
-func (s *Service) GetCampaignStats(ctx context.Context, orgID, campaignID pgtype.UUID) (CampaignStats, error) {
+func (s *Service) GetCampaignStats(ctx context.Context, orgID, userID, campaignID pgtype.UUID) (CampaignStats, error) {
+	if err := s.checkOrgMember(ctx, orgID, userID); err != nil {
+		return CampaignStats{}, err
+	}
+
 	row, err := s.store.GetCampaignStats(ctx, orgID, campaignID)
 	if err != nil {
 		return CampaignStats{}, err
@@ -415,6 +480,7 @@ func (s *Service) GetCampaignStats(ctx context.Context, orgID, campaignID pgtype
 	stats := CampaignStats{
 		Impressions:   row.Impressions,
 		Clicks:        row.Clicks,
+		Conversions:   row.Conversions,
 		Spent:         row.Spent,
 		BudgetCredits: int(row.BudgetCredits),
 	}
@@ -442,10 +508,19 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, campaignID pgtype.U
 		refundEnabled = v
 	}
 
-	if refundEnabled && s.enqueuer != nil && campaign.BudgetCredits > 0 {
+	// Refund the UNUSED escrow only — budget_credits minus accrued spend.
+	// Refunding the original budget in full would give advertisers back
+	// money already consumed by serving (auto-end after full spend would
+	// refund 100% of a delivered campaign).
+	remaining := int64(campaign.BudgetCredits) - campaign.Spent
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	if refundEnabled && s.enqueuer != nil && remaining > 0 {
 		payload, _ := json.Marshal(map[string]interface{}{
 			"organization_id": campaign.OrganizationID.String(),
-			"amount":          int(campaign.BudgetCredits),
+			"amount":          int(remaining),
 			"campaign_id":     campaign.ID.String(),
 			"reason":          "ad_campaign_refund",
 		})

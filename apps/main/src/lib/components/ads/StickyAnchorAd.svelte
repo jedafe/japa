@@ -5,9 +5,11 @@
 	// the mobile tab bar on small screens. Same fetch/track contract as
 	// AdSlot.svelte.
 	import { browser } from '$app/environment';
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { trackedAdUrl } from '$lib/ads/trackedUrl';
+	import { fetchAdCampaigns, type AdCampaign } from '$lib/ads/serve';
 	import { X } from 'lucide-svelte';
 
 	const DISMISS_KEY = 'jc.ad.anchor.dismissed';
@@ -19,42 +21,22 @@
 
 	let { slot = 'sticky_anchor', spaceId = '' }: Props = $props();
 
-	interface AdContent {
-		headline?: string;
-		body?: string;
-		cta?: string;
-		image_url?: string;
-		html?: string;
-	}
-
-	interface AdCampaign {
-		id: string;
-		name: string;
-		content: AdContent;
-		target_url?: string;
-		priority: number;
-	}
-
 	let campaign = $state<AdCampaign | null>(null);
-	let dismissed = $state(browser ? sessionStorage.getItem(DISMISS_KEY) === '1' : true);
+	// Dismissal is per-campaign — hiding one ad must not suppress a
+	// different campaign that fills the slot later in the session.
+	let dismissed = $derived(browser && campaign ? sessionStorage.getItem(`${DISMISS_KEY}.${campaign.id}`) === '1' : true);
 	let impressionTracked = $state(false);
 	let containerEl = $state<HTMLElement | null>(null);
 	let fetchedKey = '';
 
+	const adsEnabled = $derived(
+		(page.data?.features as Record<string, boolean> | undefined)?.['feature.ads'] !== false
+	);
+
 	async function fetchAds(): Promise<void> {
-		try {
-			const qs = spaceId ? `&space_id=${encodeURIComponent(spaceId)}` : '';
-			const result = await api.get<AdCampaign[]>(`/ads/serve?slot=${encodeURIComponent(slot)}${qs}`);
-			const campaigns = result.data;
-			if (!campaigns || campaigns.length === 0) {
-				campaign = null;
-				return;
-			}
-			campaigns.sort((a, b) => b.priority - a.priority);
-			campaign = campaigns[0];
-		} catch {
-			campaign = null;
-		}
+		if (!adsEnabled) return;
+		const campaigns = await fetchAdCampaigns(slot, spaceId);
+		campaign = campaigns[0] ?? null;
 	}
 
 	async function trackImpression(): Promise<void> {
@@ -78,14 +60,15 @@
 		window.open(trackedAdUrl(campaign.target_url, campaign.id), '_blank', 'noopener,noreferrer');
 	}
 
+	let dismissedNow = $state(false);
 	function dismiss(): void {
-		dismissed = true;
-		if (browser) sessionStorage.setItem(DISMISS_KEY, '1');
+		dismissedNow = true;
+		if (browser && campaign) sessionStorage.setItem(`${DISMISS_KEY}.${campaign.id}`, '1');
 	}
 
 	$effect(() => {
 		const fetchKey = `${slot}|${spaceId}`;
-		if (!dismissed && fetchedKey !== fetchKey) {
+		if (fetchedKey !== fetchKey) {
 			fetchedKey = fetchKey;
 			void fetchAds();
 		}
@@ -110,7 +93,7 @@
 	});
 </script>
 
-{#if !dismissed && campaign}
+{#if !dismissed && !dismissedNow && campaign}
 	<div
 		bind:this={containerEl}
 		class="fixed inset-x-0 bottom-16 z-40 flex justify-center px-3 sm:bottom-0 motion-reduce:transition-none"

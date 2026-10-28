@@ -52,9 +52,13 @@
 	// Resolve the slot ID: prefer slot_mapping from API, fall back to props.slot_id.
 	function resolveSlotId(network: AdNetwork | null): string | null {
 		if (network?.slot_mapping) {
-			const key = props.format ?? 'default';
-			const mapped = network.slot_mapping[key];
-			if (mapped !== undefined) return String(mapped);
+			// Try the block's format key, then a network-level 'default'
+			// fallback — an admin mapping keyed only by 'default' still
+			// fills every placement without needing per-format entries.
+			for (const key of [props.format ?? 'default', 'default']) {
+				const mapped = network.slot_mapping[key];
+				if (mapped !== undefined) return String(mapped);
+			}
 		}
 		return props.slot_id ?? null;
 	}
@@ -79,7 +83,7 @@
 		if (raw.defer === true || raw.defer === 'true') script.defer = true;
 		// data-* pass-through only — every other attribute is dropped.
 		for (const [k, v] of Object.entries(raw)) {
-			if (!k.startsWith('data-')) continue;
+			if (!k.startsWith('data-') && k !== 'crossorigin') continue;
 			if (v !== null && v !== undefined) script.setAttribute(k, String(v));
 		}
 		document.head.appendChild(script);
@@ -132,6 +136,12 @@
 			// Admin-authored ad HTML still passes the hardened content
 			// sanitizer — raw innerHTML would execute stored script.
 			container.innerHTML = sanitizeContentHtml(props.custom_html);
+			if (!container.textContent?.trim() && !container.querySelector('img,iframe,video,svg')) {
+				const note = document.createElement('p');
+				note.className = 'p-4 text-center text-xs text-[var(--color-muted)]';
+				note.textContent = t('ads.custom_stripped', 'Custom ad HTML contained unsupported content (scripts are stripped for security)');
+				container.appendChild(note);
+			}
 			if (props.fallback_url && safeHref(props.fallback_url)) {
 				const a = document.createElement('a');
 				a.href = safeHref(props.fallback_url);
@@ -142,14 +152,18 @@
 			return;
 		}
 
-		if (provider === 'adsense' && slotId) {
-			const clientId = network?.client_id ?? 'ca-pub-0000000000000000';
-			// Render an AdSense ins element; the adsbygoogle script (loaded
-			// once in the app shell) pushes the ad into the slot.
+		if (provider === 'adsense' && slotId && network?.client_id) {
+			// Real AdSense fill needs the loader AND a real client id — the
+			// previous path pushed to a queue whose script was never loaded
+			// (and fell back to a dummy ca-pub id), so it could never serve.
+			ensureScript(
+				`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(network.client_id)}`,
+				{ 'data-ad-client': network.client_id, 'crossorigin': 'anonymous' }
+			);
 			const ins = document.createElement('ins');
 			ins.className = 'adsbygoogle';
 			ins.style.display = 'block';
-			ins.setAttribute('data-ad-client', clientId);
+			ins.setAttribute('data-ad-client', network.client_id);
 			ins.setAttribute('data-ad-slot', slotId);
 			ins.setAttribute('data-ad-format', props.format ?? 'auto');
 			ins.setAttribute('data-full-width-responsive', 'true');
@@ -158,28 +172,12 @@
 			try {
 				((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
 			} catch {
-				// adsbygoogle not loaded yet — the script will pick it up
-			}
-		} else if (provider === 'ezoic' && slotId) {
-			// Ezoic uses a placeholder div with data-ezoic-id.
-			const div = document.createElement('div');
-			div.setAttribute('data-ezoic-id', slotId);
-			container.innerHTML = '';
-			container.appendChild(div);
-		} else if (provider === 'media_net' && slotId) {
-			// Media.net uses a script-based slot.
-			const div = document.createElement('div');
-			div.id = `media-net-${slotId}`;
-			container.innerHTML = '';
-			container.appendChild(div);
-			if (network) {
-				const scriptUrl = typeof network.config?.script_url === 'string' ? network.config.script_url : null;
-				if (scriptUrl) ensureScript(scriptUrl, network.config?.script_attrs as Record<string, unknown> | undefined);
+				// adsbygoogle not loaded yet — the loader picks the ins up.
 			}
 		} else if (network) {
-			// Every other provider (google_admanager, prebid, mediavine,
-			// raptive, amazon_aps, …) resolves through the config-driven
-			// renderer — active networks only, no script without config.
+			// Every other provider — ezoic, media_net, google_admanager,
+			// prebid, mediavine, raptive, amazon_aps, … — resolves through
+			// the config-driven renderer (script_url + placement div).
 			genericRender(network, slotId);
 		}
 	});

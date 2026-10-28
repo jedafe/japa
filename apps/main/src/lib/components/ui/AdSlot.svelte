@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { page } from '$app/state';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { trackedAdUrl } from '$lib/ads/trackedUrl';
+	import { fetchAdCampaigns, type AdCampaign } from '$lib/ads/serve';
 
 	interface Props {
 		/** Ad slot identifier, surfaced as the label. */
@@ -17,24 +19,6 @@
 	}
 
 	let { slot, format = 'banner', spaceId = '', pickIndex = 0 }: Props = $props();
-
-	interface AdContent {
-		headline?: string;
-		body?: string;
-		cta?: string;
-		html?: string;
-		markdown?: string;
-		image_url?: string;
-		image_media_id?: string;
-	}
-
-	interface AdCampaign {
-		id: string;
-		name: string;
-		content: AdContent;
-		target_url?: string;
-		priority: number;
-	}
 
 	let campaign = $state<AdCampaign | null>(null);
 	let loading = $state(true);
@@ -55,25 +39,20 @@
 
 	let sizeClass = $derived(dimensions[format]);
 
+	// /ads/serve is gated behind the feature.ads flag — skip the request
+	// entirely when ads are disabled (mirrors the docs/academy AdSlot).
+	const adsEnabled = $derived(
+		(page.data?.features as Record<string, boolean> | undefined)?.['feature.ads'] !== false
+	);
+
 	async function fetchAds(): Promise<void> {
+		if (!adsEnabled) { loading = false; return; }
 		loading = true;
-		try {
-			const qs = spaceId ? `&space_id=${encodeURIComponent(spaceId)}` : '';
-			const result = await api.get<AdCampaign[]>(`/ads/serve?slot=${encodeURIComponent(slot)}${qs}`);
-			const campaigns = result.data;
-			if (!campaigns || campaigns.length === 0) {
-				campaign = null;
-				return;
-			}
-			// Pick by priority (descending); pickIndex selects the nth best
-			// when several same-slot units share the page.
-			campaigns.sort((a, b) => b.priority - a.priority);
-			campaign = campaigns[pickIndex % campaigns.length];
-		} catch {
-			campaign = null;
-		} finally {
-			loading = false;
-		}
+		const campaigns = await fetchAdCampaigns(slot, spaceId);
+		// pickIndex beyond the served set renders nothing rather than
+		// repeating the same creative in two units on one page.
+		campaign = pickIndex < campaigns.length ? campaigns[pickIndex] : null;
+		loading = false;
 	}
 
 	async function trackImpression(): Promise<void> {
@@ -142,7 +121,7 @@
      box must not occupy sidebar space when no ad is returned. -->
 <div
 	bind:this={containerEl}
-	class="grid place-items-center rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-xs text-[var(--color-muted)] overflow-hidden {sizeClass}"
+	class="grid place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-xs text-[var(--color-muted)] overflow-hidden {sizeClass}"
 	class:hidden={!loading && !campaign}
 	data-ad-slot={slot}
 	aria-label={t('ads.label', 'Advertisement')}
@@ -151,15 +130,18 @@
 		<!-- Reserve the slot while the serve call resolves so a served ad
 		     swaps in place instead of popping in and shifting the widgets
 		     below it; a no-fill collapses the box on resolve. -->
-		<div class="h-full w-full animate-pulse"></div>
+		<div class="h-full w-full animate-pulse bg-[var(--color-surface-subtle)]"></div>
 	{:else if campaign}
 		<a
 			href={campaign.target_url ?? '#'}
 			onclick={handleClick}
-			class="flex h-full w-full items-center justify-center overflow-hidden"
-			rel="noopener noreferrer"
+			class="relative flex h-full w-full items-center justify-center overflow-hidden"
+			rel="noopener sponsored"
 			target="_blank"
 		>
+			<span class="absolute end-1 top-1 rounded bg-black/55 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-white">
+				{t('ads.label', 'Ad')}
+			</span>
 			{#if campaign.content?.image_url}
 				<img
 					src={campaign.content.image_url}

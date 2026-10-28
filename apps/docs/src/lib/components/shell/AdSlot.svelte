@@ -66,6 +66,8 @@
 			// Pick the highest-priority ad (descending); first in array wins ties.
 			campaigns.sort((a, b) => b.priority - a.priority);
 			campaign = campaigns[0];
+		} catch {
+			campaign = null;
 		} finally {
 			loading = false;
 		}
@@ -135,7 +137,7 @@
      box must not occupy sidebar space when no ad is returned. -->
 <div
 	bind:this={containerEl}
-	class="grid place-items-center overflow-hidden rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-xs text-[var(--color-muted)] {sizeClass}"
+	class="grid place-items-center overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] text-xs text-[var(--color-muted)] {sizeClass}"
 	class:hidden={!loading && !campaign}
 	data-ad-slot={slot}
 	aria-label={t('ads.label', 'Advertisement')}
@@ -144,15 +146,18 @@
 		<!-- Reserve the slot while the serve call resolves so a served ad
 		     swaps in place instead of popping in and shifting widgets below;
 		     a no-fill collapses the box on resolve. -->
-		<div class="h-full w-full animate-pulse"></div>
+		<div class="h-full w-full animate-pulse bg-[var(--color-surface-subtle)]"></div>
 	{:else if campaign}
 		<a
 			href={campaign.target_url ?? '#'}
 			onclick={handleClick}
-			class="flex h-full w-full items-center justify-center overflow-hidden"
-			rel="noopener noreferrer"
+			class="relative flex h-full w-full items-center justify-center overflow-hidden"
+			rel="noopener sponsored"
 			target="_blank"
 		>
+			<span class="absolute end-1 top-1 rounded bg-black/55 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-white">
+				{t('ads.label', 'Ad')}
+			</span>
 			{#if campaign.content?.image_url}
 				<img
 					src={campaign.content.image_url}

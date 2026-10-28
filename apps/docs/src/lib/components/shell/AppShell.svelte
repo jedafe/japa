@@ -132,6 +132,8 @@
 		logoDarkUrl ||
 			((page.data.siteSettings?.['appearance.logo_url_dark'] as string | undefined) ?? '')
 	);
+
+	import AdConversionTracker from './AdConversionTracker.svelte';
 </script>
 
 {#if isFull}
@@ -234,6 +236,8 @@
 
 	<GuestFooter menu={footerMenu} {user} />
 {/if}
+
+<AdConversionTracker />
 
 <style>
 	/* ---- Standard shell (doc + api variants) ---- */

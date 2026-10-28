@@ -73,6 +73,33 @@ func (s *Store) IsOrgMember(ctx context.Context, orgID, userID pgtype.UUID) (boo
 	return isMember, nil
 }
 
+// IsOrgAdmin reports whether the user has spend authority (owner/admin
+// role) in the organisation.
+func (s *Store) IsOrgAdmin(ctx context.Context, orgID, userID pgtype.UUID) (bool, error) {
+	isAdmin, err := s.queries.IsOrgAdmin(ctx, gen.IsOrgAdminParams{
+		OrgID:  orgID,
+		UserID: userID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("adsselfserve: is org admin: %w", err)
+	}
+
+	return isAdmin, nil
+}
+
+// EndSelfServeAdCampaign transitions a stoppable campaign to ended.
+func (s *Store) EndSelfServeAdCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+	campaign, err := s.writeQueries.EndSelfServeAdCampaign(ctx, gen.EndSelfServeAdCampaignParams{
+		ID:             campaignID,
+		OrganizationID: orgID,
+	})
+	if err != nil {
+		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: end campaign: %w", err)
+	}
+
+	return campaign, nil
+}
+
 // CreateCampaign inserts a new self-serve ad campaign with status
 // 'pending_review'. The caller is responsible for eligibility checks and
 // cost calculation before calling this.

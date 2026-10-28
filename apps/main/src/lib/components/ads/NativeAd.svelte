@@ -7,7 +7,9 @@
 	// never leave a "Sponsored" shell with no ad inside.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { page } from '$app/state';
 	import { trackedAdUrl } from '$lib/ads/trackedUrl';
+	import { fetchAdCampaigns, type AdCampaign } from '$lib/ads/serve';
 
 	interface Props {
 		/** Ad slot name (native_feed, native_discover, native_space_feed, native_forum). */
@@ -21,44 +23,22 @@
 
 	let { slot, spaceId = '', pickIndex = 0 }: Props = $props();
 
-	interface AdContent {
-		headline?: string;
-		body?: string;
-		cta?: string;
-		image_url?: string;
-	}
-
-	interface AdCampaign {
-		id: string;
-		name: string;
-		content: AdContent;
-		target_url?: string;
-		priority: number;
-	}
-
 	let campaign = $state<AdCampaign | null>(null);
 	let loading = $state(true);
 	let impressionTracked = $state(false);
 	let containerEl = $state<HTMLElement | null>(null);
 	let fetchedKey = '';
 
+	const adsEnabled = $derived(
+		(page.data?.features as Record<string, boolean> | undefined)?.['feature.ads'] !== false
+	);
+
 	async function fetchAds(): Promise<void> {
+		if (!adsEnabled) { loading = false; return; }
 		loading = true;
-		try {
-			const qs = spaceId ? `&space_id=${encodeURIComponent(spaceId)}` : '';
-			const result = await api.get<AdCampaign[]>(`/ads/serve?slot=${encodeURIComponent(slot)}${qs}`);
-			const campaigns = result.data;
-			if (!campaigns || campaigns.length === 0) {
-				campaign = null;
-				return;
-			}
-			campaigns.sort((a, b) => b.priority - a.priority);
-			campaign = campaigns[pickIndex % campaigns.length];
-		} catch {
-			campaign = null;
-		} finally {
-			loading = false;
-		}
+		const campaigns = await fetchAdCampaigns(slot, spaceId);
+		campaign = pickIndex < campaigns.length ? campaigns[pickIndex] : null;
+		loading = false;
 	}
 
 	async function trackImpression(): Promise<void> {
