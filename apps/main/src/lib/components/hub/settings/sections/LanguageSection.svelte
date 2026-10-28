@@ -202,6 +202,9 @@
 			selectedLabel={selectedLanguageLabel}
 			onSelect={(item) => form.set({ language: item.id })}
 		/>
+		<p class="mt-1.5 text-xs text-[var(--color-muted)]">
+			{t('settings.language.language_hint', 'Interface language — applies across the whole app after saving.')}
+		</p>
 	</label>
 
 	<label class="block">

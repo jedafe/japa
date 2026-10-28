@@ -64,6 +64,9 @@
 <SettingsSection titleKey="settings.nav.privacy" descKey="settings.privacy.desc" {form}>
 	<div class="mb-4">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.privacy.visibility')}</span>
+		<p class="mb-2 text-xs text-[var(--color-muted)]">
+			{t('settings.privacy.visibility_hint', 'Who can see your profile page and posts.')}
+		</p>
 		<div class="flex flex-wrap gap-2">
 			{#each visibilityOptions as opt (opt.value)}
 				<button
@@ -81,6 +84,9 @@
 	</div>
 	<div class="mb-4">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.privacy.dm_privacy')}</span>
+		<p class="mb-2 text-xs text-[var(--color-muted)]">
+			{t('settings.privacy.dm_privacy_hint', 'Who can start a direct-message conversation with you.')}
+		</p>
 		<div class="flex flex-wrap gap-2">
 			{#each dmPrivacyOptions as opt (opt.value)}
 				<button
@@ -97,7 +103,12 @@
 		</div>
 	</div>
 	<label class="mb-3 flex items-center justify-between gap-3">
-		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.show_online_status')}</span>
+		<span>
+			<span class="block text-sm text-[var(--color-text)]">{t('settings.privacy.show_online_status')}</span>
+			<span class="block text-xs text-[var(--color-muted)]">
+				{t('settings.privacy.show_online_status_hint', 'Others can see when you are currently active.')}
+			</span>
+		</span>
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"
@@ -106,7 +117,12 @@
 		/>
 	</label>
 	<label class="mb-3 flex items-center justify-between gap-3">
-		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.show_activity')}</span>
+		<span>
+			<span class="block text-sm text-[var(--color-text)]">{t('settings.privacy.show_activity')}</span>
+			<span class="block text-xs text-[var(--color-muted)]">
+				{t('settings.privacy.show_activity_hint', 'Show your recent activity on your public profile.')}
+			</span>
+		</span>
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"
@@ -115,7 +131,12 @@
 		/>
 	</label>
 	<label class="flex items-center justify-between gap-3">
-		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.searchable')}</span>
+		<span>
+			<span class="block text-sm text-[var(--color-text)]">{t('settings.privacy.searchable')}</span>
+			<span class="block text-xs text-[var(--color-muted)]">
+				{t('settings.privacy.searchable_hint', 'Allow search engines to index your profile page.')}
+			</span>
+		</span>
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"
@@ -124,7 +145,12 @@
 		/>
 	</label>
 	<label class="flex items-center justify-between gap-3">
-		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.show_points_publicly')}</span>
+		<span>
+			<span class="block text-sm text-[var(--color-text)]">{t('settings.privacy.show_points_publicly')}</span>
+			<span class="block text-xs text-[var(--color-muted)]">
+				{t('settings.privacy.show_points_publicly_hint', 'Display your points and rank on your profile.')}
+			</span>
+		</span>
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"

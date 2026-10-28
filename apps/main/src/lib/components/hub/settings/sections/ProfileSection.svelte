@@ -196,29 +196,46 @@
 	<label class="mb-3 block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.name')}</span>
 		<input
+			id="profile-display-name"
+			placeholder={t('settings.profile.name_placeholder', 'Ada Lovelace')}
+			aria-describedby="profile-display-name-hint"
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)]"
 			value={form.values.display_name}
 			oninput={(e) => form.set({ display_name: e.currentTarget.value })}
 		/>
+		<span id="profile-display-name-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+			{t('settings.profile.name_hint', 'Your public name — shown on posts and your profile.')}
+		</span>
 	</label>
 	<label class="block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.bio')}</span>
 		<textarea
+			id="profile-bio"
+			placeholder={t('settings.profile.bio_placeholder', 'Tell the community a bit about yourself')}
+			aria-describedby="profile-bio-hint"
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)]"
 			rows="4"
 			value={form.values.bio}
 			oninput={(e) => form.set({ bio: e.currentTarget.value })}
 		></textarea>
+		<span id="profile-bio-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+			{t('settings.profile.bio_hint', 'Shown on your public profile — a few lines is plenty.')}
+		</span>
 	</label>
 	<label class="mt-3 block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.website', 'Website')}</span>
 		<input
+			id="profile-website"
 			type="url"
 			placeholder="https://"
+			aria-describedby="profile-website-hint"
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)]"
 			value={form.values.website_url}
 			oninput={(e) => form.set({ website_url: e.currentTarget.value })}
 		/>
+		<span id="profile-website-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+			{t('settings.profile.website_hint', 'Your personal site or portfolio, linked from your profile.')}
+		</span>
 	</label>
 
 	<div class="mt-4 grid grid-cols-1 gap-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2">
@@ -230,6 +247,9 @@
 				ariaLabel={t('settings.profile.profession', 'Profession')}
 				onValueChange={(v) => form.set({ profession: v ?? '' })}
 			/>
+			<span id="profile-profession-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.profile.profession_hint', 'Pick from the list or type your own.')}
+			</span>
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.education', 'Education')}</span>
@@ -239,17 +259,25 @@
 				ariaLabel={t('settings.profile.education', 'Education')}
 				onValueChange={(v) => form.set({ education: v ?? '' })}
 			/>
+			<span id="profile-education-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.profile.education_hint', 'Your highest completed level — pick from the list or type your own.')}
+			</span>
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.date_of_birth', 'Date of birth')}</span>
 			<input
+				id="profile-dob"
 				type="date"
 				min="1900-01-01"
 				max={dobMax}
+				aria-describedby="profile-dob-hint"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)]"
 				value={form.values.date_of_birth}
 				oninput={(e) => form.set({ date_of_birth: e.currentTarget.value })}
 			/>
+			<span id="profile-dob-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.profile.date_of_birth_hint', 'Used for age-based eligibility checks in tools.')}
+			</span>
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.gender', 'Gender')}</span>
@@ -259,6 +287,9 @@
 				ariaLabel={t('settings.profile.gender', 'Gender')}
 				onValueChange={(v) => form.set({ gender: v ?? '' })}
 			/>
+			<span id="profile-gender-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.profile.gender_hint', 'Optional — you can leave this as "Prefer not to say".')}
+			</span>
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.marital_status', 'Marital status')}</span>
@@ -268,6 +299,9 @@
 				ariaLabel={t('settings.profile.marital_status', 'Marital status')}
 				onValueChange={(v) => form.set({ marital_status: v ?? '' })}
 			/>
+			<span id="profile-marital-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.profile.marital_status_hint', 'Optional — used only for household-based tools like POF calculations.')}
+			</span>
 		</label>
 	</div>
 </SettingsSection>
