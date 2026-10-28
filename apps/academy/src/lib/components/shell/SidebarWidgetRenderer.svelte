@@ -266,6 +266,7 @@
 				disabled={newsletterSubmitting}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-60"
 			/>
+			<p class="text-xs text-[var(--color-muted)]">{t('newsletter.email_hint', 'Weekly digest — unsubscribe anytime.')}</p>
 			<button type="submit" disabled={newsletterSubmitting} class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-60">
 				{typeof widgetProps.button_text === 'string' ? widgetProps.button_text : t('sidebar.subscribe', 'Subscribe')}
 			</button>

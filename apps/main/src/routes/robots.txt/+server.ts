@@ -29,6 +29,7 @@ const DISALLOW_PATHS = [
 	'/api/',
 	'/admin/',
 	'/content/',
+	'/r$',
 	'/r/',
 	'/search',
 	'/settings',
