@@ -1,0 +1,188 @@
+# Field Hints — Pass 1: apps/main Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Every form field in `apps/main` gets contextual helper text and a placeholder, via i18n keys (`en.json` + inline `t()` fallback).
+
+**Architecture:** Surgical per-file application of a canonical hint pattern — no shared component migration. Helper text is a muted `<span>` under each field linked via `aria-describedby`. `PasswordField` gets an optional `hint` prop since it is the shared password control.
+
+**Tech Stack:** SvelteKit 2, Svelte 5 Runes, Tailwind v4 (CSS vars like `var(--color-muted)`), app i18n via `t(key, fallback?)` from `$lib/i18n`.
+
+## Global Constraints
+
+- Spec: `docs/superpowers/specs/2026-10-28-field-hints-design.md` — all rules below come from it.
+- **i18n:** `t()` accepts a fallback: `t('area.fields.name_hint', 'English copy')`. Always pass the English copy as the fallback AND add the key to `src/lib/i18n/en.json`. Do NOT touch `fr.json`/`jce_*.json` (fr falls back to en).
+- **Key naming:** `<area>.fields.<name>_hint` / `<area>.fields.<name>_placeholder`, where `<area>` matches the file's existing key group (e.g. `auth.fields.*`, `settings.profile.*`, `tools.remittance.*`). Reuse the group's existing prefix — do not invent new top-level groups.
+- **Helper copy:** one short sentence (≤ ~90 chars) explaining *why*, *format*, or a *constraint* — never a restatement of the label. Good: "Used for sign-in and receipts — we never share it." Bad: "Enter your email."
+- **Placeholder copy:** a concrete example value, not a label repeat. Good: `you@example.com`. Bad: `Email`.
+- **Existing placeholders:** keep them (do not churn); optionally move hardcoded placeholder strings into `t()` keys when adding the hint anyway.
+- **Exclusions** — NO helper text; placeholder only if missing and clearly beneficial: search boxes / command palettes, chat/message/comment composers (DM input, forum reply box, comment editor, JapaBot prompt), DataTable/filter inputs, hidden inputs (honeypot), submit buttons, read-only display inputs.
+- **Selects/checkboxes:** get helper text when a choice needs context; never placeholder.
+- **a11y:** hint `<span>` gets `id="{field-id}-hint"`; the control gets `aria-describedby="{field-id}-hint"`. When the field also has an error element, use `aria-describedby={error ? '{id}-hint {id}-error' : '{id}-hint'}`. If a control has no `id`, add one (kebab-case, unique in file).
+- **Style:** match each file's existing markup — most fields use `text-xs`/`text-sm` with `text-[var(--color-muted)]`; hint renders BELOW the control (and below any error message goes after the hint).
+- **No new components** except the `hint` prop on `PasswordField` (Task 1). Custom components like `AutocompleteSelect` get the hint `<span>` at the callsite.
+- **Verify:** `cd apps/main && bun run check`. The repo may have pre-existing svelte-check errors — run it BEFORE your first edit and record the error count; the pass is clean only if your changes add ZERO new errors.
+- **en.json:** keys appear roughly sorted/grouped — insert new keys adjacent to their group.
+
+## Canonical pattern (every task applies this)
+
+Standard labeled field (label wraps control — the dominant pattern in `main`):
+
+```svelte
+<label class="block">
+	<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('area.fields.name')}</span>
+	<input
+		id="unique-field-id"
+		placeholder={t('area.fields.name_placeholder', 'example value')}
+		aria-describedby="unique-field-id-hint"
+		<!-- existing attrs unchanged -->
+	/>
+	<span id="unique-field-id-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+		{t('area.fields.name_hint', 'Why/format hint copy')}
+	</span>
+</label>
+```
+
+Field with error display (auth pattern — `for`/`id` association):
+
+```svelte
+<label for="login-email" class="sr-only">{t('auth.fields.email')}</label>
+<input
+	id="login-email"
+	placeholder={t('auth.fields.email_placeholder', 'you@example.com')}
+	aria-describedby={errors.email ? 'login-email-hint login-email-error' : 'login-email-hint'}
+/>
+<span id="login-email-hint" class="text-xs text-[var(--color-muted)]">
+	{t('auth.fields.email_hint', "Used for sign-in and receipts — we never share it.")}
+</span>
+{#if errors.email}<p id="login-email-error" class="text-sm text-red-500">{t(errors.email)}</p>{/if}
+```
+
+Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
+
+```svelte
+<label class="block">
+	<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('area.fields.name')}</span>
+	<AutocompleteSelect ... ariaDescribedby="area-name-hint" />
+	<span id="area-name-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+		{t('area.fields.name_hint', 'hint copy')}
+	</span>
+</label>
+```
+
+(If the component lacks an `aria-describedby` pass-through, render the hint span anyway — visible copy matters most; note the gap, don't redesign the component.)
+
+---
+
+### Task 1: Shared `PasswordField` hint prop + auth surfaces
+
+**Files:**
+- Modify: `src/lib/components/auth/PasswordField.svelte` — add optional `hint?: string` prop
+- Modify: `src/lib/components/auth/LoginForm.svelte`
+- Modify: `src/lib/components/auth/SignupForm.svelte`
+- Modify: `src/routes/(auth)/forgot-password/+page.svelte`
+- Modify: `src/routes/(auth)/reset-password/+page.svelte`
+- Modify: `src/routes/(auth)/verify-totp/+page.svelte`
+- Modify: `src/routes/unsubscribe/+page.svelte`
+- Keys: `src/lib/i18n/en.json` (under `auth.fields.*`, `auth.totp.*`, `unsubscribe.*`)
+- Exclude: `src/lib/components/auth/HoneypotField.svelte` (hidden input)
+
+**Interfaces:**
+- Produces: `PasswordField` gains `hint?: string` — later tasks reuse it: `<PasswordField hint={t('area.fields.password_hint', 'copy')} />`. When `hint` is set the component renders `<p id="{id}-hint" class="text-xs text-[var(--color-muted)]">{hint}</p>` below the strength meter and sets `aria-describedby` to include `{id}-hint` (plus `{id}-error` when `error` is truthy).
+
+- [ ] **Step 1: Baseline check** — run `cd apps/main && bun run check 2>&1 | tail -5`; record the error count.
+- [ ] **Step 2: Add `hint` prop to `PasswordField`** — add `hint = ''` to the `$props()` destructure and `hint?: string` to the type; change `aria-describedby` on the input to `{[hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(' ') || undefined}`; render `{#if hint}<p id="{id}-hint" class="text-xs text-[var(--color-muted)]">{hint}</p>{/if}` after the strength meter block, before the error block.
+- [ ] **Step 3: Apply hints to the 6 auth files** — follow the error-pattern snippet above. Email gets `auth.fields.email_hint` = "Used for sign-in and receipts — we never share it." Password on login gets `auth.fields.password_hint` = "Your JapaConnect account password." Signup password: pass `hint={t('auth.fields.new_password_hint', 'At least 8 characters — mix letters, numbers and symbols.')}`; username gets a format hint; TOTP code: `auth.totp.code_hint` = "6-digit code from your authenticator app."; unsubscribe email reuses `auth.fields.email_hint`.
+- [ ] **Step 4: Add all new keys to `en.json`.**
+- [ ] **Step 5: Re-run `bun run check`** — zero new errors vs baseline.
+- [ ] **Step 6: Commit** — `git add` the touched files + `en.json`; commit `feat(main): add field hints to auth forms`.
+
+### Task 2: Settings hub — profile, account & preference sections
+
+**Files:** `src/lib/components/hub/settings/sections/`: `ProfileSection.svelte`, `AccountSection.svelte`, `LocationSection.svelte`, `LanguageSection.svelte`, `NotificationsSection.svelte`, `PrivacySection.svelte`, `AIPrivacySection.svelte`. Keys: `src/lib/i18n/en.json` under `settings.*`.
+
+- [ ] **Step 1: Enumerate** — read all 7 files; list every `input`/`textarea`/`select`/`AutocompleteSelect`. Skip any search/filter inputs.
+- [ ] **Step 2: Apply pattern** — each field gets `placeholder` (inputs only, where missing), `id` (if missing), `aria-describedby`, and the hint `<span>` below the control. Copy examples: `settings.profile.bio_hint` = "Shown on your public profile — keep it under a few lines." `settings.profile.website_hint` = "Your personal site or portfolio, shown on your profile." `settings.notifications.*_hint` = explains what each toggle controls. `AutocompleteSelect` fields (profession, education) get the callsite hint pattern.
+- [ ] **Step 3: Add keys to `en.json`** under `settings.profile.*`, `settings.account.*`, `settings.notifications.*`, `settings.privacy.*`, `settings.ai_privacy.*`, `settings.location.*`, `settings.language.*` — match whatever group the file already uses.
+- [ ] **Step 4:** `bun run check` — zero new errors.
+- [ ] **Step 5: Commit** — `feat(main): add field hints to settings profile/preference sections`.
+
+### Task 3: Settings hub — monetization, keys & flow dialogs
+
+**Files:** `src/lib/components/hub/settings/sections/`: `NewsletterSection.svelte`, `ApiKeysSection.svelte`, `AIKeysSection.svelte`, `AffiliateSection.svelte`, `SubscriptionSection.svelte`, `MentorSection.svelte`, `DangerSection.svelte`; `flows/`: `ChangePasswordForm.svelte`, `TotpEnrollFlow.svelte`, `DeleteAccountDialog.svelte`, `ApiKeyRevealDialog.svelte`; `wallet/`: `WalletPurchaseTab.svelte`, `WalletConvertTab.svelte`, `WalletWithdrawTab.svelte`. Keys: `en.json` under each section's existing group.
+
+- [ ] **Step 1: Enumerate** all fields in the 14 files.
+- [ ] **Step 2: Apply pattern.** Copy examples: API key name = "A label so you remember what this key is for." Wallet withdraw address/amount = format + minimum/fee note where the backend exposes one (use generic copy otherwise, e.g. "Amount in wallet credits to withdraw."). `ChangePasswordForm` reuses `PasswordField` with its `hint` prop. `DeleteAccountDialog` confirm field: "Type DELETE to confirm." `TotpEnrollFlow` code field reuses the TOTP hint style from Task 1.
+- [ ] **Step 3: Keys → `en.json`.**
+- [ ] **Step 4:** `bun run check` — zero new errors.
+- [ ] **Step 5: Commit** — `feat(main): add field hints to settings keys/wallet/flows`.
+
+### Task 4: Onboarding, profile & user dialogs
+
+**Files:** `src/routes/onboarding/+page.svelte`, `src/lib/components/feed/JourneyOnboardingModal.svelte`, `src/lib/components/profile/JourneysPanel.svelte`, `MessageUserDialog.svelte`, `ReportDialog.svelte`, `src/lib/components/referral/ReferralWidget.svelte`, `src/lib/components/appeals/AppealButton.svelte`, `src/lib/components/landing/GuestHomePage.svelte`, `src/lib/components/marketplace/MarketplaceHero.svelte`, `src/routes/(app)/claim-ownership/+page.svelte`, `src/routes/(app)/u/[username]/claim/+page.svelte`, `src/routes/(app)/verification-request/+page.svelte`, `src/routes/(app)/dashboard/bookmarks/+page.svelte`. Keys: each area's existing group in `en.json`.
+
+- [ ] **Step 1: Enumerate** — classify each input; message-body textareas in `MessageUserDialog`/`ReportDialog`/`AppealButton` ARE form fields (they submit a report/message), give them hints like "Include links or details that help the review." Search inputs in `GuestHomePage`/`MarketplaceHero`/bookmarks are search boxes → placeholder only.
+- [ ] **Step 2: Apply pattern.** Onboarding fields are the highest-value hints (first-run UX): e.g. destination-country select = "Where you're planning to move — powers your roadmap." japa-stage/step fields get format hints.
+- [ ] **Step 3: Keys → `en.json`.**
+- [ ] **Step 4:** `bun run check` — zero new errors.
+- [ ] **Step 5: Commit** — `feat(main): add field hints to onboarding and user dialogs`.
+
+### Task 5: Create panel, spaces & editors
+
+**Files:** `src/lib/components/create/panel/`: `CreateJourneyPanel.svelte`, `CreateSeoPanel.svelte`, `CreateSettingsPanel.svelte`, `SeriesCreationModal.svelte`; `src/lib/components/create/editors/`: `ComparisonBuilder.svelte`, `ListBuilder.svelte`; `src/lib/components/create/`: `TagInput.svelte`, `VideoField.svelte`, `CustomFieldGroup.svelte`; `src/lib/components/spaces/`: `SpaceCreationModal.svelte`, `SpaceSettings.svelte`, `SpaceCombobox.svelte`; `src/lib/components/shell/SidebarWidgetRenderer.svelte`; `src/routes/(app)/dashboard/spaces/+page.svelte`. Keys: `en.json`.
+
+- [ ] **Step 1: Enumerate** fields.
+- [ ] **Step 2: Apply pattern.** SEO panel: title/slug/description get length/format hints ("55–60 chars shows fully in search results."). `TagInput`: "Press Enter to add a tag." `VideoField`: accepted URL formats. `SpaceCombobox`: "Search spaces or type to create." Settings panel toggles get one-line effect notes.
+- [ ] **Step 3: Keys → `en.json`.**
+- [ ] **Step 4:** `bun run check` — zero new errors.
+- [ ] **Step 5: Commit** — `feat(main): add field hints to create panel and spaces`.
+
+### Task 6: Community feature pages
+
+**Files:** `src/routes/(app)/achievements/{+page,new/+page,[slug]/edit/+page}.svelte`, `ama/{new,[id]/edit}/+page.svelte`, `calendar/{+page,new,[id]/edit}/+page.svelte`, `forum/{[category]/new,[slug]}/+page.svelte`, `japa-stage/me/+page.svelte`, `mutual-aid/{+page,new,[id]/edit}/+page.svelte`, `planning-groups/{+page,new,[id],[id]/edit}/+page.svelte`, `roadmap/submit/+page.svelte`, `scam-alerts/{+page,new,[id]/edit}/+page.svelte`, `stories/+page.svelte`, `feedback/+page.svelte`, `tags/{+page,[slug]}/+page.svelte`, `spaces/{+page,[slug]}/+page.svelte`, `wiki/[space_slug]/{create,[page_slug]}/+page.svelte`, `src/lib/components/wiki/SuggestEdit.svelte`, `WikiRollupPanel.svelte`. Keys: `en.json`.
+
+- [ ] **Step 1: Enumerate.** Forum reply box + comment-like inputs = composer → placeholder only. `new`/`edit` page fields = full pattern.
+- [ ] **Step 2: Apply pattern.** Examples: scam-alert URL field = "Link to the listing or profile if you have one." Event date/time = timezone note. Wiki page title = "Use a clear, searchable title — it becomes the URL slug."
+- [ ] **Step 3: Keys → `en.json`.**
+- [ ] **Step 4:** `bun run check` — zero new errors.
+- [ ] **Step 5: Commit** — `feat(main): add field hints to community feature forms`.
+
+### Task 7: Marketplace, org, jobs & services
+
+**Files:** `src/lib/components/deals/DealForm.svelte`, `src/lib/components/marketplace/{MentorshipRequestDialog,MessageDialog,BookingDialog}.svelte`, `src/lib/components/messages/BookingDetailPane.svelte`, `src/lib/components/jobs/JobGeoFields.svelte`, `src/lib/components/services/{ServiceContentEditor,ServiceTierEditor}.svelte`, `src/routes/(app)/deal/[provider]/+page.svelte`, `(marketplace)/services/+page.svelte`, `jobs/{+page,create,[slug],[slug]/edit}/+page.svelte`, `services/{new,[slug]/edit}/+page.svelte`, `org/{+page,new,[slug]/coupons,[slug]/jobs/[jobId],[slug]/service-bookings}/+page.svelte`, `me/{applications,import}/+page.svelte`, `dashboard/organizations/{+page,[id],[id]/ads}/+page.svelte`, `dashboard/tickets/{new,[id]}/+page.svelte`. Keys: `en.json`.
+
+- [ ] **Step 1: Enumerate** — booking/mentorship message textareas are form fields (get hints); any search/filter inputs get placeholder only.
+- [ ] **Step 2: Apply pattern.** Examples: job salary fields = currency/range hint; coupon code = "Uppercase letters and numbers, e.g. JAPA20." Service tier price/delivery = unit hints. Ticket subject/body = support-context hints.
+- [ ] **Step 3: Keys → `en.json`.**
+- [ ] **Step 4:** `bun run check` — zero new errors.
+- [ ] **Step 5: Commit** — `feat(main): add field hints to marketplace/org/jobs forms`.
+
+### Task 8: Tools pages
+
+**Files:** all under `src/routes/(app)/tools/`: `cost-of-living`, `credential-checker`, `crs-calculator`, `eca-guide`, `language-test`, `pof-calculator`, `processing-tracker/{+page,my-applications}`, `remittance`, `sop-generator`, `travel`, `visa-routes`, `arrival-checklist`, `attestation-guide`, `community-locator`, `currency-converter`, `cv-formatter`, `embassy-alerter`, `readiness`, `visa-checklist` — each `+page.svelte`. Keys: `en.json` under `tools.<tool>.*`.
+
+- [ ] **Step 1: Enumerate** all tool form fields.
+- [ ] **Step 2: Apply pattern.** Tool inputs are question-like fields — hints explain what the value drives: e.g. CRS calculator age = "Your age on the day you'd submit an Express Entry profile." POF amount = "Funds in your account, in CAD." remittance amount = source-currency note.
+- [ ] **Step 3: Keys → `en.json`.**
+- [ ] **Step 4:** `bun run check` — zero new errors.
+- [ ] **Step 5: Commit** — `feat(main): add field hints to tools forms`.
+
+### Task 9: AI, studio, sources & remaining surfaces
+
+**Files:** `src/lib/ai/{AddAiKeyDialog,EditAiKeyDialog,AiBodyField,AiDraftPanel}.svelte`, `src/lib/components/compare/AiQuickPanel.svelte`, `src/lib/components/studio/{ImportPanel,ContentManagerView,PromptRightPanel}.svelte`, `src/lib/components/source/{ProposeSourceForm,SourceEditDialog}.svelte`, `src/lib/components/reviews/ReviewForm.svelte`, `src/lib/components/ui/LiteralSuggest.svelte`, `src/lib/components/hub/dashboard/views/{AnalyticsView,RelationshipsView}.svelte`, routes: `sources/+page`, `scholarships/{+page,[guide_id],saved}/+page`, `universities/{+page,[slug]}/+page`, `visa-timelines/{+page,my}/+page`, `compare/+page`, `comparisons/+page`, `dashboard/media/+page`, `series/+page`, `deals/+page`, `messages/requests/+page`, `studio/{videos,moderation}/+page`, `search/+page`. Keys: `en.json`.
+
+- [ ] **Step 1: Enumerate** — `search/+page` and filter inputs are exclusions (placeholder only); `AiBodyField`/`AiDraftPanel`/`PromptRightPanel` prompt textareas are AI composers → placeholder only, no helper. `AddAiKeyDialog`/`EditAiKeyDialog` fields get full pattern.
+- [ ] **Step 2: Apply pattern** to the genuine form fields (source propose/edit, review form, AI key name+key fields, import forms, media metadata fields). Example: AI key field = "Stored encrypted — used only for your AI features."
+- [ ] **Step 3: Keys → `en.json`.**
+- [ ] **Step 4:** `bun run check` — zero new errors.
+- [ ] **Step 5: Commit** — `feat(main): add field hints to ai/studio/source forms`.
+
+### Task 10: Verification sweep
+
+**Files:** none new — review only.
+
+- [ ] **Step 1: Sweep for missed fields** — run `grep -rln --include="*.svelte" -E "<input|<textarea|<select" src` in `apps/main`, diff against files touched; for each untouched file confirm it only contains excluded inputs (search/chat/filter/hidden) — spot-read any doubtful file.
+- [ ] **Step 2: Sweep for unhinted labeled fields** — `grep -rn --include="*.svelte" "<label" src | grep -v "aria-describedby\|sr-only"` and manually inspect hits; some labels legitimately wrap exclusions — classify each.
+- [ ] **Step 3: Full verification** — `bun run check` (zero new errors vs original baseline) and `bun run build` succeeds.
+- [ ] **Step 4: Manual spot-check** — run `bun run dev`, open login page + settings profile + one tool page; visually confirm hint text renders under fields, placeholders show, layout not broken.
+- [ ] **Step 5: Commit** any sweep fixes — `feat(main): field hints verification sweep`.
