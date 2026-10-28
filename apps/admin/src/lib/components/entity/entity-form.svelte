@@ -59,8 +59,9 @@
 		{@const helpText = fieldDisabled && field.lockedHelp ? field.lockedHelp : field.help}
 		<div class="flex flex-col gap-1">
 			<label for={field.key} class="text-sm font-medium" style="color: var(--color-foreground)">
-				{field.label}{#if field.required}<span style="color: var(--color-danger)">*</span>{/if}{#if helpText}<HintIcon text={helpText} />{/if}
+				{field.label}{#if field.required}<span style="color: var(--color-danger)">*</span>{/if}
 			</label>
+			{#if helpText}<HintIcon text={helpText} />{/if}
 
 			{#if field.type === 'textarea'}
 				<textarea

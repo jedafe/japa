@@ -12,11 +12,16 @@
 </span>
 
 <style>
-	.hint-icon {
+	:global(*:has(> .hint-icon)) {
 		position: relative;
+	}
+	.hint-icon {
+		position: absolute;
+		inset-inline-end: 0.6rem;
+		top: 50%;
+		translate: 0 -50%;
+		z-index: 5;
 		display: inline-flex;
-		vertical-align: -0.15em;
-		margin-inline-start: 0.35rem;
 		cursor: help;
 		color: var(--color-muted, #6b7280);
 	}

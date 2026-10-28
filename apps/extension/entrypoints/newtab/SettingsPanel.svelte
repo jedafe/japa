@@ -146,10 +146,16 @@
 </div>
 
 <style>
-	.field-hint {
+	.field:has(> .field-hint) {
 		position: relative;
+	}
+	.field-hint {
+		position: absolute;
+		inset-inline-end: 0.6rem;
+		top: 50%;
+		translate: 0 -50%;
+		z-index: 5;
 		display: inline-flex;
-		margin-inline-start: 0.35rem;
 		cursor: help;
 		font-size: 0.7rem;
 		font-weight: 600;
