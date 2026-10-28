@@ -128,6 +128,7 @@
 					autocomplete="off"
 					spellcheck="false"
 				/>
+				<span class="hint">The read-only key shown once in Settings → API keys.</span>
 			</label>
 			<button class="primary" onclick={save} disabled={saving || !validKey}>
 				{saving ? 'Connecting…' : 'Connect'}
