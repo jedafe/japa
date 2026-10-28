@@ -62,6 +62,8 @@ var Registry = []Feature{
 	{Key: "feature.withdraw", Label: "Credit Withdrawals", Description: "Enable user credit withdrawals and payouts", Default: true, Category: "Commerce"},
 	{Key: "feature.ads", Label: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Default: true, Category: "Commerce", SettingsCategory: "ads"},
 	{Key: "feature.referral", Label: "Referral Program", Description: "User referral program with credit rewards and attribution tracking", Default: false, Category: "Commerce", SettingsCategory: "referral"},
+	{Key: "tips.enabled", Label: "Tips & Donations", Description: "Creator/org/platform tipping — points, credits, fiat, and Open Collective (§125)", Default: false, Category: "Commerce", SettingsCategory: "tips"},
+	{Key: "tips.opencollective", Label: "Open Collective Tips", Description: "Open Collective collective linking and contribution sync (§125)", Default: false, Category: "Commerce"},
 	{Key: "feature.affiliate_program", Label: "Affiliate Program", Description: "Affiliate tracking and commission management", Default: false, Category: "Commerce"},
 	{Key: "jobs.enabled", Label: "Jobs Board", Description: "Job listings board with featured placement and credit-based promotion", Default: true, Category: "Commerce", SettingsCategory: "jobs"},
 	// Tools

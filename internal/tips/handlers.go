@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/middleware"
 )
 
 // Handlers exposes the tips HTTP surface.
@@ -423,6 +424,84 @@ func (h *Handlers) DisconnectOrgOC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Tip creation ---------------------------------------------------------------
+
+// createTipRequest is the POST /api/v1/tips body. `amount` maps onto the
+// per-method column: points→points_amount, credits→credits_amount,
+// fiat→fiat_amount.
+type createTipRequest struct {
+	RecipientType string `json:"recipient_type"`
+	RecipientID   string `json:"recipient_id"`
+	ContentID     string `json:"content_id"`
+	Method        string `json:"method"`
+	Amount        int64  `json:"amount"`
+	Currency      string `json:"currency"`
+	Message       string `json:"message"`
+	IsAnonymous   bool   `json:"is_anonymous"`
+}
+
+// CreateTip handles POST /api/v1/tips — Rule 9 Idempotency-Key required.
+func (h *Handlers) CreateTip(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	idemKey := middleware.IdempotencyKeyFromContext(r.Context())
+	if idemKey == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_idempotency_key", "Idempotency-Key header is required")
+		return
+	}
+	var in createTipRequest
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if !IsValidMethod(in.Method) || in.Method == MethodOpenCollective {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_method", "Invalid tip method")
+		return
+	}
+
+	var input CreateTipInput
+	input.Method = in.Method
+	input.RecipientType = in.RecipientType
+	input.Message = in.Message
+	input.IsAnonymous = in.IsAnonymous
+	input.FiatCurrency = in.Currency
+	switch in.Method {
+	case MethodPoints:
+		input.PointsAmount = in.Amount
+	case MethodCredits:
+		input.CreditsAmount = in.Amount
+	default:
+		input.FiatAmount = in.Amount
+	}
+	if in.RecipientID != "" {
+		var rid pgtype.UUID
+		if err := rid.Scan(in.RecipientID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_recipient", "Invalid recipient_id")
+			return
+		}
+		if in.RecipientType == RecipientOrganization {
+			input.RecipientOrgID = rid
+		} else {
+			input.RecipientUserID = rid
+		}
+	}
+	if in.ContentID != "" {
+		if err := input.ContentID.Scan(in.ContentID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_recipient", "Invalid content_id")
+			return
+		}
+	}
+
+	res, err := h.service.CreateTip(r.Context(), user.UserID, input, idemKey)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
 }
 
 // --- Public config ------------------------------------------------------------

@@ -5089,6 +5089,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService), mw.RateLimit(vkClient.Redis(), "loose")).Get("/organizations/{id}/donation-config", tipsHandlers.PublicOrgTipConfig)
 				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/donate", tipsHandlers.PublicDonate)
 
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.send"),
+					mw.RateLimit(vkClient.Redis(), "strict"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Post("/tips", tipsHandlers.CreateTip)
+
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/donation-settings", tipsHandlers.AdminGetDonationSettings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Put("/admin/donation-settings", tipsHandlers.AdminUpdateDonationSettings)
 			})

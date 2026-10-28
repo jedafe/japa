@@ -15,16 +15,21 @@ import (
 
 // fakeStore records calls and replays scripted settings/links state.
 type fakeStore struct {
-	settings     map[string]gen.TipSetting
-	links        map[pgtype.UUID][]gen.TipExternalLink
-	ocTips       map[string]gen.Tip
-	inserted     []gen.InsertTipParams
-	emailToUser  map[string]pgtype.UUID
-	mentor       bool
-	mentorErr    error
-	orgOwner     pgtype.UUID
-	getCalls     int
-	upsertParams gen.UpsertTipSettingsParams
+	settings      map[string]gen.TipSetting
+	links         map[pgtype.UUID][]gen.TipExternalLink
+	ocTips        map[string]gen.Tip
+	inserted      []gen.InsertTipParams
+	settled       []settleWalletParams
+	emailToUser   map[string]pgtype.UUID
+	idemTip       gen.Tip
+	hasIdemTip    bool
+	pointsToday   int64
+	contentAuthor pgtype.UUID
+	mentor        bool
+	mentorErr     error
+	orgOwner      pgtype.UUID
+	getCalls      int
+	upsertParams  gen.UpsertTipSettingsParams
 }
 
 func newFakeStore() *fakeStore {
@@ -81,6 +86,9 @@ func (f *fakeStore) listLinks(_ context.Context, id pgtype.UUID) ([]gen.TipExter
 
 func (f *fakeStore) getTip(context.Context, pgtype.UUID) (gen.Tip, error) { return gen.Tip{}, ErrNotFound }
 func (f *fakeStore) getTipByIdempotencyKey(context.Context, pgtype.UUID, string) (gen.Tip, error) {
+	if f.hasIdemTip {
+		return f.idemTip, nil
+	}
 	return gen.Tip{}, ErrNotFound
 }
 func (f *fakeStore) getTipByPaymentID(context.Context, pgtype.UUID) (gen.Tip, error) {
@@ -107,7 +115,9 @@ func (f *fakeStore) listTipsReceived(context.Context, pgtype.UUID, int32, int32)
 	return nil, nil
 }
 func (f *fakeStore) countTipsReceived(context.Context, pgtype.UUID) (int32, error)    { return 0, nil }
-func (f *fakeStore) sumTipperPointsToday(context.Context, pgtype.UUID) (int64, error) { return 0, nil }
+func (f *fakeStore) sumTipperPointsToday(context.Context, pgtype.UUID) (int64, error) {
+	return f.pointsToday, nil
+}
 func (f *fakeStore) contentTipSummary(context.Context, pgtype.UUID) (gen.ContentTipSummaryRow, error) {
 	return gen.ContentTipSummaryRow{}, nil
 }
@@ -128,6 +138,9 @@ func (f *fakeStore) getCurrencyByCode(context.Context, string) (gen.Currency, er
 	return gen.Currency{}, ErrNotFound
 }
 func (f *fakeStore) getContentAuthorID(context.Context, pgtype.UUID) (pgtype.UUID, error) {
+	if f.contentAuthor.Valid {
+		return f.contentAuthor, nil
+	}
 	return pgtype.UUID{}, ErrNotFound
 }
 func (f *fakeStore) getUserIDByUsername(context.Context, string) (pgtype.UUID, error) {
@@ -142,8 +155,9 @@ func (f *fakeStore) getUserIDByEmail(_ context.Context, email string) (pgtype.UU
 func (f *fakeStore) getOrgOwnerID(context.Context, pgtype.UUID) (pgtype.UUID, error) {
 	return f.orgOwner, nil
 }
-func (f *fakeStore) settleWalletTip(context.Context, settleWalletParams) (gen.Tip, error) {
-	return gen.Tip{}, nil
+func (f *fakeStore) settleWalletTip(_ context.Context, p settleWalletParams) (gen.Tip, error) {
+	f.settled = append(f.settled, p)
+	return gen.Tip{Method: p.method, Status: StatusCompleted}, nil
 }
 func (f *fakeStore) settleFiatTip(context.Context, pgtype.UUID, int64, pgtype.UUID) error {
 	return nil

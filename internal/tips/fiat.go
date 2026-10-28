@@ -1,0 +1,89 @@
+// fiat.go — §125 fiat tip settlement: creates a pending tip + a §17 payments
+// row (purpose_type='donation'), returns the provider checkout URL. The
+// worker-side settle/clawback tasks complete the flow.
+package tips
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// createFiatTip validates bounds, inserts a pending tip, and initiates the
+// provider checkout via the payments seam.
+func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner Owner, walletOwner pgtype.UUID, st Settings, in CreateTipInput, idemKey string) (CreateTipResult, error) {
+	if s.payments == nil {
+		return CreateTipResult{}, ErrInvalidMethod
+	}
+	if !st.AcceptFiat {
+		return CreateTipResult{}, ErrMethodNotAccepted
+	}
+
+	amount := in.FiatAmount
+	if amount <= 0 {
+		amount = genericAmount(in)
+	}
+	if amount <= 0 {
+		return CreateTipResult{}, ErrInvalidAmount
+	}
+	if s.settings != nil {
+		if min := int64(s.settings.GetIntOr(ctx, "tips.min_fiat_minor", 100)); amount < min {
+			return CreateTipResult{}, ErrBelowMinimum
+		}
+		if max := int64(s.settings.GetIntOr(ctx, "tips.max_fiat_minor", 1000000)); amount > max {
+			return CreateTipResult{}, ErrAboveMaximum
+		}
+	}
+	if amount < st.MinTipAmount {
+		return CreateTipResult{}, ErrBelowMinimum
+	}
+
+	currency := in.FiatCurrency
+	if currency == "" && s.settings != nil {
+		currency = s.settings.GetStringOr(ctx, "wallet.default_currency", "NGN")
+	}
+	if currency == "" {
+		currency = "NGN"
+	}
+
+	tip, err := s.store.insertTip(ctx, gen.InsertTipParams{
+		SenderUserID:            senderID,
+		RecipientType:           owner.Type,
+		RecipientUserID:         nullableOwnerUser(owner),
+		RecipientOrganizationID: nullableOwnerOrg(owner),
+		ContentID:               in.ContentID,
+		Method:                  in.Method,
+		FiatAmount:              &amount,
+		FiatCurrency:            &currency,
+		Message:                 strPtrOrNil(in.Message),
+		IsAnonymous:             in.IsAnonymous,
+		Status:                  StatusPending,
+		IdempotencyKey:          strPtrOrNil(idemKey),
+	})
+	if err != nil {
+		return CreateTipResult{}, err
+	}
+
+	pay, err := s.payments.CreatePayment(ctx, senderID, PaymentCreateInput{
+		Provider:    in.Method,
+		PurposeType: "donation",
+		PurposeID:   tip.ID.String(),
+		Amount:      amount,
+		Currency:    currency,
+		Metadata: map[string]interface{}{
+			"tip_id":         tip.ID.String(),
+			"recipient_type": owner.Type,
+		},
+	})
+	if err != nil {
+		return CreateTipResult{}, err
+	}
+
+	var paymentID pgtype.UUID
+	if err := paymentID.Scan(pay.ID); err == nil {
+		_ = s.store.attachTipPayment(ctx, tip.ID, paymentID)
+	}
+
+	return CreateTipResult{Tip: tipFromRow(tip), CheckoutURL: pay.CheckoutURL}, nil
+}
