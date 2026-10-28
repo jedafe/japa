@@ -304,8 +304,9 @@
 				</label>
 
 				<div class="field">
-					<label class="field-label" for="doc-category">{t('new_page.field_category', 'Category')}</label>
-					<HintIcon text={t('new_page.category_hint', 'The top-level section this page lives in.')} />
+					<label class="field-label" for="doc-category">{t('new_page.field_category', 'Category')}
+					<HintIcon text={t('new_page.category_hint', 'The top-level section this page lives in.')}  />
+</label>
 					<Autocomplete
 						id="doc-category"
 						placeholder={t('new_page.category_placeholder', 'e.g. Guides')}
@@ -324,8 +325,9 @@
 				</div>
 
 				<div class="field">
-					<label class="field-label" for="doc-subcategory">{t('new_page.field_subcategory', 'Subcategory')}</label>
-					<HintIcon text={t('new_page.subcategory_hint', 'Optional — a nested grouping under the category.')} />
+					<label class="field-label" for="doc-subcategory">{t('new_page.field_subcategory', 'Subcategory')}
+					<HintIcon text={t('new_page.subcategory_hint', 'Optional — a nested grouping under the category.')}  />
+</label>
 					<Autocomplete
 						id="doc-subcategory"
 						disabled={!category.trim()}
@@ -345,8 +347,9 @@
 				</div>
 
 				<div class="field">
-					<label class="field-label" for="doc-parent">{t('new_page.field_parent', 'Parent page')}</label>
-					<HintIcon text={t('new_page.parent_hint', 'Optional — nest this page under another.')} />
+					<label class="field-label" for="doc-parent">{t('new_page.field_parent', 'Parent page')}
+					<HintIcon text={t('new_page.parent_hint', 'Optional — nest this page under another.')}  />
+</label>
 					<Autocomplete
 						id="doc-parent"
 						placeholder={t('new_page.no_parent', '— Top level —')}

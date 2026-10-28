@@ -493,8 +493,9 @@
 								<div>
 									<label for="story-score" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
 										{t('language_test.final_score', 'Final score')} *
-									</label>
-									<HintIcon text={t('tools.lang_test.score_hint', 'Your test score — e.g. IELTS 7.5.')} />
+									
+									<HintIcon text={t('tools.lang_test.score_hint', 'Your test score — e.g. IELTS 7.5.')}  />
+</label>
 									<input
 										id="story-score"
 										type="text"
@@ -506,8 +507,9 @@
 								<div>
 									<label for="story-level" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
 										{t('language_test.starting_level', 'Starting level')}
-									</label>
-									<HintIcon text={t('tools.lang_test.level_hint', 'Your level — e.g. B1, CLB 8.')} />
+									
+									<HintIcon text={t('tools.lang_test.level_hint', 'Your level — e.g. B1, CLB 8.')}  />
+</label>
 									<input
 										id="story-level"
 										type="text"
@@ -519,8 +521,9 @@
 								<div>
 									<label for="story-weeks" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
 										{t('language_test.prep_weeks', 'Prep duration (weeks)')}
-									</label>
-									<HintIcon text={t('tools.lang_test.weeks_hint', 'How many weeks you prepared.')} />
+									
+									<HintIcon text={t('tools.lang_test.weeks_hint', 'How many weeks you prepared.')}  />
+</label>
 									<input
 										id="story-weeks"
 										type="number"
@@ -532,8 +535,9 @@
 								<div>
 									<label for="story-resources" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
 										{t('language_test.resources_used', 'Resources used (comma-separated)')}
-									</label>
-									<HintIcon text={t('tools.lang_test.resources_hint', 'What you studied with — courses, books, channels.')} />
+									
+									<HintIcon text={t('tools.lang_test.resources_hint', 'What you studied with — courses, books, channels.')}  />
+</label>
 									<input
 										id="story-resources"
 										type="text"

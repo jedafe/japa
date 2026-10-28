@@ -302,8 +302,9 @@
 	{/if}
 	<div class="space-y-4">
 		<div>
-			<label for="group-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.name', 'Name')}</label>
-			<HintIcon text={t('users.group_name_hint', 'The group name shown in the admin.')} />
+			<label for="group-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.name', 'Name')}
+			<HintIcon text={t('users.group_name_hint', 'The group name shown in the admin.')}  />
+</label>
 			<input
 				id="group-name"
 				type="text"
@@ -314,8 +315,9 @@
 			/>
 		</div>
 		<div>
-			<label for="group-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.description_label', 'Description')}</label>
-			<HintIcon text={t('users.group_desc_hint', 'What this group is for.')} />
+			<label for="group-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.description_label', 'Description')}
+			<HintIcon text={t('users.group_desc_hint', 'What this group is for.')}  />
+</label>
 			<textarea
 				id="group-desc"
 				rows="2"

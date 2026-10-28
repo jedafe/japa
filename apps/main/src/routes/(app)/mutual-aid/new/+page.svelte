@@ -174,8 +174,9 @@
 				<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
 					{t('mutual_aid.field_destination', 'Destination country')}
 					<span class="text-red-500" aria-hidden="true">*</span>
-				</label>
-				<HintIcon text={t('mutual_aid.destination_hint', 'The country where help is needed or offered.')} />
+				
+				<HintIcon text={t('mutual_aid.destination_hint', 'The country where help is needed or offered.')}  />
+</label>
 				<Autocomplete
 					placeholder={t('mutual_aid.field_destination_placeholder', 'Select a country')}
 					emptyMessage={t('common.no_results', 'No results found')}
@@ -192,8 +193,9 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="city" class="text-sm font-medium text-[var(--color-text)]">
 					{t('mutual_aid.field_city', 'City')}
-				</label>
-				<HintIcon text={t('mutual_aid.city_hint', 'Optional — the city this applies to.')} />
+				
+				<HintIcon text={t('mutual_aid.city_hint', 'Optional — the city this applies to.')}  />
+</label>
 				<AutocompleteSelect
 					id="city"
 					bind:value={citySpaceId}
@@ -215,8 +217,9 @@
 				<label for="post_type" class="text-sm font-medium text-[var(--color-text)]">
 					{t('mutual_aid.field_post_type', 'Post type')}
 					<span class="text-red-500" aria-hidden="true">*</span>
-				</label>
-				<HintIcon text={t('mutual_aid.type_hint', 'Whether you are offering or requesting help.')} />
+				
+				<HintIcon text={t('mutual_aid.type_hint', 'Whether you are offering or requesting help.')}  />
+</label>
 				<AutocompleteSelect
 					id="post_type"
 					value={postType}
@@ -230,8 +233,9 @@
 				<label for="category" class="text-sm font-medium text-[var(--color-text)]">
 					{t('mutual_aid.field_category', 'Category')}
 					<span class="text-red-500" aria-hidden="true">*</span>
-				</label>
-				<HintIcon text={t('mutual_aid.category_hint', 'The kind of help — housing, transport, docs.')} />
+				
+				<HintIcon text={t('mutual_aid.category_hint', 'The kind of help — housing, transport, docs.')}  />
+</label>
 				<AutocompleteSelect
 					id="category"
 					value={category}
@@ -245,8 +249,9 @@
 				<label for="title" class="text-sm font-medium text-[var(--color-text)]">
 					{t('mutual_aid.field_title', 'Title')}
 					<span class="text-red-500" aria-hidden="true">*</span>
-				</label>
-				<HintIcon text={t('mutual_aid.title_hint', 'One line — what you need or what you are offering.')} />
+				
+				<HintIcon text={t('mutual_aid.title_hint', 'One line — what you need or what you are offering.')}  />
+</label>
 				<input
 					id="title"
 					type="text"

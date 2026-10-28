@@ -571,8 +571,9 @@
 				<div>
 					<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="status">
 						{t('scholarships.application_status', 'Application status')}
-					</label>
-					<HintIcon text={t('scholarships.status_hint', 'Where you are with this application.')} />
+					
+					<HintIcon text={t('scholarships.status_hint', 'Where you are with this application.')}  />
+</label>
 					<AutocompleteSelect
 						id="status"
 						value={savedItem.status}

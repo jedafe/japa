@@ -194,8 +194,9 @@
 		<div>
 			<label for="title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_title_label')}
-			</label>
-			<HintIcon text={t('academy.title_hint', 'The course title learners see in listings.')} />
+			
+			<HintIcon text={t('academy.title_hint', 'The course title learners see in listings.')}  />
+</label>
 			<input
 				id="title"
 				type="text"
@@ -210,8 +211,9 @@
 		<div>
 			<label for="slug" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_slug_label')}
-			</label>
-			<HintIcon text={t('academy.slug_hint', 'URL-safe identifier — auto-generated from the title.')} />
+			
+			<HintIcon text={t('academy.slug_hint', 'URL-safe identifier — auto-generated from the title.')}  />
+</label>
 			<input
 				id="slug"
 				type="text"
@@ -228,8 +230,9 @@
 		<div>
 			<label for="description" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_description_label')}
-			</label>
-			<HintIcon text={t('academy.description_hint', 'A short summary shown on the track page.')} />
+			
+			<HintIcon text={t('academy.description_hint', 'A short summary shown on the track page.')}  />
+</label>
 			<textarea
 				id="description"
 				bind:value={description}
@@ -243,8 +246,9 @@
 		<div>
 			<label for="difficulty" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_difficulty_label')}
-			</label>
-			<HintIcon text={t('academy.difficulty_hint', 'The level learners need — beginner, intermediate, advanced.')} />
+			
+			<HintIcon text={t('academy.difficulty_hint', 'The level learners need — beginner, intermediate, advanced.')}  />
+</label>
 			<AutocompleteSelect
 				id="difficulty"
 				bind:value={difficulty}
@@ -257,8 +261,9 @@
 		<div>
 			<label for="price" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_price_label')}
-			</label>
-			<HintIcon text={t('academy.price_hint', 'Price in the chosen currency — leave 0 for free.')} />
+			
+			<HintIcon text={t('academy.price_hint', 'Price in the chosen currency — leave 0 for free.')}  />
+</label>
 			<input
 				id="price"
 				type="number"
@@ -356,8 +361,9 @@
 			<div>
 				<label for="subscription-eligible" class="block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.track_subscription_eligible_label', 'Subscription eligible')}
-				</label>
-				<HintIcon text={t('academy.track_subscription_eligible_hint', 'Allow subscribers to access this course as part of their plan. You earn a stream-rate revenue share when they enroll.')} />
+				
+				<HintIcon text={t('academy.track_subscription_eligible_hint', 'Allow subscribers to access this course as part of their plan. You earn a stream-rate revenue share when they enroll.')}  />
+</label>
 			</div>
 		</div>
 

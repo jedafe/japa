@@ -57,8 +57,9 @@
 		<div>
 			<label for="display_name" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.display_name_label')}
-			</label>
-			<HintIcon text={t('academy.display_name_hint', 'Your public instructor name.')} />
+			
+			<HintIcon text={t('academy.display_name_hint', 'Your public instructor name.')}  />
+</label>
 			<input
 				id="display_name"
 				type="text"
@@ -73,8 +74,9 @@
 		<div>
 			<label for="headline" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.headline_label')}
-			</label>
-			<HintIcon text={t('academy.headline_hint', 'One line shown under your name — role or specialty.')} />
+			
+			<HintIcon text={t('academy.headline_hint', 'One line shown under your name — role or specialty.')}  />
+</label>
 			<input
 				id="headline"
 				type="text"
@@ -88,8 +90,9 @@
 		<div>
 			<label for="bio" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.bio_label')}
-			</label>
-			<HintIcon text={t('academy.bio_hint', 'Shown on your instructor page — experience and expertise.')} />
+			
+			<HintIcon text={t('academy.bio_hint', 'Shown on your instructor page — experience and expertise.')}  />
+</label>
 			<textarea
 				id="bio"
 				bind:value={bio}
@@ -103,8 +106,9 @@
 		<div>
 			<label for="application_note" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.application_note_label')}
-			</label>
-			<HintIcon text={t('academy.note_hint', 'Portfolio, expertise areas or sample links — helps reviewers.')} />
+			
+			<HintIcon text={t('academy.note_hint', 'Portfolio, expertise areas or sample links — helps reviewers.')}  />
+</label>
 			<textarea
 				id="application_note"
 				bind:value={applicationNote}

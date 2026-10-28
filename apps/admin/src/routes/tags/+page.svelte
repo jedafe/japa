@@ -564,8 +564,9 @@
 		<div>
 			<label for="tag-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.name", "Name")}
-			</label>
-			<HintIcon text={t('admin.name_hint', 'The name shown in admin lists and on the site where public.')} />
+			
+			<HintIcon text={t('admin.name_hint', 'The name shown in admin lists and on the site where public.')}  />
+</label>
 			<input
 				id="tag-name"
 				type="text"
@@ -581,8 +582,9 @@
 		<div>
 			<label for="tag-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.slug", "Slug")}
-			</label>
-			<HintIcon text={t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')} />
+			
+			<HintIcon text={t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
+</label>
 			<input
 				id="tag-slug"
 				type="text"
@@ -602,8 +604,9 @@
 				style="color: var(--color-foreground)"
 			>
 				{t("tags.description", "Description")}
-			</label>
-			<HintIcon text={t('admin.description_hint', 'Shown in detail views — keep it concise.')} />
+			
+			<HintIcon text={t('admin.description_hint', 'Shown in detail views — keep it concise.')}  />
+</label>
 			<textarea
 				id="tag-description"
 				rows="2"
@@ -616,8 +619,9 @@
 		<div>
 			<label for="tag-rules" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.rules", "Rules")}
-			</label>
-			<HintIcon text={t('admin.rules_hint', 'Matching rules — one per line.')} />
+			
+			<HintIcon text={t('admin.rules_hint', 'Matching rules — one per line.')}  />
+</label>
 			<textarea
 				id="tag-rules"
 				rows="3"
@@ -792,8 +796,9 @@
 			<input id="tag-is-system" type="checkbox" class="h-4 w-4 rounded" bind:checked={value.is_system} />
 			<label for="tag-is-system" class="text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.is_system", "System tag (cannot be deleted)")}
-			</label>
-			<HintIcon text={t('admin.is_system_hint', 'System records cannot be deleted or renamed.')} />
+			
+			<HintIcon text={t('admin.is_system_hint', 'System records cannot be deleted or renamed.')}  />
+</label>
 		</div>
 	</div>
 

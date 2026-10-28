@@ -359,8 +359,9 @@
 			<div>
 				<label for="template-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">
 					{t('jsonld-templates.content_type', 'Content Type')}
-				</label>
-			<HintIcon text={t('jsonld-templates.content_type_hint', 'The type — controls how it’s handled.')} />
+				
+			<HintIcon text={t('jsonld-templates.content_type_hint', 'The type — controls how it’s handled.')}  />
+</label>
 				<AutocompleteSelect
 					id="template-content-type"
 					bind:value={value.content_type}
@@ -373,8 +374,9 @@
 			<div>
 				<label for="template-is-active" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">
 					{t('jsonld-templates.status', 'Status')}
-				</label>
-			<HintIcon text={t('jsonld-templates.is_active_hint', 'Inactive templates are not rendered.')} />
+				
+			<HintIcon text={t('jsonld-templates.is_active_hint', 'Inactive templates are not rendered.')}  />
+</label>
 				<label class="inline-flex items-center gap-2 pt-2">
 					<input id="template-is-active" type="checkbox" class="h-4 w-4 rounded border" bind:checked={value.is_active} />
 					<span class="text-sm" style="color: var(--color-foreground-alt)">
@@ -391,8 +393,9 @@
 						({t('jsonld-templates.invalid_json', 'Invalid JSON')}: {jsonError})
 					</span>
 				{/if}
-			</label>
-			<HintIcon text={t('jsonld-templates.content_hint', 'The main content — supports the template syntax shown.')} />
+			
+			<HintIcon text={t('jsonld-templates.content_hint', 'The main content — supports the template syntax shown.')}  />
+</label>
 			<textarea
 				id="template-content"
 				class="w-full rounded-lg border px-3 py-2 font-mono text-xs {jsonError ? '' : ''}"

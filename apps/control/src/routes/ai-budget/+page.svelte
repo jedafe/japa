@@ -338,8 +338,9 @@
 
 <Modal bind:open={editModalOpen} title={t('ai_budget.edit_threshold', 'Edit Budget Threshold')} description={t('ai_budget.edit_threshold_desc', 'Set the monthly AI spend alert threshold in USD.')}>
 			<div class="mt-4">
-				<label for="threshold-input" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_budget.budget_threshold')}</label>
-				<HintIcon text={t('ai_budget.threshold_hint', 'Monthly AI spend cap — usage alerts fire near it.')} />
+				<label for="threshold-input" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_budget.budget_threshold')}
+				<HintIcon text={t('ai_budget.threshold_hint', 'Monthly AI spend cap — usage alerts fire near it.')}  />
+</label>
 				<input
 					id="threshold-input"
 					type="number"

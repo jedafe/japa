@@ -367,8 +367,9 @@
 		<div>
 			<label for="import-name" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.import_name', 'Import Name')}
-			</label>
-			<HintIcon text={t('app.data_imports.name_hint', 'The name shown in admin lists and on the site where public.')} />
+			
+			<HintIcon text={t('app.data_imports.name_hint', 'The name shown in admin lists and on the site where public.')}  />
+</label>
 			<input
 				id="import-name"
 				type="text"
@@ -382,30 +383,34 @@
 			<div>
 				<label for="import-type" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('app.data_imports.data_type', 'Data Type')}
-				</label>
-			<HintIcon text={t('app.data_imports.type_hint', 'The type — controls how it’s handled.')} />
+				
+			<HintIcon text={t('app.data_imports.type_hint', 'The type — controls how it’s handled.')}  />
+</label>
 				<Select bind:value={value.type} options={importTypes} />
 			</div>
 			<div>
 				<label for="import-format" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('app.data_imports.format', 'Format')}
-				</label>
-			<HintIcon text={t('app.data_imports.format_hint', 'The expected format — e.g. CSV or JSON.')} />
+				
+			<HintIcon text={t('app.data_imports.format_hint', 'The expected format — e.g. CSV or JSON.')}  />
+</label>
 				<Select bind:value={value.format} options={importFormatOptions} />
 			</div>
 		</div>
 		<div>
 			<label for="import-mode" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.mode', 'Mode')}
-			</label>
-			<HintIcon text={t('app.data_imports.mode_hint', 'How this behaves — pick the closest fit.')} />
+			
+			<HintIcon text={t('app.data_imports.mode_hint', 'How this behaves — pick the closest fit.')}  />
+</label>
 			<Select bind:value={value.mode} options={importModeOptions} />
 		</div>
 		<div>
 			<label for="import-file-url" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.file_url', 'File URL')}
-			</label>
-			<HintIcon text={t('app.data_imports.file_url_hint', 'Direct file URL — must be publicly reachable.')} />
+			
+			<HintIcon text={t('app.data_imports.file_url_hint', 'Direct file URL — must be publicly reachable.')}  />
+</label>
 			<input
 				id="import-file-url"
 				type="text"

@@ -429,8 +429,9 @@
 		<div>
 			<label for="import-user" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('imports.target_user', 'Target User')}
-			</label>
-			<HintIcon text={t('imports.user_hint', 'The user account this is attached to.')} />
+			
+			<HintIcon text={t('imports.user_hint', 'The user account this is attached to.')}  />
+</label>
 			<UserAutocomplete
 				bind:value={value._username}
 				placeholder={t('imports.user_placeholder', 'Search by username…')}
@@ -443,8 +444,9 @@
 		<div>
 			<label for="import-source-type" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('imports.source_type', 'Source Type')}
-			</label>
-			<HintIcon text={t('imports.source_type_hint', 'The type — controls how it’s handled.')} />
+			
+			<HintIcon text={t('imports.source_type_hint', 'The type — controls how it’s handled.')}  />
+</label>
 			<Select
 				bind:value={value.source_type}
 				options={sourceTypeOptions}
@@ -455,8 +457,9 @@
 			<div>
 				<label for="import-source-url" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('imports.source_url', 'Source URL')}
-				</label>
-			<HintIcon text={t('imports.source_url_hint', 'The URL this data is pulled from — full URL including https://.')} />
+				
+			<HintIcon text={t('imports.source_url_hint', 'The URL this data is pulled from — full URL including https://.')}  />
+</label>
 				<input
 					id="import-source-url"
 					type="url"

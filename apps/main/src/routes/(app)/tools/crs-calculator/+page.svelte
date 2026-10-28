@@ -316,8 +316,9 @@
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<!-- Marital status -->
 			<div>
-				<label class={labelCls} for="marital">{t('crs_calculator.marital', 'Marital status')}</label>
-				<HintIcon text={t('tools.crs.marital_hint', 'Your status affects how points are calculated.')} />
+				<label class={labelCls} for="marital">{t('crs_calculator.marital', 'Marital status')}
+				<HintIcon text={t('tools.crs.marital_hint', 'Your status affects how points are calculated.')}  />
+</label>
 				<AutocompleteSelect
 					id="marital"
 					value={maritalStatus}
@@ -331,36 +332,41 @@
 
 			<!-- Age -->
 			<div>
-				<label class={labelCls} for="age">{t('crs_calculator.age', 'Age')}</label>
-				<HintIcon text={t('tools.crs.age_hint', 'Your age on the day you would submit an Express Entry profile.')} />
+				<label class={labelCls} for="age">{t('crs_calculator.age', 'Age')}
+				<HintIcon text={t('tools.crs.age_hint', 'Your age on the day you would submit an Express Entry profile.')}  />
+</label>
 				<input id="age" type="number" bind:value={age} min="17" max="120" class={inputCls} />
 			</div>
 
 			<!-- Education -->
 			<div>
-				<label class={labelCls} for="education">{t('crs_calculator.education', 'Highest education')}</label>
-				<HintIcon text={t('tools.crs.education_hint', 'Your highest completed credential.')} />
+				<label class={labelCls} for="education">{t('crs_calculator.education', 'Highest education')}
+				<HintIcon text={t('tools.crs.education_hint', 'Your highest completed credential.')}  />
+</label>
 				<AutocompleteSelect id="education" bind:value={education} options={educationOptions} />
 			</div>
 
 			<!-- Canadian experience -->
 			<div>
-				<label class={labelCls} for="canadianExp">{t('crs_calculator.canadian_exp', 'Canadian work experience (years)')}</label>
-				<HintIcon text={t('tools.crs.canadian_exp_hint', 'Years of skilled work inside Canada.')} />
+				<label class={labelCls} for="canadianExp">{t('crs_calculator.canadian_exp', 'Canadian work experience (years)')}
+				<HintIcon text={t('tools.crs.canadian_exp_hint', 'Years of skilled work inside Canada.')}  />
+</label>
 				<input id="canadianExp" type="number" bind:value={canadianExp} min="0" max="60" class={inputCls} />
 			</div>
 
 			<!-- Foreign experience -->
 			<div>
-				<label class={labelCls} for="foreignExp">{t('crs_calculator.foreign_exp', 'Foreign work experience (years)')}</label>
-				<HintIcon text={t('tools.crs.foreign_exp_hint', 'Years of skilled work outside Canada.')} />
+				<label class={labelCls} for="foreignExp">{t('crs_calculator.foreign_exp', 'Foreign work experience (years)')}
+				<HintIcon text={t('tools.crs.foreign_exp_hint', 'Years of skilled work outside Canada.')}  />
+</label>
 				<input id="foreignExp" type="number" bind:value={foreignExp} min="0" max="60" class={inputCls} />
 			</div>
 
 			<!-- Canadian education -->
 			<div>
-				<label class={labelCls} for="canadianEdu">{t('crs_calculator.canadian_edu', 'Canadian education')}</label>
-				<HintIcon text={t('tools.crs.canadian_edu_hint', 'Degrees earned at Canadian institutions.')} />
+				<label class={labelCls} for="canadianEdu">{t('crs_calculator.canadian_edu', 'Canadian education')}
+				<HintIcon text={t('tools.crs.canadian_edu_hint', 'Degrees earned at Canadian institutions.')}  />
+</label>
 				<AutocompleteSelect
 					id="canadianEdu"
 					bind:value={canadianEducation}
@@ -375,8 +381,9 @@
 				{t('crs_calculator.first_language', 'First official language (CLB scores)')}
 			</legend>
 			<div class="mb-3 sm:max-w-xs">
-				<label class={subLabelCls} for="firstLang">{t('crs_calculator.first_lang_select', 'Language')}</label>
-				<HintIcon text={t('tools.crs.lang_hint', 'Your strongest official-language test result.')} />
+				<label class={subLabelCls} for="firstLang">{t('crs_calculator.first_lang_select', 'Language')}
+				<HintIcon text={t('tools.crs.lang_hint', 'Your strongest official-language test result.')}  />
+</label>
 				<AutocompleteSelect
 					id="firstLang"
 					bind:value={firstLanguage}

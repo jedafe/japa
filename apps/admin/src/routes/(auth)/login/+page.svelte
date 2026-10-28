@@ -94,8 +94,9 @@
 
 		<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="space-y-4">
 			<div>
-				<label for="email" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.email')}</label>
-				<HintIcon text={t('auth.login.email_hint', 'Your admin account email.')} />
+				<label for="email" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.email')}
+				<HintIcon text={t('auth.login.email_hint', 'Your admin account email.')}  />
+</label>
 				<input
 					id="email"
 					type="email"
@@ -108,8 +109,9 @@
 			</div>
 
 			<div>
-				<label for="password" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.password')}</label>
-				<HintIcon text={t('auth.login.password_hint', 'Your admin account password.')} />
+				<label for="password" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.password')}
+				<HintIcon text={t('auth.login.password_hint', 'Your admin account password.')}  />
+</label>
 				<input
 					id="password"
 					type="password"

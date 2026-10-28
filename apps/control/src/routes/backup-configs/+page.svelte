@@ -558,8 +558,9 @@
 				<div>
 					<label for="bc-name" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.name', 'Name')}
-					</label>
-					<HintIcon text={t('backup_configs.name_hint', 'A label for this backup job.')} />
+					
+					<HintIcon text={t('backup_configs.name_hint', 'A label for this backup job.')}  />
+</label>
 					<input
 						id="bc-name"
 						type="text"
@@ -571,8 +572,9 @@
 				<div>
 					<label for="bc-schedule" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.schedule', 'Schedule')}
-					</label>
-					<HintIcon text={t('backup_configs.schedule_hint', 'How often the backup runs.')} />
+					
+					<HintIcon text={t('backup_configs.schedule_hint', 'How often the backup runs.')}  />
+</label>
 					<Autocomplete
 						id="bc-schedule"
 						placeholder={t('backup_configs.schedule', 'Select schedule...')}
@@ -602,8 +604,9 @@
 				<div>
 					<label for="backup-targets" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.what_to_backup', 'What to Backup')}
-					</label>
-					<HintIcon text={t('backup_configs.targets_hint', 'What to include — database, media, config.')} />
+					
+					<HintIcon text={t('backup_configs.targets_hint', 'What to include — database, media, config.')}  />
+</label>
 
 					{#if selectedTargetLabels.length > 0}
 						<div class="mb-2 flex flex-wrap gap-1.5">

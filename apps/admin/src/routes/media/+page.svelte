@@ -1161,8 +1161,9 @@
 	{#if uploadModalTab === 'upload'}
 		<div class="space-y-4">
 			<div>
-				<label for="media-upload-files" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_files', 'Files')}</label>
-				<HintIcon text={t('media.media_upload_files_hint', 'The files to upload — multiple allowed.')} />
+				<label for="media-upload-files" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_files', 'Files')}
+				<HintIcon text={t('media.media_upload_files_hint', 'The files to upload — multiple allowed.')}  />
+</label>
 				<input
 					id="media-upload-files"
 					type="file"
@@ -1193,8 +1194,9 @@
 				</div>
 			{/if}
 			<div>
-				<label for="media-upload-group" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
-				<HintIcon text={t('media.media_upload_group_hint', 'Restrict to a user group — optional.')} />
+				<label for="media-upload-group" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_user_group', 'User Group (optional)')}
+				<HintIcon text={t('media.media_upload_group_hint', 'Restrict to a user group — optional.')}  />
+</label>
 				<AutocompleteSelect
 					id="media-upload-group"
 					bind:value={uploadUserGroupId}
@@ -1203,8 +1205,9 @@
 				/>
 			</div>
 			<div>
-				<label for="media-upload-alt" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
-				<HintIcon text={t('media.media_upload_alt_hint', 'Alt text for accessibility — optional.')} />
+				<label for="media-upload-alt" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_alt_text', 'Alt Text (optional)')}
+				<HintIcon text={t('media.media_upload_alt_hint', 'Alt text for accessibility — optional.')}  />
+</label>
 				<input
 					id="media-upload-alt"
 					type="text"
@@ -1360,8 +1363,9 @@
 			<div>
 				<label for="edit-caption" class="mb-1 block text-sm font-medium text-foreground">
 					{t('app.media.field_title', 'Title / Caption')}
-				</label>
-				<HintIcon text={t('media.edit_caption_hint', 'The caption shown with this media.')} />
+				
+				<HintIcon text={t('media.edit_caption_hint', 'The caption shown with this media.')}  />
+</label>
 				<input
 					id="edit-caption"
 					type="text"
@@ -1373,8 +1377,9 @@
 			<div>
 				<label for="edit-alt" class="mb-1 block text-sm font-medium text-foreground">
 					{t('app.media.field_alt_text', 'Alt Text')}
-				</label>
-				<HintIcon text={t('media.edit_alt_hint', 'Alt text for accessibility.')} />
+				
+				<HintIcon text={t('media.edit_alt_hint', 'Alt text for accessibility.')}  />
+</label>
 				<textarea
 					id="edit-alt"
 					bind:value={editAltText}

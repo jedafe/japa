@@ -172,8 +172,9 @@
 						class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 					>
 						{t('fx.amount', 'Amount')}
-					</label>
-						<HintIcon text={t('tools.fx.amount_hint', 'The amount to convert.')} />
+					
+						<HintIcon text={t('tools.fx.amount_hint', 'The amount to convert.')}  />
+</label>
 					<div class="mt-1 flex items-center gap-2">
 						<input
 							id="fx-amount"
@@ -198,8 +199,9 @@
 							class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 						>
 							{t('fx.from', 'From')}
-						</label>
-							<HintIcon text={t('tools.fx.from_hint', 'Source currency.')} />
+						
+							<HintIcon text={t('tools.fx.from_hint', 'Source currency.')}  />
+</label>
 						<div class="mt-1">
 							<Autocomplete
 								id="fx-from"
@@ -231,8 +233,9 @@
 							class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 						>
 							{t('fx.to', 'To')}
-						</label>
-							<HintIcon text={t('tools.fx.to_hint', 'Target currency.')} />
+						
+							<HintIcon text={t('tools.fx.to_hint', 'Target currency.')}  />
+</label>
 						<div class="mt-1">
 							<Autocomplete
 								id="fx-to"

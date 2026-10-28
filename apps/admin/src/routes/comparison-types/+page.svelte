@@ -482,8 +482,9 @@
 								<div>
 									<label for="ct-user-group" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">
 										{t('comparison_types.user_group', 'User group ID')}
-									</label>
-			<HintIcon text={t('comparison_types.user_group_hint', 'Which user group can fill this data.')} />
+									
+			<HintIcon text={t('comparison_types.user_group_hint', 'Which user group can fill this data.')}  />
+</label>
 									<AutocompleteSelect
 										id="ct-user-group"
 										bind:value={accessForm.user_group_id}
@@ -602,8 +603,9 @@
 					<div>
 						<label for="ct-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('comparison_types.name', 'Name')}
-						</label>
-			<HintIcon text={t('comparison_types.name_hint', 'The name shown in admin lists and on the site where public.')} />
+						
+			<HintIcon text={t('comparison_types.name_hint', 'The name shown in admin lists and on the site where public.')}  />
+</label>
 						<input
 							id="ct-name"
 							type="text"
@@ -618,8 +620,9 @@
 					<div>
 						<label for="ct-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('comparison_types.slug', 'Slug')}
-						</label>
-			<HintIcon text={t('comparison_types.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')} />
+						
+			<HintIcon text={t('comparison_types.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
+</label>
 						<input
 							id="ct-slug"
 							type="text"
@@ -631,8 +634,9 @@
 					<div>
 						<label for="ct-desc" class="block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('comparison_types.description_label', 'Description')}
-						</label>
-			<HintIcon text={t('comparison_types.desc_hint', 'Shown in detail views — keep it concise.')} />
+						
+			<HintIcon text={t('comparison_types.desc_hint', 'Shown in detail views — keep it concise.')}  />
+</label>
 						<textarea
 							id="ct-desc"
 							rows="2"
@@ -645,8 +649,9 @@
 						<div>
 							<label for="ct-icon" class="block text-sm font-medium" style="color: var(--color-foreground)">
 								{t('comparison_types.icon', 'Icon')}
-							</label>
-			<HintIcon text={t('comparison_types.icon_hint', 'Icon name or emoji shown next to the record.')} />
+							
+			<HintIcon text={t('comparison_types.icon_hint', 'Icon name or emoji shown next to the record.')}  />
+</label>
 							<input
 								id="ct-icon"
 								type="text"
@@ -658,8 +663,9 @@
 						<div>
 							<label for="ct-item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">
 								{t('comparison_types.item_label', 'Item label')}
-							</label>
-			<HintIcon text={t('comparison_types.item_label_hint', 'The display label for this item.')} />
+							
+			<HintIcon text={t('comparison_types.item_label_hint', 'The display label for this item.')}  />
+</label>
 							<input
 								id="ct-item-label"
 								type="text"
@@ -672,8 +678,9 @@
 					<div>
 						<label for="ct-field-group" class="block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('comparison_types.field_group', 'Field group')}
-						</label>
-			<HintIcon text={t('comparison_types.field_group_hint', 'The field group this belongs to — drives sectioning.')} />
+						
+			<HintIcon text={t('comparison_types.field_group_hint', 'The field group this belongs to — drives sectioning.')}  />
+</label>
 						{#if editing}
 							<input
 								id="ct-field-group"
@@ -710,8 +717,9 @@
 							/>
 							<label for="ct-allow-nested" class="text-sm" style="color: var(--color-foreground)">
 								{t('comparison_types.allow_nested_comparisons', 'Allow nested comparisons')}
-							</label>
-			<HintIcon text={t('comparison_types.allow_nested_hint', 'Whether sub-comparisons can nest under this type.')} />
+							
+			<HintIcon text={t('comparison_types.allow_nested_hint', 'Whether sub-comparisons can nest under this type.')}  />
+</label>
 						</div>
 						{#if Boolean(configObj(value).allow_nested_comparisons)}
 							<div>
@@ -818,8 +826,9 @@
 						<input id="ct-system" type="checkbox" bind:checked={value.is_system} disabled={!!editing} />
 						<label for="ct-system" class="text-sm" style="color: var(--color-foreground)">
 							{t('comparison_types.system', 'System')}
-						</label>
-			<HintIcon text={t('comparison_types.system_hint', 'System types cannot be deleted or renamed.')} />
+						
+			<HintIcon text={t('comparison_types.system_hint', 'System types cannot be deleted or renamed.')}  />
+</label>
 					</div>
 				</div>
 	</div>

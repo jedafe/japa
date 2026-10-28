@@ -212,8 +212,9 @@
 			<div class="mb-4">
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="visaType">
 					{t('pof_calculator.visa_type', 'Visa / program type')}
-				</label>
-				<HintIcon text={t('tools.pof.visa_hint', 'The visa category you are applying under.')} />
+				
+				<HintIcon text={t('tools.pof.visa_hint', 'The visa category you are applying under.')}  />
+</label>
 				<Autocomplete
 					id="visaType"
 					placeholder={t('pof_calculator.select_visa', 'Select visa type')}
@@ -233,8 +234,9 @@
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="members">
 					{t('pof_calculator.members', 'Family members (you + spouse/partner)')}
-				</label>
-				<HintIcon text={t('tools.pof.members_hint', 'Number of family members, including you.')} />
+				
+				<HintIcon text={t('tools.pof.members_hint', 'Number of family members, including you.')}  />
+</label>
 				<input
 					id="members"
 					type="number"
@@ -248,8 +250,9 @@
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="dependants">
 					{t('pof_calculator.dependants', 'Dependants (children)')}
-				</label>
-				<HintIcon text={t('tools.pof.dependants_hint', 'Dependents who count toward the fund requirement.')} />
+				
+				<HintIcon text={t('tools.pof.dependants_hint', 'Dependents who count toward the fund requirement.')}  />
+</label>
 				<input
 					id="dependants"
 					type="number"

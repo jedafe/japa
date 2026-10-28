@@ -107,8 +107,9 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="title" class="text-sm font-medium text-[var(--color-text)]">
 				{t('ama.field_title', 'AMA title')} <span class="text-red-500">*</span>
-			</label>
-			<HintIcon text={t('ama.title_hint', 'Format: Ask a [profession] who [did the thing].')} />
+			
+			<HintIcon text={t('ama.title_hint', 'Format: Ask a [profession] who [did the thing].')}  />
+</label>
 			<input
 				id="title"
 				type="text"

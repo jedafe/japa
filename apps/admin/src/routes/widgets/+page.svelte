@@ -367,8 +367,9 @@
 		<div>
 			<label for="widget-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('widgets.name', 'Name')} *
-			</label>
-			<HintIcon text={t('widgets.name_hint', 'The name shown in admin lists and on the site where public.')} />
+			
+			<HintIcon text={t('widgets.name_hint', 'The name shown in admin lists and on the site where public.')}  />
+</label>
 			<input
 				id="widget-name"
 				type="text"
@@ -383,8 +384,9 @@
 		<div>
 			<label for="widget-type" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('widgets.type', 'Type')} *
-			</label>
-			<HintIcon text={t('widgets.type_hint', 'The type — controls how it’s handled.')} />
+			
+			<HintIcon text={t('widgets.type_hint', 'The type — controls how it’s handled.')}  />
+</label>
 			<AutocompleteSelect
 				id="widget-type"
 				bind:value={value.widget_type}
@@ -403,8 +405,9 @@
 		<div>
 			<label for="widget-ttl" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				Cache TTL (seconds)
-			</label>
-			<HintIcon text={t('admin.ttl_hint', 'Cache lifetime — higher values reduce load.')} />
+			
+			<HintIcon text={t('admin.ttl_hint', 'Cache lifetime — higher values reduce load.')}  />
+</label>
 			<input
 				id="widget-ttl"
 				type="number"

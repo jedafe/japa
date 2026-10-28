@@ -278,16 +278,18 @@
 				<div>
 					<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-dest">
 						{t('processing_tracker.destination', 'Destination country')} *
-					</label>
-					<HintIcon text={t('processing_tracker.dest_hint', 'The country you applied to.')} />
+					
+					<HintIcon text={t('processing_tracker.dest_hint', 'The country you applied to.')}  />
+</label>
 					<DestinationSelector {destinations} bind:selectedId={newDestId} />
 				</div>
 				<div class="grid sm:grid-cols-2 gap-4">
 					<div>
 						<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-visa">
 							{t('processing_tracker.visa_category', 'Visa category')} *
-						</label>
-						<HintIcon text={t('processing_tracker.visa_hint', 'The visa type — e.g. Student, Skilled Worker.')} />
+						
+						<HintIcon text={t('processing_tracker.visa_hint', 'The visa type — e.g. Student, Skilled Worker.')}  />
+</label>
 						<input
 							id="new-visa"
 							bind:value={newVisaCategory}
@@ -299,8 +301,9 @@
 					<div>
 						<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-consulate">
 							{t('processing_tracker.consulate', 'Consulate (optional)')}
-						</label>
-						<HintIcon text={t('processing_tracker.consulate_hint', 'The consulate or office handling your application.')} />
+						
+						<HintIcon text={t('processing_tracker.consulate_hint', 'The consulate or office handling your application.')}  />
+</label>
 						<input
 							id="new-consulate"
 							bind:value={newConsulate}
@@ -313,8 +316,9 @@
 					<div>
 						<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-method">
 							{t('processing_tracker.method', 'Application method')}
-						</label>
-						<HintIcon text={t('processing_tracker.method_hint', 'How you applied — online, in person, via agent.')} />
+						
+						<HintIcon text={t('processing_tracker.method_hint', 'How you applied — online, in person, via agent.')}  />
+</label>
 						<AutocompleteSelect
 							id="new-method"
 							bind:value={newMethod}

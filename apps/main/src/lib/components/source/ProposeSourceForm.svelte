@@ -292,16 +292,18 @@
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="psf-name">
 				{t('sources.submit.name', 'Source name')}
-			</label>
-			<HintIcon text={t('sources.submit.name_hint', 'The official name of the source.')} />
+			
+			<HintIcon text={t('sources.submit.name_hint', 'The official name of the source.')}  />
+</label>
 			<input id="psf-name" name="name" bind:value={name} class={inputClass()} placeholder="DAAD Scholarships" disabled={loading} />
 		</div>
 
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="psf-source-url">
 				{t('sources.submit.source_url', 'Source URL')}
-			</label>
-			<HintIcon text={t('sources.submit.url_hint', 'The main URL — where the data is published.')} />
+			
+			<HintIcon text={t('sources.submit.url_hint', 'The main URL — where the data is published.')}  />
+</label>
 			<div class="flex items-start gap-2">
 				<input
 					id="psf-source-url"
@@ -449,8 +451,9 @@
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="psf-domain">
 				{t('sources.submit.domain', 'Domain (optional)')}
-			</label>
-			<HintIcon text={t('sources.submit.domain_hint', 'The domain, e.g. daad.de — used for matching.')} />
+			
+			<HintIcon text={t('sources.submit.domain_hint', 'The domain, e.g. daad.de — used for matching.')}  />
+</label>
 			<input
 				id="psf-domain"
 				name="domain"
@@ -528,8 +531,9 @@
 			<div>
 				<label class="mb-1 block text-sm font-medium" for="psf-source-kind">
 					{t('sources.submit.source_kind', 'Source kind')}
-				</label>
-				<HintIcon text={t('sources.submit.kind_hint', 'What kind of source — database, list, feed.')} />
+				
+				<HintIcon text={t('sources.submit.kind_hint', 'What kind of source — database, list, feed.')}  />
+</label>
 				<AutocompleteSelect id="psf-source-kind" name="source_kind" bind:value={sourceKind} options={kindOptions} disabled={loading} />
 			</div>
 		{/if}
@@ -537,8 +541,9 @@
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="psf-description">
 				{t('sources.submit.description_label', 'Description')}
-			</label>
-			<HintIcon text={t('sources.submit.desc_hint', 'What this source covers and why it should be added.')} />
+			
+			<HintIcon text={t('sources.submit.desc_hint', 'What this source covers and why it should be added.')}  />
+</label>
 			<textarea
 				id="psf-description"
 				name="description"

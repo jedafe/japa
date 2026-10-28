@@ -211,8 +211,9 @@
 
 	<div class="ef-grid">
 		<div class="ef-field">
-			<label class="ef-label" for="doc-edit-category">{t('new_page.field_category', 'Category')}</label>
-			<HintIcon text={t('new_page.category_hint', 'The top-level section this page lives in.')} />
+			<label class="ef-label" for="doc-edit-category">{t('new_page.field_category', 'Category')}
+			<HintIcon text={t('new_page.category_hint', 'The top-level section this page lives in.')}  />
+</label>
 			<Autocomplete
 				id="doc-edit-category"
 				placeholder={t('new_page.optional', 'Optional')}
@@ -231,8 +232,9 @@
 		</div>
 
 		<div class="ef-field">
-			<label class="ef-label" for="doc-edit-subcategory">{t('new_page.field_subcategory', 'Subcategory')}</label>
-			<HintIcon text={t('new_page.subcategory_hint', 'Optional — a nested grouping under the category.')} />
+			<label class="ef-label" for="doc-edit-subcategory">{t('new_page.field_subcategory', 'Subcategory')}
+			<HintIcon text={t('new_page.subcategory_hint', 'Optional — a nested grouping under the category.')}  />
+</label>
 			<Autocomplete
 				id="doc-edit-subcategory"
 				disabled={!editCategory.trim()}
@@ -276,8 +278,9 @@
 				<HintIcon text={t('edit.slug_hint', 'Renaming the slug changes the page URL.')} />
 			</label>
 			<div class="ef-field">
-				<label class="ef-label" for="doc-edit-parent">{t('new_page.field_parent', 'Parent page')}</label>
-				<HintIcon text={t('new_page.parent_hint', 'Optional — nest this page under another.')} />
+				<label class="ef-label" for="doc-edit-parent">{t('new_page.field_parent', 'Parent page')}
+				<HintIcon text={t('new_page.parent_hint', 'Optional — nest this page under another.')}  />
+</label>
 				<Autocomplete
 					id="doc-edit-parent"
 					placeholder={t('new_page.no_parent', '— Top level —')}

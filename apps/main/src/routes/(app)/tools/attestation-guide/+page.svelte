@@ -331,8 +331,9 @@
 				class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 			>
 				{t('geo.destination', 'Destination:')}
-			</label>
-				<HintIcon text={t('tools.attestation.dest_hint', 'Where the document will be used.')} />
+			
+				<HintIcon text={t('tools.attestation.dest_hint', 'Where the document will be used.')}  />
+</label>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('geo.select_destination', 'Select a country…')}
@@ -353,8 +354,9 @@
 				<div class="flex items-center gap-3">
 					<label for="issuing-selector" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 						{t('attestation_guide.issuing_country', 'Issuing country:')}
-					</label>
-					<HintIcon text={t('tools.attestation.issuing_hint', 'The country that issued the document.')} />
+					
+					<HintIcon text={t('tools.attestation.issuing_hint', 'The country that issued the document.')}  />
+</label>
 					<Autocomplete
 						id="issuing-selector"
 						placeholder={t('attestation_guide.any_issuing', 'Any')}
@@ -370,8 +372,9 @@
 				<div class="flex items-center gap-3">
 					<label for="doc-type" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 						{t('attestation_guide.doc_type', 'Document type:')}
-					</label>
-					<HintIcon text={t('tools.attestation.doc_hint', 'The document you need attested — e.g. birth certificate.')} />
+					
+					<HintIcon text={t('tools.attestation.doc_hint', 'The document you need attested — e.g. birth certificate.')}  />
+</label>
 					<input
 						id="doc-type"
 						type="text"

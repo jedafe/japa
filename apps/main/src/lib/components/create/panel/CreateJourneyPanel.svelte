@@ -177,8 +177,9 @@
 
 <div class="journey-panel">
 	<div class="field-row">
-		<label class="field-label" for="journey-stage">{t('create.journey.stage')}</label>
-		<HintIcon text={t('create.journey.stage_hint', 'Your current stage in the move — e.g. researching or preparing.')} />
+		<label class="field-label" for="journey-stage">{t('create.journey.stage')}
+		<HintIcon text={t('create.journey.stage_hint', 'Your current stage in the move — e.g. researching or preparing.')}  />
+</label>
 		{#if stageOptions.length > 0}
 			<Autocomplete
 				placeholder={t('create.journey.stage_placeholder')}
@@ -203,8 +204,9 @@
 	</div>
 
 	<div class="field-row">
-		<label class="field-label" for="journey-visa">{t('create.journey.visa')}</label>
-		<HintIcon text={t('create.journey.visa_hint', 'The visa route this journey is for, if known.')} />
+		<label class="field-label" for="journey-visa">{t('create.journey.visa')}
+		<HintIcon text={t('create.journey.visa_hint', 'The visa route this journey is for, if known.')}  />
+</label>
 		{#if visaOptions.length > 0}
 			<Autocomplete
 				placeholder={t('create.journey.visa_placeholder')}
@@ -230,8 +232,9 @@
 	</div>
 
 	<div class="field-row">
-		<label class="field-label" for="journey-source">{t('create.journey.source_country')}</label>
-		<HintIcon text={t('create.journey.source_hint', 'The country you are moving from.')} />
+		<label class="field-label" for="journey-source">{t('create.journey.source_country')}
+		<HintIcon text={t('create.journey.source_hint', 'The country you are moving from.')}  />
+</label>
 		<Autocomplete
 			placeholder={t('create.journey.source_country_placeholder')}
 			emptyMessage={t('create.journey.country_empty')}
@@ -245,8 +248,9 @@
 	</div>
 
 	<div class="field-row">
-		<label class="field-label" for="journey-target">{t('create.journey.target_country')}</label>
-		<HintIcon text={t('create.journey.target_hint', 'The country you are moving to.')} />
+		<label class="field-label" for="journey-target">{t('create.journey.target_country')}
+		<HintIcon text={t('create.journey.target_hint', 'The country you are moving to.')}  />
+</label>
 		<Autocomplete
 			placeholder={t('create.journey.target_country_placeholder')}
 			emptyMessage={t('create.journey.country_empty')}
@@ -260,8 +264,9 @@
 	</div>
 
 	<div class="field-row">
-		<label class="field-label" for="journey-dimension">{t('create.journey.dimension', 'Roadmap dimension')}</label>
-		<HintIcon text={t('create.journey.dimension_hint', 'What part of the roadmap this journey covers.')} />
+		<label class="field-label" for="journey-dimension">{t('create.journey.dimension', 'Roadmap dimension')}
+		<HintIcon text={t('create.journey.dimension_hint', 'What part of the roadmap this journey covers.')}  />
+</label>
 		<Autocomplete
 			id="journey-dimension"
 			placeholder={t('create.journey.dimension_placeholder', 'Select a readiness dimension')}
@@ -280,8 +285,9 @@
 	{/if}
 
 	<div class="field-row">
-		<label class="field-label" for="journey-purpose">{t('create.journey.purpose', 'Purpose')}</label>
-		<HintIcon text={t('create.journey.purpose_hint', 'The main reason — study, work, family, and so on.')} />
+		<label class="field-label" for="journey-purpose">{t('create.journey.purpose', 'Purpose')}
+		<HintIcon text={t('create.journey.purpose_hint', 'The main reason — study, work, family, and so on.')}  />
+</label>
 		{#if purposeOptions.length > 0}
 			<Autocomplete
 				id="journey-purpose"

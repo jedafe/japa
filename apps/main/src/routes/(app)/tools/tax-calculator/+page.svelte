@@ -193,8 +193,9 @@
 				<div>
 					<label for="tc-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('tax_calculator.destination', 'Destination:')}
-					</label>
-					<HintIcon text={t('tools.tax.dest_hint', 'The country you will pay tax in.')} />
+					
+					<HintIcon text={t('tools.tax.dest_hint', 'The country you will pay tax in.')}  />
+</label>
 					<div class="mt-2">
 						<Autocomplete
 							placeholder={t('geo.select_destination', 'Select a country…')}
@@ -213,8 +214,9 @@
 				<div>
 					<label for="tc-origin" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('tax_calculator.origin', 'Origin:')}
-					</label>
-					<HintIcon text={t('tools.tax.origin_hint', 'Where you are coming from — affects treaties.')} />
+					
+					<HintIcon text={t('tools.tax.origin_hint', 'Where you are coming from — affects treaties.')}  />
+</label>
 					<div class="mt-2">
 						<Autocomplete
 							placeholder={t('tax_calculator.select_origin', 'Select origin country…')}
@@ -234,8 +236,9 @@
 			<div class="flex items-center gap-3">
 				<label for="employment" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 					{t('tax_calculator.employment_status', 'Employment status:')}
-				</label>
-				<HintIcon text={t('tools.tax.employment_hint', 'Your employment situation.')} />
+				
+				<HintIcon text={t('tools.tax.employment_hint', 'Your employment situation.')}  />
+</label>
 				<AutocompleteSelect
 					id="employment"
 					value={employmentStatus}

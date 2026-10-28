@@ -325,8 +325,9 @@
 				class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 			>
 				{t('geo.destination', 'Destination:')}
-			</label>
-				<HintIcon text={t('tools.embassy.dest_hint', 'The country whose embassy alerts you want.')} />
+			
+				<HintIcon text={t('tools.embassy.dest_hint', 'The country whose embassy alerts you want.')}  />
+</label>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('geo.select_destination', 'Select a country…')}

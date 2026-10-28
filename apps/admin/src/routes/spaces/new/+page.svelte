@@ -193,8 +193,9 @@
 				<div>
 					<label for="name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.name", "Name")} <span style="color: var(--color-danger)">*</span>
-					</label>
-					<HintIcon text={t('spaces.name_hint', 'The name shown in admin lists.')} />
+					
+					<HintIcon text={t('spaces.name_hint', 'The name shown in admin lists.')}  />
+</label>
 					<input
 						id="name"
 						type="text"
@@ -208,8 +209,9 @@
 				<div>
 					<label for="slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.slug", "Slug")} <span style="color: var(--color-danger)">*</span>
-					</label>
-					<HintIcon text={t('spaces.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')} />
+					
+					<HintIcon text={t('spaces.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
+</label>
 					<input
 						id="slug"
 						type="text"
@@ -224,8 +226,9 @@
 				<div>
 					<label for="space-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.space_type", "Space Type")} <span style="color: var(--color-danger)">*</span>
-					</label>
-					<HintIcon text={t('spaces.space_type_hint', 'The kind of space — e.g. country, city, community.')} />
+					
+					<HintIcon text={t('spaces.space_type_hint', 'The kind of space — e.g. country, city, community.')}  />
+</label>
 					<Autocomplete
 						id="space-type"
 						placeholder={t("spaces.select_type", "Select a type")}
@@ -241,8 +244,9 @@
 				<div>
 					<label for="level" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.level", "Level")} <span style="color: var(--color-danger)">*</span>
-					</label>
-					<HintIcon text={t('spaces.level_hint', 'The space level in the geo hierarchy.')} />
+					
+					<HintIcon text={t('spaces.level_hint', 'The space level in the geo hierarchy.')}  />
+</label>
 					<Autocomplete
 						id="level"
 						placeholder={t("spaces.level", "Level")}
@@ -258,8 +262,9 @@
 				<div>
 					<label for="parent-id" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.parent_id", "Parent Space")}
-					</label>
-					<HintIcon text={t('spaces.parent_id_hint', 'The parent space this nests under.')} />
+					
+					<HintIcon text={t('spaces.parent_id_hint', 'The parent space this nests under.')}  />
+</label>
 					<Autocomplete
 						id="parent-id"
 						placeholder={t("spaces.parent_placeholder", "Search primary spaces")}
@@ -274,8 +279,9 @@
 				<div>
 					<label for="preset-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t("spaces.preset_name", "Permission Preset")}
-					</label>
-					<HintIcon text={t('spaces.preset_name_hint', 'A starter preset — prefills type and settings.')} />
+					
+					<HintIcon text={t('spaces.preset_name_hint', 'A starter preset — prefills type and settings.')}  />
+</label>
 					<Autocomplete
 						id="preset-name"
 						placeholder={t("spaces.preset_none", "None (use defaults)")}
@@ -292,8 +298,9 @@
 			<div>
 				<label for="description" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 					{t("spaces.description", "Description")}
-				</label>
-				<HintIcon text={t('spaces.description_hint', 'Short description shown on the record.')} />
+				
+				<HintIcon text={t('spaces.description_hint', 'Short description shown on the record.')}  />
+</label>
 				<textarea
 					id="description"
 					class="w-full rounded-lg border px-3 py-2 text-sm"

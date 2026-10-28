@@ -235,8 +235,9 @@
 					{#if currentTab.requiresUrl}
 						<label for="source_url" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.source_url', 'YouTube URL')}
-						</label>
-						<HintIcon text={t('studio.videos.url_hint', 'Paste a YouTube video URL to import.')} />
+						
+						<HintIcon text={t('studio.videos.url_hint', 'Paste a YouTube video URL to import.')}  />
+</label>
 						<input
 							id="source_url"
 							name="source_url"
@@ -248,8 +249,9 @@
 					{:else}
 						<label for="query" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.query', 'Search keyword')}
-						</label>
-						<HintIcon text={t('studio.videos.query_hint', 'A keyword or phrase to search for.')} />
+						
+						<HintIcon text={t('studio.videos.query_hint', 'A keyword or phrase to search for.')}  />
+</label>
 						<input
 							id="query"
 							name="query"
@@ -267,8 +269,9 @@
 					<div>
 						<label for="target_username" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.target_username', 'Target username (optional)')}
-						</label>
-						<HintIcon text={t('studio.videos.username_hint', 'The account handle to pull videos from.')} />
+						
+						<HintIcon text={t('studio.videos.username_hint', 'The account handle to pull videos from.')}  />
+</label>
 						<input
 							id="target_username"
 							name="target_username"

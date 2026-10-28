@@ -181,8 +181,9 @@
 			<div>
 				<label for="pt-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 					{t('processing_tracker.destination', 'Destination country')}
-				</label>
-				<HintIcon text={t('tools.pt.dest_hint', 'The country you applied to.')} />
+				
+				<HintIcon text={t('tools.pt.dest_hint', 'The country you applied to.')}  />
+</label>
 				<div class="mt-2">
 					<SelectField
 						id="pt-dest"
@@ -204,8 +205,9 @@
 						class="block text-sm font-medium text-[var(--color-text)] mb-1"
 					>
 						{t('processing_tracker.visa_category', 'Visa category')}
-					</label>
-						<HintIcon text={t('tools.pt.category_hint', 'The visa class you applied under.')} />
+					
+						<HintIcon text={t('tools.pt.category_hint', 'The visa class you applied under.')}  />
+</label>
 					<input
 						id="visa-category"
 						type="text"
@@ -224,8 +226,9 @@
 						class="block text-sm font-medium text-[var(--color-text)] mb-1"
 					>
 						{t('processing_tracker.origin', 'Origin country (optional)')}
-					</label>
-						<HintIcon text={t('tools.pt.origin_hint', 'The country you applied from.')} />
+					
+						<HintIcon text={t('tools.pt.origin_hint', 'The country you applied from.')}  />
+</label>
 					<SelectField
 						id="origin-dest"
 						value={originDest}

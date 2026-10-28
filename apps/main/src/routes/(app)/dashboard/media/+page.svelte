@@ -756,8 +756,9 @@
 	{#snippet children(close)}
 			<div class="space-y-3">
 				<div>
-					<label for="edit-alt" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_alt')}</label>
-					<HintIcon text={t('media.alt_hint', 'Describes the image for screen readers and SEO.')} />
+					<label for="edit-alt" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_alt')}
+					<HintIcon text={t('media.alt_hint', 'Describes the image for screen readers and SEO.')}  />
+</label>
 					<input
 						id="edit-alt"
 						type="text"
@@ -766,8 +767,9 @@
 					/>
 				</div>
 				<div>
-					<label for="edit-caption" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_caption')}</label>
-					<HintIcon text={t('media.caption_hint', 'Optional caption shown under the media.')} />
+					<label for="edit-caption" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_caption')}
+					<HintIcon text={t('media.caption_hint', 'Optional caption shown under the media.')}  />
+</label>
 					<input
 						id="edit-caption"
 						type="text"

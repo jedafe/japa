@@ -171,8 +171,9 @@
 	<div class="flex items-center gap-2">
 		<label for="date-from" class="text-sm" style="color: var(--color-muted)">
 			{t('common.from', 'From')}
-		</label>
-		<HintIcon text={t('academy.date_from_hint', 'Start of the date range.')} />
+		
+		<HintIcon text={t('academy.date_from_hint', 'Start of the date range.')}  />
+</label>
 		<input
 			id="date-from"
 			type="date"
@@ -185,8 +186,9 @@
 	<div class="flex items-center gap-2">
 		<label for="date-to" class="text-sm" style="color: var(--color-muted)">
 			{t('common.to', 'To')}
-		</label>
-		<HintIcon text={t('academy.date_to_hint', 'End of the date range.')} />
+		
+		<HintIcon text={t('academy.date_to_hint', 'End of the date range.')}  />
+</label>
 		<input
 			id="date-to"
 			type="date"

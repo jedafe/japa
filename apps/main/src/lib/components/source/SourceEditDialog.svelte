@@ -77,8 +77,9 @@
 <Modal bind:open onOpenChange={(v) => { if (!v) close(); }} icon={Pencil} title={t('sources.edit.title', 'Edit source')} size="md">
 			<div class="flex flex-col gap-3">
 				<div class="flex flex-col gap-1">
-					<label for="source-name" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.name', 'Name')}</label>
-					<HintIcon text={t('sources.edit.name_hint', 'The official name of the source.')} />
+					<label for="source-name" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.name', 'Name')}
+					<HintIcon text={t('sources.edit.name_hint', 'The official name of the source.')}  />
+</label>
 					<input
 						id="source-name"
 						type="text"
@@ -88,8 +89,9 @@
 				</div>
 
 				<div class="flex flex-col gap-1">
-					<label for="source-description" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.description', 'Description')}</label>
-					<HintIcon text={t('sources.edit.desc_hint', 'What this source covers.')} />
+					<label for="source-description" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.description', 'Description')}
+					<HintIcon text={t('sources.edit.desc_hint', 'What this source covers.')}  />
+</label>
 					<textarea
 						id="source-description"
 						bind:value={description}
@@ -99,8 +101,9 @@
 				</div>
 
 				<div class="flex flex-col gap-1">
-					<label for="source-url" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.source_url', 'Source URL')}</label>
-					<HintIcon text={t('sources.edit.url_hint', 'The main URL the source is fetched from.')} />
+					<label for="source-url" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.source_url', 'Source URL')}
+					<HintIcon text={t('sources.edit.url_hint', 'The main URL the source is fetched from.')}  />
+</label>
 					<input
 						id="source-url"
 						type="url"
@@ -113,8 +116,9 @@
 				</div>
 
 				<div class="flex flex-col gap-1">
-					<label for="source-logo" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.logo_url', 'Logo URL')}</label>
-					<HintIcon text={t('sources.edit.logo_hint', 'Direct image URL for the source logo.')} />
+					<label for="source-logo" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.logo_url', 'Logo URL')}
+					<HintIcon text={t('sources.edit.logo_hint', 'Direct image URL for the source logo.')}  />
+</label>
 					<input
 						id="source-logo"
 						type="url"

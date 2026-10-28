@@ -277,8 +277,9 @@
 			<div>
 				<label for="title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.title_label', 'Title')}
-				</label>
-				<HintIcon text={t('academy.title_hint', 'The course title learners see in listings.')} />
+				
+				<HintIcon text={t('academy.title_hint', 'The course title learners see in listings.')}  />
+</label>
 				<input
 					id="title"
 					type="text"
@@ -293,8 +294,9 @@
 			<div>
 				<label for="description" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.description_label', 'Description')}
-				</label>
-				<HintIcon text={t('academy.description_hint', 'A short summary shown on the track page.')} />
+				
+				<HintIcon text={t('academy.description_hint', 'A short summary shown on the track page.')}  />
+</label>
 				<textarea
 					id="description"
 					bind:value={description}
@@ -308,8 +310,9 @@
 			<div>
 				<label for="difficulty" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.difficulty_label', 'Difficulty')}
-				</label>
-				<HintIcon text={t('academy.difficulty_hint', 'The level learners need — beginner, intermediate, advanced.')} />
+				
+				<HintIcon text={t('academy.difficulty_hint', 'The level learners need — beginner, intermediate, advanced.')}  />
+</label>
 				<AutocompleteSelect
 					id="difficulty"
 					bind:value={difficulty}
@@ -322,8 +325,9 @@
 			<div>
 				<label for="price" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.price_label', 'Price')}
-				</label>
-				<HintIcon text={t('academy.price_hint', 'Price in the chosen currency — leave 0 for free.')} />
+				
+				<HintIcon text={t('academy.price_hint', 'Price in the chosen currency — leave 0 for free.')}  />
+</label>
 				<input
 					id="price"
 					type="number"
@@ -342,8 +346,9 @@
 			<div>
 				<label for="country" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.track_country_label', 'Country / primary market')}
-				</label>
-				<HintIcon text={t('academy.track_country_hint', 'The country this track content targets.')} />
+				
+				<HintIcon text={t('academy.track_country_hint', 'The country this track content targets.')}  />
+</label>
 				<Autocomplete
 					id="country"
 					placeholder={t('academy.track_country_placeholder', 'Search countries…')}
@@ -362,8 +367,9 @@
 			<div>
 				<label for="currency" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.currency_label', 'Currency')}
-				</label>
-				<HintIcon text={t('academy.currency_hint', 'The currency the price is charged in.')} />
+				
+				<HintIcon text={t('academy.currency_hint', 'The currency the price is charged in.')}  />
+</label>
 				{#if currencyOptions.length > 0}
 					<AutocompleteSelect
 						id="currency"
@@ -423,8 +429,9 @@
 				<div>
 					<label for="subscription-eligible" class="block text-sm font-medium text-[var(--color-text)]">
 						{t('academy.track_subscription_eligible_label', 'Subscription eligible')}
-					</label>
-					<HintIcon text={t('academy.track_subscription_eligible_hint', 'Allow subscribers to access this course as part of their plan. You earn a stream-rate revenue share when they enroll.')} />
+					
+					<HintIcon text={t('academy.track_subscription_eligible_hint', 'Allow subscribers to access this course as part of their plan. You earn a stream-rate revenue share when they enroll.')}  />
+</label>
 				</div>
 			</div>
 

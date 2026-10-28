@@ -330,16 +330,18 @@
 				<div>
 					<label for="ad-name" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.campaign_name', 'Campaign Name')}
-					</label>
-					<HintIcon text={t('org_ads.name_hint', 'Internal name for this campaign — not shown to users.')} />
+					
+					<HintIcon text={t('org_ads.name_hint', 'Internal name for this campaign — not shown to users.')}  />
+</label>
 					<input id="ad-name" class={inputClass} type="text" bind:value={formName} required />
 				</div>
 
 				<div>
 					<label for="ad-slot" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.slot_type', 'Ad Slot')}
-					</label>
-					<HintIcon text={t('org_ads.slot_hint', 'Where the ad appears — feed, sidebar, banner.')} />
+					
+					<HintIcon text={t('org_ads.slot_hint', 'Where the ad appears — feed, sidebar, banner.')}  />
+</label>
 					<AutocompleteSelect
 						id="ad-slot"
 						bind:value={formSlotTypeId}
@@ -356,8 +358,9 @@
 				<div>
 					<label for="ad-duration" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.duration_days', 'Duration (days)')}
-					</label>
-					<HintIcon text={t('org_ads.duration_hint', 'How many days the campaign runs.')} />
+					
+					<HintIcon text={t('org_ads.duration_hint', 'How many days the campaign runs.')}  />
+</label>
 					<input
 						id="ad-duration"
 						class={inputClass}
@@ -371,64 +374,72 @@
 				<div>
 					<label for="ad-start" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.start_date', 'Start Date')}
-					</label>
-					<HintIcon text={t('org_ads.start_hint', 'When the campaign begins.')} />
+					
+					<HintIcon text={t('org_ads.start_hint', 'When the campaign begins.')}  />
+</label>
 					<input id="ad-start" class={inputClass} type="date" bind:value={formStartDate} />
 				</div>
 
 				<div class="md:col-span-2">
 					<label for="ad-headline" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.headline', 'Headline')} *
-					</label>
-					<HintIcon text={t('org_ads.headline_hint', 'The main text users see.')} />
+					
+					<HintIcon text={t('org_ads.headline_hint', 'The main text users see.')}  />
+</label>
 					<input id="ad-headline" class={inputClass} type="text" bind:value={formHeadline} required />
 				</div>
 
 				<div class="md:col-span-2">
 					<label for="ad-body" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.body', 'Body text')}
-					</label>
-					<HintIcon text={t('org_ads.body_hint', 'Supporting copy under the headline.')} />
+					
+					<HintIcon text={t('org_ads.body_hint', 'Supporting copy under the headline.')}  />
+</label>
 					<textarea id="ad-body" class={inputClass} rows="3" bind:value={formBody}></textarea>
 				</div>
 
 				<div>
 					<label for="ad-cta" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.cta', 'Call to action')}
-					</label>
-					<HintIcon text={t('org_ads.cta_hint', 'The button text — e.g. Learn More.')} />
+					
+					<HintIcon text={t('org_ads.cta_hint', 'The button text — e.g. Learn More.')}  />
+</label>
 					<input id="ad-cta" class={inputClass} type="text" bind:value={formCta} placeholder={t('org_ads.cta_ph', 'Learn More')} />
 				</div>
 
 				<div>
 					<label for="ad-image" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.image_url', 'Image URL')}
-					</label>
-					<HintIcon text={t('org_ads.image_hint', 'Direct image URL for the creative.')} />
+					
+					<HintIcon text={t('org_ads.image_hint', 'Direct image URL for the creative.')}  />
+</label>
 					<input id="ad-image" class={inputClass} type="url" bind:value={formImageUrl} placeholder="https://..." />
 				</div>
 
 				<div>
 					<label for="ad-geo" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.target_geo', 'Target countries (ISO codes, comma-separated)')}
-					</label>
-					<HintIcon text={t('org_ads.geo_hint', 'Country codes to target — e.g. NG, GB, US.')} />
+					
+					<HintIcon text={t('org_ads.geo_hint', 'Country codes to target — e.g. NG, GB, US.')}  />
+</label>
 					<input id="ad-geo" class={inputClass} type="text" bind:value={formTargetGeo} placeholder="NG, GB, US" />
 				</div>
 
 				<div>
 					<label for="ad-freq" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.freq_cap', 'Frequency cap / user / day')}
-					</label>
-					<HintIcon text={t('org_ads.freq_hint', 'How often the ad shows per viewer.')} />
+					
+					<HintIcon text={t('org_ads.freq_hint', 'How often the ad shows per viewer.')}  />
+</label>
 					<input id="ad-freq" class={inputClass} type="number" min="0" bind:value={formFreqCap} />
 				</div>
 
 				<div>
 					<label for="ad-url" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.target_url', 'Target URL')}
-					</label>
-					<HintIcon text={t('org_ads.url_hint', 'Where clicks land.')} />
+					
+					<HintIcon text={t('org_ads.url_hint', 'Where clicks land.')}  />
+</label>
 					<input
 						id="ad-url"
 						class={inputClass}

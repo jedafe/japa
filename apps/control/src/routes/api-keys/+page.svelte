@@ -732,8 +732,9 @@
 				<div>
 					<label for="create-name" class="text-foreground block text-sm font-medium">
 						{t('api_keys.name')} <span class="text-destructive">*</span>
-					</label>
-					<HintIcon text={t('api_keys.name_hint', 'A label so you remember what this key is for.')} />
+					
+					<HintIcon text={t('api_keys.name_hint', 'A label so you remember what this key is for.')}  />
+</label>
 					<input
 						id="create-name"
 						type="text"
@@ -746,8 +747,9 @@
 				<div>
 					<label for="create-scopes" class="text-foreground block text-sm font-medium">
 						{t('api_keys.scopes')}
-					</label>
-					<HintIcon text={t('api_keys.scopes_hint', 'The API endpoints this key can access — pick each permission it needs.')} />
+					
+					<HintIcon text={t('api_keys.scopes_hint', 'The API endpoints this key can access — pick each permission it needs.')}  />
+</label>
 					<div class="mt-1 flex flex-wrap gap-1.5">
 						{#each createForm.scopes as scope}
 							<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium">
@@ -773,8 +775,9 @@
 				<div>
 					<label for="create-tier" class="text-foreground block text-sm font-medium">
 						{t('api_keys.rate_limit_tier')}
-					</label>
-					<HintIcon text={t('api_keys.tier_hint', 'The rate-limit tier for this key.')} />
+					
+					<HintIcon text={t('api_keys.tier_hint', 'The rate-limit tier for this key.')}  />
+</label>
 					<AutocompleteSelect
 						bind:value={createForm.rate_limit_tier}
 						options={tierOptions}

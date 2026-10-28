@@ -389,8 +389,9 @@
 				class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 			>
 				{t('geo.destination', 'Destination:')}
-			</label>
-				<HintIcon text={t('tools.community.dest_hint', 'The country or city to find communities in.')} />
+			
+				<HintIcon text={t('tools.community.dest_hint', 'The country or city to find communities in.')}  />
+</label>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('geo.select_destination', 'Select a country…')}

@@ -804,13 +804,15 @@
 <Modal bind:open={showWidgetModal} title={editingWidget ? t("sidebars.edit_widget", "Edit Widget") : t("sidebars.add_widget", "Add Widget")}>
 	<div class="space-y-4">
 		<div>
-			<label for="widget-label" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_label", "Label")}</label>
-			<HintIcon text={t('admin.label_hint', 'The display label shown to users.')} />
+			<label for="widget-label" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_label", "Label")}
+			<HintIcon text={t('admin.label_hint', 'The display label shown to users.')}  />
+</label>
 			<input id="widget-label" type="text" bind:value={widgetLabel} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('sidebars.ph_eg_trending_tags', 'e.g., Trending Tags')} />
 		</div>
 		<div>
-			<label for="widget-type" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_type", "Widget Type")}</label>
-			<HintIcon text={t('admin.type_hint', 'The type — controls how it’s handled.')} />
+			<label for="widget-type" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_type", "Widget Type")}
+			<HintIcon text={t('admin.type_hint', 'The type — controls how it’s handled.')}  />
+</label>
 			<AutocompleteSelect
 				id="widget-type"
 				options={availableWidgetTypes.map((wt) => ({ value: wt.type, label: wt.name, sublabel: wt.description }))}
@@ -918,15 +920,17 @@
 			<p class="text-xs" style="color: var(--color-muted)">{t("sidebars.no_widget_props", "This widget has no configurable options.")}</p>
 		{:else}
 			<div>
-				<label for="widget-props" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_props_json", "Props (JSON)")}</label>
-			<HintIcon text={t('admin.props_hint', 'Widget props — set the fields this widget type needs.')} />
+				<label for="widget-props" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_props_json", "Props (JSON)")}
+			<HintIcon text={t('admin.props_hint', 'Widget props — set the fields this widget type needs.')}  />
+</label>
 				<textarea id="widget-props" bind:value={widgetProps} rows="6" class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={'{}'}></textarea>
 			</div>
 		{/if}
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="widget-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.visibility", "Visibility")}</label>
-			<HintIcon text={t('admin.visibility_hint', 'Who can see this — public, members only, or private.')} />
+				<label for="widget-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.visibility", "Visibility")}
+			<HintIcon text={t('admin.visibility_hint', 'Who can see this — public, members only, or private.')}  />
+</label>
 				<AutocompleteSelect
 					id="widget-visibility"
 					options={visibilityOptions}
@@ -935,8 +939,9 @@
 				/>
 			</div>
 			<div>
-				<label for="widget-status" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
-			<HintIcon text={t('admin.status_hint', 'The record state — controls visibility and actions.')} />
+				<label for="widget-status" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}
+			<HintIcon text={t('admin.status_hint', 'The record state — controls visibility and actions.')}  />
+</label>
 				<AutocompleteSelect
 					id="widget-status"
 					options={statusOptions}
@@ -1114,19 +1119,22 @@
 	).slice(0, 10)}
 	<div class="space-y-4">
 		<div>
-			<label for="sidebar-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.name", "Name")}</label>
-			<HintIcon text={t('admin.name_hint', 'The name shown in admin lists and on the site where public.')} />
+			<label for="sidebar-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.name", "Name")}
+			<HintIcon text={t('admin.name_hint', 'The name shown in admin lists and on the site where public.')}  />
+</label>
 			<input id="sidebar-name" type="text" bind:value={value.name} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('sidebars.ph_eg_dashboard_right', 'e.g., Dashboard Right')} />
 		</div>
 		<div>
-			<label for="sidebar-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.slug", "Slug")}</label>
-			<HintIcon text={t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')} />
+			<label for="sidebar-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.slug", "Slug")}
+			<HintIcon text={t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
+</label>
 			<input id="sidebar-slug" type="text" bind:value={value.slug} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="dashboard-right" />
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="sidebar-app" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.app", "App")}</label>
-			<HintIcon text={t('admin.app_hint', 'Which app surface this applies to.')} />
+				<label for="sidebar-app" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.app", "App")}
+			<HintIcon text={t('admin.app_hint', 'Which app surface this applies to.')}  />
+</label>
 				<AutocompleteSelect
 					id="sidebar-app"
 					options={appOptions}
@@ -1135,8 +1143,9 @@
 				/>
 			</div>
 			<div>
-				<label for="sidebar-position" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.position", "Position")}</label>
-			<HintIcon text={t('admin.position_hint', 'Ordering position — lower numbers show first.')} />
+				<label for="sidebar-position" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.position", "Position")}
+			<HintIcon text={t('admin.position_hint', 'Ordering position — lower numbers show first.')}  />
+</label>
 				<AutocompleteSelect
 					id="sidebar-position"
 					options={positionOptions}
@@ -1146,15 +1155,17 @@
 			</div>
 		</div>
 		<div>
-			<label for="sidebar-pattern" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.page_pattern", "Page Pattern")}</label>
-			<HintIcon text={t('admin.pattern_hint', 'A matching pattern — regex or wildcard.')} />
+			<label for="sidebar-pattern" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.page_pattern", "Page Pattern")}
+			<HintIcon text={t('admin.pattern_hint', 'A matching pattern — regex or wildcard.')}  />
+</label>
 			<input id="sidebar-pattern" type="text" bind:value={value.page_pattern} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="*" />
 			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t("sidebars.page_pattern_hint", "Glob pattern. * matches all pages. /dashboard matches only that page. /u/* matches all profile pages.")}</p>
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="sidebar-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.visibility", "Visibility")}</label>
-			<HintIcon text={t('admin.visibility_hint', 'Who can see this — public, members only, or private.')} />
+				<label for="sidebar-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.visibility", "Visibility")}
+			<HintIcon text={t('admin.visibility_hint', 'Who can see this — public, members only, or private.')}  />
+</label>
 				<AutocompleteSelect
 					id="sidebar-visibility"
 					options={visibilityOptions}
@@ -1163,8 +1174,9 @@
 				/>
 			</div>
 			<div>
-				<label for="sidebar-status" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
-			<HintIcon text={t('admin.status_hint', 'The record state — controls visibility and actions.')} />
+				<label for="sidebar-status" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}
+			<HintIcon text={t('admin.status_hint', 'The record state — controls visibility and actions.')}  />
+</label>
 				<AutocompleteSelect
 					id="sidebar-status"
 					options={statusOptions}

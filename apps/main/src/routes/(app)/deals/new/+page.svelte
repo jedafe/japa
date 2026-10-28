@@ -178,8 +178,9 @@
 
 			{#if data.orgs.length > 1}
 				<div>
-					<label for="deal-org" class={labelClass}>{t('deals.org_picker', 'Submitting as')}</label>
-					<HintIcon text={t('deals.org_hint', 'Submit this deal on behalf of an organization you manage.')} />
+					<label for="deal-org" class={labelClass}>{t('deals.org_picker', 'Submitting as')}
+					<HintIcon text={t('deals.org_hint', 'Submit this deal on behalf of an organization you manage.')}  />
+</label>
 					<AutocompleteSelect
 						id="deal-org"
 						bind:value={selectedOrgId}

@@ -244,8 +244,9 @@
 		<div class="border-b border-[var(--color-border)] px-4 py-3">
 			<label for="cvf-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('cv_formatter.select_destination', 'Destination')}
-			</label>
-			<HintIcon text={t('tools.cv.dest_hint', 'CV conventions differ by country — pick yours.')} />
+			
+			<HintIcon text={t('tools.cv.dest_hint', 'CV conventions differ by country — pick yours.')}  />
+</label>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('cv_formatter.select_destination_placeholder', 'Select destination country')}
@@ -347,8 +348,9 @@
 					<div class="flex items-center gap-3">
 						<label for="output-format" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 							{t('cv_formatter.output_format', 'Format:')}
-						</label>
-						<HintIcon text={t('tools.cv.format_hint', 'The file format for the formatted CV.')} />
+						
+						<HintIcon text={t('tools.cv.format_hint', 'The file format for the formatted CV.')}  />
+</label>
 						<AutocompleteSelect
 							id="output-format"
 							bind:value={outputFormat}

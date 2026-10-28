@@ -553,8 +553,9 @@
 		<div class="flex items-start gap-2">
 			<input id="rule-one-time" type="checkbox" bind:checked={ruleForm.one_time} class="h-4 w-4 rounded border" />
 			<div class="text-sm">
-				<label for="rule-one-time" class="font-medium">{t('app.wallet.one_time', 'One-time award')}</label>
-				<HintIcon text={t('app.wallet.one_time_hint', 'Only the first matching activity per user awards points.')} />
+				<label for="rule-one-time" class="font-medium">{t('app.wallet.one_time', 'One-time award')}
+				<HintIcon text={t('app.wallet.one_time_hint', 'Only the first matching activity per user awards points.')}  />
+</label>
 			</div>
 		</div>
 	</div>

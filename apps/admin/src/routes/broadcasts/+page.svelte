@@ -246,18 +246,21 @@
 <Modal bind:open={showCreateModal} title={t('broadcasts.new_broadcast', 'New Broadcast')} description={t('broadcasts.create_description', 'Create and send a broadcast message')} size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="bc-title" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.title_label', 'Title')}</label>
-			<HintIcon text={t('broadcasts.bc_title_hint', 'The broadcast title admins see.')} />
+			<label for="bc-title" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.title_label', 'Title')}
+			<HintIcon text={t('broadcasts.bc_title_hint', 'The broadcast title admins see.')}  />
+</label>
 			<input id="bc-title" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('broadcasts.placeholder_title', 'e.g. Platform Maintenance Notice')} bind:value={newBroadcast.title} />
 		</div>
 		<div>
-			<label for="bc-body" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.message_label', 'Message')}</label>
-			<HintIcon text={t('broadcasts.bc_body_hint', 'The message sent to the audience.')} />
+			<label for="bc-body" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.message_label', 'Message')}
+			<HintIcon text={t('broadcasts.bc_body_hint', 'The message sent to the audience.')}  />
+</label>
 			<textarea id="bc-body" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" rows="5" placeholder={t('broadcasts.placeholder_message', 'Write your broadcast message...')} bind:value={newBroadcast.body}></textarea>
 		</div>
 		<div>
-			<label for="bc-audience" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.target_audience_label', 'Target Audience')}</label>
-			<HintIcon text={t('broadcasts.bc_audience_hint', 'Who receives this broadcast.')} />
+			<label for="bc-audience" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.target_audience_label', 'Target Audience')}
+			<HintIcon text={t('broadcasts.bc_audience_hint', 'Who receives this broadcast.')}  />
+</label>
 			<Select options={audienceOptions} bind:value={newBroadcast.target_audience} />
 		</div>
 		<div class="flex justify-end gap-3 pt-2">

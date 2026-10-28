@@ -417,13 +417,15 @@
 	{#if editTarget}
 		<div class="space-y-4">
 			<div>
-				<label for="edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.name')}</label>
-				<HintIcon text={t('spaces.edit_name_hint', 'The name shown in admin lists.')} />
+				<label for="edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.name')}
+				<HintIcon text={t('spaces.edit_name_hint', 'The name shown in admin lists.')}  />
+</label>
 				<input id="edit-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editName} />
 			</div>
 			<div>
-				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.visibility')}</label>
-				<HintIcon text={t('spaces.edit_type_hint', 'The type — controls how it is handled.')} />
+				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.visibility')}
+				<HintIcon text={t('spaces.edit_type_hint', 'The type — controls how it is handled.')}  />
+</label>
 				<Autocomplete
 					id="edit-type"
 					placeholder={t("spaces.visibility", "Visibility")}

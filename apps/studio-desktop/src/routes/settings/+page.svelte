@@ -372,8 +372,9 @@
 					update('autoSync', (event.currentTarget as HTMLInputElement).checked)}
 			/>
 			<span>Enable auto-sync</span>
-		</label>
-					<HintIcon text='Automatically sync new posts when you save.' />
+		
+					<HintIcon text='Automatically sync new posts when you save.'  />
+</label>
 
 		{#if settings.autoSync}
 			<div class="rounded-lg border border-border bg-surface p-3">

@@ -37,8 +37,9 @@
 <div class="settings-panel">
 	<!-- Slug -->
 	<div class="field-row">
-		<label class="field-label" for="settings-slug">{t('create.label.slug')}</label>
-		<HintIcon text={t('create.settings.slug_hint', 'The URL path for this content — lowercase, hyphens, no spaces.')} />
+		<label class="field-label" for="settings-slug">{t('create.label.slug')}
+		<HintIcon text={t('create.settings.slug_hint', 'The URL path for this content — lowercase, hyphens, no spaces.')}  />
+</label>
 		<input
 			id="settings-slug"
 			type="text"
@@ -68,8 +69,9 @@
 
 	<!-- Canonical URL -->
 	<div class="field-row">
-		<label class="field-label" for="settings-canonical">{t('create.label.canonical_url')}</label>
-		<HintIcon text={t('create.settings.canonical_hint', 'Optional — the preferred URL search engines should index.')} />
+		<label class="field-label" for="settings-canonical">{t('create.label.canonical_url')}
+		<HintIcon text={t('create.settings.canonical_hint', 'Optional — the preferred URL search engines should index.')}  />
+</label>
 		<input
 			id="settings-canonical"
 			type="url"
@@ -85,8 +87,9 @@
 
 	<!-- Publish at -->
 	<div class="field-row">
-		<label class="field-label" for="settings-publishat">{t('create.label.publish_at')}</label>
-		<HintIcon text={t('create.settings.publish_at_hint', 'Leave blank to publish immediately.')} />
+		<label class="field-label" for="settings-publishat">{t('create.label.publish_at')}
+		<HintIcon text={t('create.settings.publish_at_hint', 'Leave blank to publish immediately.')}  />
+</label>
 		<input
 			id="settings-publishat"
 			type="datetime-local"

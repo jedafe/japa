@@ -208,8 +208,9 @@
 				<div>
 					<label for="destination_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_destination', 'Destination country')} <span class="text-red-500" aria-hidden="true">*</span>
-					</label>
-					<HintIcon text={t('calendar.new.destination_hint', 'The country this event applies to.')} />
+					
+					<HintIcon text={t('calendar.new.destination_hint', 'The country this event applies to.')}  />
+</label>
 					<Autocomplete
 						placeholder={t('calendar.new.placeholder_destination', 'Select a country')}
 						emptyMessage={t('common.no_results', 'No results found')}
@@ -224,8 +225,9 @@
 				<div>
 					<label for="origin_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_origin', 'Origin country (optional)')}
-					</label>
-					<HintIcon text={t('calendar.new.origin_hint', 'Optional — restrict to a specific origin country.')} />
+					
+					<HintIcon text={t('calendar.new.origin_hint', 'Optional — restrict to a specific origin country.')}  />
+</label>
 					<Autocomplete
 						placeholder={t('calendar.new.placeholder_origin', 'Leave blank for all origins')}
 						emptyMessage={t('common.no_results', 'No results found')}
@@ -243,8 +245,9 @@
 			<div>
 				<label for="title" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_title', 'Title')} <span class="text-red-500" aria-hidden="true">*</span>
-				</label>
-				<HintIcon text={t('calendar.new.title_hint', 'A short event name shown on the calendar.')} />
+				
+				<HintIcon text={t('calendar.new.title_hint', 'A short event name shown on the calendar.')}  />
+</label>
 				<input
 					id="title"
 					type="text"
@@ -259,8 +262,9 @@
 			<div>
 				<label for="category" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_category', 'Category')}
-				</label>
-				<HintIcon text={t('calendar.new.category_hint', 'What kind of event — deadline, window, meetup.')} />
+				
+				<HintIcon text={t('calendar.new.category_hint', 'What kind of event — deadline, window, meetup.')}  />
+</label>
 				<AutocompleteSelect
 					id="category"
 					value={category}
@@ -290,15 +294,17 @@
 				<div>
 					<label for="occurs_at" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_occurs_at', 'Starts')} <span class="text-red-500" aria-hidden="true">*</span>
-					</label>
-					<HintIcon text={t('calendar.new.occurs_hint', 'When the event starts (your local time).')} />
+					
+					<HintIcon text={t('calendar.new.occurs_hint', 'When the event starts (your local time).')}  />
+</label>
 					<input id="occurs_at" type="datetime-local" bind:value={occursAt} class={inputClass} />
 				</div>
 				<div>
 					<label for="ends_at" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_ends_at', 'Ends (optional)')}
-					</label>
-					<HintIcon text={t('calendar.new.ends_hint', 'Optional — when the event ends.')} />
+					
+					<HintIcon text={t('calendar.new.ends_hint', 'Optional — when the event ends.')}  />
+</label>
 					<input id="ends_at" type="datetime-local" bind:value={endsAt} class={inputClass} />
 				</div>
 			</div>
@@ -324,8 +330,9 @@
 			<div>
 				<label for="source_url" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_source', 'Official source URL')} <span class="text-red-500" aria-hidden="true">*</span>
-				</label>
-				<HintIcon text={t('calendar.new.source_hint', 'Link to the official announcement — required for verification.')} />
+				
+				<HintIcon text={t('calendar.new.source_hint', 'Link to the official announcement — required for verification.')}  />
+</label>
 				<input
 					id="source_url"
 					type="url"

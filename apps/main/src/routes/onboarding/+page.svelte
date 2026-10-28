@@ -411,8 +411,9 @@
 							onSelect={(item) => (selectedCountry = item.id)}
 							onClear={() => (selectedCountry = '')}
 						/>
-						</label>
-							<HintIcon text={t('onboarding.country_hint', 'The country you live in now.')} />
+						
+							<HintIcon text={t('onboarding.country_hint', 'The country you live in now.')}  />
+</label>
 						{#if data.geoContext?.is_valid}
 							<p class="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted)]">
 								<MapPin size={11} /> {t('onboarding.geo_detected', 'Detected: {country}').replace('{country}', data.geoContext.country_name)}

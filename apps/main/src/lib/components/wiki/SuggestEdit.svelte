@@ -589,8 +589,9 @@
 											<div class="flex flex-col gap-1">
 												<label for="pf-label" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_label', 'Field label')}
-												</label>
-												<HintIcon text={t('wiki.suggest.label_hint', 'The human-readable name shown to readers.')} />
+												
+												<HintIcon text={t('wiki.suggest.label_hint', 'The human-readable name shown to readers.')}  />
+</label>
 												<input
 													id="pf-label"
 													type="text"
@@ -602,8 +603,9 @@
 											<div class="flex flex-col gap-1">
 												<label for="pf-key" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_key', 'Field key')}
-												</label>
-												<HintIcon text={t('wiki.suggest.key_hint', 'The internal key — lowercase, no spaces.')} />
+												
+												<HintIcon text={t('wiki.suggest.key_hint', 'The internal key — lowercase, no spaces.')}  />
+</label>
 												<input
 													id="pf-key"
 													type="text"
@@ -615,8 +617,9 @@
 											<div class="flex flex-col gap-1">
 												<label for="pf-type" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_type', 'Field type')}
-												</label>
-												<HintIcon text={t('wiki.suggest.type_hint', 'The kind of value — text, date, number.')} />
+												
+												<HintIcon text={t('wiki.suggest.type_hint', 'The kind of value — text, date, number.')}  />
+</label>
 												<AutocompleteSelect
 													id="pf-type"
 													bind:value={pfType}
@@ -627,8 +630,9 @@
 												<div class="flex flex-col gap-1">
 													<label for="pf-options" class="text-xs font-medium text-[var(--color-text)]">
 														{t('wiki.propose_options', 'Options')}{#if pfOptionsRequired}<span class="text-red-500">*</span>{/if}
-													</label>
-													<HintIcon text={t('wiki.suggest.options_hint', 'Allowed values, comma-separated.')} />
+													
+													<HintIcon text={t('wiki.suggest.options_hint', 'Allowed values, comma-separated.')}  />
+</label>
 													<input
 														id="pf-options"
 														type="text"

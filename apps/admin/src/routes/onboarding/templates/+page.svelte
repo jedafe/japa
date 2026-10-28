@@ -240,8 +240,9 @@
 		<div>
 			<label for="tpl-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.name', 'Name')} <span style="color: var(--color-danger)">*</span>
-			</label>
-			<HintIcon text={t('onboarding.templates.name_hint', 'The name shown in admin lists and on the site where public.')} />
+			
+			<HintIcon text={t('onboarding.templates.name_hint', 'The name shown in admin lists and on the site where public.')}  />
+</label>
 			<input
 				id="tpl-name"
 				type="text"
@@ -255,8 +256,9 @@
 		<div>
 			<label for="tpl-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.description', 'Description')}
-			</label>
-			<HintIcon text={t('onboarding.templates.desc_hint', 'Shown in detail views — keep it concise.')} />
+			
+			<HintIcon text={t('onboarding.templates.desc_hint', 'Shown in detail views — keep it concise.')}  />
+</label>
 			<textarea
 				id="tpl-desc"
 				rows="2"
@@ -269,8 +271,9 @@
 		<div>
 			<label for="tpl-steps" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.steps', 'Steps (JSON)')}
-			</label>
-			<HintIcon text={t('onboarding.templates.steps_hint', 'The ordered steps — one per line.')} />
+			
+			<HintIcon text={t('onboarding.templates.steps_hint', 'The ordered steps — one per line.')}  />
+</label>
 			<textarea
 				id="tpl-steps"
 				rows="10"
@@ -293,8 +296,9 @@
 			/>
 			<label for="tpl-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('onboarding.templates.active', 'Active')}
-			</label>
-			<HintIcon text={t('onboarding.templates.active_hint', 'Inactive templates are hidden from onboarding.')} />
+			
+			<HintIcon text={t('onboarding.templates.active_hint', 'Inactive templates are hidden from onboarding.')}  />
+</label>
 		</div>
 	</div>
 {/snippet}

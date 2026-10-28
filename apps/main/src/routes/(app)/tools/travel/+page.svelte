@@ -597,8 +597,9 @@
 			{#if tab === 'flights'}
 				<form onsubmit={(e) => { e.preventDefault(); searchFlights(); }} class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
 					<div>
-						<label for="flight-origin" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.origin', 'Origin (IATA)')}</label>
-						<HintIcon text={t('tools.travel.origin_hint', 'Departure city or airport code.')} />
+						<label for="flight-origin" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.origin', 'Origin (IATA)')}
+						<HintIcon text={t('tools.travel.origin_hint', 'Departure city or airport code.')}  />
+</label>
 						<Autocomplete
 							id="flight-origin"
 							freeText
@@ -612,8 +613,9 @@
 						/>
 					</div>
 					<div>
-						<label for="flight-dest" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.destination', 'Destination (IATA)')}</label>
-						<HintIcon text={t('tools.travel.dest_hint', 'Arrival city or airport code.')} />
+						<label for="flight-dest" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.destination', 'Destination (IATA)')}
+						<HintIcon text={t('tools.travel.dest_hint', 'Arrival city or airport code.')}  />
+</label>
 						<Autocomplete
 							id="flight-dest"
 							freeText
@@ -627,23 +629,27 @@
 						/>
 					</div>
 					<div>
-						<label for="flight-date" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.departure_date', 'Departure date')}</label>
-						<HintIcon text={t('tools.travel.date_hint', 'When you fly out.')} />
+						<label for="flight-date" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.departure_date', 'Departure date')}
+						<HintIcon text={t('tools.travel.date_hint', 'When you fly out.')}  />
+</label>
 						<input id="flight-date" type="date" required min={today} bind:value={flightDate} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
 					</div>
 					<div>
-						<label for="flight-return" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.return_date', 'Return date (optional)')}</label>
-						<HintIcon text={t('tools.travel.return_hint', 'Optional — leave blank for one-way.')} />
+						<label for="flight-return" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.return_date', 'Return date (optional)')}
+						<HintIcon text={t('tools.travel.return_hint', 'Optional — leave blank for one-way.')}  />
+</label>
 						<input id="flight-return" type="date" min={flightDate || today} bind:value={flightReturn} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
 					</div>
 					<div>
-						<label for="flight-adults" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.adults', 'Adults')}</label>
-						<HintIcon text={t('tools.travel.adults_hint', 'Travelers 12 and over.')} />
+						<label for="flight-adults" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.adults', 'Adults')}
+						<HintIcon text={t('tools.travel.adults_hint', 'Travelers 12 and over.')}  />
+</label>
 						<AutocompleteSelect id="flight-adults" options={numberOptions(1, 9)} bind:value={flightAdults} />
 					</div>
 					<div>
-						<label for="flight-children" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.children', 'Children')}</label>
-						<HintIcon text={t('tools.travel.children_hint', 'Travelers under 12.')} />
+						<label for="flight-children" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.children', 'Children')}
+						<HintIcon text={t('tools.travel.children_hint', 'Travelers under 12.')}  />
+</label>
 						<AutocompleteSelect id="flight-children" options={numberOptions(0, 8)} bind:value={flightChildren} />
 					</div>
 					{#if cabinOptions.length > 1}

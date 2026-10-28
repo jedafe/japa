@@ -300,8 +300,9 @@
 <!-- Add Moderator Modal -->
 <Modal bind:open={showAddModal} title={t("spaces.add_moderator", "Add Moderator")}>
 	<div>
-		<label for="mod-user" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spaces.user", "User")}</label>
-		<HintIcon text={t('spaces.mod_user_hint', 'The user to grant moderator rights.')} />
+		<label for="mod-user" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spaces.user", "User")}
+		<HintIcon text={t('spaces.mod_user_hint', 'The user to grant moderator rights.')}  />
+</label>
 		<div class="mt-1">
 			<Autocomplete
 				id="mod-user"

@@ -161,8 +161,9 @@
 				<div class="space-y-2">
 					<label class="text-sm font-medium text-[var(--color-text)]" for="discount">
 						<span class="inline-flex items-center gap-1"><Tag size={14} /> {t('academy.discount_code', 'Discount code')}</span>
-					</label>
-					<HintIcon text={t('academy.discount_hint', 'Enter a coupon code if you have one.')} />
+					
+					<HintIcon text={t('academy.discount_hint', 'Enter a coupon code if you have one.')}  />
+</label>
 					<div class="flex gap-2">
 						<input
 							id="discount"

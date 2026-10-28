@@ -282,23 +282,26 @@
 					<div>
 						<label for="ce-label" class={labelClass}>
 							{t('intel.channel_label', 'Label')} <span class="text-destructive">*</span>
-						</label>
-						<HintIcon text={t('intel.channel_label_hint', 'A name for this channel — e.g. RSS feed — scholarships.')} />
+						
+						<HintIcon text={t('intel.channel_label_hint', 'A name for this channel — e.g. RSS feed — scholarships.')}  />
+</label>
 						<input id="ce-label" type="text" bind:value={form.label} class={inputClass} placeholder={t('intel.channel_label_placeholder', 'e.g. RSS feed — scholarships')} />
 					</div>
 					<div>
 						<label for="ce-url" class={labelClass}>
 							{t('intel.channel_entry_url', 'Entry URL')} <span class="text-destructive">*</span>
-						</label>
-						<HintIcon text={t('intel.channel_url_hint', 'The feed or page URL this channel reads.')} />
+						
+						<HintIcon text={t('intel.channel_url_hint', 'The feed or page URL this channel reads.')}  />
+</label>
 						<input id="ce-url" type="text" bind:value={form.entry_url} class={inputClass} placeholder="https://example.org/feed.xml" />
 					</div>
 				</div>
 
 				<div class="grid grid-cols-3 gap-4">
 					<div>
-						<label for="ce-method" class={labelClass}>{t('intel.field_crawl_method', 'Method')}</label>
-						<HintIcon text={t('intel.crawl_method_hint', 'How content is fetched — RSS, HTML parse, API.')} />
+						<label for="ce-method" class={labelClass}>{t('intel.field_crawl_method', 'Method')}
+						<HintIcon text={t('intel.crawl_method_hint', 'How content is fetched — RSS, HTML parse, API.')}  />
+</label>
 						<AutocompleteSelect
 							id="ce-method"
 							value={form.crawl_method}
@@ -308,8 +311,9 @@
 						/>
 					</div>
 					<div>
-						<label for="ce-pipeline" class={labelClass}>{t('intel.channel_pipeline', 'Pipeline')}</label>
-						<HintIcon text={t('intel.pipeline_hint', 'Which ingestion pipeline processes the results.')} />
+						<label for="ce-pipeline" class={labelClass}>{t('intel.channel_pipeline', 'Pipeline')}
+						<HintIcon text={t('intel.pipeline_hint', 'Which ingestion pipeline processes the results.')}  />
+</label>
 						<AutocompleteSelect
 							id="ce-pipeline"
 							value={form.pipeline}
@@ -319,8 +323,9 @@
 						/>
 					</div>
 					<div>
-						<label for="ce-mins" class={labelClass}>{t('intel.field_crawl_mins', 'Crawl Interval (mins)')}</label>
-						<HintIcon text={t('intel.crawl_mins_hint', 'Minutes between crawls — higher saves quota.')} />
+						<label for="ce-mins" class={labelClass}>{t('intel.field_crawl_mins', 'Crawl Interval (mins)')}
+						<HintIcon text={t('intel.crawl_mins_hint', 'Minutes between crawls — higher saves quota.')}  />
+</label>
 						<input id="ce-mins" type="number" min="1" bind:value={form.crawl_frequency_mins} disabled={!isScheduled} class={inputClass} />
 						{#if !isScheduled}
 							<p class="text-muted-foreground mt-1 text-xs">

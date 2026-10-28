@@ -499,8 +499,9 @@
 				<div class="min-w-0 sm:flex-1">
 					<label for="col-baseline-search" class="mb-1 block text-xs text-[var(--color-muted)]">
 						{t('col.baseline_label', 'Compare against (baseline)')}
-					</label>
-					<HintIcon text={t('tools.col.baseline_hint', 'The city you live in now — costs are compared from here.')} />
+					
+					<HintIcon text={t('tools.col.baseline_hint', 'The city you live in now — costs are compared from here.')}  />
+</label>
 					<Autocomplete
 						id="col-baseline-search"
 						placeholder={t('col.search_baseline', 'Search baseline city…')}
@@ -523,8 +524,9 @@
 				<div class="min-w-0 sm:flex-1">
 					<label for="col-city-search" class="mb-1 block text-xs text-[var(--color-muted)]">
 						{t('col.destinations_label', 'Compare with')}
-					</label>
-					<HintIcon text={t('tools.col.cities_hint', 'Add cities to compare against your baseline.')} />
+					
+					<HintIcon text={t('tools.col.cities_hint', 'Add cities to compare against your baseline.')}  />
+</label>
 					<Autocomplete
 						id="col-city-search"
 						placeholder={t('col.search_cities', 'Search cities to compare…')}

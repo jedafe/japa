@@ -619,8 +619,9 @@
 				<div>
 					<label for="cron-type" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.job_type', 'Job Type')}
-					</label>
-					<HintIcon text={t('cron.type_hint', 'The task this job runs.')} />
+					
+					<HintIcon text={t('cron.type_hint', 'The task this job runs.')}  />
+</label>
 					<Autocomplete
 						id="cron-type"
 						placeholder={t('cron.select_task_type', 'Select a task type...')}
@@ -638,8 +639,9 @@
 				<div>
 					<label for="cron-schedule-preset" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.schedule', 'Schedule')}
-					</label>
-					<HintIcon text={t('cron.schedule_hint', 'How often the job runs.')} />
+					
+					<HintIcon text={t('cron.schedule_hint', 'How often the job runs.')}  />
+</label>
 					<Autocomplete
 						id="cron-schedule-preset"
 						placeholder={t('cron.select_schedule', 'Select a schedule...')}
@@ -671,8 +673,9 @@
 				<div>
 					<label for="cron-payload" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.payload', 'Payload')} (JSON)
-					</label>
-					<HintIcon text={t('cron.payload_hint', 'Optional JSON payload passed to the task.')} />
+					
+					<HintIcon text={t('cron.payload_hint', 'Optional JSON payload passed to the task.')}  />
+</label>
 					<textarea
 						id="cron-payload"
 						bind:value={editForm.payload}

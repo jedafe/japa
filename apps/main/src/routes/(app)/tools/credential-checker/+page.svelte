@@ -222,8 +222,9 @@
 					class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 				>
 					{t('geo.destination', 'Destination')}
-				</label>
-					<HintIcon text={t('tools.credential.dest_hint', 'The country where your credential will be assessed.')} />
+				
+					<HintIcon text={t('tools.credential.dest_hint', 'The country where your credential will be assessed.')}  />
+</label>
 				<div class="mt-2">
 					<SelectField
 						id="cc-dest"
@@ -246,8 +247,9 @@
 						class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 					>
 						{t('credential_checker.profession', 'Profession')}
-					</label>
-						<HintIcon text={t('tools.credential.profession_hint', 'Your regulated or skilled profession.')} />
+					
+						<HintIcon text={t('tools.credential.profession_hint', 'Your regulated or skilled profession.')}  />
+</label>
 					<div class="mt-2">
 						<SelectField
 							id="cc-profession"
@@ -265,8 +267,9 @@
 						class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 					>
 						{t('credential_checker.issuing_country', 'Issuing country (optional)')}
-					</label>
-						<HintIcon text={t('tools.credential.issuing_hint', 'The country that issued your credential.')} />
+					
+						<HintIcon text={t('tools.credential.issuing_hint', 'The country that issued your credential.')}  />
+</label>
 					<div class="mt-2">
 						<SelectField
 							id="cc-issuing"

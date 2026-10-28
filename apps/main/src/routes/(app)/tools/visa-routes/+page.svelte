@@ -183,8 +183,9 @@
 		<div class="border-b border-[var(--color-border)] px-4 py-3">
 			<label for="vr-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('visa_routes.destination', 'Destination country')}
-			</label>
-			<HintIcon text={t('tools.visa_routes.dest_hint', 'The country you want to move to.')} />
+			
+			<HintIcon text={t('tools.visa_routes.dest_hint', 'The country you want to move to.')}  />
+</label>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('visa_routes.select_destination', 'Select a destination country')}

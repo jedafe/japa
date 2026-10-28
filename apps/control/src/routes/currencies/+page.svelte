@@ -282,8 +282,9 @@
 	{#snippet children(close)}
 			<div class="space-y-4">
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-code">{t('currencies.col_code', 'Code')}</label>
-					<HintIcon text={t('currencies.code_hint', 'ISO code — e.g. NGN, USD.')} />
+					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-code">{t('currencies.col_code', 'Code')}
+					<HintIcon text={t('currencies.code_hint', 'ISO code — e.g. NGN, USD.')}  />
+</label>
 					<input
 						id="curr-code"
 						type="text"
@@ -296,8 +297,9 @@
 					<HintIcon text={t('currencies.code_hint', 'ISO 4217 — 3 letter code')} />
 				</div>
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-name">{t('currencies.col_name', 'Name')}</label>
-					<HintIcon text={t('currencies.name_hint', 'The display name of the currency.')} />
+					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-name">{t('currencies.col_name', 'Name')}
+					<HintIcon text={t('currencies.name_hint', 'The display name of the currency.')}  />
+</label>
 					<input
 						id="curr-name"
 						type="text"
@@ -307,8 +309,9 @@
 					/>
 				</div>
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-symbol">{t('currencies.col_symbol', 'Symbol')}</label>
-					<HintIcon text={t('currencies.symbol_hint', 'The symbol shown next to amounts — e.g. ₦, $.')} />
+					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-symbol">{t('currencies.col_symbol', 'Symbol')}
+					<HintIcon text={t('currencies.symbol_hint', 'The symbol shown next to amounts — e.g. ₦, $.')}  />
+</label>
 					<input
 						id="curr-symbol"
 						type="text"
@@ -319,8 +322,9 @@
 				</div>
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label class="text-foreground mb-1 block text-sm font-medium" for="curr-rate">{t('currencies.col_rate', 'Credits per Unit')}</label>
-						<HintIcon text={t('currencies.rate_hint', 'Wallet credits granted per unit of this currency.')} />
+						<label class="text-foreground mb-1 block text-sm font-medium" for="curr-rate">{t('currencies.col_rate', 'Credits per Unit')}
+						<HintIcon text={t('currencies.rate_hint', 'Wallet credits granted per unit of this currency.')}  />
+</label>
 						<input
 							id="curr-rate"
 							type="number"
@@ -331,8 +335,9 @@
 						<p class="text-muted-foreground mt-1 text-xs">{t('currencies.rate_hint', '1 {code} = N credits').replace('{code}', formData.code || 'XXX')}</p>
 					</div>
 					<div>
-						<label class="text-foreground mb-1 block text-sm font-medium" for="curr-pos">{t('currencies.col_position', 'Position')}</label>
-						<HintIcon text={t('currencies.pos_hint', 'Ordering position — lower numbers show first.')} />
+						<label class="text-foreground mb-1 block text-sm font-medium" for="curr-pos">{t('currencies.col_position', 'Position')}
+						<HintIcon text={t('currencies.pos_hint', 'Ordering position — lower numbers show first.')}  />
+</label>
 						<input
 							id="curr-pos"
 							type="number"
@@ -350,8 +355,9 @@
 							bind:checked={formData.is_active}
 							class="border-border-input bg-background size-4 rounded"
 						/>
-						<label class="text-foreground text-sm font-medium" for="curr-active">{t('currencies.col_status', 'Status')} — {formData.is_active ? t('currencies.status_active', 'Active') : t('currencies.status_inactive', 'Inactive')}</label>
-						<HintIcon text={t('currencies.active_hint', 'Inactive currencies are hidden from pickers.')} />
+						<label class="text-foreground text-sm font-medium" for="curr-active">{t('currencies.col_status', 'Status')} — {formData.is_active ? t('currencies.status_active', 'Active') : t('currencies.status_inactive', 'Inactive')}
+						<HintIcon text={t('currencies.active_hint', 'Inactive currencies are hidden from pickers.')}  />
+</label>
 					</div>
 				{/if}
 				<div>

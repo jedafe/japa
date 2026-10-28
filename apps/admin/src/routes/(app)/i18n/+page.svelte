@@ -381,8 +381,9 @@
 
 	{#if activeTab === 'translations'}
 		<div class="mb-4 flex items-center gap-3">
-			<label for="locale-select" class="text-sm font-medium text-foreground-alt">{t('app.i18n.language', 'Language')}</label>
-			<HintIcon text={t('i18n.locale_select_hint', 'The locale to edit.')} />
+			<label for="locale-select" class="text-sm font-medium text-foreground-alt">{t('app.i18n.language', 'Language')}
+			<HintIcon text={t('i18n.locale_select_hint', 'The locale to edit.')}  />
+</label>
 			<Select
 				options={languages.map((l) => ({ value: l.code, label: l.name }))}
 				value={selectedLocale}
@@ -427,8 +428,9 @@
 <SlideOver bind:open={createSlideOverOpen} title={t('app.i18n.add_language')}>
 	<div class="space-y-4">
 		<div>
-			<label for="lang-code" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.language_code', 'Language Code')}</label>
-			<HintIcon text={t('i18n.lang_code_hint', 'The locale code — e.g. en, fr.')} />
+			<label for="lang-code" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.language_code', 'Language Code')}
+			<HintIcon text={t('i18n.lang_code_hint', 'The locale code — e.g. en, fr.')}  />
+</label>
 			<input
 				id="lang-code"
 				type="text"
@@ -438,8 +440,9 @@
 			/>
 		</div>
 		<div>
-			<label for="lang-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.language_name', 'Language Name')}</label>
-			<HintIcon text={t('i18n.lang_name_hint', 'The language name.')} />
+			<label for="lang-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.language_name', 'Language Name')}
+			<HintIcon text={t('i18n.lang_name_hint', 'The language name.')}  />
+</label>
 			<input
 				id="lang-name"
 				type="text"
@@ -449,8 +452,9 @@
 			/>
 		</div>
 		<div>
-			<label for="lang-flag" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.flag_emoji_optional', 'Flag Emoji (optional)')}</label>
-			<HintIcon text={t('i18n.lang_flag_hint', 'The flag emoji shown next to the locale.')} />
+			<label for="lang-flag" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.flag_emoji_optional', 'Flag Emoji (optional)')}
+			<HintIcon text={t('i18n.lang_flag_hint', 'The flag emoji shown next to the locale.')}  />
+</label>
 			<input
 				id="lang-flag"
 				type="text"
@@ -476,13 +480,15 @@
 	{#if editingString}
 		<div class="space-y-4">
 			<div>
-				<label for="edit-key" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.key', 'Key')}</label>
-				<HintIcon text={t('i18n.edit_key_hint', 'The translation key — do not rename lightly.')} />
+				<label for="edit-key" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.key', 'Key')}
+				<HintIcon text={t('i18n.edit_key_hint', 'The translation key — do not rename lightly.')}  />
+</label>
 				<p id="edit-key" class="rounded-lg bg-surface px-3 py-2 font-mono text-xs text-foreground-alt">{editingString.key}</p>
 			</div>
 			<div>
-				<label for="edit-value" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.value', 'Value')} ({editingString.locale})</label>
-				<HintIcon text={t('i18n.edit_value_hint', 'The translated text.')} />
+				<label for="edit-value" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.value', 'Value')} ({editingString.locale})
+				<HintIcon text={t('i18n.edit_value_hint', 'The translated text.')}  />
+</label>
 				<textarea
 					id="edit-value"
 					rows="4"

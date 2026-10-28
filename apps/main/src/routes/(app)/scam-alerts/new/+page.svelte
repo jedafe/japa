@@ -160,8 +160,9 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="destination_space_id" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_destination', 'Destination country')} <span class="text-red-500">*</span>
-				</label>
-				<HintIcon text={t('scam_alerts.destination_hint', 'The country the scam targets.')} />
+				
+				<HintIcon text={t('scam_alerts.destination_hint', 'The country the scam targets.')}  />
+</label>
 				<Autocomplete
 					id="destination_space_id"
 					placeholder={t('scam_alerts.placeholder_destination', 'Select destination country')}
@@ -177,8 +178,9 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="origin_space_id" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_origin_country', 'Origin country')}
-				</label>
-				<HintIcon text={t('scam_alerts.origin_hint', 'The community the scammer pretends to be from or targets.')} />
+				
+				<HintIcon text={t('scam_alerts.origin_hint', 'The community the scammer pretends to be from or targets.')}  />
+</label>
 				<Autocomplete
 					id="origin_space_id"
 					placeholder={t('scam_alerts.placeholder_origin_country', 'Select origin country')}
@@ -197,8 +199,9 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="scam_type" class="text-sm font-medium text-[var(--color-text)]">
 				{t('scam_alerts.field_scam_type', 'Scam type')} <span class="text-red-500">*</span>
-			</label>
-			<HintIcon text={t('scam_alerts.type_hint', 'The kind of scam — e.g. fake job, visa fraud.')} />
+			
+			<HintIcon text={t('scam_alerts.type_hint', 'The kind of scam — e.g. fake job, visa fraud.')}  />
+</label>
 			<AutocompleteSelect
 				id="scam_type"
 				value={scamType}
@@ -212,8 +215,9 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="origin_community" class="text-sm font-medium text-[var(--color-text)]">
 				{t('scam_alerts.field_origin_community', 'Origin community')}
-			</label>
-			<HintIcon text={t('scam_alerts.community_hint', 'Optional — the community being impersonated.')} />
+			
+			<HintIcon text={t('scam_alerts.community_hint', 'Optional — the community being impersonated.')}  />
+</label>
 			<input
 				id="origin_community"
 				type="text"
@@ -229,8 +233,9 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="platform_used" class="text-sm font-medium text-[var(--color-text)]">
 				{t('scam_alerts.field_platform', 'Platform used')}
-			</label>
-			<HintIcon text={t('scam_alerts.platform_hint', 'Where the scam happened — e.g. WhatsApp, a website.')} />
+			
+			<HintIcon text={t('scam_alerts.platform_hint', 'Where the scam happened — e.g. WhatsApp, a website.')}  />
+</label>
 			<AutocompleteSelect
 				id="platform_used"
 				value={platformUsed}
@@ -246,8 +251,9 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="approximate_date" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_date', 'Approximate date')}
-				</label>
-				<HintIcon text={t('scam_alerts.date_hint', 'Roughly when it happened.')} />
+				
+				<HintIcon text={t('scam_alerts.date_hint', 'Roughly when it happened.')}  />
+</label>
 				<input
 					id="approximate_date"
 					type="date"
@@ -260,8 +266,9 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="amount_range" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_amount', 'Amount range')}
-				</label>
-				<HintIcon text={t('scam_alerts.amount_hint', 'Optional — how much was lost or asked for.')} />
+				
+				<HintIcon text={t('scam_alerts.amount_hint', 'Optional — how much was lost or asked for.')}  />
+</label>
 				<input
 					id="amount_range"
 					type="text"

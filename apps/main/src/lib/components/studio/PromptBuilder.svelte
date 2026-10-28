@@ -165,8 +165,9 @@
 	<div class="guide-category-selector">
 		<label for="guide-category" class="guide-category-label">
 			{t('studio.prompts.guide_category', 'Guide category')}
-		</label>
-		<HintIcon text={t('studio.prompts.category_hint', 'The guide category this prompt targets.')} />
+		
+		<HintIcon text={t('studio.prompts.category_hint', 'The guide category this prompt targets.')}  />
+</label>
 		<Autocomplete
 			id="guide-category"
 			placeholder={t('studio.prompts.guide_category', 'Guide category')}

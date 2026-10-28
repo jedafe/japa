@@ -393,8 +393,9 @@
 				<div>
 					<label for="webhook-name" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.name', 'Name')}
-					</label>
-					<HintIcon text={t('webhooks.name_hint', 'A label so you remember this endpoint.')} />
+					
+					<HintIcon text={t('webhooks.name_hint', 'A label so you remember this endpoint.')}  />
+</label>
 					<input
 						id="webhook-name"
 						type="text"
@@ -406,8 +407,9 @@
 				<div>
 					<label for="webhook-url" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.url', 'URL')}
-					</label>
-					<HintIcon text={t('webhooks.url_hint', 'The URL that receives event payloads — must be HTTPS.')} />
+					
+					<HintIcon text={t('webhooks.url_hint', 'The URL that receives event payloads — must be HTTPS.')}  />
+</label>
 					<input
 						id="webhook-url"
 						type="url"
@@ -420,8 +422,9 @@
 				<div>
 					<label for="webhook-events" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.events', 'Events')}
-					</label>
-					<HintIcon text={t('webhooks.events_hint', 'Which events trigger this webhook.')} />
+					
+					<HintIcon text={t('webhooks.events_hint', 'Which events trigger this webhook.')}  />
+</label>
 					<WebhookEventMultiSelect
 						value={form.event_types}
 						onchange={(next) => (form.event_types = next)}
@@ -491,8 +494,9 @@
 		<div class="mt-4">
 			<label for="webhook-secret" class="text-foreground block text-sm font-medium">
 				{t('webhooks.secret_label', 'Signing secret')}
-			</label>
-			<HintIcon text={t('webhooks.secret_hint', 'Used to sign payloads — verify on your side.')} />
+			
+			<HintIcon text={t('webhooks.secret_hint', 'Used to sign payloads — verify on your side.')}  />
+</label>
 			<div class="mt-1 flex items-center gap-2">
 				<input
 					id="webhook-secret"

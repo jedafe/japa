@@ -200,8 +200,9 @@
 {#snippet RoleForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
 	<div class="space-y-4">
 		<div>
-			<label for="role-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.roles.name', 'Name')}</label>
-			<HintIcon text={t('users.roles.name_hint', 'The name shown in admin lists and on the site where public.')} />
+			<label for="role-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.roles.name', 'Name')}
+			<HintIcon text={t('users.roles.name_hint', 'The name shown in admin lists and on the site where public.')}  />
+</label>
 			<input
 				id="role-name"
 				type="text"

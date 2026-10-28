@@ -691,8 +691,9 @@ import { contentHref } from '$lib/utils/contentLink';
 				{#if showPollForm}
 					<form onsubmit={createPoll} class="space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
 						<div>
-							<label for="poll-question" class="mb-1 block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_question', 'Poll question')}</label>
-							<HintIcon text={t('forum.poll_question_hint', 'The question members vote on.')} />
+							<label for="poll-question" class="mb-1 block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_question', 'Poll question')}
+							<HintIcon text={t('forum.poll_question_hint', 'The question members vote on.')}  />
+</label>
 							<input id="poll-question" type="text" bind:value={pollQuestion} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" placeholder={t('forum.poll_question_placeholder', 'Ask a question…')} />
 						</div>
 						<div class="flex items-center gap-2">

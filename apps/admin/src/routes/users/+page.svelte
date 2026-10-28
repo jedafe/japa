@@ -587,8 +587,9 @@
 				{t("users.suspend_warning", "The user will be unable to access the platform until unsuspended.")}
 			</p>
 			<div class="mt-3">
-				<label for="suspend-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.suspend_reason", "Reason")}</label>
-				<HintIcon text={t('users.suspend_reason_hint', 'The reason recorded — shown to the user where noted.')} />
+				<label for="suspend-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.suspend_reason", "Reason")}
+				<HintIcon text={t('users.suspend_reason_hint', 'The reason recorded — shown to the user where noted.')}  />
+</label>
 				<textarea
 					id="suspend-reason"
 					rows="2"
@@ -614,8 +615,9 @@
 		{t("users.warn_confirm", "Issue a warning to")} <strong>{actionTarget?.username}</strong>
 	</p>
 	<div class="mb-3">
-		<label for="warn-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.warn_violation", "Violation Type")}</label>
-		<HintIcon text={t('users.warn_violation_hint', 'The rule violated.')} />
+		<label for="warn-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.warn_violation", "Violation Type")}
+		<HintIcon text={t('users.warn_violation_hint', 'The rule violated.')}  />
+</label>
 		<Autocomplete
 			id="warn-violation"
 			placeholder={t("users.warn_violation_ph", "Select violation type")}

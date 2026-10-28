@@ -214,22 +214,25 @@
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="dest">
 					{t('eca_guide.destination', 'Destination')}
-				</label>
-				<HintIcon text={t('tools.eca.dest_hint', 'The country where you will use the evaluation.')} />
+				
+				<HintIcon text={t('tools.eca.dest_hint', 'The country where you will use the evaluation.')}  />
+</label>
 				<DestinationSelector {destinations} bind:selectedId={selectedDest} onchange={onDestChange} />
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="purpose">
 					{t('eca_guide.purpose', 'Purpose')}
-				</label>
-				<HintIcon text={t('tools.eca.purpose_hint', 'Why you need the ECA — e.g. Express Entry.')} />
+				
+				<HintIcon text={t('tools.eca.purpose_hint', 'Why you need the ECA — e.g. Express Entry.')}  />
+</label>
 				<AutocompleteSelect id="purpose" bind:value={selectedPurpose} options={purposeOptions} />
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="provider">
 					{t('eca_guide.provider', 'Provider')}
-				</label>
-				<HintIcon text={t('tools.eca.provider_hint', 'The evaluation service — WES is the most common.')} />
+				
+				<HintIcon text={t('tools.eca.provider_hint', 'The evaluation service — WES is the most common.')}  />
+</label>
 				<AutocompleteSelect
 					id="provider"
 					bind:value={selectedProvider}

@@ -555,32 +555,37 @@
 	<div class="space-y-3">
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
-				<label for="doc-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}</label>
-				<HintIcon text={t('docs.doc_title_hint', 'The page title shown in docs navigation.')} />
+				<label for="doc-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}
+				<HintIcon text={t('docs.doc_title_hint', 'The page title shown in docs navigation.')}  />
+</label>
 				<input id="doc-title" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.title} oninput={() => { if (!editingId) form.slug = slugify(form.title); }} />
 			</div>
 			<div>
-				<label for="doc-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}</label>
-				<HintIcon text={t('docs.doc_slug_hint', 'URL-safe identifier — auto-generated from the title.')} />
+				<label for="doc-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}
+				<HintIcon text={t('docs.doc_slug_hint', 'URL-safe identifier — auto-generated from the title.')}  />
+</label>
 				<input id="doc-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.slug} />
 			</div>
 		</div>
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
-				<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</label>
-				<HintIcon text={t('docs.doc_audience_hint', 'Who can see this page.')} />
+				<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}
+				<HintIcon text={t('docs.doc_audience_hint', 'Who can see this page.')}  />
+</label>
 				<Select options={audienceOptions} bind:value={form.audience} />
 			</div>
 			<div>
-				<label for="doc-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.status')}</label>
-				<HintIcon text={t('docs.doc_status_hint', 'Draft or published state.')} />
+				<label for="doc-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.status')}
+				<HintIcon text={t('docs.doc_status_hint', 'Draft or published state.')}  />
+</label>
 				<Select options={statusOptions} bind:value={form.status} />
 			</div>
 		</div>
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
-				<label for="doc-category" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.category', 'Category')}</label>
-				<HintIcon text={t('docs.doc_category_hint', 'The top-level section this page lives in.')} />
+				<label for="doc-category" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.category', 'Category')}
+				<HintIcon text={t('docs.doc_category_hint', 'The top-level section this page lives in.')}  />
+</label>
 				<Autocomplete
 					id="doc-category"
 					placeholder={t('docs.category_ph', 'Category (optional)')}
@@ -597,8 +602,9 @@
 				/>
 			</div>
 			<div>
-				<label for="doc-subcategory" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.subcategory', 'Subcategory')}</label>
-				<HintIcon text={t('docs.doc_subcategory_hint', 'Optional — a nested grouping under the category.')} />
+				<label for="doc-subcategory" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.subcategory', 'Subcategory')}
+				<HintIcon text={t('docs.doc_subcategory_hint', 'Optional — a nested grouping under the category.')}  />
+</label>
 				<Autocomplete
 					id="doc-subcategory"
 					disabled={!form.category.trim()}
@@ -618,8 +624,9 @@
 		</div>
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
-				<label for="doc-parent" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.parent_page', 'Parent page')}</label>
-				<HintIcon text={t('docs.doc_parent_hint', 'Optional — nest this page under another.')} />
+				<label for="doc-parent" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.parent_page', 'Parent page')}
+				<HintIcon text={t('docs.doc_parent_hint', 'Optional — nest this page under another.')}  />
+</label>
 				<Autocomplete
 					id="doc-parent"
 					placeholder={t('docs.parent_ph', '— Top level —')}
@@ -633,14 +640,16 @@
 				/>
 			</div>
 			<div>
-				<label for="doc-position" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.position', 'Position')}</label>
-				<HintIcon text={t('docs.doc_position_hint', 'Ordering position — lower numbers show first.')} />
+				<label for="doc-position" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.position', 'Position')}
+				<HintIcon text={t('docs.doc_position_hint', 'Ordering position — lower numbers show first.')}  />
+</label>
 				<input id="doc-position" type="number" min="0" step="1" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.position} />
 			</div>
 		</div>
 		<div>
-			<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_markdown')}</label>
-			<HintIcon text={t('docs.doc_body_hint', 'The page content.')} />
+			<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_markdown')}
+			<HintIcon text={t('docs.doc_body_hint', 'The page content.')}  />
+</label>
 			<textarea id="doc-body" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="12" bind:value={form.body}></textarea>
 		</div>
 	</div>
@@ -669,37 +678,43 @@
 		{/if}
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
-				<label for="generate-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}</label>
-				<HintIcon text={t('docs.generate_title_hint', 'Title for the generated page.')} />
+				<label for="generate-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}
+				<HintIcon text={t('docs.generate_title_hint', 'Title for the generated page.')}  />
+</label>
 				<input id="generate-title" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={generateTitle} oninput={slugifyGenerateTitle} />
 			</div>
 			<div>
-				<label for="generate-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}</label>
-				<HintIcon text={t('docs.generate_slug_hint', 'URL-safe identifier for the page.')} />
+				<label for="generate-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}
+				<HintIcon text={t('docs.generate_slug_hint', 'URL-safe identifier for the page.')}  />
+</label>
 				<input id="generate-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={generateSlug} />
 			</div>
 		</div>
 		<div>
-			<label for="generate-prompt" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.generation_prompt', 'What should the page cover?')}</label>
-			<HintIcon text={t('docs.generate_prompt_hint', 'Describe the page the AI should write.')} />
+			<label for="generate-prompt" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.generation_prompt', 'What should the page cover?')}
+			<HintIcon text={t('docs.generate_prompt_hint', 'Describe the page the AI should write.')}  />
+</label>
 			<textarea id="generate-prompt" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="6" bind:value={generatePrompt}></textarea>
 		</div>
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
-				<label for="generate-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</label>
-				<HintIcon text={t('docs.generate_audience_hint', 'Who the generated page targets.')} />
+				<label for="generate-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}
+				<HintIcon text={t('docs.generate_audience_hint', 'Who the generated page targets.')}  />
+</label>
 				<Select options={audienceOptions} bind:value={generateAudience} />
 			</div>
 			<div>
-				<label for="generate-related" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.related_features', 'Related features (comma separated)')}</label>
-				<HintIcon text={t('docs.generate_related_hint', 'Related pages to link — comma-separated.')} />
+				<label for="generate-related" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.related_features', 'Related features (comma separated)')}
+				<HintIcon text={t('docs.generate_related_hint', 'Related pages to link — comma-separated.')}  />
+</label>
 				<input id="generate-related" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={generateRelated} />
 			</div>
 		</div>
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
-				<label for="generate-category" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.category', 'Category')}</label>
-				<HintIcon text={t('docs.generate_category_hint', 'The section for the generated page.')} />
+				<label for="generate-category" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.category', 'Category')}
+				<HintIcon text={t('docs.generate_category_hint', 'The section for the generated page.')}  />
+</label>
 				<Autocomplete
 					id="generate-category"
 					placeholder={t('docs.category_ph', 'Category (optional)')}
@@ -717,8 +732,9 @@
 				/>
 			</div>
 			<div>
-				<label for="generate-subcategory" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.subcategory', 'Subcategory')}</label>
-				<HintIcon text={t('docs.generate_subcategory_hint', 'Optional — a nested grouping.')} />
+				<label for="generate-subcategory" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.subcategory', 'Subcategory')}
+				<HintIcon text={t('docs.generate_subcategory_hint', 'Optional — a nested grouping.')}  />
+</label>
 				<Autocomplete
 					id="generate-subcategory"
 					disabled={!generateCategory.trim()}

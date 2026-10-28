@@ -541,8 +541,9 @@
 			<div class="guide-category-selector">
 				<label for="guide-category" class="guide-category-label">
 					{t('create.guide.category_label')}
-				</label>
-				<HintIcon text={t('create.category_hint', 'The topic category this guide belongs to.')} />
+				
+				<HintIcon text={t('create.category_hint', 'The topic category this guide belongs to.')}  />
+</label>
 				<Autocomplete
 					id="guide-category"
 					placeholder={t('create.guide.category_placeholder')}

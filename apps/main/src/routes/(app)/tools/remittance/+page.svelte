@@ -371,8 +371,9 @@
 				<div>
 					<label for="rem-send" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('remittance.send', 'Send')}
-					</label>
-					<HintIcon text={t('tools.remittance.send_hint', 'The amount you are sending.')} />
+					
+					<HintIcon text={t('tools.remittance.send_hint', 'The amount you are sending.')}  />
+</label>
 					<div class="mt-1">
 						<Autocomplete
 							placeholder="—"
@@ -390,8 +391,9 @@
 				<div>
 					<label for="rem-recv" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('remittance.receive', 'Receive')}
-					</label>
-					<HintIcon text={t('tools.remittance.recv_hint', 'What the recipient gets — updates from live rates.')} />
+					
+					<HintIcon text={t('tools.remittance.recv_hint', 'What the recipient gets — updates from live rates.')}  />
+</label>
 					<div class="mt-1">
 						<Autocomplete
 							placeholder="—"
@@ -700,8 +702,9 @@
 							<div>
 								<label for="alert-rate" class="block text-xs text-[var(--color-muted)]">
 									{t('remittance.target_rate', 'Target rate')} ({sendCurrency}→{receiveCurrency})
-								</label>
-								<HintIcon text={t('tools.remittance.alert_hint', 'We notify you when the rate reaches this.')} />
+								
+								<HintIcon text={t('tools.remittance.alert_hint', 'We notify you when the rate reaches this.')}  />
+</label>
 								<input
 									id="alert-rate"
 									type="number"

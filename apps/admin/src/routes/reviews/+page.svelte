@@ -285,8 +285,9 @@
 			<div>
 				<label for="moderateStatus" class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t('reviews.status', 'Status')}
-				</label>
-				<HintIcon text={t('reviews.moderateStatus_hint', 'The moderation decision.')} />
+				
+				<HintIcon text={t('reviews.moderateStatus_hint', 'The moderation decision.')}  />
+</label>
 				<Select
 					options={[
 						{ value: 'published', label: t('reviews.status_published', 'Published') },
@@ -299,8 +300,9 @@
 			<div>
 				<label for="moderateReason" class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t('reviews.moderate_reason', 'Reason (optional)')}
-				</label>
-				<HintIcon text={t('reviews.moderateReason_hint', 'The reason recorded — shown to the reviewer.')} />
+				
+				<HintIcon text={t('reviews.moderateReason_hint', 'The reason recorded — shown to the reviewer.')}  />
+</label>
 				<textarea
 					id="moderateReason"
 					rows={2}

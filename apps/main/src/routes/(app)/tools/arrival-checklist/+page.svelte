@@ -304,8 +304,9 @@
 					<div class="w-full sm:w-auto">
 						<label for="arr-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 							{t('arrival_checklist.destination', 'Destination')}
-						</label>
-						<HintIcon text={t('tools.arrival.dest_hint', 'Where you are arriving.')} />
+						
+						<HintIcon text={t('tools.arrival.dest_hint', 'Where you are arriving.')}  />
+</label>
 						<SelectField
 							id="arr-dest"
 							value={selectedDestId}
@@ -318,8 +319,9 @@
 						<div class="w-full sm:w-auto">
 							<label for="arr-visa" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 								{t('arrival_checklist.visa_category', 'Visa category')}
-							</label>
-							<HintIcon text={t('tools.arrival.visa_hint', 'Your visa or permit category.')} />
+							
+							<HintIcon text={t('tools.arrival.visa_hint', 'Your visa or permit category.')}  />
+</label>
 							<SelectField
 								id="arr-visa"
 								value={selectedVisaCategory}

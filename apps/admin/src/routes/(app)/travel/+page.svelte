@@ -267,8 +267,9 @@
 		<div>
 			<label for="travel-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.name', 'Name')}
-			</label>
-			<HintIcon text={t('travel.name_hint', 'The name shown in admin lists and on the site where public.')} />
+			
+			<HintIcon text={t('travel.name_hint', 'The name shown in admin lists and on the site where public.')}  />
+</label>
 			<input
 				id="travel-name"
 				type="text"
@@ -281,8 +282,9 @@
 		<div>
 			<label for="travel-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.slug', 'Slug')}
-			</label>
-			<HintIcon text={t('travel.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')} />
+			
+			<HintIcon text={t('travel.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
+</label>
 			<input
 				id="travel-slug"
 				type="text"
@@ -297,8 +299,9 @@
 		<div>
 			<label for="travel-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.type', 'Provider Type')}
-			</label>
-			<HintIcon text={t('travel.type_hint', 'The type — controls how it’s handled.')} />
+			
+			<HintIcon text={t('travel.type_hint', 'The type — controls how it’s handled.')}  />
+</label>
 			<Autocomplete
 				id="travel-type"
 				class="w-full"
@@ -329,8 +332,9 @@
 			<div>
 				<label for="travel-api-endpoint" class="mb-1 block text-xs" style="color: var(--color-muted)">
 					{t('travel.api_endpoint', 'Endpoint URL')}
-				</label>
-			<HintIcon text={t('travel.api_endpoint_hint', 'The API endpoint this calls — full URL.')} />
+				
+			<HintIcon text={t('travel.api_endpoint_hint', 'The API endpoint this calls — full URL.')}  />
+</label>
 				<input
 					id="travel-api-endpoint"
 					type="url"
@@ -343,8 +347,9 @@
 			<div>
 				<label for="travel-api-key" class="mb-1 block text-xs" style="color: var(--color-muted)">
 					{t('travel.api_key', 'API Key')}
-				</label>
-			<HintIcon text={t('travel.api_key_hint', 'Stored encrypted — never shown again after saving.')} />
+				
+			<HintIcon text={t('travel.api_key_hint', 'Stored encrypted — never shown again after saving.')}  />
+</label>
 				<input
 					id="travel-api-key"
 					type="text"
@@ -397,8 +402,9 @@
 			/>
 			<label for="travel-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('travel.active', 'Active')}
-			</label>
-			<HintIcon text={t('travel.active_hint', 'Inactive routes are hidden from searches.')} />
+			
+			<HintIcon text={t('travel.active_hint', 'Inactive routes are hidden from searches.')}  />
+</label>
 		</div>
 	</div>
 {/snippet}

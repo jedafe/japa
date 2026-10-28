@@ -103,8 +103,9 @@
 				<div>
 					<label for="source_type" class="block text-xs font-medium text-[var(--color-muted)]">
 						{t('import.source_type', 'Source type')}
-					</label>
-					<HintIcon text={t('import.source_type_hint', 'Where this data comes from — CSV, API, manual.')} />
+					
+					<HintIcon text={t('import.source_type_hint', 'Where this data comes from — CSV, API, manual.')}  />
+</label>
 					<!-- Hidden field keeps the SvelteKit form action payload intact. -->
 					<input type="hidden" name="source_type" value={sourceType} />
 					<Autocomplete
@@ -123,8 +124,9 @@
 					<div>
 						<label for="source_url" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('import.source_url', 'Source URL')}
-						</label>
-						<HintIcon text={t('import.source_url_hint', 'The URL to import from — full URL including https://.')} />
+						
+						<HintIcon text={t('import.source_url_hint', 'The URL to import from — full URL including https://.')}  />
+</label>
 						<input
 							id="source_url"
 							name="source_url"

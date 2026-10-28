@@ -297,8 +297,9 @@
 
 					<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="field-row">
-							<label class="field-label" for="journey-origin">{t('journey.banner.origin_country', 'Where are you now?')}</label>
-							<HintIcon text={t('journey.banner.origin_hint', 'The country you currently live in.')} />
+							<label class="field-label" for="journey-origin">{t('journey.banner.origin_country', 'Where are you now?')}
+							<HintIcon text={t('journey.banner.origin_hint', 'The country you currently live in.')}  />
+</label>
 							<Autocomplete
 								placeholder={t('journey.banner.origin_placeholder', 'e.g. Nigeria')}
 								emptyMessage={t('create.journey.country_empty', 'No country found')}
@@ -311,8 +312,9 @@
 							/>
 						</div>
 						<div class="field-row">
-							<label class="field-label" for="journey-destination">{t('journey.banner.destination_country', 'Where do you want to go?')}</label>
-							<HintIcon text={t('journey.banner.destination_hint', 'The country you plan to move to — drives your checklist.')} />
+							<label class="field-label" for="journey-destination">{t('journey.banner.destination_country', 'Where do you want to go?')}
+							<HintIcon text={t('journey.banner.destination_hint', 'The country you plan to move to — drives your checklist.')}  />
+</label>
 							<Autocomplete
 								placeholder={t('journey.banner.destination_placeholder', 'e.g. Canada')}
 								emptyMessage={t('create.journey.country_empty', 'No country found')}

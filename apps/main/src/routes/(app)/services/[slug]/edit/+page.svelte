@@ -471,8 +471,9 @@
 			<div>
 				<label for="category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('services.field_category', 'Service category')}
-				</label>
-				<HintIcon text={t('services.category_hint', 'The service category — helps people find you.')} />
+				
+				<HintIcon text={t('services.category_hint', 'The service category — helps people find you.')}  />
+</label>
 				<Autocomplete
 					id="category"
 					placeholder={t('services.field_category', 'Service category')}
@@ -506,8 +507,9 @@
 				<div>
 					<label for="city" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('services.field_city', 'City')}
-					</label>
-					<HintIcon text={t('services.city_hint', 'Optional — the city you operate in.')} />
+					
+					<HintIcon text={t('services.city_hint', 'Optional — the city you operate in.')}  />
+</label>
 					<Autocomplete
 						id="city"
 						placeholder={destinationSpaceId
@@ -682,8 +684,9 @@
 						<div>
 							<label for="pkg-mode" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 								{t('services.pkg_purchase_mode', 'Purchase mode')}
-							</label>
-							<HintIcon text={t('services.pkg_mode_hint', 'How clients pay — direct booking or inquiry first.')} />
+							
+							<HintIcon text={t('services.pkg_mode_hint', 'How clients pay — direct booking or inquiry first.')}  />
+</label>
 							<Autocomplete
 								id="pkg-mode"
 								placeholder={t('services.pkg_purchase_mode', 'Purchase mode')}
@@ -722,8 +725,9 @@
 					<div>
 						<label for="pkg-price-per" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 							{t('services.pkg_price_per', 'Price is per')}
-						</label>
-						<HintIcon text={t('services.pkg_per_hint', 'What the price covers — per person, package or group.')} />
+						
+						<HintIcon text={t('services.pkg_per_hint', 'What the price covers — per person, package or group.')}  />
+</label>
 						<Autocomplete
 							id="pkg-price-per"
 							placeholder={t('services.pkg_price_per', 'Price is per')}

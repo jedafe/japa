@@ -149,8 +149,9 @@
 			<div class="flex-1">
 				<label for="content-id" class="block text-sm font-medium" style="color: var(--color-foreground)">
 					{t('ingestion_jobs.content_id', 'Comparison')}
-				</label>
-				<HintIcon text={t('comparison.content_id_hint', 'The content this job ingests.')} />
+				
+				<HintIcon text={t('comparison.content_id_hint', 'The content this job ingests.')}  />
+</label>
 				<input
 					id="content-id"
 					type="text"

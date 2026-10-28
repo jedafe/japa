@@ -249,8 +249,9 @@
 				<div>
 					<label for="post-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t('app.blog.field_title', 'Title')}
-					</label>
-					<HintIcon text={t('blog.post_title_hint', 'The post title shown in listings.')} />
+					
+					<HintIcon text={t('blog.post_title_hint', 'The post title shown in listings.')}  />
+</label>
 					<input
 						id="post-title"
 						type="text"
@@ -265,8 +266,9 @@
 				<div>
 					<label for="post-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t('app.blog.field_slug', 'Slug')}
-					</label>
-					<HintIcon text={t('blog.post_slug_hint', 'URL-safe identifier — auto-generated from the title.')} />
+					
+					<HintIcon text={t('blog.post_slug_hint', 'URL-safe identifier — auto-generated from the title.')}  />
+</label>
 					<input
 						id="post-slug"
 						type="text"
@@ -280,8 +282,9 @@
 				<div>
 					<label for="post-body" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 						{t('app.blog.field_content', 'Content (HTML)')}
-					</label>
-					<HintIcon text={t('blog.post_body_hint', 'The post content.')} />
+					
+					<HintIcon text={t('blog.post_body_hint', 'The post content.')}  />
+</label>
 					<textarea
 						id="post-body"
 						bind:value={bodyHtml}
@@ -296,8 +299,9 @@
 					<div>
 						<label for="post-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('app.blog.field_status', 'Status')}
-						</label>
-						<HintIcon text={t('blog.post_status_hint', 'Draft or published state.')} />
+						
+						<HintIcon text={t('blog.post_status_hint', 'Draft or published state.')}  />
+</label>
 						<AutocompleteSelect
 							id="post-status"
 							bind:value={status}
@@ -310,8 +314,9 @@
 					<div>
 						<label for="post-visibility" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('app.blog.field_visibility', 'Visibility')}
-						</label>
-						<HintIcon text={t('blog.post_visibility_hint', 'Who can see this post.')} />
+						
+						<HintIcon text={t('blog.post_visibility_hint', 'Who can see this post.')}  />
+</label>
 						<AutocompleteSelect
 							id="post-visibility"
 							bind:value={visibility}

@@ -350,13 +350,15 @@
 	<Modal bind:open={showCreateModal} onOpenChange={(isOpen) => { if (!isOpen) { createName = ''; createClientId = ''; createClientSecret = ''; createRedirectUri = ''; } }} title={t('oauth_clients.create_title', 'Create OAuth Client')}>
 			<form onsubmit={(e) => { e.preventDefault(); createClient(); }} class="space-y-4">
 				<div>
-					<label for="oauth-name" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.name_label', 'Name')}</label>
-					<HintIcon text={t('oauth_clients.name_hint', 'The app or service name.')} />
+					<label for="oauth-name" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.name_label', 'Name')}
+					<HintIcon text={t('oauth_clients.name_hint', 'The app or service name.')}  />
+</label>
 					<input id="oauth-name" type="text" bind:value={createName} required class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm" placeholder="My App" />
 				</div>
 				<div>
-					<label for="oauth-provider" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.provider_label', 'Provider')}</label>
-					<HintIcon text={t('oauth_clients.provider_hint', 'Which OAuth service — e.g. Google, Apple.')} />
+					<label for="oauth-provider" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.provider_label', 'Provider')}
+					<HintIcon text={t('oauth_clients.provider_hint', 'Which OAuth service — e.g. Google, Apple.')}  />
+</label>
 					<AutocompleteSelect
 						id="oauth-provider"
 						bind:value={createProvider}
@@ -368,19 +370,22 @@
 					</p>
 				</div>
 				<div>
-					<label for="oauth-client-id" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_id_label', 'Client ID')}</label>
-					<HintIcon text={t('oauth_clients.client_id_hint', 'From the provider developer console.')} />
+					<label for="oauth-client-id" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_id_label', 'Client ID')}
+					<HintIcon text={t('oauth_clients.client_id_hint', 'From the provider developer console.')}  />
+</label>
 					<input id="oauth-client-id" type="text" bind:value={createClientId} required class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="xxxxxxxxxx.apps.googleusercontent.com" />
 				</div>
 				<div>
-					<label for="oauth-client-secret" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_secret_label', 'Client Secret')}</label>
-					<HintIcon text={t('oauth_clients.client_secret_hint', 'Stored encrypted — never shown again.')} />
+					<label for="oauth-client-secret" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_secret_label', 'Client Secret')}
+					<HintIcon text={t('oauth_clients.client_secret_hint', 'Stored encrypted — never shown again.')}  />
+</label>
 					<input id="oauth-client-secret" type="password" bind:value={createClientSecret} required autocomplete="new-password" class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="GOCSPX-xxxxxxxxxxxxx" />
 					<HintIcon text={t('oauth_clients.client_secret_hint', 'Used to authenticate with the OAuth provider. Stored encrypted. Revealed once after creation.')} />
 				</div>
 				<div>
-					<label for="oauth-redirect" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.redirect_uri_label', 'Redirect URI')}</label>
-					<HintIcon text={t('oauth_clients.redirect_hint', 'Must match exactly what is registered with the provider.')} />
+					<label for="oauth-redirect" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.redirect_uri_label', 'Redirect URI')}
+					<HintIcon text={t('oauth_clients.redirect_hint', 'Must match exactly what is registered with the provider.')}  />
+</label>
 					<input id="oauth-redirect" type="text" bind:value={createRedirectUri} class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm" placeholder="https://example.com/auth/callback" />
 				</div>
 				<div class="flex justify-end gap-2 pt-2">

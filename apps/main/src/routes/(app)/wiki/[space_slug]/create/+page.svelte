@@ -334,8 +334,9 @@
 			<div>
 				<label for="wiki-create-category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_category_label', 'Category')}
-				</label>
-				<HintIcon text={t('wiki.create.category_hint', 'The category this page belongs to.')} />
+				
+				<HintIcon text={t('wiki.create.category_hint', 'The category this page belongs to.')}  />
+</label>
 				<AutocompleteSelect
 					id="wiki-create-category"
 					value={category}
@@ -353,8 +354,9 @@
 					<div class="mb-1 flex items-center justify-between gap-2">
 						<label for="wiki-create-page" class="block text-sm font-medium text-[var(--color-text)]">
 							{t('wiki.create_page_label', 'Page')}
-						</label>
-						<HintIcon text={t('wiki.create.page_hint', 'The parent page — leave blank for top level.')} />
+						
+						<HintIcon text={t('wiki.create.page_hint', 'The parent page — leave blank for top level.')}  />
+</label>
 						{#if canManageTemplates}
 							<button
 								type="button"
@@ -430,8 +432,9 @@
 			<div>
 				<label for="wiki-create-title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_title_label', 'Page title')}
-				</label>
-				<HintIcon text={t('wiki.create.title_hint', 'The page title shown in the wiki.')} />
+				
+				<HintIcon text={t('wiki.create.title_hint', 'The page title shown in the wiki.')}  />
+</label>
 				<input
 					id="wiki-create-title"
 					type="text"

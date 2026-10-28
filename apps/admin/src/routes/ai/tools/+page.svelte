@@ -236,8 +236,9 @@
 	>
 		<div class="space-y-4">
 			<div>
-				<label for="tool-name" class="mb-1 block text-sm font-medium">{t('ai.tool_name')}</label>
-				<HintIcon text={t('ai.tool_name_hint', 'The tool name shown to the AI.')} />
+				<label for="tool-name" class="mb-1 block text-sm font-medium">{t('ai.tool_name')}
+				<HintIcon text={t('ai.tool_name_hint', 'The tool name shown to the AI.')}  />
+</label>
 				<input
 					id="tool-name"
 					type="text"
@@ -250,8 +251,9 @@
 				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ai.tools.name_readonly', 'Tool name cannot be changed after creation.')}</p>
 			</div>
 			<div>
-				<label for="tool-desc" class="mb-1 block text-sm font-medium">{t('ai.description')}</label>
-				<HintIcon text={t('ai.tool_desc_hint', 'What the tool does — the AI uses this to decide when to call it.')} />
+				<label for="tool-desc" class="mb-1 block text-sm font-medium">{t('ai.description')}
+				<HintIcon text={t('ai.tool_desc_hint', 'What the tool does — the AI uses this to decide when to call it.')}  />
+</label>
 				<textarea
 					id="tool-desc"
 					class="w-full rounded-md border px-3 py-2 text-sm"
@@ -261,8 +263,9 @@
 				></textarea>
 			</div>
 			<div>
-				<label for="tool-perm" class="mb-1 block text-sm font-medium">{t('ai.required_permission', 'Required permission')}</label>
-				<HintIcon text={t('ai.tool_perm_hint', 'The permission required.')} />
+				<label for="tool-perm" class="mb-1 block text-sm font-medium">{t('ai.required_permission', 'Required permission')}
+				<HintIcon text={t('ai.tool_perm_hint', 'The permission required.')}  />
+</label>
 				<input
 					id="tool-perm"
 					type="text"
@@ -279,8 +282,9 @@
 					bind:checked={editingTool.is_enabled}
 					class="rounded"
 				/>
-				<label for="tool-enabled" class="text-sm">{t('ai.enabled')}</label>
-				<HintIcon text={t('ai.tool_enabled_hint', 'Turn off to disable without deleting.')} />
+				<label for="tool-enabled" class="text-sm">{t('ai.enabled')}
+				<HintIcon text={t('ai.tool_enabled_hint', 'Turn off to disable without deleting.')}  />
+</label>
 			</div>
 		</div>
 		{#snippet footer()}

@@ -283,8 +283,9 @@
 		<div class="mt-4">
 			<label for="et-test-email" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.test_email', 'Test Email Address')}
-			</label>
-			<HintIcon text={t('email_templates.et_test_email_hint', 'Where the test email is sent.')} />
+			
+			<HintIcon text={t('email_templates.et_test_email_hint', 'Where the test email is sent.')}  />
+</label>
 			<HintIcon text={t('email_templates.test_email_hint', 'Where the test email is sent.')} />
 			<input
 				id="et-test-email"
@@ -399,8 +400,9 @@
 		<div>
 			<label for="et-subject" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.subject', 'Subject')}
-			</label>
-			<HintIcon text={t('email_templates.et_subject_hint', 'The email subject line recipients see.')} />
+			
+			<HintIcon text={t('email_templates.et_subject_hint', 'The email subject line recipients see.')}  />
+</label>
 			<HintIcon text={t('email_templates.subject_hint', 'The email subject line recipients see.')} />
 			<input
 				id="et-subject"
@@ -414,8 +416,9 @@
 		<div>
 			<label for="et-body" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.body', 'Body (HTML)')}
-			</label>
-			<HintIcon text={t('email_templates.et_body_hint', 'Email body HTML — test before publishing.')} />
+			
+			<HintIcon text={t('email_templates.et_body_hint', 'Email body HTML — test before publishing.')}  />
+</label>
 			<HintIcon text={t('email_templates.body_hint', 'The main content body.')} />
 			<Tabs
 				tabs={[
@@ -451,8 +454,9 @@
 		<div>
 			<label for="et-plain" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('email_templates.plain_text', 'Plain Text Body')}
-			</label>
-			<HintIcon text={t('email_templates.et_plain_hint', 'Plain-text fallback for mail clients that block HTML.')} />
+			
+			<HintIcon text={t('email_templates.et_plain_hint', 'Plain-text fallback for mail clients that block HTML.')}  />
+</label>
 			<HintIcon text={t('email_templates.plain_hint', 'Plain-text fallback for mail clients that block HTML.')} />
 			<textarea
 				id="et-plain"
@@ -473,8 +477,9 @@
 			/>
 			<label for="et-active" class="text-sm font-medium" style="color: var(--color-foreground)">
 				{t('common.active', 'Active')}
-			</label>
-			<HintIcon text={t('email_templates.et_active_hint', 'Inactive templates are not sent.')} />
+			
+			<HintIcon text={t('email_templates.et_active_hint', 'Inactive templates are not sent.')}  />
+</label>
 			<HintIcon text={t('common.active_hint', 'Inactive records are hidden or disabled.')} />
 		</div>
 

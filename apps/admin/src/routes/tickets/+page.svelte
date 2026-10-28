@@ -514,8 +514,9 @@
 					</div>
 				</div>
 				<div>
-					<label for="tk-note" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.add_note", "Add Internal Note")}</label>
-					<HintIcon text={t('tickets.tk_note_hint', 'Internal note — not visible to the user.')} />
+					<label for="tk-note" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.add_note", "Add Internal Note")}
+					<HintIcon text={t('tickets.tk_note_hint', 'Internal note — not visible to the user.')}  />
+</label>
 					<div class="flex gap-2">
 						<input id="tk-note" type="text" bind:value={newNote} class="flex-1 rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("tickets.note_placeholder", "Internal note (not visible to user)...")} onkeydown={(e) => { if (e.key === 'Enter') submitNote(); }} />
 						<Button size="sm" variant="outline" onclick={submitNote} disabled={!newNote.trim() || addingNote}>{addingNote ? t("common.saving", "Saving...") : t("common.post", "Post")}</Button>
@@ -535,14 +536,16 @@
 <SlideOver bind:open={showEditSlideOver} title={t("tickets.edit", "Edit Ticket")}>
 	<div class="space-y-4">
 		<div>
-			<label for="tk-subject" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.subject", "Subject")}</label>
-			<HintIcon text={t('tickets.tk_subject_hint', 'The subject the user sees.')} />
+			<label for="tk-subject" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.subject", "Subject")}
+			<HintIcon text={t('tickets.tk_subject_hint', 'The subject the user sees.')}  />
+</label>
 			<input id="tk-subject" type="text" bind:value={editForm.subject} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="tk-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
-				<HintIcon text={t('tickets.tk_status_hint', 'The ticket state.')} />
+				<label for="tk-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}
+				<HintIcon text={t('tickets.tk_status_hint', 'The ticket state.')}  />
+</label>
 				<Select
 					options={ticketStatusOptions}
 					value={editForm.status}
@@ -550,8 +553,9 @@
 				/>
 			</div>
 			<div>
-				<label for="tk-priority" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.priority", "Priority")}</label>
-				<HintIcon text={t('tickets.tk_priority_hint', 'Higher priority tickets surface first.')} />
+				<label for="tk-priority" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.priority", "Priority")}
+				<HintIcon text={t('tickets.tk_priority_hint', 'Higher priority tickets surface first.')}  />
+</label>
 				<Select
 					options={ticketPriorityOptions}
 					value={editForm.priority}
@@ -560,8 +564,9 @@
 			</div>
 		</div>
 		<div>
-			<label for="tk-assignee" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.assignee", "Assignee")}</label>
-			<HintIcon text={t('tickets.tk_assignee_hint', 'The admin handling this ticket.')} />
+			<label for="tk-assignee" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.assignee", "Assignee")}
+			<HintIcon text={t('tickets.tk_assignee_hint', 'The admin handling this ticket.')}  />
+</label>
 			<input id="tk-assignee" type="text" bind:value={editForm.assigned_to} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 		</div>
 	</div>

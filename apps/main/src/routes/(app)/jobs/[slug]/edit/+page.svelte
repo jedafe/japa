@@ -201,8 +201,9 @@
 			<div class="space-y-2">
 				<label for="job-org" class="text-sm font-medium text-[var(--color-text)]">
 					{t('jobs.organization', 'Organization')} <span class="text-[var(--destructive)]">*</span>
-				</label>
-				<HintIcon text={t('jobs.org_hint', 'Post under one of your organizations.')} />
+				
+				<HintIcon text={t('jobs.org_hint', 'Post under one of your organizations.')}  />
+</label>
 				<AutocompleteSelect
 					id="job-org"
 					bind:value={orgId}

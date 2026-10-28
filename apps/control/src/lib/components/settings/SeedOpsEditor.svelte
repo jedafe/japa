@@ -200,13 +200,15 @@
 				<div class="mt-3 space-y-3 border-t border-border-input pt-3">
 					<div class="grid grid-cols-2 gap-2">
 						<div>
-							<label class={labelCls} for="seed-op-kind-{i}">{t('seeds_editor.kind', 'Kind (unique id)')}</label>
-							<HintIcon text={t('seeds_editor.kind_hint', 'Unique identifier for this seed operation.')} />
+							<label class={labelCls} for="seed-op-kind-{i}">{t('seeds_editor.kind', 'Kind (unique id)')}
+							<HintIcon text={t('seeds_editor.kind_hint', 'Unique identifier for this seed operation.')}  />
+</label>
 							<input id="seed-op-kind-{i}" class="{inputCls} font-mono" placeholder="my_op" bind:value={op.kind} oninput={emit} {disabled} />
 						</div>
 						<div>
-							<label class={labelCls} for="seed-op-task-{i}">{t('seeds_editor.task_type', 'Task type')}</label>
-							<HintIcon text={t('seeds_editor.task_hint', 'The task type this op runs.')} />
+							<label class={labelCls} for="seed-op-task-{i}">{t('seeds_editor.task_type', 'Task type')}
+							<HintIcon text={t('seeds_editor.task_hint', 'The task type this op runs.')}  />
+</label>
 							<select id="seed-op-task-{i}" class={inputCls} bind:value={op.task_type} onchange={emit} {disabled}>
 								<option value="">{t('seeds_editor.no_task', '— none (display/CLI only) —')}</option>
 								{#each taskTypes as tt (tt.type)}
@@ -216,19 +218,22 @@
 						</div>
 					</div>
 					<div>
-						<label class={labelCls} for="seed-op-desc-{i}">{t('seeds_editor.description', 'Description')}</label>
-						<HintIcon text={t('seeds_editor.desc_hint', 'What this op does — for admin reference.')} />
+						<label class={labelCls} for="seed-op-desc-{i}">{t('seeds_editor.description', 'Description')}
+						<HintIcon text={t('seeds_editor.desc_hint', 'What this op does — for admin reference.')}  />
+</label>
 						<input id="seed-op-desc-{i}" class={inputCls} bind:value={op.description} oninput={emit} {disabled} />
 					</div>
 					<div class="grid grid-cols-2 gap-2">
 						<div>
-							<label class={labelCls} for="seed-op-cmd-{i}">{t('seeds_editor.command', 'CLI command (optional)')}</label>
-							<HintIcon text={t('seeds_editor.cmd_hint', 'Optional CLI command to run instead.')} />
+							<label class={labelCls} for="seed-op-cmd-{i}">{t('seeds_editor.command', 'CLI command (optional)')}
+							<HintIcon text={t('seeds_editor.cmd_hint', 'Optional CLI command to run instead.')}  />
+</label>
 							<input id="seed-op-cmd-{i}" class="{inputCls} font-mono" placeholder="go run ./cmd/..." bind:value={op.command} oninput={emit} {disabled} />
 						</div>
 						<div>
-							<label class={labelCls} for="seed-op-static-{i}">{t('seeds_editor.static', 'Static payload JSON (optional)')}</label>
-							<HintIcon text={t('seeds_editor.static_hint', 'Optional static JSON payload.')} />
+							<label class={labelCls} for="seed-op-static-{i}">{t('seeds_editor.static', 'Static payload JSON (optional)')}
+							<HintIcon text={t('seeds_editor.static_hint', 'Optional static JSON payload.')}  />
+</label>
 							<input
 								id="seed-op-static-{i}"
 								class="{inputCls} font-mono"

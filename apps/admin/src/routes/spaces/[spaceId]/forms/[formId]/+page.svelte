@@ -290,8 +290,9 @@
 			<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.details')}</h2>
 			<div class="space-y-4">
 				<div>
-					<label for="edit-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_label')}</label>
-					<HintIcon text={t('spaces.edit_name_hint', 'The name shown in admin lists.')} />
+					<label for="edit-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_label')}
+					<HintIcon text={t('spaces.edit_name_hint', 'The name shown in admin lists.')}  />
+</label>
 					<input
 						id="edit-name"
 						type="text"
@@ -302,8 +303,9 @@
 					/>
 				</div>
 				<div>
-					<label for="edit-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.description_label')}</label>
-					<HintIcon text={t('spaces.edit_desc_hint', 'Short description shown on the record.')} />
+					<label for="edit-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.description_label')}
+					<HintIcon text={t('spaces.edit_desc_hint', 'Short description shown on the record.')}  />
+</label>
 					<textarea
 						id="edit-desc"
 						class="w-full rounded-md border px-3 py-2 text-sm"

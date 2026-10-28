@@ -14,8 +14,8 @@
 <style>
 	.hint-icon {
 		display: inline-flex;
-		float: inline-end;
-		margin-inline-start: auto;
+		vertical-align: -0.15em;
+		margin-inline-start: 0.35rem;
 		cursor: help;
 		color: var(--color-muted, #6b7280);
 		position: relative;
