@@ -201,24 +201,23 @@
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryReady; // re-derive when the 250 primary geo space countries load
 		return [
-			{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text', help: t('app.tools.name_hint', 'The name shown in admin lists and on the site where public.'),},
-			{ key: 'visa_category', label: t('app.tools.col_visa_type', 'Visa Category'), type: 'text', help: t('app.tools.visa_category_hint', 'The visa category — e.g. study, work, family.') },
-			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', help: t('app.tools.destination_space_id_hint', 'The destination space this is linked to.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
-			{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text', help: t('app.tools.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
-			{ key: 'eligibility_summary', label: t('app.tools.col_summary', 'Eligibility Summary'), type: 'textarea', help: t('app.tools.eligibility_summary_hint', 'Free text — multiple lines allowed.') },
-			{ key: 'gov_source_url', label: t('app.tools.col_gov_source_url', 'Government Source URL'), type: 'url', help: t('app.tools.gov_source_url_hint', 'Official government source — used to verify data.') },
-			{ key: 'typical_fee_usd', label: t('app.tools.col_typical_fee', 'Typical Fee (USD)'), type: 'number', help: t('app.tools.typical_fee_usd_hint', 'Typical fee in USD.') },
-			{ key: 'path_to_pr', label: t('app.tools.col_path_to_pr', 'Path to PR'), type: 'textarea', help: t('app.tools.path_to_pr_hint', 'How this route leads to permanent residency.') },
-			{ key: 'renewal_terms', label: t('app.tools.col_renewal_terms', 'Renewal Terms'), type: 'textarea', help: t('app.tools.renewal_terms_hint', 'How renewal works — automatic, manual, price.') },
-			{ key: 'restrictions', label: t('app.tools.col_restrictions', 'Restrictions'), type: 'textarea', help: t('app.tools.restrictions_hint', 'Limits or conditions that apply.') },
+			{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text' },
+			{ key: 'visa_category', label: t('app.tools.col_visa_type', 'Visa Category'), type: 'text' },
+			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
+			{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text' },
+			{ key: 'eligibility_summary', label: t('app.tools.col_summary', 'Eligibility Summary'), type: 'textarea' },
+			{ key: 'gov_source_url', label: t('app.tools.col_gov_source_url', 'Government Source URL'), type: 'url' },
+			{ key: 'typical_fee_usd', label: t('app.tools.col_typical_fee', 'Typical Fee (USD)'), type: 'number' },
+			{ key: 'path_to_pr', label: t('app.tools.col_path_to_pr', 'Path to PR'), type: 'textarea' },
+			{ key: 'renewal_terms', label: t('app.tools.col_renewal_terms', 'Renewal Terms'), type: 'textarea' },
+			{ key: 'restrictions', label: t('app.tools.col_restrictions', 'Restrictions'), type: 'textarea' },
 			{
 				key: 'status',
 				label: t('app.tools.col_status', 'Status'),
 				type: 'select',
-			help: t('app.tools.status_hint', 'The record state — controls visibility and actions.'),
 				options: visaRouteStatusOptions
 			},
-			{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox', help: t('app.tools.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
+			{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox' }
 		];
 	});
 

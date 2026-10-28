@@ -203,12 +203,12 @@
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryUtilsName.ready;
 		return [
-			{ key: 'test_name', label: t('common.test_name', 'Test Name'), type: 'text', help: t('common.test_name_hint', 'The test this result is for — e.g. IELTS.'),},
-			{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'autocomplete', help: t('common.destination_space_name_hint', 'The destination space this is linked to.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsName.fetcher, initialFetcher: countryUtilsName.initialFetcher, getSelectedLabel: countryUtilsName.getSelectedLabel },
-			{ key: 'visa_category', label: t('common.visa_category', 'Visa Category'), type: 'text', help: t('common.visa_category_hint', 'The visa category — e.g. study, work, family.') },
-			{ key: 'minimum_score', label: t('common.minimum_score', 'Minimum Score'), type: 'text', help: t('common.minimum_score_hint', 'The minimum score required.') },
-			{ key: 'notes', label: t('common.notes', 'Notes'), type: 'textarea', help: t('common.notes_hint', 'Internal notes — not shown to users.') },
-			{ key: 'source_url', label: t('common.source_url', 'Source URL'), type: 'url', help: t('common.source_url_hint', 'The URL this data was pulled from — used for verification.') }
+			{ key: 'test_name', label: t('common.test_name', 'Test Name'), type: 'text' },
+			{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsName.fetcher, initialFetcher: countryUtilsName.initialFetcher, getSelectedLabel: countryUtilsName.getSelectedLabel },
+			{ key: 'visa_category', label: t('common.visa_category', 'Visa Category'), type: 'text' },
+			{ key: 'minimum_score', label: t('common.minimum_score', 'Minimum Score'), type: 'text' },
+			{ key: 'notes', label: t('common.notes', 'Notes'), type: 'textarea' },
+			{ key: 'source_url', label: t('common.source_url', 'Source URL'), type: 'url' }
 		];
 	});
 
@@ -219,7 +219,6 @@
 				key: 'dest',
 				label: t('app.tools.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.tools.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Curriculum editor — Japa Academy creator authors modules, lessons, and
 	// quiz questions on their own track (ADR-063). Platform admins may edit
 	// any track's curriculum (the backend bypasses ownership for them).
@@ -771,6 +770,7 @@
 												</div>
 												<button type="button" onclick={() => addOption(q)} class="mt-1.5 inline-flex items-center gap-1 text-xs text-[var(--color-primary)]"><Plus size={12} /> {t('curriculum.add_option', 'Add option')}</button>
 												<input type="text" bind:value={q.explanation} oninput={() => (quizDirty = true)} placeholder={t('curriculum.explanation', 'Explanation shown after submit (optional)')} class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-xs text-[var(--color-text)]" />
+												<p class="mt-1 text-[10px] text-[var(--color-muted)]">{t('curriculum.answer_hint', 'Select the radio next to the correct option')}</p>
 											</div>
 										{/each}
 										{#if quizQuestions.length === 0}

@@ -102,10 +102,10 @@
 	});
 
 	const fields = $derived<FieldDef[]>([
-		{ key: 'title', label: t('app.mutual_aid.col_title', 'Title'), type: 'text', help: t('app.mutual_aid.title_hint', 'The title shown in listings and detail views.'),},
-		{ key: 'type', label: t('app.mutual_aid.col_type', 'Type'), type: 'text', help: t('app.mutual_aid.type_hint', 'The type — controls how it’s handled.') },
-		{ key: 'status', label: t('app.mutual_aid.col_status', 'Status'), type: 'select', help: t('app.mutual_aid.status_hint', 'The record state — controls visibility and actions.'), options: statusOptions },
-		{ key: 'description', label: t('app.mutual_aid.detail_description', 'Description'), type: 'textarea', help: t('app.mutual_aid.description_hint', 'Shown in detail views — keep it concise.') }
+		{ key: 'title', label: t('app.mutual_aid.col_title', 'Title'), type: 'text' },
+		{ key: 'type', label: t('app.mutual_aid.col_type', 'Type'), type: 'text' },
+		{ key: 'status', label: t('app.mutual_aid.col_status', 'Status'), type: 'select', options: statusOptions },
+		{ key: 'description', label: t('app.mutual_aid.detail_description', 'Description'), type: 'textarea' }
 	]);
 
 	const filters = $derived.by<FilterDef[]>(() => {
@@ -120,7 +120,6 @@
 				key: 'dest',
 				label: t('app.mutual_aid.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.mutual_aid.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

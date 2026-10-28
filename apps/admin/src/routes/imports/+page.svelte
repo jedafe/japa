@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// /imports — Content Import oversight (Section 65, ADR-083).
 	// Migrated to the EntityPage scaffold: DataTable with server-side
 	// pagination + status filter, custom row actions (View, Retry),
@@ -180,9 +179,9 @@
 	// standard EntityForm input), but `fields` is still required for the
 	// scaffold to seed the form value object.
 	const fields: FieldDef[] = [
-		{ key: 'user_id', label: t('imports.target_user', 'Target User'), type: 'text', help: t('imports.user_id_hint', 'The user account this is attached to.'), required: true },
-		{ key: 'source_type', label: t('imports.source_type', 'Source Type'), type: 'text', help: t('imports.source_type_hint', 'The kind of source this is.'), required: true },
-		{ key: 'source_url', label: t('imports.source_url', 'Source URL'), type: 'url', help: t('imports.source_url_hint', 'The URL this data was pulled from — used for verification.') }
+		{ key: 'user_id', label: t('imports.target_user', 'Target User'), type: 'text', required: true },
+		{ key: 'source_type', label: t('imports.source_type', 'Source Type'), type: 'text', required: true },
+		{ key: 'source_url', label: t('imports.source_url', 'Source URL'), type: 'url' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -429,9 +428,7 @@
 		<div>
 			<label for="import-user" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('imports.target_user', 'Target User')}
-			
-			<HintIcon text={t('imports.user_hint', 'The user account this is attached to.')}  />
-</label>
+			</label>
 			<UserAutocomplete
 				bind:value={value._username}
 				placeholder={t('imports.user_placeholder', 'Search by username…')}
@@ -444,9 +441,7 @@
 		<div>
 			<label for="import-source-type" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('imports.source_type', 'Source Type')}
-			
-			<HintIcon text={t('imports.source_type_hint', 'The type — controls how it’s handled.')}  />
-</label>
+			</label>
 			<Select
 				bind:value={value.source_type}
 				options={sourceTypeOptions}
@@ -457,9 +452,7 @@
 			<div>
 				<label for="import-source-url" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('imports.source_url', 'Source URL')}
-				
-			<HintIcon text={t('imports.source_url_hint', 'The URL this data is pulled from — full URL including https://.')}  />
-</label>
+				</label>
 				<input
 					id="import-source-url"
 					type="url"
@@ -468,7 +461,9 @@
 					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					style="border-color: var(--color-border)"
 				/>
-				<HintIcon text={t('imports.source_url_hint', 'The RSS feed URL or profile URL of the blog to import.')} />
+				<p class="mt-1 text-xs text-muted">
+					{t('imports.source_url_hint', 'The RSS feed URL or profile URL of the blog to import.')}
+				</p>
 			</div>
 		{/if}
 		<div class="rounded-lg border p-3 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	interface Toggle {
 		key: string;
 		label: string;
@@ -10,10 +9,9 @@
 		values: Record<string, boolean>;
 		items: readonly Toggle[];
 		onchange?: (key: string, value: boolean) => void;
-		hint?: string;
 	}
 
-	let { label, values, items, onchange, hint }: Props = $props();
+	let { label, values, items, onchange }: Props = $props();
 </script>
 
 <div class="block text-sm font-medium">
@@ -34,5 +32,4 @@
 			</label>
 		{/each}
 	</div>
-{#if hint}<HintIcon text={hint} />{/if}
 </div>

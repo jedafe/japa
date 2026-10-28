@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /roadmap — EntityPage scaffold (§113). Items table with status/category
 	// filters, soft-delete restore + hard delete, and a "Change Status" state
@@ -285,7 +284,7 @@
 	// `fields` is $derived so the category select picks up options once the
 	// categories API responds.
 	const fields = $derived<FieldDef[]>([
-		{ key: 'title', label: t('roadmap.title', 'Title'), type: 'text', help: t('roadmap.title_hint', 'The title shown in listings and detail views.'), required: true },
+		{ key: 'title', label: t('roadmap.title', 'Title'), type: 'text', required: true },
 		{
 			key: 'slug',
 			label: t('roadmap.slug', 'Slug'),
@@ -293,13 +292,12 @@
 			placeholder: 'auto',
 			help: t('roadmap.slug_hint', 'Leave empty to auto-generate from the title.')
 		},
-		{ key: 'summary', label: t('roadmap.summary', 'Summary'), type: 'textarea', help: t('roadmap.summary_hint', 'A one or two sentence overview shown on cards.'),},
-		{ key: 'body', label: t('roadmap.body', 'Body'), type: 'textarea', help: t('roadmap.body_hint', 'The main content body.') },
+		{ key: 'summary', label: t('roadmap.summary', 'Summary'), type: 'textarea' },
+		{ key: 'body', label: t('roadmap.body', 'Body'), type: 'textarea' },
 		{
 			key: 'category_id',
 			label: t('roadmap.category', 'Category'),
 			type: 'select',
-			help: t('roadmap.category_id_hint', 'The category this belongs to — drives grouping and filters.'),
 			options: categoryOptions,
 			placeholder: t('roadmap.no_category', 'No category')
 		},
@@ -307,7 +305,6 @@
 			key: 'status',
 			label: t('common.status', 'Status'),
 			type: 'select',
-			help: t('common.status_hint', 'The record state — controls visibility and actions.'),
 			options: STATUS_OPTIONS,
 			// Linked items derive status from the flag's rollout phase (§4.2) —
 			// lock the control and explain why; the backend returns
@@ -318,13 +315,12 @@
 				'Status is derived from the linked feature flag — change the flag’s phase to move it.'
 			)
 		},
-		{ key: 'sort_order', label: t('roadmap.sort_order', 'Sort Order'), type: 'number',},
-		{ key: 'is_flagship', label: t('roadmap.is_flagship', 'Flagship'), type: 'checkbox', help: t('roadmap.is_flagship_hint', 'Flagship records get featured placement.') },
+		{ key: 'sort_order', label: t('roadmap.sort_order', 'Sort Order'), type: 'number' },
+		{ key: 'is_flagship', label: t('roadmap.is_flagship', 'Flagship'), type: 'checkbox' },
 		{
 			key: 'target_window',
 			label: t('roadmap.target_window', 'Target Window'),
 			type: 'text',
-			help: t('roadmap.target_window_hint', 'The intake or window targeted — e.g. Q3 2026.'),
 			placeholder: 'Q3 2026'
 		},
 		{
@@ -617,6 +613,9 @@
 				{STATUS_OPTIONS.find((s) => s.value === row.status)?.label ?? row.status}
 			</p>
 			{#if row.feature_flag_key}
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">
+					{t('roadmap.status_derived_hint', 'Status is derived from the linked feature flag — change the flag’s phase to move it.')}
+				</p>
 			{/if}
 		</div>
 		{#if row.summary}

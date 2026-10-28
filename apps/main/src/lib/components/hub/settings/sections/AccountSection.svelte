@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -67,15 +66,11 @@
 	<label class="mb-3 block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.account.email')}</span>
 		<input
-			id="account-email"
 			type="email"
-			placeholder={t('auth.fields.email_placeholder', 'you@example.com')}
-			aria-describedby="account-email-hint"
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			value={form.values.email}
 			oninput={(e) => form.set({ email: e.currentTarget.value })}
 		/>
-		<HintIcon id="account-email-hint" text={t('settings.account.email_hint', 'Used for sign-in and account emails.')} />
 		{#if form.values.email !== profile?.email}
 			<span class="mt-1 block text-xs text-[var(--color-muted)]">
 				{t('settings.account.email_reverify', 'Changing your email requires re-verification.')}
@@ -85,14 +80,10 @@
 	<label class="mb-3 block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.account.username')}</span>
 		<input
-			id="account-username"
-			placeholder={t('auth.fields.username_placeholder', 'e.g. ada_lovelace')}
-			aria-describedby="account-username-hint"
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)]"
 			value={form.values.username}
 			oninput={(e) => form.set({ username: e.currentTarget.value })}
 		/>
-		<HintIcon id="account-username-hint" text={t('settings.account.username_hint', '3–30 characters — letters, numbers and underscores. This is your public handle.')} />
 	</label>
 	<div class="block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.account.theme')}</span>
@@ -102,7 +93,6 @@
 			ariaLabel={t('settings.account.theme')}
 			onValueChange={(v) => form.set({ theme: (v as ThemeName) || 'light' })}
 		/>
-		<HintIcon id="account-theme-hint" text={t('settings.account.theme_hint', 'Applies immediately — System follows your device setting.')} />
 	</div>
 
 	<!-- §07 Verification Requests: profile verification entry point. -->

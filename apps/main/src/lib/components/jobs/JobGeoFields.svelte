@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Cascading Country → State → City pickers for the job listing form,
 	// backed by the geo-space catalog (GET /geo/countries,
 	// /geo/countries/{code}/states, /geo/states/{id}/cities). Only the
@@ -110,9 +109,7 @@
 
 <div class="geo-fields">
 	<div class="geo-field">
-		<label class="geo-label" for="job-country">{t('jobs.country', 'Country')}
-		<HintIcon text={t('jobs.country_hint', 'The country the job is based in.')}  />
-</label>
+		<label class="geo-label" for="job-country">{t('jobs.country', 'Country')}</label>
 		<Autocomplete
 			id="job-country"
 			placeholder={t('jobs.country', 'Country')}
@@ -141,9 +138,7 @@
 
 	{#if countryCode && states.length > 0}
 		<div class="geo-field">
-			<label class="geo-label" for="job-state">{t('jobs.state', 'State / Region')}
-			<HintIcon text={t('jobs.state_hint', 'State, province or region.')}  />
-</label>
+			<label class="geo-label" for="job-state">{t('jobs.state', 'State / Region')}</label>
 			<Autocomplete
 				id="job-state"
 				placeholder={t('jobs.state', 'State / Region')}
@@ -168,9 +163,7 @@
 
 	{#if countryCode}
 		<div class="geo-field">
-			<label class="geo-label" for="job-city">{t('jobs.city', 'City')}
-			<HintIcon text={t('jobs.city_hint', 'The city — or Remote.')}  />
-</label>
+			<label class="geo-label" for="job-city">{t('jobs.city', 'City')}</label>
 			{#if states.length > 0 && !stateId}
 				<p class="geo-hint">{t('jobs.city_pick_state', 'Select a state / region first')}</p>
 			{:else if stateId}

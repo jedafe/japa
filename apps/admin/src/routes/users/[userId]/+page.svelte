@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
   import { page } from "$app/state";
@@ -822,9 +821,7 @@
       </div>
     </div>
     <div>
-      <label for="restrict-duration" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.duration', 'Duration')}
-      <HintIcon text={t('users.restrict_duration_hint', 'How long the restriction lasts.')}  />
-</label>
+      <label for="restrict-duration" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.duration', 'Duration')}</label>
       <Autocomplete
         id="restrict-duration"
         placeholder={t('users.detail.select_duration', 'Select duration')}
@@ -843,9 +840,7 @@
       />
     </div>
     <div>
-      <label for="restrict-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.reason', 'Reason')}
-      <HintIcon text={t('users.restrict_reason_hint', 'The reason recorded for audit.')}  />
-</label>
+      <label for="restrict-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.reason', 'Reason')}</label>
       <textarea id="restrict-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.ph_reason_for_restriction', 'Reason for restriction...')} bind:value={restrictReason}></textarea>
     </div>
   </div>
@@ -864,9 +859,7 @@
     {t('users.detail.suspend_effect', 'The user will be unable to perform any action on the platform until unsuspended.')}
   </p>
   <div class="mt-3">
-    <label for="suspend-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.reason', 'Reason')}
-    <HintIcon text={t('users.suspend_reason_hint', 'The reason recorded — shown to the user where noted.')}  />
-</label>
+    <label for="suspend-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.reason', 'Reason')}</label>
     <textarea id="suspend-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.ph_reason_for_suspension', 'Reason for suspension...')} bind:value={suspendReason}></textarea>
   </div>
   <div class="mt-6 flex justify-end gap-3">
@@ -913,9 +906,7 @@
 <Modal bind:open={showWarningModal} title={t('users.detail.warning', 'Issue Warning')} size="sm">
   <div class="space-y-3">
     <div>
-      <label for="warning-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.detail.violation_type', 'Violation Type')}
-      <HintIcon text={t('users.warning_violation_hint', 'The rule violated.')}  />
-</label>
+      <label for="warning-violation" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.detail.violation_type', 'Violation Type')}</label>
       <Autocomplete
         id="warning-violation"
         placeholder={t('users.detail.select_violation', 'Select violation type')}
@@ -934,9 +925,7 @@
       />
     </div>
     <div>
-      <label for="warning-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.reason_for_warning')}
-      <HintIcon text={t('users.warning_reason_hint', 'The reason recorded — shown to the user where noted.')}  />
-</label>
+      <label for="warning-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.reason_for_warning')}</label>
       <textarea id="warning-reason" rows="3" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.ph_enter_the_reason_for_this', 'Enter the reason for this warning...')} bind:value={warningReason}></textarea>
     </div>
     <p class="text-xs" style="color: var(--color-muted)">After 3 warnings of the same type, the user will be auto-restricted from related operations for 7 days.</p>
@@ -964,9 +953,7 @@
 
 <Modal bind:open={showProfileTypeModal} title={t('users.detail.change_profile_type', 'Change Profile Type')} size="sm">
   <div>
-    <label for="profile-type-select" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.profile_type', 'Profile Type')}
-    <HintIcon text={t('users.profile_type_select_hint', 'The kind of profile.')}  />
-</label>
+    <label for="profile-type-select" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.profile_type', 'Profile Type')}</label>
     <Autocomplete
       id="profile-type-select"
       placeholder={t('users.detail.select_profile_type', 'Select profile type')}

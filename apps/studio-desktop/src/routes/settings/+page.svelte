@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { onMount } from 'svelte';
 	import { Save, FolderOpen, TestTube, Loader2, Check, AlertCircle, Trash2 } from 'lucide-svelte';
@@ -269,7 +268,6 @@
 				value={settings.projectName}
 				oninput={(event) => update('projectName', (event.currentTarget as HTMLInputElement).value)}
 			/>
-				<HintIcon text='The name shown in the app header and exports.' />
 		</label>
 
 		<label class="block text-sm font-medium">
@@ -281,7 +279,6 @@
 				value={settings.baseUrl}
 				oninput={(event) => update('baseUrl', (event.currentTarget as HTMLInputElement).value)}
 			/>
-				<HintIcon text='The API server this instance talks to — usually https://api.japa.to.' />
 		</label>
 
 		<label class="block text-sm font-medium">
@@ -372,9 +369,7 @@
 					update('autoSync', (event.currentTarget as HTMLInputElement).checked)}
 			/>
 			<span>Enable auto-sync</span>
-		
-					<HintIcon text='Automatically sync new posts when you save.'  />
-</label>
+		</label>
 
 		{#if settings.autoSync}
 			<div class="rounded-lg border border-border bg-surface p-3">

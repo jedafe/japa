@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { aiAdminApi, type AiTool, type AiUsageSummary } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -236,9 +235,7 @@
 	>
 		<div class="space-y-4">
 			<div>
-				<label for="tool-name" class="mb-1 block text-sm font-medium">{t('ai.tool_name')}
-				<HintIcon text={t('ai.tool_name_hint', 'The tool name shown to the AI.')}  />
-</label>
+				<label for="tool-name" class="mb-1 block text-sm font-medium">{t('ai.tool_name')}</label>
 				<input
 					id="tool-name"
 					type="text"
@@ -251,9 +248,7 @@
 				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ai.tools.name_readonly', 'Tool name cannot be changed after creation.')}</p>
 			</div>
 			<div>
-				<label for="tool-desc" class="mb-1 block text-sm font-medium">{t('ai.description')}
-				<HintIcon text={t('ai.tool_desc_hint', 'What the tool does — the AI uses this to decide when to call it.')}  />
-</label>
+				<label for="tool-desc" class="mb-1 block text-sm font-medium">{t('ai.description')}</label>
 				<textarea
 					id="tool-desc"
 					class="w-full rounded-md border px-3 py-2 text-sm"
@@ -263,9 +258,7 @@
 				></textarea>
 			</div>
 			<div>
-				<label for="tool-perm" class="mb-1 block text-sm font-medium">{t('ai.required_permission', 'Required permission')}
-				<HintIcon text={t('ai.tool_perm_hint', 'The permission required.')}  />
-</label>
+				<label for="tool-perm" class="mb-1 block text-sm font-medium">{t('ai.required_permission', 'Required permission')}</label>
 				<input
 					id="tool-perm"
 					type="text"
@@ -282,9 +275,7 @@
 					bind:checked={editingTool.is_enabled}
 					class="rounded"
 				/>
-				<label for="tool-enabled" class="text-sm">{t('ai.enabled')}
-				<HintIcon text={t('ai.tool_enabled_hint', 'Turn off to disable without deleting.')}  />
-</label>
+				<label for="tool-enabled" class="text-sm">{t('ai.enabled')}</label>
 			</div>
 		</div>
 		{#snippet footer()}

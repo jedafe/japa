@@ -191,10 +191,10 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('app.story.col_title', 'Title'), type: 'text', help: t('app.story.title_hint', 'The title shown in listings and detail views.'),},
-		{ key: 'author_name', label: t('app.story.col_author', 'Author'), type: 'text', help: t('app.story.author_name_hint', 'The display name of the author.') },
-		{ key: 'status', label: t('app.story.col_status', 'Status'), type: 'text', help: t('app.story.status_hint', 'The record state — controls visibility and actions.') },
-		{ key: 'body', label: t('app.story.detail_content', 'Content'), type: 'textarea', help: t('app.story.body_hint', 'The main content body.') }
+		{ key: 'title', label: t('app.story.col_title', 'Title'), type: 'text' },
+		{ key: 'author_name', label: t('app.story.col_author', 'Author'), type: 'text' },
+		{ key: 'status', label: t('app.story.col_status', 'Status'), type: 'text' },
+		{ key: 'body', label: t('app.story.detail_content', 'Content'), type: 'textarea' }
 	];
 
 	const filters = $derived.by<FilterDef[]>(() => {
@@ -217,7 +217,6 @@
 				key: 'dest',
 				label: t('app.story.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.story.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

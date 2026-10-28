@@ -90,8 +90,6 @@
 	// registration can never leak into a route that mounts no SetSidebar.
 	routeSidebar.owner = null;
 	routeSidebar.snippet = null;
-
-	import AdConversionTracker from './AdConversionTracker.svelte';
 </script>
 
 {#if !user}
@@ -215,8 +213,6 @@
 		</div>
 	{/if}
 {/if}
-
-<AdConversionTracker />
 
 <style>
 	.shell {

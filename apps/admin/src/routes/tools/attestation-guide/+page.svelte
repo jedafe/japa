@@ -231,11 +231,11 @@
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryUtils.ready;
 		return [
-			{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'text', help: t('common.document_type_hint', 'The document type required.'),},
-			{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country'), type: 'autocomplete', help: t('common.issuing_space_id_hint', 'The space that issued this document or record.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
-			{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country'), type: 'autocomplete', help: t('common.destination_space_id_hint', 'The destination space this is linked to.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
-			{ key: 'apostille_required', label: t('common.apostille', 'Apostille Required'), type: 'checkbox', help: t('common.apostille_required_hint', 'Whether the document needs an apostille stamp.') },
-			{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'textarea', help: t('common.pathway_steps_hint', 'The ordered steps of this pathway.') }
+			{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'text' },
+			{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
+			{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
+			{ key: 'apostille_required', label: t('common.apostille', 'Apostille Required'), type: 'checkbox' },
+			{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'textarea' }
 		];
 	});
 
@@ -246,7 +246,6 @@
 				key: 'dest',
 				label: t('app.tools.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.tools.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { AutocompleteSelect } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
 
@@ -46,7 +45,6 @@
 					class={showLabels ? 'text-xs text-[var(--color-muted)]' : 'sr-only'}
 					>{t('ai.picker.model_label', 'Model')}</label
 				>
-					<HintIcon text={t('ai.picker.model_hint', 'Which AI model to use.')} />
 				<AutocompleteSelect id="{idPrefix}-model" bind:value={model} options={modelOptions} {compact} />
 			</div>
 		{/if}
@@ -57,7 +55,6 @@
 					class={showLabels ? 'text-xs text-[var(--color-muted)]' : 'sr-only'}
 					>{t('ai.picker.tone_label', 'Tone')}</label
 				>
-					<HintIcon text={t('ai.picker.tone_hint', 'The writing tone for generated content.')} />
 				<AutocompleteSelect id="{idPrefix}-tone" bind:value={tone} options={toneOptions} {compact} />
 			</div>
 		{/if}
@@ -68,7 +65,6 @@
 					class={showLabels ? 'text-xs text-[var(--color-muted)]' : 'sr-only'}
 					>{t('ai.picker.voice_label', 'Voice')}</label
 				>
-					<HintIcon text={t('ai.picker.voice_hint', 'The voice for audio output.')} />
 				<AutocompleteSelect id="{idPrefix}-voice" bind:value={voice} options={voiceOptions} {compact} />
 			</div>
 		{/if}

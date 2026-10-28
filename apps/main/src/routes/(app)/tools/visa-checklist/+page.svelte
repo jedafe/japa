@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
@@ -360,9 +359,7 @@
 		<div class="border-b border-[var(--color-border)] px-4 py-3">
 			<label for="vc-origin" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('checklist.step1', '1. Where are you coming from?')}
-			
-			<HintIcon text={t('tools.checklist.origin_hint', 'Where you are applying from.')}  />
-</label>
+			</label>
 			<div class="mt-2">
 				<SelectField
 					id="vc-origin"
@@ -382,9 +379,7 @@
 			<div class="border-b border-[var(--color-border)] px-4 py-3">
 				<label for="vc-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 					{t('checklist.step2', '2. Where are you going?')}
-				
-				<HintIcon text={t('tools.checklist.dest_hint', 'Where you are applying to.')}  />
-</label>
+				</label>
 				<div class="mt-2">
 					<SelectField
 						id="vc-dest"
@@ -405,9 +400,7 @@
 			<div class="border-b border-[var(--color-border)] px-4 py-3">
 				<label for="vc-visa" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 					{t('checklist.step3', '3. Visa type')}
-				
-				<HintIcon text={t('tools.checklist.visa_hint', 'The visa type this checklist is for.')}  />
-</label>
+				</label>
 				<div class="mt-2">
 					<SelectField
 						id="vc-visa"

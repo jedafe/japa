@@ -80,23 +80,23 @@
 			key: 'destination_space_id',
 			label: t('sop_generator.destination', 'Destination (blank = generic)'),
 			type: 'autocomplete',
-			help: t('sop_generator.destination_space_id_hint', 'The destination space this is linked to.'),
 			placeholder: t('sop_generator.destination_ph', 'Search country…'),
 			emptyMessage: t('common.no_results', 'No results found'),
 			fetcher: countrySel.fetcher,
 			initialFetcher: countrySel.initialFetcher,
 			getSelectedLabel: countrySel.getSelectedLabel
 		},
-		{ key: 'purpose', label: t('sop_generator.purpose', 'Purpose'), type: 'select', help: t('sop_generator.purpose_hint', 'What this is for — shown to admins and users.'), required: true, options: PURPOSE_OPTIONS },
-		{ key: 'title', label: t('sop_generator.title_label', 'Title'), type: 'text', help: t('sop_generator.title_hint', 'The title shown in listings and detail views.'), required: true },
+		{ key: 'purpose', label: t('sop_generator.purpose', 'Purpose'), type: 'select', required: true, options: PURPOSE_OPTIONS },
+		{ key: 'title', label: t('sop_generator.title_label', 'Title'), type: 'text', required: true },
 		{
 			key: 'structure',
 			label: t('sop_generator.structure', 'Structure (JSON)'),
-			type: 'textarea',			required: true,
+			type: 'textarea',
+			required: true,
 			placeholder: '[{"section":"intro","prompt_hint":"Hook + intent","max_words":120}]',
 			help: t('sop_generator.structure_help', 'Array of {section, prompt_hint, max_words} objects (§110)')
 		},
-		{ key: 'is_active', label: t('sop_generator.active', 'Active'), type: 'checkbox', help: t('sop_generator.is_active_hint', 'Inactive records are hidden or disabled on the site.') },
+		{ key: 'is_active', label: t('sop_generator.active', 'Active'), type: 'checkbox' },
 	];
 
 	async function loadTemplates(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
@@ -212,7 +212,6 @@
 			key: 'destination_space_id',
 			label: t('sop_generator.destination_required', 'Destination'),
 			type: 'autocomplete',
-			help: t('sop_generator.destination_space_id_hint', 'The destination space this is linked to.'),
 			required: true,
 			placeholder: t('sop_generator.destination_ph', 'Search country…'),
 			emptyMessage: t('common.no_results', 'No results found'),
@@ -220,12 +219,11 @@
 			initialFetcher: countrySel.initialFetcher,
 			getSelectedLabel: countrySel.getSelectedLabel
 		},
-		{ key: 'program_level', label: t('sop_generator.program_level', 'Program level'), type: 'select', help: t('sop_generator.program_level_hint', 'The study level — e.g. undergraduate, masters, PhD.'), required: true, options: LEVEL_OPTIONS },
+		{ key: 'program_level', label: t('sop_generator.program_level', 'Program level'), type: 'select', required: true, options: LEVEL_OPTIONS },
 		{
 			key: 'field_of_study',
 			label: t('sop_generator.field_of_study', 'Field of study'),
 			type: 'autocomplete',
-			help: t('sop_generator.field_of_study_hint', 'The discipline — e.g. Computer Science.'),
 			placeholder: t('sop_generator.field_of_study_ph', 'Search managed fields…'),
 			emptyMessage: t('sop_generator.field_none', 'No match — type a new field to create it on save'),
 			fetcher: fieldOfStudyFetcher,
@@ -236,9 +234,9 @@
 			freeText: true,
 			allowFreeText: true
 		},
-		{ key: 'title', label: t('sop_generator.title_label', 'Title'), type: 'text', help: t('sop_generator.title_hint', 'The title shown in listings and detail views.'), required: true },
-		{ key: 'body', label: t('sop_generator.sample_body', 'Sample SOP text'), type: 'textarea', help: t('sop_generator.body_hint', 'The main content body.'), required: true },
-		{ key: 'word_count', label: t('sop_generator.word_count', 'Word count'), type: 'number', help: t('sop_generator.word_count_hint', 'Target or maximum word count.') },
+		{ key: 'title', label: t('sop_generator.title_label', 'Title'), type: 'text', required: true },
+		{ key: 'body', label: t('sop_generator.sample_body', 'Sample SOP text'), type: 'textarea', required: true },
+		{ key: 'word_count', label: t('sop_generator.word_count', 'Word count'), type: 'number' },
 	];
 
 	async function loadSamples(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
@@ -329,9 +327,9 @@
 	let fieldController = $state<EntityPageController | undefined>(undefined);
 
 	const fieldFields: FieldDef[] = [
-		{ key: 'name', label: t('sop_generator.field_name', 'Field of study'), type: 'text', help: t('sop_generator.name_hint', 'The name shown in admin lists and on the site where public.'), required: true, placeholder: 'Computer Science' },
+		{ key: 'name', label: t('sop_generator.field_name', 'Field of study'), type: 'text', required: true, placeholder: 'Computer Science' },
 		{ key: 'sort_order', label: t('sop_generator.sort_order', 'Sort order'), type: 'number', help: t('sop_generator.sort_order_help', 'Lower numbers appear first in the public select') },
-		{ key: 'is_active', label: t('sop_generator.active', 'Active'), type: 'checkbox', help: t('sop_generator.is_active_hint', 'Inactive records are hidden or disabled on the site.') },
+		{ key: 'is_active', label: t('sop_generator.active', 'Active'), type: 'checkbox' },
 	];
 
 	async function loadFields(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {

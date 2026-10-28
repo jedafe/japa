@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { Modal } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
@@ -98,12 +97,10 @@
 							<input
 								type="password"
 								autocomplete="current-password"
-								aria-describedby="deactivate-password-hint"
 								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 								value={deactivatePassword}
 								oninput={(e) => (deactivatePassword = e.currentTarget.value)}
 							/>
-							<HintIcon id="deactivate-password-hint" text={t('settings.danger.deactivate_password_hint', 'Enter your current password to confirm deactivation.')} />
 						</label>
 						{#if deactivateError}<p class="mb-4 text-xs text-[var(--color-danger,#dc2626)]">{deactivateError}</p>{/if}
 						<div class="flex justify-end gap-2">

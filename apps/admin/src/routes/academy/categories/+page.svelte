@@ -38,10 +38,10 @@
 	}
 
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('academy.category_name', 'Category Name'), type: 'text', help: t('academy.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
-		{ key: 'slug', label: t('academy.slug', 'Slug'), type: 'text', help: t('academy.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), required: true },
-		{ key: 'sort_order', label: t('academy.sort_order', 'Sort Order'), type: 'number', help: t('academy.sort_order_hint', 'Lower numbers appear first.') },
-		{ key: 'is_active', label: t('academy.active', 'Active'), type: 'checkbox', help: t('academy.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
+		{ key: 'name', label: t('academy.category_name', 'Category Name'), type: 'text', required: true },
+		{ key: 'slug', label: t('academy.slug', 'Slug'), type: 'text', required: true },
+		{ key: 'sort_order', label: t('academy.sort_order', 'Sort Order'), type: 'number' },
+		{ key: 'is_active', label: t('academy.active', 'Active'), type: 'checkbox' }
 	];
 
 	const config = $derived<EntityPageConfig>({

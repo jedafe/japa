@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// §22 Appeals — reusable appeal submission control for Academy surfaces
 	// (instructor application rejections, track submission rejections).
 	// Submits POST /api/v1/appeals which records the moderation_appeal and
@@ -211,9 +210,7 @@
 								maxlength={MAX_REASON}
 								placeholder={t('appeals.reason_placeholder', 'Explain briefly why the decision was wrong — links or reference details help the review.')}
 								class="field-input !h-auto py-2.5"
-							></textarea
-							>
-						<HintIcon text={t('appeals.reason_hint', 'Be specific — cite the policy or evidence that supports your case.')} />
+							></textarea>
 							<p class="text-end text-[11px] text-[var(--color-muted)]">{reason.length} / {MAX_REASON}</p>
 						</div>
 					</div>

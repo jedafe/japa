@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -637,33 +636,25 @@
 			<div class="space-y-4">
 				<!-- Name -->
 				<div>
-					<label for="edit-name" class="block text-sm font-medium text-[var(--color-text)]">{t('tag.name', 'Name')}
-					<HintIcon text={t('tags.edit_name_hint', 'The name shown in admin lists.')}  />
-</label>
+					<label for="edit-name" class="block text-sm font-medium text-[var(--color-text)]">{t('tag.name', 'Name')}</label>
 					<input id="edit-name" type="text" bind:value={editName} class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm text-[var(--color-text)]" />
 				</div>
 
 				<!-- Description -->
 				<div>
-					<label for="edit-desc" class="block text-sm font-medium text-[var(--color-text)]">{t('tag.description_label', 'Description')}
-					<HintIcon text={t('tags.edit_desc_hint', 'Short description shown on the record.')}  />
-</label>
+					<label for="edit-desc" class="block text-sm font-medium text-[var(--color-text)]">{t('tag.description_label', 'Description')}</label>
 					<textarea id="edit-desc" rows="2" bind:value={editDescription} class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm text-[var(--color-text)]" placeholder={t('tag.description_placeholder', 'Optional description...')}></textarea>
 				</div>
 
 				<!-- Rules -->
 				<div>
-					<label for="edit-rules" class="block text-sm font-medium text-[var(--color-text)]">{t('tag.rules', 'Tag Rules')}
-					<HintIcon text={t('tags.edit_rules_hint', 'Matching rules — one per line.')}  />
-</label>
+					<label for="edit-rules" class="block text-sm font-medium text-[var(--color-text)]">{t('tag.rules', 'Tag Rules')}</label>
 					<textarea id="edit-rules" rows="3" bind:value={editRules} class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm text-[var(--color-text)]" placeholder={t('tag.rules_placeholder', 'Optional community rules/guidelines...')}></textarea>
 				</div>
 
 				<!-- Color -->
 				<div>
-					<label for="edit-color" class="block text-sm font-medium text-[var(--color-text)]">{t('tag.color', 'Color')}
-					<HintIcon text={t('tags.edit_color_hint', 'The tag color shown in listings.')}  />
-</label>
+					<label for="edit-color" class="block text-sm font-medium text-[var(--color-text)]">{t('tag.color', 'Color')}</label>
 					<div class="mt-1 flex items-center gap-2">
 						<input id="edit-color" type="color" bind:value={editColor} class="h-9 w-12 cursor-pointer rounded border border-[var(--color-border)] bg-[var(--color-surface)]" />
 						<input type="text" bind:value={editColor} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm font-mono text-[var(--color-text)]" placeholder="#3b82f6" />

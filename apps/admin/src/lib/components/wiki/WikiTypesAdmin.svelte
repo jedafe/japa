@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// §80 Wiki Types & Field-Group Pages — admin management for wiki types
 	// (space_types carrying a wiki_type_configs row, with parent edges that
 	// express the geo chain + child types like university) and each type's
@@ -950,6 +949,9 @@
 	{#if selectedType && catConfig}
 		<section class="rounded-[12px] border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
 			<div class="mb-3 flex items-center justify-between">
+				<p class="text-xs" style="color: var(--color-muted)">
+					{t('app.wiki.categories_hint', 'Editing the category template for this wiki type.')}
+				</p>
 				<Button variant="ghost" onclick={() => { selectedType = null; selectedCategory = null; }}>
 					<X size={14} class="me-1" />{t('common.close', 'Close')}
 				</Button>
@@ -963,6 +965,9 @@
 	{#if selectedCategory && tplConfig}
 		<section class="rounded-[12px] border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
 			<div class="mb-3 flex items-center justify-between">
+				<p class="text-xs" style="color: var(--color-muted)">
+					{t('app.wiki.templates_hint', 'Editing the page templates under this category.')}
+				</p>
 				<Button variant="ghost" onclick={() => (selectedCategory = null)}>
 					<X size={14} class="me-1" />{t('common.close', 'Close')}
 				</Button>

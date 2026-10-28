@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, replaceState } from '$app/navigation';
@@ -540,9 +539,7 @@
 			<div class="guide-category-selector">
 				<label for="guide-category" class="guide-category-label">
 					{t('create.guide.category_label')}
-				
-				<HintIcon text={t('create.category_hint', 'The topic category this guide belongs to.')}  />
-</label>
+				</label>
 				<Autocomplete
 					id="guide-category"
 					placeholder={t('create.guide.category_placeholder')}

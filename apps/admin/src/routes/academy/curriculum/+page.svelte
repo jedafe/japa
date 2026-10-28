@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent } from "$lib/components/ui/card";
@@ -782,9 +781,8 @@
 			</div>
 			<div class="flex items-center gap-2 pt-2">
 				<input id="track-subscription-eligible" type="checkbox" bind:checked={newTrack.subscription_eligible} class="h-4 w-4 rounded" />
-				<label for="track-subscription-eligible" class="text-sm text-foreground">{t('app.academy.subscription_eligible', 'Subscription eligible')}
-				<HintIcon text={t('app.academy.subscription_eligible_hint', '(included in subscription packages)')}  />
-</label>
+				<label for="track-subscription-eligible" class="text-sm text-foreground">{t('app.academy.subscription_eligible', 'Subscription eligible')}</label>
+				<span class="text-xs text-muted">{t('app.academy.subscription_eligible_hint', '(included in subscription packages)')}</span>
 			</div>
 		</div>
 	{:else if activeTab === "modules"}
@@ -988,9 +986,8 @@
 				</div>
 				<div class="flex items-center gap-2">
 					<input id="edit-track-subscription-eligible" type="checkbox" bind:checked={editForm.subscription_eligible} class="h-4 w-4 rounded" />
-					<label for="edit-track-subscription-eligible" class="text-sm text-foreground">{t('app.academy.subscription_eligible', 'Subscription eligible')}
-					<HintIcon text={t('app.academy.subscription_eligible_hint', '(included in subscription packages)')}  />
-</label>
+					<label for="edit-track-subscription-eligible" class="text-sm text-foreground">{t('app.academy.subscription_eligible', 'Subscription eligible')}</label>
+					<span class="text-xs text-muted">{t('app.academy.subscription_eligible_hint', '(included in subscription packages)')}</span>
 				</div>
 				<div class="grid grid-cols-2 gap-4">
 					<div>

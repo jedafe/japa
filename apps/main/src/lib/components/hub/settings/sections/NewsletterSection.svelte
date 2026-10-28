@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	/**
 	 * Newsletter preferences — Section 62 / ADR-080.
 	 *
@@ -208,13 +207,12 @@
 		<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center">
 			<Mail size={32} class="mx-auto text-[var(--color-muted)]" />
 			<h2 class="mt-3 text-sm font-medium text-[var(--color-text)]">{t('settings.newsletter.not_subscribed', 'You are not subscribed to the newsletter')}</h2>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('settings.newsletter.not_subscribed_desc', 'Subscribe to receive the weekly digest and occasional updates.')}</p>
 			<form onsubmit={handleSubscribe} class="mx-auto mt-4 flex max-w-sm gap-2">
 				<input
 					type="email"
 					bind:value={subscribeEmail}
 					placeholder={t('landing.newsletter_placeholder', 'your@email.com')}
-					aria-label={t('auth.fields.email', 'Email')}
-					aria-describedby="newsletter-subscribe-hint"
 					required
 					disabled={subscribing}
 					class="min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-50"

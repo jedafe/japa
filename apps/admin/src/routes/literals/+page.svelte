@@ -114,7 +114,6 @@
 			key: 'kind',
 			label: t('literals.kind', 'Kind'),
 			type: 'select',
-			help: t('literals.kind_hint', 'The kind or class of this record.'),
 			options: [
 				{ value: 'expression', label: t('literals.kind_expression', 'Expression') },
 				{ value: 'static', label: t('literals.kind_static', 'Static') }
@@ -133,33 +132,28 @@
 			key: 'fallback',
 			label: t('literals.fallback', 'Fallback'),
 			type: 'text',
-			help: t('literals.fallback_hint', 'Used when the primary value is missing.'),
 			placeholder: '2026'
 		},
 		{
 			key: 'label',
 			label: t('literals.label', 'Label'),
-			type: 'text',
-			help: t('literals.label_hint', 'The display label shown to users.')
+			type: 'text'
 		},
 		{
 			key: 'description',
 			label: t('literals.description', 'Description'),
-			type: 'textarea',
-			help: t('literals.description_hint', 'Shown in detail views — keep it concise.')
+			type: 'textarea'
 		},
 		{
 			key: 'category',
 			label: t('literals.category', 'Category'),
 			type: 'text',
-			help: t('literals.category_hint', 'The category this belongs to — drives grouping and filters.'),
 			placeholder: 'time'
 		},
 		{
 			key: 'is_active',
 			label: t('literals.active', 'Active'),
-			type: 'checkbox',
-			help: t('literals.is_active_hint', 'Inactive records are hidden or disabled on the site.')
+			type: 'checkbox'
 		}
 	];
 

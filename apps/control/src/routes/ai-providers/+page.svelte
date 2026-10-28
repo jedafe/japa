@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { api } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
@@ -678,9 +677,7 @@ const providerPresets: ProviderPreset[] = [
 			<div class="mt-4 space-y-4">
 				<!-- Preset -->
 				<div>
-					<label for="create-preset" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.preset', 'Start from preset')}
-					<HintIcon text={t('ai_providers.preset_hint', 'Prefills settings for a known provider.')}  />
-</label>
+					<label for="create-preset" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.preset', 'Start from preset')}</label>
 					<AutocompleteSelect
 						id="create-preset"
 						bind:value={selectedPreset}
@@ -699,9 +696,7 @@ const providerPresets: ProviderPreset[] = [
 
 				<!-- Name -->
 				<div>
-					<label for="create-name" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.name', 'Name')}
-					<HintIcon text={t('ai_providers.name_hint', 'The display name for this provider.')}  />
-</label>
+					<label for="create-name" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.name', 'Name')}</label>
 					<input
 						id="create-name"
 						type="text"
@@ -713,9 +708,7 @@ const providerPresets: ProviderPreset[] = [
 
 				<!-- Provider Type -->
 				<div>
-					<label for="provider-type" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.type', 'Type')}
-					<HintIcon text={t('ai_providers.type_hint', 'The provider category — controls how it is called.')}  />
-</label>
+					<label for="provider-type" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.type', 'Type')}</label>
 					<Autocomplete
 						id="provider-type"
 						placeholder={t('ai_providers.type', 'Type')}
@@ -731,9 +724,7 @@ const providerPresets: ProviderPreset[] = [
 
 				<!-- API Key -->
 				<div>
-					<label for="create-api-key" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.api_key', 'API Key')}
-					<HintIcon text={t('ai_providers.api_key_hint', 'Stored encrypted — used only for your AI features.')}  />
-</label>
+					<label for="create-api-key" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.api_key', 'API Key')}</label>
 					<input
 						id="create-api-key"
 						type="password"

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { page } from '$app/state';
@@ -611,7 +610,9 @@
 		title={t('personas.create_title', 'Create AI Personas')}
 	>
 		<div class="space-y-4">
-			<HintIcon text={t('personas.create_hint', 'Provision one or more AI personas. All personas in a batch are created in a single transaction.')} />
+			<p class="text-sm" style="color: var(--color-muted)">
+				{t('personas.create_hint', 'Provision one or more AI personas. All personas in a batch are created in a single transaction.')}
+			</p>
 			{#each newPersonas as persona, idx (idx)}
 				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
 					<div class="mb-2 flex items-center justify-between">
@@ -768,7 +769,7 @@
 								}}
 								placeholder={'{"comment": 4, "react": 20}'}
 							></textarea>
-							<HintIcon text={t('personas.action_budget_hint', 'Map of action type to max count per day.')} />
+							<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('personas.action_budget_hint', 'Map of action type to max count per day.')}</p>
 						</div>
 						<div class="sm:col-span-2">
 							<label for={`persona-avoid-recent-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.avoid_recent_authors', 'Avoid Recent Authors (comma-separated user IDs)')}</label>
@@ -1030,7 +1031,7 @@
 								}}
 								placeholder={'{"comment": 4, "react": 20}'}
 							></textarea>
-							<HintIcon text={t('personas.action_budget_hint', 'Map of action type to max count per day.')} />
+							<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('personas.action_budget_hint', 'Map of action type to max count per day.')}</p>
 						</div>
 						<div class="sm:col-span-2">
 							<label for="edit-persona-avoid-recent" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.avoid_recent_authors', 'Avoid Recent Authors (comma-separated user IDs)')}</label>

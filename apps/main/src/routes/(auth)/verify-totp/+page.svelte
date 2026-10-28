@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (TOTP login challenge)
 	// Collects a 6-digit TOTP code (or a one-time backup code) and posts to the
 	// /api/auth/totp/verify or /api/auth/totp/backup proxy. On success the
@@ -180,10 +179,9 @@
 					value={code}
 					oninput={(e) => (code = sanitizeCode(e.currentTarget.value))}
 					aria-invalid={errorKey === 'auth.totp.invalid_code' || errorKey === 'auth.totp.code_required' ? 'true' : undefined}
-					aria-describedby="totp-code-hint"
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-center text-lg tracking-[0.5em] text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				/>
-				<HintIcon id="totp-code-hint" text={t('auth.totp.code_help')} />
+				<p class="text-xs text-[var(--color-muted)]">{t('auth.totp.code_help')}</p>
 			</div>
 
 			<button
@@ -215,10 +213,9 @@
 					value={backupCode}
 					oninput={(e) => (backupCode = e.currentTarget.value)}
 					aria-invalid={errorKey === 'auth.totp.invalid_backup' || errorKey === 'auth.totp.backup_required' ? 'true' : undefined}
-					aria-describedby="totp-backup-hint"
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				/>
-				<HintIcon id="totp-backup-hint" text={t('auth.totp.backup_help')} />
+				<p class="text-xs text-[var(--color-muted)]">{t('auth.totp.backup_help')}</p>
 			</div>
 
 			<button

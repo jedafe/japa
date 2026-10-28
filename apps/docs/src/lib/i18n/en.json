@@ -1,6 +1,4 @@
 {
-  "api.key_name_hint": "A label so you remember what this key is for.",
-  "api.rename_hint": "The new display name for this key.",
   "app.name": "{site} Docs",
   "app.tagline": "Developer & user documentation",
   "auth.login": "Log in",
@@ -48,8 +46,6 @@
   "nav.replay_tour": "Replay tour",
   "nav.new_page": "New page",
   "nav.logout": "Logout",
-  "new_page.category_hint": "The top-level section this page lives in.",
-  "new_page.subcategory_hint": "Optional — a nested grouping under the category.",
   "tour.docs_nav_title": "Documentation tree",
   "tour.docs_nav_desc": "Browse every guide and reference grouped by audience. Expand a section to see its pages.",
   "tour.docs_audience_title": "Audience switcher",

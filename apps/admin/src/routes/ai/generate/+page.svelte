@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { aiApi, personaVoicesAdminApi, type GenerateResult, type PersonaVoice } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -274,9 +273,7 @@
 				<!-- Prompt -->
 				<div>
 					<div class="mb-1 flex items-center justify-between">
-						<label for="gen-prompt" class="text-sm font-medium">{t('ai.prompt')}
-						<HintIcon text={t('ai.gen_prompt_hint', 'Describe the content the AI should write.')}  />
-</label>
+						<label for="gen-prompt" class="text-sm font-medium">{t('ai.prompt')}</label>
 						<span class="text-xs" style="color: var(--color-muted)">{charCount} chars</span>
 					</div>
 					<textarea
@@ -292,9 +289,7 @@
 				<!-- Category, Model & Voice -->
 				<div class="grid gap-4 sm:grid-cols-3">
 					<div>
-						<label for="gen-category" class="mb-1 block text-sm font-medium">{t('ai.category')}
-						<HintIcon text={t('ai.gen_category_hint', 'The content category to generate.')}  />
-</label>
+						<label for="gen-category" class="mb-1 block text-sm font-medium">{t('ai.category')}</label>
 						{#if categoriesError}
 							<p class="text-sm" style="color: var(--color-danger)">
 								{t('ai.categories_load_failed', 'Failed to load categories. Please retry.')}
@@ -317,9 +312,7 @@
 						{/if}
 					</div>
 					<div>
-						<label for="gen-model" class="mb-1 block text-sm font-medium">{t('ai.model_optional')}
-						<HintIcon text={t('ai.gen_model_hint', 'The AI model to use.')}  />
-</label>
+						<label for="gen-model" class="mb-1 block text-sm font-medium">{t('ai.model_optional')}</label>
 						<Autocomplete
 							id="gen-model"
 							placeholder={t('ai.model_search', 'Search model...')}
@@ -333,9 +326,7 @@
 							/>
 						</div>
 					<div>
-						<label for="gen-voice" class="mb-1 block text-sm font-medium">{t('ai.voice_optional', 'Voice / Tone')}
-						<HintIcon text={t('ai.gen_voice_hint', 'The voice preset for audio output.')}  />
-</label>
+						<label for="gen-voice" class="mb-1 block text-sm font-medium">{t('ai.voice_optional', 'Voice / Tone')}</label>
 						<Autocomplete
 							id="gen-voice"
 							placeholder={t('ai.voice_search', 'Search voice...')}
@@ -369,16 +360,12 @@
 							<!-- Humanization toggle (per-request override; merged with global ai.humanize.* setting) -->
 							<div class="flex items-center gap-2">
 								<input type="checkbox" id="gen-humanize" bind:checked={humanize} />
-								<label for="gen-humanize" class="text-sm font-medium">{t('ai.humanize.label')}
-								<HintIcon text={t('ai.gen_humanize_hint', 'How natural-sounding the result should be.')}  />
-</label>
+								<label for="gen-humanize" class="text-sm font-medium">{t('ai.humanize.label')}</label>
 							</div>
 							<p class="ms-6 mt-1 text-xs" style="color: var(--color-muted)">{t('ai.humanize.description')}</p>
 							{#if humanize}
 								<div class="ms-6 mt-3">
-									<label for="gen-humanize-level" class="mb-1 block text-xs font-medium">{t('ai.humanize.level.label')}
-									<HintIcon text={t('ai.gen_humanize_level_hint', 'How natural-sounding the result should be.')}  />
-</label>
+									<label for="gen-humanize-level" class="mb-1 block text-xs font-medium">{t('ai.humanize.level.label')}</label>
 									<Select
 										options={humanizeLevelOptions.map(o => ({ value: o.value, label: t(o.labelKey) }))}
 										bind:value={humanizeLevel}

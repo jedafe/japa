@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { invalidateAll } from '$app/navigation';
 	import { purchaseCredits, setCurrencyPreference } from '$lib/api/hub';
@@ -125,6 +124,9 @@
 						.replace('{n}', currentCurrency.credits_per_unit?.toLocaleString() ?? '0')}
 				</p>
 			{/if}
+			<p class="mt-1 text-xs text-[var(--color-muted)]">
+				{t('settings.wallet.purchase_currency_hint', 'Change your preferred currency on the Details tab.')}
+			</p>
 		</div>
 
 		{#if sortedPacks.length > 0}
@@ -180,11 +182,9 @@
 						min={minPurchase || 1}
 						bind:value={customAmount}
 						oninput={() => (selectedPackId = '')}
-						aria-describedby="custom-credits-hint"
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 						placeholder={t('wallet.purchase.enter_amount', 'Enter credit amount')}
 					/>
-					<HintIcon id="custom-credits-hint" text={t('wallet.purchase.credits_hint', 'Number of wallet credits to buy — the price updates as you type.')} />
 				</div>
 				<div class="text-end">
 					<p class="text-sm text-[var(--color-muted)]">{t('wallet.purchase.price', 'Price')}</p>

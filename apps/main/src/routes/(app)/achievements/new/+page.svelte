@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Create achievement form. Submits via the browser API client (POST /achievements,
 	// auth required). On success navigates to the new achievement's detail page.
@@ -167,9 +166,7 @@
 				<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
 					{t('achievements.field_destination', 'Destination country')}
 					<span class="text-red-500" aria-hidden="true">*</span>
-				
-				<HintIcon text={t('achievements.destination_hint', 'The country this achievement is about.')}  />
-</label>
+				</label>
 				<Autocomplete
 					placeholder={t('achievements.destination_placeholder', 'e.g. Canada')}
 					emptyMessage={t('common.no_results', 'No results found')}
@@ -184,9 +181,7 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="origin_country" class="text-sm font-medium text-[var(--color-text)]">
 					{t('achievements.field_origin', 'Origin country')}
-				
-				<HintIcon text={t('achievements.origin_hint', 'Where you started from.')}  />
-</label>
+				</label>
 				<Autocomplete
 					placeholder={t('achievements.origin_placeholder', 'e.g. Nigeria')}
 					emptyMessage={t('common.no_results', 'No results found')}
@@ -204,9 +199,7 @@
 			<label for="title" class="text-sm font-medium text-[var(--color-text)]">
 				{t('achievements.field_title', 'Title')}
 				<span class="text-red-500" aria-hidden="true">*</span>
-			
-			<HintIcon text={t('achievements.title_hint', 'A short, celebratory headline.')}  />
-</label>
+			</label>
 			<input
 				id="title"
 				type="text"
@@ -231,15 +224,12 @@
 			placeholder={t('achievements.body_placeholder', 'Share your journey…')}
 			rows={6}
 		/>
-			<HintIcon text={t('achievements.body_hint', 'Tell the story — what happened and what it means to you.')} />
 
 		<div class="flex flex-col gap-1.5">
 			<label for="milestone_type" class="text-sm font-medium text-[var(--color-text)]">
 				{t('achievements.field_milestone_type', 'Milestone type')}
 				<span class="text-red-500" aria-hidden="true">*</span>
-			
-			<HintIcon text={t('achievements.milestone_hint', 'The kind of milestone — e.g. visa approved, landed.')}  />
-</label>
+			</label>
 			<AutocompleteSelect
 				id="milestone_type"
 				value={milestoneType}
@@ -256,9 +246,10 @@
 				class="h-4 w-4 accent-[var(--color-primary)]"
 			/>
 			{t('achievements.field_anonymous', 'Post anonymously')}
-		
-		<HintIcon text={t('achievements.anonymous_hint', 'Shows as "Anonymous member from [origin] → [destination]".')}  />
-</label>
+		</label>
+		<p class="-mt-2 text-xs text-[var(--color-muted)]">
+			{t('achievements.anonymous_hint', 'Shows as "Anonymous member from [origin] → [destination]".')}
+		</p>
 
 		{#if errorKey}
 			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">

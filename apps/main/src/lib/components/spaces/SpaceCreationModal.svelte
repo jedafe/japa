@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/05-geo-first-space-system.md
 	// Simplified member space creation modal. Members choose a flat list of
 	// selectable space types (default: community), enter a name, and the
@@ -243,11 +242,9 @@
 							onfocus={() => { if (name.trim()) showNameSuggestions = true; }}
 							onblur={() => { setTimeout(() => (showNameSuggestions = false), 200); }}
 							placeholder={t('spaces.name_community_placeholder', 'e.g. Frontend Devs in Lagos, Nigeria')}
-							aria-describedby="space-name-hint"
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							disabled={submitting}
 						/>
-						<HintIcon id="space-name-hint" text={t('spaces.name_hint', 'The public name people see and search for.')} />
 						{#if nameSearchLoading}
 							<div class="absolute end-3 top-[26px]">
 								<Loader2 size={14} class="animate-spin text-[var(--color-muted)]" />
@@ -276,11 +273,9 @@
 							value={slug}
 							oninput={onSlugInput}
 							placeholder="my-space"
-							aria-describedby="space-slug-hint"
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							disabled={submitting}
 						/>
-						<HintIcon id="space-slug-hint" text={t('spaces.slug_hint', 'URL-safe identifier — auto-generated from the name.')} />
 					</div>
 
 					<div>
@@ -290,11 +285,9 @@
 							bind:value={description}
 							rows={2}
 							placeholder={t('spaces.description_placeholder')}
-							aria-describedby="space-desc-hint"
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							disabled={submitting}
 						></textarea>
-						<HintIcon id="space-desc-hint" text={t('spaces.desc_hint', 'A short description — what this space is for.')} />
 					</div>
 
 					<div>

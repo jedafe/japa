@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { t, i18n } from '$lib/i18n';
@@ -278,18 +277,14 @@
 				<div>
 					<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-dest">
 						{t('processing_tracker.destination', 'Destination country')} *
-					
-					<HintIcon text={t('processing_tracker.dest_hint', 'The country you applied to.')}  />
-</label>
+					</label>
 					<DestinationSelector {destinations} bind:selectedId={newDestId} />
 				</div>
 				<div class="grid sm:grid-cols-2 gap-4">
 					<div>
 						<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-visa">
 							{t('processing_tracker.visa_category', 'Visa category')} *
-						
-						<HintIcon text={t('processing_tracker.visa_hint', 'The visa type — e.g. Student, Skilled Worker.')}  />
-</label>
+						</label>
 						<input
 							id="new-visa"
 							bind:value={newVisaCategory}
@@ -301,9 +296,7 @@
 					<div>
 						<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-consulate">
 							{t('processing_tracker.consulate', 'Consulate (optional)')}
-						
-						<HintIcon text={t('processing_tracker.consulate_hint', 'The consulate or office handling your application.')}  />
-</label>
+						</label>
 						<input
 							id="new-consulate"
 							bind:value={newConsulate}
@@ -316,9 +309,7 @@
 					<div>
 						<label class="block text-xs font-medium text-[var(--color-text-muted)] mb-1" for="new-method">
 							{t('processing_tracker.method', 'Application method')}
-						
-						<HintIcon text={t('processing_tracker.method_hint', 'How you applied — online, in person, via agent.')}  />
-</label>
+						</label>
 						<AutocompleteSelect
 							id="new-method"
 							bind:value={newMethod}

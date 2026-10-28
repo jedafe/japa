@@ -108,7 +108,7 @@
 	};
 
 	const fields: FieldDef[] = [
-		{ key: 'admin_note', label: t('app.wallet.admin_note', 'Admin Note'), type: 'textarea', help: t('app.wallet.admin_note_hint', 'Internal note visible to admins only.') }
+		{ key: 'admin_note', label: t('app.wallet.admin_note', 'Admin Note'), type: 'textarea' }
 	];
 
 	const config: EntityPageConfig = {

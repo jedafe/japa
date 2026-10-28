@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /affiliate — migrated to shared components (ActionMenu, BulkBar, SlideOver, FilterPanel).
 	// Tabbed page (6 tabs) — not an EntityPage candidate; keeps the tab structure but
@@ -771,27 +770,21 @@
 				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('affiliate.commission_rates')}</h3>
 				<div class="mx-auto max-w-lg space-y-4">
 					<div>
-						<label for="rate-monthly" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.pro_monthly')}
-						<HintIcon text={t('affiliate.rate_monthly_hint', 'Monthly rate percent.')}  />
-</label>
+						<label for="rate-monthly" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.pro_monthly')}</label>
 						<div class="flex items-center gap-2">
 							<input id="rate-monthly" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={rates.pro_monthly} />
 							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
 					<div>
-						<label for="rate-annual" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.pro_annual')}
-						<HintIcon text={t('affiliate.rate_annual_hint', 'Annual rate percent.')}  />
-</label>
+						<label for="rate-annual" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.pro_annual')}</label>
 						<div class="flex items-center gap-2">
 							<input id="rate-annual" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={rates.pro_annual} />
 							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
 					<div>
-						<label for="rate-course" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.course')}
-						<HintIcon text={t('affiliate.rate_course_hint', 'Rate percent for course referrals.')}  />
-</label>
+						<label for="rate-course" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.course')}</label>
 						<div class="flex items-center gap-2">
 							<input id="rate-course" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={rates.course} />
 							<span class="text-sm text-muted">%</span>
@@ -848,27 +841,19 @@
 <SlideOver bind:open={showCreateSlideOver} title={t('affiliate.add_provider')}>
 	<div class="space-y-4">
 		<div>
-			<label for="provider-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.name')}
-			<HintIcon text={t('affiliate.provider_name_hint', 'The provider or brand name.')}  />
-</label>
+			<label for="provider-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.name')}</label>
 			<input id="provider-name" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newProvider.name} />
 		</div>
 		<div>
-			<label for="provider-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.base_url')}
-			<HintIcon text={t('affiliate.provider_url_hint', 'The provider homepage or referral link.')}  />
-</label>
+			<label for="provider-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.base_url')}</label>
 			<input id="provider-url" type="url" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="https://example.com" bind:value={newProvider.base_url} />
 		</div>
 		<div>
-			<label for="provider-category" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.category', 'Category')}
-			<HintIcon text={t('affiliate.provider_category_hint', 'The category this provider belongs to.')}  />
-</label>
+			<label for="provider-category" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.category', 'Category')}</label>
 			<input id="provider-category" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('affiliate.category_placeholder', 'Cloud, AI, SaaS, Dev…')} bind:value={newProvider.category} />
 		</div>
 		<div>
-			<label for="provider-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.commission_rate')}
-			<HintIcon text={t('affiliate.provider_rate_hint', 'The commission rate as a percent.')}  />
-</label>
+			<label for="provider-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.commission_rate')}</label>
 			<div class="flex items-center gap-2">
 				<input id="provider-rate" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newProvider.commission_rate} />
 				<span class="text-sm text-muted">%</span>
@@ -890,21 +875,15 @@
 <SlideOver bind:open={showEditProviderSlideOver} title={t('affiliate.edit_provider', 'Edit Provider')}>
 	<div class="space-y-4">
 		<div>
-			<label for="edit-provider-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.name')}
-			<HintIcon text={t('affiliate.edit_provider_name_hint', 'The provider or brand name.')}  />
-</label>
+			<label for="edit-provider-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.name')}</label>
 			<input id="edit-provider-name" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.name} />
 		</div>
 		<div>
-			<label for="edit-provider-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('common.description', 'Description')}
-			<HintIcon text={t('affiliate.edit_provider_desc_hint', 'A short description of the provider.')}  />
-</label>
+			<label for="edit-provider-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('common.description', 'Description')}</label>
 			<textarea id="edit-provider-desc" rows="2" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.description}></textarea>
 		</div>
 		<div>
-			<label for="edit-provider-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.provider_type', 'Provider Type')}
-			<HintIcon text={t('affiliate.edit_provider_type_hint', 'The kind of provider.')}  />
-</label>
+			<label for="edit-provider-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.provider_type', 'Provider Type')}</label>
 			<AutocompleteSelect
 				id="edit-provider-type"
 				bind:value={editProvider.provider_type}
@@ -913,41 +892,29 @@
 			/>
 		</div>
 		<div>
-			<label for="edit-provider-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.base_url')}
-			<HintIcon text={t('affiliate.edit_provider_url_hint', 'The provider homepage or referral link.')}  />
-</label>
+			<label for="edit-provider-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.base_url')}</label>
 			<input id="edit-provider-url" type="url" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="https://example.com" bind:value={editProvider.base_url} />
 		</div>
 		<div>
-			<label for="edit-provider-category" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.category', 'Category')}
-			<HintIcon text={t('affiliate.edit_provider_category_hint', 'The category this provider belongs to.')}  />
-</label>
+			<label for="edit-provider-category" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.category', 'Category')}</label>
 			<input id="edit-provider-category" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('affiliate.category_placeholder', 'Cloud, AI, SaaS, Dev…')} bind:value={editProvider.category} />
 		</div>
 		<div>
-			<label for="edit-provider-logo" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.logo_media_id', 'Logo Media ID')}
-			<HintIcon text={t('affiliate.edit_provider_logo_hint', 'Direct image URL for the provider logo.')}  />
-</label>
+			<label for="edit-provider-logo" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.logo_media_id', 'Logo Media ID')}</label>
 			<input id="edit-provider-logo" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 font-mono text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="UUID" bind:value={editProvider.logo_media_id} />
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="edit-provider-tp" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.tracking_param', 'Tracking Param')}
-				<HintIcon text={t('affiliate.edit_provider_tp_hint', 'Tagline or title shown on the profile.')}  />
-</label>
+				<label for="edit-provider-tp" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.tracking_param', 'Tracking Param')}</label>
 				<input id="edit-provider-tp" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.tracking_param} />
 			</div>
 			<div>
-				<label for="edit-provider-tv" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.tracking_value', 'Tracking Value')}
-				<HintIcon text={t('affiliate.edit_provider_tv_hint', 'Thumbnail variant or template version.')}  />
-</label>
+				<label for="edit-provider-tv" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.tracking_value', 'Tracking Value')}</label>
 				<input id="edit-provider-tv" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.tracking_value} />
 			</div>
 		</div>
 		<div>
-			<label for="edit-provider-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.commission_rate')}
-			<HintIcon text={t('affiliate.edit_provider_rate_hint', 'The commission rate as a percent.')}  />
-</label>
+			<label for="edit-provider-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.commission_rate')}</label>
 			<div class="flex items-center gap-2">
 				<input id="edit-provider-rate" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.commission_rate} />
 				<span class="text-sm text-muted">%</span>
@@ -1005,9 +972,7 @@
 <SlideOver bind:open={showRecordCommissionSlideOver} title={t('affiliate.record_commission', 'Record Commission')}>
 	<div class="space-y-4">
 		<div>
-			<label for="comm-provider" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.provider', 'Provider')}
-			<HintIcon text={t('affiliate.comm_provider_hint', 'The affiliate provider this commission applies to.')}  />
-</label>
+			<label for="comm-provider" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.provider', 'Provider')}</label>
 			<AutocompleteSelect
 				id="comm-provider"
 				bind:value={newCommission.provider_id}
@@ -1016,21 +981,15 @@
 			/>
 		</div>
 		<div>
-			<label for="comm-content" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.content_id', 'Content ID')}
-			<HintIcon text={t('affiliate.comm_content_hint', 'The content this commission applies to.')}  />
-</label>
+			<label for="comm-content" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.content_id', 'Content ID')}</label>
 			<input id="comm-content" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="UUID" bind:value={newCommission.content_id} />
 		</div>
 		<div>
-			<label for="comm-amount" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.external_commission', 'External Commission (NGN)')}
-			<HintIcon text={t('affiliate.comm_amount_hint', 'The commission amount.')}  />
-</label>
+			<label for="comm-amount" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.external_commission', 'External Commission (NGN)')}</label>
 			<input id="comm-amount" type="number" min="0" step="0.01" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newCommission.external_commission} />
 		</div>
 		<div>
-			<label for="comm-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.event_description', 'Event Description')}
-			<HintIcon text={t('affiliate.comm_desc_hint', 'Optional note on this commission.')}  />
-</label>
+			<label for="comm-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.event_description', 'Event Description')}</label>
 			<textarea id="comm-desc" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" rows="3" bind:value={newCommission.event_description}></textarea>
 		</div>
 	</div>

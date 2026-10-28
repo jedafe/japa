@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import JsonEditor from '$lib/components/docs/JsonEditor.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -315,7 +314,6 @@
 								placeholder={t('api.api_key_placeholder')}
 								autocomplete="off"
 							/>
-								<HintIcon text={t('api.playground_key_hint', 'Your API key — used only for this test call.')} />
 						{:else}
 							<p class="pg-help">{t('api.select_key_help', 'Select a key above, then paste the full key value. The selector helps you identify which app it belongs to.')}</p>
 						{/if}

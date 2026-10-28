@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -140,9 +139,7 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="host_dest_country_id" class="text-sm font-medium text-[var(--color-text)]">
 				{t('ama.field_destination', 'Destination country')} <span class="text-red-500">*</span>
-			
-			<HintIcon text={t('ama.destination_hint', 'The country your experience relates to.')}  />
-</label>
+			</label>
 			<Autocomplete
 				placeholder={t('ama.placeholder_destination', 'Select destination country')}
 				emptyMessage={t('common.no_results', 'No results found')}
@@ -159,9 +156,7 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="title" class="text-sm font-medium text-[var(--color-text)]">
 				{t('ama.field_title', 'AMA title')} <span class="text-red-500">*</span>
-			
-			<HintIcon text={t('ama.title_hint', 'Format: Ask a [profession] who [did the thing].')}  />
-</label>
+			</label>
 			<input
 				id="title"
 				type="text"
@@ -187,16 +182,13 @@
 			placeholder={t('ama.placeholder_intro', 'Introduce yourself and the kind of questions you can answer…')}
 			rows={5}
 		/>
-			<HintIcon text={t('ama.intro_hint', 'Your background and the topics you can answer — builds trust.')} />
 
 		<!-- Host profession + years abroad -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<div class="flex flex-col gap-1.5">
 				<label for="host_profession" class="text-sm font-medium text-[var(--color-text)]">
 					{t('ama.field_profession', 'Profession')}
-				
-				<HintIcon text={t('ama.profession_hint', 'Your profession — helps users know who they are asking.')}  />
-</label>
+				</label>
 				<input
 					id="host_profession"
 					type="text"
@@ -209,9 +201,7 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="host_years_abroad" class="text-sm font-medium text-[var(--color-text)]">
 					{t('ama.field_years_abroad', 'Years abroad')}
-				
-				<HintIcon text={t('ama.years_hint', 'How many years you have lived abroad.')}  />
-</label>
+				</label>
 				<input
 					id="host_years_abroad"
 					type="number"
@@ -228,9 +218,7 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="open_duration_hours" class="text-sm font-medium text-[var(--color-text)]">
 				{t('ama.field_duration', 'Session duration (hours)')}
-			
-			<HintIcon text={t('ama.duration_hint', 'How long the AMA stays open for questions, in hours.')}  />
-</label>
+			</label>
 			<input
 				id="open_duration_hours"
 				type="number"

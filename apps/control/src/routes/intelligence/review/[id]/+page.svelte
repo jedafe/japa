@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { api } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
@@ -511,9 +510,7 @@
 					<h3 class="text-foreground text-sm font-semibold">{t('intel.approve_record', 'Approve record')}</h3>
 				</div>
 				<p class="text-muted-foreground mt-2 text-xs">{t('intel.approve_confirm', 'This will mark the record as approved and enqueue it for promotion to the structured projection. An optional note is recorded in the review log.')}</p>
-				<label for="approve-note" class="text-muted-foreground mt-3 block text-xs font-medium">{t('intel.review_note', 'Review note (optional)')}
-				<HintIcon text={t('intel.review_note_hint', 'Optional note attached to the decision.')}  />
-</label>
+				<label for="approve-note" class="text-muted-foreground mt-3 block text-xs font-medium">{t('intel.review_note', 'Review note (optional)')}</label>
 				<textarea id="approve-note" bind:value={approveNote} rows="3" class="border-border-input bg-background text-foreground mt-1 w-full rounded-lg border p-2 text-xs focus:shadow-date-field-focus focus:outline-none"></textarea>
 				<div class="mt-3 flex justify-end gap-2">
 					<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={() => { showApproveDialog = false; }}>{t('common.cancel', 'Cancel')}</button>
@@ -534,9 +531,7 @@
 					<h3 class="text-foreground text-sm font-semibold">{t('intel.reject_record', 'Reject record')}</h3>
 				</div>
 				<p class="text-muted-foreground mt-2 text-xs">{t('intel.reject_confirm', 'This will mark the record as rejected. It will not be promoted. An optional note is recorded in the review log.')}</p>
-				<label for="reject-note" class="text-muted-foreground mt-3 block text-xs font-medium">{t('intel.review_note', 'Review note (optional)')}
-				<HintIcon text={t('intel.review_note_hint', 'Optional note attached to the decision.')}  />
-</label>
+				<label for="reject-note" class="text-muted-foreground mt-3 block text-xs font-medium">{t('intel.review_note', 'Review note (optional)')}</label>
 				<textarea id="reject-note" bind:value={rejectNote} rows="3" class="border-border-input bg-background text-foreground mt-1 w-full rounded-lg border p-2 text-xs focus:shadow-date-field-focus focus:outline-none"></textarea>
 				<div class="mt-3 flex justify-end gap-2">
 					<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={() => { showRejectDialog = false; }}>{t('common.cancel', 'Cancel')}</button>
@@ -720,9 +715,7 @@
 						<div>
 							<label for="edit-json" class="text-muted-foreground mb-1 block text-xs font-medium">
 								{t('intel.edit_extracted', 'Edit extracted fields (JSON)')}
-							
-							<HintIcon text={t('intel.edit_json_hint', 'Edit the extracted data as JSON — changes apply on save.')}  />
-</label>
+							</label>
 							<textarea
 								id="edit-json"
 								bind:value={editJson}
@@ -731,9 +724,7 @@
 							></textarea>
 							<label for="edit-note" class="text-muted-foreground mt-3 block text-xs font-medium">
 								{t('intel.review_note', 'Review note (optional)')}
-							
-							<HintIcon text={t('intel.edit_note_hint', 'Why you changed the data — recorded in audit.')}  />
-</label>
+							</label>
 							<textarea
 								id="edit-note"
 								bind:value={editNote}

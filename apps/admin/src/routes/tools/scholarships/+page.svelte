@@ -165,16 +165,16 @@
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryUtilsName.ready;
 		return [
-			{ key: 'title', label: t('app.tools.col_title', 'Title'), type: 'text', help: t('app.tools.title_hint', 'The title shown in listings and detail views.'), required: true },
-			{ key: 'country', label: t('app.tools.col_country', 'Country'), type: 'autocomplete', help: t('app.tools.country_hint', 'The country this record applies to.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsName.fetcher, initialFetcher: countryUtilsName.initialFetcher, getSelectedLabel: countryUtilsName.getSelectedLabel, required: true },
-			{ key: 'university', label: t('app.tools.col_university', 'University'), type: 'text', help: t('app.tools.university_hint', 'The university this is attached to.') },
-			{ key: 'degree_level', label: t('app.tools.col_degree_level', 'Degree Level'), type: 'text', help: t('app.tools.degree_level_hint', 'The degree level required or offered.'), placeholder: 'masters, bachelors, phd' },
-			{ key: 'deadline', label: t('app.tools.col_deadline', 'Deadline'), type: 'date', help: t('app.tools.deadline_hint', 'The last valid date — expired entries stop showing.') },
-			{ key: 'application_url', label: t('app.tools.col_application_url', 'Application URL'), type: 'url', help: t('app.tools.application_url_hint', 'Where applicants apply — full URL with https://.') },
-			{ key: 'source_url', label: t('app.tools.col_source_url', 'Source URL'), type: 'url', help: t('app.tools.source_url_hint', 'The URL this data was pulled from — used for verification.'), required: true },
-			{ key: 'source_type', label: t('app.tools.col_source_type', 'Source Type'), type: 'text', help: t('app.tools.source_type_hint', 'The kind of source this is.'), placeholder: 'web, rss, api' },
-			{ key: 'trust_level', label: t('app.tools.col_trust_level', 'Trust Level'), type: 'number', help: t('app.tools.trust_level_hint', 'Trust level required — higher means more established.') },
-			{ key: 'description', label: t('app.tools.col_description', 'Description'), type: 'textarea', help: t('app.tools.description_hint', 'Shown in detail views — keep it concise.') }
+			{ key: 'title', label: t('app.tools.col_title', 'Title'), type: 'text', required: true },
+			{ key: 'country', label: t('app.tools.col_country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsName.fetcher, initialFetcher: countryUtilsName.initialFetcher, getSelectedLabel: countryUtilsName.getSelectedLabel, required: true },
+			{ key: 'university', label: t('app.tools.col_university', 'University'), type: 'text' },
+			{ key: 'degree_level', label: t('app.tools.col_degree_level', 'Degree Level'), type: 'text', placeholder: 'masters, bachelors, phd' },
+			{ key: 'deadline', label: t('app.tools.col_deadline', 'Deadline'), type: 'date' },
+			{ key: 'application_url', label: t('app.tools.col_application_url', 'Application URL'), type: 'url' },
+			{ key: 'source_url', label: t('app.tools.col_source_url', 'Source URL'), type: 'url', required: true },
+			{ key: 'source_type', label: t('app.tools.col_source_type', 'Source Type'), type: 'text', placeholder: 'web, rss, api' },
+			{ key: 'trust_level', label: t('app.tools.col_trust_level', 'Trust Level'), type: 'number' },
+			{ key: 'description', label: t('app.tools.col_description', 'Description'), type: 'textarea' }
 		];
 	});
 
@@ -190,7 +190,6 @@
 				key: 'dest',
 				label: t('app.tools.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.tools.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

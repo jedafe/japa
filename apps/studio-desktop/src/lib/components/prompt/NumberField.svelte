@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	interface Props {
 		label: string;
 		value: number;
@@ -7,10 +6,9 @@
 		min?: number;
 		max?: number;
 		oninput?: (value: number) => void;
-		hint?: string;
 	}
 
-	let { label, value, placeholder, min, max, oninput, hint }: Props = $props();
+	let { label, value, placeholder, min, max, oninput }: Props = $props();
 
 	function clamp(num: number): number {
 		if (min !== undefined && num < min) return min;
@@ -37,5 +35,4 @@
 		max={max ?? undefined}
 		oninput={handleInput}
 	/>
-	{#if hint}<HintIcon text={hint} />{/if}
 </label>

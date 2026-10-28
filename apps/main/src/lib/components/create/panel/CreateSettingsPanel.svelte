@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import type { Visibility } from '$lib/types';
 	import SelectField from '$lib/components/ui/SelectField.svelte';
@@ -37,9 +36,7 @@
 <div class="settings-panel">
 	<!-- Slug -->
 	<div class="field-row">
-		<label class="field-label" for="settings-slug">{t('create.label.slug')}
-		<HintIcon text={t('create.settings.slug_hint', 'The URL path for this content — lowercase, hyphens, no spaces.')}  />
-</label>
+		<label class="field-label" for="settings-slug">{t('create.label.slug')}</label>
 		<input
 			id="settings-slug"
 			type="text"
@@ -69,9 +66,7 @@
 
 	<!-- Canonical URL -->
 	<div class="field-row">
-		<label class="field-label" for="settings-canonical">{t('create.label.canonical_url')}
-		<HintIcon text={t('create.settings.canonical_hint', 'Optional — the preferred URL search engines should index.')}  />
-</label>
+		<label class="field-label" for="settings-canonical">{t('create.label.canonical_url')}</label>
 		<input
 			id="settings-canonical"
 			type="url"
@@ -87,9 +82,7 @@
 
 	<!-- Publish at -->
 	<div class="field-row">
-		<label class="field-label" for="settings-publishat">{t('create.label.publish_at')}
-		<HintIcon text={t('create.settings.publish_at_hint', 'Leave blank to publish immediately.')}  />
-</label>
+		<label class="field-label" for="settings-publishat">{t('create.label.publish_at')}</label>
 		<input
 			id="settings-publishat"
 			type="datetime-local"

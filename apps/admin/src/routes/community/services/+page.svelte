@@ -203,10 +203,10 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('app.services.col_name', 'Title'), type: 'text', help: t('app.services.title_hint', 'The title shown in listings and detail views.'),},
-		{ key: 'service_category', label: t('app.services.col_category', 'Category'), type: 'text', help: t('app.services.service_category_hint', 'The service category — controls directory grouping.') },
-		{ key: 'status', label: t('app.services.col_status', 'Status'), type: 'text', help: t('app.services.status_hint', 'The record state — controls visibility and actions.') },
-		{ key: 'body', label: t('app.services.detail_description', 'Description'), type: 'textarea', help: t('app.services.body_hint', 'The main content body.') }
+		{ key: 'title', label: t('app.services.col_name', 'Title'), type: 'text' },
+		{ key: 'service_category', label: t('app.services.col_category', 'Category'), type: 'text' },
+		{ key: 'status', label: t('app.services.col_status', 'Status'), type: 'text' },
+		{ key: 'body', label: t('app.services.detail_description', 'Description'), type: 'textarea' }
 	];
 
 	const filters = $derived.by<FilterDef[]>(() => {
@@ -221,7 +221,6 @@
 				key: 'dest',
 				label: t('app.services.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.services.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

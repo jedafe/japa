@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
@@ -98,10 +97,7 @@
 		</div>
 	</div>
 	<label class="mb-3 flex items-center justify-between gap-3">
-		<span>
-			<span class="block text-sm text-[var(--color-text)]">{t('settings.privacy.show_online_status')}</span>
-			<HintIcon text={t('settings.privacy.show_online_status_hint', 'Others can see when you are currently active.')} />
-		</span>
+		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.show_online_status')}</span>
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"
@@ -110,10 +106,7 @@
 		/>
 	</label>
 	<label class="mb-3 flex items-center justify-between gap-3">
-		<span>
-			<span class="block text-sm text-[var(--color-text)]">{t('settings.privacy.show_activity')}</span>
-			<HintIcon text={t('settings.privacy.show_activity_hint', 'Show your recent activity on your public profile.')} />
-		</span>
+		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.show_activity')}</span>
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"
@@ -122,10 +115,7 @@
 		/>
 	</label>
 	<label class="flex items-center justify-between gap-3">
-		<span>
-			<span class="block text-sm text-[var(--color-text)]">{t('settings.privacy.searchable')}</span>
-			<HintIcon text={t('settings.privacy.searchable_hint', 'Allow search engines to index your profile page.')} />
-		</span>
+		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.searchable')}</span>
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"
@@ -134,10 +124,7 @@
 		/>
 	</label>
 	<label class="flex items-center justify-between gap-3">
-		<span>
-			<span class="block text-sm text-[var(--color-text)]">{t('settings.privacy.show_points_publicly')}</span>
-			<HintIcon text={t('settings.privacy.show_points_publicly_hint', 'Display your points and rank on your profile.')} />
-		</span>
+		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.show_points_publicly')}</span>
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"

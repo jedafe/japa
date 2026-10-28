@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
@@ -266,9 +265,7 @@
 	<!-- Date-range picker that writes ?from=&to= to the URL and refetches -->
 	<div class="flex flex-wrap items-end gap-2">
 		<div>
-			<label for="range-from" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.from', 'From')}
-			<HintIcon text={t('admin.range_from_hint', 'Start of the date range.')}  />
-</label>
+			<label for="range-from" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.from', 'From')}</label>
 			<input
 				id="range-from"
 				type="date"
@@ -278,9 +275,7 @@
 			/>
 		</div>
 		<div>
-			<label for="range-to" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.to', 'To')}
-			<HintIcon text={t('admin.range_to_hint', 'End of the date range.')}  />
-</label>
+			<label for="range-to" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.to', 'To')}</label>
 			<input
 				id="range-to"
 				type="date"

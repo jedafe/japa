@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -302,7 +301,7 @@
 								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={program.referrer_reward_cents}
 							/>
-							<HintIcon text={t('referral.cents_hint')} />
+							<p class="mt-1 text-xs text-muted">{t('referral.cents_hint')}</p>
 						</div>
 						<div>
 							<label for="prog-referee-reward" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.referee_reward')}</label>
@@ -313,7 +312,7 @@
 								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={program.referee_reward_cents}
 							/>
-							<HintIcon text={t('referral.cents_hint')} />
+							<p class="mt-1 text-xs text-muted">{t('referral.cents_hint')}</p>
 						</div>
 						<div>
 							<label for="prog-max-referrals" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.max_referrals')}</label>
@@ -324,7 +323,7 @@
 								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={program.max_referrals}
 							/>
-							<HintIcon text={t('referral.max_referrals_hint')} />
+							<p class="mt-1 text-xs text-muted">{t('referral.max_referrals_hint')}</p>
 						</div>
 						<div>
 							<label for="prog-cookie-days" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.cookie_days')}</label>

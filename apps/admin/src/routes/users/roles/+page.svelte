@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /users/roles — migrated to the EntityPage scaffold.
 	//
@@ -70,8 +69,8 @@
 	// `fields` seeds the edit form value; the actual inputs are rendered by the
 	// `formSnippet` below (the searchable permissions grid).
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('users.roles.name', 'Name'), type: 'text', help: t('users.roles.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
-		{ key: 'permissions', label: t('users.roles.permissions', 'Permissions'), type: 'text', help: t('users.roles.permissions_hint', 'Which admin permissions are required.') }
+		{ key: 'name', label: t('users.roles.name', 'Name'), type: 'text', required: true },
+		{ key: 'permissions', label: t('users.roles.permissions', 'Permissions'), type: 'text' }
 	];
 
 	const config: EntityPageConfig = {
@@ -200,9 +199,7 @@
 {#snippet RoleForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
 	<div class="space-y-4">
 		<div>
-			<label for="role-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.roles.name', 'Name')}
-			<HintIcon text={t('users.roles.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-</label>
+			<label for="role-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.roles.name', 'Name')}</label>
 			<input
 				id="role-name"
 				type="text"

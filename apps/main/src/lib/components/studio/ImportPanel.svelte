@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §5 — paste generated
 	// .md output → parse frontmatter → confirm → save as a contents draft.
 	// This is the web replacement for the desktop app's watched folder.
@@ -278,13 +277,11 @@
 				<label class={labelCls}>
 					{t('studio.prompts.title', 'Title')}
 					<input type="text" value={str('title')} oninput={(e) => { setStr('title', e.currentTarget.value); revalidate(); }} class={inputCls} />
-					<HintIcon text={t('studio.import.title_hint', 'The title for the imported content.')} />
 					{#if errors.title}<p class={errCls}>{errors.title}</p>{/if}
 				</label>
 				<label class={labelCls}>
 					{t('studio.prompts.slug', 'Slug')}
 					<input type="text" value={str('slug')} oninput={(e) => { setStr('slug', e.currentTarget.value); revalidate(); }} class={inputCls} />
-					<HintIcon text={t('studio.import.slug_hint', 'URL-safe identifier — auto-filled from the title.')} />
 					{#if errors.slug}<p class={errCls}>{errors.slug}</p>{/if}
 				</label>
 				{@render acField(t('studio.prompts.content_type', 'Content type'), typeItems, 'content_type', () => setStr('guide_category', ''))}

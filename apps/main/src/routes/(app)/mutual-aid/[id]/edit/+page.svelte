@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 	import { t, siteName} from '$lib/i18n';
 	import { goto } from '$app/navigation';
@@ -83,9 +82,7 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="post_type" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_post_type', 'Post type')}
-			
-			<HintIcon text={t('mutual_aid.type_hint', 'Whether you are offering or requesting help.')}  />
-</label>
+			</label>
 			<input
 				id="post_type"
 				type="text"
@@ -100,9 +97,7 @@
 			<label for="category" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_category', 'Category')}
 				<span class="text-red-500" aria-hidden="true">*</span>
-			
-			<HintIcon text={t('mutual_aid.category_hint', 'The kind of help — housing, transport, docs.')}  />
-</label>
+			</label>
 			<AutocompleteSelect
 				id="category"
 				value={category}
@@ -116,9 +111,7 @@
 			<label for="title" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_title', 'Title')}
 				<span class="text-red-500" aria-hidden="true">*</span>
-			
-			<HintIcon text={t('mutual_aid.title_hint', 'One line — what you need or what you are offering.')}  />
-</label>
+			</label>
 			<input
 				id="title"
 				type="text"
@@ -144,7 +137,6 @@
 			placeholder={t('mutual_aid.field_description_placeholder', 'Provide details about your request or offer…')}
 			rows={6}
 		/>
-			<HintIcon text={t('mutual_aid.desc_hint', 'Details: what, where, when, and how to reach you.')} />
 
 		<!-- Destination country (read-only — destination cannot be changed
 		     after creation; the backend UpdatePostRequest only accepts
@@ -152,9 +144,7 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_destination', 'Destination country')}
-			
-			<HintIcon text={t('mutual_aid.destination_hint', 'The country where help is needed or offered.')}  />
-</label>
+			</label>
 			<AutocompleteSelect
 				id="destination_country"
 				value={destinationSpaceId}
@@ -170,9 +160,7 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="city" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_city', 'City')}
-			
-			<HintIcon text={t('mutual_aid.city_hint', 'Optional — the city this applies to.')}  />
-</label>
+			</label>
 			<input
 				id="city"
 				type="text"

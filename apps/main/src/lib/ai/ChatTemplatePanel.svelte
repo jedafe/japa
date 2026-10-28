@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// ChatTemplatePanel — the /ai right rail: saved generation-spec presets
 	// plus a Prompt|Structure editor, in the PromptRightPanel idiom.
 	//
@@ -1062,7 +1061,6 @@
 						<label class="tpl-label" for="tpl-instructions"
 							>{t('ai.templates.instructions', 'Extra instructions')}</label
 						>
-						<HintIcon text={t('ai.templates.instructions_hint', 'Extra instructions the AI follows every time.')} />
 						<textarea
 							id="tpl-instructions"
 							rows="3"

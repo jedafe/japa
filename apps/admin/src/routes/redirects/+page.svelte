@@ -82,19 +82,17 @@
 			key: 'http_status',
 			label: t('redirects.code', 'Status Code'),
 			type: 'select',
-			help: t('redirects.http_status_hint', 'The HTTP status returned — e.g. 404, 410.'),
 			options: [
 				{ value: '301', label: `301 ${t('redirects.permanent', 'Permanent')}` },
 				{ value: '302', label: `302 ${t('redirects.temporary', 'Temporary')}` },
 				{ value: '307', label: `307 ${t('redirects.temp_redirect', 'Temporary Redirect')}` }
 			]
 		},
-		{ key: 'is_active', label: t('common.active', 'Active'), type: 'checkbox', help: t('common.is_active_hint', 'Inactive records are hidden or disabled on the site.'),},
+		{ key: 'is_active', label: t('common.active', 'Active'), type: 'checkbox' },
 		{
 			key: 'notes',
 			label: t('redirects.notes', 'Notes'),
 			type: 'textarea',
-			help: t('redirects.notes_hint', 'Internal notes — not shown to users.'),
 			placeholder: t('redirects.notes_placeholder', 'Optional internal note')
 		}
 	];

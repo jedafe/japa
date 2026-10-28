@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 	// /deals/new — staff create (audience="staff") or organization deal
 	// submission (audience="org", create-only — org mode never PATCHes the
@@ -178,9 +177,7 @@
 
 			{#if data.orgs.length > 1}
 				<div>
-					<label for="deal-org" class={labelClass}>{t('deals.org_picker', 'Submitting as')}
-					<HintIcon text={t('deals.org_hint', 'Submit this deal on behalf of an organization you manage.')}  />
-</label>
+					<label for="deal-org" class={labelClass}>{t('deals.org_picker', 'Submitting as')}</label>
 					<AutocompleteSelect
 						id="deal-org"
 						bind:value={selectedOrgId}

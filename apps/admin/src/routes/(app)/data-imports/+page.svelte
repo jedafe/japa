@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// /data-imports — Platform Data Import (Section 67).
 	// Migrated to the EntityPage scaffold per apps/admin/AGENTS.md.
 	// Non-standard CRUD: no edit, custom create form (select/file-url),
@@ -130,11 +129,11 @@
 
 	// ── EntityPage config ─────────────────────────────────────────────────
 	const fields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('app.data_imports.import_name', 'Import Name'), type: 'text', help: t('app.data_imports.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
-		{ key: 'type', label: t('app.data_imports.data_type', 'Data Type'), type: 'select', help: t('app.data_imports.type_hint', 'The type — controls how it’s handled.'), options: importTypes },
-		{ key: 'format', label: t('app.data_imports.format', 'Format'), type: 'select', help: t('app.data_imports.format_hint', 'The expected format — e.g. CSV columns or template.'), options: importFormatOptions },
-		{ key: 'mode', label: t('app.data_imports.mode', 'Mode'), type: 'select', help: t('app.data_imports.mode_hint', 'How this behaves — pick the closest fit.'), options: importModeOptions },
-		{ key: 'file_url', label: t('app.data_imports.file_url', 'File URL'), type: 'text', help: t('app.data_imports.file_url_hint', 'Direct file URL — must be publicly reachable.'), required: true }
+		{ key: 'name', label: t('app.data_imports.import_name', 'Import Name'), type: 'text', required: true },
+		{ key: 'type', label: t('app.data_imports.data_type', 'Data Type'), type: 'select', options: importTypes },
+		{ key: 'format', label: t('app.data_imports.format', 'Format'), type: 'select', options: importFormatOptions },
+		{ key: 'mode', label: t('app.data_imports.mode', 'Mode'), type: 'select', options: importModeOptions },
+		{ key: 'file_url', label: t('app.data_imports.file_url', 'File URL'), type: 'text', required: true }
 	]);
 
 	const config = $derived<EntityPageConfig>({
@@ -367,9 +366,7 @@
 		<div>
 			<label for="import-name" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.import_name', 'Import Name')}
-			
-			<HintIcon text={t('app.data_imports.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-</label>
+			</label>
 			<input
 				id="import-name"
 				type="text"
@@ -383,34 +380,26 @@
 			<div>
 				<label for="import-type" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('app.data_imports.data_type', 'Data Type')}
-				
-			<HintIcon text={t('app.data_imports.type_hint', 'The type — controls how it’s handled.')}  />
-</label>
+				</label>
 				<Select bind:value={value.type} options={importTypes} />
 			</div>
 			<div>
 				<label for="import-format" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('app.data_imports.format', 'Format')}
-				
-			<HintIcon text={t('app.data_imports.format_hint', 'The expected format — e.g. CSV or JSON.')}  />
-</label>
+				</label>
 				<Select bind:value={value.format} options={importFormatOptions} />
 			</div>
 		</div>
 		<div>
 			<label for="import-mode" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.mode', 'Mode')}
-			
-			<HintIcon text={t('app.data_imports.mode_hint', 'How this behaves — pick the closest fit.')}  />
-</label>
+			</label>
 			<Select bind:value={value.mode} options={importModeOptions} />
 		</div>
 		<div>
 			<label for="import-file-url" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.file_url', 'File URL')}
-			
-			<HintIcon text={t('app.data_imports.file_url_hint', 'Direct file URL — must be publicly reachable.')}  />
-</label>
+			</label>
 			<input
 				id="import-file-url"
 				type="text"
@@ -419,7 +408,9 @@
 				placeholder="/uploads/import-file.csv"
 				bind:value={value.file_url}
 			/>
-			<HintIcon text={t('app.data_imports.file_url_hint', 'Path to the uploaded file. Upload the file first via the Media uploader, then paste the path here.')} />
+			<p class="mt-1 text-xs text-muted">
+				{t('app.data_imports.file_url_hint', 'Path to the uploaded file. Upload the file first via the Media uploader, then paste the path here.')}
+			</p>
 		</div>
 		<div class="rounded-lg border p-3 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
 			{t('app.data_imports.form_help', 'In "create" mode, rows that conflict with existing records are skipped. In "upsert" mode, existing records are updated and new ones are inserted.')}

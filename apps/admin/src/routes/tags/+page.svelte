@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /tags — migrated to the EntityPage scaffold (Task 9).
 	//
@@ -564,9 +563,7 @@
 		<div>
 			<label for="tag-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.name", "Name")}
-			
-			<HintIcon text={t('admin.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-</label>
+			</label>
 			<input
 				id="tag-name"
 				type="text"
@@ -582,9 +579,7 @@
 		<div>
 			<label for="tag-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.slug", "Slug")}
-			
-			<HintIcon text={t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
-</label>
+			</label>
 			<input
 				id="tag-slug"
 				type="text"
@@ -604,9 +599,7 @@
 				style="color: var(--color-foreground)"
 			>
 				{t("tags.description", "Description")}
-			
-			<HintIcon text={t('admin.description_hint', 'Shown in detail views — keep it concise.')}  />
-</label>
+			</label>
 			<textarea
 				id="tag-description"
 				rows="2"
@@ -619,9 +612,7 @@
 		<div>
 			<label for="tag-rules" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.rules", "Rules")}
-			
-			<HintIcon text={t('admin.rules_hint', 'Matching rules — one per line.')}  />
-</label>
+			</label>
 			<textarea
 				id="tag-rules"
 				rows="3"
@@ -796,9 +787,7 @@
 			<input id="tag-is-system" type="checkbox" class="h-4 w-4 rounded" bind:checked={value.is_system} />
 			<label for="tag-is-system" class="text-sm font-medium" style="color: var(--color-foreground)">
 				{t("tags.is_system", "System tag (cannot be deleted)")}
-			
-			<HintIcon text={t('admin.is_system_hint', 'System records cannot be deleted or renamed.')}  />
-</label>
+			</label>
 		</div>
 	</div>
 

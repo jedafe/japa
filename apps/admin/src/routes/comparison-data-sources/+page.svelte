@@ -28,20 +28,19 @@
 	// Fields drive EntityForm seeding and create-form defaults. The actual
 	// form UI is rendered via the DataSourceForm snippet below.
 	const fields: FieldDef[] = $derived([
-		{ key: 'source_name', label: t('data_sources.source_name', 'Source name'), type: 'text', help: t('data_sources.source_name_hint', 'The name of the source this came from.'), required: true },
+		{ key: 'source_name', label: t('data_sources.source_name', 'Source name'), type: 'text', required: true },
 		{
 			key: 'source_kind',
 			label: t('data_sources.source_kind', 'Kind'),
 			type: 'select',
-			help: t('data_sources.source_kind_hint', 'The kind of source — database, list, feed.'),
 			options: sourceKindOptions,
 			required: true
 		},
-		{ key: 'source_url', label: t('data_sources.source_url', 'Source URL'), type: 'url', help: t('data_sources.source_url_hint', 'The URL this data was pulled from — used for verification.'),},
-		{ key: 'entity_type', label: t('data_sources.entity_type', 'Entity type'), type: 'text', help: t('data_sources.entity_type_hint', 'The kind of entity this is linked to.') },
-		{ key: 'entity_id', label: t('data_sources.entity_id', 'Entity ID'), type: 'text', help: t('data_sources.entity_id_hint', 'The entity this is linked to.') },
-		{ key: 'dimension_slug', label: t('data_sources.dimension_slug', 'Dimension slug'), type: 'text', help: t('data_sources.dimension_slug_hint', 'The dimension this source feeds — e.g. cost_of_living, safety.') },
-		{ key: 'trust_level', label: t('data_sources.trust_level', 'Trust level'), type: 'number', help: t('data_sources.trust_level_hint', 'Trust level required — higher means more established.') }
+		{ key: 'source_url', label: t('data_sources.source_url', 'Source URL'), type: 'url' },
+		{ key: 'entity_type', label: t('data_sources.entity_type', 'Entity type'), type: 'text' },
+		{ key: 'entity_id', label: t('data_sources.entity_id', 'Entity ID'), type: 'text' },
+		{ key: 'dimension_slug', label: t('data_sources.dimension_slug', 'Dimension slug'), type: 'text' },
+		{ key: 'trust_level', label: t('data_sources.trust_level', 'Trust level'), type: 'number' }
 	]);
 
 	function parseConfig(value: Record<string, any>): { ok: true; config: Record<string, unknown> } | { ok: false; error: string } {

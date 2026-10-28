@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 	// §114 — org coupon management: create/edit/suspend/delete plus
 	// redemption + attachment rollups. List mutations go through the
@@ -277,12 +276,10 @@
 					<div>
 						<label for="cp-title" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_title', 'Title')} <span class="text-red-500">*</span></label>
 						<input id="cp-title" type="text" bind:value={draft.title} placeholder={t('coupons.f_title_ph', 'e.g. Early-bird 15% off')} class={inputClass} />
-						<HintIcon text={t('coupons.title_hint', 'Shown to customers — e.g. Early-bird 15% off.')} />
 					</div>
 					<div>
 						<label for="cp-code" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_code', 'Code')} <span class="text-red-500">*</span></label>
 						<input id="cp-code" type="text" bind:value={draft.code} placeholder="EARLY15" class="{inputClass} font-mono uppercase" maxlength="32" />
-						<HintIcon text={t('coupons.code_hint', 'Uppercase letters and numbers, e.g. JAPA20.')} />
 					</div>
 					<div>
 						<label for="cp-type" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_type', 'Discount type')}</label>
@@ -318,7 +315,6 @@
 					<div>
 						<label for="cp-minspend" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_minspend', 'Minimum spend (optional)')}</label>
 						<input id="cp-minspend" type="number" min="0" step="0.01" bind:value={draft.minSpend} placeholder="0.00" class={inputClass} />
-						<HintIcon text={t('coupons.minspend_hint', 'Optional — minimum order value to use the code.')} />
 					</div>
 					<div>
 						<label for="cp-from" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_valid_from', 'Valid from')}</label>
@@ -331,12 +327,10 @@
 					<div>
 						<label for="cp-max" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_max_redemptions', 'Max redemptions (optional)')}</label>
 						<input id="cp-max" type="number" min="1" bind:value={draft.maxRedemptions} class={inputClass} />
-						<HintIcon text={t('coupons.max_hint', 'Optional — total times this code can be used.')} />
 					</div>
 					<div>
 						<label for="cp-peruser" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_per_user', 'Per-user limit (optional)')}</label>
 						<input id="cp-peruser" type="number" min="1" bind:value={draft.perUserLimit} class={inputClass} />
-						<HintIcon text={t('coupons.peruser_hint', 'Optional — times one customer can use it.')} />
 					</div>
 					<div>
 						<label for="cp-terms" class="mb-1 block text-xs font-medium text-[var(--color-text)]">{t('coupons.f_terms', 'Terms URL (optional)')}</label>

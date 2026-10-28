@@ -37,12 +37,12 @@
 	}
 
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('app.wallet.pack_name', 'Pack Name'), type: 'text', help: t('app.wallet.name_hint', 'The name shown in admin lists and on the site where public.'), placeholder: 'e.g. Starter Pack', required: true },
-		{ key: 'description', label: t('app.wallet.pack_description', 'Description'), type: 'textarea', help: t('app.wallet.description_hint', 'Shown in detail views — keep it concise.'), placeholder: 'Optional description shown to users' },
-		{ key: 'credit_amount', label: t('app.wallet.credit_amount', 'Credit Amount'), type: 'number', help: t('app.wallet.credit_amount_hint', 'Amount in wallet credits.'), min: 1, required: true },
-		{ key: 'bonus_credits', label: t('app.wallet.bonus_credits', 'Bonus Credits'), type: 'number', help: t('app.wallet.bonus_credits_hint', 'Credits granted as a bonus on this action.'), min: 0 },
-		{ key: 'min_user_level', label: t('app.wallet.min_user_level', 'Min User Level'), type: 'text', help: t('app.wallet.min_user_level_hint', 'Minimum account level required.'), placeholder: 'e.g. pro (optional)' },
-		{ key: 'position', label: t('app.wallet.position', 'Position'), type: 'number', help: t('app.wallet.position_hint', 'Ordering position — lower numbers show first.'), min: 0 }
+		{ key: 'name', label: t('app.wallet.pack_name', 'Pack Name'), type: 'text', placeholder: 'e.g. Starter Pack', required: true },
+		{ key: 'description', label: t('app.wallet.pack_description', 'Description'), type: 'textarea', placeholder: 'Optional description shown to users' },
+		{ key: 'credit_amount', label: t('app.wallet.credit_amount', 'Credit Amount'), type: 'number', min: 1, required: true },
+		{ key: 'bonus_credits', label: t('app.wallet.bonus_credits', 'Bonus Credits'), type: 'number', min: 0 },
+		{ key: 'min_user_level', label: t('app.wallet.min_user_level', 'Min User Level'), type: 'text', placeholder: 'e.g. pro (optional)' },
+		{ key: 'position', label: t('app.wallet.position', 'Position'), type: 'number', min: 0 }
 	];
 
 	const config: EntityPageConfig = {

@@ -143,9 +143,9 @@
 
 	// ── Editable fields ─────
 	const fields = $derived<FieldDef[]>([
-		{ key: 'title', label: t('jobs.title_col', 'Title'), type: 'text', help: t('jobs.title_hint', 'The title shown in listings and detail views.'), required: true },
-		{ key: 'status', label: t('jobs.status', 'Status'), type: 'select', help: t('jobs.status_hint', 'The record state — controls visibility and actions.'), options: statusOptions },
-		{ key: 'body', label: t('jobs.body', 'Body'), type: 'textarea', help: t('jobs.body_hint', 'The main content body.') }
+		{ key: 'title', label: t('jobs.title_col', 'Title'), type: 'text', required: true },
+		{ key: 'status', label: t('jobs.status', 'Status'), type: 'select', options: statusOptions },
+		{ key: 'body', label: t('jobs.body', 'Body'), type: 'textarea' }
 	]);
 
 	// Helper to read a custom field value from the listing's field_values map.

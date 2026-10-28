@@ -350,7 +350,7 @@
 	]);
 
 	const fields: FieldDef[] = [
-		{ key: 'extracted', label: t('intel.extracted', 'Extracted Data'), type: 'textarea', help: t('intel.extracted_hint', 'What was extracted — internal use.') }
+		{ key: 'extracted', label: t('intel.extracted', 'Extracted Data'), type: 'textarea' }
 	];
 
 	const config = $derived<EntityPageConfig>({

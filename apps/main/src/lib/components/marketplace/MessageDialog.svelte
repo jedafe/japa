@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// "Message provider / Message Mentor" — opens a small modal that starts
 	// (or reuses) a DM conversation with the listing author via
 	// POST /dm/conversations, then deep-links into /messages?c={id}.

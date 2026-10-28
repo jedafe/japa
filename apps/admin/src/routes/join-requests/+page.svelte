@@ -59,9 +59,9 @@
 
 	// `fields` is required by EntityPageConfig; the page is read-only so the form never opens.
 	const fields: FieldDef[] = [
-		{ key: 'display_name', label: t('joinRequests.user', 'User'), type: 'text', help: t('joinRequests.display_name_hint', 'The name shown to users — differs from the internal name.'),},
-		{ key: 'space_name', label: t('joinRequests.space', 'Space'), type: 'text', help: t('joinRequests.space_name_hint', 'The space this belongs to.') },
-		{ key: 'status', label: t('joinRequests.status', 'Status'), type: 'text', help: t('joinRequests.status_hint', 'The record state — controls visibility and actions.') }
+		{ key: 'display_name', label: t('joinRequests.user', 'User'), type: 'text' },
+		{ key: 'space_name', label: t('joinRequests.space', 'Space'), type: 'text' },
+		{ key: 'status', label: t('joinRequests.status', 'Status'), type: 'text' }
 	];
 
 	// Row actions: custom array replaces defaults, so View is included explicitly.

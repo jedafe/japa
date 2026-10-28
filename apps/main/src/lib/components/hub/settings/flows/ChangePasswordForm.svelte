@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { changePassword } from '$lib/api/hub';
 	import { validatePassword } from '../security';
@@ -45,34 +44,28 @@
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.security.current')}</span>
 		<input
 			type="password"
-			aria-describedby="cp-current-hint"
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			value={current}
 			oninput={(e) => (current = e.currentTarget.value)}
 		/>
-		<HintIcon id="cp-current-hint" text={t('settings.security.current_hint', 'Your existing account password.')} />
 	</label>
 	<label class="block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.security.new')}</span>
 		<input
 			type="password"
-			aria-describedby="cp-new-hint"
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			value={next}
 			oninput={(e) => (next = e.currentTarget.value)}
 		/>
-		<HintIcon id="cp-new-hint" text={t('settings.security.new_hint', 'At least 8 characters with upper & lower case letters and a number.')} />
 	</label>
 	<label class="block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.security.confirm')}</span>
 		<input
 			type="password"
-			aria-describedby="cp-confirm-hint"
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			value={confirm}
 			oninput={(e) => (confirm = e.currentTarget.value)}
 		/>
-		<HintIcon id="cp-confirm-hint" text={t('settings.security.confirm_hint', 'Re-enter your new password exactly.')} />
 	</label>
 	{#if error}<p class="text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
 	{#if success}<p class="text-xs text-green-600">{t('settings.security.changed')}</p>{/if}

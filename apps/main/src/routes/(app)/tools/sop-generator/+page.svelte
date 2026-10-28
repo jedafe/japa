@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
@@ -341,9 +340,7 @@
 		</div>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<div>
-				<label class={labelCls} for="genPurpose">{t('sop_generator.purpose', 'Purpose')}
-				<HintIcon text={t('tools.sop.purpose_hint', 'What the statement is for.')}  />
-</label>
+				<label class={labelCls} for="genPurpose">{t('sop_generator.purpose', 'Purpose')}</label>
 				<Autocomplete
 					id="genPurpose"
 					placeholder={t('sop_generator.purpose_placeholder', 'Select a purpose…')}
@@ -363,22 +360,16 @@
 				/>
 			</div>
 			<div>
-				<label class={labelCls} for="genProgram">{t('sop_generator.program', 'Program')}
-				<HintIcon text={t('tools.sop.program_hint', 'The program you are applying to.')}  />
-</label>
+				<label class={labelCls} for="genProgram">{t('sop_generator.program', 'Program')}</label>
 				<input id="genProgram" type="text" bind:value={genProgram} placeholder="e.g. MSc Computer Science" class={inputCls} />
 			</div>
 			<div>
-				<label class={labelCls} for="genInstitution">{t('sop_generator.institution', 'Institution')}
-				<HintIcon text={t('tools.sop.institution_hint', 'The school or institution name.')}  />
-</label>
+				<label class={labelCls} for="genInstitution">{t('sop_generator.institution', 'Institution')}</label>
 				<input id="genInstitution" type="text" bind:value={genInstitution} placeholder="e.g. University of Toronto" class={inputCls} />
 			</div>
 		</div>
 		<div class="mt-4">
-			<label class={labelCls} for="genBackground">{t('sop_generator.background', 'Brief background')}
-			<HintIcon text={t('tools.sop.background_hint', 'Summarize your background — the generator expands it.')}  />
-</label>
+			<label class={labelCls} for="genBackground">{t('sop_generator.background', 'Brief background')}</label>
 			<textarea
 				id="genBackground"
 				bind:value={genBackground}

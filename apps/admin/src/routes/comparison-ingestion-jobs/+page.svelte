@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { DataTable } from '$lib/components/ui/data-table';
@@ -149,9 +148,7 @@
 			<div class="flex-1">
 				<label for="content-id" class="block text-sm font-medium" style="color: var(--color-foreground)">
 					{t('ingestion_jobs.content_id', 'Comparison')}
-				
-				<HintIcon text={t('comparison.content_id_hint', 'The content this job ingests.')}  />
-</label>
+				</label>
 				<input
 					id="content-id"
 					type="text"

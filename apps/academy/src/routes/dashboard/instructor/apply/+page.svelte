@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Creator application — Japa Academy instructor application form (ADR-063).
 	// CSR ONLY: POST /academy/instructor/apply.
 	// Payload matches backend ApplyInput (internal/academy/creator/store.go):
@@ -57,9 +56,7 @@
 		<div>
 			<label for="display_name" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.display_name_label')}
-			
-			<HintIcon text={t('academy.display_name_hint', 'Your public instructor name.')}  />
-</label>
+			</label>
 			<input
 				id="display_name"
 				type="text"
@@ -74,9 +71,7 @@
 		<div>
 			<label for="headline" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.headline_label')}
-			
-			<HintIcon text={t('academy.headline_hint', 'One line shown under your name — role or specialty.')}  />
-</label>
+			</label>
 			<input
 				id="headline"
 				type="text"
@@ -90,9 +85,7 @@
 		<div>
 			<label for="bio" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.bio_label')}
-			
-			<HintIcon text={t('academy.bio_hint', 'Shown on your instructor page — experience and expertise.')}  />
-</label>
+			</label>
 			<textarea
 				id="bio"
 				bind:value={bio}
@@ -106,9 +99,7 @@
 		<div>
 			<label for="application_note" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.application_note_label')}
-			
-			<HintIcon text={t('academy.note_hint', 'Portfolio, expertise areas or sample links — helps reviewers.')}  />
-</label>
+			</label>
 			<textarea
 				id="application_note"
 				bind:value={applicationNote}

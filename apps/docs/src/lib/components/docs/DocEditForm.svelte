@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { enhance } from '$app/forms';
 	import { beforeNavigate } from '$app/navigation';
 	import { onMount, untrack } from 'svelte';
@@ -211,9 +210,7 @@
 
 	<div class="ef-grid">
 		<div class="ef-field">
-			<label class="ef-label" for="doc-edit-category">{t('new_page.field_category', 'Category')}
-			<HintIcon text={t('new_page.category_hint', 'The top-level section this page lives in.')}  />
-</label>
+			<label class="ef-label" for="doc-edit-category">{t('new_page.field_category', 'Category')}</label>
 			<Autocomplete
 				id="doc-edit-category"
 				placeholder={t('new_page.optional', 'Optional')}
@@ -232,9 +229,7 @@
 		</div>
 
 		<div class="ef-field">
-			<label class="ef-label" for="doc-edit-subcategory">{t('new_page.field_subcategory', 'Subcategory')}
-			<HintIcon text={t('new_page.subcategory_hint', 'Optional — a nested grouping under the category.')}  />
-</label>
+			<label class="ef-label" for="doc-edit-subcategory">{t('new_page.field_subcategory', 'Subcategory')}</label>
 			<Autocomplete
 				id="doc-edit-subcategory"
 				disabled={!editCategory.trim()}
@@ -275,12 +270,10 @@
 					pattern="[a-z0-9]+(-[a-z0-9]+)*"
 					bind:value={editSlug}
 				/>
-				<HintIcon text={t('edit.slug_hint', 'Renaming the slug changes the page URL.')} />
+				<span class="ef-hint">{t('edit.slug_hint', 'Renaming the slug changes the page URL.')}</span>
 			</label>
 			<div class="ef-field">
-				<label class="ef-label" for="doc-edit-parent">{t('new_page.field_parent', 'Parent page')}
-				<HintIcon text={t('new_page.parent_hint', 'Optional — nest this page under another.')}  />
-</label>
+				<label class="ef-label" for="doc-edit-parent">{t('new_page.field_parent', 'Parent page')}</label>
 				<Autocomplete
 					id="doc-edit-parent"
 					placeholder={t('new_page.no_parent', '— Top level —')}
@@ -313,7 +306,9 @@
 		</button>
 		<a href={viewPath} class="ef-cancel">{t('editor.cancel', 'Cancel')}</a>
 		{#if demoteWarning}
-			<HintIcon text={t('edit.approved_demote_hint', 'Saving edits will return this page to review — its approval will be cleared.')} />
+			<span class="ef-demote-hint">
+				{t('edit.approved_demote_hint', 'Saving edits will return this page to review — its approval will be cleared.')}
+			</span>
 		{/if}
 	</div>
 </form>
@@ -394,6 +389,7 @@
 	.ef-input:focus { outline: none; border-color: var(--color-primary); }
 	.ef-title { font-size: 1.25rem; font-weight: 600; }
 	.ef-mono { font-family: var(--font-mono); font-size: 0.8125rem; }
+	.ef-hint { font-size: 0.75rem; color: var(--color-muted); }
 	.ef-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
@@ -439,6 +435,11 @@
 		text-decoration: none;
 	}
 	.ef-cancel:hover { color: var(--color-text); }
+	.ef-demote-hint {
+		font-size: 0.75rem;
+		color: var(--method-patch);
+		font-weight: 500;
+	}
 	.form-error {
 		margin: 0 0 0.25rem;
 		padding: 0.75rem 1rem;

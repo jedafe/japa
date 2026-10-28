@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// §114/000829 structured detail-page content editor — one collapsed
 	// <details> section shared by the create and edit forms. Covers:
 	//   selling_points[] — hero trust chips (icon + title + description)
@@ -283,6 +282,9 @@
 			<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('services.highlights_items', 'Highlights')}
 			</span>
+			<p class="mb-2 text-xs text-[var(--color-muted)]">
+				{t('services.highlights_hint', 'Checklist lines shown in the highlights card.')}
+			</p>
 			<div class="space-y-2">
 				{#each highlights as line, idx (idx)}
 					<div class="flex items-center gap-2">
@@ -321,6 +323,9 @@
 			<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('services.audience_items', 'Who this is for')}
 			</span>
+			<p class="mb-2 text-xs text-[var(--color-muted)]">
+				{t('services.audience_hint', 'Checklist lines describing the ideal customer.')}
+			</p>
 			<div class="space-y-2">
 				{#each audience as line, idx (idx)}
 					<div class="flex items-center gap-2">

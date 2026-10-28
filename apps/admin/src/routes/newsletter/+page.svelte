@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /newsletter — migrated to the EntityPage scaffold.
 	// Tabbed page: Subscribers (view/edit/delete + import) and Campaigns
@@ -120,7 +119,7 @@
 
 	// ── Subscriber edit fields (status only — email is read-only) ───────────
 	const subscriberFields = $derived<FieldDef[]>([
-		{ key: 'status', label: t('common.status', 'Status'), type: 'select', help: t('common.status_hint', 'The record state — controls visibility and actions.'), options: subscriberStatusOptions }
+		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: subscriberStatusOptions }
 	]);
 
 	// ── Row actions ─────────────────────────────────────────────────────────
@@ -573,7 +572,9 @@
 <!-- Import Subscribers Modal (page-local — form with textarea) -->
 <Modal bind:open={showImportModal} title={t('app.newsletter.modal_import_subscribers', 'Import Subscribers')} size="lg">
 	<div class="space-y-4">
-		<HintIcon text={t('app.newsletter.import_hint', 'Paste email addresses below, one per line. Optionally add a name after a comma: email@example.com, John Doe')} />
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('app.newsletter.import_hint', 'Paste email addresses below, one per line. Optionally add a name after a comma: email@example.com, John Doe')}
+		</p>
 		<textarea class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="10" bind:value={importText} placeholder={"user1@example.com\nuser2@example.com, Jane Doe\nuser3@example.com"}></textarea>
 		{#if importResult}
 			<div class="rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background: var(--color-surface)">

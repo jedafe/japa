@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
@@ -393,9 +392,7 @@
 				<div>
 					<label for="webhook-name" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.name', 'Name')}
-					
-					<HintIcon text={t('webhooks.name_hint', 'A label so you remember this endpoint.')}  />
-</label>
+					</label>
 					<input
 						id="webhook-name"
 						type="text"
@@ -407,9 +404,7 @@
 				<div>
 					<label for="webhook-url" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.url', 'URL')}
-					
-					<HintIcon text={t('webhooks.url_hint', 'The URL that receives event payloads — must be HTTPS.')}  />
-</label>
+					</label>
 					<input
 						id="webhook-url"
 						type="url"
@@ -417,19 +412,21 @@
 						class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 						placeholder="https://example.com/webhook"
 					/>
-					<HintIcon text={t('webhooks.url_hint', 'The endpoint that will receive event deliveries.')} />
+					<p class="text-muted-foreground mt-1 text-xs">
+						{t('webhooks.url_hint', 'The endpoint that will receive event deliveries.')}
+					</p>
 				</div>
 				<div>
 					<label for="webhook-events" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.events', 'Events')}
-					
-					<HintIcon text={t('webhooks.events_hint', 'Which events trigger this webhook.')}  />
-</label>
+					</label>
 					<WebhookEventMultiSelect
 						value={form.event_types}
 						onchange={(next) => (form.event_types = next)}
 					/>
-					<HintIcon text={t('webhooks.events_hint', 'Select the events to subscribe to.')} />
+					<p class="text-muted-foreground mt-1 text-xs">
+						{t('webhooks.events_hint', 'Select the events to subscribe to.')}
+					</p>
 				</div>
 				<div class="rounded-9px border border-border-input p-3 text-xs text-muted-foreground">
 					{t('webhooks.secret_hint', 'The signing secret is generated automatically on creation and shown once. To rotate, delete and recreate the webhook.')}
@@ -494,9 +491,7 @@
 		<div class="mt-4">
 			<label for="webhook-secret" class="text-foreground block text-sm font-medium">
 				{t('webhooks.secret_label', 'Signing secret')}
-			
-			<HintIcon text={t('webhooks.secret_hint', 'Used to sign payloads — verify on your side.')}  />
-</label>
+			</label>
 			<div class="mt-1 flex items-center gap-2">
 				<input
 					id="webhook-secret"

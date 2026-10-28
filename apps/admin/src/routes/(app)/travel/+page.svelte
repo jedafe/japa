@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /travel — Travel Search providers (Section 67, ADR-085).
 	// Migrated to the EntityPage scaffold. Uses `formSnippet` for structured
@@ -87,21 +86,20 @@
 	// JSON config fields use `textarea`; the snippet below overrides their
 	// rendering but the fields array is still required for seeding.
 	const fields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('travel.name', 'Name'), type: 'text', help: t('travel.name_hint', 'The name shown in admin lists and on the site where public.'), required: true, placeholder: 'Skyscanner' },
-		{ key: 'slug', label: t('travel.slug', 'Slug'), type: 'text', help: t('travel.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), required: true, placeholder: 'skyscanner', readonlyInEdit: true },
+		{ key: 'name', label: t('travel.name', 'Name'), type: 'text', required: true, placeholder: 'Skyscanner' },
+		{ key: 'slug', label: t('travel.slug', 'Slug'), type: 'text', required: true, placeholder: 'skyscanner', readonlyInEdit: true },
 		{
 			key: 'provider_type',
 			label: t('travel.type', 'Provider Type'),
 			type: 'select',
-			help: t('travel.provider_type_hint', 'The kind of provider — payment, AI, data.'),
 			required: true,
 			options: travelProviderTypeOptions
 		},
-		{ key: 'api_endpoint', label: t('travel.api_endpoint', 'API Endpoint'), type: 'text', help: t('travel.api_endpoint_hint', 'The API endpoint this calls — full URL.'),},
-		{ key: 'api_key', label: t('travel.api_key', 'API Key'), type: 'text', help: t('travel.api_key_hint', 'Stored encrypted — never shown again after saving.') },
-		{ key: 'api_extra_pairs', label: t('travel.api_extra', 'Extra Settings'), type: 'textarea', help: t('travel.api_extra_pairs_hint', 'Extra key/value pairs sent with each request.') },
-		{ key: 'affiliate_pairs', label: t('travel.affiliate_config', 'Affiliate Params'), type: 'textarea', help: t('travel.affiliate_pairs_hint', 'Product/URL pairs for this affiliate.') },
-		{ key: 'is_active', label: t('travel.active', 'Active'), type: 'checkbox', help: t('travel.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
+		{ key: 'api_endpoint', label: t('travel.api_endpoint', 'API Endpoint'), type: 'text' },
+		{ key: 'api_key', label: t('travel.api_key', 'API Key'), type: 'text' },
+		{ key: 'api_extra_pairs', label: t('travel.api_extra', 'Extra Settings'), type: 'textarea' },
+		{ key: 'affiliate_pairs', label: t('travel.affiliate_config', 'Affiliate Params'), type: 'textarea' },
+		{ key: 'is_active', label: t('travel.active', 'Active'), type: 'checkbox' }
 	]);
 
 	const config = $derived<EntityPageConfig>({
@@ -267,9 +265,7 @@
 		<div>
 			<label for="travel-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.name', 'Name')}
-			
-			<HintIcon text={t('travel.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-</label>
+			</label>
 			<input
 				id="travel-name"
 				type="text"
@@ -282,9 +278,7 @@
 		<div>
 			<label for="travel-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.slug', 'Slug')}
-			
-			<HintIcon text={t('travel.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
-</label>
+			</label>
 			<input
 				id="travel-slug"
 				type="text"
@@ -299,9 +293,7 @@
 		<div>
 			<label for="travel-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.type', 'Provider Type')}
-			
-			<HintIcon text={t('travel.type_hint', 'The type — controls how it’s handled.')}  />
-</label>
+			</label>
 			<Autocomplete
 				id="travel-type"
 				class="w-full"
@@ -332,9 +324,7 @@
 			<div>
 				<label for="travel-api-endpoint" class="mb-1 block text-xs" style="color: var(--color-muted)">
 					{t('travel.api_endpoint', 'Endpoint URL')}
-				
-			<HintIcon text={t('travel.api_endpoint_hint', 'The API endpoint this calls — full URL.')}  />
-</label>
+				</label>
 				<input
 					id="travel-api-endpoint"
 					type="url"
@@ -347,9 +337,7 @@
 			<div>
 				<label for="travel-api-key" class="mb-1 block text-xs" style="color: var(--color-muted)">
 					{t('travel.api_key', 'API Key')}
-				
-			<HintIcon text={t('travel.api_key_hint', 'Stored encrypted — never shown again after saving.')}  />
-</label>
+				</label>
 				<input
 					id="travel-api-key"
 					type="text"
@@ -373,7 +361,9 @@
 				})}
 			</div>
 			{#if editing}
-				<HintIcon text={t('travel.api_config_hint', 'Leave blank to keep existing credentials. Any value entered here replaces them.')} />
+				<p class="text-xs" style="color: var(--color-muted)">
+					{t('travel.api_config_hint', 'Leave blank to keep existing credentials. Any value entered here replaces them.')}
+				</p>
 			{/if}
 		</div>
 		<div>
@@ -388,7 +378,9 @@
 					(value.affiliate_pairs as ConfigPair[] | undefined)?.splice(i, 1),
 				addLabel: t('travel.add_param', 'Add parameter')
 			})}
-			<HintIcon text={t('travel.affiliate_hint', 'Appended to booking links as URL parameters (e.g. aff_id, aff_sub).')} />
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('travel.affiliate_hint', 'Appended to booking links as URL parameters (e.g. aff_id, aff_sub).')}
+			</p>
 		</div>
 		<div class="flex items-center gap-2">
 			<!-- New providers default to active (the create handler treats an
@@ -402,9 +394,7 @@
 			/>
 			<label for="travel-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('travel.active', 'Active')}
-			
-			<HintIcon text={t('travel.active_hint', 'Inactive routes are hidden from searches.')}  />
-</label>
+			</label>
 		</div>
 	</div>
 {/snippet}

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
@@ -361,9 +360,7 @@
 	<div class="space-y-3">
 		<p class="text-sm" style="color: var(--color-muted)">{t("universities.bulkImportHelp", "Upload a CSV file with columns: name, slug, initials, country, logo_url. The initials and country columns are optional. Each row will create a university. Duplicate slugs are skipped.")}</p>
 		<div>
-			<label for="csv-file" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.csvFile", "CSV File")}
-			<HintIcon text={t('admin.file_hint', 'Upload the file to import.')}  />
-</label>
+			<label for="csv-file" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.csvFile", "CSV File")}</label>
 			<input id="csv-file" type="file" accept=".csv" onchange={handleFileSelect} class="w-full text-sm" />
 		</div>
 	</div>
@@ -377,27 +374,19 @@
 {#snippet UniversityForm({ value, editing }: { value: any; editing: boolean })}
 	<div class="space-y-3">
 		<div>
-			<label for="uni-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.name", "Name")}
-			<HintIcon text={t('admin.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-</label>
+			<label for="uni-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.name", "Name")}</label>
 			<input id="uni-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.name} />
 		</div>
 		<div>
-			<label for="uni-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.domain_slug", "Domain")}
-			<HintIcon text={t('admin.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
-</label>
+			<label for="uni-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.domain_slug", "Domain")}</label>
 			<input id="uni-slug" type="text" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.slug} />
 		</div>
 		<div>
-			<label for="uni-initials" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.initials", "Initials")}
-			<HintIcon text={t('admin.initials_hint', 'Short initials shown when no logo is set — e.g. MIT.')}  />
-</label>
+			<label for="uni-initials" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.initials", "Initials")}</label>
 			<input id="uni-initials" type="text" placeholder="UNILAG" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.initials} />
 		</div>
 		<div>
-			<label for="uni-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.country", "Country")}
-			<HintIcon text={t('admin.country_hint', 'The country this record applies to.')}  />
-</label>
+			<label for="uni-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.country", "Country")}</label>
 			<Autocomplete
 				id="uni-country"
 				placeholder={t("universities.country_placeholder", "Select country")}
@@ -433,9 +422,7 @@
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="uni-verified" type="checkbox" class="h-4 w-4 rounded" bind:checked={value.verified} />
-			<label for="uni-verified" class="text-sm" style="color: var(--color-foreground)">{t("universities.verified", "Verified")}
-			<HintIcon text={t('admin.verified_hint', 'Verified records show a badge and rank higher.')}  />
-</label>
+			<label for="uni-verified" class="text-sm" style="color: var(--color-foreground)">{t("universities.verified", "Verified")}</label>
 		</div>
 	</div>
 

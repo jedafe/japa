@@ -74,13 +74,12 @@
 	]);
 
 	const fields = $derived<FieldDef[]>([
-		{ key: 'title', label: t('comparisons.col_title', 'Title'), type: 'text', help: t('comparisons.title_hint', 'The title shown in listings and detail views.'), required: true },
-		{ key: 'slug', label: t('comparisons.col_slug', 'Slug'), type: 'text', help: t('comparisons.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'), required: true },
+		{ key: 'title', label: t('comparisons.col_title', 'Title'), type: 'text', required: true },
+		{ key: 'slug', label: t('comparisons.col_slug', 'Slug'), type: 'text', required: true },
 		{
 			key: 'type_id',
 			label: t('comparisons.type', 'Comparison Type'),
 			type: 'select',
-			help: t('comparisons.type_id_hint', 'The type this record belongs to.'),
 			options: typeOptions,
 			readonlyInEdit: true
 		},
@@ -88,7 +87,6 @@
 			key: 'visibility',
 			label: t('comparisons.col_visibility', 'Visibility'),
 			type: 'select',
-			help: t('comparisons.visibility_hint', 'Who can see this — public, members only, or private.'),
 			options: visibilityOptions.length ? visibilityOptions : [{ value: 'members', label: 'Members' }],
 			required: true
 		},
@@ -96,7 +94,6 @@
 			key: 'status',
 			label: t('comparisons.col_status', 'Status'),
 			type: 'select',
-			help: t('comparisons.status_hint', 'The record state — controls visibility and actions.'),
 			options: statusOptions.length
 				? statusOptions
 				: [
@@ -104,7 +101,7 @@
 						{ value: 'published', label: 'Published' }
 			  ]
 		},
-		{ key: 'body', label: t('comparisons.body', 'Body'), type: 'textarea', help: t('comparisons.body_hint', 'The main content body.') }
+		{ key: 'body', label: t('comparisons.body', 'Body'), type: 'textarea' }
 	]);
 
 	const filters = $derived<FilterDef[]>([

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Track creation — Japa Academy instructor creates a new track (ADR-063).
 	// CSR ONLY: POST /academy/my/tracks.
 	// Payload matches backend CreateTrackInput (internal/academy/creator/store.go):
@@ -194,9 +193,7 @@
 		<div>
 			<label for="title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_title_label')}
-			
-			<HintIcon text={t('academy.title_hint', 'The course title learners see in listings.')}  />
-</label>
+			</label>
 			<input
 				id="title"
 				type="text"
@@ -211,9 +208,7 @@
 		<div>
 			<label for="slug" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_slug_label')}
-			
-			<HintIcon text={t('academy.slug_hint', 'URL-safe identifier — auto-generated from the title.')}  />
-</label>
+			</label>
 			<input
 				id="slug"
 				type="text"
@@ -223,16 +218,16 @@
 				placeholder={t('academy.slug_placeholder', 'mastering-go-for-backend-engineers')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
-			<HintIcon text={t('academy.track_slug_hint')} />
+			<p class="mt-1 text-xs text-[var(--color-text-subtle)]">
+				{t('academy.track_slug_hint')}
+			</p>
 		</div>
 
 		<!-- Description (optional) -->
 		<div>
 			<label for="description" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_description_label')}
-			
-			<HintIcon text={t('academy.description_hint', 'A short summary shown on the track page.')}  />
-</label>
+			</label>
 			<textarea
 				id="description"
 				bind:value={description}
@@ -246,9 +241,7 @@
 		<div>
 			<label for="difficulty" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_difficulty_label')}
-			
-			<HintIcon text={t('academy.difficulty_hint', 'The level learners need — beginner, intermediate, advanced.')}  />
-</label>
+			</label>
 			<AutocompleteSelect
 				id="difficulty"
 				bind:value={difficulty}
@@ -261,9 +254,7 @@
 		<div>
 			<label for="price" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_price_label')}
-			
-			<HintIcon text={t('academy.price_hint', 'Price in the chosen currency — leave 0 for free.')}  />
-</label>
+			</label>
 			<input
 				id="price"
 				type="number"
@@ -294,7 +285,9 @@
 				onSelect={onSelectCountry}
 				onClear={onClearCountry}
 			/>
-			<HintIcon text={t('academy.track_country_hint', 'Select the country this track is primarily for. This defaults the currency.')} />
+			<p class="mt-1 text-xs text-[var(--color-text-subtle)]">
+				{t('academy.track_country_hint', 'Select the country this track is primarily for. This defaults the currency.')}
+			</p>
 		</div>
 
 		<!-- Currency (auto-filled from selected country; editable override) -->
@@ -361,9 +354,10 @@
 			<div>
 				<label for="subscription-eligible" class="block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.track_subscription_eligible_label', 'Subscription eligible')}
-				
-				<HintIcon text={t('academy.track_subscription_eligible_hint', 'Allow subscribers to access this course as part of their plan. You earn a stream-rate revenue share when they enroll.')}  />
-</label>
+				</label>
+				<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+					{t('academy.track_subscription_eligible_hint', 'Allow subscribers to access this course as part of their plan. You earn a stream-rate revenue share when they enroll.')}
+				</p>
 			</div>
 		</div>
 

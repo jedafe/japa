@@ -134,7 +134,6 @@
 				key: 'destination_space_id',
 				label: t('app.tools.col_dest_country', 'Destination Country'),
 				type: 'autocomplete',
-			help: t('app.tools.destination_space_id_hint', 'The destination space this is linked to.'),
 				required: true,
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
@@ -153,22 +152,23 @@
 				initialFetcher: fetchVisaTypeInitial,
 				getSelectedLabel: getVisaTypeLabel
 			},
-			{ key: 'program_label', label: t('app.tools.col_program_label', 'Program label'), type: 'text', help: t('app.tools.program_label_hint', 'The program name applicants see.'), required: true },
+			{ key: 'program_label', label: t('app.tools.col_program_label', 'Program label'), type: 'text', required: true },
 			currencies.length > 0
-				? { key: 'currency', label: t('app.tools.col_currency', 'Currency'), type: 'select' as const, help: t('app.tools.currency_hint', 'ISO currency code, e.g. NGN or USD.'), required: true, options: currencyOptions(currencies) }
-				: { key: 'currency', label: t('app.tools.col_currency', 'Currency'), type: 'text' as const, help: t('app.tools.currency_hint', 'ISO currency code, e.g. NGN or USD.'), required: true, placeholder: 'CAD|GBP|EUR' },
-			{ key: 'effective_date', label: t('app.tools.col_effective_date', 'Effective date'), type: 'date', help: t('app.tools.effective_date_hint', 'The date the policy or rate takes effect.'), required: true },
-			{ key: 'source_url', label: t('app.tools.col_source_url', 'Source URL'), type: 'url', help: t('app.tools.source_url_hint', 'The URL this data was pulled from — used for verification.') },
+				? { key: 'currency', label: t('app.tools.col_currency', 'Currency'), type: 'select' as const, required: true, options: currencyOptions(currencies) }
+				: { key: 'currency', label: t('app.tools.col_currency', 'Currency'), type: 'text' as const, required: true, placeholder: 'CAD|GBP|EUR' },
+			{ key: 'effective_date', label: t('app.tools.col_effective_date', 'Effective date'), type: 'date', required: true },
+			{ key: 'source_url', label: t('app.tools.col_source_url', 'Source URL'), type: 'url' },
 			{
 				key: 'amount_schedule',
 				label: t('app.tools.col_amount_schedule', 'Amount schedule (JSON)'),
-				type: 'textarea',				required: true,
+				type: 'textarea',
+				required: true,
 				placeholder: '[{"members":1,"amount":14500}] or {"base":13347,"base_members":1,"per_additional":680}',
 				help: t('app.tools.amount_schedule_help', 'Band array or formula object — resolved per household size')
 			},
-			{ key: 'funds_must_be_liquid', label: t('app.tools.col_funds_liquid', 'Funds must be liquid'), type: 'checkbox', help: t('app.tools.funds_must_be_liquid_hint', 'Whether funds must be immediately available.'),},
-			{ key: 'accepted_proof', label: t('app.tools.col_accepted_proof', 'Accepted proof (JSON array)'), type: 'textarea', help: t('app.tools.accepted_proof_hint', 'What evidence is accepted.'), placeholder: '["bank_statement","gift_deed"]' },
-			{ key: 'notes', label: t('app.tools.col_notes', 'Notes'), type: 'textarea', help: t('app.tools.notes_hint', 'Internal notes — not shown to users.') },
+			{ key: 'funds_must_be_liquid', label: t('app.tools.col_funds_liquid', 'Funds must be liquid'), type: 'checkbox' },
+			{ key: 'accepted_proof', label: t('app.tools.col_accepted_proof', 'Accepted proof (JSON array)'), type: 'textarea', placeholder: '["bank_statement","gift_deed"]' },
+			{ key: 'notes', label: t('app.tools.col_notes', 'Notes'), type: 'textarea' },
 			{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox', help: t('app.tools.is_active_help', 'Inactive requirements are hidden from the public calculator') }
 		];
 	});

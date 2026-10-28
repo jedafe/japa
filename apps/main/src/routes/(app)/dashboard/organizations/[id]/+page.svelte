@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/07-organizations.md (org admin dashboard)
 	// Org admin view: edit org fields (PATCH /organizations/{id}), manage
 	// members (list + remove + change role), invite members, revoke invitations,
@@ -474,26 +473,22 @@
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_name')}</span>
 				<input class={inputClass} value={name} oninput={(e) => (name = e.currentTarget.value)} />
-				<HintIcon text={t('organizations.new.name_hint', 'The public name of your organization.')} />
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_tagline')}</span>
 				<input class={inputClass} value={tagline} oninput={(e) => (tagline = e.currentTarget.value)} />
-				<HintIcon text={t('organizations.new.tagline_hint', 'One line — what the organization does.')} />
 			</label>
 		</div>
 
 		<label class="flex flex-col gap-1.5">
 			<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_description')}</span>
 			<textarea class={inputClass} rows={4} value={description} oninput={(e) => (description = e.currentTarget.value)}></textarea>
-			<HintIcon text={t('organizations.new.desc_hint', 'Describe the organization, services and audience.')} />
 		</label>
 
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_website')}</span>
 				<input class={inputClass} value={websiteUrl} oninput={(e) => (websiteUrl = e.currentTarget.value)} placeholder="https://" />
-				<HintIcon text={t('organizations.new.website_hint', 'Optional — the organization website.')} />
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_country')}</span>
@@ -565,7 +560,6 @@
 			<label class="flex flex-1 flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_email', 'Email')}</span>
 				<input class={inputClass} type="email" bind:value={inviteEmail} placeholder="member@example.com" required />
-				<HintIcon text={t('organizations.invite_email_hint', 'The email of the person to invite.')} />
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>
@@ -594,7 +588,9 @@
 			<UserCheck class="h-4 w-4" />
 			{t('org_admin.add_member_section', 'Add member')}
 		</h2>
-		<HintIcon text={t('org_admin.add_member_hint', 'Add an existing {site} user directly by username.')} />
+		<p class="text-xs text-[var(--color-muted)]">
+			{t('org_admin.add_member_hint', 'Add an existing {site} user directly by username.')}
+		</p>
 		{#if addErrorKey}
 			<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{t(addErrorKey)}</p>
 		{/if}
@@ -602,7 +598,6 @@
 			<label class="flex flex-1 flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.add_member_username', 'Username')}</span>
 				<input class={inputClass} type="text" bind:value={addUsername} placeholder="@username" required />
-				<HintIcon text={t('organizations.username_hint', 'The member username — e.g. @jane.')} />
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>

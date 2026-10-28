@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -181,7 +180,6 @@
 					placeholder={t('jobs.title_placeholder', 'e.g. Senior Software Engineer')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 				/>
-					<HintIcon text={t('jobs.title_hint', 'The role title candidates see in listings.')} />
 			</div>
 
 			<div class="space-y-2">
@@ -195,15 +193,12 @@
 					placeholder={t('jobs.body_placeholder', 'Describe the role, responsibilities, and requirements…')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				></textarea>
-					<HintIcon text={t('jobs.body_hint', 'Describe the role, responsibilities and requirements.')} />
 			</div>
 
 			<div class="space-y-2">
 				<label for="job-org" class="text-sm font-medium text-[var(--color-text)]">
 					{t('jobs.organization', 'Organization')} <span class="text-[var(--destructive)]">*</span>
-				
-				<HintIcon text={t('jobs.org_hint', 'Post under one of your organizations.')}  />
-</label>
+				</label>
 				<AutocompleteSelect
 					id="job-org"
 					bind:value={orgId}

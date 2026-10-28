@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -139,7 +138,6 @@
 						placeholder={t('organizations.new.name_placeholder', 'Organization name')}
 						class={inputClass}
 					/>
-						<HintIcon text={t('organizations.new.name_hint', 'The public name of your organization.')} />
 				</div>
 
 				<div>
@@ -156,7 +154,9 @@
 						placeholder={t('organizations.new.slug_placeholder', 'organization-slug')}
 						class={inputClass}
 					/>
-					<HintIcon text={t('organizations.new.slug_hint', 'Used in the URL: /org/your-slug')} />
+					<p class="mt-1 text-xs text-[var(--color-muted)]">
+						{t('organizations.new.slug_hint', 'Used in the URL: /org/your-slug')}
+					</p>
 				</div>
 
 				<div>
@@ -171,7 +171,6 @@
 						placeholder={t('organizations.new.tagline_placeholder', 'A short tagline')}
 						class={inputClass}
 					/>
-						<HintIcon text={t('organizations.new.tagline_hint', 'One line — what the organization does.')} />
 				</div>
 
 				<div>
@@ -186,7 +185,6 @@
 						placeholder={t('organizations.new.description_placeholder', 'Describe the organization…')}
 						class={inputClass}
 					></textarea>
-						<HintIcon text={t('organizations.new.desc_hint', 'Describe the organization, services and audience.')} />
 				</div>
 
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -220,7 +218,6 @@
 							onSelect={(item) => { countryCode = item.id; }}
 							onClear={() => { countryCode = ''; }}
 						/>
-							<HintIcon text={t('organizations.new.country_hint', 'Where the organization is based.')} />
 					</div>
 				</div>
 

@@ -105,11 +105,11 @@
 	}
 
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('app.achievements.col_title', 'Title'), type: 'text', help: t('app.achievements.title_hint', 'The title shown in listings and detail views.'),},
-		{ key: 'body', label: t('app.achievements.col_body', 'Body'), type: 'textarea', help: t('app.achievements.body_hint', 'The main content body.') },
-		{ key: 'milestone_type', label: t('app.achievements.col_milestone', 'Milestone'), type: 'text', help: t('app.achievements.milestone_type_hint', 'The kind of milestone — e.g. visa approved.') },
-		{ key: 'status', label: t('app.achievements.col_status', 'Status'), type: 'text', help: t('app.achievements.status_hint', 'The record state — controls visibility and actions.') },
-		{ key: 'is_anonymous', label: t('app.achievements.col_anonymous', 'Anonymous'), type: 'checkbox', help: t('app.achievements.is_anonymous_hint', 'Hide the author’s identity publicly.') }
+		{ key: 'title', label: t('app.achievements.col_title', 'Title'), type: 'text' },
+		{ key: 'body', label: t('app.achievements.col_body', 'Body'), type: 'textarea' },
+		{ key: 'milestone_type', label: t('app.achievements.col_milestone', 'Milestone'), type: 'text' },
+		{ key: 'status', label: t('app.achievements.col_status', 'Status'), type: 'text' },
+		{ key: 'is_anonymous', label: t('app.achievements.col_anonymous', 'Anonymous'), type: 'checkbox' }
 	];
 
 	const filters = $derived.by<FilterDef[]>(() => {
@@ -124,7 +124,6 @@
 				key: 'dest',
 				label: t('app.achievement.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.achievement.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

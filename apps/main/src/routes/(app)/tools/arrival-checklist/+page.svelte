@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { t } from '$lib/i18n';
@@ -304,9 +303,7 @@
 					<div class="w-full sm:w-auto">
 						<label for="arr-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 							{t('arrival_checklist.destination', 'Destination')}
-						
-						<HintIcon text={t('tools.arrival.dest_hint', 'Where you are arriving.')}  />
-</label>
+						</label>
 						<SelectField
 							id="arr-dest"
 							value={selectedDestId}
@@ -319,9 +316,7 @@
 						<div class="w-full sm:w-auto">
 							<label for="arr-visa" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 								{t('arrival_checklist.visa_category', 'Visa category')}
-							
-							<HintIcon text={t('tools.arrival.visa_hint', 'Your visa or permit category.')}  />
-</label>
+							</label>
 							<SelectField
 								id="arr-visa"
 								value={selectedVisaCategory}

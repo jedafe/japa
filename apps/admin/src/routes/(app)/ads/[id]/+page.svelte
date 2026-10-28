@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -30,9 +29,7 @@
 		target_url?: string | null;
 		target_geo?: string[];
 		target_space_ids?: string[];
-		is_house?: boolean;
-		organization_id?: string | null;
-		content?: { headline?: string; body?: string; cta?: string; html?: string; image_url?: string; markdown?: string } | null;
+		content?: { headline?: string; body?: string; cta?: string } | null;
 		slot_type_id?: string;
 		created_at?: string;
 	};
@@ -223,23 +220,14 @@
 		<!-- Status & Actions -->
 		<div class="flex flex-wrap items-center gap-3">
 			<Badge class={statusBadgeClass(campaign.status)}>{campaign.status}</Badge>
-			{#if campaign.is_house}
-				<Badge class="bg-info/15 text-info border-info">{t('ads.house_badge', 'house')}</Badge>
-			{/if}
-			{#if campaign.organization_id}
-				<Badge class="bg-surface text-foreground border-border">org: {campaign.organization_id.slice(0, 8)}…</Badge>
-			{/if}
 			{#if canManageAds && campaign.status !== 'completed' && campaign.status !== 'ended'}
 				<Button variant="outline" size="sm" onclick={toggleCampaignStatus}>
 					{#if campaign.status === 'active'}
 						<Pause class="h-3.5 w-3.5" />
 						{t('ads.pause', 'Pause')}
-					{:else if campaign.status === 'pending_review'}
-						<Play class="h-3.5 w-3.5" />
-						{t('ads.approve', 'Approve')}
 					{:else}
 						<Play class="h-3.5 w-3.5" />
-						{t('ads.activate', 'Activate')}
+						{t('ads.resume', 'Resume')}
 					{/if}
 				</Button>
 				<Button variant="outline" size="sm" onclick={confirmEnd} style="color: var(--color-danger)">
@@ -312,12 +300,6 @@
 								<p class="text-sm font-medium text-foreground">{campaign.content.cta}</p>
 							</div>
 						{/if}
-						{#if campaign.content.image_url}
-							<div>
-								<p class="text-xs text-muted">{t('ads.image', 'Creative image')}</p>
-								<img src={campaign.content.image_url} alt="" class="mt-1 max-h-40 rounded-md border border-border object-cover" />
-							</div>
-						{/if}
 					</div>
 				</CardContent>
 			</Card>
@@ -380,15 +362,11 @@
 					<h2 class="text-sm font-semibold uppercase tracking-wider text-muted">{t('ads.details', 'Campaign Details')}</h2>
 					<div class="space-y-3">
 						<div>
-							<label for="edit-name" class="mb-1 block text-sm font-medium">{t('ads.campaign_name', 'Campaign Name')}
-							<HintIcon text={t('org_ads.edit_name_hint', 'The name shown in admin lists.')}  />
-</label>
+							<label for="edit-name" class="mb-1 block text-sm font-medium">{t('ads.campaign_name', 'Campaign Name')}</label>
 							<input id="edit-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={editName} />
 						</div>
 						<div>
-							<label for="edit-budget" class="mb-1 block text-sm font-medium">{t('ads.budget', 'Budget (credits)')}
-							<HintIcon text={t('org_ads.edit_budget_hint', 'Campaign budget in credits.')}  />
-</label>
+							<label for="edit-budget" class="mb-1 block text-sm font-medium">{t('ads.budget', 'Budget (credits)')}</label>
 							<input id="edit-budget" type="number" min="0" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={editBudget} placeholder="1000" />
 						</div>
 						<div class="flex justify-end gap-2">

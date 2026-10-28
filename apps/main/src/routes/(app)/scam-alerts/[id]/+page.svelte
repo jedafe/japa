@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { page } from '$app/state';
 	import { ArrowLeft, Pin, Bell, BellOff, TriangleAlert, ShieldCheck, Pencil } from 'lucide-svelte';
@@ -204,6 +203,9 @@
 			<!-- Reporter appeal — own report closed as debunked/duplicate (§22) -->
 			{#if data.authed && alert.is_reporter && (alert.status === 'debunked' || alert.status === 'duplicate')}
 				<div class="mt-6 flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+					<p class="text-xs text-[var(--color-muted)]">
+						{t('scam_alerts.appeal_hint', 'Think this classification is wrong? You can contest it.')}
+					</p>
 					<AppealButton
 						entityType="scam_report"
 						entityId={alert.id}

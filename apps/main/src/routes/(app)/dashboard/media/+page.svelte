@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/34-media-system.md (user media library)
 	// Grid/list of the user's uploaded media with filter, search, pagination,
 	// bulk actions, upload, and per-item actions (edit, delete, copy URL, details).
@@ -756,9 +755,7 @@
 	{#snippet children(close)}
 			<div class="space-y-3">
 				<div>
-					<label for="edit-alt" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_alt')}
-					<HintIcon text={t('media.alt_hint', 'Describes the image for screen readers and SEO.')}  />
-</label>
+					<label for="edit-alt" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_alt')}</label>
 					<input
 						id="edit-alt"
 						type="text"
@@ -767,9 +764,7 @@
 					/>
 				</div>
 				<div>
-					<label for="edit-caption" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_caption')}
-					<HintIcon text={t('media.caption_hint', 'Optional caption shown under the media.')}  />
-</label>
+					<label for="edit-caption" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_caption')}</label>
 					<input
 						id="edit-caption"
 						type="text"

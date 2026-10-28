@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { Modal } from '$lib/components/ui';
 	import { Pencil, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
@@ -77,9 +76,7 @@
 <Modal bind:open onOpenChange={(v) => { if (!v) close(); }} icon={Pencil} title={t('sources.edit.title', 'Edit source')} size="md">
 			<div class="flex flex-col gap-3">
 				<div class="flex flex-col gap-1">
-					<label for="source-name" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.name', 'Name')}
-					<HintIcon text={t('sources.edit.name_hint', 'The official name of the source.')}  />
-</label>
+					<label for="source-name" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.name', 'Name')}</label>
 					<input
 						id="source-name"
 						type="text"
@@ -89,9 +86,7 @@
 				</div>
 
 				<div class="flex flex-col gap-1">
-					<label for="source-description" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.description', 'Description')}
-					<HintIcon text={t('sources.edit.desc_hint', 'What this source covers.')}  />
-</label>
+					<label for="source-description" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.description', 'Description')}</label>
 					<textarea
 						id="source-description"
 						bind:value={description}
@@ -101,9 +96,7 @@
 				</div>
 
 				<div class="flex flex-col gap-1">
-					<label for="source-url" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.source_url', 'Source URL')}
-					<HintIcon text={t('sources.edit.url_hint', 'The main URL the source is fetched from.')}  />
-</label>
+					<label for="source-url" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.source_url', 'Source URL')}</label>
 					<input
 						id="source-url"
 						type="url"
@@ -111,14 +104,14 @@
 						class="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 					/>
 					{#if sourceUrl !== (source.source_url ?? '')}
-						<HintIcon text={t('sources.edit.reprobe_hint', 'Changing the URL re-runs channel detection for this source.')} />
+						<p class="text-xs text-[var(--color-text-muted)]">
+							{t('sources.edit.reprobe_hint', 'Changing the URL re-runs channel detection for this source.')}
+						</p>
 					{/if}
 				</div>
 
 				<div class="flex flex-col gap-1">
-					<label for="source-logo" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.logo_url', 'Logo URL')}
-					<HintIcon text={t('sources.edit.logo_hint', 'Direct image URL for the source logo.')}  />
-</label>
+					<label for="source-logo" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.logo_url', 'Logo URL')}</label>
 					<input
 						id="source-logo"
 						type="url"

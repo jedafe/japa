@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	/**
 	 * Generic report dialog for users and other reportable entities.
 	 * Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
@@ -199,10 +198,8 @@
 						rows={4}
 						maxlength={NOTES_MAX}
 						placeholder={t('report.notes_placeholder', 'Add any details that may help our moderation team...')}
-						aria-describedby="report-notes-hint"
 						class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					></textarea>
-					<HintIcon id="report-notes-hint" text={t('report.notes_hint', 'Include links or details that help our moderation team review faster.')} />
 				</label>
 
 				<label class="mb-4 block">
@@ -213,10 +210,8 @@
 						bind:value={evidenceInput}
 						rows={2}
 						placeholder={t('report.evidence_placeholder', 'https://… — one link per line')}
-						aria-describedby="report-evidence-hint"
 						class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					></textarea>
-					<HintIcon id="report-evidence-hint" text={t('report.evidence_hint', 'URLs to screenshots, listings or profiles — one per line.')} />
 				</label>
 
 				{#if status === 'error'}

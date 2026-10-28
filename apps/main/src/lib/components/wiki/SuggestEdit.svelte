@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (Community Field Ops)
 	// "Suggest an edit" — opens a dialog with the entity's editable field
 	// schema (GET /wiki/entities/{type}/{id}/fields) and submits changed
@@ -589,9 +588,7 @@
 											<div class="flex flex-col gap-1">
 												<label for="pf-label" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_label', 'Field label')}
-												
-												<HintIcon text={t('wiki.suggest.label_hint', 'The human-readable name shown to readers.')}  />
-</label>
+												</label>
 												<input
 													id="pf-label"
 													type="text"
@@ -603,9 +600,7 @@
 											<div class="flex flex-col gap-1">
 												<label for="pf-key" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_key', 'Field key')}
-												
-												<HintIcon text={t('wiki.suggest.key_hint', 'The internal key — lowercase, no spaces.')}  />
-</label>
+												</label>
 												<input
 													id="pf-key"
 													type="text"
@@ -617,9 +612,7 @@
 											<div class="flex flex-col gap-1">
 												<label for="pf-type" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_type', 'Field type')}
-												
-												<HintIcon text={t('wiki.suggest.type_hint', 'The kind of value — text, date, number.')}  />
-</label>
+												</label>
 												<AutocompleteSelect
 													id="pf-type"
 													bind:value={pfType}
@@ -630,9 +623,7 @@
 												<div class="flex flex-col gap-1">
 													<label for="pf-options" class="text-xs font-medium text-[var(--color-text)]">
 														{t('wiki.propose_options', 'Options')}{#if pfOptionsRequired}<span class="text-red-500">*</span>{/if}
-													
-													<HintIcon text={t('wiki.suggest.options_hint', 'Allowed values, comma-separated.')}  />
-</label>
+													</label>
 													<input
 														id="pf-options"
 														type="text"

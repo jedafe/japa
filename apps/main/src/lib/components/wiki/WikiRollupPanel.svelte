@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	// (Hierarchical UX + Reader UX)
 	// Read-time descendant rollup on a rollup-enabled category page — the
@@ -406,7 +405,9 @@
 				</table>
 				{#if compareRows.length >= 2}
 					<div class="flex items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-2.5">
-						<HintIcon text={t('wiki.rollup_compare_hint', 'Pick 2–4 places to compare side by side.')} />
+						<p class="text-xs text-[var(--color-muted)]">
+							{t('wiki.rollup_compare_hint', 'Pick 2–4 places to compare side by side.')}
+						</p>
 						<a
 							href={compareHref || '/compare'}
 							aria-disabled={compareIds.length < 2}

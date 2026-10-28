@@ -67,11 +67,11 @@
 	// `fields` is required by EntityPageConfig; readonly page so the form is
 	// never shown, but kept for shape completeness.
 	const fields: FieldDef[] = [
-		{ key: 'username', label: t('app.tools.col_username', 'Username'), type: 'text', help: t('app.tools.username_hint', 'The member handle — e.g. jane or @jane.'),},
-		{ key: 'guide_id', label: t('app.tools.col_guide_id', 'Guide ID'), type: 'text', help: t('app.tools.guide_id_hint', 'The guide this is attached to.') },
-		{ key: 'item_key', label: t('app.tools.col_item_key', 'Item'), type: 'text', help: t('app.tools.item_key_hint', 'The machine key for this item.') },
-		{ key: 'completed', label: t('app.tools.col_completed', 'Completed'), type: 'checkbox', help: t('app.tools.completed_hint', 'Marks the record as finished — archives it.') },
-		{ key: 'notes', label: t('app.tools.col_notes', 'Notes'), type: 'textarea', help: t('app.tools.notes_hint', 'Internal notes — not shown to users.') }
+		{ key: 'username', label: t('app.tools.col_username', 'Username'), type: 'text' },
+		{ key: 'guide_id', label: t('app.tools.col_guide_id', 'Guide ID'), type: 'text' },
+		{ key: 'item_key', label: t('app.tools.col_item_key', 'Item'), type: 'text' },
+		{ key: 'completed', label: t('app.tools.col_completed', 'Completed'), type: 'checkbox' },
+		{ key: 'notes', label: t('app.tools.col_notes', 'Notes'), type: 'textarea' }
 	];
 
 	const config = $derived<EntityPageConfig>({

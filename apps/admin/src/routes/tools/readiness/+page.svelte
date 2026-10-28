@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// /tools/readiness — admin monitoring + management page for the Japa
 	// Readiness Assessment (Section 71, ADR-071).
 	// Shows score distribution stats, result list with server-side pagination,
@@ -95,9 +94,9 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'username', label: t('app.tools.col_username', 'Username'), type: 'text', help: t('app.tools.username_hint', 'The member handle — e.g. jane or @jane.'),},
-		{ key: 'total_score', label: t('app.tools.col_score', 'Score'), type: 'number', help: t('app.tools.total_score_hint', 'The total score achieved.') },
-		{ key: 'threshold_label', label: t('app.tools.col_readiness_level', 'Readiness Level'), type: 'text', help: t('app.tools.threshold_label_hint', 'Label shown at this threshold.') }
+		{ key: 'username', label: t('app.tools.col_username', 'Username'), type: 'text' },
+		{ key: 'total_score', label: t('app.tools.col_score', 'Score'), type: 'number' },
+		{ key: 'threshold_label', label: t('app.tools.col_readiness_level', 'Readiness Level'), type: 'text' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -492,7 +491,9 @@
 						class="w-full rounded-lg border p-3 font-mono text-xs"
 						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
 					></textarea>
-					<HintIcon text={t('app.tools.curated_roadmap_hint', 'Map of dimension -> ordered roadmap steps. Must be valid JSON.')} />
+					<p class="mt-1 text-xs" style="color: var(--color-muted)">
+						{t('app.tools.curated_roadmap_hint', 'Map of dimension -> ordered roadmap steps. Must be valid JSON.')}
+					</p>
 				</div>
 
 				<button

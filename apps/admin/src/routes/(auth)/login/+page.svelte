@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { setAccessToken } from '$lib/api/token';
@@ -94,9 +93,7 @@
 
 		<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="space-y-4">
 			<div>
-				<label for="email" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.email')}
-				<HintIcon text={t('auth.login.email_hint', 'Your admin account email.')}  />
-</label>
+				<label for="email" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.email')}</label>
 				<input
 					id="email"
 					type="email"
@@ -109,9 +106,7 @@
 			</div>
 
 			<div>
-				<label for="password" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.password')}
-				<HintIcon text={t('auth.login.password_hint', 'Your admin account password.')}  />
-</label>
+				<label for="password" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.password')}</label>
 				<input
 					id="password"
 					type="password"

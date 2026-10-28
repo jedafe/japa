@@ -191,10 +191,10 @@
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryByNameReady; // re-derive once the 250 primary geo space countries load
 		return [
-			{ key: 'profession_name', label: t('app.tools.col_profession', 'Profession'), type: 'text', help: t('app.tools.profession_name_hint', 'The profession this applies to — e.g. Nurse.'),},
-			{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', help: t('app.tools.destination_space_name_hint', 'The destination space this is linked to.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
-			{ key: 'issuing_space_name', label: t('app.tools.col_issuing_country', 'Issuing Country'), type: 'autocomplete', help: t('app.tools.issuing_space_name_hint', 'The space that issued this document or record.'), placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
-			{ key: 'pathway_description', label: t('app.tools.col_summary', 'Summary'), type: 'textarea', help: t('app.tools.pathway_description_hint', 'How this pathway works, step by step.') }
+			{ key: 'profession_name', label: t('app.tools.col_profession', 'Profession'), type: 'text' },
+			{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
+			{ key: 'issuing_space_name', label: t('app.tools.col_issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
+			{ key: 'pathway_description', label: t('app.tools.col_summary', 'Summary'), type: 'textarea' }
 		];
 	});
 
@@ -212,7 +212,6 @@
 					key: 'dest',
 					label: t('app.tools.col_destination', 'Destination'),
 					type: 'autocomplete',
-			help: t('app.tools.dest_hint', 'The destination country this applies to.'),
 					placeholder: t('app.tools.country_placeholder', 'Search country…'),
 					emptyMessage: t('common.no_results', 'No results found'),
 					fetcher: countryUtilsById.fetcher,

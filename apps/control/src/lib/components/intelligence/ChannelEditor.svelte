@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -282,26 +281,20 @@
 					<div>
 						<label for="ce-label" class={labelClass}>
 							{t('intel.channel_label', 'Label')} <span class="text-destructive">*</span>
-						
-						<HintIcon text={t('intel.channel_label_hint', 'A name for this channel — e.g. RSS feed — scholarships.')}  />
-</label>
+						</label>
 						<input id="ce-label" type="text" bind:value={form.label} class={inputClass} placeholder={t('intel.channel_label_placeholder', 'e.g. RSS feed — scholarships')} />
 					</div>
 					<div>
 						<label for="ce-url" class={labelClass}>
 							{t('intel.channel_entry_url', 'Entry URL')} <span class="text-destructive">*</span>
-						
-						<HintIcon text={t('intel.channel_url_hint', 'The feed or page URL this channel reads.')}  />
-</label>
+						</label>
 						<input id="ce-url" type="text" bind:value={form.entry_url} class={inputClass} placeholder="https://example.org/feed.xml" />
 					</div>
 				</div>
 
 				<div class="grid grid-cols-3 gap-4">
 					<div>
-						<label for="ce-method" class={labelClass}>{t('intel.field_crawl_method', 'Method')}
-						<HintIcon text={t('intel.crawl_method_hint', 'How content is fetched — RSS, HTML parse, API.')}  />
-</label>
+						<label for="ce-method" class={labelClass}>{t('intel.field_crawl_method', 'Method')}</label>
 						<AutocompleteSelect
 							id="ce-method"
 							value={form.crawl_method}
@@ -311,9 +304,7 @@
 						/>
 					</div>
 					<div>
-						<label for="ce-pipeline" class={labelClass}>{t('intel.channel_pipeline', 'Pipeline')}
-						<HintIcon text={t('intel.pipeline_hint', 'Which ingestion pipeline processes the results.')}  />
-</label>
+						<label for="ce-pipeline" class={labelClass}>{t('intel.channel_pipeline', 'Pipeline')}</label>
 						<AutocompleteSelect
 							id="ce-pipeline"
 							value={form.pipeline}
@@ -323,9 +314,7 @@
 						/>
 					</div>
 					<div>
-						<label for="ce-mins" class={labelClass}>{t('intel.field_crawl_mins', 'Crawl Interval (mins)')}
-						<HintIcon text={t('intel.crawl_mins_hint', 'Minutes between crawls — higher saves quota.')}  />
-</label>
+						<label for="ce-mins" class={labelClass}>{t('intel.field_crawl_mins', 'Crawl Interval (mins)')}</label>
 						<input id="ce-mins" type="number" min="1" bind:value={form.crawl_frequency_mins} disabled={!isScheduled} class={inputClass} />
 						{#if !isScheduled}
 							<p class="text-muted-foreground mt-1 text-xs">
@@ -338,7 +327,9 @@
 				{#if entityTypeOptions.length > 0}
 					<div>
 						<span class={labelClass}>{t('intel.field_entity_types', 'Entity types')}</span>
-						<HintIcon text={t('intel.channel_entity_types_hint', 'Schemas that validate records from this channel — required for extract and curate pipelines.')} />
+						<p class="text-muted-foreground mt-1 text-xs">
+							{t('intel.channel_entity_types_hint', 'Schemas that validate records from this channel — required for extract and curate pipelines.')}
+						</p>
 						<div class="mt-2 grid max-h-40 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto sm:grid-cols-3">
 							{#each entityTypeOptions as et (et)}
 								<label class="flex cursor-pointer items-center gap-2 text-sm">
@@ -368,7 +359,9 @@
 					{#if jsonError}
 						<p class="text-destructive mt-1 text-xs">{jsonError}</p>
 					{:else}
-						<HintIcon text={t('intel.channel_provider_config_hint', 'Optional per-method config (selectors, endpoints, headers). Leave empty for defaults.')} />
+						<p class="text-muted-foreground mt-1 text-xs">
+							{t('intel.channel_provider_config_hint', 'Optional per-method config (selectors, endpoints, headers). Leave empty for defaults.')}
+						</p>
 					{/if}
 				</div>
 
@@ -411,10 +404,14 @@
 								class={inputClass}
 								placeholder={t('intel.csv_placeholder', 'comma, separated, values')}
 							/>
-							<HintIcon text={t('intel.channel_relevance_patterns_hint', 'Substring patterns matched against item URLs.')} />
+							<p class="text-muted-foreground mt-1 text-xs">
+								{t('intel.channel_relevance_patterns_hint', 'Substring patterns matched against item URLs.')}
+							</p>
 						</div>
 					</div>
-					<HintIcon text={t('intel.channel_relevance_cache_hint', 'Verdicts are cached for 7 days — saved topic changes apply to newly crawled items.')} />
+					<p class="text-muted-foreground text-xs">
+						{t('intel.channel_relevance_cache_hint', 'Verdicts are cached for 7 days — saved topic changes apply to newly crawled items.')}
+					</p>
 				{/if}
 
 				<div class="flex items-center gap-6">

@@ -1253,7 +1253,6 @@
 				type="email"
 				bind:value={newsletterEmail}
 				placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : t('sidebar.email_placeholder')}
-				aria-label={t('auth.fields.email', 'Email')}
 				disabled={newsletterSubmitting}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-60"
 			/>

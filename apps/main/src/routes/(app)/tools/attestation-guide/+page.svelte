@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
@@ -331,9 +330,7 @@
 				class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 			>
 				{t('geo.destination', 'Destination:')}
-			
-				<HintIcon text={t('tools.attestation.dest_hint', 'Where the document will be used.')}  />
-</label>
+			</label>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('geo.select_destination', 'Select a country…')}
@@ -354,9 +351,7 @@
 				<div class="flex items-center gap-3">
 					<label for="issuing-selector" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 						{t('attestation_guide.issuing_country', 'Issuing country:')}
-					
-					<HintIcon text={t('tools.attestation.issuing_hint', 'The country that issued the document.')}  />
-</label>
+					</label>
 					<Autocomplete
 						id="issuing-selector"
 						placeholder={t('attestation_guide.any_issuing', 'Any')}
@@ -372,9 +367,7 @@
 				<div class="flex items-center gap-3">
 					<label for="doc-type" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 						{t('attestation_guide.doc_type', 'Document type:')}
-					
-					<HintIcon text={t('tools.attestation.doc_hint', 'The document you need attested — e.g. birth certificate.')}  />
-</label>
+					</label>
 					<input
 						id="doc-type"
 						type="text"

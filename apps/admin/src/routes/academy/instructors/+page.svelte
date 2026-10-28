@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
@@ -300,9 +299,7 @@
 		<div class="space-y-4">
 			<p class="text-sm" style="color: var(--color-muted)">{t("academy.approve_confirm", "Approve")} <strong>{target.display_name}</strong>?</p>
 			<div>
-				<label for="approve-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.tier", "Tier")}
-				<HintIcon text={t('academy.approve_tier_hint', 'The instructor tier — e.g. partner, premium.')}  />
-</label>
+				<label for="approve-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.tier", "Tier")}</label>
 				<AutocompleteSelect
 					id="approve-tier"
 					bind:value={approveTier}
@@ -311,9 +308,7 @@
 				/>
 			</div>
 			<div>
-				<label for="approve-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.commission_override", "Commission Override (%) — optional")}
-				<HintIcon text={t('academy.approve_commission_hint', 'Percent — leave blank to use the tier default.')}  />
-</label>
+				<label for="approve-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.commission_override", "Commission Override (%) — optional")}</label>
 				<input id="approve-commission" type="number" step="0.01" min="0" max="100" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="e.g. 70" bind:value={approveCommission} />
 			</div>
 		</div>
@@ -384,9 +379,7 @@
 		<div class="space-y-4">
 			<p class="text-sm" style="color: var(--color-muted)">{t("academy.update_tier_for", "Update tier for")} <strong>{target.display_name}</strong></p>
 			<div>
-				<label for="edit-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.tier", "Tier")}
-				<HintIcon text={t('academy.edit_tier_hint', 'The instructor tier — e.g. partner, premium.')}  />
-</label>
+				<label for="edit-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.tier", "Tier")}</label>
 				<AutocompleteSelect
 					id="edit-tier"
 					bind:value={editTier}
@@ -395,9 +388,7 @@
 				/>
 			</div>
 			<div>
-				<label for="edit-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.commission_override", "Commission Override (%) — optional")}
-				<HintIcon text={t('academy.edit_commission_hint', 'Percent — leave blank to use the tier default.')}  />
-</label>
+				<label for="edit-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.commission_override", "Commission Override (%) — optional")}</label>
 				<input id="edit-commission" type="number" step="0.01" min="0" max="100" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="e.g. 70" bind:value={editCommission} />
 			</div>
 		</div>

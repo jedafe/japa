@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Modal dialog for creating a new blog series (POST /series).
 	// Mirrors SpaceCreationModal — uses bits-ui Dialog, auto-generates slug
 	// from title, and calls onCreated on success instead of navigating.
@@ -80,9 +79,7 @@
 						placeholder={t('create.series.title_placeholder')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 						disabled={submitting}
-						aria-describedby="series-title-hint"
 					/>
-					<HintIcon id="series-title-hint" text={t('create.series.title_hint', 'The public name of the series.')} />
 				</div>
 
 				<div>
@@ -94,9 +91,7 @@
 						placeholder={t('create.series.slug_placeholder')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 						disabled={submitting}
-						aria-describedby="series-slug-hint"
 					/>
-					<HintIcon id="series-slug-hint" text={t('create.series.slug_hint', 'URL-safe identifier — auto-generated from the title.')} />
 				</div>
 
 				<div>
@@ -108,9 +103,7 @@
 						placeholder={t('create.series.description_placeholder')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 						disabled={submitting}
-						aria-describedby="series-desc-hint"
 					/>
-					<HintIcon id="series-desc-hint" text={t('create.series.desc_hint', 'Optional — what this series is about.')} />
 				</div>
 
 				{#if error}

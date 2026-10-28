@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -123,6 +122,7 @@
 			{#if data.endpoints.length > 0}
 				<div class="spec-endpoints">
 					<h2 class="spec-heading">{t('api.endpoints_from_spec')}</h2>
+					<p class="spec-hint">{t('api.spec_endpoints_hint')}</p>
 
 					<div class="endpoint-filters">
 						<div class="ep-search-wrap">

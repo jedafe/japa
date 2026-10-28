@@ -1,15 +1,13 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	interface Props {
 		label: string;
 		value: string;
 		placeholder?: string;
 		type?: string;
 		oninput?: (value: string) => void;
-		hint?: string;
 	}
 
-	let { label, value, placeholder, type = 'text', oninput, hint }: Props = $props();
+	let { label, value, placeholder, type = 'text', oninput }: Props = $props();
 
 	function handleInput(event: Event) {
 		oninput?.((event.currentTarget as HTMLInputElement).value);
@@ -25,5 +23,4 @@
 		{placeholder}
 		oninput={handleInput}
 	/>
-	{#if hint}<HintIcon text={hint} />{/if}
 </label>

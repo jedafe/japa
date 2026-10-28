@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /plans — migrated to the EntityPage scaffold.
 	//
@@ -137,17 +136,17 @@
 	];
 
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('plans.name', 'Name'), type: 'text', help: t('plans.name_hint', 'The name shown in admin lists and on the site where public.'),},
-		{ key: 'slug', label: t('plans.slug', 'Slug'), type: 'text', help: t('plans.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
-		{ key: 'description', label: t('plans.description', 'Description'), type: 'textarea', help: t('plans.description_hint', 'Shown in detail views — keep it concise.') },
-		{ key: 'features', label: t('plans.features', 'Features'), type: 'text', help: t('plans.features_hint', 'Feature list shown on the plan card — one per line.') },
-		{ key: 'monthly_amount', label: t('plans.monthly', 'Monthly'), type: 'number', help: t('plans.monthly_amount_hint', 'Amount per month in the record’s currency.') },
-		{ key: 'yearly_amount', label: t('plans.yearly', 'Yearly'), type: 'number', help: t('plans.yearly_amount_hint', 'Amount per year in the record’s currency.') },
-		{ key: 'currency', label: t('plans.currency', 'Currency'), type: 'text', help: t('plans.currency_hint', 'ISO currency code, e.g. NGN or USD.') },
-		{ key: 'status', label: t('plans.status', 'Status'), type: 'text', help: t('plans.status_hint', 'The record state — controls visibility and actions.') },
-		{ key: 'sort_order', label: t('plans.sort_order', 'Sort Order'), type: 'number', help: t('plans.sort_order_hint', 'Lower numbers appear first.') },
-		{ key: 'highlighted', label: t('plans.highlighted', 'Highlighted'), type: 'checkbox', help: t('plans.highlighted_hint', 'Highlighted records stand out in listings.') },
-		{ key: 'tier', label: t('plans.tier', 'Tier'), type: 'select', help: t('plans.tier_hint', 'The tier — e.g. free, partner, premium.'), options: tierOptions }
+		{ key: 'name', label: t('plans.name', 'Name'), type: 'text' },
+		{ key: 'slug', label: t('plans.slug', 'Slug'), type: 'text' },
+		{ key: 'description', label: t('plans.description', 'Description'), type: 'textarea' },
+		{ key: 'features', label: t('plans.features', 'Features'), type: 'text' },
+		{ key: 'monthly_amount', label: t('plans.monthly', 'Monthly'), type: 'number' },
+		{ key: 'yearly_amount', label: t('plans.yearly', 'Yearly'), type: 'number' },
+		{ key: 'currency', label: t('plans.currency', 'Currency'), type: 'text' },
+		{ key: 'status', label: t('plans.status', 'Status'), type: 'text' },
+		{ key: 'sort_order', label: t('plans.sort_order', 'Sort Order'), type: 'number' },
+		{ key: 'highlighted', label: t('plans.highlighted', 'Highlighted'), type: 'checkbox' },
+		{ key: 'tier', label: t('plans.tier', 'Tier'), type: 'select', options: tierOptions }
 	];
 
 	// Row actions: View (always) + Manage Tracks / Edit / Delete (permission-gated).
@@ -333,6 +332,9 @@
 <!-- Manage Tracks Modal (page-local sub-flow) -->
 <Modal bind:open={showTracksModal} title={t('plans.manage_tracks_title', 'Manage Tracks — {name}').replace('{name}', tracksPlanName)} size="lg">
 	<div class="space-y-3">
+		<p class="text-xs" style="color: var(--color-muted)">
+			{t('plans.tracks_hint', 'Select which courses are included in this subscription plan. When no tracks are selected, the plan includes ALL tracks (Pro = all).')}
+		</p>
 		{#if loadingTracks}
 			<p class="text-sm" style="color: var(--color-muted)">{t('plans.loading_tracks', 'Loading tracks...')}</p>
 		{:else}
@@ -463,9 +465,7 @@
 {#snippet PlanForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
 	<div class="space-y-3">
 		<div>
-			<label for="plan-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.name', 'Name')}
-			<HintIcon text={t('plans.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-</label>
+			<label for="plan-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.name', 'Name')}</label>
 			<input
 				id="plan-name"
 				type="text"
@@ -479,9 +479,7 @@
 			/>
 		</div>
 		<div>
-			<label for="plan-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.slug', 'Slug')}
-			<HintIcon text={t('plans.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
-</label>
+			<label for="plan-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.slug', 'Slug')}</label>
 			<input
 				id="plan-slug"
 				type="text"
@@ -492,9 +490,7 @@
 			/>
 		</div>
 		<div>
-			<label for="plan-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.description', 'Description')}
-			<HintIcon text={t('plans.desc_hint', 'Shown in detail views — keep it concise.')}  />
-</label>
+			<label for="plan-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.description', 'Description')}</label>
 			<textarea
 				id="plan-desc"
 				class="w-full rounded-md border px-3 py-2 text-sm"
@@ -580,9 +576,7 @@
 
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="plan-monthly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.monthly_kobo', 'Monthly (in kobo/cents)')}
-			<HintIcon text={t('plans.monthly_hint', 'Monthly price in kobo or cents — the smallest currency unit.')}  />
-</label>
+				<label for="plan-monthly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.monthly_kobo', 'Monthly (in kobo/cents)')}</label>
 				<input
 					id="plan-monthly"
 					type="number"
@@ -593,9 +587,7 @@
 				/>
 			</div>
 			<div>
-				<label for="plan-yearly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.yearly_kobo', 'Yearly (in kobo/cents)')}
-			<HintIcon text={t('plans.yearly_hint', 'Yearly price in kobo or cents — usually discounted vs monthly.')}  />
-</label>
+				<label for="plan-yearly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.yearly_kobo', 'Yearly (in kobo/cents)')}</label>
 				<input
 					id="plan-yearly"
 					type="number"
@@ -609,41 +601,31 @@
 
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="plan-currency" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.currency', 'Currency')}
-			<HintIcon text={t('plans.currency_hint', 'ISO currency code, e.g. NGN or USD.')}  />
-</label>
+				<label for="plan-currency" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.currency', 'Currency')}</label>
 				<Select options={currencyOptions} bind:value={value.currency} />
 			</div>
 			<div>
-				<label for="plan-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.status', 'Status')}
-			<HintIcon text={t('plans.status_hint', 'The record state — controls visibility and actions.')}  />
-</label>
+				<label for="plan-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.status', 'Status')}</label>
 				<Select options={statuses} bind:value={value.status} />
 			</div>
 		</div>
 
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="plan-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}
-			<HintIcon text={t('plans.tier_hint', 'The tier — e.g. free, partner, premium.')}  />
-</label>
+				<label for="plan-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}</label>
 				<Select options={tierOptions} bind:value={value.tier} />
 			</div>
 			<div class="flex items-end gap-2 pb-2">
 				<input id="plan-highlight" type="checkbox" bind:checked={value.highlighted} />
 				<label for="plan-highlight" class="flex items-center gap-1 text-sm">
 					<Star class="h-3.5 w-3.5" /> {t('plans.highlighted', 'Highlighted')}
-				
-			<HintIcon text={t('plans.highlight_hint', 'Highlighted plans stand out in listings.')}  />
-</label>
+				</label>
 			</div>
 		</div>
 
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="plan-sort" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.sort_order', 'Sort Order')}
-			<HintIcon text={t('plans.sort_hint', 'Lower numbers appear first.')}  />
-</label>
+				<label for="plan-sort" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.sort_order', 'Sort Order')}</label>
 				<input
 					id="plan-sort"
 					type="number"

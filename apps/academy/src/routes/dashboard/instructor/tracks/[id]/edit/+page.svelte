@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Track editor — Japa Academy instructor edits an existing track (ADR-063).
 	// CSR ONLY: GET /academy/my/tracks (find by id), PATCH /academy/my/tracks/{id}.
 	// PATCH accepts optional fields: title, description, difficulty, price_kobo,
@@ -277,9 +276,7 @@
 			<div>
 				<label for="title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.title_label', 'Title')}
-				
-				<HintIcon text={t('academy.title_hint', 'The course title learners see in listings.')}  />
-</label>
+				</label>
 				<input
 					id="title"
 					type="text"
@@ -294,9 +291,7 @@
 			<div>
 				<label for="description" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.description_label', 'Description')}
-				
-				<HintIcon text={t('academy.description_hint', 'A short summary shown on the track page.')}  />
-</label>
+				</label>
 				<textarea
 					id="description"
 					bind:value={description}
@@ -310,9 +305,7 @@
 			<div>
 				<label for="difficulty" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.difficulty_label', 'Difficulty')}
-				
-				<HintIcon text={t('academy.difficulty_hint', 'The level learners need — beginner, intermediate, advanced.')}  />
-</label>
+				</label>
 				<AutocompleteSelect
 					id="difficulty"
 					bind:value={difficulty}
@@ -325,9 +318,7 @@
 			<div>
 				<label for="price" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.price_label', 'Price')}
-				
-				<HintIcon text={t('academy.price_hint', 'Price in the chosen currency — leave 0 for free.')}  />
-</label>
+				</label>
 				<input
 					id="price"
 					type="number"
@@ -346,9 +337,7 @@
 			<div>
 				<label for="country" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.track_country_label', 'Country / primary market')}
-				
-				<HintIcon text={t('academy.track_country_hint', 'The country this track content targets.')}  />
-</label>
+				</label>
 				<Autocomplete
 					id="country"
 					placeholder={t('academy.track_country_placeholder', 'Search countries…')}
@@ -360,16 +349,16 @@
 					onSelect={onSelectCountry}
 					onClear={onClearCountry}
 				/>
-				<HintIcon text={t('academy.track_country_hint', 'Select the country this track is primarily for. This defaults the currency.')} />
+				<p class="mt-1 text-xs text-[var(--color-text-subtle)]">
+					{t('academy.track_country_hint', 'Select the country this track is primarily for. This defaults the currency.')}
+				</p>
 			</div>
 
 			<!-- Currency (auto-filled from selected country; editable override) -->
 			<div>
 				<label for="currency" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.currency_label', 'Currency')}
-				
-				<HintIcon text={t('academy.currency_hint', 'The currency the price is charged in.')}  />
-</label>
+				</label>
 				{#if currencyOptions.length > 0}
 					<AutocompleteSelect
 						id="currency"
@@ -429,9 +418,10 @@
 				<div>
 					<label for="subscription-eligible" class="block text-sm font-medium text-[var(--color-text)]">
 						{t('academy.track_subscription_eligible_label', 'Subscription eligible')}
-					
-					<HintIcon text={t('academy.track_subscription_eligible_hint', 'Allow subscribers to access this course as part of their plan. You earn a stream-rate revenue share when they enroll.')}  />
-</label>
+					</label>
+					<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+						{t('academy.track_subscription_eligible_hint', 'Allow subscribers to access this course as part of their plan. You earn a stream-rate revenue share when they enroll.')}
+					</p>
 				</div>
 			</div>
 

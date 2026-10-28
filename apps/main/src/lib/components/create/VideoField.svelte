@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// §106 video composer field — resolves an external video URL or uploads a
 	// video file, then links the resulting video_sources row to the draft.
 	// On success it fills title/description/featured image and asks the parent
@@ -127,7 +126,6 @@
 				type="url"
 				class="video-input"
 				placeholder={t('create.video.url_placeholder', 'Paste a YouTube, Vimeo, TikTok, or Instagram Reels URL…')}
-				aria-describedby="video-url-hint"
 				bind:value={url}
 				disabled={busy}
 				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleResolve(); } }}
@@ -136,7 +134,7 @@
 				{#if busy}<Loader2 size={14} class="animate-spin" />{/if}
 				{t('create.video.resolve', 'Resolve')}
 			</button>
-</div>
+		</div>
 	{:else}
 		<div class="video-row">
 			<input

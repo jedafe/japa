@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// §106 video — channel claim / takedown form.
 	// Authenticated users can claim a synthetic channel or request a takedown
 	// of a specific video source on a channel.
@@ -307,11 +306,9 @@
 						id="evidence-url"
 						type="url"
 						bind:value={evidenceUrl}
-						aria-describedby="evidence-url-hint"
 						placeholder={t('video_claims.evidence_placeholder', 'https://example.com/evidence')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					/>
-					<HintIcon id="evidence-url-hint" text={t('video_claims.evidence_hint', 'A link proving your claim — e.g. your official site or profile.')} />
 				</div>
 
 				<div class="space-y-1">
@@ -323,10 +320,8 @@
 						bind:value={notes}
 						rows={4}
 						placeholder={t('video_claims.notes_placeholder', 'Explain why you are submitting this request…')}
-						aria-describedby="notes-hint"
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					></textarea>
-					<HintIcon id="notes-hint" text={t('video_claims.notes_hint', 'Explain why you are submitting this request — include any supporting details.')} />
 				</div>
 
 				<button

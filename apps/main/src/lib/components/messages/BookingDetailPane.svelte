@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md,
 	// sections/102-mentorship-matching.md (000824 — mentorship bookings are
 	// user-provider service_bookings rows)
@@ -669,6 +668,9 @@
 </Modal>
 
 <Modal bind:open={declineOpen} title={t('bookings.decline_title', 'Decline request')} size="md">
+	<p class="text-xs text-[var(--color-muted)]">
+		{t('bookings.respond_note_hint', 'Add an optional note for the other person.')}
+	</p>
 	<textarea
 		bind:value={declineNote}
 		rows="3"
@@ -698,6 +700,9 @@
 	title={t('bookings.cancel_mentorship', 'Cancel mentorship')}
 	size="md"
 >
+	<p class="text-xs text-[var(--color-muted)]">
+		{t('bookings.respond_note_hint', 'Add an optional note for the other person.')}
+	</p>
 	<textarea
 		bind:value={cancelNote}
 		rows="3"

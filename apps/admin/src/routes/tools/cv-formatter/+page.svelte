@@ -104,12 +104,12 @@
 
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown.
 	const fields: FieldDef[] = [
-		{ key: 'destination_space_id', label: t('app.tools.col_destination', 'Destination'), type: 'text', help: t('app.tools.destination_space_id_hint', 'The destination space this is linked to.'),},
-		{ key: 'recommended_length_pages', label: t('app.tools.col_length_pages', 'Recommended Length'), type: 'text', help: t('app.tools.recommended_length_pages_hint', 'Recommended length in pages.') },
-		{ key: 'photo_policy', label: t('app.tools.col_photo_policy', 'Photo Policy'), type: 'text', help: t('app.tools.photo_policy_hint', 'Whether photos are allowed or required.') },
-		{ key: 'date_format', label: t('app.tools.col_date_format', 'Date Format'), type: 'text', help: t('app.tools.date_format_hint', 'How dates are rendered — e.g. YYYY-MM-DD.') },
-		{ key: 'tone_guidance', label: t('app.tools.col_tone_guidance', 'Tone Guidance'), type: 'textarea', help: t('app.tools.tone_guidance_hint', 'How the AI should sound — e.g. warm, formal.') },
-		{ key: 'common_pitfalls', label: t('app.tools.col_common_pitfalls', 'Common Pitfalls'), type: 'textarea', help: t('app.tools.common_pitfalls_hint', 'Mistakes applicants commonly make.') }
+		{ key: 'destination_space_id', label: t('app.tools.col_destination', 'Destination'), type: 'text' },
+		{ key: 'recommended_length_pages', label: t('app.tools.col_length_pages', 'Recommended Length'), type: 'text' },
+		{ key: 'photo_policy', label: t('app.tools.col_photo_policy', 'Photo Policy'), type: 'text' },
+		{ key: 'date_format', label: t('app.tools.col_date_format', 'Date Format'), type: 'text' },
+		{ key: 'tone_guidance', label: t('app.tools.col_tone_guidance', 'Tone Guidance'), type: 'textarea' },
+		{ key: 'common_pitfalls', label: t('app.tools.col_common_pitfalls', 'Common Pitfalls'), type: 'textarea' }
 	];
 
 		const filters = $derived.by<FilterDef[]>(() => {
@@ -119,7 +119,6 @@
 				key: 'dest',
 				label: t('app.tools.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.tools.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

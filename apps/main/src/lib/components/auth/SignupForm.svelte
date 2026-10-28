@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 	// Presentational signup form — calls the /api/auth/signup proxy, sets the
 	// cookie server-side, and redirects to /onboarding for new users.
@@ -106,13 +105,12 @@
 			type="email"
 			autocomplete="email"
 			bind:value={email}
-			placeholder={t('auth.fields.email_placeholder', 'you@example.com')}
+			placeholder={t('auth.fields.email')}
 			aria-label={t('auth.fields.email')}
 			aria-invalid={errors.email ? 'true' : undefined}
-			aria-describedby={errors.email ? 'signup-email-hint signup-email-error' : 'signup-email-hint'}
+			aria-describedby={errors.email ? 'signup-email-error' : undefined}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
-		<HintIcon id="signup-email-hint" text={t('auth.signup.email_hint', 'Used for sign-in and receipts — we never share it.')} />
 		{#if errors.email}<p id="signup-email-error" class="text-sm text-red-500">{t(errors.email)}</p>{/if}
 	</div>
 
@@ -123,13 +121,12 @@
 			type="text"
 			autocomplete="username"
 			bind:value={username}
-			placeholder={t('auth.fields.username_placeholder', 'e.g. ada_lovelace')}
+			placeholder={t('auth.fields.username')}
 			aria-label={t('auth.fields.username')}
 			aria-invalid={errors.username ? 'true' : undefined}
-			aria-describedby={errors.username ? 'signup-username-hint signup-username-error' : 'signup-username-hint'}
+			aria-describedby={errors.username ? 'signup-username-error' : undefined}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
-		<HintIcon id="signup-username-hint" text={t('auth.fields.username_hint', '3–30 characters — letters, numbers and underscores. This is your public handle.')} />
 		{#if errors.username}<p id="signup-username-error" class="text-sm text-red-500">{t(errors.username)}</p>{/if}
 	</div>
 
@@ -140,7 +137,6 @@
 		showStrength
 		error={errors.password ?? ''}
 		autocomplete="new-password"
-		hint={t('auth.fields.new_password_hint', 'At least 8 characters with upper & lower case letters and a number.')}
 		hideLabel
 	/>
 

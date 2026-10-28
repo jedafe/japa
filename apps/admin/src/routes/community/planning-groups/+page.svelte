@@ -77,10 +77,10 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('app.planning_group.col_name', 'Name'), type: 'text', help: t('app.planning_group.name_hint', 'The name shown in admin lists and on the site where public.'),},
-		{ key: 'member_count', label: t('app.planning_group.col_member_count', 'Members'), type: 'number', help: t('app.planning_group.member_count_hint', 'Current member count — display only in most cases.') },
-		{ key: 'status', label: t('app.planning_group.col_status', 'Status'), type: 'text', help: t('app.planning_group.status_hint', 'The record state — controls visibility and actions.') },
-		{ key: 'description', label: t('app.planning_group.detail_description', 'Description'), type: 'textarea', help: t('app.planning_group.description_hint', 'Shown in detail views — keep it concise.') }
+		{ key: 'name', label: t('app.planning_group.col_name', 'Name'), type: 'text' },
+		{ key: 'member_count', label: t('app.planning_group.col_member_count', 'Members'), type: 'number' },
+		{ key: 'status', label: t('app.planning_group.col_status', 'Status'), type: 'text' },
+		{ key: 'description', label: t('app.planning_group.detail_description', 'Description'), type: 'textarea' }
 	];
 
 	const filters = $derived.by<FilterDef[]>(() => {
@@ -90,7 +90,6 @@
 				key: 'dest',
 				label: t('app.planning_group.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.planning_group.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

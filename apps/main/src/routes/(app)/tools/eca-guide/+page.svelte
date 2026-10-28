@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
@@ -214,25 +213,19 @@
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="dest">
 					{t('eca_guide.destination', 'Destination')}
-				
-				<HintIcon text={t('tools.eca.dest_hint', 'The country where you will use the evaluation.')}  />
-</label>
+				</label>
 				<DestinationSelector {destinations} bind:selectedId={selectedDest} onchange={onDestChange} />
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="purpose">
 					{t('eca_guide.purpose', 'Purpose')}
-				
-				<HintIcon text={t('tools.eca.purpose_hint', 'Why you need the ECA — e.g. Express Entry.')}  />
-</label>
+				</label>
 				<AutocompleteSelect id="purpose" bind:value={selectedPurpose} options={purposeOptions} />
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="provider">
 					{t('eca_guide.provider', 'Provider')}
-				
-				<HintIcon text={t('tools.eca.provider_hint', 'The evaluation service — WES is the most common.')}  />
-</label>
+				</label>
 				<AutocompleteSelect
 					id="provider"
 					bind:value={selectedProvider}

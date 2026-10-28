@@ -116,10 +116,10 @@
 
 	// `fields` is required by EntityPageConfig; tracks are read-only in this view.
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('academy.track_title', 'Track'), type: 'text', help: t('academy.title_hint', 'The title shown in listings and detail views.'),},
-		{ key: 'slug', label: t('academy.slug', 'Slug'), type: 'text', help: t('academy.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
-		{ key: 'difficulty', label: t('academy.difficulty', 'Difficulty'), type: 'text', help: t('academy.difficulty_hint', 'The level learners need — beginner, intermediate, advanced.') },
-		{ key: 'price_kobo', label: t('academy.price', 'Price'), type: 'number', help: t('academy.price_kobo_hint', 'Price in kobo — 100 kobo = ₦1.') }
+		{ key: 'title', label: t('academy.track_title', 'Track'), type: 'text' },
+		{ key: 'slug', label: t('academy.slug', 'Slug'), type: 'text' },
+		{ key: 'difficulty', label: t('academy.difficulty', 'Difficulty'), type: 'text' },
+		{ key: 'price_kobo', label: t('academy.price', 'Price'), type: 'number' }
 	];
 
 	const rowActions = $derived.by<ActionItem[]>(() => {

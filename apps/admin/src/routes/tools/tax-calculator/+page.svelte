@@ -134,9 +134,9 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'employment_status', label: t('common.employment_status', 'Employment Status'), type: 'text', help: t('common.employment_status_hint', 'The employment situation this applies to.'),},
-		{ key: 'residency_trigger', label: t('tax_calculator.residency_trigger', 'Residency Trigger'), type: 'textarea', help: t('tax_calculator.residency_trigger_hint', 'What makes someone tax-resident here.') },
-		{ key: 'first_year_obligations', label: t('tax_calculator.first_year_obligations', 'First Year Obligations'), type: 'textarea', help: t('tax_calculator.first_year_obligations_hint', 'What newcomers must do in their first year.') }
+		{ key: 'employment_status', label: t('common.employment_status', 'Employment Status'), type: 'text' },
+		{ key: 'residency_trigger', label: t('tax_calculator.residency_trigger', 'Residency Trigger'), type: 'textarea' },
+		{ key: 'first_year_obligations', label: t('tax_calculator.first_year_obligations', 'First Year Obligations'), type: 'textarea' }
 	];
 
 		const filters = $derived.by<FilterDef[]>(() => {
@@ -146,7 +146,6 @@
 				key: 'dest',
 				label: t('app.tools.col_destination', 'Destination'),
 				type: 'autocomplete',
-			help: t('app.tools.dest_hint', 'The destination country this applies to.'),
 				placeholder: t('app.tools.country_placeholder', 'Search country…'),
 				emptyMessage: t('common.no_results', 'No results found'),
 				fetcher: countryUtils.fetcher,

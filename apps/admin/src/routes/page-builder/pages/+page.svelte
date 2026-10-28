@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /page-builder/pages — migrated to the EntityPage scaffold.
 	// List + page metadata CRUD via EntityPage; state actions (publish/archive)
@@ -358,12 +357,11 @@
 
 	// ── Form fields ── `fields` drives EntityForm rendering + edit-form seeding.
 	const fields = $derived.by<FieldDef[]>(() => [
-		{ key: 'title', label: t('page_builder.title', 'Title'), type: 'text', help: t('page_builder.title_hint', 'The title shown in listings and detail views.'), required: true },
+		{ key: 'title', label: t('page_builder.title', 'Title'), type: 'text', required: true },
 		{
 			key: 'slug',
 			label: t('page_builder.slug', 'Slug'),
 			type: 'text',
-			help: t('page_builder.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.'),
 			placeholder: t('page_builder.slug_hint', 'Auto-generated from title')
 		},
 		{
@@ -383,7 +381,6 @@
 			key: 'status',
 			label: t('page_builder.status', 'Status'),
 			type: 'select',
-			help: t('page_builder.status_hint', 'The record state — controls visibility and actions.'),
 			options: statusOptions.length ? statusOptions : [
 				{ value: 'draft', label: t('page_builder.status_draft', 'Draft') },
 				{ value: 'published', label: t('page_builder.status_published', 'Published') },
@@ -405,7 +402,6 @@
 			key: 'theme_id',
 			label: t('page_builder.theme', 'Theme'),
 			type: 'autocomplete',
-			help: t('page_builder.theme_id_hint', 'The visual theme applied.'),
 			placeholder: t('page_builder.theme_placeholder', 'Search theme…'),
 			emptyMessage: t('common.no_results', 'No results found'),
 			fetcher: fetchThemeOptions,
@@ -553,6 +549,9 @@
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('page_builder.publish_confirm', 'Publish page')} <strong>{actionTarget.title}</strong>?
 		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-muted)">
+			{t('page_builder.publish_hint', 'This will make the page publicly visible.')}
+		</p>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showPublishConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
@@ -567,6 +566,9 @@
 	{#if actionTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('page_builder.archive_confirm', 'Archive page')} <strong>{actionTarget.title}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-warning)">
+			{t('page_builder.archive_hint', 'Archived pages are hidden from the public site.')}
 		</p>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">

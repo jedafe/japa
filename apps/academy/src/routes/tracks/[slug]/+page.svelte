@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Track Detail — widened overview (ADR-060).
 	// SSR hero + stats · Tabs (Overview | Curriculum | Reviews) · Accordion curriculum ·
 	// instructor card · enroll CTA · Course JSON-LD.

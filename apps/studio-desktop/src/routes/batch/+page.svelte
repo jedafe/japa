@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { onMount } from 'svelte';
 	import { Sparkles, Copy, Save, Loader2, AlertCircle } from 'lucide-svelte';
 	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
@@ -233,7 +232,6 @@
 						placeholder={`e.g.\nCost of Living in Canada\nFinding Housing in Toronto, guide, relocation\n\nJSON: [{"title":"...","content_type":"guide"}]\nCSV: title,content_type,guide_category`}
 						bind:value={rawInput}
 					></textarea>
-						<HintIcon text='Each line or row becomes one batch item — paste a list or a JSON array.' />
 				</label>
 
 				<div class="flex flex-wrap gap-2">

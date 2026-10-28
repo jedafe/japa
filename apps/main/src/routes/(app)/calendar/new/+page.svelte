@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -208,9 +207,7 @@
 				<div>
 					<label for="destination_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_destination', 'Destination country')} <span class="text-red-500" aria-hidden="true">*</span>
-					
-					<HintIcon text={t('calendar.new.destination_hint', 'The country this event applies to.')}  />
-</label>
+					</label>
 					<Autocomplete
 						placeholder={t('calendar.new.placeholder_destination', 'Select a country')}
 						emptyMessage={t('common.no_results', 'No results found')}
@@ -225,9 +222,7 @@
 				<div>
 					<label for="origin_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_origin', 'Origin country (optional)')}
-					
-					<HintIcon text={t('calendar.new.origin_hint', 'Optional — restrict to a specific origin country.')}  />
-</label>
+					</label>
 					<Autocomplete
 						placeholder={t('calendar.new.placeholder_origin', 'Leave blank for all origins')}
 						emptyMessage={t('common.no_results', 'No results found')}
@@ -245,9 +240,7 @@
 			<div>
 				<label for="title" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_title', 'Title')} <span class="text-red-500" aria-hidden="true">*</span>
-				
-				<HintIcon text={t('calendar.new.title_hint', 'A short event name shown on the calendar.')}  />
-</label>
+				</label>
 				<input
 					id="title"
 					type="text"
@@ -262,9 +255,7 @@
 			<div>
 				<label for="category" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_category', 'Category')}
-				
-				<HintIcon text={t('calendar.new.category_hint', 'What kind of event — deadline, window, meetup.')}  />
-</label>
+				</label>
 				<AutocompleteSelect
 					id="category"
 					value={category}
@@ -287,24 +278,19 @@
 				placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
 				rows={5}
 			/>
-				<HintIcon text={t('calendar.new.desc_hint', 'What people need to know — links and deadlines help.')} />
 
 			<!-- Dates -->
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div>
 					<label for="occurs_at" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_occurs_at', 'Starts')} <span class="text-red-500" aria-hidden="true">*</span>
-					
-					<HintIcon text={t('calendar.new.occurs_hint', 'When the event starts (your local time).')}  />
-</label>
+					</label>
 					<input id="occurs_at" type="datetime-local" bind:value={occursAt} class={inputClass} />
 				</div>
 				<div>
 					<label for="ends_at" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_ends_at', 'Ends (optional)')}
-					
-					<HintIcon text={t('calendar.new.ends_hint', 'Optional — when the event ends.')}  />
-</label>
+					</label>
 					<input id="ends_at" type="datetime-local" bind:value={endsAt} class={inputClass} />
 				</div>
 			</div>
@@ -322,7 +308,6 @@
 						placeholder={t('calendar.new.placeholder_recurrence', 'e.g. annual')}
 						class={inputClass}
 					/>
-						<HintIcon text={t('calendar.new.recurrence_hint', 'How often it repeats — e.g. annual, monthly.')} />
 				{/if}
 			</div>
 
@@ -330,9 +315,7 @@
 			<div>
 				<label for="source_url" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_source', 'Official source URL')} <span class="text-red-500" aria-hidden="true">*</span>
-				
-				<HintIcon text={t('calendar.new.source_hint', 'Link to the official announcement — required for verification.')}  />
-</label>
+				</label>
 				<input
 					id="source_url"
 					type="url"

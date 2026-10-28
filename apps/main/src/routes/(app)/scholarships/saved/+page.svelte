@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';

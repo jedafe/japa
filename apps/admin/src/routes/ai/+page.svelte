@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type HitlVerifyResult, type GenerateResult, type AiTool, type AiUsageSummary, type AiToolUsageStats } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -544,9 +543,7 @@
 
 		<div class="space-y-4">
 			<div>
-				<label for="ai-prompt" class="mb-1 block text-sm font-medium">{t('ai.prompt')}
-				<HintIcon text={t('ai.ai_prompt_hint', 'The instruction sent to the AI.')}  />
-</label>
+				<label for="ai-prompt" class="mb-1 block text-sm font-medium">{t('ai.prompt')}</label>
 				<textarea
 					id="ai-prompt"
 					class="w-full rounded-md border px-3 py-2 text-sm"
@@ -559,15 +556,11 @@
 
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
-					<label for="ai-category" class="mb-1 block text-sm font-medium">{t('ai.category')}
-					<HintIcon text={t('ai.ai_category_hint', 'The category — drives grouping and filters.')}  />
-</label>
+					<label for="ai-category" class="mb-1 block text-sm font-medium">{t('ai.category')}</label>
 					<Select options={categories} bind:value={category} />
 				</div>
 				<div>
-					<label for="ai-model" class="mb-1 block text-sm font-medium">{t('ai.model_optional')}
-					<HintIcon text={t('ai.ai_model_hint', 'The AI model to use.')}  />
-</label>
+					<label for="ai-model" class="mb-1 block text-sm font-medium">{t('ai.model_optional')}</label>
 					<Select options={models} bind:value={model} />
 				</div>
 			</div>
@@ -874,9 +867,7 @@
 
 			{#if showRejectInput}
 				<div>
-					<label for="reject-reason" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.reject_reason')}
-					<HintIcon text={t('ai.reject_reason_hint', 'The reason recorded — shown to the user where noted.')}  />
-</label>
+					<label for="reject-reason" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.reject_reason')}</label>
 					<textarea
 						id="reject-reason"
 						class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
@@ -941,15 +932,11 @@
 <SlideOver bind:open={showToolSlideOver} title={t('ai.tools.configure')}>
 	<div class="space-y-4">
 		<div>
-			<label for="tool-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.tools.name')}
-			<HintIcon text={t('ai.tool_name_hint', 'The tool name shown to the AI.')}  />
-</label>
+			<label for="tool-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.tools.name')}</label>
 			<input id="tool-name" type="text" bind:value={toolName} class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
 		</div>
 		<div>
-			<label for="tool-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.tools.description')}
-			<HintIcon text={t('ai.tool_desc_hint', 'What the tool does — the AI uses this to decide when to call it.')}  />
-</label>
+			<label for="tool-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.tools.description')}</label>
 			<textarea id="tool-desc" bind:value={toolDescription} rows="3" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"></textarea>
 		</div>
 		<div class="flex items-center gap-3">

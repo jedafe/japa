@@ -90,7 +90,7 @@
 	// `fields` drives EntityForm rendering and edit-form seeding. Mirrors the
 	// legacy form exactly: name (required) + slug (auto-generated when blank).
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('themes.name', 'Name'), type: 'text', help: t('themes.name_hint', 'The name shown in admin lists and on the site where public.'), placeholder: 'e.g., Dark Theme', required: true },
+		{ key: 'name', label: t('themes.name', 'Name'), type: 'text', placeholder: 'e.g., Dark Theme', required: true },
 		{
 			key: 'slug',
 			label: t('themes.slug', 'Slug'),

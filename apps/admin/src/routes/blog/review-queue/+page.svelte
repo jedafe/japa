@@ -113,10 +113,10 @@
 
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('app.blog.col_title', 'Title'), type: 'text', help: t('app.blog.title_hint', 'The title shown in listings and detail views.'),},
-		{ key: 'slug', label: t('app.blog.col_slug', 'Slug'), type: 'text', help: t('app.blog.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
-		{ key: 'author_name', label: t('app.blog.col_author', 'Author'), type: 'text', help: t('app.blog.author_name_hint', 'The display name of the author.') },
-		{ key: 'excerpt', label: t('app.blog.detail_excerpt', 'Excerpt'), type: 'textarea', help: t('app.blog.excerpt_hint', 'A short teaser shown in listings.') }
+		{ key: 'title', label: t('app.blog.col_title', 'Title'), type: 'text' },
+		{ key: 'slug', label: t('app.blog.col_slug', 'Slug'), type: 'text' },
+		{ key: 'author_name', label: t('app.blog.col_author', 'Author'), type: 'text' },
+		{ key: 'excerpt', label: t('app.blog.detail_excerpt', 'Excerpt'), type: 'textarea' }
 	];
 
 	const config = $derived<EntityPageConfig>({

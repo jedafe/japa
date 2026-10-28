@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /menus — migrated to the EntityPage scaffold.
 	//
@@ -90,10 +89,10 @@
 
 	// `fields` drives EntityForm rendering + edit-form seeding for the MENU entity.
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('menus.name', 'Name'), type: 'text', help: t('menus.name_hint', 'The name shown in admin lists and on the site where public.'), placeholder: 'e.g., Primary Nav', required: true },
+		{ key: 'name', label: t('menus.name', 'Name'), type: 'text', placeholder: 'e.g., Primary Nav', required: true },
 		{ key: 'slug', label: t('menus.slug', 'Slug'), type: 'text', placeholder: 'primary-nav', required: true, readonlyInEdit: true, help: t('menus.slug_immutable', 'Slug cannot be changed after creation') },
-		{ key: 'placement', label: t('menus.placement', 'Placement'), type: 'select', help: t('menus.placement_hint', 'Where this shows on the page.'), options: placementOptions },
-		{ key: 'status', label: t('common.status', 'Status'), type: 'select', help: t('common.status_hint', 'The record state — controls visibility and actions.'), options: statusOptions }
+		{ key: 'placement', label: t('menus.placement', 'Placement'), type: 'select', options: placementOptions },
+		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: statusOptions }
 	];
 
 	const config: EntityPageConfig = {
@@ -724,7 +723,7 @@ loadPermissionNodes();
 					inputClass="font-mono"
 				/>
 			</div>
-			<HintIcon text={t('menus.permission_node_hint', 'Optional. Restrict this item to users with the given permission node.')} />
+			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.permission_node_hint', 'Optional. Restrict this item to users with the given permission node.')}</p>
 		</div>
 		{#if menuItems.length > 0}
 			<div class="col-span-2">
@@ -767,7 +766,7 @@ loadPermissionNodes();
 		</div>
 		<label class="block col-span-2">
 			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.required_groups', 'Required User Groups')}</span>
-			<HintIcon text={t('menus.required_groups_hint', 'Item is visible only to users in at least one selected group. Leave empty for everyone.')} />
+			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.required_groups_hint', 'Item is visible only to users in at least one selected group. Leave empty for everyone.')}</p>
 			<div class="mt-1 space-y-2">
 				{#if selectedGroupObjs.length > 0}
 					<div class="flex flex-wrap items-center gap-1">

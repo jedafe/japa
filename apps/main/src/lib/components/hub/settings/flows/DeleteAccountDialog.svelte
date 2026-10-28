@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { Modal } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
 	import { deleteAccount } from '$lib/api/hub';
@@ -50,10 +49,8 @@
 			</p>
 			<input
 				type="text"
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+				class="mb-4 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				placeholder={username}
-				aria-label={t('settings.danger.delete_confirm_prompt')}
-				aria-describedby="delete-confirm-hint"
 				value={typed}
 				oninput={(e) => (typed = e.currentTarget.value)}
 			/>

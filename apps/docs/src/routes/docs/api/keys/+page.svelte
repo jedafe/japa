@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t, i18n } from '$lib/i18n';
@@ -396,7 +395,6 @@
 					<label>
 						<span>{t('api.app_name', 'App Name')}</span>
 						<input name="name" type="text" bind:value={keyName} placeholder="My App" required />
-						<HintIcon text={t('api.key_name_hint', 'A label so you remember what this key is for.')} />
 					</label>
 					<label>
 						<span>{t('api.rate_limit_tier', 'Rate limit tier')}</span>
@@ -466,7 +464,6 @@
 					<label>
 						<span>{t('api.app_name', 'App Name')}</span>
 						<input name="name" type="text" bind:value={renameName} required />
-						<HintIcon text={t('api.rename_hint', 'The new display name for this key.')} />
 					</label>
 					<input type="hidden" name="id" value={dialogKey.id} />
 					<div class="dialog-actions">

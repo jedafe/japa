@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
@@ -334,9 +333,7 @@
 			<div>
 				<label for="wiki-create-category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_category_label', 'Category')}
-				
-				<HintIcon text={t('wiki.create.category_hint', 'The category this page belongs to.')}  />
-</label>
+				</label>
 				<AutocompleteSelect
 					id="wiki-create-category"
 					value={category}
@@ -354,9 +351,7 @@
 					<div class="mb-1 flex items-center justify-between gap-2">
 						<label for="wiki-create-page" class="block text-sm font-medium text-[var(--color-text)]">
 							{t('wiki.create_page_label', 'Page')}
-						
-						<HintIcon text={t('wiki.create.page_hint', 'The parent page — leave blank for top level.')}  />
-</label>
+						</label>
 						{#if canManageTemplates}
 							<button
 								type="button"
@@ -385,7 +380,9 @@
 					</p>
 					{#if tplOpen && canManageTemplates}
 						<div class="mt-2 space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
-							<HintIcon text={t('wiki.new_template_hint', 'Adds a predefined page under this category for every wiki of this type. Use {name} for the space name — e.g. "Prices in {name}".')} />
+							<p class="text-xs text-[var(--color-muted)]">
+								{t('wiki.new_template_hint', 'Adds a predefined page under this category for every wiki of this type. Use {name} for the space name — e.g. "Prices in {name}".')}
+							</p>
 							<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 								<input
 									type="text"
@@ -432,9 +429,7 @@
 			<div>
 				<label for="wiki-create-title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_title_label', 'Page title')}
-				
-				<HintIcon text={t('wiki.create.title_hint', 'The page title shown in the wiki.')}  />
-</label>
+				</label>
 				<input
 					id="wiki-create-title"
 					type="text"

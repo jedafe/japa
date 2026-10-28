@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { api } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
@@ -257,14 +256,12 @@
 			<label for="bp-type" class="mb-1 block text-sm font-medium text-[var(--color-text)]"
 				>{t('byok.col_type', 'Type')}</label
 			>
-			<HintIcon text={t('byok.type_hint', 'The provider category — controls how it is called.')} />
 			<AutocompleteSelect id="bp-type" bind:value={form.provider_type} options={providerTypeOptions} />
 		</div>
 		<div>
 			<label for="bp-name" class="mb-1 block text-sm font-medium text-[var(--color-text)]"
 				>{t('byok.col_name', 'Display name')}</label
 			>
-			<HintIcon text={t('byok.name_hint', 'The display name for this provider.')} />
 			<input
 				id="bp-name"
 				type="text"
@@ -276,7 +273,6 @@
 			<label for="bp-models" class="mb-1 block text-sm font-medium text-[var(--color-text)]"
 				>{t('byok.col_models', 'Models')} <span class="text-xs text-[var(--color-muted)]">({t('byok.models_hint', 'one per line: id|Label')})</span></label
 			>
-			<HintIcon text={t('byok.models_hint', 'Comma-separated model IDs this provider supports.')} />
 			<textarea
 				id="bp-models"
 				bind:value={form.modelsText}
@@ -289,7 +285,6 @@
 			<label for="bp-url" class="mb-1 block text-sm font-medium text-[var(--color-text)]"
 				>{t('byok.col_signup', 'Signup URL')} <span class="text-xs text-[var(--color-muted)]">({t('byok.url_hint', 'affiliate/referral link, https only')})</span></label
 			>
-			<HintIcon text={t('byok.url_hint', 'The API base URL — full URL including https://.')} />
 			<input
 				id="bp-url"
 				type="url"
@@ -302,7 +297,6 @@
 			<label for="bp-label" class="mb-1 block text-sm font-medium text-[var(--color-text)]"
 				>{t('byok.col_label', 'Signup label')} <span class="text-xs text-[var(--color-muted)]">({t('byok.label_hint', 'CTA text on the affiliate link; empty = default')})</span></label
 			>
-			<p class="text-muted-foreground mt-1 text-xs">{t('byok.label_desc', 'A name so you remember what this key is for.')}</p>
 			<input
 				id="bp-label"
 				type="text"

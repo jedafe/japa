@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { onMount } from 'svelte';
 	import {
@@ -1081,7 +1080,6 @@
 						value={newPostTitle}
 						oninput={(event) => (newPostTitle = (event.currentTarget as HTMLInputElement).value)}
 					/>
-						<HintIcon text='The title shown in the editor and used for the file name.' />
 				</label>
 				<label class="block text-sm font-medium">
 					Content type

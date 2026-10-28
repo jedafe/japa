@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: japaconnect-engineering/sections/29-ratings-reviews.md (create form)
 	// Inline create-review form. The parent passes entityType + entityId; the
 	// form posts to /reviews/{entity_type}/{entity_id} via the browser API

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /onboarding/templates — Onboarding template CRUD (Section 09).
 	// Templates are configurable onboarding step sequences stored as jsonb.
@@ -31,10 +30,10 @@
 	// is rendered by `formSnippet` below (a JSON textarea), but it MUST appear
 	// here so EntityPage seeds value.steps from the selected row.
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('onboarding.templates.name', 'Name'), type: 'text', help: t('onboarding.templates.name_hint', 'The name shown in admin lists and on the site where public.'), required: true, placeholder: 'Default 7-step flow' },
-		{ key: 'description', label: t('onboarding.templates.description', 'Description'), type: 'textarea', help: t('onboarding.templates.description_hint', 'Shown in detail views — keep it concise.'), placeholder: 'Describe what this template configures…' },
-		{ key: 'steps', label: t('onboarding.templates.steps', 'Steps (JSON)'), type: 'textarea', help: t('onboarding.templates.steps_hint', 'The ordered steps — one per line.') },
-		{ key: 'is_active', label: t('onboarding.templates.active', 'Active'), type: 'checkbox', help: t('onboarding.templates.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
+		{ key: 'name', label: t('onboarding.templates.name', 'Name'), type: 'text', required: true, placeholder: 'Default 7-step flow' },
+		{ key: 'description', label: t('onboarding.templates.description', 'Description'), type: 'textarea', placeholder: 'Describe what this template configures…' },
+		{ key: 'steps', label: t('onboarding.templates.steps', 'Steps (JSON)'), type: 'textarea' },
+		{ key: 'is_active', label: t('onboarding.templates.active', 'Active'), type: 'checkbox' }
 	];
 
 	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a
@@ -240,9 +239,7 @@
 		<div>
 			<label for="tpl-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.name', 'Name')} <span style="color: var(--color-danger)">*</span>
-			
-			<HintIcon text={t('onboarding.templates.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-</label>
+			</label>
 			<input
 				id="tpl-name"
 				type="text"
@@ -256,9 +253,7 @@
 		<div>
 			<label for="tpl-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.description', 'Description')}
-			
-			<HintIcon text={t('onboarding.templates.desc_hint', 'Shown in detail views — keep it concise.')}  />
-</label>
+			</label>
 			<textarea
 				id="tpl-desc"
 				rows="2"
@@ -271,9 +266,7 @@
 		<div>
 			<label for="tpl-steps" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.steps', 'Steps (JSON)')}
-			
-			<HintIcon text={t('onboarding.templates.steps_hint', 'The ordered steps — one per line.')}  />
-</label>
+			</label>
 			<textarea
 				id="tpl-steps"
 				rows="10"
@@ -296,9 +289,7 @@
 			/>
 			<label for="tpl-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('onboarding.templates.active', 'Active')}
-			
-			<HintIcon text={t('onboarding.templates.active_hint', 'Inactive templates are hidden from onboarding.')}  />
-</label>
+			</label>
 		</div>
 	</div>
 {/snippet}

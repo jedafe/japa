@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: Section 59 (Sidebar Management System), ADR-066.
 	// Renders a single sidebar widget based on its widget_type.
 	// Only widget types scoped to the Academy app in the backend registry

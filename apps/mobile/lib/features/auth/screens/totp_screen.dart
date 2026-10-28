@@ -46,7 +46,7 @@ class _TOTPScreenState extends ConsumerState<TOTPScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            JcTextField(label: t('auth.totp_code'), controller: _code, hint: t('auth.totp_code_hint')),
+            JcTextField(label: t('auth.totp_code'), controller: _code),
             if (state.error != null) Text(state.error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             JcButton(

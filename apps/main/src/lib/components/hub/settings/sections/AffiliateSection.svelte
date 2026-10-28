@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { Modal } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -367,7 +366,6 @@
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.product_type', 'Product type')}</span>
 			<AutocompleteSelect bind:value={newProductType} options={productTypes} />
-			<HintIcon id="affiliate-product-hint" text={t('settings.affiliate.product_type_hint', 'Which catalog the link should point into.')} />
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.url')}</span>
@@ -375,23 +373,18 @@
 				type="url"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				placeholder="https://"
-				aria-describedby="affiliate-url-hint"
 				value={newUrl}
 				oninput={(e) => (newUrl = e.currentTarget.value)}
 			/>
-			<HintIcon id="affiliate-url-hint" text={t('settings.affiliate.url_hint', 'The page your referral link should land on.')} />
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.label')}</span>
 			<input
 				type="text"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-				placeholder={t('settings.affiliate.label_placeholder', 'e.g. Twitter bio link')}
-				aria-describedby="affiliate-label-hint"
 				value={newDescription}
 				oninput={(e) => (newDescription = e.currentTarget.value)}
 			/>
-			<HintIcon id="affiliate-label-hint" text={t('settings.affiliate.label_hint', 'A note to remember where you shared this link.')} />
 		</label>
 		{#if error}<p class="text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
 		<button
@@ -510,11 +503,9 @@
 							<input
 								type="text"
 								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-								aria-describedby="affiliate-edit-label-hint"
 								value={editDescription}
 								oninput={(e) => (editDescription = e.currentTarget.value)}
 							/>
-							<HintIcon id="affiliate-edit-label-hint" text={t('settings.affiliate.label_hint', 'A note to remember where you shared this link.')} />
 						</label>
 						<label class="flex items-center gap-2">
 							<input

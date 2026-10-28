@@ -198,22 +198,21 @@
 		filters: filterDefs,
 		actions,
 		fields: [
-			{ key: 'version', label: t('roadmap.releases.version', 'Version'), type: 'text', help: t('roadmap.releases.version_hint', 'Version identifier — e.g. 2.1.0.'), required: true },
-			{ key: 'slug', label: t('common.slug', 'Slug'), type: 'text', help: t('common.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
-			{ key: 'title', label: t('common.title', 'Title'), type: 'text', help: t('common.title_hint', 'The title shown in listings and detail views.') },
-			{ key: 'summary', label: t('common.summary', 'Summary'), type: 'textarea', help: t('common.summary_hint', 'A one or two sentence overview shown on cards.') },
-			{ key: 'body', label: t('roadmap.releases.notes', 'Release notes'), type: 'textarea', help: t('roadmap.releases.body_hint', 'The main content body.') },
+			{ key: 'version', label: t('roadmap.releases.version', 'Version'), type: 'text', required: true },
+			{ key: 'slug', label: t('common.slug', 'Slug'), type: 'text' },
+			{ key: 'title', label: t('common.title', 'Title'), type: 'text' },
+			{ key: 'summary', label: t('common.summary', 'Summary'), type: 'textarea' },
+			{ key: 'body', label: t('roadmap.releases.notes', 'Release notes'), type: 'textarea' },
 			{
 				key: 'surface',
 				label: t('roadmap.releases.surface', 'Surface'),
 				type: 'select',
-			help: t('roadmap.releases.surface_hint', 'Where this appears — feed, sidebar, email.'),
 				options: SURFACE_OPTIONS
 			},
-			{ key: 'is_esr', label: t('roadmap.releases.is_esr', 'ESR (extended support)'), type: 'checkbox', help: t('roadmap.releases.is_esr_hint', 'Mark as an emergency service resource.'),},
-			{ key: 'released_at', label: t('roadmap.releases.released_at', 'Released at'), type: 'datetime-local', help: t('roadmap.releases.released_at_hint', 'When the release shipped.') },
-			{ key: 'eol_at', label: t('roadmap.releases.eol', 'EOL at'), type: 'datetime-local', help: t('roadmap.releases.eol_at_hint', 'End-of-life date — support ends after this.') },
-			{ key: 'sort_order', label: t('common.sort_order', 'Sort order'), type: 'number', help: t('common.sort_order_hint', 'Lower numbers appear first.') }
+			{ key: 'is_esr', label: t('roadmap.releases.is_esr', 'ESR (extended support)'), type: 'checkbox' },
+			{ key: 'released_at', label: t('roadmap.releases.released_at', 'Released at'), type: 'datetime-local' },
+			{ key: 'eol_at', label: t('roadmap.releases.eol', 'EOL at'), type: 'datetime-local' },
+			{ key: 'sort_order', label: t('common.sort_order', 'Sort order'), type: 'number' }
 		],
 		createPermission: 'roadmap.edit',
 		editPermission: 'roadmap.edit',

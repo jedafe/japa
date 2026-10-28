@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Ref: 2026-08-21-journey-aware-recommendations-design.md §6.1
 	// Guest journey onboarding modal. Appears automatically after 1 minute
 	// when a guest has not set their destination, and can be opened manually
@@ -297,9 +296,7 @@
 
 					<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="field-row">
-							<label class="field-label" for="journey-origin">{t('journey.banner.origin_country', 'Where are you now?')}
-							<HintIcon text={t('journey.banner.origin_hint', 'The country you currently live in.')}  />
-</label>
+							<label class="field-label" for="journey-origin">{t('journey.banner.origin_country', 'Where are you now?')}</label>
 							<Autocomplete
 								placeholder={t('journey.banner.origin_placeholder', 'e.g. Nigeria')}
 								emptyMessage={t('create.journey.country_empty', 'No country found')}
@@ -312,9 +309,7 @@
 							/>
 						</div>
 						<div class="field-row">
-							<label class="field-label" for="journey-destination">{t('journey.banner.destination_country', 'Where do you want to go?')}
-							<HintIcon text={t('journey.banner.destination_hint', 'The country you plan to move to — drives your checklist.')}  />
-</label>
+							<label class="field-label" for="journey-destination">{t('journey.banner.destination_country', 'Where do you want to go?')}</label>
 							<Autocomplete
 								placeholder={t('journey.banner.destination_placeholder', 'e.g. Canada')}
 								emptyMessage={t('create.journey.country_empty', 'No country found')}
@@ -347,8 +342,7 @@
 									allowFreeText
 								/>
 							{:else}
-								<input id="journey-purpose" type="text" class="field-input" placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')} bind:value={purpose} aria-describedby="journey-purpose-hint" />
-								<HintIcon id="journey-purpose-hint" text={t('journey.banner.purpose_hint', 'E.g. study, work, family reunion.')} />
+								<input id="journey-purpose" type="text" class="field-input" placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')} bind:value={purpose} />
 							{/if}
 						</div>
 						<div class="field-row">
@@ -366,8 +360,7 @@
 									allowFreeText
 								/>
 							{:else}
-								<input id="journey-visa" type="text" class="field-input" placeholder={t('journey.banner.visa_placeholder', 'e.g. student')} bind:value={visaRoute} aria-describedby="journey-visa-hint" />
-								<HintIcon id="journey-visa-hint" text={t('journey.banner.visa_hint', 'The visa category you are applying for, if known.')} />
+								<input id="journey-visa" type="text" class="field-input" placeholder={t('journey.banner.visa_placeholder', 'e.g. student')} bind:value={visaRoute} />
 							{/if}
 						</div>
 					</div>
@@ -390,14 +383,12 @@
 									onClear={() => { japaStage = ''; }}
 								/>
 							{:else}
-								<input id="journey-stage" type="text" class="field-input" placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')} bind:value={japaStage} aria-describedby="journey-stage-hint" />
-								<HintIcon id="journey-stage-hint" text={t('journey.banner.stage_hint', 'E.g. researching, preparing documents, waiting on a decision.')} />
+								<input id="journey-stage" type="text" class="field-input" placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')} bind:value={japaStage} />
 							{/if}
 						</div>
 						<div class="field-row">
 							<label class="field-label" for="journey-travel-date">{t('journey.banner.travel_date', 'Planned travel date (optional)')}</label>
-							<input id="journey-travel-date" type="date" class="field-input" bind:value={travelDate} aria-describedby="journey-travel-date-hint" />
-								<HintIcon id="journey-travel-date-hint" text={t('journey.banner.travel_date_hint', 'Your planned departure — used to time checklists and reminders.')} />
+							<input id="journey-travel-date" type="date" class="field-input" bind:value={travelDate} />
 						</div>
 					</div>
 				{:else}

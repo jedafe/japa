@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 	// My Japa Stage. Server-preloaded via GET /me/japa-stage; updates go through
@@ -204,9 +203,7 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="intent" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_intent.label', 'Journey type')}
-			
-			<HintIcon text={t('japa_stage.intent_hint', 'What you are planning — move, visit, study.')}  />
-</label>
+			</label>
 			<AutocompleteSelect
 				id="intent"
 				value={intent}
@@ -218,9 +215,7 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="stage" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.current_stage', 'Current stage')}
-			
-			<HintIcon text={t('japa_stage.stage_hint', 'Where you are in the process right now.')}  />
-</label>
+			</label>
 			<AutocompleteSelect
 				id="stage"
 				value={stage}
@@ -235,9 +230,7 @@
 		<div class="flex flex-col gap-1.5">
 			<label for="dest" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.dest_country', 'Destination country')}
-			
-			<HintIcon text={t('japa_stage.dest_hint', 'The country you are heading to.')}  />
-</label>
+			</label>
 			<Autocomplete
 				placeholder={t('japa_stage.dest_placeholder', 'e.g. Canada')}
 				emptyMessage={t('common.no_results', 'No results found')}

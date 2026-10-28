@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// EditAiKeyDialog — rename a key's label and/or rotate its credential.
 	// Rotating resets status/last_error server-side after a re-verify
 	// (PATCH /me/ai-keys/{id}).
@@ -83,7 +82,6 @@
 				placeholder={t('ai.byok.label_hint', 'e.g. My OpenAI')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ai.byok.label_desc', 'A name so you remember what this key is for.')}</p>
 		</div>
 
 		<div>
@@ -99,7 +97,6 @@
 				placeholder={keyEntry?.api_key_masked ?? 'sk-…'}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			/>
-				<HintIcon text={t('ai.byok.key_hint', 'Stored encrypted — used only for your AI features.')} />
 		</div>
 
 		{#if errorMessage}

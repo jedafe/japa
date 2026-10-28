@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n';
@@ -326,25 +325,19 @@
 						<label for="pf-name" class={labelClass}>
 							{t('deal.form.provider_name', 'Provider name')}
 							<span class="text-red-500">*</span>
-						
-						<HintIcon text={t('deal.form.pf_name_hint', 'The provider or brand name.')}  />
-</label>
+						</label>
 						<input id="pf-name" type="text" bind:value={pf.name} class={inputClass} />
 					</div>
 					<div>
 						<label for="pf-category" class={labelClass}>
 							{t('deal.form.provider_category', 'Category')}
-						
-						<HintIcon text={t('deal.form.pf_category_hint', 'The category this provider operates in.')}  />
-</label>
+						</label>
 						<input id="pf-category" type="text" bind:value={pf.category} class={inputClass} />
 					</div>
 					<div>
 						<label for="pf-base-url" class={labelClass}>
 							{t('deal.form.provider_base_url', 'Base URL')}
-						
-						<HintIcon text={t('deal.form.pf_url_hint', 'The provider homepage — where deals link.')}  />
-</label>
+						</label>
 						<input
 							id="pf-base-url"
 							type="url"
@@ -357,9 +350,7 @@
 				<div>
 					<label for="pf-description" class={labelClass}>
 						{t('deal.form.provider_description', 'Provider description')}
-					
-					<HintIcon text={t('deal.form.pf_desc_hint', 'A short description shown on the provider page.')}  />
-</label>
+					</label>
 					<textarea id="pf-description" bind:value={pf.description} rows={2} class={inputClass}
 					></textarea>
 				</div>

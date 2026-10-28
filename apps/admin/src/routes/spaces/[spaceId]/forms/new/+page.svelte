@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -143,9 +142,7 @@
 		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.details')}</h2>
 		<div class="space-y-4">
 			<div>
-				<label for="form-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_label')} *
-				<HintIcon text={t('spaces.form_name_hint', 'The form name admins and users see.')}  />
-</label>
+				<label for="form-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_label')} *</label>
 				<input
 					id="form-name"
 					type="text"
@@ -156,9 +153,7 @@
 				/>
 			</div>
 			<div>
-				<label for="form-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.description_label')}
-				<HintIcon text={t('spaces.form_desc_hint', 'What this form collects.')}  />
-</label>
+				<label for="form-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.description_label')}</label>
 				<textarea
 					id="form-desc"
 					class="w-full rounded-md border px-3 py-2 text-sm"

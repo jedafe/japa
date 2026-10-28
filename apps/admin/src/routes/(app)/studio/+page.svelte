@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -711,9 +710,7 @@
 				</div>
 			{/if}
 			<div>
-				<label for="studio-persona" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.persona', 'Persona')}
-				<HintIcon text={t('studio.studio_persona_hint', 'The studio persona value.')}  />
-</label>
+				<label for="studio-persona" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.persona', 'Persona')}</label>
 				<AutocompleteSelect
 					id="studio-persona"
 					bind:value={newJob.persona_id}
@@ -722,9 +719,7 @@
 				/>
 			</div>
 			<div>
-				<label for="studio-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.content_type', 'Content Type')}
-				<HintIcon text={t('studio.studio_content_type_hint', 'The type — controls how it is handled.')}  />
-</label>
+				<label for="studio-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.content_type', 'Content Type')}</label>
 				<AutocompleteSelect
 					id="studio-content-type"
 					bind:value={newJob.content_type}
@@ -734,9 +729,7 @@
 				/>
 			</div>
 			<div>
-				<label for="studio-ai-model" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('ai.model_optional', 'Model (optional)')}
-				<HintIcon text={t('studio.studio_ai_model_hint', 'The AI model to use.')}  />
-</label>
+				<label for="studio-ai-model" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('ai.model_optional', 'Model (optional)')}</label>
 				<AutocompleteSelect
 					id="studio-ai-model"
 					bind:value={newJob.ai_model}
@@ -745,9 +738,7 @@
 				/>
 			</div>
 			<div>
-				<label for="studio-voice" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('ai.voice_optional', 'Voice / Tone')}
-				<HintIcon text={t('studio.studio_voice_hint', 'The voice preset for audio output.')}  />
-</label>
+				<label for="studio-voice" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('ai.voice_optional', 'Voice / Tone')}</label>
 				<AutocompleteSelect
 					id="studio-voice"
 					bind:value={newJob.voice_id}
@@ -757,9 +748,7 @@
 			</div>
 			{#if guideCategories.length > 0}
 				<div>
-					<label for="studio-guide-category" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.guide_category', 'Guide Category')}
-					<HintIcon text={t('studio.studio_guide_category_hint', 'The category — drives grouping and filters.')}  />
-</label>
+					<label for="studio-guide-category" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.guide_category', 'Guide Category')}</label>
 					<AutocompleteSelect
 						id="studio-guide-category"
 						bind:value={newJob.guide_category}
@@ -769,15 +758,11 @@
 				</div>
 			{/if}
 			<div>
-				<label for="studio-topic" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.topic_prompt', 'Topic Prompt')}
-				<HintIcon text={t('studio.studio_topic_hint', 'The studio topic value.')}  />
-</label>
+				<label for="studio-topic" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.topic_prompt', 'Topic Prompt')}</label>
 				<textarea id="studio-topic" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="3" bind:value={newJob.topic_prompt} placeholder={t('studio.topic_placeholder', 'Describe what the AI should write about...')}></textarea>
 			</div>
 			<div>
-				<label for="studio-tags" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.target_tags', 'Target Tags (comma-separated)')}
-				<HintIcon text={t('studio.studio_tags_hint', 'The studio tags value.')}  />
-</label>
+				<label for="studio-tags" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.target_tags', 'Target Tags (comma-separated)')}</label>
 				<input id="studio-tags" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.target_tags} placeholder={t('app.studio.ph_tech_ai_tutorial', 'tech, ai, tutorial')} />
 			</div>
 		</div>
@@ -842,15 +827,11 @@
 	>
 		<div class="space-y-3">
 			<div>
-				<label for="batch-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.batch_name', 'Batch Name')}
-				<HintIcon text={t('studio.batch_name_hint', 'A label for this batch job.')}  />
-</label>
+				<label for="batch-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.batch_name', 'Batch Name')}</label>
 				<input id="batch-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBatch.name} placeholder={t('studio.batch_name_ph', 'e.g. UK visa guides — Oct 2026')} />
 			</div>
 			<div>
-				<label for="batch-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.description', 'Description')}
-				<HintIcon text={t('studio.batch_desc_hint', 'What this batch generates.')}  />
-</label>
+				<label for="batch-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.description', 'Description')}</label>
 				<input id="batch-desc" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBatch.description} placeholder={t('studio.batch_desc_ph', 'Optional description')} />
 			</div>
 			<div class="border-t pt-3" style="border-color: var(--color-border)">

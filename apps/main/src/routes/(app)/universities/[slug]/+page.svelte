@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
@@ -826,6 +825,9 @@
 							<span class="block text-sm font-medium text-[var(--color-text)]">
 								{t('university.compare_title', 'Compare with other universities')}
 							</span>
+							<span class="block text-xs text-[var(--color-muted)]">
+								{t('university.compare_hint', 'Add this university to the comparison tool')}
+							</span>
 						</span>
 					</span>
 					<ArrowRight size={18} class="shrink-0 text-[var(--color-text-subtle)] rtl:-scale-x-100" />
@@ -843,6 +845,9 @@
 				<span class="min-w-0">
 					<span class="block text-sm font-medium text-[var(--color-text)]">
 						{t('university.discussions', 'View discussions')}
+					</span>
+					<span class="block text-xs text-[var(--color-muted)]">
+						{t('university.discussions_hint', 'Join the conversation in this space')}
 					</span>
 				</span>
 			</span>

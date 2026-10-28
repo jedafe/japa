@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { X, Search } from 'lucide-svelte';
 	import { searchHits } from '$lib/api/create';
@@ -140,7 +139,6 @@
 				onfocus={onFocus}
 				oninput={(e) => onInput(e.currentTarget.value)}
 				onkeydown={onKeydown}
-				aria-describedby="tag-input-hint"
 				onblur={() => {
 					// Delay to allow click on suggestion
 					setTimeout(() => {

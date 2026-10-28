@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// JapaAIChat — the ADR-130 unified chat surface. One transcript, one
 	// composer, one history: the resolved tool catalog is what differs
 	// between "chat" and "agent" turns (an empty catalog degenerates the
@@ -2282,7 +2281,9 @@
 									{prefsSaved ? t('ai.tools.saved', 'Saved') : t('ai.tools.save_default', 'Use these as my defaults')}
 								</button>
 							{:else}
-								<HintIcon text={t('ai.tools.off_hint', 'Tools are off — messages are answered as plain chat.')} />
+								<p class="text-xs" style="color: var(--color-muted)">
+									{t('ai.tools.off_hint', 'Tools are off — messages are answered as plain chat.')}
+								</p>
 							{/if}
 						</div>
 					{/if}
@@ -2448,7 +2449,9 @@
 					class="mt-1 w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
 					placeholder={t('ai.projects.instructions_placeholder', 'Context the AI applies to every conversation in this project')}
 				></textarea>
-				<HintIcon text={t('ai.projects.instructions_hint', 'Sent with each message in this project’s conversations.')} />
+				<span class="mt-0.5 block text-[10px] text-[var(--color-muted)]">
+					{t('ai.projects.instructions_hint', 'Sent with each message in this project’s conversations.')}
+				</span>
 			</label>
 
 			<div>
@@ -2615,7 +2618,9 @@
 						bind:value={insertTopics}
 						placeholder={t('ai.templates.paste_titles_placeholder', 'Title one\nTitle two\nTitle three')}
 					></textarea>
-					<HintIcon text={t('ai.templates.paste_titles_hint', 'One title per line — each becomes a post.')} />
+					<p class="mt-1 text-[10px]" style="color: var(--color-muted)">
+						{t('ai.templates.paste_titles_hint', 'One title per line — each becomes a post.')}
+					</p>
 				</div>
 			{/if}
 

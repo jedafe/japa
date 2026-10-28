@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { blogAdminApi, contentAdminApi } from '$lib/api';
@@ -143,7 +142,9 @@
 					class="w-full rounded-lg border p-3 text-sm"
 					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				/>
-				<HintIcon text={t('app.blog.slug_hint', 'Leave blank to auto-generate from title')} />
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">
+					{t('app.blog.slug_hint', 'Leave blank to auto-generate from title')}
+				</p>
 			</div>
 
 			<div>

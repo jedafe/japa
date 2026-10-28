@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /gamification — migrated to the EntityPage scaffold.
 	// Two tabs: Badges (full CRUD + award) and Challenges (full CRUD).
@@ -122,14 +121,14 @@
 	// ── Badge EntityPage ───────────────────────────────────────────────────
 
 	const badgeFields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', help: t('gamification.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
-		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text', help: t('gamification.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
-		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea', help: t('gamification.description_hint', 'Shown in detail views — keep it concise.') },
-		{ key: 'trigger_type', label: t('gamification.trigger', 'Trigger Type'), type: 'select', help: t('gamification.trigger_type_hint', 'What event fires this — e.g. signup, post create.'), options: triggerTypeOptions },
-		{ key: 'trigger_value', label: t('gamification.trigger_value', 'Trigger Value'), type: 'number', help: t('gamification.trigger_value_hint', 'The value that must match to fire.') },
-		{ key: 'trigger_activity_key', label: t('gamification.activity_key', 'Activity Key'), type: 'text', help: t('gamification.trigger_activity_key_hint', 'The activity that fires this rule.') },
-		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox', help: t('gamification.is_active_hint', 'Inactive records are hidden or disabled on the site.') },
-		{ key: 'display_order', label: t('gamification.display_order', 'Display Order'), type: 'number', help: t('gamification.display_order_hint', 'Lower numbers appear first.') }
+		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', required: true },
+		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text' },
+		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea' },
+		{ key: 'trigger_type', label: t('gamification.trigger', 'Trigger Type'), type: 'select', options: triggerTypeOptions },
+		{ key: 'trigger_value', label: t('gamification.trigger_value', 'Trigger Value'), type: 'number' },
+		{ key: 'trigger_activity_key', label: t('gamification.activity_key', 'Activity Key'), type: 'text' },
+		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox' },
+		{ key: 'display_order', label: t('gamification.display_order', 'Display Order'), type: 'number' }
 	]);
 
 	const badgeFilters = $derived<FilterDef[]>([
@@ -268,15 +267,15 @@
 	// ── Challenge EntityPage ───────────────────────────────────────────────
 
 	const challengeFields: FieldDef[] = [
-		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', help: t('gamification.name_hint', 'The name shown in admin lists and on the site where public.'), required: true },
-		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text', help: t('gamification.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.') },
-		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea', help: t('gamification.description_hint', 'Shown in detail views — keep it concise.') },
-		{ key: 'activity_key', label: t('gamification.activity', 'Activity Key'), type: 'text', help: t('gamification.activity_key_hint', 'The activity this refers to — e.g. post.create.') },
-		{ key: 'target_count', label: t('gamification.target', 'Target Count'), type: 'number', help: t('gamification.target_count_hint', 'How many items to collect or produce.') },
-		{ key: 'reward_points', label: t('gamification.reward', 'Reward Points'), type: 'number', help: t('gamification.reward_points_hint', 'Points granted for this action.') },
-		{ key: 'starts_at', label: t('gamification.starts', 'Start Date'), type: 'date', help: t('gamification.starts_at_hint', 'When the event starts.') },
-		{ key: 'ends_at', label: t('gamification.ends', 'End Date'), type: 'date', help: t('gamification.ends_at_hint', 'When the event ends — leave blank if open-ended.') },
-		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox', help: t('gamification.is_active_hint', 'Inactive records are hidden or disabled on the site.') }
+		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', required: true },
+		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text' },
+		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea' },
+		{ key: 'activity_key', label: t('gamification.activity', 'Activity Key'), type: 'text' },
+		{ key: 'target_count', label: t('gamification.target', 'Target Count'), type: 'number' },
+		{ key: 'reward_points', label: t('gamification.reward', 'Reward Points'), type: 'number' },
+		{ key: 'starts_at', label: t('gamification.starts', 'Start Date'), type: 'date' },
+		{ key: 'ends_at', label: t('gamification.ends', 'End Date'), type: 'date' },
+		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox' }
 	];
 
 	const challengeFilters = $derived<FilterDef[]>([
@@ -502,9 +501,7 @@
 		<p class="mb-3 text-sm" style="color: var(--color-foreground)">
 			{t('gamification.award_badge_to', 'Award')} <strong>{awardBadgeName}</strong>
 		</p>
-		<label for="award-username" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.username', 'Username')}
-			<HintIcon text={t('gamification.username_hint', 'The member handle — e.g. jane or @jane.')}  />
-</label>
+		<label for="award-username" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.username', 'Username')}</label>
 		<UserAutocomplete
 			id="award-username"
 			bind:value={awardUsername}
@@ -644,28 +641,20 @@
 {#snippet BadgeForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
 	<div class="space-y-3">
 		<div>
-			<label for="badge-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}
-			<HintIcon text={t('gamification.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-</label>
+			<label for="badge-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}</label>
 			<input id="badge-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.name} placeholder={t('app.gamification.ph_top_contributor', 'Top Contributor')} />
 		</div>
 		<div>
-			<label for="badge-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}
-			<HintIcon text={t('gamification.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
-</label>
+			<label for="badge-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}</label>
 			<input id="badge-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.slug} placeholder="top-contributor" />
 		</div>
 		<div>
-			<label for="badge-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.description', 'Description')}
-			<HintIcon text={t('gamification.desc_hint', 'Shown in detail views — keep it concise.')}  />
-</label>
+			<label for="badge-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.description', 'Description')}</label>
 			<textarea id="badge-desc" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="2" bind:value={value.description}></textarea>
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="badge-trigger" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger', 'Trigger Type')}
-			<HintIcon text={t('gamification.trigger_hint', 'What event fires this — e.g. signup, post create.')}  />
-</label>
+				<label for="badge-trigger" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger', 'Trigger Type')}</label>
 				<AutocompleteSelect
 					id="badge-trigger"
 					bind:value={value.trigger_type}
@@ -674,30 +663,22 @@
 				/>
 			</div>
 			<div>
-				<label for="badge-trigger-value" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger_value', 'Trigger Value')}
-			<HintIcon text={t('gamification.trigger_value_hint', 'The value that must match to fire — e.g. the score or count.')}  />
-</label>
+				<label for="badge-trigger-value" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger_value', 'Trigger Value')}</label>
 				<input id="badge-trigger-value" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.trigger_value} />
 			</div>
 		</div>
 		<div>
-			<label for="badge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity_key', 'Activity Key')}
-			<HintIcon text={t('gamification.activity_hint', 'The activity that fires this rule — e.g. post.create.')}  />
-</label>
+			<label for="badge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity_key', 'Activity Key')}</label>
 			<ActivityKeyAutocomplete id="badge-activity" bind:value={value.trigger_activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="badge-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.display_order', 'Display Order')}
-			<HintIcon text={t('gamification.order_hint', 'Ordering position — lower numbers show first.')}  />
-</label>
+				<label for="badge-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.display_order', 'Display Order')}</label>
 				<input id="badge-order" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.display_order} />
 			</div>
 			<div class="flex items-center gap-2 pt-6">
 				<input type="checkbox" id="badge-active" bind:checked={value.is_active} />
-				<label for="badge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}
-			<HintIcon text={t('gamification.active_hint', 'Inactive badges or rules are not awarded.')}  />
-</label>
+				<label for="badge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
 			</div>
 		</div>
 	</div>
@@ -706,63 +687,45 @@
 {#snippet ChallengeForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
 	<div class="space-y-3">
 		<div>
-			<label for="challenge-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}
-			<HintIcon text={t('gamification.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-</label>
+			<label for="challenge-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.name', 'Name')}</label>
 			<input id="challenge-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.name} placeholder={t('app.gamification.ph_30day_posting_streak', '30-Day Posting Streak')} />
 		</div>
 		<div>
-			<label for="challenge-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}
-			<HintIcon text={t('gamification.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
-</label>
+			<label for="challenge-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}</label>
 			<input id="challenge-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.slug} placeholder="30-day-streak" />
 		</div>
 		<div>
-			<label for="challenge-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.description', 'Description')}
-			<HintIcon text={t('gamification.desc_hint', 'Shown in detail views — keep it concise.')}  />
-</label>
+			<label for="challenge-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.description', 'Description')}</label>
 			<textarea id="challenge-desc" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="2" bind:value={value.description}></textarea>
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="challenge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity', 'Activity Key')}
-			<HintIcon text={t('gamification.activity_hint', 'The activity that fires this rule — e.g. post.create.')}  />
-</label>
+				<label for="challenge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity', 'Activity Key')}</label>
 				<ActivityKeyAutocomplete id="challenge-activity" bind:value={value.activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
 			</div>
 			<div>
-				<label for="challenge-target" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.target', 'Target Count')}
-			<HintIcon text={t('gamification.target_hint', 'How many times the action must occur.')}  />
-</label>
+				<label for="challenge-target" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.target', 'Target Count')}</label>
 				<input id="challenge-target" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.target_count} />
 			</div>
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="challenge-reward" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.reward', 'Reward Points')}
-			<HintIcon text={t('gamification.reward_hint', 'Points granted when this unlocks.')}  />
-</label>
+				<label for="challenge-reward" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.reward', 'Reward Points')}</label>
 				<input id="challenge-reward" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.reward_points} />
 			</div>
 			<div>
-				<label for="challenge-starts" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.starts', 'Start Date')}
-			<HintIcon text={t('gamification.starts_hint', 'When the event starts.')}  />
-</label>
+				<label for="challenge-starts" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.starts', 'Start Date')}</label>
 				<input id="challenge-starts" type="date" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.starts_at} />
 			</div>
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label for="challenge-ends" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.ends', 'End Date')}
-			<HintIcon text={t('gamification.ends_hint', 'When the event ends.')}  />
-</label>
+				<label for="challenge-ends" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.ends', 'End Date')}</label>
 				<input id="challenge-ends" type="date" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.ends_at} />
 			</div>
 			<div class="flex items-center gap-2 pt-6">
 				<input type="checkbox" id="challenge-active" bind:checked={value.is_active} />
-				<label for="challenge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}
-			<HintIcon text={t('gamification.active_hint', 'Inactive badges or rules are not awarded.')}  />
-</label>
+				<label for="challenge-active" class="text-sm" style="color: var(--color-foreground)">{t('gamification.active', 'Active')}</label>
 			</div>
 		</div>
 	</div>

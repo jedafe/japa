@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// /blog — migrated to shared components (ActionMenu, FilterPanel, SlideOver,
 	// bulkActionsList). Tabbed page with state actions (publish/unpublish/restore/
 	// reject/delete); keeps page-local Modals for reject (form input) and delete
@@ -475,9 +474,7 @@
 			{t('app.blog.reject_confirm', 'Are you sure you want to reject "{title}"? The author will be notified.').replace('{title}', rejectTarget?.title ?? '')}
 		</p>
 		<div>
-			<label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.blog.reason_optional', 'Reason (optional)')}
-			<HintIcon text={t('blog.reject_reason_hint', 'The reason recorded — shown to the user where noted.')}  />
-</label>
+			<label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.blog.reason_optional', 'Reason (optional)')}</label>
 			<textarea id="reject-reason" bind:value={rejectReason} rows="3" class="w-full rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('app.blog.reject_placeholder', 'Explain why this post was rejected...')}></textarea>
 		</div>
 	</div>

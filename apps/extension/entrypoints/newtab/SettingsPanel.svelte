@@ -128,7 +128,6 @@
 					autocomplete="off"
 					spellcheck="false"
 				/>
-				<span class="field-hint" tabindex="0" aria-label="Field hint">?<span class="field-hint-tip" role="tooltip">The read-only key shown once in Settings → API keys.</span></span>
 			</label>
 			<button class="primary" onclick={save} disabled={saving || !validKey}>
 				{saving ? 'Connecting…' : 'Connect'}
@@ -144,48 +143,3 @@
 		</details>
 	{/if}
 </div>
-
-<style>
-	.field-hint {
-		display: inline-flex;
-		float: inline-end;
-		cursor: help;
-		position: relative;
-		font-size: 0.7rem;
-		font-weight: 600;
-		width: 1rem;
-		height: 1rem;
-		align-items: center;
-		justify-content: center;
-		border-radius: 50%;
-		border: 1px solid currentColor;
-		opacity: 0.6;
-	}
-	.field-hint-tip {
-		position: absolute;
-		z-index: 60;
-		bottom: calc(100% + 8px);
-		left: 50%;
-		transform: translateX(-50%);
-		width: max-content;
-		max-width: 14rem;
-		padding: 0.375rem 0.625rem;
-		border-radius: 0.5rem;
-		background: #111827;
-		color: #f9fafb;
-		font-size: 0.75rem;
-		font-weight: 400;
-		line-height: 1.35;
-		white-space: normal;
-		opacity: 0;
-		visibility: hidden;
-		transition: opacity 0.15s ease;
-		pointer-events: none;
-	}
-	.field-hint:hover .field-hint-tip,
-	.field-hint:focus-visible .field-hint-tip,
-	.field-hint:focus .field-hint-tip {
-		opacity: 1;
-		visibility: visible;
-	}
-</style>

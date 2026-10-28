@@ -74,12 +74,12 @@
 	// api_key is write-only — never returned by the API; leaving it blank on
 	// edit keeps the stored key (COALESCE in the update query).
 	let fields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('coupon_feeds.name', 'Name'), type: 'text', help: t('coupon_feeds.name_hint', 'The name shown in admin lists and on the site where public.'), required: true, placeholder: 'e.g. CouponAPI.org' },
-		{ key: 'source_type', label: t('coupon_feeds.source_type', 'Source Type'), type: 'select', help: t('coupon_feeds.source_type_hint', 'The kind of source this is.'), options: sourceTypeOptions, required: true },
-		{ key: 'endpoint_url', label: t('coupon_feeds.endpoint_url', 'Endpoint URL'), type: 'url', help: t('coupon_feeds.endpoint_url_hint', 'The API endpoint this calls — full URL.'), required: true, placeholder: 'https://couponapi.org/api/getIncrementalFeed/' },
-		{ key: 'api_key', label: t('coupon_feeds.api_key', 'API Key'), type: 'text', help: t('coupon_feeds.api_key_hint', 'Stored encrypted — never shown again after saving.'), placeholder: t('coupon_feeds.api_key_hint', 'Leave blank to keep the stored key') },
-		{ key: 'default_provider_id', label: t('coupon_feeds.default_provider', 'Default Provider'), type: 'autocomplete', help: t('coupon_feeds.default_provider_id_hint', 'The provider used when none is specified.'), placeholder: t('coupon_feeds.default_provider_hint', 'Optional — else matched per offer store'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchProviderOptions, initialFetcher: fetchProviderOptionsInitial, getSelectedLabel: getProviderSelectedLabel },
-		{ key: 'enabled', label: t('coupon_feeds.enabled', 'Enabled'), type: 'checkbox', help: t('coupon_feeds.enabled_hint', 'Turn off to disable without deleting.') }
+		{ key: 'name', label: t('coupon_feeds.name', 'Name'), type: 'text', required: true, placeholder: 'e.g. CouponAPI.org' },
+		{ key: 'source_type', label: t('coupon_feeds.source_type', 'Source Type'), type: 'select', options: sourceTypeOptions, required: true },
+		{ key: 'endpoint_url', label: t('coupon_feeds.endpoint_url', 'Endpoint URL'), type: 'url', required: true, placeholder: 'https://couponapi.org/api/getIncrementalFeed/' },
+		{ key: 'api_key', label: t('coupon_feeds.api_key', 'API Key'), type: 'text', placeholder: t('coupon_feeds.api_key_hint', 'Leave blank to keep the stored key') },
+		{ key: 'default_provider_id', label: t('coupon_feeds.default_provider', 'Default Provider'), type: 'autocomplete', placeholder: t('coupon_feeds.default_provider_hint', 'Optional — else matched per offer store'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchProviderOptions, initialFetcher: fetchProviderOptionsInitial, getSelectedLabel: getProviderSelectedLabel },
+		{ key: 'enabled', label: t('coupon_feeds.enabled', 'Enabled'), type: 'checkbox' }
 	]);
 
 	async function syncNow(row: FeedSource, ctx?: ActionContext) {

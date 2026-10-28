@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /wallet — migrated to shared components (ActionMenu, BulkBar, SlideOver).
 	// Tabbed page (rules + settings + adjust) — not an EntityPage candidate; keeps
@@ -553,9 +552,8 @@
 		<div class="flex items-start gap-2">
 			<input id="rule-one-time" type="checkbox" bind:checked={ruleForm.one_time} class="h-4 w-4 rounded border" />
 			<div class="text-sm">
-				<label for="rule-one-time" class="font-medium">{t('app.wallet.one_time', 'One-time award')}
-				<HintIcon text={t('app.wallet.one_time_hint', 'Only the first matching activity per user awards points.')}  />
-</label>
+				<label for="rule-one-time" class="font-medium">{t('app.wallet.one_time', 'One-time award')}</label>
+				<p class="text-muted-foreground text-xs">{t('app.wallet.one_time_hint', 'Only the first matching activity per user awards points.')}</p>
 			</div>
 		</div>
 	</div>

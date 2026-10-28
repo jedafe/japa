@@ -80,16 +80,15 @@
 		],
 		filters: filterDefs,
 		fields: [
-			{ key: 'title', label: t('common.title', 'Title'), type: 'text', help: t('common.title_hint', 'The title shown in listings and detail views.'), required: true },
+			{ key: 'title', label: t('common.title', 'Title'), type: 'text', required: true },
 			{
 				key: 'commit_type',
 				label: t('roadmap.entries.type', 'Type'),
 				type: 'select',
-			help: t('roadmap.entries.commit_type_hint', 'Conventional-commit type — e.g. feat, fix.'),
 				options: TYPE_OPTIONS
 			},
-			{ key: 'scope', label: t('roadmap.entries.scope', 'Scope'), type: 'text', help: t('roadmap.entries.scope_hint', 'What this permission or key can access.'),},
-			{ key: 'item_id', label: t('roadmap.entries.item_id', 'Roadmap item ID'), type: 'text', help: t('roadmap.entries.item_id_hint', 'The item this is linked to.') }
+			{ key: 'scope', label: t('roadmap.entries.scope', 'Scope'), type: 'text' },
+			{ key: 'item_id', label: t('roadmap.entries.item_id', 'Roadmap item ID'), type: 'text' }
 		],
 		hideCreate: true, // entries come from commit ingest only — no manual create
 		editPermission: 'roadmap.edit',

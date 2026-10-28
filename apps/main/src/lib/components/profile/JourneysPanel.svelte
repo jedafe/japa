@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md (ADR-129)
 	// Trips & other journeys — concurrent/past journey records beside the
@@ -249,7 +248,6 @@
 					onSelect={(item) => (jDest = item.id)}
 					onClear={() => (jDest = '')}
 				/>
-				<HintIcon text={t('journeys.dest_hint', 'Where you plan to move — drives guides and checklists.')} />
 			</div>
 
 			<div class="flex flex-col gap-1.5">
@@ -263,10 +261,8 @@
 					class={inputClass}
 					bind:value={jLabel}
 					placeholder={t('journeys.label_placeholder', 'e.g. Lagos business trip')}
-					aria-describedby="j-label-hint"
 					maxlength="120"
 				/>
-				<HintIcon id="j-label-hint" text={t('journeys.label_hint', 'A name for this journey — e.g. a move, a trip, or an application.')} />
 			</div>
 
 			<div class="grid grid-cols-2 gap-3">
@@ -274,15 +270,13 @@
 					<label for="j-start" class="text-xs font-medium text-[var(--color-text)]">
 						{t('journeys.travel_start', 'Travel start')}
 					</label>
-					<input id="j-start" type="date" class={inputClass} bind:value={jStart} aria-describedby="j-start-hint" />
-					<HintIcon id="j-start-hint" text={t('journeys.start_hint', 'When this trip or journey stage begins.')} />
+					<input id="j-start" type="date" class={inputClass} bind:value={jStart} />
 				</div>
 				<div class="flex flex-col gap-1.5">
 					<label for="j-end" class="text-xs font-medium text-[var(--color-text)]">
 						{t('journeys.travel_end', 'Travel end')}
 					</label>
-					<input id="j-end" type="date" class={inputClass} bind:value={jEnd} min={jStart || undefined} aria-describedby="j-end-hint" />
-					<HintIcon id="j-end-hint" text={t('journeys.end_hint', 'Leave blank if the trip is ongoing.')} />
+					<input id="j-end" type="date" class={inputClass} bind:value={jEnd} min={jStart || undefined} />
 				</div>
 			</div>
 

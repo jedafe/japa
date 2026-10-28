@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { siteName } from '$lib/stores/site.svelte';
 	// /media — migrated to the EntityPage scaffold.
 	// Moderation entity: read-only list (no create from EntityPage) with state actions
@@ -316,8 +315,8 @@
 	// `fields` is required by EntityPage for edit-form seeding; this page is read-only
 	// (no create/edit slide-over), so a minimal metadata field set is declared.
 	const fields: FieldDef[] = [
-		{ key: 'alt_text', label: t('app.media.field_alt_text', 'Alt Text'), type: 'text', help: t('app.media.alt_text_hint', 'Alt text for accessibility — shown to screen readers.'),},
-		{ key: 'status', label: t('app.media.field_status', 'Status'), type: 'text', help: t('app.media.status_hint', 'The record state — controls visibility and actions.') }
+		{ key: 'alt_text', label: t('app.media.field_alt_text', 'Alt Text'), type: 'text' },
+		{ key: 'status', label: t('app.media.field_status', 'Status'), type: 'text' }
 	];
 
 	function formatFileSize(bytes: number): string {
@@ -1161,9 +1160,7 @@
 	{#if uploadModalTab === 'upload'}
 		<div class="space-y-4">
 			<div>
-				<label for="media-upload-files" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_files', 'Files')}
-				<HintIcon text={t('media.media_upload_files_hint', 'The files to upload — multiple allowed.')}  />
-</label>
+				<label for="media-upload-files" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_files', 'Files')}</label>
 				<input
 					id="media-upload-files"
 					type="file"
@@ -1194,9 +1191,7 @@
 				</div>
 			{/if}
 			<div>
-				<label for="media-upload-group" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_user_group', 'User Group (optional)')}
-				<HintIcon text={t('media.media_upload_group_hint', 'Restrict to a user group — optional.')}  />
-</label>
+				<label for="media-upload-group" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
 				<AutocompleteSelect
 					id="media-upload-group"
 					bind:value={uploadUserGroupId}
@@ -1205,9 +1200,7 @@
 				/>
 			</div>
 			<div>
-				<label for="media-upload-alt" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_alt_text', 'Alt Text (optional)')}
-				<HintIcon text={t('media.media_upload_alt_hint', 'Alt text for accessibility — optional.')}  />
-</label>
+				<label for="media-upload-alt" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
 				<input
 					id="media-upload-alt"
 					type="text"
@@ -1363,9 +1356,7 @@
 			<div>
 				<label for="edit-caption" class="mb-1 block text-sm font-medium text-foreground">
 					{t('app.media.field_title', 'Title / Caption')}
-				
-				<HintIcon text={t('media.edit_caption_hint', 'The caption shown with this media.')}  />
-</label>
+				</label>
 				<input
 					id="edit-caption"
 					type="text"
@@ -1377,9 +1368,7 @@
 			<div>
 				<label for="edit-alt" class="mb-1 block text-sm font-medium text-foreground">
 					{t('app.media.field_alt_text', 'Alt Text')}
-				
-				<HintIcon text={t('media.edit_alt_hint', 'Alt text for accessibility.')}  />
-</label>
+				</label>
 				<textarea
 					id="edit-alt"
 					bind:value={editAltText}
@@ -1387,7 +1376,7 @@
 					placeholder={t('app.media.alt_placeholder', 'Accessibility description for screen readers...')}
 					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
 				></textarea>
-				<HintIcon text={t('app.media.alt_hint', 'Used by screen readers and SEO. Describe the image content.')} />
+				<p class="mt-1 text-xs text-muted">{t('app.media.alt_hint', 'Used by screen readers and SEO. Describe the image content.')}</p>
 			</div>
 		</div>
 		<div class="mt-4 flex justify-end gap-2">

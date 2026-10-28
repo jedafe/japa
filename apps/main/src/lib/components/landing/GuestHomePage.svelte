@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
@@ -557,8 +556,6 @@
 		<form class="newsletter-form" onsubmit={subscribe}>
 			<input
 				type="email"
-				aria-label={t('auth.fields.email', 'Email')}
-				aria-describedby="guest-newsletter-hint"
 				bind:value={email}
 				placeholder={t('landing.home.newsletter_placeholder', 'Enter your email address')}
 				class="newsletter-input"

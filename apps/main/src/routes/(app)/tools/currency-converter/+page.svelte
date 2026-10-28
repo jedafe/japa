@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -172,9 +171,7 @@
 						class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 					>
 						{t('fx.amount', 'Amount')}
-					
-						<HintIcon text={t('tools.fx.amount_hint', 'The amount to convert.')}  />
-</label>
+					</label>
 					<div class="mt-1 flex items-center gap-2">
 						<input
 							id="fx-amount"
@@ -199,9 +196,7 @@
 							class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 						>
 							{t('fx.from', 'From')}
-						
-							<HintIcon text={t('tools.fx.from_hint', 'Source currency.')}  />
-</label>
+						</label>
 						<div class="mt-1">
 							<Autocomplete
 								id="fx-from"
@@ -233,9 +228,7 @@
 							class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
 						>
 							{t('fx.to', 'To')}
-						
-							<HintIcon text={t('tools.fx.to_hint', 'Target currency.')}  />
-</label>
+						</label>
 						<div class="mt-1">
 							<Autocomplete
 								id="fx-to"

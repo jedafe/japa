@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { Switch } from 'bits-ui';
 	import { ImagePlus, X, AlertTriangle, CheckCircle2 } from 'lucide-svelte';

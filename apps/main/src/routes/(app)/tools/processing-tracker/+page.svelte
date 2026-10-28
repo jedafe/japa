@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import {
@@ -181,9 +180,7 @@
 			<div>
 				<label for="pt-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 					{t('processing_tracker.destination', 'Destination country')}
-				
-				<HintIcon text={t('tools.pt.dest_hint', 'The country you applied to.')}  />
-</label>
+				</label>
 				<div class="mt-2">
 					<SelectField
 						id="pt-dest"
@@ -205,9 +202,7 @@
 						class="block text-sm font-medium text-[var(--color-text)] mb-1"
 					>
 						{t('processing_tracker.visa_category', 'Visa category')}
-					
-						<HintIcon text={t('tools.pt.category_hint', 'The visa class you applied under.')}  />
-</label>
+					</label>
 					<input
 						id="visa-category"
 						type="text"
@@ -226,9 +221,7 @@
 						class="block text-sm font-medium text-[var(--color-text)] mb-1"
 					>
 						{t('processing_tracker.origin', 'Origin country (optional)')}
-					
-						<HintIcon text={t('tools.pt.origin_hint', 'The country you applied from.')}  />
-</label>
+					</label>
 					<SelectField
 						id="origin-dest"
 						value={originDest}

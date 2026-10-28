@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	// Mentorship request dialog (000824 unification) — the "Request
 	// mentorship" CTA on a listing_kind='mentorship' detail page. Submits a
 	// service booking with intent='inquiry', the mentee's goals as note, and
@@ -252,7 +251,6 @@
 					placeholder={t('mentors.field_goals_placeholder', 'What do you hope to achieve?')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				></textarea>
-					<HintIcon text={t('mentors.goals_hint', 'What you want to get out of the mentorship — be specific.')} />
 			</div>
 
 			<div class="flex flex-col gap-1.5">

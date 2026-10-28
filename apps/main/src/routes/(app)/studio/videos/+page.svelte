@@ -1,5 +1,4 @@
 <script lang="ts">
-	import HintIcon from '$lib/components/ui/HintIcon.svelte';
 	import { t } from '$lib/i18n';
 	import { Clapperboard, CheckCircle2, AlertCircle, Loader2, Video, Search, ListVideo, RefreshCw } from 'lucide-svelte';
 	import { EmptyState, RelativeTime } from '$lib/components/ui';
@@ -235,9 +234,7 @@
 					{#if currentTab.requiresUrl}
 						<label for="source_url" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.source_url', 'YouTube URL')}
-						
-						<HintIcon text={t('studio.videos.url_hint', 'Paste a YouTube video URL to import.')}  />
-</label>
+						</label>
 						<input
 							id="source_url"
 							name="source_url"
@@ -249,9 +246,7 @@
 					{:else}
 						<label for="query" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.query', 'Search keyword')}
-						
-						<HintIcon text={t('studio.videos.query_hint', 'A keyword or phrase to search for.')}  />
-</label>
+						</label>
 						<input
 							id="query"
 							name="query"
@@ -269,9 +264,7 @@
 					<div>
 						<label for="target_username" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.target_username', 'Target username (optional)')}
-						
-						<HintIcon text={t('studio.videos.username_hint', 'The account handle to pull videos from.')}  />
-</label>
+						</label>
 						<input
 							id="target_username"
 							name="target_username"
