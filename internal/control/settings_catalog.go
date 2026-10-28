@@ -432,6 +432,8 @@ var settingsCatalog = map[string]settingMeta{
 	"seo.sitemap.forum_min_replies":       {Type: "int", DefaultValue: "2", Min: 0, Description: "Minimum reply count for forum threads to be included in the sitemap.", Panel: "admin"},
 	"seo.sitemap.question_min_answers":    {Type: "int", DefaultValue: "2", Min: 0, Description: "Minimum answer count for questions (solved forum threads) — set to 0 to include unsolved questions.", Panel: "admin"},
 	"seo.sitemap.discussion_min_comments": {Type: "int", DefaultValue: "0", Min: 0, Description: "Minimum comment count for discussions to be included in the sitemap.", Panel: "admin"},
+	"seo.sitemap.user_min_posts":          {Type: "int", DefaultValue: "1", Min: 0, Description: "Minimum published content count for a user profile to be included in the sitemap (Section 43 quality gate).", Panel: "admin"},
+	"seo.sitemap.tag_min_content":         {Type: "int", DefaultValue: "1", Min: 0, Description: "Minimum content count for a tag page to be included in the sitemap (Section 43 quality gate).", Panel: "admin"},
 	// User profile settings.
 	"users.allowed_avatar_types":       {Type: "csv", DefaultValue: "png,jpg,jpeg,gif,webp,svg", Description: "Comma-separated allowed file extensions for user avatars.", Options: `[{"value":"png","label":"PNG"},{"value":"jpg","label":"JPG"},{"value":"jpeg","label":"JPEG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"}]`, Panel: "admin"},
 	"users.allow_social_login":         {Type: "bool", DefaultValue: "false", Description: "Whether OAuth social login providers are enabled.", Panel: "admin"},
@@ -614,7 +616,7 @@ var settingsCatalog = map[string]settingMeta{
 	// (FeedList, InArticleAd) read these via /site/settings/public.
 	"ads.native_feed_interval":       {Type: "int", DefaultValue: "5", Public: true, Description: "Insert a native ad after every N feed items (0 disables).", Panel: "control"},
 	"ads.in_article_after_paragraph": {Type: "int", DefaultValue: "3", Public: true, Description: "Paragraph index for the first in-article ad.", Panel: "control"},
-	"ads.in_article_max_ads":       {Type: "int", DefaultValue: "2", Public: true, Description: "Max in-article ad units per article.", Panel: "control"},
+	"ads.in_article_max_ads":         {Type: "int", DefaultValue: "2", Public: true, Description: "Max in-article ad units per article.", Panel: "control"},
 	"ads.in_article_every":           {Type: "int", DefaultValue: "6", Public: true, Description: "Repeat in-article ad every N paragraphs (0 = once).", Panel: "control"},
 
 	// Newsletter & Digest (§62, ADR-080)
@@ -818,6 +820,13 @@ var settingsCatalog = map[string]settingMeta{
 	"trending.weight.tag_follower":    {Type: "float", DefaultValue: "1", Description: "Tag trending: follower count multiplier", Panel: "admin"},
 	"trending.weight.views":           {Type: "float", DefaultValue: "1", Description: "Content/user velocity: views multiplier", Panel: "admin"},
 	"trending.weight.votes":           {Type: "float", DefaultValue: "10", Description: "Content/user velocity: votes multiplier", Panel: "admin"},
+	"tips.fee_percent":                {Type: "int", DefaultValue: "0", Min: 0, Max: 50, Description: "Platform fee percentage deducted from credit and fiat tips before crediting the recipient. Ref: Section 125.", Panel: "admin"},
+	"tips.points_daily_limit":         {Type: "int", DefaultValue: "500", Description: "Maximum points a member may tip per UTC day (anti-laundering). Ref: Section 125.", Panel: "admin"},
+	"tips.min_fiat_minor":             {Type: "int", DefaultValue: "100", Description: "Minimum fiat tip amount in the currency's minor units (cents). Ref: Section 125.", Panel: "admin"},
+	"tips.max_fiat_minor":             {Type: "int", DefaultValue: "1000000", Description: "Maximum fiat tip amount in the currency's minor units. Ref: Section 125.", Panel: "admin"},
+	"tips.oc_sync_interval_minutes":   {Type: "int", DefaultValue: "10", Description: "Open Collective contribution poll interval (informational; cron spec lives in SchedulerCronSpecs). Ref: Section 125.", Panel: "admin"},
+	"tips.oc_platform_collective":     {Type: "string", DefaultValue: "", Description: "Platform-level Open Collective collective slug shown on /donate when OC donations are enabled. Ref: Section 125.", Panel: "admin"},
+	"tips.oc_platform_token":          {Type: "string", DefaultValue: "", Sensitive: true, Description: "Platform Open Collective personal token for syncing platform collective contributions (server-only). Ref: Section 125.", Panel: "admin"},
 	"users.username_cooldown_days":    {Type: "int", DefaultValue: "30", Description: "Minimum days between username changes (\u00a750)", Panel: "admin"},
 	"wallet.credit_purchase_enabled":  {Type: "bool", DefaultValue: "true", Description: `Killswitch for credit purchasing. When false, ` + "`" + `POST /wallet/purchase-credits` + "`" + ` returns 403; spending existing credits still works. Ref: Section 58.`, Panel: "admin"},
 	"wallet.default_currency":         {Type: "string", DefaultValue: "USD", Description: "Fallback currency code when user has no country/preference (ISO 4217). Ref: Section 58, ADR-065.", Panel: "admin"},
