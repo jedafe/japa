@@ -166,7 +166,7 @@
 		{
 			key: 'api_config',
 			label: t('remittance.api_config', 'API Config (JSON)'),
-			type: 'textarea',
+			type: 'json',
 			placeholder: '{"api_key": "…"}',
 			help: t('remittance.api_config_hint', 'Provider credentials for API data_source — stored encrypted. Leave empty on edit to keep existing.')
 		},

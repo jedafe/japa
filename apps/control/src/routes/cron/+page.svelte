@@ -12,6 +12,7 @@
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { JsonValueEditor } from '@japaconnect/ui';
 
 	let {} = $props();
 
@@ -671,13 +672,11 @@
 					<label for="cron-payload" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.payload', 'Payload')} (JSON)
 					</label>
-					<textarea
+					<JsonValueEditor
 						id="cron-payload"
 						bind:value={editForm.payload}
-						rows="4"
-						class="border-border-input bg-background text-foreground w-full rounded-5px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 						placeholder={'{"key": "value"}'}
-					></textarea>
+					/>
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">

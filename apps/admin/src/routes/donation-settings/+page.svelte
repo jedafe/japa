@@ -6,7 +6,7 @@
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { onMount } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { tipsAdminApi } from '$lib/api';
 	import { Loader2, CheckCircle2, AlertCircle } from 'lucide-svelte';
 
@@ -30,8 +30,8 @@
 	onMount(async () => {
 		const res = await tipsAdminApi.getDonationSettings();
 		loading = false;
-		if (res.error) {
-			error = res.error.message;
+		if (!res.ok) {
+			error = res.error;
 			return;
 		}
 		settings = (res.data as PlatformSettings) ?? {
@@ -62,8 +62,8 @@
 			oc_collective_slug: settings.oc_collective_slug || null
 		});
 		saving = false;
-		if (res.error) {
-			error = res.error.message;
+		if (!res.ok) {
+			error = res.error;
 			return;
 		}
 		saved = true;
@@ -79,12 +79,13 @@
 
 	{#if loading}
 		<div class="flex justify-center py-10"><Loader2 class="size-6 animate-spin text-muted-foreground" /></div>
-	{:else if settings}
+	{:else}
 		{#if error}
 			<div class="mb-3 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
 				<AlertCircle class="size-4" />{error}
 			</div>
 		{/if}
+		{#if settings}
 		{#if saved}
 			<div class="mb-3 flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-600">
 				<CheckCircle2 class="size-4" />{t('common.saved', 'Saved')}
@@ -138,5 +139,6 @@
 				{#if saving}<Loader2 class="inline size-4 animate-spin" />{:else}{t('common.save', 'Save')}{/if}
 			</button>
 		</div>
+		{/if}
 	{/if}
 </div>

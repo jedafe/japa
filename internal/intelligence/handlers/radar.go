@@ -129,11 +129,16 @@ func housingGuideToRadarItem(h gen.HousingGuide) radarItem {
 	}
 
 	return radarItem{
-		ID:                h.ID,
-		IntelRecordID:     h.IntelRecordID,
-		Type:              "housing",
-		Title:             title,
-		SpaceID:           func() pgtype.UUID { if h.DestinationSpaceID.Valid { return h.DestinationSpaceID }; return h.CitySpaceID }(),
+		ID:            h.ID,
+		IntelRecordID: h.IntelRecordID,
+		Type:          "housing",
+		Title:         title,
+		SpaceID: func() pgtype.UUID {
+			if h.DestinationSpaceID.Valid {
+				return h.DestinationSpaceID
+			}
+			return h.CitySpaceID
+		}(),
 		Description:       h.Tips,
 		ConfidenceOverall: h.ConfidenceOverall,
 		TrustLevel:        0,
@@ -331,7 +336,6 @@ func normalizeRadarItemType(v string) string {
 		return v
 	}
 }
-
 
 // resolveRadarCountryNames replaces each item's raw extraction text
 // ("USA", "Japan") with the canonical space name ("United States",
@@ -565,55 +569,55 @@ func (h *Handlers) radarFollowedDomains(spaceIDs []pgtype.UUID, since pgtype.Tim
 	}
 
 	add("scholarship", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
-			rows, err := h.intelStores.ListScholarshipsBySpaces(ctx, gen.ListScholarshipsBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
-			})
-			if err != nil {
-				return nil, err
-			}
-
-			return convertRadarRows(rows, scholarshipToRadarItem), nil
+		rows, err := h.intelStores.ListScholarshipsBySpaces(ctx, gen.ListScholarshipsBySpacesParams{
+			Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 		})
-		add("job", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
-			rows, err := h.intelStores.ListIntelJobsBySpaces(ctx, gen.ListIntelJobsBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
-			})
-			if err != nil {
-				return nil, err
-			}
+		if err != nil {
+			return nil, err
+		}
 
-			return convertRadarRows(rows, jobToRadarItem), nil
+		return convertRadarRows(rows, scholarshipToRadarItem), nil
+	})
+	add("job", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListIntelJobsBySpaces(ctx, gen.ListIntelJobsBySpacesParams{
+			Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 		})
-		add("visa", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
-			rows, err := h.intelStores.ListVisaRoutesBySpaces(ctx, gen.ListVisaRoutesBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
-			})
-			if err != nil {
-				return nil, err
-			}
+		if err != nil {
+			return nil, err
+		}
 
-			return convertRadarRows(rows, visaRouteToRadarItem), nil
+		return convertRadarRows(rows, jobToRadarItem), nil
+	})
+	add("visa", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListVisaRoutesBySpaces(ctx, gen.ListVisaRoutesBySpacesParams{
+			Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 		})
-		add("housing", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
-			rows, err := h.intelStores.ListHousingGuidesBySpaces(ctx, gen.ListHousingGuidesBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
-			})
-			if err != nil {
-				return nil, err
-			}
+		if err != nil {
+			return nil, err
+		}
 
-			return convertRadarRows(rows, housingGuideToRadarItem), nil
+		return convertRadarRows(rows, visaRouteToRadarItem), nil
+	})
+	add("housing", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListHousingGuidesBySpaces(ctx, gen.ListHousingGuidesBySpacesParams{
+			Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 		})
-		add("cost_of_living", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
-			rows, err := h.intelStores.ListComparisonItemsBySpaces(ctx, gen.ListComparisonItemsBySpacesParams{
-				Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
-			})
-			if err != nil {
-				return nil, err
-			}
+		if err != nil {
+			return nil, err
+		}
 
-			return convertRadarRows(rows, comparisonItemToRadarItem), nil
+		return convertRadarRows(rows, housingGuideToRadarItem), nil
+	})
+	add("cost_of_living", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListComparisonItemsBySpaces(ctx, gen.ListComparisonItemsBySpacesParams{
+			Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
 		})
+		if err != nil {
+			return nil, err
+		}
+
+		return convertRadarRows(rows, comparisonItemToRadarItem), nil
+	})
 
 	return out
 }

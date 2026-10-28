@@ -10,6 +10,7 @@
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Bot, Plus, Trash2, Activity, Pencil, Pause, Play, Eye } from 'lucide-svelte';
 	import { api, apiRaw } from '$lib/api';
+	import { JsonValueEditor } from '@japaconnect/ui';
 	import type { BulkAction } from '$lib/components/ui/data-table';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
@@ -756,19 +757,16 @@
 							</div>
 							<div class="sm:col-span-2">
 								<label for={`persona-action-budget-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.action_budget', 'Action Budget (JSON)')}</label>
-							<textarea
+							<JsonValueEditor
 								id={`persona-action-budget-${idx}`}
-								class="w-full rounded-md border px-3 py-1.5 text-sm font-mono"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-								rows="2"
-								value={JSON.stringify(persona.activity_policy!.action_budget)}
-								oninput={(e) => {
+								value={JSON.stringify(persona.activity_policy!.action_budget ?? {})}
+								onchange={(json) => {
 									try {
-										persona.activity_policy!.action_budget = JSON.parse((e.target as HTMLTextAreaElement).value || '{}');
+										persona.activity_policy!.action_budget = json.trim() ? JSON.parse(json) : {};
 									} catch { /* leave unchanged on parse error */ }
 								}}
 								placeholder={'{"comment": 4, "react": 20}'}
-							></textarea>
+							/>
 							<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('personas.action_budget_hint', 'Map of action type to max count per day.')}</p>
 						</div>
 						<div class="sm:col-span-2">
@@ -1018,19 +1016,16 @@
 						</div>
 						<div class="sm:col-span-2">
 							<label for="edit-persona-action-budget" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.action_budget', 'Action Budget (JSON)')}</label>
-							<textarea
+							<JsonValueEditor
 								id="edit-persona-action-budget"
-								class="w-full rounded-md border px-3 py-1.5 text-sm font-mono"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-								rows="2"
-								value={JSON.stringify(editForm.activity_policy.action_budget)}
-								oninput={(e) => {
+								value={JSON.stringify(editForm.activity_policy.action_budget ?? {})}
+								onchange={(json) => {
 									try {
-										editForm.activity_policy!.action_budget = JSON.parse((e.target as HTMLTextAreaElement).value || '{}');
+										editForm.activity_policy!.action_budget = json.trim() ? JSON.parse(json) : {};
 									} catch { /* leave unchanged on parse error */ }
 								}}
 								placeholder={'{"comment": 4, "react": 20}'}
-							></textarea>
+							/>
 							<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('personas.action_budget_hint', 'Map of action type to max count per day.')}</p>
 						</div>
 						<div class="sm:col-span-2">

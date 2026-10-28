@@ -12,17 +12,22 @@ package roadmap
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/spam"
 )
 
 // Handlers holds dependencies for roadmap HTTP handlers.
@@ -30,12 +35,17 @@ type Handlers struct {
 	Service  *Service
 	SiteURL  string // set at wiring time — used by the releases RSS feed
 	SiteName string
+	spam     *spam.SpamPipeline
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
 }
+
+// SetSpamPipeline wires the §41 multi-layer spam pipeline — submissions run
+// through it before reaching the pending queue (§113). Optional; nil skips.
+func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) { h.spam = p }
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -258,6 +268,32 @@ func (h *Handlers) CreateSubmission(w http.ResponseWriter, r *http.Request) {
 	if input.CategoryID != "" {
 		if err := categoryID.Scan(input.CategoryID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category_id", "Invalid category_id format")
+			return
+		}
+	}
+
+	// §113: submissions pass the spam pipeline + form_submission rate tier
+	// (rate limit is middleware at the route). A blocked submission 403s.
+	// The body arrives base64-encoded TipTap JSON — decode it for scanning
+	// or the censored-words/link layers would see opaque base64.
+	spamBody := input.Body
+	if decoded, derr := base64.StdEncoding.DecodeString(input.Body); derr == nil {
+		if trimmed := strings.TrimSpace(string(decoded)); strings.HasPrefix(trimmed, "{") {
+			spamBody = trimmed
+		}
+	}
+	if h.spam != nil {
+		res, err := h.spam.Check(r.Context(), spam.SpamCheckRequest{
+			Content:    strings.Join([]string{input.Title, input.Summary, spamBody}, " "),
+			UserID:     user.UserID,
+			IP:         clientip.FromRequest(r),
+			UserType:   "existing",
+			EntityType: "roadmap_submission",
+		})
+		if err != nil {
+			slog.Warn("roadmap submission spam check failed", "error", err)
+		} else if res.Blocked {
+			errpkg.WriteError(w, http.StatusForbidden, "submission_blocked", "Submission blocked by safety filters")
 			return
 		}
 	}

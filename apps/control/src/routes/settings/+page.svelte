@@ -19,6 +19,7 @@
 	import CsvRepeater from '$lib/components/settings/CsvRepeater.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { JsonValueEditor } from '@japaconnect/ui';
 	import { categoryIcons, categoryNames, sensitiveKeys as categorySensitiveKeys, textareaKeys as categoryTextareaKeys, uploadKeys as categoryUploadKeys, colorKeys as categoryColorKeys } from '$lib/components/settings/categoryConfig';
 	import {
 		Settings,
@@ -1002,10 +1003,10 @@
 		if (isUploadKey(setting.key)) return 'upload';
 		if (isColorKey(setting.key)) return 'color';
 		if (setting.type === 'int' || setting.type === 'float') return 'number';
-		// JSON-typed settings without a structured editor (e.g.
-		// geo_personalization.intent_matrix) need a multi-line editor —
-		// a single-line input cannot hold large JSON documents.
-		if (setting.type === 'json') return 'textarea';
+		// JSON-typed settings without a dedicated structured editor (e.g.
+		// geo_personalization.intent_matrix) use the generic JsonValueEditor —
+		// objects render as key/value rows, arrays as repeaters.
+		if (setting.type === 'json') return 'json-editor';
 		return 'text';
 	}
 
@@ -1593,6 +1594,22 @@
 										onSelect={(item) => addUuidToSetting(setting.key, item.id)}
 									/>
 								</div>
+							{:else if componentType === 'json-editor'}
+									<div class="w-64">
+										<JsonValueEditor
+											id="setting-{setting.key}"
+											value={setting.value ?? ''}
+											disabled={isSaving}
+											onchange={(json) => {
+												const val = json.trim();
+												// Clearing an array-typed setting restores '[]' so the
+												// stored shape stays consistent with its seed.
+												if (val === '' && setting.value?.startsWith('[')) updateSetting(setting.key, '[]');
+												else updateSetting(setting.key, val);
+											}}
+										/>
+									</div>
+
 							{:else if componentType === 'textarea'}
 									<textarea
 										id="setting-{setting.key}"
@@ -1911,6 +1928,20 @@
 												options={getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value))}
 												placeholder={t('settings.add_placeholder', 'Add...')}
 												class="{selectTriggerClasses} w-full"
+											/>
+										</div>
+
+									{:else if componentType === 'json-editor'}
+										<div class="w-64">
+											<JsonValueEditor
+												id="setting-{setting.key}"
+												value={setting.value ?? ''}
+												disabled={isSaving}
+												onchange={(json) => {
+													const val = json.trim();
+													if (val === '' && setting.value?.startsWith('[')) updateSetting(setting.key, '[]');
+													else updateSetting(setting.key, val);
+												}}
 											/>
 										</div>
 

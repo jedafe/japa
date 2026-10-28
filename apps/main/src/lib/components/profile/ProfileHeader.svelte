@@ -12,13 +12,15 @@
 	interface Props {
 		user: PublicUser;
 		isOwnProfile?: boolean;
+		/** True when the viewed user follows the viewer back — "Follows you" chip. */
+		followedBy?: boolean;
 		followers?: FollowListItem[];
 		following?: FollowListItem[];
 		children?: Snippet;
 		/** Items rendered inside the cover overflow menu (other profiles). */
 		menuItems?: Snippet;
 	}
-	let { user, isOwnProfile = false, followers = [], following = [], children, menuItems }: Props = $props();
+	let { user, isOwnProfile = false, followedBy = false, followers = [], following = [], children, menuItems }: Props = $props();
 
 	let followersModalOpen = $state(false);
 	let followingModalOpen = $state(false);
@@ -103,7 +105,12 @@
 								<BadgeCheck size={18} class="shrink-0 text-[var(--color-primary)]" />
 							{/if}
 						</div>
-						<p class="truncate text-sm text-[var(--color-muted)]">@{user.username}</p>
+						<p class="truncate text-sm text-[var(--color-muted)]">
+							@{user.username}
+							{#if followedBy}
+								<span class="ml-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium">{t('profile.follows_you', 'Follows you')}</span>
+							{/if}
+						</p>
 					</div>
 				</div>
 
@@ -122,7 +129,12 @@
 						<BadgeCheck size={18} class="text-[var(--color-primary)]" />
 					{/if}
 				</div>
-				<p class="text-sm text-[var(--color-muted)]">@{user.username}</p>
+				<p class="text-sm text-[var(--color-muted)]">
+					@{user.username}
+					{#if followedBy}
+						<span class="ml-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium">{t('profile.follows_you', 'Follows you')}</span>
+					{/if}
+				</p>
 			</div>
 		</div>
 

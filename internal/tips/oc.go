@@ -33,7 +33,7 @@ func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUI
 		return nil, ErrInvalidLink
 	}
 
-		var encrypted *string
+	var encrypted *string
 	if token != "" {
 		if s.oc == nil {
 			return nil, ErrOCNotConnected

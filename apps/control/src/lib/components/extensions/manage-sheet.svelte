@@ -63,6 +63,7 @@
 		phase: string;
 		rollout: number;
 		showOnRoadmap: boolean;
+		internal: boolean;
 		surfaces: Record<SurfaceName, DraftSurface>;
 	}
 
@@ -72,6 +73,8 @@
 	let deleting = $state(false);
 	let saveError = $state('');
 	let expanded = $state<Set<string>>(new Set());
+	let dirtySurfaces = $state<Set<string>>(new Set());
+	let storedSurfaces = $state<Set<string>>(new Set());
 
 	// Option lists — fetched once (Rule 16: audience/geo vocabularies come
 	// from the API, never hardcoded). Groups require admin.rbac.manage on
@@ -142,7 +145,7 @@
 		// Surface a retry hint when any vocabulary failed to load — an empty
 		// audience/country list otherwise looks like "no data".
 		if (!groupsLoaded || !permsLoaded || !countriesLoaded) {
-			optionsError = t('extensions.options_error', 'Some option lists failed to load — reopen the panel to retry.');
+			optionsError = t('extensions.options_error', 'Some option lists failed to load.');
 		}
 	}
 
@@ -163,10 +166,13 @@
 			phase: e.phase ?? (e.enabled ? 'shipped' : 'planned'),
 			rollout: e.rollout_percentage ?? 100,
 			showOnRoadmap: !!e.show_on_roadmap,
+			internal: !!e.internal,
 			surfaces
 		};
 		saveError = '';
 		expanded = new Set();
+		dirtySurfaces = new Set();
+		storedSurfaces = new Set(Object.keys(e.stored_surfaces ?? {}));
 	}
 
 	// Seed the draft when the sheet opens for an extension (or when a
@@ -221,19 +227,24 @@
 
 	function setState(surface: string, state: SurfaceState) {
 		const r = ruleFor(surface);
-		if (r) r.state = state;
+		if (r) {
+			r.state = state;
+			dirtySurfaces = new Set([...dirtySurfaces, surface]);
+		}
 	}
 
 	function addAudience(surface: string, item: AutocompleteItem) {
 		const r = ruleFor(surface);
 		if (!r || r.audience.includes(item.id)) return;
 		r.audience = [...r.audience, item.id];
+		dirtySurfaces = new Set([...dirtySurfaces, surface]);
 	}
 
 	function removeAudience(surface: string, entry: string) {
 		const r = ruleFor(surface);
 		if (!r) return;
 		r.audience = r.audience.filter((a) => a !== entry);
+		dirtySurfaces = new Set([...dirtySurfaces, surface]);
 	}
 
 	function addGeo(surface: string, field: 'geo_allow' | 'geo_deny', item: AutocompleteItem) {
@@ -242,12 +253,14 @@
 		const code = item.id.trim().toUpperCase();
 		if (!/^[A-Z]{2}$/.test(code) || r[field].includes(code)) return;
 		r[field] = [...r[field], code];
+		dirtySurfaces = new Set([...dirtySurfaces, surface]);
 	}
 
 	function removeGeo(surface: string, field: 'geo_allow' | 'geo_deny', code: string) {
 		const r = ruleFor(surface);
 		if (!r) return;
 		r[field] = r[field].filter((c) => c !== code);
+		dirtySurfaces = new Set([...dirtySurfaces, surface]);
 	}
 
 	function optionLabel(options: Option[], value: string): string {
@@ -302,9 +315,11 @@
 		const candidates = groupOptions.some((g) => g.value === 'group:beta_testers')
 			? ['group:beta_testers']
 			: [];
-		const staff = groupOptions.find((g) => /staff|admin/i.test(g.label) || g.value === 'group:admin')?.value;
-		if (staff) candidates.push(staff);
+		for (const s of ['group:staff', 'group:admin', 'group:super_admin']) {
+			if (slugs.has(s)) { candidates.push(s); break; }
+		}
 		r.audience = candidates.filter((c) => slugs.has(c));
+		dirtySurfaces = new Set([...dirtySurfaces, surface]);
 	}
 
 	function presetApplyAll(surface: string) {
@@ -319,6 +334,7 @@
 				geo_deny: [...src.geo_deny]
 			};
 		}
+		dirtySurfaces = new Set(SURFACES);
 	}
 
 	function restrictionSummary(r: DraftSurface): string {
@@ -349,9 +365,17 @@
 		saving = true;
 		saveError = '';
 
+		// Only send surfaces the operator touched or that carry a
+		// non-default rule — untouched plain-visible surfaces stay absent so
+		// registry DefaultSurfaces keeps applying (§42 surface merge).
 		const surfaces: Record<string, { state: string; audience?: string[]; geo_allow?: string[]; geo_deny?: string[] }> = {};
 		for (const s of SURFACES) {
 			const r = draft.surfaces[s];
+			const nonDefault = r.state !== 'visible' || r.audience.length > 0 || r.geo_allow.length > 0 || r.geo_deny.length > 0;
+			// Stored rules are always re-sent — omitting them on a whole-map
+			// replace would silently revert an explicit override to the
+			// registry default (e.g. stored visible over a hidden default).
+			if (!dirtySurfaces.has(s) && !nonDefault && !storedSurfaces.has(s)) continue;
 			surfaces[s] = {
 				state: r.state,
 				...(r.audience.length ? { audience: r.audience } : {}),
@@ -365,6 +389,7 @@
 			description: draft.description.trim(),
 			phase: draft.phase,
 			show_on_roadmap: draft.showOnRoadmap,
+			internal: draft.internal,
 			rollout_percentage: draft.rollout,
 			surfaces: surfaces as Extension['surfaces']
 		};
@@ -379,6 +404,7 @@
 				description: ext.description,
 				phase: ext.phase,
 				show_on_roadmap: ext.show_on_roadmap,
+				internal: ext.internal,
 				rollout_percentage: ext.rollout_percentage,
 				surfaces: ext.surfaces
 			})
@@ -507,6 +533,21 @@
 						<p class="text-muted-foreground mt-3 text-xs">
 							{ext.category}
 						</p>
+						<div class="mt-4 flex items-center justify-between gap-4">
+							<div class="min-w-0">
+								<span class="text-foreground block text-sm font-medium">
+									{t('extensions.field_internal', 'Internal flag')}
+								</span>
+								<p class="text-muted-foreground mt-0.5 text-xs">
+									{t('extensions.internal_hint', 'Hide from the public flag map — gating still applies.')}
+								</p>
+							</div>
+							<Switch
+								id="ext-manage-internal"
+								checked={draft?.internal ?? false}
+								onCheckedChange={(checked) => { if (draft) draft.internal = checked; }}
+							/>
+						</div>
 					</section>
 
 					<!-- Rollout -->
@@ -533,13 +574,13 @@
 							<input
 								id="ext-manage-rollout"
 								type="number"
-								min="0"
+								min="1"
 								max="100"
 								bind:value={draft.rollout}
 								class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus mt-1 block w-28 rounded-9px border px-3 py-2 text-sm transition-colors"
 							/>
 							<p class="text-muted-foreground mt-1 text-xs">
-								{t('extensions.rollout_hint', '100 = fully on, 0 = off, 1-99 = gradual rollout.')}
+								{t('extensions.rollout_hint', '1-99 = % of users in rollout, 100 = fully on — disable to turn off.')}
 							</p>
 						</div>
 					</section>
@@ -758,6 +799,9 @@
 				</div>
 
 				<div class="border-border-card border-t px-5 py-3">
+					{#if optionsError}
+						<p class="text-destructive mb-2 text-sm">{optionsError} <button type="button" class="underline" onclick={loadOptions}>{t('common.retry', 'Retry')}</button></p>
+					{/if}
 					{#if saveError}
 						<p class="text-destructive mb-2 text-sm">{saveError}</p>
 					{/if}

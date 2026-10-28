@@ -235,7 +235,7 @@
 			{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
 			{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
 			{ key: 'apostille_required', label: t('common.apostille', 'Apostille Required'), type: 'checkbox' },
-			{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'textarea' }
+			{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'json' }
 		];
 	});
 

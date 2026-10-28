@@ -91,7 +91,7 @@
 		{
 			key: 'structure',
 			label: t('sop_generator.structure', 'Structure (JSON)'),
-			type: 'textarea',
+			type: 'json',
 			required: true,
 			placeholder: '[{"section":"intro","prompt_hint":"Hook + intent","max_words":120}]',
 			help: t('sop_generator.structure_help', 'Array of {section, prompt_hint, max_words} objects (§110)')

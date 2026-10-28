@@ -19,8 +19,8 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
-// flagCacheTTL is the TTL for both the in-memory L1 cache and the Valkey L2
-// cache. Per Section 42, feature flag caches use a 5-minute TTL.
+// flagCacheTTL is the Valkey L2 cache TTL. Per Section 42, feature flag
+// caches use a 5-minute TTL; the in-memory L1 layer evicts after 60s.
 const flagCacheTTL = 5 * time.Minute
 
 // flagCacheKeyPrefix namespaces all feature flag cache keys in Valkey.
@@ -159,16 +159,16 @@ func (c *Checker) fireConfigChanged(ctx context.Context, key string, cfg FlagCon
 func (c *Checker) IsEnabled(ctx context.Context, key string) bool {
 	// Ref: .jeos/sections/42-feature-flags.md (removal in progress).
 	// Global resolution only — surface/geo/audience overlays live in EvalFlag.
-	enabled, _ := c.resolveFlag(ctx, key)
+	enabled, config := c.resolveFlag(ctx, key)
 
-	return enabled
+	return effectiveEnabled(c.bucketID(ctx, CallerScope{}), key, enabled, flagConfigFrom(config))
 }
 
 // resolveFlag is the shared L1 → L2 → DB lookup behind IsEnabled and EvalFlag.
-// It returns the rollout-effective enabled bool plus the raw config blob the
-// scoped evaluator needs for surface/geo/audience rules. On transient DB
-// errors the registry default is returned but NOT cached — the next request
-// retries the DB.
+// It returns the raw stored enabled bool plus the raw config blob — rollout
+// bucketing is applied by each eval path with the caller's bucket identity.
+// On transient DB errors the registry default is returned but NOT cached —
+// the next request retries the DB.
 func (c *Checker) resolveFlag(ctx context.Context, key string) (bool, []byte) {
 	// L1 — in-memory (hot path)
 	if cached := c.cacheGet(key); cached != nil {
@@ -195,14 +195,13 @@ func (c *Checker) resolveFlag(ctx context.Context, key string) (bool, []byte) {
 		return enabled, nil
 	}
 
-	// Success or ErrNoRows (legitimate "flag not set" → use default).
-	// The cached enabled value is rollout-effective; config stays raw so
-	// EvalFlag can apply surface/geo/audience rules on top.
-	effective := effectiveEnabled(c.rolloutID(ctx), key, enabled, config)
-	c.cacheSet(key, effective, config)
-	c.valkeySet(ctx, key, effective, config)
+	// Success or ErrNoRows (legitimate "flag not set" → use default). The
+	// raw enabled column is cached — rollout bucketing is applied per-caller
+	// by each eval path (a per-user verdict cannot be shared under one key).
+	c.cacheSet(key, enabled, config)
+	c.valkeySet(ctx, key, enabled, config)
 
-	return effective, config
+	return enabled, config
 }
 
 // QueryEnabled reads the flag's effective enabled state straight from the DB,
@@ -233,7 +232,7 @@ func (c *Checker) queryEnabled(ctx context.Context, key string) (bool, error) {
 		return enabled, err
 	}
 
-	return effectiveEnabled(c.rolloutID(ctx), key, enabled, config), nil
+	return effectiveEnabled(c.rolloutID(ctx), key, enabled, flagConfigFrom(config)), nil
 }
 
 // queryFlagRow reads the raw feature_flags row for a key. Returns
@@ -268,21 +267,32 @@ func (c *Checker) queryFlagRow(ctx context.Context, key string) (bool, []byte, e
 // 0 and 100 (exclusive), a deterministic hash decides whether this platform
 // falls inside the rollout cohort. The same flag always sees the same outcome
 // until the percentage or enabled state changes.
-func effectiveEnabled(id, key string, enabled bool, config []byte) bool {
+func effectiveEnabled(id, key string, enabled bool, cfg FlagConfig) bool {
 	if !enabled {
 		return false
 	}
 
-	var cfg FlagConfig
-	if len(config) > 0 {
-		if jsonErr := json.Unmarshal(config, &cfg); jsonErr == nil {
-			if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
-				return hashInRollout(id, key, cfg.RolloutPercentage)
-			}
-		}
+	if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
+		return hashInRollout(id, key, cfg.RolloutPercentage)
 	}
 
 	return true
+}
+
+// flagConfigFrom decodes a raw feature_flags.config blob once per eval —
+// callers pass the parsed FlagConfig onward so hot paths unmarshal a
+// row's config a single time.
+func flagConfigFrom(config []byte) FlagConfig {
+	if len(config) == 0 {
+		return FlagConfig{}
+	}
+
+	var cfg FlagConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return FlagConfig{}
+	}
+
+	return cfg
 }
 
 // hashInRollout deterministically decides whether a (ID, key) pair falls
@@ -293,6 +303,44 @@ func hashInRollout(id, key string, percentage int) bool {
 	bucket := int(h % 100) // #nosec
 
 	return bucket < percentage
+}
+
+// bucketID resolves the bucketing identity for rollout evaluation: the
+// caller's user UUID when authenticated (per-user gradual rollout), else
+// the install's platform identifier — anonymous and global checks keep the
+// historical per-platform bucket.
+func (c *Checker) bucketID(ctx context.Context, sc CallerScope) string {
+	if sc.SubjectID != "" {
+		return "u:" + sc.SubjectID
+	}
+
+	return c.rolloutID(ctx)
+}
+
+// ConfigIsInternal reports whether a raw config blob carries
+// internal:true — the flag is excluded from public flag projections.
+func ConfigIsInternal(config []byte) bool {
+	if len(config) == 0 {
+		return false
+	}
+
+	var cfg FlagConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return false
+	}
+
+	return cfg.Internal
+}
+
+// DisplayPhase resolves the phase a flag may honestly report: an explicit
+// "shipped" phase on a disabled flag floors to "testing" — a flag that is
+// off cannot be live anywhere.
+func DisplayPhase(phase string, enabled bool) string {
+	if !enabled && phase == "shipped" {
+		return "testing"
+	}
+
+	return phase
 }
 
 // fnvHash64 is a small FNV-1a 64-bit implementation used for deterministic
@@ -589,7 +637,7 @@ func (c *Checker) GetAllEnabled(ctx context.Context) map[string]bool {
 	// Postgres hit). On DB error AllFlagRows returns nil and the defaults
 	// above stand — same fallback as the old inline batch query.
 	for _, row := range c.AllFlagRows(ctx) {
-		result[row.Key] = effectiveEnabled(c.rolloutID(ctx), row.Key, row.Enabled, row.Config)
+		result[row.Key] = effectiveEnabled(c.rolloutID(ctx), row.Key, row.Enabled, flagConfigFrom(row.Config))
 	}
 
 	return result
@@ -646,6 +694,11 @@ type FlagConfig struct {
 	// ShowOnRoadmap opts the flag into the public roadmap projection; the
 	// roadmap sync hook derives the linked item's status from Phase.
 	ShowOnRoadmap bool `json:"showOnRoadmap"`
+	// Internal excludes the flag from the public projections — GET
+	// /feature-flags and /feature-flags/details[/{key}]. Backend gating
+	// (Gate/EvalFlag) still enforces it, so operators can keep custom or
+	// in-development flags reachable-but-unlisted.
+	Internal bool `json:"internal"`
 	// Surfaces maps a surface name (one of Surfaces) to its visibility rule.
 	// A surface absent from the map behaves as {state:"visible"} — everyone,
 	// all countries. A nil map means all surfaces visible.
@@ -671,7 +724,7 @@ var Phases = []string{"planned", "in_progress", "testing", "shipped", "archived"
 // Surfaces enumerates the client surfaces a flag may carry per-surface rules
 // for. "extension" is the browser-extension surface, not the control-panel
 // extensions catalog.
-var Surfaces = []string{"main", "tools", "academy", "docs", "mobile", "admin", "extension", "desktop"}
+var Surfaces = []string{"main", "tools", "academy", "docs", "mobile", "admin", "extension", "desktop", "control"}
 
 // ValidPhase reports whether p is a known rollout phase.
 func ValidPhase(p string) bool {

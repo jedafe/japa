@@ -70,8 +70,9 @@
 			error = t('tips.invalid_amount', 'Enter a valid amount');
 			return;
 		}
-		// Fiat: convert major units → minor units (integer math, floor).
-		const amt = isFiat ? Math.floor(raw * Math.pow(10, exponent)) : Math.floor(raw);
+		// Fiat: convert major units → minor units. Math.round (not floor) —
+		// 9.99*100 is 998.9999… in float64, floor would shave a unit off.
+		const amt = isFiat ? Math.round(raw * Math.pow(10, exponent)) : Math.floor(raw);
 		if (amt <= 0) {
 			error = t('tips.invalid_amount', 'Enter a valid amount');
 			return;

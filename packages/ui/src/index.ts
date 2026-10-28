@@ -29,6 +29,10 @@ export { default as LinkPreviewCard } from './editor/LinkPreviewCard.svelte';
 // §34 media, ADR-034). Hosts inject fetchItems/onUpload/stock API callbacks.
 export { default as MediaPickerModal } from './media/MediaPickerModal.svelte';
 export { default as MediaLightbox } from './media/MediaLightbox.svelte';
+// Structured JSON editor — replaces raw JSON textareas in admin/control
+// configuration forms with object rows, array repeaters and typed inputs.
+export { default as JsonValueEditor } from './json/JsonValueEditor.svelte';
+export type { JsonEditorLabels } from './json/types';
 export { convertImageToModernFormat } from './media/imageConvert';
 export { buildEditorExtensions } from './editor/extensions';
 export type { EditorExtensionOptions } from './editor/extensions';

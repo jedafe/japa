@@ -472,13 +472,23 @@ func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	following, err := h.follows.ToggleFollow(r.Context(), user.UserID, follows.EntityTypeTag, tag.ID)
+	// POST = ensure-follow, DELETE = ensure-unfollow (method semantics
+	// per api-routes-catalog); a raw toggle inverts state on repeats.
+	var following bool
+
+	var err error
+	if r.Method == http.MethodDelete {
+		following, err = h.follows.EnsureUnfollow(r.Context(), user.UserID, follows.EntityTypeTag, tag.ID)
+	} else {
+		following, err = h.follows.EnsureFollow(r.Context(), user.UserID, follows.EntityTypeTag, tag.ID)
+	}
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle tag follow")
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"following": following}})
+	fc, _ := h.follows.CountFollowers(r.Context(), follows.EntityTypeTag, tag.ID)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": following, "follower_count": fc}})
 }
 
 // GetTagFollowers handles GET /api/v1/tags/{slug}/followers.
@@ -890,6 +900,12 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.DeleteTag(r.Context(), id); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag")
 		return
+	}
+
+	// BUG-009 (follows audit): flush stale jc:is_following keys for the
+	// deleted tag's followers.
+	if h.follows != nil {
+		h.follows.InvalidateEntityFollowers(r.Context(), follows.EntityTypeTag, id)
 	}
 
 	// Drop the directory tag from the tags index.

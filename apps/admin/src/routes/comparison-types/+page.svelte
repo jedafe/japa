@@ -246,7 +246,7 @@
 		{ key: 'icon', label: t('comparison_types.icon', 'Icon'), type: 'text' },
 		{ key: 'item_label', label: t('comparison_types.item_label', 'Item label'), type: 'text' },
 		{ key: 'field_group_id', label: t('comparison_types.field_group', 'Field group'), type: 'autocomplete', placeholder: t('comparison_types.field_group_select', 'Select a field group…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchFieldGroupOptions, initialFetcher: fetchFieldGroupOptionsInitial, getSelectedLabel: getFieldGroupSelectedLabel },
-		{ key: 'config', label: t('comparison_types.config', 'Config (JSON)'), type: 'textarea' },
+		{ key: 'config', label: t('comparison_types.config', 'Config (JSON)'), type: 'json' },
 		{ key: 'is_system', label: t('comparison_types.system', 'System'), type: 'checkbox' }
 	];
 

@@ -28,7 +28,7 @@
 		referral_url: string | null;
 		is_verified: boolean;
 		status: string;
-		// load() stringifies details for the JSON textarea, so rows carry the
+		// load() stringifies details for the JSON editor, so rows carry the
 		// object (API) or a string (form-seeded) — and builds accept either.
 		details?: Record<string, unknown> | string | null;
 		valid_from?: string;
@@ -221,7 +221,7 @@
 			? { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'select', options: currencyOptions(currencies) }
 			: { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'text', placeholder: 'e.g. NGN, USD' },
 		{ key: 'description', label: t('coupons.description_field', 'Description'), type: 'textarea' },
-		{ key: 'details', label: t('deals.details_json', 'Deal page content (JSON)'), type: 'textarea', placeholder: '{ "summary": "…", "sections": [{ "title": "", "body": "" }], "faq": [{ "q": "", "a": "" }], "trial": { "title": "", "body": "", "url": "" } }' },
+		{ key: 'details', label: t('deals.details_json', 'Deal page content (JSON)'), type: 'json', placeholder: '{ "summary": "…", "sections": [{ "title": "", "body": "" }], "faq": [{ "q": "", "a": "" }], "trial": { "title": "", "body": "", "url": "" } }' },
 		{ key: 'referral_url', label: t('coupons.referral_url', 'Referral URL'), type: 'url' },
 		{ key: 'terms_url', label: t('coupons.terms_url', 'Terms URL'), type: 'url' },
 		{ key: 'valid_from', label: t('coupons.valid_from', 'Valid From'), type: 'date' },
@@ -311,7 +311,7 @@
 				const body = result.data;
 				const raw = (Array.isArray(body?.data) ? body.data : []) as Coupon[];
 				// Convert ISO timestamps to date-input format for form seeding; the
-				// details object is stringified for the JSON textarea field.
+				// details object is stringified for the JSON editor field.
 				const data = raw.map((c) => ({
 					...c,
 					// Raw ISO kept for moderation payloads — the date-input values

@@ -41,15 +41,15 @@
 		{ value: 'under_review', label: t('roadmap.status.under_review', 'Under Review') },
 		{ value: 'planned', label: t('roadmap.status.planned', 'Planned') },
 		{ value: 'in_progress', label: t('roadmap.status.in_progress', 'In Progress') },
-		{ value: 'testing', label: t('roadmap.status_testing', 'Testing') },
+		{ value: 'testing', label: t('roadmap.status.testing', 'Testing') },
 		{ value: 'shipped', label: t('roadmap.status.shipped', 'Shipped') },
 		{ value: 'declined', label: t('roadmap.status.declined', 'Declined') },
 		{ value: 'archived', label: t('roadmap.status.archived', 'Archived') }
 	];
 
 	const STATUS_COLORS: Record<string, string> = {
-		pending: 'bg-warning/15 text-warning',
-		under_review: 'bg-info/15 text-info',
+		pending: 'bg-muted/30 text-muted',
+		under_review: 'bg-warning/15 text-warning',
 		planned: 'bg-info/15 text-info',
 		in_progress: 'bg-primary/15 text-primary',
 		testing: 'bg-accent/15 text-accent-foreground',
@@ -111,9 +111,9 @@
 		if (hasPermission('admin.feature_flags.manage')) {
 			const res = await featureFlagsAdminApi.list();
 			if (res.ok) {
-				flagOptions = ((res.data as Array<{ key: string; name?: string }>) ?? []).map((f) => ({
+				flagOptions = ((res.data as Array<{ key: string; name?: string; showOnRoadmap?: boolean }>) ?? []).map((f) => ({
 					value: f.key,
-					label: f.name ? `${f.name} (${f.key})` : f.key
+					label: (f.name ? `${f.name} (${f.key})` : f.key) + (f.showOnRoadmap === false ? ' — not on roadmap' : '')
 				}));
 				return;
 			}
@@ -147,6 +147,43 @@
 	let showRestoreConfirm = $state(false);
 	let showHardDeleteConfirm = $state(false);
 
+	// Reorder flow (BUG-R-009) — fetches the current filtered page of items,
+	// lets the operator move rows up/down, then POSTs the new sort_order set.
+	let showReorder = $state(false);
+	let reorderItems = $state<RoadmapItem[]>([]);
+	let reorderLoading = $state(false);
+
+	async function openReorder() {
+		showReorder = true;
+		reorderLoading = true;
+		const res = await roadmapAdminApi.list('page_size=100&sort=recent');
+		reorderLoading = false;
+		reorderItems = res.ok
+			? (((res.data as { items?: RoadmapItem[] })?.items) ?? [])
+					.filter((i) => !i.deleted_at)
+					.sort((a, b) => a.sort_order - b.sort_order)
+			: [];
+	}
+
+	function moveItem(i: number, dir: -1 | 1) {
+		const j = i + dir;
+		if (j < 0 || j >= reorderItems.length) return;
+		const next = [...reorderItems];
+		[next[i], next[j]] = [next[j], next[i]];
+		reorderItems = next;
+	}
+
+	async function saveReorder() {
+		acting = true;
+		pageError = '';
+		const res = await roadmapAdminApi.reorder(
+			reorderItems.map((it, i) => ({ id: it.id, sort_order: i }))
+		);
+		acting = false;
+		if (res.ok) { showReorder = false; entityController?.reload(); }
+		else pageError = res.error ?? t('common.error', 'Failed to reorder items');
+	}
+
 	function openStatusModal(row: RoadmapItem) {
 		actionTarget = row;
 		statusChoice = row.status;
@@ -166,6 +203,7 @@
 	async function confirmStatusChange() {
 		if (!actionTarget || !statusChoice) return;
 		acting = true;
+		pageError = '';
 		try {
 			const result = await roadmapAdminApi.setStatus(actionTarget.id, statusChoice);
 			if (result.ok) {
@@ -192,6 +230,7 @@
 	async function confirmRestore() {
 		if (!actionTarget) return;
 		acting = true;
+		pageError = '';
 		try {
 			const result = await roadmapAdminApi.restore(actionTarget.id);
 			if (result.ok) {
@@ -210,6 +249,7 @@
 	async function confirmHardDelete() {
 		if (!actionTarget) return;
 		acting = true;
+		pageError = '';
 		try {
 			const result = await roadmapAdminApi.hardDelete(actionTarget.id);
 			if (result.ok) {
@@ -466,13 +506,23 @@
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		update: async (id, body, row) => {
+			// PATCH the content fields first — the lifecycle endpoint runs
+			// last so a rejected status change never leaves the other edits
+			// unsaved behind a failed first request (two-request flow, BUG-R-006).
+			const payload: Record<string, unknown> = itemBody(body);
+			// An unchanged feature_flag_key stays out of the PATCH — '' is the
+			// explicit unlink signal, not the field's rest state.
+			if (String(payload.feature_flag_key) === String(row?.feature_flag_key ?? '')) {
+				delete payload.feature_flag_key;
+			}
+			const res = await roadmapAdminApi.update(id, payload);
+			if (!res.ok) return { ok: false, error: res.error };
+
 			// Status is not part of the PATCH contract — the backend ignores it
 			// there and only mutates it through the lifecycle endpoint. Route a
-			// changed status through setStatus first so invalid transitions
-			// surface their 409 instead of being silently dropped. Skip the
-			// call entirely when the row is (or is being) flag-linked: the flag
-			// derives status, so a manual write would either 409 status_derived
-			// or be overridden by the link in the same save.
+			// changed status through setStatus after the PATCH so invalid
+			// transitions surface their 409. Skip when the row is (or is being)
+			// flag-linked: the flag derives status.
 			const nextStatus = String(body.status ?? '');
 			const linking = String(body.feature_flag_key ?? '').trim() !== '';
 			if (nextStatus && row && nextStatus !== row.status && !linking && !row.feature_flag_key) {
@@ -481,17 +531,17 @@
 					return {
 						ok: false,
 						error:
-							statusRes.code === 'status_derived'
+							t('roadmap.edits_saved_status_failed', 'Edits saved — status change failed: ') +
+							(statusRes.code === 'status_derived'
 								? t(
 										'roadmap.status_derived_hint',
 										'Status is derived from the linked feature flag — change the flag’s phase to move it.'
 									)
-								: statusRes.error
+								: (statusRes.error ?? ''))
 					};
 				}
 			}
-			const res = await roadmapAdminApi.update(id, itemBody(body));
-			return res.ok ? { ok: true } : { ok: false, error: res.error };
+			return { ok: true };
 		},
 		remove: async (id) => {
 			const res = await roadmapAdminApi.delete(id);
@@ -514,7 +564,32 @@
 	</div>
 {/if}
 
+<div class="mb-3 flex justify-end">
+	<Button variant="ghost" onclick={openReorder}>{t('roadmap.reorder', 'Reorder')}</Button>
+</div>
+
 <EntityPage {config} bind:controller={entityController} />
+
+<!-- Reorder modal -->
+<Modal bind:open={showReorder} title={t('roadmap.reorder', 'Reorder Items')}>
+	{#if reorderLoading}
+		<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading…')}</p>
+	{:else}
+		<ul class="max-h-80 space-y-1 overflow-y-auto">
+			{#each reorderItems as it, i (it.id)}
+				<li class="flex items-center gap-2 rounded border px-2 py-1.5 text-sm" style="border-color: var(--color-border)">
+					<span class="min-w-0 flex-1 truncate">{it.title}</span>
+					<Button variant="ghost" onclick={() => moveItem(i, -1)} disabled={i === 0}>↑</Button>
+					<Button variant="ghost" onclick={() => moveItem(i, 1)} disabled={i === reorderItems.length - 1}>↓</Button>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showReorder = false)} disabled={acting}>{t('common.cancel', 'Cancel')}</Button>
+		<Button onclick={saveReorder} disabled={acting || reorderLoading || reorderItems.length === 0}>{t('common.save', 'Save Changes')}</Button>
+	</div>
+</Modal>
 
 <!-- Change-status modal -->
 <Modal bind:open={showStatusModal} title={t('roadmap.change_status', 'Change Status')}>

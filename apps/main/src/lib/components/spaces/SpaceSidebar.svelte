@@ -126,7 +126,7 @@
 				// SpaceJoinButton behavior on the /spaces list page.
 				// Notifies the parent page so the header Follow button
 				// immediately reflects "Following".
-				if (joined && !res.data.pending) {
+				if (joined && !res.data.pending && !following) {
 					following = true;
 					onFollowChange?.(true);
 					void api.post<{ following: boolean }>(`/spaces/${space.slug}/follow`);

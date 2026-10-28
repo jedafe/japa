@@ -186,7 +186,16 @@ hideable columns. It lists each toggleable column with a checkbox.
 Defined in `src/lib/components/entity/index.ts`. Supported `type` values:
 `text`, `textarea`, `number`, `email`, `password`, `date`, `datetime-local`,
 `url`, `checkbox`, `color` (native color picker), `select` (requires
-`options: Array<{ value; label }>`).
+`options: Array<{ value; label }>`), `autocomplete`, `json`.
+
+`json` renders the shared `JsonValueEditor` (`@japaconnect/ui`) — objects
+become editable key/value rows, arrays become a reorderable repeater, and
+scalars get typed inputs (text/number/checkbox) with a per-node type
+switcher and a Raw-JSON fallback toggle. The bound value stays a JSON
+**string**, so pages keep their existing `JSON.parse` in `create`/`update`
+unchanged; object/array row seeds are also accepted. For direct use outside
+`EntityForm`, `JsonValueEditor` accepts `bind:value` (string or value) plus
+an `onchange(json: string)` callback for hosts that store the value parsed.
 
 Every variant also accepts the per-row lock props `disabledWhen` and
 `lockedHelp`. `disabledWhen(editing)` is evaluated against the row being

@@ -260,6 +260,8 @@ export function roadmapErrorKey(
 			return 'roadmap.errors.feature_disabled';
 		case 'rate_limit_exceeded':
 			return 'roadmap.errors.rate_limit_exceeded';
+		case 'submission_blocked':
+			return 'roadmap.errors.submission_blocked';
 		case 'unauthorized':
 			return 'roadmap.errors.unauthorized';
 		case 'not_found':

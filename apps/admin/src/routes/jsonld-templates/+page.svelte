@@ -2,13 +2,14 @@
 	import { siteName } from '$lib/stores/site.svelte';
 	// /jsonld-templates — migrated to the EntityPage scaffold.
 	//
-	// The form has a JSON content textarea with live JSON-validation feedback, so
+	// The form has a JSON content editor with live JSON-validation feedback, so
 	// it is rendered via the `formSnippet` escape hatch (a `fields` array is still
 	// passed so EntityPage seeds the edit-form value). Export/import are kept as
 	// page-local header actions rendered above the scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Button } from '$lib/components/ui/button';
 	import { api, jsonLdApi, contentAdminApi, type JsonLdTemplate } from '$lib/api';
+	import { JsonValueEditor } from '@japaconnect/ui';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, Download, Upload } from 'lucide-svelte';
@@ -38,7 +39,7 @@
 	});
 
 	// Normalize an API row: stringify `template` into a `content` string so the
-	// formSnippet's textarea can bind to `value.content` and EntityPage's edit
+	// formSnippet's JsonValueEditor can bind to `value.content` and EntityPage's edit
 	// seeding (row[field.key]) picks it up.
 	function mapTemplate(raw: JsonLdTemplate): Template {
 		return { ...raw, content: JSON.stringify(raw.template ?? {}, null, 2) };
@@ -155,11 +156,11 @@
 	}
 
 	// `fields` drives edit-form seeding; the actual inputs are rendered by the
-	// `formSnippet` below (JSON content textarea with validation feedback).
+	// `formSnippet` below (structured JSON editor with validation feedback).
 	const fields: FieldDef[] = [
 		{ key: 'content_type', label: t('jsonld-templates.content_type', 'Content Type'), type: 'text', required: true },
 		{ key: 'is_active', label: t('jsonld-templates.status', 'Status'), type: 'checkbox' },
-		{ key: 'content', label: t('jsonld-templates.content', 'JSON-LD Content'), type: 'textarea' }
+		{ key: 'content', label: t('jsonld-templates.content', 'JSON-LD Content'), type: 'json' }
 	];
 
 	const config: EntityPageConfig = {
@@ -348,7 +349,7 @@
 	</div>
 {/snippet}
 
-<!-- Create/Edit form body (JSON content textarea with live validation feedback) -->
+<!-- Create/Edit form body (structured JSON editor with validation feedback) -->
 {#snippet TemplateForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
 	<!-- Seed "content" once: edit from the row's template, create from the default skeleton. -->
 	{@const _seed = value.content ??= editing ? JSON.stringify(editing?.template ?? {}, null, 2) : DEFAULT_TEMPLATE}
@@ -389,15 +390,11 @@
 					</span>
 				{/if}
 			</label>
-			<textarea
+			<JsonValueEditor
 				id="template-content"
-				class="w-full rounded-lg border px-3 py-2 font-mono text-xs {jsonError ? '' : ''}"
-				style="border-color: {jsonError ? 'var(--color-danger)' : 'var(--color-border)'}; background: var(--color-surface); color: var(--color-foreground)"
-				rows="20"
-				spellcheck="false"
 				bind:value={value.content}
 				placeholder={t('jsonld-templates.placeholder', '{"@context": "https://schema.org", "@type": "Article", ...}')}
-			></textarea>
+			/>
 		</div>
 	</div>
 {/snippet}

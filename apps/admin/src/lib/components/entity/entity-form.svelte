@@ -3,6 +3,7 @@
 	import type { FieldDef } from './index';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { JsonValueEditor } from '@japaconnect/ui';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
@@ -113,6 +114,15 @@
 					onFreeTextBlur={(q: string) => { value[field.key] = q.trim(); }}
 					onSelect={(item: AutocompleteItem) => { value[field.key] = item.id; }}
 					onClear={() => { value[field.key] = ''; }}
+				/>
+			{:else if field.type === 'json'}
+				<!-- Structured JSON editor — the bound value stays a JSON string so
+				     page create/update handlers keep their JSON.parse unchanged. -->
+				<JsonValueEditor
+					id={field.key}
+					bind:value={value[field.key]}
+					disabled={fieldDisabled || (field.readonlyInEdit && !!editing)}
+					placeholder={field.placeholder}
 				/>
 			{:else if field.type === 'checkbox'}
 				<input

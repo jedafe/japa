@@ -167,14 +167,11 @@ func (h *Handlers) HandleGetFeatureFlagDetails(w http.ResponseWriter, r *http.Re
 	details := make([]FeatureFlagDetail, 0, len(merged))
 
 	for _, row := range merged {
-		res := evalScoped(row.Key, effectiveEnabled(h.checker.rolloutID(r.Context()), row.Key, row.Enabled, row.Config), row.Config, sc)
-
-		var cfg FlagConfig
-		if len(row.Config) > 0 {
-			if err := json.Unmarshal(row.Config, &cfg); err != nil {
-				cfg = FlagConfig{}
-			}
+		cfg := flagConfigFrom(row.Config)
+		if cfg.Internal {
+			continue // internal flags are excluded from public projections
 		}
+		res := evalScoped(row.Key, effectiveEnabled(h.checker.bucketID(r.Context(), sc), row.Key, row.Enabled, cfg), cfg, sc)
 
 		details = append(details, FeatureFlagDetail{
 			Key:               row.Key,
@@ -229,13 +226,15 @@ func (h *Handlers) HandleGetFeatureFlagDetail(w http.ResponseWriter, r *http.Req
 	}
 
 	sc := h.checker.BuildScope(r, SurfaceFrom(r))
-	res := evalScoped(row.Key, effectiveEnabled(h.checker.rolloutID(r.Context()), row.Key, row.Enabled, row.Config), row.Config, sc)
+	cfg := flagConfigFrom(row.Config)
+	res := evalScoped(row.Key, effectiveEnabled(h.checker.bucketID(r.Context(), sc), row.Key, row.Enabled, cfg), cfg, sc)
 
-	var cfg FlagConfig
-	if len(row.Config) > 0 {
-		if err := json.Unmarshal(row.Config, &cfg); err != nil {
-			cfg = FlagConfig{}
-		}
+	// internal flags 404 — they are excluded from public projections and
+	// must not be probe-able by key. Surface-hidden flags still return
+	// visible:false (documented contract — see handlers_test).
+	if cfg.Internal {
+		errpkg.WriteError(w, http.StatusNotFound, "feature_hidden", "Feature flag not available on this surface")
+		return
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": FeatureFlagDetail{
@@ -255,7 +254,7 @@ func (h *Handlers) HandleGetFeatureFlagDetail(w http.ResponseWriter, r *http.Req
 // "planned".
 func phaseFor(enabled bool, cfg FlagConfig) string {
 	if cfg.Phase != "" {
-		return cfg.Phase
+		return DisplayPhase(cfg.Phase, enabled)
 	}
 
 	if enabled {
@@ -282,6 +281,12 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
+		return
+	}
+
+	if !ValidFlagKey(flagName) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_key",
+			"key must be lowercase segments joined by dots, e.g. feature.blog or domain.enabled")
 		return
 	}
 
@@ -340,6 +345,7 @@ type FeatureFlag struct {
 	RolloutPercentage int                    `json:"rolloutPercentage"`
 	Phase             string                 `json:"phase,omitempty"`
 	ShowOnRoadmap     bool                   `json:"showOnRoadmap"`
+	Internal          bool                   `json:"internal"`
 	Surfaces          map[string]SurfaceRule `json:"surfaces,omitempty"`
 	CreatedAt         string                 `json:"createdAt"`
 	UpdatedAt         string                 `json:"updatedAt"`
@@ -470,6 +476,7 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		RolloutPercentage: input.RolloutPercentage,
 		Phase:             strings.TrimSpace(input.Phase),
 		ShowOnRoadmap:     input.ShowOnRoadmap,
+		Internal:          input.Internal,
 		Surfaces:          input.Surfaces,
 	}
 	if cfg.Name == "" {
@@ -534,6 +541,12 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !ValidFlagKey(flagName) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_key",
+			"key must be lowercase segments joined by dots, e.g. feature.blog or domain.enabled")
+		return
+	}
+
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -559,6 +572,7 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		RolloutPercentage: input.RolloutPercentage,
 		Phase:             strings.TrimSpace(input.Phase),
 		ShowOnRoadmap:     input.ShowOnRoadmap,
+		Internal:          input.Internal,
 		Surfaces:          input.Surfaces,
 	}
 	if cfg.Name == "" {
@@ -625,6 +639,12 @@ func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !ValidFlagKey(flagName) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_key",
+			"key must be lowercase segments joined by dots, e.g. feature.blog or domain.enabled")
+		return
+	}
+
 	var actor pgtype.UUID
 	if user := auth.FromContext(r.Context()); user != nil {
 		actor = user.UserID
@@ -676,6 +696,10 @@ func flagConfigPatch(cfg FlagConfig, body []byte) []byte {
 		if _, ok := fields["surfaces"]; ok {
 			patch["surfaces"] = cfg.Surfaces
 		}
+
+		if _, ok := fields["internal"]; ok {
+			patch["internal"] = cfg.Internal
+		}
 	}
 
 	raw, err := json.Marshal(patch)
@@ -698,6 +722,7 @@ type FeatureFlagInput struct {
 	RolloutPercentage int                    `json:"rolloutPercentage"`
 	Phase             string                 `json:"phase"`
 	ShowOnRoadmap     bool                   `json:"showOnRoadmap"`
+	Internal          bool                   `json:"internal"`
 	Surfaces          map[string]SurfaceRule `json:"surfaces"`
 }
 

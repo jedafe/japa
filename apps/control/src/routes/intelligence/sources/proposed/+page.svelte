@@ -591,10 +591,11 @@
 					</button>
 					{#if canManage && detailSource}
 						<AutocompleteSelect
-							bind:value={approveTrust}
+							value={approveTrust == null ? '' : String(approveTrust)}
+							onValueChange={(v) => (approveTrust = v === '' ? null : Number(v))}
 							disabled={!!approving}
 							ariaLabel={t('intel.field_trust_level', 'Trust')}
-							options={trustOptions.map((o) => ({ value: o.value, label: t('intel.trust_as', 'Trust: {label}').replace('{label}', o.label) }))}
+							options={trustOptions.map((o) => ({ value: String(o.value), label: t('intel.trust_as', 'Trust: {label}').replace('{label}', o.label) }))}
 						/>
 						<button
 							class="border-destructive/40 text-destructive hover:bg-destructive/10 rounded-9px border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"

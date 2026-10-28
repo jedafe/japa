@@ -7,6 +7,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import { isSafeUrl } from '$lib/utils';
+	import { JsonValueEditor } from '@japaconnect/ui';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import {
@@ -716,12 +717,7 @@
 							<label for="edit-json" class="text-muted-foreground mb-1 block text-xs font-medium">
 								{t('intel.edit_extracted', 'Edit extracted fields (JSON)')}
 							</label>
-							<textarea
-								id="edit-json"
-								bind:value={editJson}
-								rows="14"
-								class="border-border-input bg-background text-foreground font-mono w-full rounded-lg border p-3 text-xs leading-relaxed focus:shadow-date-field-focus focus:outline-none"
-							></textarea>
+							<JsonValueEditor id="edit-json" bind:value={editJson} />
 							<label for="edit-note" class="text-muted-foreground mt-3 block text-xs font-medium">
 								{t('intel.review_note', 'Review note (optional)')}
 							</label>

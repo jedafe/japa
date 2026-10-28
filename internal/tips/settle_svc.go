@@ -104,11 +104,15 @@ func (s *Service) notifyClawback(ctx context.Context, tip gen.Tip, walletOwner p
 	if s.clawNotifier == nil || !walletOwner.Valid {
 		return
 	}
+	unit := "credits"
+	if tip.Method == MethodPoints {
+		unit = "points"
+	}
 	if err := s.clawNotifier.CreateNotification(ctx, walletOwner,
 		"tip.received", "system", pgtype.UUID{},
 		"tip", tip.ID,
 		"Tip refunded",
-		"A tip you received was refunded and the credits were removed from your wallet.",
+		"A tip you received was refunded and the "+unit+" were removed from your wallet.",
 		"/me/tips"); err != nil {
 		slog.Warn("tips: clawback notification failed", "tip_id", tip.ID.String(), "error", err)
 	}

@@ -1210,7 +1210,7 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, userID pgtype.UUID, fie
 	}
 
 	// Join country space (idempotent via ON CONFLICT DO NOTHING).
-	if err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+	if _, err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
 		SpaceID: countrySpace.ID,
 		UserID:  userID,
 	}); err != nil {
@@ -1227,7 +1227,7 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, userID pgtype.UUID, fie
 				stateID,
 			)
 			if err == nil {
-				if err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+				if _, err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
 					SpaceID: stateSpace.ID,
 					UserID:  userID,
 				}); err != nil {
@@ -1247,7 +1247,7 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, userID pgtype.UUID, fie
 				cityID,
 			)
 			if err == nil {
-				if err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+				if _, err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
 					SpaceID: citySpace.ID,
 					UserID:  userID,
 				}); err != nil {

@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import type { DataSource } from '$lib/types/jce';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { JsonValueEditor } from '@japaconnect/ui';
 
 	let {
 		value = $bindable<Record<string, any>>({}),
@@ -191,14 +192,9 @@
 		<label for="ds-config" class="block text-sm font-medium" style="color: var(--color-foreground)">
 			{t('data_sources.config', 'Config (JSON)')}
 		</label>
-		<textarea
-			id="ds-config"
-			rows="6"
-			class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-			style="border-color: {validation.config ? 'var(--color-danger)' : 'var(--color-border)'}; background-color: var(--color-surface); color: var(--color-foreground)"
-			bind:value={configInput}
-			aria-invalid={validation.config ? 'true' : 'false'}
-		></textarea>
+		<div class="mt-1">
+			<JsonValueEditor id="ds-config" bind:value={configInput} />
+		</div>
 		{#if validation.config}
 			<p class="mt-1 text-xs" style="color: var(--color-danger)">{validation.config}</p>
 		{:else}

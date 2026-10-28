@@ -28,7 +28,7 @@ import (
 type SettingDef struct {
 	Key         string   `json:"key"`
 	Label       string   `json:"label"`
-	Type        string   `json:"type"` // "text", "number", "toggle", "select", "multiselect", "color", "file", "media", "textarea"
+	Type        string   `json:"type"` // "text", "number", "toggle", "select", "multiselect", "color", "file", "media", "textarea", "json"
 	Value       any      `json:"value,omitempty"`
 	Options     []string `json:"options,omitempty"`
 	Max         int      `json:"max,omitempty"`         // item cap for repeater types (link-list, link-cards)
@@ -397,7 +397,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "icon_512", Label: "Icon 512px", Type: "media", Accept: "image/*", Description: "Empty uses the bundled /favicon.png"},
 			{Key: "maskable_icon", Label: "Maskable Icon", Type: "media", Accept: "image/*", Description: "Safe-zone padded icon for adaptive launchers; empty uses /icon-maskable-512.png"},
 			{Key: "shortcuts", Label: "App Shortcuts", Type: "link-list", Max: 4, Description: "Manifest shortcuts on the main app (label + url)"},
-			{Key: "screenshots", Label: "Screenshots", Type: "textarea", Placeholder: `[{"src":"/screenshots/home.png","sizes":"1280x720","type":"image/png"}]`, Description: "JSON array for the richer install dialog"},
+			{Key: "screenshots", Label: "Screenshots", Type: "json", Placeholder: `[{"src":"/screenshots/home.png","sizes":"1280x720","type":"image/png"}]`, Description: "JSON array for the richer install dialog"},
 			{Key: "categories", Label: "Categories", Type: "text", Value: "social", Description: "Comma-separated manifest categories"},
 			{Key: "offline_enabled", Label: "Offline Support", Type: "toggle", Value: true, Description: "Service-worker caching + offline fallback page"},
 			{Key: "install_prompt_enabled", Label: "Install Prompt", Type: "toggle", Value: true, Description: "Show the install banner and Devices install row when the browser offers install"},
@@ -428,7 +428,7 @@ var defaultSettings = map[string]SettingCategory{
 			// uploads share media.max_upload_mb under Media settings.
 			{Key: "require_content_review", Label: "Require Content Review", Type: "toggle"},
 			{Key: "allowed_upload_types", Label: "Allowed Upload Types", Type: "multiselect", Options: []string{"jpeg", "jpg", "png", "gif", "webp", "svg", "pdf", "mp4", "webm", "mov", "mp3", "ogg", "wav", "m4a"}},
-			{Key: "link_preview.blacklist", Label: "Link Preview Blacklist", Type: "textarea", Placeholder: `["example.com", "spam.com"]`},
+			{Key: "link_preview.blacklist", Label: "Link Preview Blacklist", Type: "json", Placeholder: `["example.com", "spam.com"]`},
 			{Key: "edit_lock_ttl_seconds", Label: "Edit Lock TTL (seconds)", Type: "number", Description: "Editor lock TTL in seconds"},
 			{Key: "edit_window_minutes", Label: "Edit Window (minutes)", Type: "number", Description: "Content edit window (24hr default)"},
 			{Key: "max_tags", Label: "Max Tags", Type: "number", Description: "Max tags per content item"},
@@ -564,7 +564,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "max_links_per_post", Label: "Max Links Per Post", Type: "number"},
 			{Key: "new_account_threshold_days", Label: "New Account Threshold (days)", Type: "number"},
 			{Key: "new_user_min_posts_for_links", Label: "New User Min Posts For Links", Type: "number", Description: "Min total posts before a new user may include external links (§41 Layer 3)", Value: 3},
-			{Key: "report_reasons", Label: "Report Reasons", Type: "textarea", Description: "Available report reason codes for the report dialog (Rule 16 compliance)", Value: `["spam","harassment","hate_speech","misinformation","illegal_content","self_harm","copyright","other"]`},
+			{Key: "report_reasons", Label: "Report Reasons", Type: "json", Description: "Available report reason codes for the report dialog (Rule 16 compliance)", Value: `["spam","harassment","hate_speech","misinformation","illegal_content","self_harm","copyright","other"]`},
 		},
 	},
 	"wallet": {

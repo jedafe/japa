@@ -27,11 +27,11 @@ export const load: LayoutServerLoad = async (event) => {
 			event.locals.locale && pathname.startsWith(`/${event.locals.locale}/`)
 				? pathname.slice(event.locals.locale.length + 1)
 				: pathname;
-		if (
-			!unprefixed.startsWith('/roadmap') &&
-			!unprefixed.startsWith('/login') &&
-			!unprefixed.startsWith('/api')
-		) {
+		const allowed =
+			unprefixed === '/roadmap' || unprefixed.startsWith('/roadmap/') ||
+			unprefixed === '/login' || unprefixed.startsWith('/login/') ||
+			unprefixed.startsWith('/api/');
+		if (!allowed) {
 			throw redirect(302, '/roadmap');
 		}
 	}

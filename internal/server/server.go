@@ -114,6 +114,7 @@ import (
 	"github.com/jedafe/japa/internal/nextactions"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/onboarding"
+	"github.com/jedafe/japa/internal/opencollective"
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/pagebuilder"
 	"github.com/jedafe/japa/internal/pagespeed"
@@ -151,6 +152,7 @@ import (
 	"github.com/jedafe/japa/internal/taxcalculator"
 	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/tiers"
+	"github.com/jedafe/japa/internal/tips"
 	"github.com/jedafe/japa/internal/travel"
 	"github.com/jedafe/japa/internal/trending"
 	"github.com/jedafe/japa/internal/umami"
@@ -163,8 +165,6 @@ import (
 	"github.com/jedafe/japa/internal/visaroutes"
 	"github.com/jedafe/japa/internal/visatimeline"
 	"github.com/jedafe/japa/internal/visitor"
-	"github.com/jedafe/japa/internal/opencollective"
-	"github.com/jedafe/japa/internal/tips"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/wallet/payout"
 	"github.com/jedafe/japa/internal/webhooks"
@@ -603,6 +603,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Follow System subsystem (Section 31 — Follow System).
 	followService := follows.NewService(database)
+	spaceService.SetFollowCacheInvalidator(followService.InvalidateEntityFollowers)
 	followHandlers := follows.NewHandlers(followService)
 	// L3: wire Valkey for is_following read-through cache (60s TTL).
 	followService.SetValkey(vkClient.Redis())
@@ -697,6 +698,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Interactions subsystem (Sections 41, 52 — Blocks & Mutes).
 	interactionsService := interactions.NewService(database)
+	interactionsService.SetFollowCacheInvalidator(followService.InvalidateFollowing)
 	interactionsService.SetValkey(vkClient.Redis()) // VALKEY-001: mute key cache invalidation
 	interactionsHandlers := interactions.NewHandlers(interactionsService)
 
@@ -1036,7 +1038,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	roadmapService.SetSettings(settingsService)
 	roadmapService.SetValkey(vkClient.Redis()) // jc:roadmap:board + jc:roadmap:releases caches
 	roadmapHandlers := roadmap.NewHandlers(roadmapService)
-	roadmapHandlers.SiteURL = cfg.SiteURL // releases RSS feed (ADR-135)
+	roadmapHandlers.SetSpamPipeline(spamPipeline) // §113: submission safety filters
+	roadmapHandlers.SiteURL = cfg.SiteURL         // releases RSS feed (ADR-135)
 	roadmapHandlers.SiteName = cfg.SiteName
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
@@ -5900,7 +5903,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/tags/{slug}/moderators", tagsHandlers.GetTagModerators)
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/followers", tagsHandlers.GetTagFollowers)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/tags/{slug}/followers", tagsHandlers.GetTagFollowers)
 			// Admin tag CRUD (previously missing entirely — content_tags/
 			// AddContentTag was unreachable since there was no way to create a tag).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
@@ -8118,9 +8121,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/intel/radar/counts", intelHandlers.HandleRadarCounts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/radar/followed", intelHandlers.HandleRadarFollowed)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/intel/radar/follow", intelHandlers.HandleRadarFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/intel/radar/follow", intelHandlers.HandleRadarUnfollow)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/radar/feed/{item_id}", intelHandlers.HandleRadarItemDetail)
@@ -8200,9 +8203,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/sources/{slug}/report", intelHandlers.HandleReportSource)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/me/blocked-sources", intelHandlers.HandleListBlockedSources)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/sources/{slug}/follow", intelHandlers.HandleToggleSourceFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/sources/{slug}/follow", intelHandlers.HandleToggleSourceFollow)
 
 			// Crawl-now — triggers an immediate fetch of a source (INTEL-011 fix).
@@ -9837,7 +9840,7 @@ func (d *personaActionDispatcher) CreateForumReply(ctx context.Context, personaU
 }
 
 func (d *personaActionDispatcher) ToggleFollow(ctx context.Context, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
-	_, err := d.follows.ToggleFollow(ctx, personaUserID, entityType, entityID)
+	_, err := d.follows.EnsureFollow(ctx, personaUserID, entityType, entityID)
 	return err
 }
 

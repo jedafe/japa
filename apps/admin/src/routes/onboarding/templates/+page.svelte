@@ -5,10 +5,10 @@
 	// The backend exposes GET/POST/PATCH/DELETE under /admin/onboarding/templates
 	// (RBAC: admin.settings for mutations, admin.settings.view for reads).
 	// This page uses the EntityPage scaffold with a formSnippet for the steps
-	// jsonb editor (a textarea accepting a JSON array), since EntityForm does
-	// not have a native JSON field type.
+	// jsonb editor (a JsonValueEditor editing a JSON array as a repeater).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api, onboardingAdminApi } from '$lib/api';
+	import { JsonValueEditor } from '@japaconnect/ui';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2 } from 'lucide-svelte';
@@ -27,12 +27,12 @@
 	const canManage = $derived(hasPermission('admin.settings'));
 
 	// `fields` drives EntityForm seeding for the edit form. The `steps` field
-	// is rendered by `formSnippet` below (a JSON textarea), but it MUST appear
+	// is rendered by `formSnippet` below (a structured JSON editor), but it MUST appear
 	// here so EntityPage seeds value.steps from the selected row.
 	const fields: FieldDef[] = [
 		{ key: 'name', label: t('onboarding.templates.name', 'Name'), type: 'text', required: true, placeholder: 'Default 7-step flow' },
 		{ key: 'description', label: t('onboarding.templates.description', 'Description'), type: 'textarea', placeholder: 'Describe what this template configures…' },
-		{ key: 'steps', label: t('onboarding.templates.steps', 'Steps (JSON)'), type: 'textarea' },
+		{ key: 'steps', label: t('onboarding.templates.steps', 'Steps (JSON)'), type: 'json' },
 		{ key: 'is_active', label: t('onboarding.templates.active', 'Active'), type: 'checkbox' }
 	];
 
@@ -58,7 +58,7 @@
 	}
 
 	// Serialize steps (array | string | null) into a pretty-printed JSON string
-	// for the textarea. Falls back to '[]' when empty.
+	// for the JSON editor. Falls back to '[]' when empty.
 	function stepsToText(v: unknown): string {
 		if (v == null) return '[]';
 		if (typeof v === 'string') {
@@ -76,7 +76,7 @@
 		}
 	}
 
-	// Parse the textarea content back into a JSON array for the API.
+	// Parse the editor's JSON string back into an array for the API.
 	function parseSteps(text: string): unknown {
 		try {
 			const parsed = JSON.parse(text);
@@ -233,7 +233,7 @@
 {/snippet}
 
 <!-- Create/edit form: name + description as standard inputs, steps as a
-     JSON textarea (EntityForm has no native JSON field type). -->
+     structured JSON editor (JsonValueEditor). -->
 {#snippet TemplateForm({ value, editing }: { value: Record<string, any>; editing: boolean })}
 	<div class="space-y-4">
 		<div>
@@ -267,15 +267,11 @@
 			<label for="tpl-steps" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('onboarding.templates.steps', 'Steps (JSON)')}
 			</label>
-			<textarea
+			<JsonValueEditor
 				id="tpl-steps"
-				rows="10"
-				class="w-full rounded-lg border px-3 py-2 font-mono text-xs"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				value={stepsToText(value.steps)}
-				oninput={(e) => (value.steps = e.currentTarget.value)}
+				bind:value={value.steps}
 				placeholder={'[{"step":1,"title":"Welcome"},{"step":2,"title":"Destination"}]'}
-			></textarea>
+			/>
 			<p class="mt-1 text-xs" style="color: var(--color-muted)">
 				{t('onboarding.templates.steps_help', 'A JSON array describing the ordered onboarding steps. Leave as [] for the default 5-step flow.')}
 			</p>

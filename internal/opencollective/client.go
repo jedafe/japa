@@ -136,7 +136,9 @@ func (c *Client) VerifyToken(ctx context.Context, token string) (string, error) 
 // membership (any role) in the given collective — used to prove collective
 // association before enabling contribution sync for a tip recipient.
 func (c *Client) VerifyCollectiveAccess(ctx context.Context, token, slug string) (bool, error) {
-	const q = `query { loggedInAccount { memberOf { nodes { account { slug } role } } } }`
+	// memberOf is paginated — request 100 so admins of many collectives aren't
+	// falsely rejected on the first page.
+	const q = `query { loggedInAccount { memberOf(limit: 100) { nodes { account { slug } role } } } }`
 	var data json.RawMessage
 	if err := c.do(ctx, token, q, nil, &data); err != nil {
 		return false, err

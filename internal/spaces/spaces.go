@@ -212,12 +212,23 @@ type Service struct {
 	sources  sourceManager
 	siteURL  string
 	settings spaceSettingsReader
+	// followInv invalidates jc:is_following keys for every follower of a
+	// deleted space (wired to follows.Service.InvalidateEntityFollowers).
+	followInv func(ctx context.Context, entityType string, entityID pgtype.UUID)
 }
 
 // SetValkey wires the Valkey client for mute SET cache invalidation
 // (Section 52 / VALKEY-001, BUG-003: platform-scoped). Key:
 // jc:muted_spaces:{}:{user_id}.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// SetFollowCacheInvalidator wires the follows service's entity-follower cache
+// invalidation so space deletes flush stale jc:is_following keys on every
+// path (space routes, universities, admin force-delete) — not just handlers
+// that happen to hold a follows dep (BUG-009).
+func (s *Service) SetFollowCacheInvalidator(fn func(ctx context.Context, entityType string, entityID pgtype.UUID)) {
+	s.followInv = fn
+}
 
 // SetSourceManager links the space service to the canonical source registry
 // (v2 source directory, Task 5).

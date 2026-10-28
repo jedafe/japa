@@ -2,7 +2,6 @@ package features
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -28,6 +27,7 @@ type CallerScope struct {
 	GroupSlugs  map[string]bool // caller's group slugs; nil = anonymous
 	Permissions map[string]bool // caller's resolved permission keys; nil = anonymous
 	SuperAdmin  bool            // bypasses audience checks ONLY — not geo/state
+	SubjectID   string          // caller's user UUID — drives per-user rollout bucketing; "" = anonymous (platform bucket)
 }
 
 // EvalResult is the outcome of caller-scoped flag resolution.
@@ -94,6 +94,9 @@ func (c *Checker) BuildScope(r *http.Request, surface string) CallerScope {
 	sc.GroupSlugs = groups
 	sc.Permissions = perms
 	sc.SuperAdmin = superAdmin
+	if user.UserID.Valid {
+		sc.SubjectID = user.UserID.String()
+	}
 
 	return sc
 }
@@ -104,9 +107,10 @@ func (c *Checker) BuildScope(r *http.Request, surface string) CallerScope {
 // no extra DB hit on the hot path.
 // Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §5.1.
 func (c *Checker) EvalFlag(ctx context.Context, key string, sc CallerScope) EvalResult {
-	enabled, config := c.resolveFlag(ctx, key)
+	raw, config := c.resolveFlag(ctx, key)
+	cfg := flagConfigFrom(config)
 
-	return evalScoped(key, enabled, config, sc)
+	return evalScoped(key, effectiveEnabled(c.bucketID(ctx, sc), key, raw, cfg), cfg, sc)
 }
 
 // EvalAll returns the caller-scoped flags map for GET /api/v1/feature-flags:
@@ -116,14 +120,22 @@ func (c *Checker) EvalFlag(ctx context.Context, key string, sc CallerScope) Eval
 // and per-flag resolutions are.
 func (c *Checker) EvalAll(ctx context.Context, sc CallerScope) map[string]bool {
 	result := make(map[string]bool, len(Registry))
+	bid := c.bucketID(ctx, sc)
 
 	for _, f := range Registry {
-		r := evalScoped(f.Key, f.Default, nil, sc)
+		r := evalScoped(f.Key, f.Default, FlagConfig{}, sc)
 		result[f.Key] = r.Enabled && r.Visible
 	}
 
 	for _, row := range c.AllFlagRows(ctx) {
-		r := evalScoped(row.Key, effectiveEnabled(c.rolloutID(ctx), row.Key, row.Enabled, row.Config), row.Config, sc)
+		cfg := flagConfigFrom(row.Config)
+		// internal:true opts the flag out of the public projection —
+		// delete so registry-seeded entries are removed too (BUG-010).
+		if cfg.Internal {
+			delete(result, row.Key)
+			continue
+		}
+		r := evalScoped(row.Key, effectiveEnabled(bid, row.Key, row.Enabled, cfg), cfg, sc)
 		result[row.Key] = r.Enabled && r.Visible
 	}
 
@@ -145,12 +157,12 @@ func (c *Checker) EvalAll(ctx context.Context, sc CallerScope) map[string]bool {
 // stored config, the registry's DefaultSurfaces applies (same merge Control →
 // Extensions displays), so registry-declared defaults are eval-effective even
 // before a flag's first write.
-func evalScoped(key string, enabled bool, config []byte, sc CallerScope) EvalResult {
+func evalScoped(key string, enabled bool, cfg FlagConfig, sc CallerScope) EvalResult {
 	if !enabled {
 		return EvalResult{}
 	}
 
-	rule, ok := surfaceRuleFor(key, config, sc.Surface)
+	rule, ok := surfaceRuleFor(key, cfg, sc.Surface)
 	if !ok {
 		return EvalResult{Enabled: true, Visible: true}
 	}
@@ -173,16 +185,9 @@ func evalScoped(key string, enabled bool, config []byte, sc CallerScope) EvalRes
 // applies" — when the surface is empty/unknown, the config is malformed
 // (visibility is a rollout control, not a security boundary, so malformed
 // config fails open), and no stored or default rule covers the surface.
-func surfaceRuleFor(key string, config []byte, surface string) (SurfaceRule, bool) {
+func surfaceRuleFor(key string, cfg FlagConfig, surface string) (SurfaceRule, bool) {
 	if !ValidSurface(surface) {
 		return SurfaceRule{}, false
-	}
-
-	var cfg FlagConfig
-	if len(config) > 0 {
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			cfg = FlagConfig{}
-		}
 	}
 
 	if rule, ok := cfg.Surfaces[surface]; ok {

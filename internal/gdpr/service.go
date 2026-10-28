@@ -594,6 +594,14 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if err := s.store.anonymizeUserProfile(ctx, request.UserID); err != nil {
 			slog.Warn("failed to anonymize user profile during deletion", "user_id", request.UserID.String(), "error", err)
 		}
+		// BUG-032 (follows audit): scrub the user's entire follow graph at
+		// anonymize-time, not just at hard delete — an anonymized account
+		// should not keep counting toward entities' follower_count or hold
+		// visible graph edges during the retention window. Best-effort like
+		// the sibling scrubs.
+		if err := s.scrubFollowsForErasure(ctx, request.UserID); err != nil {
+			slog.Warn("failed to scrub follows during anonymization", "user_id", request.UserID.String(), "error", err)
+		}
 		// Scrub PII from user_journeys (ADR-129) — member label, destination,
 		// and per-journey stage history — and soft-delete the rows so nothing
 		// renders during the retention window. Rows cascade with the user row
@@ -776,6 +784,31 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			WHERE user_id = $1
 		`, request.UserID); err != nil {
 			slog.Warn("failed to delete remittance_rate_alerts during deletion", "user_id", request.UserID.String(), "error", err)
+		}
+	}
+
+	// 1e-ii. Roadmap votes + submitter/approver attribution (§113, ADR-014).
+	// The ON DELETE CASCADE only fires on user hard-delete — the anonymize
+	// step keeps the user row, so votes would otherwise stay keyed to the
+	// erased account through the retention window.
+	if step == deletionStepAnonymized {
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM roadmap_votes
+			WHERE user_id = $1
+		`, request.UserID); err != nil {
+			slog.Warn("failed to delete roadmap_votes during deletion", "user_id", request.UserID.String(), "error", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE roadmap_items
+			SET submitted_by = NULL WHERE submitted_by = $1
+		`, request.UserID); err != nil {
+			slog.Warn("failed to detach roadmap submitter during deletion", "user_id", request.UserID.String(), "error", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE roadmap_items
+			SET approved_by = NULL WHERE approved_by = $1
+		`, request.UserID); err != nil {
+			slog.Warn("failed to detach roadmap approver during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 	}
 
@@ -969,6 +1002,15 @@ func (s *Service) logDeletionAudit(ctx context.Context, request gen.AccountDelet
 // non-CASCADE foreign key references. Called only when gdpr.hard_delete_enabled
 // is true and the retention period has elapsed.
 func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error {
+	// BUG-004 (follows audit): scrub the user's follow graph BEFORE the user
+	// row deletion — the follower_id FK CASCADE would silently drop the
+	// user's outgoing follows without recounting the targets' denormalized
+	// follower_count. Running this first makes the cascade a no-op for
+	// counts. Target-side rows are also handled in the tx below (C7).
+	if err := s.scrubFollowsForErasure(ctx, userID); err != nil {
+		slog.Warn("failed to scrub follows before hard delete", "user_id", userID.String(), "error", err)
+	}
+
 	// Resolve the deleted-user placeholder UUID from settings, or use zero UUID.
 	deletedUserPlaceholder := pgtype.UUID{}
 	_ = deletedUserPlaceholder.Scan("00000000-0000-0000-0000-000000000000")
@@ -1337,10 +1379,17 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		}
 
 		// §125: tips are financial records — retained, but the sender side is
-		// pseudonymized (sender_user_id + external_sender_name cleared) and the
-		// user's tip_settings + external links are deleted with the account.
+		// pseudonymized (sender_user_id + external_sender_name cleared), the
+		// recipient side is reassigned to the deleted-user placeholder (the
+		// recipient FK is NO ACTION — without this the users-row delete
+		// fails), and tip_settings + external links are deleted.
 		if err := q.AnonymizeTipsForUser(ctx, userID); err != nil {
 			return fmt.Errorf("anonymizing tips: %w", err)
+		}
+		if err := q.ReassignTipsRecipientToPlaceholder(ctx, gen.ReassignTipsRecipientToPlaceholderParams{
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning tips recipient: %w", err)
 		}
 		if err := q.DeleteTipSettingsForUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting tip settings: %w", err)
@@ -2259,6 +2308,8 @@ type UserDataExport struct {
 	ForumThreads                []map[string]interface{} `json:"forum_threads"`
 	ForumReplies                []map[string]interface{} `json:"forum_replies"`
 	ForumVotes                  []map[string]interface{} `json:"forum_votes"`
+	RoadmapVotes                []map[string]interface{} `json:"roadmap_votes"`
+	RoadmapSubmissions          []map[string]interface{} `json:"roadmap_submissions"`
 	ForumBookmarks              []map[string]interface{} `json:"forum_bookmarks"`
 	ForumPollVotes              []map[string]interface{} `json:"forum_poll_votes"`
 	ForumThreadTags             []map[string]interface{} `json:"forum_thread_tags"`
@@ -2574,6 +2625,11 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 	} else {
 		slog.Warn("failed to collect forum_replies for export", "user_id", userID.String(), "error", err)
 	}
+
+	// Roadmap votes + submissions (§113) — previously unexported.
+	export.RoadmapVotes = s.exportRows(ctx, `SELECT item_id, created_at FROM roadmap_votes WHERE user_id = $1`, userID, "roadmap_votes")
+	export.RoadmapSubmissions = s.exportRows(ctx, `SELECT id, title, slug, summary, status, created_at FROM roadmap_items WHERE submitted_by = $1`, userID, "roadmap_items")
+
 
 	// Forum votes cast by the user.
 	if rows, err := s.store.gdprExportUserForumVotes(ctx, userID); err == nil {
@@ -3397,4 +3453,121 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 	}
 
 	return export, nil
+}
+
+// scrubFollowsForErasure removes a user's entire follow graph and repairs the
+// denormalized follower_count on every entity they followed. Used by both the
+// anonymize step (BUG-032 — edges must not survive the retention window) and
+// hard delete (BUG-004 — the follower_id FK CASCADE would drop outgoing
+// follows without recounting targets).
+//
+// Steps, in one transaction: (1) collect the targets of the user's outgoing
+// follows, (2) delete both directions — follows BY the user and follows
+// TARGETING them — (3) recount each affected entity's follower_count from
+// the follows table. The recount is authoritative, so it self-heals any
+// prior drift on those entities.
+func (s *Service) scrubFollowsForErasure(ctx context.Context, userID pgtype.UUID) error {
+	type followTarget struct {
+		entityType string
+		entityID   pgtype.UUID
+	}
+
+	targetRows, err := s.db.Writer.Query(ctx,
+		`SELECT entity_type, entity_id FROM follows WHERE follower_id = $1`, userID)
+	if err != nil {
+		return fmt.Errorf("collecting follow targets: %w", err)
+	}
+
+	var targets []followTarget
+	for targetRows.Next() {
+		var t followTarget
+		if err := targetRows.Scan(&t.entityType, &t.entityID); err != nil {
+			targetRows.Close()
+			return fmt.Errorf("scanning follow target: %w", err)
+		}
+		targets = append(targets, t)
+	}
+	targetRows.Close()
+
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning follows scrub tx: %w", err)
+	}
+
+	defer tx.Rollback(ctx) // no-op after commit
+
+	q := gen.New(tx)
+
+	// Follows BY the user (no-op at hard delete if cascade already ran;
+	// required at anonymize since the user row survives).
+	if err := q.DeleteFollowsByFollower(ctx, userID); err != nil {
+		return fmt.Errorf("deleting outgoing follows: %w", err)
+	}
+
+	// Follows TARGETING the user — polymorphic entity_id has no FK.
+	if err := q.DeleteFollowsByEntity(ctx, gen.DeleteFollowsByEntityParams{
+		EntityType: "user",
+		EntityID:   userID,
+	}); err != nil {
+		return fmt.Errorf("deleting incoming follows: %w", err)
+	}
+
+	// Recount each affected entity's follower_count from the follows table.
+	entityTables := map[string]string{
+		"user":         "users",
+		"space":        "spaces",
+		"tag":          "tags",
+		"organization": "organizations",
+		"source":       "intel_sources",
+	}
+
+	byType := map[string][]pgtype.UUID{}
+	for _, t := range targets {
+		byType[t.entityType] = append(byType[t.entityType], t.entityID)
+	}
+
+	for entityType, ids := range byType {
+		table, ok := entityTables[entityType]
+		if !ok {
+			continue
+		}
+
+		if _, err := tx.Exec(ctx, fmt.Sprintf(
+			`UPDATE %s e SET follower_count = (
+				SELECT COUNT(*) FROM follows f
+				WHERE f.entity_type = '%s' AND f.entity_id = e.id
+			) WHERE e.id = ANY($1)`,
+			table, entityType), ids); err != nil {
+			return fmt.Errorf("recounting %s follower counts: %w", entityType, err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+// exportRows runs a per-user SELECT and returns the rows as generic maps for
+// the data-export JSON document. Missing/failed tables degrade to nil — the
+// export is best-effort and never aborts on one collector.
+func (s *Service) exportRows(ctx context.Context, query string, userID pgtype.UUID, label string) []map[string]interface{} {
+	rows, err := s.db.Reader.Query(ctx, query, userID)
+	if err != nil {
+		slog.Warn("failed to collect "+label+" for export", "user_id", userID.String(), "error", err)
+		return nil
+	}
+	defer rows.Close()
+
+	cols := rows.FieldDescriptions()
+	out := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		vals, err := rows.Values()
+		if err != nil {
+			return out
+		}
+		m := make(map[string]interface{}, len(cols))
+		for i, c := range cols {
+			m[string(c.Name)] = vals[i]
+		}
+		out = append(out, m)
+	}
+	return out
 }

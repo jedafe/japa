@@ -83,7 +83,7 @@
 		travelProviderTypeOptions.find((o) => o.value === v)?.label ?? v;
 
 	// `fields` drives EntityForm rendering + edit-form value seeding. The
-	// JSON config fields use `textarea`; the snippet below overrides their
+	// JSON config fields are seeded for the snippet below, which overrides their
 	// rendering but the fields array is still required for seeding.
 	const fields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('travel.name', 'Name'), type: 'text', required: true, placeholder: 'Skyscanner' },

@@ -189,6 +189,24 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		const list = (path: string, search = listParams) =>
 			apiList<unknown>(ctx, `${path}?${search.toString()}`).catch(() => ({ items: [] }));
 
+		// Follows audit BUG-024: client-side search filters only apply to the
+		// loaded page — matches on later pages are invisible. These five tabs
+		// have no server-side ?q= support, so fetch every page (bounded) and
+		// let the view search the complete set.
+		const LIST_ALL_CAP = 500;
+		const listAll = async (path: string) => {
+			const items: unknown[] = [];
+			for (let offset = 0; offset < LIST_ALL_CAP; offset += pageSize) {
+				const p = new URLSearchParams(listParams);
+				p.set('page_size', String(pageSize));
+				p.set('page_offset', String(offset));
+				const res = await apiList<unknown>(ctx, `${path}?${p.toString()}`).catch(() => ({ items: [] }));
+				items.push(...(res.items ?? []));
+				if ((res.items ?? []).length < pageSize) break;
+			}
+			return { items, capped: items.length >= LIST_ALL_CAP };
+		};
+
 		const analytics = await apiGet<MeAnalytics>(ctx, '/me/analytics').catch(() => null);
 
 		const [
@@ -200,12 +218,12 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 			mutedUsersRes,
 			mutedSpacesRes
 		] = await Promise.all([
-			list('/me/following'),
-			list('/me/followers'),
+			listAll('/me/following'),
+			listAll('/me/followers'),
 			list('/me/spaces', memberSpaceParams),
-			list('/me/followed-tags'),
-			list('/me/blocked-users'),
-			list('/me/muted-users'),
+			listAll('/me/followed-tags'),
+			listAll('/me/blocked-users'),
+			listAll('/me/muted-users'),
 			list('/me/muted-spaces', spaceParams)
 		]);
 
@@ -214,12 +232,14 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 			return { items: items.slice(0, pageSize), hasMore };
 		}
 
-		const following = paginated(followingRes.items);
-		const followers = paginated(followersRes.items);
+		// Full-set tabs return every fetched item (search is client-side);
+		// hasMore only when the 500-item cap was hit.
+		const following = { items: followingRes.items, hasMore: followingRes.capped };
+		const followers = { items: followersRes.items, hasMore: followersRes.capped };
 		const spaces = paginated(spacesRes.items);
-		const tags = paginated(tagsRes.items);
-		const blocked = paginated(blockedRes.items);
-		const mutedUsers = paginated(mutedUsersRes.items);
+		const tags = { items: tagsRes.items, hasMore: tagsRes.capped };
+		const blocked = { items: blockedRes.items, hasMore: blockedRes.capped };
+		const mutedUsers = { items: mutedUsersRes.items, hasMore: mutedUsersRes.capped };
 		const mutedSpaces = paginated(mutedSpacesRes.items);
 
 		return {

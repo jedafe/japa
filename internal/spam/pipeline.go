@@ -24,7 +24,7 @@ type SpamCheckRequest struct { //nolint:revive // stuttering type name preserved
 	UserID     pgtype.UUID // Submitting user
 	IP         string      // Client IP address
 	UserType   string      // "new" or "existing"
-	EntityType string      // "post", "comment", or "message"
+	EntityType string      // "post", "comment", "message", or "roadmap_submission"
 }
 
 // SpamCheckResult holds the combined output of all pipeline layers.

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
-	// /ads/networks — migrated to the EntityPage scaffold; CRUD entity with JSON textarea fields.
+	// /ads/networks — migrated to the EntityPage scaffold; CRUD entity with structured JSON fields.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { adNetworksApi, type AdNetwork } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -41,7 +41,7 @@
 	const providerOptions = $derived(providers.map((p) => ({ value: p, label: p })));
 
 	// `slot_mapping`/`config` are JSON objects in the row; `load` stringifies them
-	// so the textarea fields seed correctly. `api_key` is never returned by the
+	// so the json editor fields seed correctly. `api_key` is never returned by the
 	// backend (security), so it seeds empty on edit — "leave empty to keep current".
 	// `fields` is $derived so the provider <select> options update after the
 	// providers API call resolves.
@@ -52,8 +52,8 @@
 		{ key: 'api_key', label: t('networks.api_key', 'API Key'), type: 'password', placeholder: t('networks.api_key_keep', 'Leave empty to keep current key') },
 		{ key: 'priority', label: t('networks.priority', 'Priority'), type: 'number', min: 0 },
 		{ key: 'is_active', label: t('networks.active', 'Active'), type: 'checkbox' },
-		{ key: 'slot_mapping', label: t('networks.slot_mapping', 'Slot Mapping'), type: 'textarea', placeholder: '{"leaderboard": "ca-pub-123/456"}' },
-		{ key: 'config', label: t('networks.config', 'Config'), type: 'textarea', placeholder: '{"auto_ads": true, "ads_per_page": 3}' }
+		{ key: 'slot_mapping', label: t('networks.slot_mapping', 'Slot Mapping'), type: 'json', placeholder: '{"leaderboard": "ca-pub-123/456"}' },
+		{ key: 'config', label: t('networks.config', 'Config'), type: 'json', placeholder: '{"auto_ads": true, "ads_per_page": 3}' }
 	]);
 
 	function parseJsonField(raw: string, field: string): Record<string, unknown> | undefined {
@@ -172,7 +172,7 @@
 						n.provider.toLowerCase().includes(query)
 					);
 				}
-				// Stringify JSON object fields so the textarea inputs seed correctly.
+				// Stringify JSON object fields so the json editor inputs seed correctly.
 				const data = raw.map((n) => ({
 					...n,
 					slot_mapping: n.slot_mapping ? JSON.stringify(n.slot_mapping, null, 2) : '',

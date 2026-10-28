@@ -3437,7 +3437,6 @@ func (a *agentRoadmapAdapter) ListItems(ctx context.Context, f ai.RoadmapItemFil
 		return nil, err
 	}
 
-
 	res, err := a.svc.AdminListItems(ctx, roadmap.AdminListFilter{
 		Status:         f.Status,
 		Search:         f.Search,
@@ -3494,7 +3493,6 @@ func (a *agentRoadmapAdapter) GetItem(ctx context.Context, id pgtype.UUID) (*ai.
 		return nil, err
 	}
 
-
 	item, err := a.svc.AdminGetItem(ctx, id)
 	if err != nil {
 		return nil, roadmapErr(err)
@@ -3508,7 +3506,6 @@ func (a *agentRoadmapAdapter) CreateItem(ctx context.Context, in ai.RoadmapItemI
 	if err := a.checkEnabled(ctx); err != nil {
 		return nil, err
 	}
-
 
 	item, err := a.svc.AdminCreateItem(ctx, roadmapInput(in))
 	if err != nil {
@@ -3524,7 +3521,6 @@ func (a *agentRoadmapAdapter) UpdateItem(ctx context.Context, id pgtype.UUID, in
 		return nil, err
 	}
 
-
 	item, err := a.svc.AdminUpdateItem(ctx, id, roadmapInput(in))
 	if err != nil {
 		return nil, roadmapErr(err)
@@ -3539,7 +3535,6 @@ func (a *agentRoadmapAdapter) SetItemStatus(ctx context.Context, id pgtype.UUID,
 		return nil, err
 	}
 
-
 	item, err := a.svc.AdminSetStatus(ctx, id, roadmap.ItemStatus(status), actorID)
 	if err != nil {
 		return nil, roadmapErr(err)
@@ -3553,7 +3548,6 @@ func (a *agentRoadmapAdapter) ListCategories(ctx context.Context) ([]ai.RoadmapC
 	if err := a.checkEnabled(ctx); err != nil {
 		return nil, err
 	}
-
 
 	cats, err := a.svc.AdminListCategories(ctx)
 	if err != nil {

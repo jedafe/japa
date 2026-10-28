@@ -268,7 +268,7 @@
 			case 'user':
 				return `/u/${slug}`;
 			case 'organization':
-				return `/organizations/${slug}`;
+				return `/org/${slug}`;
 			case 'space':
 				return `/spaces/${slug}`;
 			case 'tag':
@@ -377,9 +377,20 @@
 
 	async function doUnfollow(item: FollowedEntity) {
 		const type = followableType(item.entity_type);
-		if ((type === 'space' || type === 'tag' || type === 'source') && !item.entity_slug) return;
 		const key = removedKey('following', item.entity_id);
 		const slug = item.entity_slug ? item.entity_slug : undefined;
+		// Dead entities have no slug — the slug-keyed routes can't reach them;
+		// fall back to DELETE /follows which takes entity_type + entity_id.
+		if ((type === 'space' || type === 'tag' || type === 'source') && !slug) {
+			const { ok } = await optimisticAction({
+				apply: () => optimisticRemoved[key] = true,
+				rollback: () => delete optimisticRemoved[key],
+				call: () => api.delete('/follows', { entity_type: item.entity_type, entity_id: item.entity_id })
+			});
+			if (ok) await invalidate('/api/v1/me/following');
+			delete optimisticRemoved[key];
+			return;
+		}
 		const { ok } = await optimisticAction({
 			apply: () => optimisticRemoved[key] = true,
 			rollback: () => delete optimisticRemoved[key],
@@ -393,8 +404,18 @@
 
 	async function doUnfollowTag(tag: FollowedEntity) {
 		const slug = tag.entity_slug;
-		if (!slug) return;
 		const key = removedKey('tags', tag.entity_id);
+		if (!slug) {
+			// Dead tag — slug-keyed route unreachable; use DELETE /follows.
+			const { ok } = await optimisticAction({
+				apply: () => optimisticRemoved[key] = true,
+				rollback: () => delete optimisticRemoved[key],
+				call: () => api.delete('/follows', { entity_type: tag.entity_type, entity_id: tag.entity_id })
+			});
+			if (ok) await invalidate('/api/v1/me/followed-tags');
+			delete optimisticRemoved[key];
+			return;
+		}
 		const { ok } = await optimisticAction({
 			apply: () => optimisticRemoved[key] = true,
 			rollback: () => delete optimisticRemoved[key],

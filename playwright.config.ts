@@ -13,7 +13,7 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'main',
-			testMatch: ['main.spec.ts', 'main-journeys.spec.ts', 'ssr-integrity.spec.ts', 'jce-nested.spec.ts', 'jce-scope-chain.spec.ts', 'settings-audit.spec.ts', 'blog-audit.spec.ts'],
+			testMatch: ['main.spec.ts', 'main-journeys.spec.ts', 'ssr-integrity.spec.ts', 'jce-nested.spec.ts', 'jce-scope-chain.spec.ts', 'settings-audit.spec.ts', 'blog-audit.spec.ts', 'roadmap.spec.ts'],
 			use: { baseURL: 'http://localhost:3000', channel: 'chrome' }
 		},
 		{

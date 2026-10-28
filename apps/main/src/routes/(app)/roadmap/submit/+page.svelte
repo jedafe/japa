@@ -167,6 +167,7 @@
 				<input
 					id="roadmap-title"
 					type="text"
+					maxlength={200}
 					bind:value={title}
 					placeholder={t('roadmap.submit.field_title_placeholder', 'A short name for your request')}
 					class={inputClass}
@@ -195,6 +196,7 @@
 				<textarea
 					id="roadmap-summary"
 					rows={2}
+					maxlength={500}
 					bind:value={summary}
 					placeholder={t('roadmap.submit.field_summary_placeholder', 'One or two sentences shown on the board card')}
 					class={inputClass}
@@ -208,6 +210,7 @@
 				<textarea
 					id="roadmap-body"
 					rows={6}
+					maxlength={20000}
 					bind:value={body}
 					placeholder={t('roadmap.submit.field_body_placeholder', 'Describe the feature, who it helps, and why it matters')}
 					class={inputClass}

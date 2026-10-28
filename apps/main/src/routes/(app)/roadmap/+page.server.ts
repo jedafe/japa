@@ -19,6 +19,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 	const category = event.url.searchParams.get('category') ?? '';
+	const sort = event.url.searchParams.get('sort') === 'recent' ? 'recent' : 'votes';
 
 	// Custom invalidation key so client-side mutations (votes, moderator
 	// status changes) re-run this load without depending on the fetch URL.
@@ -35,5 +36,5 @@ export const load: PageServerLoad = async (event) => {
 		loadError = true;
 	}
 
-	return { board, loadError, category };
+	return { board, loadError, category, sort };
 };

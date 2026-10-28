@@ -134,7 +134,7 @@ func flagPhaseStatus(phase string) ItemStatus {
 // without a declared phase are live (shipped); disabled flags are planned.
 func effectiveFlagPhase(phase string, enabled bool) string {
 	if features.ValidPhase(phase) {
-		return phase
+		return features.DisplayPhase(phase, enabled)
 	}
 
 	if enabled {
@@ -554,7 +554,7 @@ func (s *Service) GetItem(ctx context.Context, slug string, viewerID pgtype.UUID
 	// Submitter sees their own item in any state (§22: a declined item must
 	// be reachable so the author can appeal the decision from the detail
 	// surface); everyone else gets the §113 indistinguishable-404.
-	if !IsPublicStatus(ItemStatus(row.Status)) && row.SubmittedBy != viewerID {
+	if !IsPublicStatus(ItemStatus(row.Status)) && !(viewerID.Valid && row.SubmittedBy == viewerID) {
 		return nil, fmt.Errorf("%w: roadmap item %q is not public", ErrNotFound, slug)
 	}
 
@@ -729,8 +729,10 @@ func (s *Service) CreateSubmission(ctx context.Context, in SubmissionInput) (gen
 		return gen.RoadmapItem{}, fmt.Errorf("%w: roadmap submissions are closed", ErrSubmissionsDisabled)
 	}
 
-	if strings.TrimSpace(in.Title) == "" {
-		return gen.RoadmapItem{}, fmt.Errorf("%w: title is required", errpkg.ErrRequired)
+	// Body arrives base64 TipTap JSON — measure the decoded payload, not
+	// the wire encoding (~33% inflation would reject a 20k-char body).
+	if err := validateSubmissionLengths(in.Title, in.Summary, shadowBodyText(in.Body)); err != nil {
+		return gen.RoadmapItem{}, err
 	}
 
 	slug, err := s.uniqueItemSlug(ctx, content.Slugify(in.Title))
@@ -809,8 +811,8 @@ func (s *Service) AdminGetItem(ctx context.Context, id pgtype.UUID) (gen.Roadmap
 // publicly visible the shadow contents row is created immediately so §49
 // comments work from first publish (§113).
 func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.RoadmapItem, error) {
-	if strings.TrimSpace(in.Title) == "" {
-		return gen.RoadmapItem{}, fmt.Errorf("%w: title is required", errpkg.ErrRequired)
+	if err := validateSubmissionLengths(in.Title, deref(in.Summary), deref(in.Body)); err != nil {
+		return gen.RoadmapItem{}, err
 	}
 
 	status := in.Status
@@ -955,6 +957,18 @@ func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminI
 	// sync the (soft-deleted) shadow contents row.
 	if current.DeletedAt.Valid {
 		return gen.RoadmapItem{}, fmt.Errorf("%w: item is deleted", ErrNotFound)
+	}
+
+	// Field caps mirror create — a PATCH must not bypass them. Empty title /
+	// nil pointers mean "unchanged" and skip validation.
+	if in.Title != "" && len(in.Title) > maxRoadmapTitleLen {
+		return gen.RoadmapItem{}, fmt.Errorf("%w: title exceeds %d characters", errpkg.ErrInvalid, maxRoadmapTitleLen)
+	}
+	if in.Summary != nil && len(*in.Summary) > maxRoadmapSummaryLen {
+		return gen.RoadmapItem{}, fmt.Errorf("%w: summary exceeds %d characters", errpkg.ErrInvalid, maxRoadmapSummaryLen)
+	}
+	if in.Body != nil && len(shadowBodyText(*in.Body)) > maxRoadmapBodyLen {
+		return gen.RoadmapItem{}, fmt.Errorf("%w: body exceeds %d characters", errpkg.ErrInvalid, maxRoadmapBodyLen)
 	}
 
 	params, linkStatus, err := s.mergeItemPatch(ctx, current, in)
@@ -1192,8 +1206,11 @@ func (s *Service) AdminSetStatus(ctx context.Context, id pgtype.UUID, to ItemSta
 	// under_review reopen reaches the public board through a different path
 	// and would otherwise render with no comments thread (§113).
 	if IsPublicStatus(to) {
+		// Non-fatal like the create/update paths — a transient contents
+		// failure must not block a legitimate status change; the next
+		// publishable save recreates the shadow row.
 		if _, err := s.ensureShadowContent(ctx, current, actorID); err != nil {
-			return gen.RoadmapItem{}, fmt.Errorf("publishing roadmap item: %w", err)
+			slog.Error("roadmap shadow content create failed", "item_id", current.ID, "error", err)
 		}
 	}
 
@@ -1713,6 +1730,29 @@ func (s *Service) enqueueShipNotify(item gen.RoadmapItem) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// Submission field caps — applied to community submissions and admin items
+// so unbounded text can't bloat the row (§113 submissions contract).
+const (
+	maxRoadmapTitleLen   = 200
+	maxRoadmapSummaryLen = 500
+	maxRoadmapBodyLen    = 32768 // decoded TipTap JSON — ~20k plaintext + structure overhead
+)
+
+func validateSubmissionLengths(title, summary, body string) error {
+	switch {
+	case strings.TrimSpace(title) == "":
+		return fmt.Errorf("%w: title is required", errpkg.ErrRequired)
+	case len(title) > maxRoadmapTitleLen:
+		return fmt.Errorf("%w: title exceeds %d characters", errpkg.ErrInvalid, maxRoadmapTitleLen)
+	case len(summary) > maxRoadmapSummaryLen:
+		return fmt.Errorf("%w: summary exceeds %d characters", errpkg.ErrInvalid, maxRoadmapSummaryLen)
+	case len(body) > maxRoadmapBodyLen:
+		return fmt.Errorf("%w: body exceeds %d characters", errpkg.ErrInvalid, maxRoadmapBodyLen)
+	}
+
+	return nil
+}
 
 // uniqueItemSlug finds an unused roadmap_items slug by appending -2, -3,
 // … to the base until a gap appears. getItemIDBySlug sees soft-deleted rows

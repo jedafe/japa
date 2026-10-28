@@ -327,6 +327,14 @@ func (s *Service) DeleteTag(ctx context.Context, id pgtype.UUID) error {
 		return fmt.Errorf("deleting tag: %w", err)
 	}
 
+	// Remove follow rows targeting the tag so following lists don't dangle.
+	if err := s.write.DeleteFollowsByEntity(ctx, gen.DeleteFollowsByEntityParams{
+		EntityType: "tag",
+		EntityID:   id,
+	}); err != nil {
+		return fmt.Errorf("deleting tag follows: %w", err)
+	}
+
 	return nil
 }
 

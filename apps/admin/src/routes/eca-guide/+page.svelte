@@ -145,9 +145,9 @@
 			{ value: 'immigration', label: 'Immigration' }, { value: 'study', label: 'Study' },
 			{ value: 'employment', label: 'Employment' }, { value: 'professional_licensure', label: 'Professional licensure' },
 		]},
-		{ key: 'pathway_steps', label: 'Pathway steps (JSON)', type: 'textarea', required: true },
-		{ key: 'documents_required', label: 'Documents required (JSON)', type: 'textarea' },
-		{ key: 'accepted_for', label: 'Accepted for (JSON)', type: 'textarea' },
+		{ key: 'pathway_steps', label: 'Pathway steps (JSON)', type: 'json', required: true },
+		{ key: 'documents_required', label: 'Documents required (JSON)', type: 'json' },
+		{ key: 'accepted_for', label: 'Accepted for (JSON)', type: 'json' },
 		{ key: 'fee_estimate', label: 'Fee estimate', type: 'text' },
 		currencies.length > 0
 			? { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions(currencies) }
@@ -157,7 +157,7 @@
 	]);
 
 	// pathway_steps / documents_required / accepted_for are jsonb columns —
-	// the form submits textarea strings, so parse them back to real JSON
+	// the json editor fields submit JSON strings, so parse them back to real JSON
 	// before they hit the API (an unparseable value passes through and the
 	// backend validation reports it).
 	function parseJsonFields(body: Record<string, unknown>): Record<string, unknown> {
@@ -182,7 +182,7 @@
 		// to body.data and lose the total needed for pagination.
 		const res = await apiRaw<{ data?: Guide[]; pagination?: { total: number } }>(`/admin/eca-guides?${params}`);
 		if (res.ok) {
-			// Stringify jsonb fields so the textarea inputs in EntityForm seed
+			// Stringify jsonb fields so the json editor inputs in EntityForm seed
 			// editable JSON instead of "[object Object]" (parseJsonFields
 			// converts them back on save).
 			const data = (res.data?.data ?? []).map((g) => ({

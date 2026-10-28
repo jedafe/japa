@@ -305,7 +305,7 @@
 		font-weight: 700;
 		margin: 1.5rem 0 0.5rem;
 	}
-	h2 .n {
+	.commit-title .n {
 		font-weight: 400;
 		color: var(--color-muted, #6b7280);
 	}
@@ -346,7 +346,7 @@
 		background: var(--color-surface, #fff);
 		overflow: hidden;
 	}
-	.commit-group + .commit-group {
+	:global(.commit-group + .commit-group) {
 		border-top: 1px solid var(--color-border, #e5e7eb);
 	}
 	.commit-trigger {
@@ -372,11 +372,11 @@
 		font-size: 0.95rem;
 		font-weight: 600;
 	}
-	.commit-trigger .chev {
+	:global(.commit-trigger .chev) {
 		color: var(--color-muted, #6b7280);
 		transition: transform 0.15s ease;
 	}
-	.commit-trigger[data-state='open'] .chev {
+	:global(.commit-trigger[data-state='open'] .chev) {
 		transform: rotate(180deg);
 	}
 	.commit-content {

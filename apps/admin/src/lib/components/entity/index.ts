@@ -71,4 +71,19 @@ export type FieldDef =
 			class?: string;
 			readonlyInEdit?: boolean;
 			hideInEdit?: boolean;
+	  } & RowLockProps)
+	| ({
+			key: string;
+			label: string;
+			/** Structured JSON editor (object rows / array repeater / typed
+			 *  inputs) backed by the shared JsonValueEditor. The bound value
+			 *  stays a JSON string — pages keep their existing JSON.parse in
+			 *  create/update — but object/array row values are accepted too. */
+			type: 'json';
+			placeholder?: string;
+			required?: boolean;
+			help?: string;
+			class?: string;
+			readonlyInEdit?: boolean;
+			hideInEdit?: boolean;
 	  } & RowLockProps);

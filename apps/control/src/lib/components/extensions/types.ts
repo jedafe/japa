@@ -30,7 +30,9 @@ export interface Extension {
 	phase?: string;
 	show_on_roadmap?: boolean;
 	surfaces?: Record<string, SurfaceRule>;
+	stored_surfaces?: Record<string, SurfaceRule>;
 	linked_roadmap_slug?: string;
+	internal?: boolean;
 }
 
 // SURFACES is the canonical ordered surface list (features.Surfaces). The UI
@@ -43,7 +45,8 @@ export const SURFACES = [
 	'mobile',
 	'admin',
 	'extension',
-	'desktop'
+	'desktop',
+	'control'
 ] as const;
 
 export type SurfaceName = (typeof SURFACES)[number];

@@ -9,6 +9,7 @@
 	import { Eye, Settings, BarChart3 } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { readinessAdminApi } from '$lib/api';
+	import { JsonValueEditor } from '@japaconnect/ui';
 
 	type ReadinessItem = {
 		id: string;
@@ -484,13 +485,7 @@
 					<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 						{t('app.tools.curated_roadmap', 'Curated Roadmap (JSON)')}
 					</p>
-					<textarea
-						value={curatedRoadmapText}
-						oninput={(e) => (curatedRoadmapText = e.currentTarget.value)}
-						rows="8"
-						class="w-full rounded-lg border p-3 font-mono text-xs"
-						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
-					></textarea>
+					<JsonValueEditor bind:value={curatedRoadmapText} />
 					<p class="mt-1 text-xs" style="color: var(--color-muted)">
 						{t('app.tools.curated_roadmap_hint', 'Map of dimension -> ordered roadmap steps. Must be valid JSON.')}
 					</p>

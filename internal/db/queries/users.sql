@@ -549,7 +549,13 @@ SELECT
  COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
  (SELECT COUNT(*)::int
  FROM follows f
- WHERE f.follower_id = u.id) AS following_count
+ WHERE f.follower_id = u.id AND (
+   (f.entity_type = 'user' AND EXISTS (SELECT 1 FROM users fu WHERE fu.id = f.entity_id AND fu.status = 'active'))
+   OR (f.entity_type = 'space' AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = f.entity_id AND sp.deleted_at IS NULL))
+   OR (f.entity_type = 'tag' AND EXISTS (SELECT 1 FROM tags tg WHERE tg.id = f.entity_id))
+   OR (f.entity_type = 'organization' AND EXISTS (SELECT 1 FROM organizations og WHERE og.id = f.entity_id AND og.deleted_at IS NULL))
+   OR (f.entity_type = 'source' AND EXISTS (SELECT 1 FROM intel_sources src WHERE src.id = f.entity_id))
+ )) AS following_count
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
@@ -585,7 +591,13 @@ SELECT u.id AS user_id,
  COALESCE(up.created_at, u.created_at) AS created_at,
  (SELECT COUNT(*)::int
  FROM follows f
- WHERE f.follower_id = u.id) AS following_count
+ WHERE f.follower_id = u.id AND (
+   (f.entity_type = 'user' AND EXISTS (SELECT 1 FROM users fu WHERE fu.id = f.entity_id AND fu.status = 'active'))
+   OR (f.entity_type = 'space' AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = f.entity_id AND sp.deleted_at IS NULL))
+   OR (f.entity_type = 'tag' AND EXISTS (SELECT 1 FROM tags tg WHERE tg.id = f.entity_id))
+   OR (f.entity_type = 'organization' AND EXISTS (SELECT 1 FROM organizations og WHERE og.id = f.entity_id AND og.deleted_at IS NULL))
+   OR (f.entity_type = 'source' AND EXISTS (SELECT 1 FROM intel_sources src WHERE src.id = f.entity_id))
+ )) AS following_count
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
@@ -632,7 +644,13 @@ SELECT u.id AS user_id,
  COALESCE(up.created_at, u.created_at) AS created_at,
  (SELECT COUNT(*)::int
  FROM follows f
- WHERE f.follower_id = u.id) AS following_count
+ WHERE f.follower_id = u.id AND (
+   (f.entity_type = 'user' AND EXISTS (SELECT 1 FROM users fu WHERE fu.id = f.entity_id AND fu.status = 'active'))
+   OR (f.entity_type = 'space' AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = f.entity_id AND sp.deleted_at IS NULL))
+   OR (f.entity_type = 'tag' AND EXISTS (SELECT 1 FROM tags tg WHERE tg.id = f.entity_id))
+   OR (f.entity_type = 'organization' AND EXISTS (SELECT 1 FROM organizations og WHERE og.id = f.entity_id AND og.deleted_at IS NULL))
+   OR (f.entity_type = 'source' AND EXISTS (SELECT 1 FROM intel_sources src WHERE src.id = f.entity_id))
+ )) AS following_count
 FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
@@ -884,7 +902,13 @@ WHERE b.user_id = @user_id;
 SELECT
  COALESCE(u.follower_count, 0)::int AS follower_count,
  (SELECT COUNT(*)::int FROM follows f
- WHERE f.follower_id = u.id) AS following_count
+ WHERE f.follower_id = u.id AND (
+   (f.entity_type = 'user' AND EXISTS (SELECT 1 FROM users fu WHERE fu.id = f.entity_id AND fu.status = 'active'))
+   OR (f.entity_type = 'space' AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = f.entity_id AND sp.deleted_at IS NULL))
+   OR (f.entity_type = 'tag' AND EXISTS (SELECT 1 FROM tags tg WHERE tg.id = f.entity_id))
+   OR (f.entity_type = 'organization' AND EXISTS (SELECT 1 FROM organizations og WHERE og.id = f.entity_id AND og.deleted_at IS NULL))
+   OR (f.entity_type = 'source' AND EXISTS (SELECT 1 FROM intel_sources src WHERE src.id = f.entity_id))
+ )) AS following_count
 FROM users u
 WHERE u.id = @user_id;
 

@@ -53,6 +53,7 @@
 	let items = $state<FollowListItem[]>([]);
 	let loading = $state(false);
 	let loaded = $state(false);
+	let loadError = $state('');
 
 	const titleKey = $derived(type === 'followers' ? 'profile.followers_label' : 'profile.following_label');
 	// Mirrored from /u/[username]/+page.server.ts FOLLOW_LIST_PAGE_SIZE.
@@ -136,8 +137,9 @@
 			}
 			items = mapList(all, type);
 			loaded = true;
-		} catch {
+		} catch (e) {
 			items = [];
+			loadError = e instanceof Error ? e.message : 'Something went wrong';
 			loaded = true;
 		} finally {
 			loading = false;
@@ -150,6 +152,7 @@
 			items = [];
 			loaded = false;
 			loading = false;
+			loadError = '';
 		} else if (!loaded && !loading) {
 			if (initialItems.length > 0 || count === 0) {
 				items = initialItems;
@@ -194,7 +197,18 @@
 							</div>
 						{/each}
 					</div>
-				{:else if items.length === 0}
+				{:else if loadError}
+				<div class="px-4 py-8 text-center">
+					<p class="text-sm text-[var(--color-text-muted)]">{loadError}</p>
+					<button
+						type="button"
+						class="mt-3 rounded-[var(--radius-button)] border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-surface-2)]"
+						onclick={() => { loadError = ''; loaded = false; items = []; }}
+					>
+						{t('common.retry', 'Try again')}
+					</button>
+				</div>
+			{:else if items.length === 0}
 					<div class="flex flex-col items-center gap-2 py-10 text-center">
 						<UserCircle size={32} class="text-[var(--color-muted)]" />
 						<p class="text-sm text-[var(--color-muted)]">

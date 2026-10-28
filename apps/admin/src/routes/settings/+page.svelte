@@ -19,6 +19,7 @@
 	import PinnedPagesEditor from '$lib/components/settings/PinnedPagesEditor.svelte';
 	import DocsVersionsEditor from '$lib/components/settings/DocsVersionsEditor.svelte';
 	import LinkListEditor from '$lib/components/settings/LinkListEditor.svelte';
+	import { JsonValueEditor } from '@japaconnect/ui';
 
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
@@ -146,7 +147,9 @@
 				if (s.type === 'toggle') {
 					const id = `${cat.key}.${s.key}`;
 					if (toggleStates[id] !== originalToggleStates[id]) count++;
-				} else if (JSON.stringify(s.value) !== JSON.stringify(origSetting.value)) {
+				} else if (s.type === 'json'
+					? jsonSignature(s.value) !== jsonSignature(origSetting.value)
+					: JSON.stringify(s.value) !== JSON.stringify(origSetting.value)) {
 					count++;
 				}
 			}
@@ -173,6 +176,15 @@
 		}
 	}
 
+	// Canonical signature for JSON-typed settings — the stored override may be
+	// a JSON string while the edited value is parsed (the json editor stores
+	// parsed values). Compare content, not representation, so identical
+	// values don't read as dirty.
+	function jsonSignature(v: unknown): string {
+		if (typeof v !== 'string') return JSON.stringify(v ?? null);
+		try { return JSON.stringify(JSON.parse(v)); } catch { return JSON.stringify(v); }
+	}
+
 	function isSettingDirty(catKey: string, settingKey: string, settingType: string): boolean {
 		const cat = categories.find(c => c.key === catKey);
 		const origCat = originalCategories.find(c => c.key === catKey);
@@ -185,6 +197,9 @@
 		if (settingType === 'toggle') {
 			const id = `${catKey}.${settingKey}`;
 			return toggleStates[id] !== originalToggleStates[id];
+		}
+		if (settingType === 'json') {
+			return jsonSignature(setting.value) !== jsonSignature(origSetting.value);
 		}
 		return JSON.stringify(setting.value) !== JSON.stringify(origSetting.value);
 	}
@@ -724,7 +739,7 @@
 						{#each category.settings as setting (setting.key)}
 							{@const toggleId = `${category.key}.${setting.key}`}
 							{@const dirty = isSettingDirty(category.key, setting.key, setting.type)}
-							{@const wideField = ['textarea', 'brand-slides', 'pinned-pages', 'docs-versions', 'link-list', 'link-cards'].includes(setting.type)}
+							{@const wideField = ['textarea', 'json', 'brand-slides', 'pinned-pages', 'docs-versions', 'link-list', 'link-cards'].includes(setting.type)}
 							<div class="grid grid-cols-1 gap-4 px-5 py-3.5 {wideField ? '' : 'sm:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] sm:items-center'}" style={dirty ? "background: color-mix(in srgb, var(--color-warning) 5%, transparent)" : ''}>
 								<div>
 									<div class="flex items-center gap-2">
@@ -815,6 +830,19 @@
 											{t('content_types.title', 'Content Types')}
 											<ArrowRight class="h-3.5 w-3.5 rtl:-scale-x-100" />
 										</a>
+									{:else if setting.type === 'json'}
+										<JsonValueEditor
+											id={toggleId}
+											value={typeof setting.value === 'string' ? setting.value : JSON.stringify(setting.value ?? null)}
+											placeholder={setting.placeholder}
+											disabled={!canManage}
+											onchange={(json) => {
+												// Store the parsed value so the update payload keeps
+												// the same shape the catalog default uses.
+												try { updateSettingValue(category.key, setting.key, json.trim() ? JSON.parse(json) : null); }
+												catch { updateSettingValue(category.key, setting.key, json); }
+											}}
+										/>
 									{:else if setting.type === 'textarea'}
 										<textarea
 											id={toggleId}

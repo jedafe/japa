@@ -310,6 +310,16 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 		// record space.joined so badge/challenge triggers (e.g.
 		// space_explorer) fire for the request-approval join path too.
 		h.Service.emitActivity(r.Context(), userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
+
+		// BUG-031 (follows audit): approval completes the join — the
+		// join→follow contract applies on this path too, not just the
+		// immediate open-join flow. Ensure semantics make it idempotent.
+		if h.follows != nil {
+			if _, ferr := h.follows.EnsureFollow(r.Context(), userID, "space", spaceID); ferr != nil {
+				slog.Warn("join-approval: auto-follow failed",
+					"space_id", spaceID.String(), "user_id", userID.String(), "error", ferr)
+			}
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": composite, "status": status}})

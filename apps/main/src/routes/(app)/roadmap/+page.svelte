@@ -5,6 +5,7 @@
 	// from the API). The flagship item (is_flagship) is pinned in a banner
 	// above the grid. Voting is logged-in only; guests get a login CTA.
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t, siteName} from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -21,7 +22,7 @@
 	// The backend enforces roadmap.moderate on PATCH /admin/roadmap/items/{id}/status.
 	const canModerate = $derived(!!data.user?.permissions?.includes('roadmap.moderate'));
 
-	let sort = $state<'votes' | 'recent'>('votes');
+	let sort = $state<'votes' | 'recent'>(data.sort === 'recent' ? 'recent' : 'votes');
 
 	// The first flagship item across columns renders as the pinned banner and
 	// is excluded from the column lists so it isn't duplicated.
@@ -188,7 +189,12 @@
 							{ value: 'votes', label: t('roadmap.sort_votes', 'Top votes') },
 							{ value: 'recent', label: t('roadmap.sort_recent', 'Most recent') }
 						]}
-						onValueChange={(v) => (sort = v as 'votes' | 'recent')}
+						onValueChange={(v) => {
+							sort = v as 'votes' | 'recent';
+							const u = new URL(page.url);
+							if (v === 'votes') u.searchParams.delete('sort'); else u.searchParams.set('sort', v);
+							goto(u, { replaceState: true, noScroll: true, keepFocus: true });
+						}}
 						compact
 						class="w-36"
 						ariaLabel={t('roadmap.sort_label', 'Sort items')}

@@ -3,6 +3,7 @@ package tips
 import (
 	"context"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -166,11 +167,15 @@ func (s *Service) acceptedMethods(owner Owner, st Settings) []string {
 		}
 	}
 	if st.AcceptFiat {
+		fiat := make([]string, 0, len(fiatMethods))
 		for m := range fiatMethods {
 			if s.providerConfigured(m) {
-				out = append(out, m)
+				fiat = append(fiat, m)
 			}
 		}
+		// Map iteration order is unstable — sort for deterministic configs.
+		sort.Strings(fiat)
+		out = append(out, fiat...)
 	}
 	if st.OCCollectiveSlug != nil && *st.OCCollectiveSlug != "" {
 		out = append(out, MethodOpenCollective)

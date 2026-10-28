@@ -3355,6 +3355,24 @@ func (q *Queries) ReassignOrganizationOwner(ctx context.Context, arg ReassignOrg
 	return err
 }
 
+const reassignTipsRecipientToPlaceholder = `-- name: ReassignTipsRecipientToPlaceholder :exec
+UPDATE tips SET recipient_user_id = $1
+WHERE recipient_user_id = $2
+`
+
+type ReassignTipsRecipientToPlaceholderParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+}
+
+// tips.recipient_user_id has a NO ACTION FK to users — received tips would
+// block the hard-delete. Reassign to the deleted-user placeholder so the
+// financial record survives pseudonymized (§19 retention).
+func (q *Queries) ReassignTipsRecipientToPlaceholder(ctx context.Context, arg ReassignTipsRecipientToPlaceholderParams) error {
+	_, err := q.db.Exec(ctx, reassignTipsRecipientToPlaceholder, arg.TargetUserID, arg.UserID)
+	return err
+}
+
 const recordConsent = `-- name: RecordConsent :one
 INSERT INTO consent_records (user_id, consent_type, granted, policy_version, ip_address, user_agent) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, user_id, consent_type, granted, policy_version,

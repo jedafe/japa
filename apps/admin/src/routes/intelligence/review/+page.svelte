@@ -14,6 +14,7 @@
 	import { goto } from '$app/navigation';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { intelReviewApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { JsonValueEditor } from '@japaconnect/ui';
 
 	type ReviewRecord = {
 		id: string;
@@ -155,7 +156,7 @@
 		pageError = '';
 		try {
 			// INTEL-009 fix: backend expects { fields: { ... } }, not { extracted }.
-			// The editExtracted textarea holds a JSON string; parse it into a
+			// The editExtracted editor holds a JSON string; parse it into a
 			// field map so the backend can merge it into editorial_overrides.
 			let fields: Record<string, unknown> = {};
 			try {
@@ -350,7 +351,7 @@
 	]);
 
 	const fields: FieldDef[] = [
-		{ key: 'extracted', label: t('intel.extracted', 'Extracted Data'), type: 'textarea' }
+		{ key: 'extracted', label: t('intel.extracted', 'Extracted Data'), type: 'json' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -521,13 +522,9 @@
 				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="extracted-edit">
 					{t('intel.extracted', 'Extracted Data (JSON)')}
 				</label>
-				<textarea
-					id="extracted-edit"
-					bind:value={editExtracted}
-					rows="14"
-					class="mt-1 w-full rounded-md border p-3 font-mono text-xs"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				></textarea>
+				<div class="mt-1">
+					<JsonValueEditor id="extracted-edit" bind:value={editExtracted} />
+				</div>
 			</div>
 		</div>
 	{/if}

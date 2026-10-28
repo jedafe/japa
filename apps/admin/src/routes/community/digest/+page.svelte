@@ -7,6 +7,7 @@
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { digestAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { JsonValueEditor } from '@japaconnect/ui';
 	import { useCountries } from '$lib/utils/countries.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -339,12 +340,7 @@
 		{#if editError}
 			<p class="text-sm" style="color: var(--color-danger)">{editError}</p>
 		{/if}
-		<textarea
-			bind:value={editJson}
-			rows="20"
-			class="w-full rounded-md border p-2 font-mono text-xs"
-			style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-		></textarea>
+		<JsonValueEditor bind:value={editJson} />
 	</div>
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t('app.digest.cancel', 'Cancel')}</Button>

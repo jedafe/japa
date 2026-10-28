@@ -101,6 +101,10 @@ type Handlers struct {
 // and notification dispatch are applied consistently (H3).
 type FollowToggleService interface {
 	ToggleFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+	EnsureFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+	EnsureUnfollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+	CountFollowers(ctx context.Context, entityType string, entityID pgtype.UUID) (int32, error)
+	InvalidateEntityFollowers(ctx context.Context, entityType string, entityID pgtype.UUID)
 }
 
 // SetFollowToggleService injects the generic follows service for space follow.

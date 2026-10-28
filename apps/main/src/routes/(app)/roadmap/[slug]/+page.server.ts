@@ -4,7 +4,6 @@ import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
 import type {
 	Comment,
 	FeatureFlagDetail,
-	RoadmapBoard,
 	RoadmapBoardItem,
 	RoadmapItemDetail
 } from '$lib/types';
@@ -81,20 +80,9 @@ export const load: PageServerLoad = async (event) => {
 		// Related items — same category via the board endpoint (Rule 16: no
 		// dedicated related-items route exists; reuse /roadmap/board?category=).
 		// Best-effort; a failure degrades to an empty list.
-		item.category_slug
-			? apiGet<RoadmapBoard>(
-					ctx,
-					`/roadmap/board?category=${encodeURIComponent(item.category_slug)}`
-				)
-					.then(
-						(board) =>
-							board.columns
-								.flatMap((c) => c.items)
-								.filter((i) => i.id !== item.id)
-								.slice(0, 3) as RoadmapBoardItem[]
-					)
-					.catch(() => [] as RoadmapBoardItem[])
-			: Promise.resolve([] as RoadmapBoardItem[])
+		// Related items come with the detail payload (SQL-side, same
+		// category, capped at 3) — no second board fetch needed.
+		Promise.resolve((item.related ?? []).slice(0, 3) as RoadmapBoardItem[])
 	]);
 	const comments = commentsRes?.data ?? [];
 	const commentDeletedUserIds = commentsRes?.deleted_user_ids ?? null;

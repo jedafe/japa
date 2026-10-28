@@ -118,9 +118,11 @@
 			<div class="border-border-card rounded-lg border p-4">
 				<p class="text-muted-foreground mb-2 text-sm">Top pages</p>
 				<table class="w-full text-sm">
-					{#each topPages as r}
-						<tr class="border-border-card border-t"><td class="truncate py-1.5 pr-4 font-mono text-xs">{r.x}</td><td class="py-1.5 text-right tabular-nums">{r.y}</td></tr>
-					{/each}
+					<tbody>
+						{#each topPages as r}
+							<tr class="border-border-card border-t"><td class="truncate py-1.5 pr-4 font-mono text-xs">{r.x}</td><td class="py-1.5 text-right tabular-nums">{r.y}</td></tr>
+						{/each}
+					</tbody>
 				</table>
 			</div>
 		{/if}

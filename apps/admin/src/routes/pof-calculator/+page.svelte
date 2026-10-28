@@ -161,13 +161,13 @@
 			{
 				key: 'amount_schedule',
 				label: t('app.tools.col_amount_schedule', 'Amount schedule (JSON)'),
-				type: 'textarea',
+				type: 'json',
 				required: true,
 				placeholder: '[{"members":1,"amount":14500}] or {"base":13347,"base_members":1,"per_additional":680}',
 				help: t('app.tools.amount_schedule_help', 'Band array or formula object — resolved per household size')
 			},
 			{ key: 'funds_must_be_liquid', label: t('app.tools.col_funds_liquid', 'Funds must be liquid'), type: 'checkbox' },
-			{ key: 'accepted_proof', label: t('app.tools.col_accepted_proof', 'Accepted proof (JSON array)'), type: 'textarea', placeholder: '["bank_statement","gift_deed"]' },
+			{ key: 'accepted_proof', label: t('app.tools.col_accepted_proof', 'Accepted proof (JSON array)'), type: 'json', placeholder: '["bank_statement","gift_deed"]' },
 			{ key: 'notes', label: t('app.tools.col_notes', 'Notes'), type: 'textarea' },
 			{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox', help: t('app.tools.is_active_help', 'Inactive requirements are hidden from the public calculator') }
 		];
@@ -176,7 +176,7 @@
 	// ── JSON field (de)serialization ──────────────────────────────────────
 	// amount_schedule/accepted_proof are JSONB columns. EntityPage seeds the
 	// edit form straight from the row, so rows are mapped to pretty-printed
-	// JSON text for the textareas; normalizeBody parses them back on submit.
+	// JSON text for the editors; normalizeBody parses them back on submit.
 	function toJsonText(v: unknown): string {
 		if (v == null) return '';
 		if (typeof v === 'string') {
@@ -208,7 +208,7 @@
 
 	// ── JSON field normalization ──────────────────────────────────────────
 	// amount_schedule/accepted_proof are JSONB columns; EntityForm gives raw
-	// textarea strings which must be parsed before hitting the API (a quoted
+	// editor strings which must be parsed before hitting the API (a quoted
 	// JSON string would fail backend schedule validation).
 	function normalizeBody(body: Record<string, unknown>): { body?: Record<string, unknown>; error?: string } {
 		const out = { ...body };

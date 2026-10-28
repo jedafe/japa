@@ -32,10 +32,18 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	var followed bool
 
 	var err error
-	if h.follows != nil {
-		followed, err = h.follows.ToggleFollow(r.Context(), user.UserID, "space", space.ID)
+	if h.follows == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Follow service unavailable")
+		return
+	}
+
+	// POST = ensure-follow, DELETE = ensure-unfollow (method semantics
+	// per api-routes-catalog); a raw toggle on either method would
+	// invert state on repeated calls.
+	if r.Method == http.MethodDelete {
+		followed, err = h.follows.EnsureUnfollow(r.Context(), user.UserID, "space", space.ID)
 	} else {
-		followed, err = h.Service.ToggleFollowSpace(r.Context(), user.UserID, space.ID)
+		followed, err = h.follows.EnsureFollow(r.Context(), user.UserID, "space", space.ID)
 	}
 
 	if err != nil {
@@ -47,7 +55,12 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	// the user is now following, false when now unfollowed. Hardcoding false
 	// on DELETE would misreport the state when the user wasn't following
 	// before (the toggle follows them but the response says false).
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": followed}})
+	fc := int32(0)
+	if h.follows != nil {
+		fc, _ = h.follows.CountFollowers(r.Context(), "space", space.ID)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": followed, "follower_count": fc}})
 }
 
 // =====================

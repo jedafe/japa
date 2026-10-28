@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { JsonValueEditor } from '@japaconnect/ui';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2 } from 'lucide-svelte';
 
@@ -348,14 +349,12 @@
 
 				<div>
 					<label for="ce-provider" class={labelClass}>{t('intel.channel_provider_config', 'Provider config (JSON)')}</label>
-					<textarea
+					<JsonValueEditor
 						id="ce-provider"
 						bind:value={form.provider_config_text}
-						class="{inputClass} font-mono text-xs"
-						rows={4}
 						placeholder={'{"feed_url": "https://…", "headers": {…}}'}
-						oninput={() => { if (jsonError) validateProviderConfig(); }}
-					></textarea>
+						onchange={() => { if (jsonError) validateProviderConfig(); }}
+					/>
 					{#if jsonError}
 						<p class="text-destructive mt-1 text-xs">{jsonError}</p>
 					{:else}

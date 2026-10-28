@@ -132,7 +132,7 @@ func TestPrivateSpaceGate_GetSpace(t *testing.T) {
 	}
 
 	// AddSpaceMember leaves status at its 'approved' default.
-	if err := q.AddSpaceMember(ctx, gen.AddSpaceMemberParams{SpaceID: private.ID, UserID: memberID}); err != nil {
+	if _, err := q.AddSpaceMember(ctx, gen.AddSpaceMemberParams{SpaceID: private.ID, UserID: memberID}); err != nil {
 		t.Fatalf("add member: %v", err)
 	}
 

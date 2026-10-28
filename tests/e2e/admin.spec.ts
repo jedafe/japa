@@ -39,4 +39,14 @@ test.describe('Admin App — Smoke Tests', () => {
 		await page.goto('/broadcast');
 		await expect(page).toHaveURL(/\/login/);
 	});
+
+	test('unauthenticated roadmap page redirects to /login', async ({ page }) => {
+		await page.goto('/roadmap');
+		await expect(page).toHaveURL(/\/login/);
+	});
+
+	test('unauthenticated roadmap submissions redirect to /login', async ({ page }) => {
+		await page.goto('/roadmap/submissions');
+		await expect(page).toHaveURL(/\/login/);
+	});
 });

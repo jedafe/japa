@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/follows"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -608,6 +609,14 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete source")
 
 		return
+	}
+
+	// Remove follow rows targeting the source so following lists don't dangle.
+	if h.followsSvc != nil {
+		h.followsSvc.InvalidateEntityFollowers(r.Context(), follows.EntityTypeSource, sourceID)
+		if err := h.followsSvc.DeleteFollowsByEntity(r.Context(), follows.EntityTypeSource, sourceID); err != nil {
+			slog.Warn("intel: delete source follows failed", "source_id", sourceID.String(), "error", err)
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{

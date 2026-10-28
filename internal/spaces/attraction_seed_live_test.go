@@ -8,12 +8,12 @@ package spaces
 // database accidentally — all rows it creates are deleted on teardown.
 
 import (
-	"strconv"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 

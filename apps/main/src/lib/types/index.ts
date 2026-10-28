@@ -5484,6 +5484,7 @@ export interface RoadmapBoard {
 
 /** GET /roadmap/items/{slug} — board fields plus the description body. */
 export interface RoadmapItemDetail extends RoadmapBoardItem {
+	related?: RoadmapBoardItem[];
 	/** Base64 TipTap JSON (submitted via encodeReplyBody) or plain text. */
 	body: string | null;
 	/** True when the caller submitted the item — gates the §22 appeal control on declined items. */

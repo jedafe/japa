@@ -18,6 +18,7 @@
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+	import { JsonValueEditor } from "@japaconnect/ui";
 	import { Eye, Pencil, Trash2, Plus, ArrowUp, ArrowDown, LayoutGrid, X } from "lucide-svelte";
 
 	type PropOption = { value: string; label: string };
@@ -916,7 +917,9 @@
 		{:else}
 			<div>
 				<label for="widget-props" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_props_json", "Props (JSON)")}</label>
-				<textarea id="widget-props" bind:value={widgetProps} rows="6" class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={'{}'}></textarea>
+				<div class="mt-1">
+					<JsonValueEditor id="widget-props" bind:value={widgetProps} placeholder={'{}'} />
+				</div>
 			</div>
 		{/if}
 		<div class="grid grid-cols-2 gap-4">

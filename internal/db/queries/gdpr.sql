@@ -1508,3 +1508,10 @@ FROM (SELECT * FROM tips WHERE sender_user_id = @user_id ORDER BY created_at DES
 -- name: GdprExportTipsReceived :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM tips WHERE recipient_user_id = @user_id ORDER BY created_at DESC) t;
+
+-- name: ReassignTipsRecipientToPlaceholder :exec
+-- tips.recipient_user_id has a NO ACTION FK to users — received tips would
+-- block the hard-delete. Reassign to the deleted-user placeholder so the
+-- financial record survives pseudonymized (§19 retention).
+UPDATE tips SET recipient_user_id = @target_user_id
+WHERE recipient_user_id = @user_id;

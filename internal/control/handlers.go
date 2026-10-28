@@ -3629,6 +3629,12 @@ type extensionEntry struct {
 	// LinkedRoadmapSlug is the slug of the roadmap_items row linked via
 	// feature_flag_key. Omitted when no item is linked.
 	LinkedRoadmapSlug string `json:"linked_roadmap_slug,omitempty"`
+	// Internal excludes the flag from the public flag projections (§42).
+	Internal bool `json:"internal"`
+	// StoredSurfaces is the raw stored surfaces map (unmerged with registry
+	// DefaultSurfaces) — the manage UI needs it to tell an explicit stored
+	// {state:"visible"} override apart from a default-visible surface.
+	StoredSurfaces map[string]features.SurfaceRule `json:"stored_surfaces,omitempty"`
 }
 
 // Derived phases shown for flags whose config carries no explicit phase —
@@ -3701,7 +3707,7 @@ func buildExtensionEntry(key string, row features.FlagRow, roadmapSlug string) e
 	entry := extensionEntry{
 		Key:               key,
 		SettingKey:        key, // the feature_flags key is the storage key now
-		Version:           "1.0.0",
+		Version:           "",
 		RolloutPercentage: 100,
 		Surfaces:          map[string]features.SurfaceRule{},
 	}
@@ -3741,6 +3747,8 @@ func buildExtensionEntry(key string, row features.FlagRow, roadmapSlug string) e
 	}
 
 	entry.ShowOnRoadmap = cfg.ShowOnRoadmap
+	entry.Internal = cfg.Internal
+	entry.StoredSurfaces = cfg.Surfaces
 	entry.Phase = extensionPhase(entry.Enabled, cfg)
 
 	for surface, rule := range cfg.Surfaces {
@@ -3800,7 +3808,7 @@ func decodeFlagConfig(raw []byte) features.FlagConfig {
 // ones — the same derivation eval applies to absent phases.
 func extensionPhase(enabled bool, cfg features.FlagConfig) string {
 	if cfg.Phase != "" {
-		return cfg.Phase
+		return features.DisplayPhase(cfg.Phase, enabled)
 	}
 
 	if enabled {
@@ -3853,6 +3861,85 @@ func (h *Handlers) extensionRow(ctx context.Context, key string) (enabled bool, 
 	return row.Enabled, decodeFlagConfig(row.Config), true, nil
 }
 
+// validateAudienceRefs resolves every group:<slug> and perm:<node> entry in
+// the patched surface rules against the database — a typo'd slug or node
+// would silently hide the feature behind an audience nobody matches.
+func (h *Handlers) validateAudienceRefs(ctx context.Context, cfg features.FlagConfig) error {
+	if h.DB == nil || h.DB.Reader == nil {
+		return nil
+	}
+
+	groups := map[string]bool{}
+	perms := map[string]bool{}
+
+	for _, rule := range cfg.Surfaces {
+		for _, entry := range rule.Audience {
+			if slug, ok := strings.CutPrefix(entry, "group:"); ok {
+				groups[slug] = true
+			} else if node, ok := strings.CutPrefix(entry, "perm:"); ok {
+				perms[node] = true
+			}
+		}
+	}
+
+	var missing []string
+
+	check := func(query, col string, set map[string]bool, prefix string) error {
+		if len(set) == 0 {
+			return nil
+		}
+
+		vals := make([]string, 0, len(set))
+		for v := range set {
+			vals = append(vals, v)
+		}
+
+		rows, err := h.DB.Reader.Query(ctx, query, vals)
+		if err != nil {
+			return fmt.Errorf("validating audience %s: %w", col, err)
+		}
+
+		found := map[string]bool{}
+		for rows.Next() {
+			var v string
+			if err := rows.Scan(&v); err != nil {
+				rows.Close()
+				return fmt.Errorf("validating audience %s: %w", col, err)
+			}
+			found[v] = true
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return fmt.Errorf("validating audience %s: %w", col, err)
+		}
+		rows.Close()
+
+		for v := range set {
+			if !found[v] {
+				missing = append(missing, prefix+v)
+			}
+		}
+
+		return nil
+	}
+
+	if err := check(`SELECT slug FROM user_groups WHERE slug = ANY($1)`, "groups", groups, "group:"); err != nil {
+		return err
+	}
+
+	if err := check(`SELECT key FROM permissions WHERE key = ANY($1)`, "permissions", perms, "perm:"); err != nil {
+		return err
+	}
+
+	if len(missing) > 0 {
+		sort.Strings(missing)
+
+		return fmt.Errorf("unknown audience entries: %s", strings.Join(missing, ", "))
+	}
+
+	return nil
+}
+
 // extensionKnown reports whether key is manageable through the extensions
 // endpoints — a Registry key or an existing feature_flags row (the same
 // union ListExtensions returns). A row read error propagates so write
@@ -3890,6 +3977,7 @@ type extensionPatchInput struct {
 	Name              *string                          `json:"name"`
 	Description       *string                          `json:"description"`
 	RolloutPercentage *int                             `json:"rollout_percentage"`
+	Internal          *bool                            `json:"internal"`
 }
 
 // extensionPatchFields translates the PATCH body into (a) the jsonb patch
@@ -3897,9 +3985,8 @@ type extensionPatchInput struct {
 // field names, so the wire's snake_case names map to the stored camelCase —
 // and (b) a FlagConfig carrying only the provided fields for ValidateConfig
 // (the checks are field-local, so validating the patch validates the write).
-// Surfaces is a whole-map replace when present — the manage UI always sends
-// the complete rule set. Rollout is clamped to 0-100, matching the dedicated
-// rollout endpoint.
+// Surfaces is a whole-map replace when present — the manage UI sends only
+// touched/non-default surfaces. Rollout 1-100 is validated upstream.
 func extensionPatchFields(input *extensionPatchInput) ([]byte, features.FlagConfig) {
 	patch := map[string]any{}
 
@@ -3908,6 +3995,11 @@ func extensionPatchFields(input *extensionPatchInput) ([]byte, features.FlagConf
 	if input.Phase != nil {
 		cfg.Phase = strings.TrimSpace(*input.Phase)
 		patch["phase"] = cfg.Phase
+	}
+
+	if input.Internal != nil {
+		cfg.Internal = *input.Internal
+		patch["internal"] = cfg.Internal
 	}
 
 	if input.ShowOnRoadmap != nil {
@@ -3990,6 +4082,13 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rollout writes must be 1-100 — 0 is ambiguous with "unset" and is
+	// not a real "off" state (disable the flag instead).
+	if input.RolloutPercentage != nil && (*input.RolloutPercentage < 1 || *input.RolloutPercentage > 100) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_rollout", "rollout_percentage must be between 1 and 100 — disable the flag to turn it off")
+		return
+	}
+
 	patch, patchCfg := extensionPatchFields(&input)
 
 	// Phase/surface/audience/geo vocabularies are validated before the
@@ -3997,6 +4096,13 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	// invalid_surface, …) emitted in the 400 error envelope.
 	if err := features.ValidateConfig(patchCfg); err != nil {
 		features.WriteConfigError(w, err)
+		return
+	}
+
+	// Audience entries must resolve — a typo'd group slug or permission node
+	// would silently hide the feature behind an audience nobody matches.
+	if err := h.validateAudienceRefs(r.Context(), patchCfg); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", err.Error())
 		return
 	}
 
@@ -4078,7 +4184,7 @@ func (h *Handlers) DeleteExtension(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.auditFlagWrite(r.Context(), updatedBy, clientip.FromRequest(r), "feature_flag.delete", key,
-		before, &flagAuditSnapshot{})
+		before, nil)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "deleted"}})
 }
@@ -4174,12 +4280,9 @@ func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request
 	}
 
 	percentage := *input.RolloutPercentage
-	if percentage < 0 {
-		percentage = 0
-	}
-
-	if percentage > 100 {
-		percentage = 100
+	if percentage < 1 || percentage > 100 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_rollout", "rollout_percentage must be between 1 and 100 — disable the flag to turn it off")
+		return
 	}
 
 	before := h.snapshotFlag(r.Context(), key)

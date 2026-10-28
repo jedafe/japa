@@ -3,7 +3,10 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import Switch from '$lib/components/ui/Switch.svelte';
 	import ManageSheet from '$lib/components/extensions/manage-sheet.svelte';
+	import { env } from '$env/dynamic/public';
 	import { SURFACES, type Extension } from '$lib/components/extensions/types';
+
+	const mainSiteUrl = env.PUBLIC_JC_MAIN_URL ?? '';
 	import { api } from '$lib/api';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import {
@@ -67,7 +70,9 @@
 				phase: e.phase ?? (e.enabled ? 'shipped' : 'planned'),
 				show_on_roadmap: !!e.show_on_roadmap,
 				surfaces: e.surfaces ?? {},
-				linked_roadmap_slug: e.linked_roadmap_slug
+				stored_surfaces: e.stored_surfaces ?? {},
+				linked_roadmap_slug: e.linked_roadmap_slug,
+				internal: !!e.internal
 			}));
 		} else {
 			error = result.error || t('extensions.load_error', 'Failed to load extensions.');
@@ -418,11 +423,13 @@
 							<p class="text-muted-foreground font-mono text-xs">{ext.key}</p>
 						</div>
 					</div>
-					<span
-						class="bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-					>
-						v{ext.version}
-					</span>
+					{#if ext.version}
+						<span
+							class="bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
+						>
+							v{ext.version}
+						</span>
+					{/if}
 				</div>
 
 				<p class="text-muted-foreground mt-3 line-clamp-3 min-h-[3.5rem] text-sm">
@@ -437,7 +444,25 @@
 					>
 						{phaseLabel(ext.phase)}
 					</span>
-					{#if ext.linked_roadmap_slug}
+					{#if ext.internal}
+						<span
+							class="bg-muted text-muted-foreground inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+							title={t('extensions.internal_hint', 'Hidden from the public flag map — gating still applies.')}
+						>
+							{t('extensions.internal_badge', 'Internal')}
+						</span>
+					{/if}
+					{#if ext.linked_roadmap_slug && mainSiteUrl}
+						<a
+							href="{mainSiteUrl}/roadmap/{ext.linked_roadmap_slug}"
+							target="_blank" rel="noopener"
+							class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+							title="{t('extensions.linked_roadmap', 'Linked roadmap item')}: {ext.linked_roadmap_slug}"
+						>
+							<Route class="size-3" />
+							{ext.linked_roadmap_slug}
+						</a>
+					{:else if ext.linked_roadmap_slug}
 						<span
 							class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
 							title="{t('extensions.linked_roadmap', 'Linked roadmap item')}: {ext.linked_roadmap_slug}"
@@ -505,13 +530,12 @@
 					</div>
 				</div>
 
-				{#if ext.enabled}
-					<div class="mt-2 flex items-center gap-2 text-xs">
+				<div class="mt-2 flex items-center gap-2 text-xs">
 						{#if editingRollout === ext.key}
 							<span class="text-muted-foreground">{t('extensions.rollout', 'Rollout')}:</span>
 							<input
 								type="number"
-								min="0"
+								min="1"
 								max="100"
 								bind:value={rolloutInput}
 								class="border-border-input bg-background w-16 rounded border px-2 py-0.5 text-xs"
@@ -541,7 +565,6 @@
 							</button>
 						{/if}
 					</div>
-				{/if}
 			</div>
 		{/each}
 	</div>
