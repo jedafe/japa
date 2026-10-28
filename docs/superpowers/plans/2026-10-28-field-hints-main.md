@@ -128,7 +128,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 - [ ] **Step 4:** `bun run check` — zero new errors.
 - [ ] **Step 5: Commit** — `feat(main): add field hints to onboarding and user dialogs`.
 
-### Task 5: Create panel, spaces & editors
+### [DONE] Task 5: Create panel, spaces & editors
 
 **Files:** `src/lib/components/create/panel/`: `CreateJourneyPanel.svelte`, `CreateSeoPanel.svelte`, `CreateSettingsPanel.svelte`, `SeriesCreationModal.svelte`; `src/lib/components/create/editors/`: `ComparisonBuilder.svelte`, `ListBuilder.svelte`; `src/lib/components/create/`: `TagInput.svelte`, `VideoField.svelte`, `CustomFieldGroup.svelte`; `src/lib/components/spaces/`: `SpaceCreationModal.svelte`, `SpaceSettings.svelte`, `SpaceCombobox.svelte`; `src/lib/components/create/CreateShell.svelte`; `src/lib/components/shell/SidebarWidgetRenderer.svelte`; `src/routes/(app)/dashboard/spaces/+page.svelte`. Keys: `en.json`.
 
@@ -192,7 +192,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ## Progress log (execution state)
 
-- Tasks 1–4 DONE & committed (auth, settings profile/prefs, settings keys/wallet/flows, onboarding/dialogs). svelte-check clean: 0 errors / 14 baseline warnings.
+- Tasks 1–5 DONE + Task 6 PARTIAL (all `new` forms committed: achievements, ama, calendar, forum, mutual-aid, planning-groups, roadmap submit, scam-alerts — 38 hints). STILL TODO for Task 6: matching `[id]/edit`+`[slug]/edit` twins (same field sets — apply same hint keys), stories/feedback(dynamic renderer—skip)/tags/spaces/wiki (SuggestEdit, WikiRollupPanel), japa-stage/me, list pages w/ real fields (ama[?], achievements edit). & committed (auth, settings profile/prefs, settings keys/wallet/flows, onboarding/dialogs). svelte-check clean: 0 errors / 14 baseline warnings.
 - **Key inserter:** `/tmp/add_keys.py` — run from `apps/main`, JSON on stdin, inserts sorted into `src/lib/i18n/en.json`. Recreate if gone (json.load → sorted insert → dump indent=2 ensure_ascii=False + trailing newline).
 - **Commit surgically:** `git add` exact files only — tree has ~60 unrelated dirty files; a broad `git add apps/main/src` already caused one bad commit (fixed via `git reset --soft`).
 - **Intentionally skipped:** dynamic field renderers (CustomFieldGroup, claim-ownership, verification-request — admin-authored labels), readonly inputs (ReferralWidget share URL), hidden honeypots, search/composer inputs (MarketplaceHero, bookmarks search), MentorSection (already had help text), NotificationsSection/AIPrivacySection/LocationSection (already hint-complete).
