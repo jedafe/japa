@@ -172,6 +172,7 @@
 					>
 						{t('fx.amount', 'Amount')}
 					</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.fx.amount_hint', 'The amount to convert.')}</p>
 					<div class="mt-1 flex items-center gap-2">
 						<input
 							id="fx-amount"
@@ -197,6 +198,7 @@
 						>
 							{t('fx.from', 'From')}
 						</label>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.fx.from_hint', 'Source currency.')}</p>
 						<div class="mt-1">
 							<Autocomplete
 								id="fx-from"
@@ -229,6 +231,7 @@
 						>
 							{t('fx.to', 'To')}
 						</label>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.fx.to_hint', 'Target currency.')}</p>
 						<div class="mt-1">
 							<Autocomplete
 								id="fx-to"

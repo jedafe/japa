@@ -222,6 +222,7 @@
 				>
 					{t('geo.destination', 'Destination')}
 				</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.credential.dest_hint', 'The country where your credential will be assessed.')}</p>
 				<div class="mt-2">
 					<SelectField
 						id="cc-dest"
@@ -245,6 +246,7 @@
 					>
 						{t('credential_checker.profession', 'Profession')}
 					</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.credential.profession_hint', 'Your regulated or skilled profession.')}</p>
 					<div class="mt-2">
 						<SelectField
 							id="cc-profession"
@@ -263,6 +265,7 @@
 					>
 						{t('credential_checker.issuing_country', 'Issuing country (optional)')}
 					</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.credential.issuing_hint', 'The country that issued your credential.')}</p>
 					<div class="mt-2">
 						<SelectField
 							id="cc-issuing"

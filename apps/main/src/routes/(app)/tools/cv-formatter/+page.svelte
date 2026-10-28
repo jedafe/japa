@@ -244,6 +244,7 @@
 			<label for="cvf-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('cv_formatter.select_destination', 'Destination')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.cv.dest_hint', 'CV conventions differ by country — pick yours.')}</p>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('cv_formatter.select_destination_placeholder', 'Select destination country')}
@@ -346,6 +347,7 @@
 						<label for="output-format" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 							{t('cv_formatter.output_format', 'Format:')}
 						</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.cv.format_hint', 'The file format for the formatted CV.')}</p>
 						<AutocompleteSelect
 							id="output-format"
 							bind:value={outputFormat}

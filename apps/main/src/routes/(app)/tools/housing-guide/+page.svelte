@@ -174,6 +174,7 @@
 			<label for="hg-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('housing_guide.destination', 'Destination country')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.housing.dest_hint', 'The city or country you are moving to.')}</p>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('housing_guide.select_destination', 'Select a destination country')}

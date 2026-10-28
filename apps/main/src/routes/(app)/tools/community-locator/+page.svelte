@@ -389,6 +389,7 @@
 			>
 				{t('geo.destination', 'Destination:')}
 			</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.community.dest_hint', 'The country or city to find communities in.')}</p>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('geo.select_destination', 'Select a country…')}

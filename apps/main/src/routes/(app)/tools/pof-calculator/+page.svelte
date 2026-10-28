@@ -212,6 +212,7 @@
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="visaType">
 					{t('pof_calculator.visa_type', 'Visa / program type')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.pof.visa_hint', 'The visa category you are applying under.')}</p>
 				<Autocomplete
 					id="visaType"
 					placeholder={t('pof_calculator.select_visa', 'Select visa type')}
@@ -232,6 +233,7 @@
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="members">
 					{t('pof_calculator.members', 'Family members (you + spouse/partner)')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.pof.members_hint', 'Number of family members, including you.')}</p>
 				<input
 					id="members"
 					type="number"
@@ -246,6 +248,7 @@
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="dependants">
 					{t('pof_calculator.dependants', 'Dependants (children)')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.pof.dependants_hint', 'Dependents who count toward the fund requirement.')}</p>
 				<input
 					id="dependants"
 					type="number"

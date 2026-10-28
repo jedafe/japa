@@ -325,6 +325,7 @@
 			>
 				{t('geo.destination', 'Destination:')}
 			</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('tools.embassy.dest_hint', 'The country whose embassy alerts you want.')}</p>
 			<div class="mt-2">
 				<Autocomplete
 					placeholder={t('geo.select_destination', 'Select a country…')}
