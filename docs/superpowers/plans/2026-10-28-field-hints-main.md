@@ -138,7 +138,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 - [ ] **Step 4:** `bun run check` — zero new errors.
 - [ ] **Step 5: Commit** — `feat(main): add field hints to create panel and spaces`.
 
-### Task 6: Community feature pages
+### [DONE] Task 6: Community feature pages
 
 **Files:** `src/routes/(app)/achievements/{+page,new/+page,[slug]/edit/+page}.svelte`, `ama/{new,[id]/edit}/+page.svelte`, `calendar/{+page,new,[id]/edit}/+page.svelte`, `forum/{[category]/new,[slug]}/+page.svelte`, `japa-stage/{+page,me/+page}.svelte`, `mutual-aid/{+page,new,[id]/edit}/+page.svelte`, `planning-groups/{+page,new,[id],[id]/edit}/+page.svelte`, `roadmap/submit/+page.svelte`, `scam-alerts/{+page,new,[id]/edit}/+page.svelte`, `stories/+page.svelte`, `feedback/+page.svelte`, `tags/{+page,[slug]}/+page.svelte`, `spaces/{+page,[slug]}/+page.svelte`, `wiki/[space_slug]/{create,[page_slug]}/+page.svelte`, `src/lib/components/wiki/SuggestEdit.svelte`, `WikiRollupPanel.svelte`. Keys: `en.json`.
 
@@ -148,7 +148,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 - [ ] **Step 4:** `bun run check` — zero new errors.
 - [ ] **Step 5: Commit** — `feat(main): add field hints to community feature forms`.
 
-### Task 7: Marketplace, org, jobs & services
+### [DONE] Task 7: Marketplace, org, jobs & services
 
 **Files:** `src/lib/components/deals/DealForm.svelte`, `src/lib/components/marketplace/{MentorshipRequestDialog,MessageDialog,BookingDialog}.svelte`, `src/lib/components/messages/BookingDetailPane.svelte`, `src/lib/components/jobs/JobGeoFields.svelte`, `src/lib/components/services/{ServiceContentEditor,ServiceTierEditor}.svelte`, `src/routes/(app)/deal/[provider]/+page.svelte`, `deals/new/+page.svelte`, `(marketplace)/services/+page.svelte`, `jobs/{+page,create,[slug],[slug]/edit}/+page.svelte`, `services/{new,[slug]/edit}/+page.svelte`, `org/{+page,new,[slug]/coupons,[slug]/jobs/[jobId],[slug]/service-bookings}/+page.svelte`, `me/{applications,import}/+page.svelte`, `dashboard/organizations/{+page,[id],[id]/ads}/+page.svelte`, `dashboard/tickets/{new,[id]}/+page.svelte`. Keys: `en.json`.
 
@@ -158,7 +158,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 - [ ] **Step 4:** `bun run check` — zero new errors.
 - [ ] **Step 5: Commit** — `feat(main): add field hints to marketplace/org/jobs forms`.
 
-### Task 8: Tools pages
+### [DONE] Task 8: Tools pages
 
 **Files:** all under `src/routes/(app)/tools/`: `cost-of-living`, `credential-checker`, `crs-calculator`, `eca-guide`, `language-test`, `pof-calculator`, `processing-tracker/{+page,my-applications}`, `remittance`, `sop-generator`, `travel`, `visa-routes`, `arrival-checklist`, `attestation-guide`, `community-locator`, `currency-converter`, `cv-formatter`, `embassy-alerter`, `readiness`, `visa-checklist`, `housing-guide`, `tax-calculator` — each `+page.svelte`, plus the shared field component `src/lib/components/tools/DestinationSelector.svelte`. Keys: `en.json` under `tools.<tool>.*`.
 
@@ -168,7 +168,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 - [ ] **Step 4:** `bun run check` — zero new errors.
 - [ ] **Step 5: Commit** — `feat(main): add field hints to tools forms`.
 
-### Task 9: AI, studio, sources & remaining surfaces
+### [DONE] Task 9: AI, studio, sources & remaining surfaces
 
 **Files:** `src/lib/ai/{AddAiKeyDialog,EditAiKeyDialog,AiBodyField,AiDraftPanel,AiModelVoicePicker,ChatTemplatePanel}.svelte`, `src/lib/components/compare/AiQuickPanel.svelte`, `src/lib/components/studio/{ImportPanel,ContentManagerView,PromptRightPanel,PromptBuilder}.svelte`, `src/lib/components/source/{ProposeSourceForm,SourceEditDialog}.svelte`, `src/lib/components/reviews/ReviewForm.svelte`, `src/lib/components/ui/LiteralSuggest.svelte`, `src/lib/components/hub/dashboard/views/{AnalyticsView,RelationshipsView}.svelte`, routes: `sources/+page`, `scholarships/{+page,[guide_id],saved}/+page`, `universities/{+page,[slug]}/+page`, `visa-timelines/{+page,my}/+page`, `compare/+page`, `comparisons/+page`, `dashboard/media/+page`, `series/+page`, `deals/+page`, `messages/requests/+page`, `studio/{videos,moderation}/+page`, `search/+page`. Keys: `en.json`.
 
@@ -192,7 +192,8 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ## Progress log (execution state)
 
-- Tasks 1–5 DONE + Task 6 PARTIAL (all `new` forms committed: achievements, ama, calendar, forum, mutual-aid, planning-groups, roadmap submit, scam-alerts — 38 hints). STILL TODO for Task 6: matching `[id]/edit`+`[slug]/edit` twins (same field sets — apply same hint keys), stories/feedback(dynamic renderer—skip)/tags/spaces/wiki (SuggestEdit, WikiRollupPanel), japa-stage/me, list pages w/ real fields (ama[?], achievements edit). & committed (auth, settings profile/prefs, settings keys/wallet/flows, onboarding/dialogs). svelte-check clean: 0 errors / 14 baseline warnings.
+- Tasks 1–9 DONE & committed. Task 10 sweep done: corrupted scripted insertions reverted+reapplied (label-anchored), duplicate hints removed where pages had pre-existing guidance, svelte-check clean (0 errors / 14 baseline warnings). Remaining intentionally-unhinted files: composers (AiBodyField uses own placeholder prop — fields still show placeholder), search/filter/sort inputs, dynamic admin-authored renderers (CustomFieldGroup, claim-ownership, verification-request, readiness), hidden honeypots, readonly share fields, literal-suggest combobox, Acknowledge checkbox w/ inline label, ApiKeyRevealDialog checkbox. NOT verified: visual spot-check via bun run dev.
+- Earlier partial note: Tasks 1–5 DONE + Task 6 PARTIAL + Task 7 PARTIAL (DealForm, deals/new, MentorshipRequestDialog, BookingDialog, jobs/create, services/new, org/new, coupons, tickets/new committed — 28 hints). STILL TODO Task 7: MessageDialog(textarea—reuse services.message_hint), BookingDetailPane, JobGeoFields(country/state/city), ServiceTierEditor+ServiceContentEditor(inline tier cells—aria-labels already), deal/[provider], marketplace/services, jobs list/[slug]/edit, services/[slug]/edit, org+page/jobs[slug]/service-bookings, me/applications+import, dashboard/organizations×3, tickets/[id]. (all `new` forms committed: achievements, ama, calendar, forum, mutual-aid, planning-groups, roadmap submit, scam-alerts — 38 hints). STILL TODO for Task 6: matching `[id]/edit`+`[slug]/edit` twins (same field sets — apply same hint keys), stories/feedback(dynamic renderer—skip)/tags/spaces/wiki (SuggestEdit, WikiRollupPanel), japa-stage/me, list pages w/ real fields (ama[?], achievements edit). & committed (auth, settings profile/prefs, settings keys/wallet/flows, onboarding/dialogs). svelte-check clean: 0 errors / 14 baseline warnings.
 - **Key inserter:** `/tmp/add_keys.py` — run from `apps/main`, JSON on stdin, inserts sorted into `src/lib/i18n/en.json`. Recreate if gone (json.load → sorted insert → dump indent=2 ensure_ascii=False + trailing newline).
 - **Commit surgically:** `git add` exact files only — tree has ~60 unrelated dirty files; a broad `git add apps/main/src` already caused one bad commit (fixed via `git reset --soft`).
 - **Intentionally skipped:** dynamic field renderers (CustomFieldGroup, claim-ownership, verification-request — admin-authored labels), readonly inputs (ReferralWidget share URL), hidden honeypots, search/composer inputs (MarketplaceHero, bookmarks search), MentorSection (already had help text), NotificationsSection/AIPrivacySection/LocationSection (already hint-complete).
