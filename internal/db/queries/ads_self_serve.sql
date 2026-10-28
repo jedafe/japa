@@ -117,6 +117,31 @@ SELECT EXISTS(
 ) AS is_member;
 
 -- =====================================================================
+-- Check if a user is an owner/admin of an organization (spend authority —
+-- campaign funding debits the org owner's wallet, so only roles that can
+-- commit org funds may create campaigns).
+-- =====================================================================
+
+-- name: IsOrgAdmin :one
+SELECT EXISTS(
+ SELECT 1 FROM organization_members
+ WHERE organization_id = @org_id AND user_id = @user_id
+  AND role IN ('owner', 'admin')
+) AS is_admin;
+
+-- =====================================================================
+-- Org ends its own campaign early — stops serving, remaining escrow is
+-- refunded via ads:refund_campaign_credits. Only stoppable states.
+-- =====================================================================
+
+-- name: EndSelfServeAdCampaign :one
+UPDATE ad_campaigns
+SET status = 'ended', updated_at = now()
+WHERE id = @id AND organization_id = @organization_id
+ AND status IN ('pending_review', 'active', 'paused')
+RETURNING *;
+
+-- =====================================================================
 -- Refund unused credits on rejection or early end.
 -- =====================================================================
 
@@ -125,6 +150,8 @@ SELECT * FROM ad_campaigns
 WHERE id = @id AND organization_id IS NOT NULL;
 
 -- name: MarkCampaignRefunded :exec
+-- Zeroes the escrow column only — the campaign keeps its real lifecycle
+-- status (rejected for review rejects, ended for auto/manual ends).
 UPDATE ad_campaigns
-SET budget_credits = 0, status = 'rejected', updated_at = now()
+SET budget_credits = 0, updated_at = now()
 WHERE id = @id;

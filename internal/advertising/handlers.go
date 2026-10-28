@@ -8,7 +8,9 @@
 package advertising
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -18,7 +20,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -44,18 +48,21 @@ func NewHandlers(service *Service) *Handlers {
 // enqueueAdEventIngest enqueues an async ad event ingestion task.
 // Fire-and-forget: errors are logged but never propagated.
 // userID may be invalid (zero UUID) for guest events — user_id is nullable.
-func (h *Handlers) enqueueAdEventIngest(campaignID, userID pgtype.UUID, eventType string) {
+func (h *Handlers) enqueueAdEventIngest(r *http.Request, campaignID, userID pgtype.UUID, eventType string) {
 	if h.AsynqClient == nil {
 		return
 	}
 
-	// Build payload — omit user_id when invalid (guest/anonymous event).
+	// Build payload — user_id for authed events, hashed client IP for
+	// guests so dedupe keys differ per visitor instead of globally.
 	payloadMap := map[string]string{
 		"campaign_id": campaignID.String(),
 		"event_type":  eventType,
 	}
 	if userID.Valid {
 		payloadMap["user_id"] = userID.String()
+	} else if r != nil {
+		payloadMap["ip"] = fmt.Sprintf("%x", sha256.Sum256([]byte(clientip.FromRequest(r))))[:16]
 	}
 
 	payload, err := json.Marshal(payloadMap)
@@ -64,9 +71,13 @@ func (h *Handlers) enqueueAdEventIngest(campaignID, userID pgtype.UUID, eventTyp
 		return
 	}
 
+	// Replay dedupe: identical events (same campaign/type/identity) within
+	// 60s enqueue as the same Asynq signature and are dropped — a script
+	// hammering /ads/events can no longer mint unbounded impressions.
 	if _, err := h.AsynqClient.Enqueue(
 		asynq.NewTask(worker.TypeAdEventIngest, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeAdEventIngest)),
+		asynq.Unique(time.Minute),
 	); err != nil {
 		slog.Warn("ads: failed to enqueue event ingest task", "campaign_id", campaignID.String(), "error", err)
 	}
@@ -194,6 +205,11 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 
 	if input.Content == nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_content", "content is required")
+		return
+	}
+
+	if input.TargetURL != "" && !httpx.IsAbsoluteHTTPURL(input.TargetURL) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_target_url", "target_url must be a valid http or https URL")
 		return
 	}
 
@@ -377,6 +393,18 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Org-owned (self-serve) campaigns hold escrow — refund the unused
+	// remainder exactly like the auto-end path in ad:accrue_spend_daily.
+	if campaign.OrganizationID.Valid && h.AsynqClient != nil {
+		payload, _ := json.Marshal(map[string]string{"campaign_id": id.String()})
+		if _, err := h.AsynqClient.Enqueue(
+			asynq.NewTask(worker.TypeAdsRefundCampaignCredits, payload),
+			asynq.Queue(worker.QueueForTask(worker.TypeAdsRefundCampaignCredits)),
+		); err != nil {
+			slog.Warn("ads: failed to enqueue refund task on end", "campaign_id", id.String(), "error", err)
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
@@ -493,28 +521,16 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 // generated model's Content field is []byte (base64 on marshal); the wire
 // contract expects the raw JSON object.
 func campaignToWire(c AdCampaign) map[string]any {
+	// Public serve payload only — budget, spent, org ownership, targeting
+	// rules and internal lifecycle fields must not leak to anonymous
+	// callers of /ads/serve.
 	return map[string]any{
-		"id":                     c.ID,
-		"name":                   c.Name,
-		"slot_type_id":           c.SlotTypeID,
-		"content":                json.RawMessage(c.Content),
-		"target_url":             c.TargetUrl,
-		"budget":                 c.Budget,
-		"spent":                  c.Spent,
-		"status":                 c.Status,
-		"priority":               c.Priority,
-		"frequency_cap_per_user": c.FrequencyCapPerUser,
-		"start_date":             c.StartDate,
-		"end_date":               c.EndDate,
-		"created_by":             c.CreatedBy,
-		"created_at":             c.CreatedAt,
-		"updated_at":             c.UpdatedAt,
-		"target_geo":             c.TargetGeo,
-		"target_space_ids":       c.TargetSpaceIds,
-		"organization_id":        c.OrganizationID,
-		"flat_rate":              c.FlatRate,
-		"budget_credits":         c.BudgetCredits,
-		"is_house":               c.IsHouse,
+		"id":         c.ID,
+		"name":       c.Name,
+		"content":    json.RawMessage(c.Content),
+		"target_url": c.TargetUrl,
+		"priority":   c.Priority,
+		"is_house":   c.IsHouse,
 	}
 }
 
@@ -526,6 +542,14 @@ func campaignToWire(c AdCampaign) map[string]any {
 // Accepts a batch of ad events for async ingestion. Public (catalog: POST
 // /ads/events) — fire-and-forget impression/click ingestion from guests too.
 func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
+	// The event's user attribution comes from the session, never the
+	// request body — a client-supplied user_id would let anyone forge
+	// events against (or exhaust the frequency cap of) another user.
+	var authUserID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		authUserID = u.UserID
+	}
+
 	var input struct {
 		Events []struct {
 			CampaignID string `json:"campaign_id"`
@@ -562,13 +586,7 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// user_id is optional — guests submit events without it.
-		var userID pgtype.UUID
-		if e.UserID != "" {
-			_ = userID.Scan(e.UserID)
-		}
-
-		h.enqueueAdEventIngest(campaignID, userID, e.EventType)
+		h.enqueueAdEventIngest(r, campaignID, authUserID, e.EventType)
 
 		ingested++
 	}
@@ -612,8 +630,10 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name              string `json:"name"`
+		Description       string `json:"description"`
+		IsActive          *bool  `json:"is_active"`
+		MaxDisplayPerPage *int32 `json:"max_display_per_page"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -627,8 +647,10 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slotType, err := h.Service.CreateSlotType(r.Context(), AdSlotTypeInput{
-		Name:        input.Name,
-		Description: input.Description,
+		Name:              input.Name,
+		Description:       input.Description,
+		IsActive:          input.IsActive,
+		MaxDisplayPerPage: input.MaxDisplayPerPage,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -652,8 +674,10 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name              string `json:"name"`
+		Description       string `json:"description"`
+		IsActive          *bool  `json:"is_active"`
+		MaxDisplayPerPage *int32 `json:"max_display_per_page"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -662,8 +686,10 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slotType, err := h.Service.UpdateSlotType(r.Context(), id, AdSlotTypeInput{
-		Name:        input.Name,
-		Description: input.Description,
+		Name:              input.Name,
+		Description:       input.Description,
+		IsActive:          input.IsActive,
+		MaxDisplayPerPage: input.MaxDisplayPerPage,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -909,6 +935,15 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
+	}
+
+	if input.Status != nil {
+		switch *input.Status {
+		case "active", "paused", "ended":
+		default:
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "status must be one of: active, paused, ended")
+			return
+		}
 	}
 
 	var endDate *time.Time

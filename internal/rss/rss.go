@@ -1,10 +1,9 @@
 // Package rss provides RSS feed handlers for JapaConnect content.
 // // The handlers query published content from the database and render
-// standard RSS 2.0 XML. All feeds are public (no auth required) and
-// platform-scoped via the platform middleware.
+// standard RSS 2.0 XML. All feeds are public (no auth required).
 // // The shared RSS 2.0 XML model lives in internal/rss/model — imported by
-// this package, internal/blog, and internal/worker so all three render
-// feeds identically (RSS-011).
+// this package, internal/blog, internal/roadmap, and internal/worker so all
+// four render feeds identically (RSS-011).
 // // Ref: japaconnect-engineering/sections/26-seo-performance.md
 package rss
 
@@ -14,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -55,18 +55,18 @@ type RSSItem = model.Item //nolint:revive // stuttering alias preserved for API 
 // ---------------------------------------------------------------------------
 
 // CacheClient is the subset of valkeycompat.Cmdable used for reading and
-// writing cached RSS feeds (jc:cache:feed:rss:*). RSS-005: space/tag/user
-// feeds now cache their rendered XML inline (write-on-miss) so the
+// writing cached RSS feeds (jc:cache:feed:rss*). Space/tag/user/forum feeds
+// cache their rendered XML inline (write-on-miss) so the
 // Cache-Control: max-age=900 header is backed by an actual cache.
 type CacheClient interface {
 	Get(ctx context.Context, key string) *valkeycompat.StringCmd
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.StatusCmd
 }
 
-// feedCacheTTL is the TTL for inline-cached space/tag/user feeds. Matches
-// the universal feed's worker-generated cache (1hr) — comfortably longer
-// than the Cache-Control max-age=900s so the 15min browser TTL stays valid
-// between hourly regenerations.
+// feedCacheTTL is the TTL for inline-cached space/tag/user/forum feeds.
+// Matches the universal feed's worker-generated cache (1hr) — comfortably
+// longer than the Cache-Control max-age=900s so the 15min browser TTL stays
+// valid between hourly regenerations.
 const feedCacheTTL = time.Hour
 
 // Handlers holds dependencies for RSS HTTP handlers.
@@ -119,23 +119,46 @@ func (h *Handlers) resolveItems(ctx context.Context, items []RSSItem) {
 	h.cat.ResolveFields(ctx, &items, literals.NewContext(ctx, ""))
 }
 
+// serveFeedXML writes a rendered feed body with the standard RSS headers
+// (§26: Cache-Control max-age=900). Honors If-None-Match against a weak ETag
+// of the body — a matching request gets 304 and no payload. A nil body means
+// the render failed upstream and becomes a 500, not an empty feed.
+func serveFeedXML(w http.ResponseWriter, r *http.Request, body []byte) {
+	if body == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to render feed")
+		return
+	}
+
+	etag := model.ETag(body)
+	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
+	w.Header().Set("ETag", etag)
+
+	if model.IfNoneMatch(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
+	if _, err := w.Write(body); err != nil {
+		slog.Error("rss: write xml", "error", err)
+	}
+}
+
 // HandleFeed serves the universal feed at /feed.xml.
 // The feed returns all published content (excluding soft-deleted and
 // auto-hidden items). Reads from the Valkey cache populated by the
-// rss:regenerate worker task when available; falls back to live DB.
+// rss:regenerate worker task when available; on a miss it renders live and
+// writes the body back so subsequent requests are cache hits.
 func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 	siteURL := resolveSiteURL(r, h.siteURL)
 
-	// Try the Valkey cache first (jc:cache:feed:rss:{}).
+	// Try the Valkey cache first (jc:cache:feed:rss).
 	cacheKey := valkey.MustKey("cache:feed:rss")
 	if h.redis != nil {
 		if cached, err := h.redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
-			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
-			w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
-			w.Header().Set("X-Cache", "HIT")
-			w.WriteHeader(http.StatusOK)
-			// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
-			_, _ = w.Write([]byte(cached))
+			serveFeedXML(w, r, []byte(cached))
 
 			return
 		}
@@ -143,7 +166,6 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 
 	// Cache miss — generate live from the DB.
 	rows, err := h.q.ListRSSFeedItems(r.Context(),
-
 		h.feedLimit,
 	)
 	if err != nil {
@@ -155,12 +177,23 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 
 	items := feedItemsFromAllRows(rows, siteURL)
 	h.resolveItems(r.Context(), items)
-	serveRSSFeed(w, h.siteName, siteURL+"/feed.xml", h.siteName+" — latest content", items)
+
+	// The channel <link> is the site root, not the feed URL itself (RSS 2.0:
+	// link is "the URL to the HTML website corresponding to the channel").
+	xmlBytes := renderFeedXML(h.siteName, siteURL, h.siteName+" — latest content", items)
+
+	if h.redis != nil && xmlBytes != nil {
+		if err := h.redis.Set(r.Context(), cacheKey, string(xmlBytes), feedCacheTTL).Err(); err != nil {
+			slog.Warn("rss: failed to cache feed", "cache_key", cacheKey, "error", err)
+		}
+	}
+
+	serveFeedXML(w, r, xmlBytes)
 }
 
-// serveCachedOrLive handles the space/tag/user feed pattern: try the
+// serveCachedOrLive handles the space/tag/user/forum feed pattern: try the
 // Valkey cache for the given key, serve on hit; on miss, run the query,
-// render, write the rendered XML back to the cache, and serve. RSS-005.
+// render, write the rendered XML back to the cache, and serve.
 // // The render callback is only invoked on a cache miss and returns the
 // items or an error (in which case a 500 is written and no caching occurs).
 func (h *Handlers) serveCachedOrLive(
@@ -170,15 +203,10 @@ func (h *Handlers) serveCachedOrLive(
 	render func() ([]RSSItem, error),
 	title, link, description string,
 ) {
-	// RSS-005: try the inline cache first.
+	// Try the inline cache first.
 	if h.redis != nil {
 		if cached, err := h.redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
-			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
-			w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
-			w.Header().Set("X-Cache", "HIT")
-			w.WriteHeader(http.StatusOK)
-			// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
-			_, _ = w.Write([]byte(cached))
+			serveFeedXML(w, r, []byte(cached))
 
 			return
 		}
@@ -203,19 +231,29 @@ func (h *Handlers) serveCachedOrLive(
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
-	w.Header().Set("X-Cache", "MISS")
-	w.WriteHeader(http.StatusOK)
-	// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
-	_, _ = w.Write(xmlBytes)
+	serveFeedXML(w, r, xmlBytes)
 }
 
 // HandleSpaceFeed serves a space-specific RSS feed at /spaces/{slug}/feed.xml.
+// Nonexistent or non-public spaces 404 rather than serving an empty phantom
+// channel — an uncached 404 also keeps arbitrary slugs out of the cache.
 func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "Space slug is required")
+		return
+	}
+
+	// Existence + visibility gate: only public, active spaces get a feed.
+	if _, err := h.q.GetPublicSpaceBySlug(r.Context(), slug); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+			return
+		}
+
+		slog.Error("rss: lookup space for feed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load feed")
+
 		return
 	}
 
@@ -243,10 +281,24 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleTagFeed serves a tag-specific RSS feed at /tags/{slug}/feed.xml.
+// Nonexistent tags 404 rather than serving an empty phantom channel.
 func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "Tag slug is required")
+		return
+	}
+
+	// Existence gate: the list query alone can't tell "no posts" from "no tag".
+	if _, err := h.q.GetTagBySlug(r.Context(), slug); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
+			return
+		}
+
+		slog.Error("rss: lookup tag for feed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load feed")
+
 		return
 	}
 
@@ -284,8 +336,10 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A feed for a nonexistent user must 404, not serve an empty phantom
-	// channel (the list query alone can't tell "no posts" from "no user").
-	if _, err := h.q.GetUserByUsername(r.Context(), username); err != nil {
+	// channel. GetPublicProfileByUsername resolves the canonical username OR
+	// the public_username alias (and requires an active account) — the same
+	// semantics as ListRSSUserFeedItems and the /u/{username} profile page.
+	if _, err := h.q.GetPublicProfileByUsername(r.Context(), username); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
@@ -320,6 +374,30 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+// HandleForumFeed serves the forum-wide RSS feed at /forum/feed.xml.
+// Items are published threads from public spaces — members/private-space
+// threads and anonymous authors never leak (see ListRSSForumFeedItems).
+func (h *Handlers) HandleForumFeed(w http.ResponseWriter, r *http.Request) {
+	siteURL := resolveSiteURL(r, h.siteURL)
+	cacheKey := valkey.MustKey("cache:feed:rss:forum")
+
+	h.serveCachedOrLive(
+		w, r, cacheKey,
+		func() ([]RSSItem, error) {
+			rows, err := h.q.ListRSSForumFeedItems(r.Context(), h.feedLimit)
+			if err != nil {
+				slog.Error("rss: query forum feed", "error", err)
+				return nil, err
+			}
+
+			return feedItemsFromForumRows(rows, siteURL), nil
+		},
+		h.siteName+" — Forum",
+		siteURL+"/forum",
+		"Latest discussions from the "+h.siteName+" community forum.",
+	)
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -334,13 +412,43 @@ func resolveSiteURL(r *http.Request, fallback string) string {
 	return clientip.ForwardedBaseURL(r, fallback)
 }
 
+// HandleTypeFeed returns a handler for /{prefix}/feed.xml — a per-type feed
+// for one ADR-058 content route family (/story/feed.xml, /guide/feed.xml,
+// …). Cached write-on-miss under jc:cache:feed:rss:type:{content_type};
+// the rss:regenerate worker also warms these keys. Unknown prefixes 404 —
+// see model.TypeFeedForPrefix.
+func (h *Handlers) HandleTypeFeed(prefix string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tf, ok := model.TypeFeedForPrefix(prefix)
+		if !ok {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Feed not found")
+			return
+		}
+
+		siteURL := resolveSiteURL(r, h.siteURL)
+		cacheKey := valkey.MustKey("cache:feed:rss:type:%s", tf.ContentType)
+
+		h.serveCachedOrLive(w, r, cacheKey, func() ([]RSSItem, error) {
+			rows, err := h.q.ListRSSFeedItemsByContentType(r.Context(), gen.ListRSSFeedItemsByContentTypeParams{
+				ContentType: tf.ContentType,
+				PageLimit:   defaultFeedLimit,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return feedItemsFromTypeRows(rows, siteURL), nil
+		}, h.siteName+" — "+tf.Label, siteURL+"/"+prefix, "Latest "+strings.ToLower(tf.Label)+" on "+h.siteName+".")
+	}
+}
+
 // feedItemsFromAllRows converts ListRSSFeedItemsRow to RSS items.
 func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, model.LinkPathFor(row.ContentType),
 		))
 	}
 
@@ -353,7 +461,7 @@ func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow, siteURL string)
 	for _, row := range rows {
 		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, model.LinkPathFor(row.ContentType),
 		))
 	}
 
@@ -366,7 +474,7 @@ func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow, siteURL string) []R
 	for _, row := range rows {
 		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, model.LinkPathFor(row.ContentType),
 		))
 	}
 
@@ -379,7 +487,35 @@ func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow, siteURL string) [
 	for _, row := range rows {
 		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, model.LinkPathFor(row.ContentType),
+		))
+	}
+
+	return items
+}
+
+// feedItemsFromForumRows converts ListRSSForumFeedItemsRow to RSS items —
+// thread links use the canonical /forum/{slug} route, not /content/.
+func feedItemsFromForumRows(rows []gen.ListRSSForumFeedItemsRow, siteURL string) []RSSItem {
+	items := make([]RSSItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, model.ItemFromRow(
+			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/forum/",
+		))
+	}
+
+	return items
+}
+
+// feedItemsFromTypeRows converts ListRSSFeedItemsByContentTypeRow to RSS
+// items — canonical links still resolve per content_type via LinkPathFor.
+func feedItemsFromTypeRows(rows []gen.ListRSSFeedItemsByContentTypeRow, siteURL string) []RSSItem {
+	items := make([]RSSItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, model.ItemFromRow(
+			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, model.LinkPathFor(row.ContentType),
 		))
 	}
 
@@ -389,27 +525,7 @@ func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow, siteURL string) [
 // renderFeedXML marshals the feed to XML bytes (with the XML declaration).
 // Delegates to the shared model.Render (RSS-011).
 func renderFeedXML(title, link, description string, items []RSSItem) []byte {
-	return model.Render(title, link, description, "en", items)
-}
-
-// serveRSSFeed marshals the feed to XML and writes the response.
-func serveRSSFeed(w http.ResponseWriter, title, link, description string, items []RSSItem) {
-	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
-	// RSS-006: signal cache miss for observability (HIT is set by callers
-	// that serve from cache).
-	w.Header().Set("X-Cache", "MISS")
-	w.WriteHeader(http.StatusOK)
-
-	xmlBytes := renderFeedXML(title, link, description, items)
-	if xmlBytes == nil {
-		return
-	}
-
-	// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
-	if _, err := w.Write(xmlBytes); err != nil {
-		slog.Error("rss: write xml", "error", err)
-	}
+	return model.Render(title, link, description, "en", link+"/feed.xml", items)
 }
 
 // itoa converts an int to its decimal string representation.

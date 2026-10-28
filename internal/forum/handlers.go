@@ -226,6 +226,28 @@ func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID pgt
 	}
 }
 
+// enqueueRSSRegenerate enqueues rss:regenerate so the universal + forum RSS
+// feeds reflect a newly published or deleted thread without waiting for the
+// hourly cron. Fire-and-forget per Rule 8 (RSS-013).
+func (h *Handlers) enqueueRSSRegenerate() {
+	if h.asynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{})
+	if err != nil {
+		slog.Warn("forum: failed to marshal rss:regenerate payload", "error", err)
+		return
+	}
+
+	if _, err := h.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeRSSRegenerate, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeRSSRegenerate)),
+	); err != nil {
+		slog.Warn("forum: failed to enqueue rss:regenerate task", "error", err)
+	}
+}
+
 // enqueueContentEmbedding fires a content:generate_embedding task for the
 // backing contents row of a forum thread. Required so content_scores exists
 // and GET /content/{id}/related can resolve vectors (BUG-004).
@@ -674,6 +696,10 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 		// §12 stale-index fix: enqueue Meilisearch re-index for the new thread.
 		h.enqueueSearchIndex("forum_thread", "index", thread.ID)
+
+		// RSS-013: the new thread belongs in the universal + forum feeds now,
+		// not after the hourly cron.
+		h.enqueueRSSRegenerate()
 	}
 
 	h.resolveLiterals(r, &thread)
@@ -1388,6 +1414,10 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 
 	// §12 stale-index fix: remove the deleted thread from the Meilisearch index.
 	h.enqueueSearchIndex("forum_thread", "delete", id)
+
+	// RSS-013: drop the deleted thread from cached feeds without waiting for
+	// the hourly cron.
+	h.enqueueRSSRegenerate()
 
 	// The QAPage JSON-LD for a deleted thread must not be served again.
 	h.Service.deleteJSONLDCache(r.Context(), id)

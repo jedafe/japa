@@ -40,10 +40,10 @@ func TestComputeSupportState(t *testing.T) {
 	}
 
 	cases := []struct {
-		name        string
-		release     gen.RoadmapRelease
-		superseded  *time.Time
-		want        string
+		name       string
+		release    gen.RoadmapRelease
+		superseded *time.Time
+		want       string
 	}{
 		{"draft", gen.RoadmapRelease{Status: "draft"}, nil, SupportDraft},
 		{"yanked", gen.RoadmapRelease{Status: "yanked"}, nil, SupportYanked},

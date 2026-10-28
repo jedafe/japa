@@ -607,7 +607,6 @@ var settingsCatalog = map[string]settingMeta{
 	"referral.max_rewards_per_period":  {Type: "int", DefaultValue: "10", Description: "Monthly cap per referrer (fraud control).", Panel: "control"},
 
 	// Self-Serve Advertising (§61, ADR-079)
-	"ads.self_serve_enabled":      {Type: "bool", DefaultValue: "true", Description: "Global self-serve toggle.", Panel: "control"},
 	"ads.min_campaign_days":       {Type: "int", DefaultValue: "3", Description: "Minimum campaign duration (days).", Panel: "control"},
 	"ads.credit_refund_on_reject": {Type: "bool", DefaultValue: "true", Description: "Auto-refund credits on admin rejection.", Panel: "control"},
 
@@ -615,6 +614,7 @@ var settingsCatalog = map[string]settingMeta{
 	// (FeedList, InArticleAd) read these via /site/settings/public.
 	"ads.native_feed_interval":       {Type: "int", DefaultValue: "5", Public: true, Description: "Insert a native ad after every N feed items (0 disables).", Panel: "control"},
 	"ads.in_article_after_paragraph": {Type: "int", DefaultValue: "3", Public: true, Description: "Paragraph index for the first in-article ad.", Panel: "control"},
+	"ads.in_article_max_ads":       {Type: "int", DefaultValue: "2", Public: true, Description: "Max in-article ad units per article.", Panel: "control"},
 	"ads.in_article_every":           {Type: "int", DefaultValue: "6", Public: true, Description: "Repeat in-article ad every N paragraphs (0 = once).", Panel: "control"},
 
 	// Newsletter & Digest (§62, ADR-080)

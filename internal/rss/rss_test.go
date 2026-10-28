@@ -142,15 +142,16 @@ func TestServeRSSFeed(t *testing.T) {
 		{
 			Title:       "Hello World",
 			Link:        "https://japa.to/content/hello-world",
-			GUID:        "urn:uuid:test-123",
+			GUID:        model.NewGUID("urn:uuid:test-123", false),
 			Description: "A test post",
 			PubDate:     "Mon, 01 Jan 2024 00:00:00 +0000",
-			Author:      "alice",
+			Creator:     "alice",
 		},
 	}
 
 	w := httptest.NewRecorder()
-	serveRSSFeed(w, "Test Feed", "https://japa.to/feed.xml", "Desc", items)
+	req := httptest.NewRequest(http.MethodGet, "/feed.xml", nil)
+	serveFeedXML(w, req, renderFeedXML("Test Feed", "https://japa.to/feed.xml", "Desc", items))
 
 	if ct := w.Header().Get("Content-Type"); ct != "application/rss+xml; charset=utf-8" {
 		t.Fatalf("unexpected Content-Type: %s", ct)
@@ -192,8 +193,8 @@ func TestServeRSSFeed(t *testing.T) {
 		t.Fatalf("unexpected item title: %s", feed.Channel.Items[0].Title)
 	}
 
-	if feed.Channel.Items[0].GUID != "urn:uuid:test-123" {
-		t.Fatalf("unexpected GUID: %s", feed.Channel.Items[0].GUID)
+	if feed.Channel.Items[0].GUID.Value != "urn:uuid:test-123" {
+		t.Fatalf("unexpected GUID: %s", feed.Channel.Items[0].GUID.Value)
 	}
 }
 

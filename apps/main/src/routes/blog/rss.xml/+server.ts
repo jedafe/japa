@@ -12,7 +12,7 @@ import type { RequestHandler } from './$types';
  *
  * Ref: japaconnect-engineering/sections/24-blog-extension.md
  */
-export const GET: RequestHandler = async ({ fetch, url, getClientAddress }) => {
+export const GET: RequestHandler = async ({ fetch, url, request, getClientAddress }) => {
 	const apiBase = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
 	const headers: Record<string, string> = {
 		'x-forwarded-host': url.host,
@@ -24,17 +24,25 @@ export const GET: RequestHandler = async ({ fetch, url, getClientAddress }) => {
 	// resolve the visitor's country for geo-aware personalization (ADR-064).
 	const clientIP = getClientAddress();
 	if (clientIP) headers['x-forwarded-for'] = clientIP;
+	// Pass conditional-GET through so readers get the backend's 304 path.
+	const ifNoneMatch = request.headers.get('if-none-match');
+	if (ifNoneMatch) headers['if-none-match'] = ifNoneMatch;
 	const res = await fetch(buildApiUrl('/blog/feed.xml', apiBase), { headers });
+
+	if (res.status === 304) {
+		return new Response(null, { status: 304 });
+	}
 
 	if (!res.ok) {
 		return new Response('RSS feed temporarily unavailable', { status: 502 });
 	}
 
 	const body = await res.text();
-	return new Response(body, {
-		headers: {
-			'content-type': 'application/rss+xml; charset=utf-8',
-			'cache-control': 'public, max-age=300'
-		}
-	});
+	const respHeaders: Record<string, string> = {
+		'content-type': 'application/rss+xml; charset=utf-8',
+		'cache-control': 'public, max-age=900'
+	};
+	const etag = res.headers.get('etag');
+	if (etag) respHeaders['etag'] = etag;
+	return new Response(body, { headers: respHeaders });
 };

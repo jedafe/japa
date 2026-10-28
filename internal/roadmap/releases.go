@@ -9,7 +9,8 @@
 // public routes.
 //
 // Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
-//      (Versioned Releases, Commit-Sourced Entries)
+//
+//	(Versioned Releases, Commit-Sourced Entries)
 package roadmap
 
 import (
@@ -157,19 +158,19 @@ func ComputeSupportState(r gen.RoadmapRelease, supersededAt *time.Time, now time
 
 // ReleaseDTO is the public/admin release shape.
 type ReleaseDTO struct {
-	ID            string     `json:"id"`
-	Surface       string     `json:"surface"`
-	Version       string     `json:"version"`
-	Slug          string     `json:"slug"`
-	Title         *string    `json:"title,omitempty"`
-	Summary       *string    `json:"summary,omitempty"`
-	Status        string     `json:"status"`
-	SupportState  string     `json:"support_state"`
-	IsESR         bool       `json:"is_esr"`
-	ItemCount     int64      `json:"item_count"`
-	ReleasedAt    *time.Time `json:"released_at,omitempty"`
-	EOLAt         *time.Time `json:"eol_at,omitempty"`
-	SupersededAt  *time.Time `json:"superseded_at,omitempty"`
+	ID           string     `json:"id"`
+	Surface      string     `json:"surface"`
+	Version      string     `json:"version"`
+	Slug         string     `json:"slug"`
+	Title        *string    `json:"title,omitempty"`
+	Summary      *string    `json:"summary,omitempty"`
+	Status       string     `json:"status"`
+	SupportState string     `json:"support_state"`
+	IsESR        bool       `json:"is_esr"`
+	ItemCount    int64      `json:"item_count"`
+	ReleasedAt   *time.Time `json:"released_at,omitempty"`
+	EOLAt        *time.Time `json:"eol_at,omitempty"`
+	SupersededAt *time.Time `json:"superseded_at,omitempty"`
 }
 
 // ReleaseListResponse is the GET /roadmap/releases payload.
@@ -204,10 +205,10 @@ type ReleaseDetail struct {
 // GitHubCommit mirrors the GitHub push-event commit object so
 // github.event.commits decodes verbatim (id is the sha).
 type GitHubCommit struct {
-	ID        string   `json:"id"`
-	Message   string   `json:"message"`
-	URL       string   `json:"url"`
-	Timestamp string   `json:"timestamp"`
+	ID        string `json:"id"`
+	Message   string `json:"message"`
+	URL       string `json:"url"`
+	Timestamp string `json:"timestamp"`
 	Author    struct {
 		Name string `json:"name"`
 	} `json:"author"`
@@ -1034,4 +1035,3 @@ func parseOptionalTime(s string) (pgtype.Timestamptz, error) {
 	}
 	return out, fmt.Errorf("unparseable timestamp %q", s)
 }
-

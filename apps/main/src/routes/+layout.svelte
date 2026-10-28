@@ -254,12 +254,13 @@
 	{#if preconnectApi}<link rel="preconnect" href={apiOrigin} crossorigin="anonymous" />{/if}
 	<meta property="og:locale" content={ogLocale} />
 	{#each enabledLanguages.filter((l) => l !== ogLocale) as alt}<meta property="og:locale:alternate" content={alt} />{/each}
-	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', '{site} Blog')} href="/blog/rss.xml" />
+	<link rel="alternate" type="application/rss+xml" title={t('feed.rss_title', '{site} Feed')} href="/feed.xml" />
+	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', '{site} Blog')} href="/blog/feed.xml" />
 	<link
 		rel="alternate"
 		type="application/rss+xml"
 		title={t('forum.rss_title', '{site} Forum')}
-		href="/forum/rss.xml"
+		href="/forum/feed.xml"
 	/>
 	{#if siteDescription}
 		<meta name="description" content={siteDescription} />

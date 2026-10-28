@@ -33,6 +33,7 @@ import (
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
@@ -163,9 +164,11 @@ type ContentCreationRecorder interface {
 }
 
 // CacheReader is the subset of valkeycompat.Cmdable used by blog handlers for
-// reading the cached RSS feed.
+// reading and writing the cached RSS feed (Set is used for write-on-miss
+// backfill so a worker outage doesn't leave the feed uncached).
 type CacheReader interface {
 	Get(ctx context.Context, key string) *valkeycompat.StringCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.StatusCmd
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -1321,10 +1324,15 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 // RSS Feed Handler
 // ---------------------------------------------------------------------------
 
+// blogRSSFeedLimit matches internal/rss.defaultFeedLimit (§26: 20 items per
+// feed) and the worker's rssFeedLimit so cached and live renders of the blog
+// feed return the same item set.
+const blogRSSFeedLimit = 20
+
 // GetRSSFeed handles GET /api/v1/blog/feed.xml (public, no auth required).
-// C6: serves the live feed from the Valkey cache (jc:cache:feed:rss:{})
-// populated by the rss:regenerate worker task. Falls back to live DB generation
-// when the cache is empty or Redis is unavailable.
+// C6: serves the live feed from the Valkey cache (jc:cache:feed:rss:blog)
+// populated by the rss:regenerate worker task. On a miss it renders live and
+// writes the body back so subsequent requests are cache hits.
 // BUG-006: respects X-Forwarded-Host to generate public-facing URLs instead
 // of the internal backend port. Forwarding headers are gated by the
 // trusted-proxy model (clientip.ForwardedBaseURL) to prevent host-header
@@ -1340,25 +1348,22 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	siteURL := clientip.ForwardedBaseURL(r, h.siteURL)
 
 	// RSS-001: use a blog-specific cache key. The universal feed cache
-	// (jc:cache:feed:rss:{}) is populated by the worker from
+	// (jc:cache:feed:rss) is populated by the worker from
 	// ListRSSFeedItems (all content types). Reading from it here would
-	// serve non-blog content (forum posts, etc.) as the blog feed.
-	cacheKey := valkey.MustKey("cache:feed:rss:blog:")
+	// serve non-blog content (forum posts, etc.) as the blog feed. The key
+	// must match the worker's write key exactly — a stray trailing colon
+	// once made this read path a permanent miss.
+	cacheKey := valkey.MustKey("cache:feed:rss:blog")
 	if h.Redis != nil {
 		if cached, err := h.Redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
-			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
-			// RSS-004: §26 requires Cache-Control: max-age=900 on all feeds.
-			w.Header().Set("Cache-Control", "public, max-age=900")
-			w.Header().Set("X-Cache", "HIT")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(cached))
+			serveBlogFeedXML(w, r, []byte(cached))
 
 			return
 		}
 	}
 
 	// Cache miss — generate live from the DB.
-	posts, err := h.Service.ListPublishedPostsForRSS(r.Context(), 50)
+	posts, err := h.Service.ListPublishedPostsForRSS(r.Context(), blogRSSFeedLimit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1370,16 +1375,43 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 		h.lit.ResolveFields(r.Context(), &posts, literals.NewContext(r.Context(), ""))
 	}
 
+	xmlBytes := renderBlogRSSXML(posts, siteURL, h.siteName)
+
+	// Write-back so the next request is a cache hit (same pattern as the
+	// scoped feeds in internal/rss).
+	if h.Redis != nil && xmlBytes != nil {
+		if err := h.Redis.Set(r.Context(), cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
+			slog.Warn("blog: failed to cache RSS feed", "cache_key", cacheKey, "error", err)
+		}
+	}
+
+	serveBlogFeedXML(w, r, xmlBytes)
+}
+
+// serveBlogFeedXML writes a rendered feed body with the standard RSS
+// headers (§26: Cache-Control max-age=900) and honors If-None-Match via a
+// weak ETag — a matching request gets 304 and no payload. A nil body means
+// the render failed upstream and becomes a 500, not an empty feed.
+func serveBlogFeedXML(w http.ResponseWriter, r *http.Request, body []byte) {
+	if body == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to render feed")
+		return
+	}
+
+	etag := model.ETag(body)
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
 	// RSS-004: §26 requires Cache-Control: max-age=900 on all feeds.
 	w.Header().Set("Cache-Control", "public, max-age=900")
-	w.Header().Set("X-Cache", "MISS")
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("ETag", etag)
 
-	if err := generateRSSXML(w, posts, siteURL, h.siteName); err != nil {
-		// Headers already sent, just log the error.
+	if model.IfNoneMatch(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
 		return
 	}
+
+	w.WriteHeader(http.StatusOK)
+	// #nosec G705 // feed is server-rendered XML; user text is escaped by xml.Marshal.
+	_, _ = w.Write(body)
 }
 
 // GetPost handles GET /api/v1/blog/{slug} — a single blog post.
@@ -2250,8 +2282,11 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-009: enqueue rss:regenerate on draft→published transition. The
 	// content HTTP handler does this at content/handlers.go:1308, but the
-	// blog UpdatePost calls the service directly. Ref: §24.
-	if existing.Status != content.StatusPublished && updated.Status == content.StatusPublished {
+	// blog UpdatePost calls the service directly. The reverse transition
+	// (published→non-published) also regenerates so the post drops out of
+	// cached feeds without waiting for the hourly cron. Ref: §24.
+	if existing.Status != updated.Status &&
+		(existing.Status == content.StatusPublished || updated.Status == content.StatusPublished) {
 		h.enqueueRSSRegenerate()
 	}
 
@@ -2283,6 +2318,10 @@ func (h *Handlers) DeletePost(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// RSS-013: drop the deleted post from cached feeds without waiting for
+	// the hourly cron.
+	h.enqueueRSSRegenerate()
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

@@ -5,7 +5,7 @@
 -- =====================
 
 -- name: CreateAdSlotType :one
-INSERT INTO ad_slot_types (slot_name, description, max_display_per_page) VALUES (@slot_name, sqlc.narg(description), @max_display_per_page)
+INSERT INTO ad_slot_types (slot_name, description, max_display_per_page, is_active) VALUES (@slot_name, sqlc.narg(description), @max_display_per_page, @is_active)
 RETURNING *;
 
 -- name: GetAdSlotTypeByID :one
@@ -36,7 +36,10 @@ RETURNING *;
 
 -- name: UpdateAdSlotTypeDetails :one
 UPDATE ad_slot_types
-SET slot_name = @slot_name, description = @description
+SET slot_name = @slot_name,
+ description = @description,
+ is_active = @is_active,
+ max_display_per_page = @max_display_per_page
 WHERE id = @id
 RETURNING *;
 
@@ -56,9 +59,14 @@ SELECT * FROM ad_campaigns
 WHERE id = @id;
 
 -- name: ListAdCampaigns :many
-SELECT * FROM ad_campaigns
-
-ORDER BY created_at DESC
+-- Per-campaign event aggregates joined in so the admin list's
+-- impressions/clicks/CTR columns show real numbers (ad_events is the
+-- event store; ad_campaigns carries no counters).
+SELECT c.*,
+ (SELECT COUNT(*) FROM ad_events e WHERE e.campaign_id = c.id AND e.event_type = 'impression')::bigint AS impressions,
+ (SELECT COUNT(*) FROM ad_events e WHERE e.campaign_id = c.id AND e.event_type = 'click')::bigint AS clicks
+FROM ad_campaigns c
+ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListActiveCampaignsBySlot :many
@@ -146,7 +154,7 @@ UPDATE ad_campaigns
 SET spent = spent + @amount, updated_at = now()
 WHERE id = @id;
 
--- name: DeleteAdCampaign :exec
+-- name: DeleteAdCampaign :execrows
 DELETE FROM ad_campaigns
 WHERE id = @id AND status IN ('draft', 'ended');
 

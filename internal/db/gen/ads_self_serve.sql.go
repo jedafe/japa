@@ -100,6 +100,54 @@ func (q *Queries) CreateSelfServeAdCampaign(ctx context.Context, arg CreateSelfS
 	return i, err
 }
 
+const endSelfServeAdCampaign = `-- name: EndSelfServeAdCampaign :one
+
+UPDATE ad_campaigns
+SET status = 'ended', updated_at = now()
+WHERE id = $1 AND organization_id = $2
+ AND status IN ('pending_review', 'active', 'paused')
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house, last_accrual_date
+`
+
+type EndSelfServeAdCampaignParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+// =====================================================================
+// Org ends its own campaign early — stops serving, remaining escrow is
+// refunded via ads:refund_campaign_credits. Only stoppable states.
+// =====================================================================
+func (q *Queries) EndSelfServeAdCampaign(ctx context.Context, arg EndSelfServeAdCampaignParams) (AdCampaign, error) {
+	row := q.db.QueryRow(ctx, endSelfServeAdCampaign, arg.ID, arg.OrganizationID)
+	var i AdCampaign
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SlotTypeID,
+		&i.Content,
+		&i.TargetUrl,
+		&i.Budget,
+		&i.Spent,
+		&i.Status,
+		&i.Priority,
+		&i.FrequencyCapPerUser,
+		&i.StartDate,
+		&i.EndDate,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TargetGeo,
+		&i.TargetSpaceIds,
+		&i.OrganizationID,
+		&i.FlatRate,
+		&i.BudgetCredits,
+		&i.IsHouse,
+		&i.LastAccrualDate,
+	)
+	return i, err
+}
+
 const getAdCampaignStats = `-- name: GetAdCampaignStats :one
 
 SELECT
@@ -224,6 +272,32 @@ func (q *Queries) GetSelfServeAdCampaign(ctx context.Context, arg GetSelfServeAd
 		&i.LastAccrualDate,
 	)
 	return i, err
+}
+
+const isOrgAdmin = `-- name: IsOrgAdmin :one
+
+SELECT EXISTS(
+ SELECT 1 FROM organization_members
+ WHERE organization_id = $1 AND user_id = $2
+  AND role IN ('owner', 'admin')
+) AS is_admin
+`
+
+type IsOrgAdminParams struct {
+	OrgID  pgtype.UUID `json:"org_id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// =====================================================================
+// Check if a user is an owner/admin of an organization (spend authority —
+// campaign funding debits the org owner's wallet, so only roles that can
+// commit org funds may create campaigns).
+// =====================================================================
+func (q *Queries) IsOrgAdmin(ctx context.Context, arg IsOrgAdminParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isOrgAdmin, arg.OrgID, arg.UserID)
+	var is_admin bool
+	err := row.Scan(&is_admin)
+	return is_admin, err
 }
 
 const isOrgMember = `-- name: IsOrgMember :one
@@ -379,10 +453,12 @@ func (q *Queries) ListOrgAdCampaigns(ctx context.Context, arg ListOrgAdCampaigns
 
 const markCampaignRefunded = `-- name: MarkCampaignRefunded :exec
 UPDATE ad_campaigns
-SET budget_credits = 0, status = 'rejected', updated_at = now()
+SET budget_credits = 0, updated_at = now()
 WHERE id = $1
 `
 
+// Zeroes the escrow column only — the campaign keeps its real lifecycle
+// status (rejected for review rejects, ended for auto/manual ends).
 func (q *Queries) MarkCampaignRefunded(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, markCampaignRefunded, id)
 	return err

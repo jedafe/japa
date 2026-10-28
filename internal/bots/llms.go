@@ -10,120 +10,149 @@ import (
 )
 
 const (
-	llmsCacheKey     = "jc:llms_txt"
-	llmsFullCacheKey = "jc:llms_full_txt"
+	llmsCacheKey     = "llms_txt"
+	llmsFullCacheKey = "llms_full_txt"
 	llmsCacheTTL     = 1 * time.Hour
 )
 
-// GenerateLLMsTxt produces a brief LLMS.txt file with the site name,
-// description, and top-level links. This is the short version served at /llms.txt.
-func GenerateLLMsTxt(siteName, siteDescription string, topLinks []Link) string {
-	var sb strings.Builder
+// sanitizeLLMsTitle strips characters that would corrupt a markdown link or
+// inject extra lines into the generated file ([ ] break link text, CR/LF
+// break the line format), then collapses whitespace.
+func sanitizeLLMsTitle(s string) string {
+	r := strings.NewReplacer("\r", " ", "\n", " ", "[", "(", "]", ")")
 
+	return strings.Join(strings.Fields(r.Replace(s)), " ")
+}
+
+func writeLLMsHeader(sb *strings.Builder, siteName, siteDescription string) {
 	sb.WriteString("# ")
-	sb.WriteString(siteName)
+	sb.WriteString(sanitizeLLMsTitle(siteName))
 	sb.WriteString("\n\n")
 	sb.WriteString("> ")
-	sb.WriteString(siteDescription)
+	sb.WriteString(sanitizeLLMsTitle(siteDescription))
+	sb.WriteString("\n\n")
+}
+
+func writeLinkSection(sb *strings.Builder, heading string, links []Link) {
+	if len(links) == 0 {
+		return
+	}
+
+	sb.WriteString("## ")
+	sb.WriteString(heading)
 	sb.WriteString("\n\n")
 
-	if len(topLinks) > 0 {
-		sb.WriteString("## Top Links\n\n")
-
-		for _, link := range topLinks {
-			sb.WriteString("- [")
-			sb.WriteString(link.Title)
-			sb.WriteString("](")
-			sb.WriteString(link.URL)
-			sb.WriteString(")\n")
-		}
-
-		sb.WriteString("\n")
+	for _, link := range links {
+		sb.WriteString("- [")
+		sb.WriteString(sanitizeLLMsTitle(link.Title))
+		sb.WriteString("](")
+		sb.WriteString(link.URL)
+		sb.WriteString(")\n")
 	}
+
+	sb.WriteString("\n")
+}
+
+// GenerateLLMsTxt produces the brief /llms.txt: header, curated top-level
+// links, recent posts, and an Optional section pointing at llms-full.txt,
+// the RSS feed, and the sitemap.
+func GenerateLLMsTxt(siteName, siteDescription string, data LLMsBriefData) string {
+	var sb strings.Builder
+
+	writeLLMsHeader(&sb, siteName, siteDescription)
+	writeLinkSection(&sb, "Top Links", data.TopLinks)
+	writeLinkSection(&sb, "Recent Posts", data.RecentPosts)
+	writeLinkSection(&sb, "Optional", data.Optional)
 
 	return sb.String()
 }
 
-// GenerateLLMsFullTxt produces a detailed LLMS-full.txt with recent posts,
-// tags, and spaces. This is the extended version served at /llms-full.txt.
+// GenerateLLMsFullTxt produces the extended /llms-full.txt with recent posts,
+// topics, spaces, and an Optional section for feeds/discovery endpoints.
 func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string {
 	var sb strings.Builder
 
-	// Header
-	sb.WriteString("# ")
-	sb.WriteString(siteName)
-	sb.WriteString("\n\n")
-	sb.WriteString("> ")
-	sb.WriteString(siteDescription)
-	sb.WriteString("\n\n")
-
-	// Recent Posts
-	if len(data.RecentPosts) > 0 {
-		sb.WriteString("## Recent Posts\n\n")
-
-		for _, p := range data.RecentPosts {
-			sb.WriteString("- [")
-			sb.WriteString(p.Title)
-			sb.WriteString("](")
-			sb.WriteString(p.URL)
-			sb.WriteString(")\n")
-		}
-
-		sb.WriteString("\n")
-	}
-
-	// Tags
-	if len(data.Tags) > 0 {
-		sb.WriteString("## Topics\n\n")
-
-		for _, t := range data.Tags {
-			sb.WriteString("- [")
-			sb.WriteString(t.Title)
-			sb.WriteString("](")
-			sb.WriteString(t.URL)
-			sb.WriteString(")\n")
-		}
-
-		sb.WriteString("\n")
-	}
-
-	// Spaces
-	if len(data.Spaces) > 0 {
-		sb.WriteString("## Spaces\n\n")
-
-		for _, s := range data.Spaces {
-			sb.WriteString("- [")
-			sb.WriteString(s.Title)
-			sb.WriteString("](")
-			sb.WriteString(s.URL)
-			sb.WriteString(")\n")
-		}
-
-		sb.WriteString("\n")
-	}
+	writeLLMsHeader(&sb, siteName, siteDescription)
+	writeLinkSection(&sb, "Recent Posts", data.RecentPosts)
+	writeLinkSection(&sb, "Topics", data.Tags)
+	writeLinkSection(&sb, "Spaces", data.Spaces)
+	writeLinkSection(&sb, "Optional", data.Optional)
 
 	return sb.String()
 }
 
+// absolutizeLinks prefixes root-relative URLs with the site origin — llms.txt
+// convention (and most consumers) expect absolute markdown links.
+func absolutizeLinks(links []Link, base string) []Link {
+	out := make([]Link, len(links))
+	for i, l := range links {
+		if strings.HasPrefix(l.URL, "/") {
+			l.URL = base + l.URL
+		}
+		out[i] = l
+	}
+
+	return out
+}
+
+// topNavLinks is the curated set of canonical entry points for the brief file.
+func topNavLinks(base string) []Link {
+	return []Link{
+		{Title: "Blog", URL: base + "/blog"},
+		{Title: "Forum", URL: base + "/forum"},
+		{Title: "Spaces", URL: base + "/spaces"},
+		{Title: "Tags", URL: base + "/tags"},
+		{Title: "Deals", URL: base + "/deals"},
+		{Title: "Tools", URL: base + "/tools"},
+		{Title: "Roadmap", URL: base + "/roadmap"},
+		{Title: "Academy", URL: base + "/academy"},
+		{Title: "Docs", URL: base + "/docs"},
+	}
+}
+
+// discoveryLinks returns the Optional section: machine-readable discovery
+// endpoints. includeFull adds the cross-link to /llms-full.txt (the brief
+// file is how crawlers are expected to find it).
+func discoveryLinks(base string, includeFull bool) []Link {
+	links := make([]Link, 0, 3)
+	if includeFull {
+		links = append(links, Link{Title: "Extended content index", URL: base + "/llms-full.txt"})
+	}
+
+	return append(links,
+		Link{Title: "RSS feed", URL: base + "/feed.xml"},
+		Link{Title: "Sitemap", URL: base + "/sitemap.xml"},
+	)
+}
+
 // LLMsHandler serves /llms.txt and /llms-full.txt. The output is cached
-// in Valkey with a 1-hour TTL. The brief version includes the site name,
-// description, and top-level links (recent published content). The full
-// version adds recent posts, top tags, and active public spaces.
+// in Valkey with a 1-hour TTL. The brief version carries curated top-level
+// links plus the 10 most recent posts; the full version lists recent posts,
+// top tags, and active public spaces. Content and spaces pass the same
+// seo.sitemap.* quality gates as the sitemaps (settings may be nil → spec
+// defaults). On non-indexable deployments the routes 404 — there is
+// nothing to crawl.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription string) http.HandlerFunc {
+func LLMsHandler(store *Store, rdb *valkey.Client, settings intSettingsReader, siteName, siteDescription, siteURL string, indexable bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !indexable {
+			http.NotFound(w, r)
+
+			return
+		}
+
 		isFull := strings.HasSuffix(r.URL.Path, "/llms-full.txt")
-		cacheKey := llmsCacheKey
+		cacheKey := valkey.MustKey(llmsCacheKey)
 
 		if isFull {
-			cacheKey = llmsFullCacheKey
+			cacheKey = valkey.MustKey(llmsFullCacheKey)
 		}
 
 		// Try cache first
 		if rdb != nil {
 			cached, err := rdb.Redis().Get(r.Context(), cacheKey).Result()
 			if err == nil && cached != "" {
-				w.Header().Set("Content-Type", "text/plain")
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.Header().Set("Cache-Control", "public, max-age=3600")
 				_, _ = w.Write([]byte(cached))
 
@@ -131,39 +160,50 @@ func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription str
 			}
 		}
 
-		// Fetch real data from the database
-		data, err := store.GetLLMsData(r.Context())
+		base := strings.TrimRight(siteURL, "/")
+		if base == "" {
+			base = "https://" + r.Host
+		}
+
+		// Fetch data; on error the nav/discovery links still render (they
+		// need no DB), so the file degrades instead of disappearing.
+		cacheControl := "public, max-age=3600"
+		data, err := store.GetLLMsData(r.Context(), LoadSitemapQualityConfig(r.Context(), settings))
 		if err != nil {
 			slog.Error("llms: failed to load data", "error", err)
-			w.Header().Set("Content-Type", "text/plain")
-			w.Header().Set("Cache-Control", "public, max-age=300")
-			_, _ = w.Write([]byte(GenerateLLMsTxt(siteName, siteDescription, nil)))
-
-			return
+			data = LLMsData{}
+			cacheControl = "public, max-age=300"
 		}
 
 		var txt string
 		if isFull {
+			data.RecentPosts = absolutizeLinks(data.RecentPosts, base)
+			data.Tags = absolutizeLinks(data.Tags, base)
+			data.Spaces = absolutizeLinks(data.Spaces, base)
+			data.Optional = discoveryLinks(base, false)
 			txt = GenerateLLMsFullTxt(siteName, siteDescription, data)
 		} else {
-			// Brief version: use recent posts as top-level links
-			topLinks := data.RecentPosts
-			if len(topLinks) > 10 {
-				topLinks = topLinks[:10]
+			recent := data.RecentPosts
+			if len(recent) > 10 {
+				recent = recent[:10]
 			}
 
-			txt = GenerateLLMsTxt(siteName, siteDescription, topLinks)
+			txt = GenerateLLMsTxt(siteName, siteDescription, LLMsBriefData{
+				TopLinks:    topNavLinks(base),
+				RecentPosts: absolutizeLinks(recent, base),
+				Optional:    discoveryLinks(base, true),
+			})
 		}
 
-		// Cache in Valkey
-		if rdb != nil {
+		// Cache in Valkey (never cache the degraded output)
+		if err == nil && rdb != nil {
 			if err := rdb.Redis().Set(r.Context(), cacheKey, txt, llmsCacheTTL).Err(); err != nil {
 				slog.Warn("llms: failed to cache", "error", err)
 			}
 		}
 
-		w.Header().Set("Content-Type", "text/plain")
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", cacheControl)
 		_, _ = w.Write([]byte(txt))
 	}
 }

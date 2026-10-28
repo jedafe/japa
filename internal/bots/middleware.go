@@ -83,7 +83,7 @@ func getCachedBots(ctx context.Context, store *Store, rdb *valkey.Client) ([]gen
 		}
 	}
 
-	bots, err := store.listKnownBots(ctx, "", MaxPageSize, 0)
+	bots, err := store.listAllKnownBots(ctx)
 	if err != nil {
 		return nil, err
 	}

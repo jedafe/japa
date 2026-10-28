@@ -4310,6 +4310,70 @@ func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, countryCode *s
 	return items, nil
 }
 
+const listTopSpacesForLLMsTxt = `-- name: ListTopSpacesForLLMsTxt :many
+SELECT s.name, s.slug, s.member_count, s.post_count,
+ COALESCE(fc.forum_count, 0) AS forum_count,
+ COALESCE(qc.question_count, 0) AS question_count
+FROM spaces s
+LEFT JOIN (
+ SELECT c.space_id, count(*) AS forum_count
+ FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+ WHERE c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+ GROUP BY c.space_id
+) fc ON fc.space_id = s.id
+LEFT JOIN (
+ SELECT c.space_id, count(*) AS question_count
+ FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+ WHERE c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+ AND ft.solved = true
+ GROUP BY c.space_id
+) qc ON qc.space_id = s.id
+WHERE s.deleted_at IS NULL AND s.visibility = 'public' AND s.status = 'active'
+ORDER BY s.member_count DESC, s.follower_count DESC, s.name ASC
+LIMIT 100
+`
+
+type ListTopSpacesForLLMsTxtRow struct {
+	Name          string `json:"name"`
+	Slug          string `json:"slug"`
+	MemberCount   int32  `json:"member_count"`
+	PostCount     int32  `json:"post_count"`
+	ForumCount    int64  `json:"forum_count"`
+	QuestionCount int64  `json:"question_count"`
+}
+
+// Bounded, active-only, popularity-ordered public space list for
+// llms-full.txt "Spaces" section. (The unbounded ListSpaces call also
+// returned non-active spaces.) Carries the bots.IsSpaceIndexable gate
+// inputs so llms.txt honors the same seo.sitemap.* thresholds as the
+// spaces sitemap.
+func (q *Queries) ListTopSpacesForLLMsTxt(ctx context.Context) ([]ListTopSpacesForLLMsTxtRow, error) {
+	rows, err := q.db.Query(ctx, listTopSpacesForLLMsTxt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTopSpacesForLLMsTxtRow
+	for rows.Next() {
+		var i ListTopSpacesForLLMsTxtRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.Slug,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.ForumCount,
+			&i.QuestionCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listViewerSpaceRelations = `-- name: ListViewerSpaceRelations :many
 SELECT r.space_id,
  BOOL_OR(r.is_member) AS is_member,

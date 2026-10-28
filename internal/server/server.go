@@ -31,7 +31,6 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/ama"
 	"github.com/jedafe/japa/internal/analytics"
-	"github.com/jedafe/japa/internal/umami"
 	"github.com/jedafe/japa/internal/appeals"
 	"github.com/jedafe/japa/internal/appointmentalert"
 	"github.com/jedafe/japa/internal/arrivalchecklist"
@@ -135,6 +134,7 @@ import (
 	"github.com/jedafe/japa/internal/reviews"
 	"github.com/jedafe/japa/internal/roadmap"
 	rsspkg "github.com/jedafe/japa/internal/rss"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/scamalert"
 	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/search"
@@ -153,6 +153,7 @@ import (
 	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/travel"
 	"github.com/jedafe/japa/internal/trending"
+	"github.com/jedafe/japa/internal/umami"
 	"github.com/jedafe/japa/internal/universities"
 	"github.com/jedafe/japa/internal/university_courses"
 	"github.com/jedafe/japa/internal/users"
@@ -1009,7 +1010,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	roadmapService.SetSettings(settingsService)
 	roadmapService.SetValkey(vkClient.Redis()) // jc:roadmap:board + jc:roadmap:releases caches
 	roadmapHandlers := roadmap.NewHandlers(roadmapService)
-	roadmapHandlers.SiteURL = cfg.SiteURL   // releases RSS feed (ADR-135)
+	roadmapHandlers.SiteURL = cfg.SiteURL // releases RSS feed (ADR-135)
 	roadmapHandlers.SiteName = cfg.SiteName
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
@@ -3304,8 +3305,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// (public settings, OpenAPI). XML/images pass through untouched.
 		r.Use(literals.Middleware(literalsCatalog))
 		r.Get("/robots.txt", bots.RobotsHandler(botStore, vkClient, cfg.SiteURL, !cfg.BlocksIndexing()))
-		r.Get("/llms.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
-		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
+		r.Get("/llms.txt", bots.LLMsHandler(botStore, vkClient, settingsService, cfg.SiteName, cfg.SiteDescription, cfg.SiteURL, !cfg.BlocksIndexing()))
+		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, settingsService, cfg.SiteName, cfg.SiteDescription, cfg.SiteURL, !cfg.BlocksIndexing()))
 		r.Get("/sitemap.xml", sitemapHandler.ServeSitemap)
 		r.Get("/sitemap-content.xml", sitemapHandler.ServeContentSitemap)
 		r.Get("/sitemap-spaces.xml", sitemapHandler.ServeSpacesSitemap)
@@ -3325,7 +3326,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/sitemap-comparisons.xml", sitemapHandler.ServeComparisonsSitemap)
 		r.Get("/sitemap-tools.xml", sitemapHandler.ServeToolsSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
-		// Universal RSS feeds (public — no auth required, platform-scoped)
+		// Universal RSS feeds (public — no auth required)
 		rssHandlers := rsspkg.NewHandlers(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName)
 		rssHandlers.SetRedis(vkClient.Redis())
 		rssHandlers.SetLiteralCatalog(literalsCatalog) // §14: resolve {{...}} before feed XML render
@@ -3333,6 +3334,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/spaces/{slug}/feed.xml", rssHandlers.HandleSpaceFeed)
 		r.Get("/tags/{slug}/feed.xml", rssHandlers.HandleTagFeed)
 		r.Get("/users/{username}/feed.xml", rssHandlers.HandleUserFeed)
+		r.Get("/forum/feed.xml", rssHandlers.HandleForumFeed)
+		// Per-content-type feeds — one per ADR-058 route family
+		// (/story/feed.xml, /guide/feed.xml, …). Registry: model.TypeFeeds().
+		for _, tf := range rssmodel.TypeFeeds() {
+			r.Get("/"+tf.Prefix+"/feed.xml", rssHandlers.HandleTypeFeed(tf.Prefix))
+		}
 
 		// Public settings endpoint (no auth required, platform-scoped)
 		r.Get("/site/settings/public", configHandlers.GetPublicSettings)
@@ -5064,7 +5071,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Gated by feature.ads flag (default: false).
 			r.With(features.Gate(featureChecker, "feature.ads"), auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/ads/serve", adHandlers.RenderSlot)
-			r.With(features.Gate(featureChecker, "feature.ads"), auth.OptionalAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "feature.ads"), mw.RateLimit(vkClient.Redis(), "moderate"), auth.OptionalAuth(kr, vkClient.Redis())).
 				Post("/ads/events", adHandlers.IngestEvents)
 			// Slot types (admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
@@ -8580,22 +8587,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/admin/community-locator/{id}", communityLocatorHandlers.HandleAdminDelete)
 			})
 
-			// Section 61 — Self-Serve Advertising (ADR-079)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.create")).
+			// Section 61 — Self-Serve Advertising (ADR-079). Whole surface is
+			// gated by feature.ads (ADR-042: 404 when disabled).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.create")).
 				Get("/org/{org_id}/ads/slots", adsSelfServeHandlers.HandleListSlots)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.create")).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.create")).
 				Post("/org/{org_id}/ads/campaigns", adsSelfServeHandlers.HandleCreateCampaign)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
 				Get("/org/{org_id}/ads/campaigns", adsSelfServeHandlers.HandleListCampaigns)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
 				Get("/org/{org_id}/ads/campaigns/{id}", adsSelfServeHandlers.HandleGetCampaign)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
 				Patch("/org/{org_id}/ads/campaigns/{id}", adsSelfServeHandlers.HandleUpdateCampaign)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
 				Post("/org/{org_id}/ads/campaigns/{id}/pause", adsSelfServeHandlers.HandlePauseCampaign)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
 				Post("/org/{org_id}/ads/campaigns/{id}/resume", adsSelfServeHandlers.HandleResumeCampaign)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.stats")).
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.manage")).
+				Post("/org/{org_id}/ads/campaigns/{id}/end", adsSelfServeHandlers.HandleEndCampaign)
+			r.With(features.Gate(featureChecker, "feature.ads"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ads.self_serve.stats")).
 				Get("/org/{org_id}/ads/campaigns/{id}/stats", adsSelfServeHandlers.HandleGetStats)
 
 			// Section 77 — Mobile Push Devices (ADR-074)

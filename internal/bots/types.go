@@ -1,14 +1,14 @@
 // Package bots implements Bot & Crawler Management for JapaConnect (Section 43).
 //
 // Three-layer architecture:
-//   - Known Bots registry (admin-configurable per platform)
+//   - Known Bots registry (admin-configurable)
 //   - Dynamic robots.txt generation from the bot registry
 //   - Bot detection middleware that identifies incoming crawlers
 //
 // robots.txt is generated dynamically from the bot registry, NOT served
 // from a static file. The generated output is cached in Valkey with a
 // 24-hour TTL (jc:robots_txt). LLMS.txt is cached with a 1-hour TTL
-// (jc:llms_txt).
+// (jc:llms_txt). All keys go through valkey.MustKey.
 package bots
 
 // BotType classifies a known bot by its primary function.
@@ -106,9 +106,17 @@ type Link struct {
 	URL   string
 }
 
+// LLMsBriefData holds the sections of the brief /llms.txt file.
+type LLMsBriefData struct {
+	TopLinks    []Link
+	RecentPosts []Link
+	Optional    []Link
+}
+
 // LLMsData holds data needed for the full LLMS.txt generation.
 type LLMsData struct {
 	RecentPosts []Link
 	Tags        []Link
 	Spaces      []Link
+	Optional    []Link
 }

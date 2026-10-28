@@ -123,8 +123,9 @@ func (s *Service) GetCampaign(ctx context.Context, id pgtype.UUID) (AdCampaign, 
 	)
 }
 
-// ListCampaigns returns all campaigns for a platform.
-func (s *Service) ListCampaigns(ctx context.Context, limit, offset int32) ([]AdCampaign, error) {
+// ListCampaigns returns all campaigns for a platform, with per-campaign
+// impression/click aggregates joined for the admin list table.
+func (s *Service) ListCampaigns(ctx context.Context, limit, offset int32) ([]gen.ListAdCampaignsRow, error) {
 	return s.store.listAdCampaignsByPlatform(ctx, limit, offset)
 }
 
@@ -220,6 +221,20 @@ func (s *Service) EndCampaign(ctx context.Context, id pgtype.UUID) (AdCampaign, 
 // previous raw-SQL handler referenced one and would 500. Uses the generated
 // UpdateAdCampaignDetails query (COALESCE-based partial update).
 func (s *Service) UpdateCampaignDetails(ctx context.Context, id pgtype.UUID, name string, budget *int64, isHouse *bool) (AdCampaign, error) {
+	// is_house requires organization_id IS NULL (house tier is admin-owned
+	// fallback inventory) — the create path enforces it, and the update path
+	// must too, or an org campaign could be flipped into the house tier.
+	if isHouse != nil && *isHouse {
+		campaign, err := s.store.Queries().GetAdCampaignByID(ctx, id)
+		if err != nil {
+			return AdCampaign{}, err
+		}
+
+		if campaign.OrganizationID.Valid {
+			return AdCampaign{}, errors.New("house campaigns must be admin-owned (organization_id must be NULL)")
+		}
+	}
+
 	return s.store.Queries().UpdateAdCampaignDetails(ctx, gen.UpdateAdCampaignDetailsParams{
 		ID: id,
 
@@ -251,6 +266,10 @@ func (s *Service) RenderSlot(ctx context.Context, userID pgtype.UUID, slotName, 
 	)
 	if err != nil {
 		return []AdCampaign{}, nil // unknown slot → empty, never an error to the caller
+	}
+
+	if !slotType.IsActive {
+		return []AdCampaign{}, nil // disabled slot type → never serve
 	}
 
 	// Paid/self-serve tier first.
@@ -339,25 +358,64 @@ func (s *Service) ListSlotTypes(ctx context.Context, limit, offset int32) ([]AdS
 }
 
 // AdSlotTypeInput holds parameters for creating/updating a slot type.
-// Only slot_name and description are writable — ad_slot_types has no
-// slug/max_width/max_height/format columns (migration 000024).
+// ad_slot_types has no slug/max_width/max_height/format columns
+// (migration 000024); is_active and max_display_per_page are honored.
 type AdSlotTypeInput struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name              string `json:"name"`
+	Description       string `json:"description"`
+	IsActive          *bool  `json:"is_active"`
+	MaxDisplayPerPage *int32 `json:"max_display_per_page"`
 }
 
 // CreateSlotType creates a new ad slot type.
 func (s *Service) CreateSlotType(ctx context.Context, input AdSlotTypeInput) (AdSlotType, error) {
+	maxDisplay := int32(1)
+	if input.MaxDisplayPerPage != nil && *input.MaxDisplayPerPage > 0 {
+		maxDisplay = *input.MaxDisplayPerPage
+	}
+
+	isActive := true
+	if input.IsActive != nil {
+		isActive = *input.IsActive
+	}
+
 	return s.store.Queries().CreateAdSlotType(ctx, gen.CreateAdSlotTypeParams{
 		SlotName:          input.Name,
 		Description:       &input.Description,
-		MaxDisplayPerPage: 1,
+		MaxDisplayPerPage: maxDisplay,
+		IsActive:          isActive,
 	})
 }
 
-// UpdateSlotType updates an existing ad slot type's name and description.
+// UpdateSlotType updates an existing ad slot type's editable fields.
 func (s *Service) UpdateSlotType(ctx context.Context, id pgtype.UUID, input AdSlotTypeInput) (AdSlotType, error) {
-	return s.store.updateAdSlotType(ctx, id, input.Name, input.Description)
+	// Merge semantics: fields not provided keep their stored values.
+	existing, err := s.store.Queries().GetAdSlotTypeByID(ctx, id)
+	if err != nil {
+		return AdSlotType{}, err
+	}
+
+	name := existing.SlotName
+	if input.Name != "" {
+		name = input.Name
+	}
+
+	description := existing.Description
+	if input.Description != "" {
+		description = &input.Description
+	}
+
+	isActive := existing.IsActive
+	if input.IsActive != nil {
+		isActive = *input.IsActive
+	}
+
+	maxDisplay := existing.MaxDisplayPerPage
+	if input.MaxDisplayPerPage != nil && *input.MaxDisplayPerPage > 0 {
+		maxDisplay = *input.MaxDisplayPerPage
+	}
+
+	return s.store.updateAdSlotType(ctx, id, name, *description, isActive, maxDisplay)
 }
 
 // DeleteSlotType deletes an ad slot type.
@@ -367,7 +425,16 @@ func (s *Service) DeleteSlotType(ctx context.Context, id pgtype.UUID) error {
 
 // DeleteCampaign deletes a campaign (only if draft or ended).
 func (s *Service) DeleteCampaign(ctx context.Context, id pgtype.UUID) error {
-	return s.store.deleteAdCampaign(ctx, id)
+	rows, err := s.store.deleteAdCampaign(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return errors.New("campaign is not deletable — only draft or ended campaigns can be deleted")
+	}
+
+	return nil
 }
 
 // GetCampaignStats returns aggregate stats for a campaign.

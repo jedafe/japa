@@ -57,6 +57,12 @@
 
 <svelte:head>
 	<title>{t('roadmap.releases.title', 'Releases')} — {siteName()}</title>
+	<link
+		rel="alternate"
+		type="application/rss+xml"
+		title={t('roadmap.releases.rss_title', '{site} Releases')}
+		href="/roadmap/releases/feed.xml"
+	/>
 </svelte:head>
 
 <div class="wrap">
@@ -73,7 +79,7 @@
 					<ArrowRight size={14} />
 				</a>
 			{/if}
-			<a class="rss-link" href="/api/v1/roadmap/releases/feed.xml" title="RSS">
+			<a class="rss-link" href="/roadmap/releases/feed.xml" title="RSS">
 				<Rss size={16} />
 			</a>
 		</div>

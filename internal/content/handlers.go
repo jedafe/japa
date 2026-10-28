@@ -2039,6 +2039,13 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		h.enqueueRSSRegenerate()
 	}
 
+	// RSS-013: regenerate RSS feeds when published content leaves the
+	// published state via edit — otherwise the item stays in cached feeds
+	// until the hourly cron.
+	if prevErr == nil && prevContent.Status == StatusPublished && content.Status != StatusPublished {
+		h.enqueueRSSRegenerate()
+	}
+
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
 	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
 	h.enqueueLinkPreviewsForBody(input.BodyHtml, id)
@@ -2107,12 +2114,15 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	// will see the content is gone and remove the row.
 	h.enqueueScholarshipSyncFromGuide(id, content.GuideCategory)
 
+	// RSS-013: regenerate RSS feeds so deleted content drops out without
+	// waiting for the hourly cron (was publish-only; removals were stale
+	// for up to the 1hr cache TTL).
+	if content.Status == StatusPublished {
+		h.enqueueRSSRegenerate()
+	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
-
-// ---------------------------------------------------------------------------
-// Lifecycle Handlers (publish / archive / schedule / view / share-count)
-// ---------------------------------------------------------------------------
 
 // PublishContent handles POST /api/v1/content/{id}/publish.
 func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
@@ -2229,6 +2239,12 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 
 	// §73: archived guides must not appear in the finder.
 	h.enqueueScholarshipSyncFromGuide(id, updated.GuideCategory)
+
+	// RSS-013: regenerate RSS feeds so archived content drops out without
+	// waiting for the hourly cron.
+	if prevContent.Status == StatusPublished {
+		h.enqueueRSSRegenerate()
+	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }

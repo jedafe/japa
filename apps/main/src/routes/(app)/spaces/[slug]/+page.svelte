@@ -550,6 +550,14 @@ import { flagUrl } from '$lib/utils/flags';
 	<meta property="og:url" content={canonical} />
 	{#if data.seoIndexable === false}
 		<meta name="robots" content="noindex,follow" />
+	{:else}
+		<!-- §26 — per-space RSS autodiscovery (public spaces only). -->
+		<link
+			rel="alternate"
+			type="application/rss+xml"
+			title="{space.name} — {t('app.name')}"
+			href="/spaces/{space.slug}/feed.xml"
+		/>
 	{/if}
 	{@html safeJsonLdScript(breadcrumbLd)}
 </svelte:head>
@@ -685,7 +693,7 @@ import { flagUrl } from '$lib/utils/flags';
 			{:else}
 				<div class="flex flex-col gap-3">
 					{#each feedItems as item, i (item.id)}
-						{#if adInterval > 0 && i > 0 && i % adInterval === 0 && i / adInterval <= 2}
+						{#if adInterval > 0 && i > 0 && i % adInterval === 0 && i / adInterval < 2 && i < feedItems.length - 1}
 							<NativeAd slot="native_space_feed" spaceId={space.id} pickIndex={Math.floor(i / adInterval) - 1} />
 						{/if}
 						<div class="group relative block">

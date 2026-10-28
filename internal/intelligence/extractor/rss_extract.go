@@ -27,6 +27,53 @@ type rssItemForRuleBased struct {
 	Category    string `xml:"category"`
 }
 
+// atomFeedForRuleBased is the Atom (<feed><entry>) counterpart — Atom
+// sources would otherwise fall through to the LLM path even though the
+// curator already understands the shape.
+type atomFeedForRuleBased struct {
+	Entries []atomEntryForRuleBased `xml:"entry"`
+}
+
+type atomEntryForRuleBased struct {
+	Title string `xml:"title"`
+	Link  struct {
+		Href string `xml:"href,attr"`
+	} `xml:"link"`
+	Summary   string `xml:"summary"`
+	Content   string `xml:"content"`
+	Published string `xml:"published"`
+	Updated   string `xml:"updated"`
+	Author    struct {
+		Name string `xml:"name"`
+	} `xml:"author"`
+	Category struct {
+		Term string `xml:"term,attr"`
+	} `xml:"category"`
+}
+
+// atomEntryToRSSItem flattens an Atom entry into the shared item shape so
+// the field-mapping logic stays single-pathed.
+func atomEntryToRSSItem(e atomEntryForRuleBased) rssItemForRuleBased {
+	desc := e.Summary
+	if desc == "" {
+		desc = e.Content
+	}
+
+	pubDate := e.Published
+	if pubDate == "" {
+		pubDate = e.Updated
+	}
+
+	return rssItemForRuleBased{
+		Title:       e.Title,
+		Link:        e.Link.Href,
+		Description: desc,
+		PubDate:     pubDate,
+		Author:      e.Author.Name,
+		Category:    e.Category.Term,
+	}
+}
+
 // RuleBasedExtract attempts to extract structured data from source text
 // without an LLM call. Currently supports RSS feeds for the news entity
 // type: it parses the XML, takes the first (most recent) feed item, and
@@ -44,9 +91,10 @@ func RuleBasedExtract(schema schemas.EntitySchema, _, _, sourceText string) (Ext
 		return ExtractResult{}, false
 	}
 
-	// Quick check: is this RSS/XML content?
+	// Quick check: is this RSS/Atom/XML content?
 	trimmed := strings.TrimSpace(sourceText)
-	if !strings.HasPrefix(trimmed, "<?xml") && !strings.HasPrefix(trimmed, "<rss") && !strings.Contains(trimmed, "<rss") {
+	if !strings.HasPrefix(trimmed, "<?xml") && !strings.HasPrefix(trimmed, "<rss") &&
+		!strings.Contains(trimmed, "<rss") && !strings.Contains(trimmed, "<feed") {
 		return ExtractResult{}, false
 	}
 
@@ -55,12 +103,23 @@ func RuleBasedExtract(schema schemas.EntitySchema, _, _, sourceText string) (Ext
 		return ExtractResult{}, false
 	}
 
-	if len(feed.Items) == 0 {
-		return ExtractResult{}, false
+	var item rssItemForRuleBased
+
+	switch {
+	case len(feed.Items) > 0:
+		// Use the first (most recent) item — RSS feeds list newest first.
+		item = feed.Items[0]
+	default:
+		// Atom feeds carry a <feed> root with <entry> children instead of
+		// <rss><channel><item>.
+		var atom atomFeedForRuleBased
+		if err := xml.Unmarshal([]byte(sourceText), &atom); err != nil || len(atom.Entries) == 0 {
+			return ExtractResult{}, false
+		}
+		item = atomEntryToRSSItem(atom.Entries[0])
 	}
 
-	// Use the first (most recent) item — RSS feeds list newest first.
-	ext := rssItemToExtraction(feed.Items[0])
+	ext := rssItemToExtraction(item)
 
 	// Validate against the schema (hallucination guard, type coercion).
 	cleaned, verrs := Validate(ext, schema)

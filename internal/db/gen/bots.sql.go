@@ -138,7 +138,7 @@ func (q *Queries) GetKnownBotByID(ctx context.Context, id pgtype.UUID) (KnownBot
 const listKnownBots = `-- name: ListKnownBots :many
 SELECT id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots
 WHERE ($1 = '' OR bot_type = $1)
-ORDER BY name ASC
+ORDER BY name ASC, id ASC
 LIMIT $3
 OFFSET $2
 `

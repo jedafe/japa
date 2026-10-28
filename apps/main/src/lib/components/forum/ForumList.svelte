@@ -18,8 +18,9 @@
 		/** Native ad slot name — when set, a NativeAd is interleaved every
 		    ads.native_feed_interval threads (max 2 per list, §25). */
 		adSlot?: string;
+		spaceId?: string;
 	}
-	let { threads: initial, pageSize, loadError, adSlot = '' }: Props = $props();
+	let { threads: initial, pageSize, loadError, adSlot = '', spaceId = '' }: Props = $props();
 
 	// Native ad insertion interval — public system setting (Rule 3).
 	const adInterval = $derived(
@@ -157,7 +158,7 @@
 			     up/down voting) — same card they get in unified feeds. -->
 			<FeedCard item={toFeedItem(thread)} style="daily" layout="stream" />
 			{#if adSlot && adInterval > 0 && (i + 1) % adInterval === 0 && i < threads.length - 1 && i / adInterval < 2}
-				<NativeAd slot={adSlot} pickIndex={Math.floor(i / adInterval)} />
+				<NativeAd slot={adSlot} {spaceId} pickIndex={Math.floor(i / adInterval)} />
 			{/if}
 		{/each}
 	</div>

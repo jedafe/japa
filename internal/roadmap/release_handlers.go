@@ -5,7 +5,8 @@
 // release lifecycle, item attachments, and the entries triage queue.
 //
 // Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
-//      (Versioned Releases, Commit-Sourced Entries)
+//
+//	(Versioned Releases, Commit-Sourced Entries)
 package roadmap
 
 import (
@@ -13,12 +14,13 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/rss/model"
 )
 
 // ---------------------------------------------------------------------------
@@ -62,49 +64,66 @@ func (h *Handlers) GetRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetReleasesFeed handles GET /api/v1/roadmap/releases/feed.xml — RSS 2.0
-// of published releases. SiteURL/SiteName are set at wiring time.
+// of published releases. SiteURL/SiteName are set at wiring time. Renders
+// through the shared internal/rss/model so all platform feeds emit the same
+// XML shape (RSS-011); §26 requires Cache-Control max-age=900 on all feeds.
 func (h *Handlers) GetReleasesFeed(w http.ResponseWriter, r *http.Request) {
 	out, err := h.Service.ListPublicReleases(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	var b strings.Builder
-	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-	b.WriteString(`<rss version="2.0"><channel>`)
-	fmt.Fprintf(&b, "<title>%s Releases</title>", xmlEscape(h.SiteName))
-	fmt.Fprintf(&b, "<link>%s/roadmap/releases</link>", xmlEscape(h.SiteURL))
-	fmt.Fprintf(&b, "<description>Product releases for %s</description>", xmlEscape(h.SiteName))
+
+	// Respect trusted X-Forwarded-Host like the other feed handlers so feed
+	// links carry the public host rather than the configured fallback.
+	siteURL := clientip.ForwardedBaseURL(r, h.SiteURL)
+
+	items := make([]model.Item, 0, len(out.Releases))
 	for _, rel := range out.Releases {
 		title := rel.Version
 		if rel.Title != nil && *rel.Title != "" {
 			title = fmt.Sprintf("%s — %s", rel.Version, *rel.Title)
 		}
-		b.WriteString("<item>")
-		fmt.Fprintf(&b, "<title>%s</title>", xmlEscape(title))
-		fmt.Fprintf(&b, "<link>%s/roadmap/releases/%s</link>", xmlEscape(h.SiteURL), xmlEscape(rel.Slug))
-		fmt.Fprintf(&b, "<guid isPermaLink=\"true\">%s/roadmap/releases/%s</guid>", xmlEscape(h.SiteURL), xmlEscape(rel.Slug))
+		item := model.Item{
+			Title:    title,
+			Link:     fmt.Sprintf("%s/roadmap/releases/%s", siteURL, rel.Slug),
+			GUID:     model.NewGUID(fmt.Sprintf("%s/roadmap/releases/%s", siteURL, rel.Slug), true),
+			Category: rel.Surface,
+		}
 		if rel.Summary != nil {
-			fmt.Fprintf(&b, "<description>%s</description>", xmlEscape(*rel.Summary))
+			item.Description = *rel.Summary
 		}
 		if rel.ReleasedAt != nil {
-			fmt.Fprintf(&b, "<pubDate>%s</pubDate>", rel.ReleasedAt.Format(time.RFC1123Z))
+			item.PubDate = rel.ReleasedAt.Format(time.RFC1123Z)
 		}
-		fmt.Fprintf(&b, "<category>%s</category>", xmlEscape(rel.Surface))
-		b.WriteString("</item>")
+		items = append(items, item)
 	}
-	b.WriteString("</channel></rss>")
-	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
-	_, _ = w.Write([]byte(b.String()))
-}
 
-// xmlEscape escapes the five XML entities for RSS output.
-func xmlEscape(s string) string {
-	r := strings.NewReplacer(
-		"&", "&amp;", "<", "&lt;", ">", "&gt;",
-		`"`, "&quot;", "'", "&apos;",
+	xmlBytes := model.Render(
+		h.SiteName+" Releases",
+		siteURL+"/roadmap/releases",
+		"Product releases for "+h.SiteName,
+		"en",
+		siteURL+"/roadmap/releases/feed.xml",
+		items,
 	)
-	return r.Replace(s)
+	if xmlBytes == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to render feed")
+		return
+	}
+
+	etag := model.ETag(xmlBytes)
+	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=900")
+	w.Header().Set("ETag", etag)
+
+	if model.IfNoneMatch(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(xmlBytes)
 }
 
 // ---------------------------------------------------------------------------

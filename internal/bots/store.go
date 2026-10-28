@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/rss/model"
 )
 
 // Store provides low-level database access for bot management operations.
@@ -97,9 +98,38 @@ func (s *Store) deleteKnownBot(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
+// listAllKnownBots pages through the registry until exhausted — the registry
+// is small, but a fixed MaxPageSize cap would silently truncate robots.txt
+// and UA matching once it grows past one page.
+func (s *Store) listAllKnownBots(ctx context.Context) ([]gen.KnownBot, error) {
+	var all []gen.KnownBot
+
+	var offset int32
+	for {
+		rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
+			BotType:    "",
+			PageSize:   MaxPageSize,
+			PageOffset: offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("listing all known bots: %w", err)
+		}
+
+		all = append(all, rows...)
+
+		if len(rows) < MaxPageSize {
+			break
+		}
+
+		offset += MaxPageSize
+	}
+
+	return all, nil
+}
+
 // getBotsByUserAgent matches an incoming User-Agent string against all
-// known bot patterns for the platform. Returns all matching bots ordered
-// by specificity (longer patterns first).
+// known bot patterns. Returns all matching bots ordered by specificity
+// (longer patterns first).
 //
 //nolint:unused // reserved for future features
 func (s *Store) getBotsByUserAgent(ctx context.Context, userAgent string) ([]gen.KnownBot, error) {
@@ -148,13 +178,12 @@ func matchBotsByUserAgent(bots []gen.KnownBot, userAgent string) []KnownBot {
 }
 
 // GetBotsByUserAgent returns all known bots matching the given User-Agent
-// string for the specified platform. Uses in-memory matching after fetching
-// all bots for the platform.
+// string. Uses in-memory matching after fetching the full registry.
 //
 
 // GetBotsByUserAgent is an exported method.
 func (s *Store) GetBotsByUserAgent(ctx context.Context, userAgent string) ([]KnownBot, error) {
-	bots, err := s.listKnownBots(ctx, "", MaxPageSize, 0)
+	bots, err := s.listAllKnownBots(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -162,18 +191,15 @@ func (s *Store) GetBotsByUserAgent(ctx context.Context, userAgent string) ([]Kno
 	return matchBotsByUserAgent(bots, userAgent), nil
 }
 
-// GetAllBots returns all known bots for the platform (for robots.txt generation).
+// GetAllBots returns every known bot in the registry (for robots.txt
+// generation). Pages internally so the output never truncates.
 //
 
 // GetAllBots is an exported method.
 func (s *Store) GetAllBots(ctx context.Context) ([]KnownBot, error) {
-	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
-		BotType:    "",
-		PageSize:   MaxPageSize,
-		PageOffset: 0,
-	})
+	rows, err := s.listAllKnownBots(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting all bots: %w", err)
+		return nil, err
 	}
 
 	result := make([]KnownBot, len(rows))
@@ -199,35 +225,22 @@ func (s *Store) GetAllBots(ctx context.Context) ([]KnownBot, error) {
 // detail URLs (/blog/, /forum/, /story/, /guide/, ...) instead of the
 // generic /content/ prefix.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
+// ContentURLPath delegates to the shared ADR-058 route-family map in
+// internal/rss/model — previously this switch drifted (missing achievement/
+// page/list types, and its default emitted /blog/ for unknown types instead
+// of the generic /content/ route).
 func ContentURLPath(contentType, slug string) string {
-	switch contentType {
-	case "blog_post":
-		return "/blog/" + slug
-	case "forum_thread":
-		return "/forum/" + slug
-	case "guide":
-		return "/guide/" + slug
-	case "discussion":
-		return "/forum/" + slug
-	case "comparison":
-		return "/comparisons/" + slug
-	case "story":
-		return "/story/" + slug
-	case "job_listing":
-		return "/jobs/" + slug
-	case "service_listing":
-		return "/services/" + slug
-	case "video":
-		return "/video/" + slug
-	default:
-		return "/blog/" + slug
-	}
+	return model.LinkPathFor(contentType) + slug
 }
 
-// GetLLMsData fetches the data needed for llms-full.txt generation:
-// recent published posts, top tags, and active public spaces.
+// GetLLMsData fetches the data needed for llms.txt generation: recent
+// published + indexable posts, the top tags, and top active public spaces.
+// Posts and spaces pass through the same Section 43 quality gates as the
+// sitemaps (IsContentIndexableByType / IsSpaceIndexable) using cfg — if it
+// isn't good enough for Google, it isn't advertised to AI crawlers either.
+// Returned links are root-relative; the handler absolutizes them.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func (s *Store) GetLLMsData(ctx context.Context) (LLMsData, error) {
+func (s *Store) GetLLMsData(ctx context.Context, cfg SitemapQualityConfig) (LLMsData, error) {
 	posts, err := s.read.ListPublishedContentForLLMsTxt(ctx)
 	if err != nil {
 		return LLMsData{}, fmt.Errorf("listing posts for llms: %w", err)
@@ -235,29 +248,63 @@ func (s *Store) GetLLMsData(ctx context.Context) (LLMsData, error) {
 
 	recentPosts := make([]Link, 0, len(posts))
 	for _, p := range posts {
+		if p.Slug == "" {
+			continue
+		}
+
+		isQuestion := p.IsQuestion != nil && *p.IsQuestion
+		if !IsContentIndexableByType(ContentIndexableInput{
+			ContentType:   p.ContentType,
+			Status:        "published",
+			Visibility:    p.Visibility,
+			WordCount:     int(p.WordCount),
+			CommentCount:  int(p.CommentCount),
+			ShareCount:    int(p.ShareCount),
+			ReactionCount: int(p.ReactionCount),
+			ReplyCount:    int(p.ReplyCount),
+			IsQuestion:    isQuestion,
+			Solved:        p.Solved,
+			SeoIndexable:  p.SeoIndexable,
+			SkipWordGate:  p.ContentType == "forum_thread" || p.ContentType == "discussion",
+		}, cfg) {
+			continue
+		}
+
 		recentPosts = append(recentPosts, Link{Title: p.Title, URL: ContentURLPath(p.ContentType, p.Slug)})
 	}
 
-	tags, err := s.read.ListTags(ctx)
+	tags, err := s.read.ListTopTagsForLLMsTxt(ctx)
 	if err != nil {
 		return LLMsData{}, fmt.Errorf("listing tags for llms: %w", err)
 	}
 
 	tagLinks := make([]Link, 0, len(tags))
 	for _, tg := range tags {
+		if tg.Slug == "" {
+			continue
+		}
+
 		tagLinks = append(tagLinks, Link{Title: tg.Name, URL: "/tags/" + tg.Slug})
 	}
 
-	spaces, err := s.read.ListSpaces(ctx,
-
-		pgtype.UUID{},
-	)
+	spaces, err := s.read.ListTopSpacesForLLMsTxt(ctx)
 	if err != nil {
 		return LLMsData{}, fmt.Errorf("listing spaces for llms: %w", err)
 	}
 
 	spaceLinks := make([]Link, 0, len(spaces))
 	for _, sp := range spaces {
+		if sp.Slug == "" {
+			continue
+		}
+
+		if !IsSpaceIndexable(
+			int(sp.MemberCount), int(sp.PostCount), int(sp.ForumCount), int(sp.QuestionCount),
+			cfg.MinMembers, cfg.MinPosts, cfg.MinForums, cfg.MinQuestions,
+		) {
+			continue
+		}
+
 		spaceLinks = append(spaceLinks, Link{Title: sp.Name, URL: "/spaces/" + sp.Slug})
 	}
 

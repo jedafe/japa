@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/rss/model"
 )
 
 // ---------------------------------------------------------------------------
@@ -183,10 +184,10 @@ func TestRSSItemFields(t *testing.T) {
 	item := RSSItem{
 		Title:       "Test Post",
 		Link:        "https://example.com/test",
-		GUID:        "urn:uuid:123",
+		GUID:        model.NewGUID("urn:uuid:123", false),
 		Description: "A test post",
 		PubDate:     "Mon, 01 Jan 2024 00:00:00 +0000",
-		Author:      "testuser",
+		Creator:     "testuser",
 	}
 	if item.Title != "Test Post" {
 		t.Errorf("unexpected title: %q", item.Title)
@@ -196,8 +197,8 @@ func TestRSSItemFields(t *testing.T) {
 		t.Errorf("unexpected link: %q", item.Link)
 	}
 
-	if item.GUID != "urn:uuid:123" {
-		t.Errorf("unexpected guid: %q", item.GUID)
+	if item.GUID.Value != "urn:uuid:123" {
+		t.Errorf("unexpected guid: %q", item.GUID.Value)
 	}
 }
 

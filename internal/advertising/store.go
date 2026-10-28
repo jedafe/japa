@@ -54,12 +54,14 @@ func (s *Store) listAdSlotTypes(ctx context.Context, limit, offset int32) ([]AdS
 	})
 }
 
-func (s *Store) updateAdSlotType(ctx context.Context, id pgtype.UUID, name, description string) (AdSlotType, error) {
+func (s *Store) updateAdSlotType(ctx context.Context, id pgtype.UUID, name, description string, isActive bool, maxDisplay int32) (AdSlotType, error) {
 	return s.writeQueries.UpdateAdSlotTypeDetails(ctx, gen.UpdateAdSlotTypeDetailsParams{
 		ID: id,
 
-		SlotName:    name,
-		Description: &description,
+		SlotName:          name,
+		Description:       &description,
+		IsActive:          isActive,
+		MaxDisplayPerPage: maxDisplay,
 	})
 }
 
@@ -69,7 +71,7 @@ func (s *Store) deleteAdSlotType(ctx context.Context, id pgtype.UUID) error {
 	)
 }
 
-func (s *Store) deleteAdCampaign(ctx context.Context, id pgtype.UUID) error {
+func (s *Store) deleteAdCampaign(ctx context.Context, id pgtype.UUID) (int64, error) {
 	return s.writeQueries.DeleteAdCampaign(ctx,
 		id,
 	)
@@ -101,6 +103,25 @@ func (s *Store) getCampaignStats(ctx context.Context, campaignID pgtype.UUID) (m
 		cpc = spend / float64(row.Clicks)
 	}
 
+	// Daily breakdown from the ad_analytics_daily rollup (populated by
+	// ad:ingest_event_batch + ad:accrue_spend_daily) — the admin stats
+	// view renders this table.
+	daily := []map[string]any{}
+	if rows, err := s.queries.GetAdAnalyticsByCampaign(ctx, gen.GetAdAnalyticsByCampaignParams{
+		CampaignID: campaignID,
+		PageLimit:  90,
+		PageOffset: 0,
+	}); err == nil {
+		for _, d := range rows {
+			daily = append(daily, map[string]any{
+				"date":        d.Date.Time.Format("2006-01-02"),
+				"impressions": d.Impressions,
+				"clicks":      d.Clicks,
+				"spend":       d.Spent,
+			})
+		}
+	}
+
 	stats := map[string]any{
 		"campaign_id":  campaignID.String(),
 		"impressions":  row.Impressions,
@@ -110,7 +131,7 @@ func (s *Store) getCampaignStats(ctx context.Context, campaignID pgtype.UUID) (m
 		"spend":        spend,
 		"ctr":          ctr,
 		"cpc":          cpc,
-		"daily_stats":  []map[string]any{},
+		"daily_stats":  daily,
 	}
 
 	return stats, nil
@@ -120,7 +141,7 @@ func (s *Store) getCampaignStats(ctx context.Context, campaignID pgtype.UUID) (m
 // Ad Campaigns
 // ---------------------------------------------------------------------------
 
-func (s *Store) listAdCampaignsByPlatform(ctx context.Context, limit, offset int32) ([]AdCampaign, error) {
+func (s *Store) listAdCampaignsByPlatform(ctx context.Context, limit, offset int32) ([]gen.ListAdCampaignsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}

@@ -670,6 +670,40 @@ func (q *Queries) ListTagsPaginated(ctx context.Context, arg ListTagsPaginatedPa
 	return items, nil
 }
 
+const listTopTagsForLLMsTxt = `-- name: ListTopTagsForLLMsTxt :many
+SELECT t.name, t.slug
+FROM tags t
+ORDER BY t.content_count DESC, t.name ASC
+LIMIT 100
+`
+
+type ListTopTagsForLLMsTxtRow struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+// Bounded, popularity-ordered tag list for llms-full.txt "Topics" section.
+// (The unbounded alphabetical ListTags made the file grow without limit.)
+func (q *Queries) ListTopTagsForLLMsTxt(ctx context.Context) ([]ListTopTagsForLLMsTxtRow, error) {
+	rows, err := q.db.Query(ctx, listTopTagsForLLMsTxt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTopTagsForLLMsTxtRow
+	for rows.Next() {
+		var i ListTopTagsForLLMsTxtRow
+		if err := rows.Scan(&i.Name, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeTagModerator = `-- name: RemoveTagModerator :exec
 DELETE FROM tag_moderators
 WHERE tag_id = $1 AND user_id = $2

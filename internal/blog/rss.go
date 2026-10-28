@@ -22,6 +22,20 @@ type RSSItem = model.Item
 
 // generateRSSXML writes an RSS 2.0 XML feed to the given writer.
 func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteURL, siteName string) error {
+	xmlBytes := renderBlogRSSXML(posts, siteURL, siteName)
+	if xmlBytes == nil {
+		return nil
+	}
+
+	// model.Render already includes the XML header; write directly.
+	_, err := w.Write(xmlBytes)
+
+	return err
+}
+
+// renderBlogRSSXML marshals the blog feed to XML bytes (with the XML
+// declaration) so the handler can both cache and serve the same body.
+func renderBlogRSSXML(posts []gen.ListPublishedPostsForRSSRow, siteURL, siteName string) []byte {
 	items := make([]model.Item, 0, len(posts))
 
 	for _, p := range posts {
@@ -47,25 +61,18 @@ func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteUR
 		items = append(items, model.Item{
 			Title:       p.Title,
 			Link:        siteURL + "/blog/" + p.Slug,
-			GUID:        model.GUIDFromID(p.ID),
+			GUID:        model.NewGUID(model.GUIDFromID(p.ID), false),
 			Description: desc,
 			PubDate:     pubDate,
 		})
 	}
 
-	xmlBytes := model.Render(
+	return model.Render(
 		siteName+" Blog",
 		siteURL+"/blog",
 		siteName+" Blog — latest posts",
 		"en-us",
+		siteURL+"/blog/feed.xml",
 		items,
 	)
-	if xmlBytes == nil {
-		return nil
-	}
-
-	// model.Render already includes the XML header; write directly.
-	_, err := w.Write(xmlBytes)
-
-	return err
 }

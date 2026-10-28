@@ -16,7 +16,7 @@ SELECT * FROM known_bots WHERE id = $1;
 -- name: ListKnownBots :many
 SELECT * FROM known_bots
 WHERE (@bot_type = '' OR bot_type = @bot_type)
-ORDER BY name ASC
+ORDER BY name ASC, id ASC
 LIMIT @page_size
 OFFSET @page_offset;
 

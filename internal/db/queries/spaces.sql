@@ -1502,3 +1502,30 @@ JOIN space_types st ON st.id = s.space_type_id
 WHERE cfv.entity_type = 'space'
   AND cfv.field_id = '00000000-0000-0000-0000-000000000117'::uuid
   AND cfv.value_text = ANY(@qids::text[]);
+
+-- name: ListTopSpacesForLLMsTxt :many
+-- Bounded, active-only, popularity-ordered public space list for
+-- llms-full.txt "Spaces" section. (The unbounded ListSpaces call also
+-- returned non-active spaces.) Carries the bots.IsSpaceIndexable gate
+-- inputs so llms.txt honors the same seo.sitemap.* thresholds as the
+-- spaces sitemap.
+SELECT s.name, s.slug, s.member_count, s.post_count,
+ COALESCE(fc.forum_count, 0) AS forum_count,
+ COALESCE(qc.question_count, 0) AS question_count
+FROM spaces s
+LEFT JOIN (
+ SELECT c.space_id, count(*) AS forum_count
+ FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+ WHERE c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+ GROUP BY c.space_id
+) fc ON fc.space_id = s.id
+LEFT JOIN (
+ SELECT c.space_id, count(*) AS question_count
+ FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+ WHERE c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+ AND ft.solved = true
+ GROUP BY c.space_id
+) qc ON qc.space_id = s.id
+WHERE s.deleted_at IS NULL AND s.visibility = 'public' AND s.status = 'active'
+ORDER BY s.member_count DESC, s.follower_count DESC, s.name ASC
+LIMIT 100;

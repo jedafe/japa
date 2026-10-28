@@ -1284,10 +1284,29 @@ ORDER BY created_at DESC
 LIMIT 50;
 
 -- name: ListPublishedContentForLLMsTxt :many
-SELECT title, slug, content_type
-FROM contents
-WHERE status = 'published' AND visibility = 'public'
-ORDER BY created_at DESC
+-- Same visibility/indexability contract as ListPublishedSlugsForSitemap:
+-- soft-deleted and seo_indexable=false content must never be advertised
+-- to AI crawlers via /llms.txt. The computed columns feed
+-- bots.IsContentIndexableByType so the file honors the same seo.sitemap.*
+-- quality thresholds as the content sitemap.
+SELECT c.title, c.slug, c.content_type, c.visibility, c.seo_indexable,
+ c.comment_count, c.share_count, c.reshare_count,
+ array_length(string_to_array(trim(c.body), ' '), 1) AS word_count,
+ COALESCE(ft.reply_count, 0) AS reply_count,
+ COALESCE(ft.solved, false) AS solved,
+ (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
+ COALESCE(r.reaction_count, 0) AS reaction_count
+FROM contents c
+LEFT JOIN forum_threads ft ON ft.content_id = c.id
+LEFT JOIN (
+ SELECT entity_id, count(*) AS reaction_count
+ FROM reactions
+ WHERE entity_type IN ('content', 'blog_post', 'forum_thread', 'discussion', 'guide', 'comparison')
+ GROUP BY entity_id
+) r ON r.entity_id = c.id
+WHERE c.status = 'published'
+ AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
+ORDER BY c.created_at DESC
 LIMIT 1000;
 
 -- name: ListPublishedContentForDigest :many

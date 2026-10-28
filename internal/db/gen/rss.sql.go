@@ -13,7 +13,7 @@ import (
 
 const listRSSFeedItems = `-- name: ListRSSFeedItems :many
 
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
+SELECT c.id, c.title, c.slug, c.content_type, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
@@ -27,6 +27,7 @@ type ListRSSFeedItemsRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
+	ContentType string             `json:"content_type"`
 	BodyHtml    string             `json:"body_html"`
 	Body        string             `json:"body"`
 	PublishedAt pgtype.Timestamptz `json:"published_at"`
@@ -51,6 +52,7 @@ func (q *Queries) ListRSSFeedItems(ctx context.Context, pageLimit int32) ([]List
 			&i.ID,
 			&i.Title,
 			&i.Slug,
+			&i.ContentType,
 			&i.BodyHtml,
 			&i.Body,
 			&i.PublishedAt,
@@ -68,7 +70,7 @@ func (q *Queries) ListRSSFeedItems(ctx context.Context, pageLimit int32) ([]List
 }
 
 const listRSSFeedItemsByContentType = `-- name: ListRSSFeedItemsByContentType :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
+SELECT c.id, c.title, c.slug, c.content_type, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
@@ -88,6 +90,7 @@ type ListRSSFeedItemsByContentTypeRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
+	ContentType string             `json:"content_type"`
 	BodyHtml    string             `json:"body_html"`
 	Body        string             `json:"body"`
 	PublishedAt pgtype.Timestamptz `json:"published_at"`
@@ -104,6 +107,73 @@ func (q *Queries) ListRSSFeedItemsByContentType(ctx context.Context, arg ListRSS
 	var items []ListRSSFeedItemsByContentTypeRow
 	for rows.Next() {
 		var i ListRSSFeedItemsByContentTypeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.ContentType,
+			&i.BodyHtml,
+			&i.Body,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.Username,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRSSForumFeedItems = `-- name: ListRSSForumFeedItems :many
+SELECT ft.id, ft.title, ft.slug,
+ c.body_html, c.body, c.published_at, ft.created_at,
+ CASE WHEN ft.is_anonymous THEN '' ELSE COALESCE(u.public_username, u.username, '') END::text AS username
+FROM forum_threads ft
+JOIN contents c ON c.id = ft.content_id
+JOIN users u ON u.id = ft.author_user_id
+LEFT JOIN spaces s ON s.id = ft.space_id
+WHERE ft.deleted_at IS NULL
+ AND (ft.space_id IS NULL OR c.status = 'published')
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (s.id IS NULL OR s.visibility = 'public')
+ORDER BY ft.created_at DESC
+LIMIT $1
+`
+
+type ListRSSForumFeedItemsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	BodyHtml    string             `json:"body_html"`
+	Body        string             `json:"body"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Username    string             `json:"username"`
+}
+
+// Forum threads join their backing contents row for body_html/auto_hidden.
+// Only threads in public spaces are emitted: 'members'-space threads would
+// leak member-only bodies into a public feed, and 'private'-space threads
+// are invisible to anonymous readers entirely. is_anonymous strips the
+// author so the feed never de-anonymizes a thread.
+// Visibility mirrors the public thread gate (CreateThread): unscoped
+// threads are public immediately (their backing row stays 'draft'), while
+// space-scoped threads need a 'published' backing row so in-review threads
+// held for moderation never leak into the feed.
+func (q *Queries) ListRSSForumFeedItems(ctx context.Context, pageLimit int32) ([]ListRSSForumFeedItemsRow, error) {
+	rows, err := q.db.Query(ctx, listRSSForumFeedItems, pageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRSSForumFeedItemsRow
+	for rows.Next() {
+		var i ListRSSForumFeedItemsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -125,7 +195,7 @@ func (q *Queries) ListRSSFeedItemsByContentType(ctx context.Context, arg ListRSS
 }
 
 const listRSSSpaceFeedItems = `-- name: ListRSSSpaceFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
+SELECT c.id, c.title, c.slug, c.content_type, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 JOIN spaces s ON c.space_id = s.id
@@ -146,6 +216,7 @@ type ListRSSSpaceFeedItemsRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
+	ContentType string             `json:"content_type"`
 	BodyHtml    string             `json:"body_html"`
 	Body        string             `json:"body"`
 	PublishedAt pgtype.Timestamptz `json:"published_at"`
@@ -166,6 +237,7 @@ func (q *Queries) ListRSSSpaceFeedItems(ctx context.Context, arg ListRSSSpaceFee
 			&i.ID,
 			&i.Title,
 			&i.Slug,
+			&i.ContentType,
 			&i.BodyHtml,
 			&i.Body,
 			&i.PublishedAt,
@@ -183,7 +255,7 @@ func (q *Queries) ListRSSSpaceFeedItems(ctx context.Context, arg ListRSSSpaceFee
 }
 
 const listRSSTagFeedItems = `-- name: ListRSSTagFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
+SELECT c.id, c.title, c.slug, c.content_type, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 JOIN content_tags ct ON ct.content_id = c.id
@@ -205,6 +277,7 @@ type ListRSSTagFeedItemsRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
+	ContentType string             `json:"content_type"`
 	BodyHtml    string             `json:"body_html"`
 	Body        string             `json:"body"`
 	PublishedAt pgtype.Timestamptz `json:"published_at"`
@@ -225,6 +298,7 @@ func (q *Queries) ListRSSTagFeedItems(ctx context.Context, arg ListRSSTagFeedIte
 			&i.ID,
 			&i.Title,
 			&i.Slug,
+			&i.ContentType,
 			&i.BodyHtml,
 			&i.Body,
 			&i.PublishedAt,
@@ -242,7 +316,7 @@ func (q *Queries) ListRSSTagFeedItems(ctx context.Context, arg ListRSSTagFeedIte
 }
 
 const listRSSUserFeedItems = `-- name: ListRSSUserFeedItems :many
-SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
+SELECT c.id, c.title, c.slug, c.content_type, c.body_html, c.body, c.published_at, c.created_at, COALESCE(u.public_username, u.username, '') AS username
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
@@ -262,6 +336,7 @@ type ListRSSUserFeedItemsRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
+	ContentType string             `json:"content_type"`
 	BodyHtml    string             `json:"body_html"`
 	Body        string             `json:"body"`
 	PublishedAt pgtype.Timestamptz `json:"published_at"`
@@ -282,6 +357,7 @@ func (q *Queries) ListRSSUserFeedItems(ctx context.Context, arg ListRSSUserFeedI
 			&i.ID,
 			&i.Title,
 			&i.Slug,
+			&i.ContentType,
 			&i.BodyHtml,
 			&i.Body,
 			&i.PublishedAt,

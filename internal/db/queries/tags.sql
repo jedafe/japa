@@ -151,3 +151,11 @@ RETURNING id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at;
 -- name: RemoveTagModerator :exec
 DELETE FROM tag_moderators
 WHERE tag_id = @tag_id AND user_id = @user_id;
+
+-- name: ListTopTagsForLLMsTxt :many
+-- Bounded, popularity-ordered tag list for llms-full.txt "Topics" section.
+-- (The unbounded alphabetical ListTags made the file grow without limit.)
+SELECT t.name, t.slug
+FROM tags t
+ORDER BY t.content_count DESC, t.name ASC
+LIMIT 100;

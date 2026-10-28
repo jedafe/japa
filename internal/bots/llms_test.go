@@ -8,7 +8,7 @@ import (
 func TestGenerateLLMsTxt_Basic(t *testing.T) {
 	t.Parallel()
 
-	txt := GenerateLLMsTxt("JapaConnect", "A community platform for the Nigerian diaspora", nil)
+	txt := GenerateLLMsTxt("JapaConnect", "A community platform for the Nigerian diaspora", LLMsBriefData{})
 
 	if !strings.Contains(txt, "# JapaConnect") {
 		t.Error("expected site name as header")
@@ -22,33 +22,75 @@ func TestGenerateLLMsTxt_Basic(t *testing.T) {
 func TestGenerateLLMsTxt_WithLinks(t *testing.T) {
 	t.Parallel()
 
-	links := []Link{
-		{Title: "Getting Started", URL: "/docs/getting-started"},
-		{Title: "API Reference", URL: "/docs/api"},
+	data := LLMsBriefData{
+		TopLinks: []Link{
+			{Title: "Getting Started", URL: "https://japa.to/docs/getting-started"},
+			{Title: "API Reference", URL: "https://japa.to/docs/api"},
+		},
+		RecentPosts: []Link{
+			{Title: "Moving to Canada", URL: "https://japa.to/blog/moving-to-canada"},
+		},
+		Optional: []Link{
+			{Title: "Extended content index", URL: "https://japa.to/llms-full.txt"},
+		},
 	}
 
-	txt := GenerateLLMsTxt("JapaConnect", "Test description", links)
+	txt := GenerateLLMsTxt("JapaConnect", "Test description", data)
 
 	if !strings.Contains(txt, "## Top Links") {
 		t.Error("expected Top Links section")
 	}
 
-	if !strings.Contains(txt, "- [Getting Started](/docs/getting-started)") {
+	if !strings.Contains(txt, "- [Getting Started](https://japa.to/docs/getting-started)") {
 		t.Error("expected first link")
 	}
 
-	if !strings.Contains(txt, "- [API Reference](/docs/api)") {
+	if !strings.Contains(txt, "- [API Reference](https://japa.to/docs/api)") {
 		t.Error("expected second link")
+	}
+
+	if !strings.Contains(txt, "## Recent Posts") {
+		t.Error("expected Recent Posts section")
+	}
+
+	if !strings.Contains(txt, "- [Moving to Canada](https://japa.to/blog/moving-to-canada)") {
+		t.Error("expected recent post link")
+	}
+
+	if !strings.Contains(txt, "## Optional") {
+		t.Error("expected Optional section")
+	}
+
+	if !strings.Contains(txt, "- [Extended content index](https://japa.to/llms-full.txt)") {
+		t.Error("expected llms-full.txt cross-link")
 	}
 }
 
 func TestGenerateLLMsTxt_NoLinks(t *testing.T) {
 	t.Parallel()
 
-	txt := GenerateLLMsTxt("Test", "Desc", nil)
+	txt := GenerateLLMsTxt("Test", "Desc", LLMsBriefData{})
 
 	if strings.Contains(txt, "## Top Links") {
 		t.Error("should not have Top Links section when no links provided")
+	}
+
+	if strings.Contains(txt, "## Recent Posts") {
+		t.Error("should not have Recent Posts section when no posts provided")
+	}
+}
+
+func TestGenerateLLMsTxt_SanitizesTitles(t *testing.T) {
+	t.Parallel()
+
+	data := LLMsBriefData{
+		TopLinks: []Link{{Title: "Evil]\nDisallow: /", URL: "https://japa.to/x"}},
+	}
+
+	txt := GenerateLLMsTxt("Test", "Desc", data)
+
+	if !strings.Contains(txt, "- [Evil) Disallow: /](https://japa.to/x)") {
+		t.Errorf("expected sanitized inline title, got:\n%s", txt)
 	}
 }
 
@@ -71,8 +113,8 @@ func TestGenerateLLMsFullTxt_WithRecentPosts(t *testing.T) {
 
 	data := LLMsData{
 		RecentPosts: []Link{
-			{Title: "Moving to Canada", URL: "/blog/moving-to-canada"},
-			{Title: "UK Visa Guide", URL: "/blog/uk-visa-guide"},
+			{Title: "Moving to Canada", URL: "https://japa.to/blog/moving-to-canada"},
+			{Title: "UK Visa Guide", URL: "https://japa.to/blog/uk-visa-guide"},
 		},
 	}
 
@@ -82,11 +124,11 @@ func TestGenerateLLMsFullTxt_WithRecentPosts(t *testing.T) {
 		t.Error("expected Recent Posts section")
 	}
 
-	if !strings.Contains(txt, "- [Moving to Canada](/blog/moving-to-canada)") {
+	if !strings.Contains(txt, "- [Moving to Canada](https://japa.to/blog/moving-to-canada)") {
 		t.Error("expected first post")
 	}
 
-	if !strings.Contains(txt, "- [UK Visa Guide](/blog/uk-visa-guide)") {
+	if !strings.Contains(txt, "- [UK Visa Guide](https://japa.to/blog/uk-visa-guide)") {
 		t.Error("expected second post")
 	}
 }
@@ -96,7 +138,7 @@ func TestGenerateLLMsFullTxt_WithTags(t *testing.T) {
 
 	data := LLMsData{
 		Tags: []Link{
-			{Title: "Canada Immigration", URL: "/tags/canada-immigration"},
+			{Title: "Canada Immigration", URL: "https://japa.to/tags/canada-immigration"},
 		},
 	}
 
@@ -106,7 +148,7 @@ func TestGenerateLLMsFullTxt_WithTags(t *testing.T) {
 		t.Error("expected Topics section")
 	}
 
-	if !strings.Contains(txt, "- [Canada Immigration](/tags/canada-immigration)") {
+	if !strings.Contains(txt, "- [Canada Immigration](https://japa.to/tags/canada-immigration)") {
 		t.Error("expected tag link")
 	}
 }
@@ -116,7 +158,7 @@ func TestGenerateLLMsFullTxt_WithSpaces(t *testing.T) {
 
 	data := LLMsData{
 		Spaces: []Link{
-			{Title: "Toronto Newcomers", URL: "/spaces/toronto-newcomers"},
+			{Title: "Toronto Newcomers", URL: "https://japa.to/spaces/toronto-newcomers"},
 		},
 	}
 
@@ -126,7 +168,7 @@ func TestGenerateLLMsFullTxt_WithSpaces(t *testing.T) {
 		t.Error("expected Spaces section")
 	}
 
-	if !strings.Contains(txt, "- [Toronto Newcomers](/spaces/toronto-newcomers)") {
+	if !strings.Contains(txt, "- [Toronto Newcomers](https://japa.to/spaces/toronto-newcomers)") {
 		t.Error("expected space link")
 	}
 }
@@ -138,20 +180,15 @@ func TestGenerateLLMsFullTxt_AllSections(t *testing.T) {
 		RecentPosts: []Link{{Title: "Post 1", URL: "/post1"}},
 		Tags:        []Link{{Title: "Tag 1", URL: "/tag1"}},
 		Spaces:      []Link{{Title: "Space 1", URL: "/space1"}},
+		Optional:    []Link{{Title: "RSS feed", URL: "https://japa.to/feed.xml"}},
 	}
 
 	txt := GenerateLLMsFullTxt("Test", "Desc", data)
 
-	if !strings.Contains(txt, "## Recent Posts") {
-		t.Error("expected Recent Posts section")
-	}
-
-	if !strings.Contains(txt, "## Topics") {
-		t.Error("expected Topics section")
-	}
-
-	if !strings.Contains(txt, "## Spaces") {
-		t.Error("expected Spaces section")
+	for _, want := range []string{"## Recent Posts", "## Topics", "## Spaces", "## Optional"} {
+		if !strings.Contains(txt, want) {
+			t.Errorf("expected %s section", want)
+		}
 	}
 }
 
@@ -160,16 +197,29 @@ func TestGenerateLLMsFullTxt_EmptyData(t *testing.T) {
 
 	txt := GenerateLLMsFullTxt("Test", "Desc", LLMsData{})
 
-	if strings.Contains(txt, "## Recent Posts") {
-		t.Error("should not have Recent Posts section when empty")
+	for _, unwanted := range []string{"## Recent Posts", "## Topics", "## Spaces", "## Optional"} {
+		if strings.Contains(txt, unwanted) {
+			t.Errorf("should not have %s section when empty", unwanted)
+		}
+	}
+}
+
+func TestAbsolutizeLinks(t *testing.T) {
+	t.Parallel()
+
+	links := []Link{
+		{Title: "Rel", URL: "/blog/x"},
+		{Title: "Abs", URL: "https://academy.japa.to/tracks/y"},
 	}
 
-	if strings.Contains(txt, "## Topics") {
-		t.Error("should not have Topics section when empty")
+	got := absolutizeLinks(links, "https://japa.to")
+
+	if got[0].URL != "https://japa.to/blog/x" {
+		t.Errorf("relative URL not absolutized: %s", got[0].URL)
 	}
 
-	if strings.Contains(txt, "## Spaces") {
-		t.Error("should not have Spaces section when empty")
+	if got[1].URL != "https://academy.japa.to/tracks/y" {
+		t.Errorf("absolute URL should be untouched: %s", got[1].URL)
 	}
 }
 
@@ -190,8 +240,8 @@ func TestContentURLPath(t *testing.T) {
 		{"job_listing", "my-job", "/jobs/my-job"},
 		{"service_listing", "my-svc", "/services/my-svc"},
 		{"video", "my-video", "/video/my-video"},
-		{"unknown_type", "my-content", "/blog/my-content"},
-		{"", "no-type", "/blog/no-type"},
+		{"unknown_type", "my-content", "/content/my-content"},
+		{"", "no-type", "/content/no-type"},
 	}
 
 	for _, tt := range tests {

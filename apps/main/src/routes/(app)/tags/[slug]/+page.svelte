@@ -336,7 +336,7 @@
 		rel="alternate"
 		type="application/rss+xml"
 		title="{title} RSS"
-		href="/tags/{tag.slug}/rss.xml"
+		href="/tags/{tag.slug}/feed.xml"
 	/>
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>

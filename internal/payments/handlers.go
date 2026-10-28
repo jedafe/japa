@@ -407,6 +407,15 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ad_slot has no fulfillment consumer — campaigns are funded from
+	// wallet credits (§61), not payment intents. Accepting the purpose
+	// would let a payment mark itself "paid" while funding nothing.
+	if input.PurposeType == PurposeAdSlot {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purpose_type",
+			"ad_slot payments are not accepted — campaigns are funded from wallet credits")
+		return
+	}
+
 	if input.Amount <= 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "Amount must be positive")
 		return

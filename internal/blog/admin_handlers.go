@@ -147,7 +147,10 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-009: enqueue rss:regenerate on draft→published transition. Ref: §24.
-	if prevStatus != content.StatusPublished && post.Status == content.StatusPublished {
+	// The reverse (published→non-published) also regenerates so the post drops
+	// out of cached feeds without waiting for the hourly cron.
+	if prevStatus != post.Status &&
+		(prevStatus == content.StatusPublished || post.Status == content.StatusPublished) {
 		h.enqueueRSSRegenerate()
 	}
 

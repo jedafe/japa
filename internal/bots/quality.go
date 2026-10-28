@@ -1,5 +1,7 @@
 package bots
 
+import "context"
+
 // SitemapQualityConfig holds configurable thresholds for sitemap inclusion.
 // Values come from system_settings (seo.sitemap.*) — callers should read
 // them via the settings reader and pass them to IsSpaceIndexable /
@@ -252,4 +254,41 @@ func IsContentIndexableByType(in ContentIndexableInput, cfg SitemapQualityConfig
 	}
 
 	return true
+}
+
+// intSettingsReader is the subset of *config.Settings needed to read the
+// seo.sitemap.* thresholds (GetIntOr). Declared locally so the bots package
+// does not import config — *config.Settings satisfies it structurally.
+type intSettingsReader interface {
+	GetIntOr(ctx context.Context, key string, fallback int) int
+}
+
+// LoadSitemapQualityConfig reads the Section 43 quality-gate thresholds from
+// system_settings (seo.sitemap.*). A nil reader returns the spec defaults —
+// same contract as the sitemap handler's config reader.
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
+func LoadSitemapQualityConfig(ctx context.Context, settings intSettingsReader) SitemapQualityConfig {
+	cfg := DefaultSitemapQualityConfig()
+	if settings == nil {
+		return cfg
+	}
+
+	cfg.MinMembers = settings.GetIntOr(ctx, "seo.sitemap.space_min_members", cfg.MinMembers)
+	cfg.MinPosts = settings.GetIntOr(ctx, "seo.sitemap.space_min_posts", cfg.MinPosts)
+	cfg.MinForums = settings.GetIntOr(ctx, "seo.sitemap.space_min_forums", cfg.MinForums)
+	cfg.MinQuestions = settings.GetIntOr(ctx, "seo.sitemap.space_min_questions", cfg.MinQuestions)
+	cfg.MinWords = settings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
+	cfg.BlogMinWords = settings.GetIntOr(ctx, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
+	cfg.StoryMinWords = settings.GetIntOr(ctx, "seo.sitemap.story_min_words", cfg.StoryMinWords)
+	cfg.ListMinWords = settings.GetIntOr(ctx, "seo.sitemap.list_min_words", cfg.ListMinWords)
+	cfg.ForumMinWords = settings.GetIntOr(ctx, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
+	cfg.DiscussionMinWords = settings.GetIntOr(ctx, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
+	cfg.GuideMinWords = settings.GetIntOr(ctx, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
+	cfg.ComparisonMinWords = settings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
+	cfg.BlogMinEngagement = settings.GetIntOr(ctx, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
+	cfg.ForumMinReplies = settings.GetIntOr(ctx, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
+	cfg.QuestionMinAnswers = settings.GetIntOr(ctx, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
+	cfg.DiscussionMinComments = settings.GetIntOr(ctx, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
+
+	return cfg
 }
