@@ -964,6 +964,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tipsService.SetOrgChecker(tipsOrgAdapter{svc: orgService})
 	tipsService.SetOCClient(tipsOCAdapter{client: opencollective.New()})
 	tipsService.SetPaymentsService(tipsPaymentAdapter{svc: paymentService})
+	tipsService.SetFeatureChecker(tipsFeatureAdapter{checker: featureChecker})
 	tipsService.SetNotifier(tipsNotifierAdapter{enq: taskEnqueuer})
 	tipsService.SetSiteURL(cfg.SiteURL)
 	tipsHandlers := tips.NewHandlers(tipsService)

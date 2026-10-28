@@ -5,6 +5,7 @@ package tips
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -62,6 +63,12 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 		IdempotencyKey:          strPtrOrNil(idemKey),
 	})
 	if err != nil {
+		// tips_idem_unique (000949): concurrent same-key replay.
+		if errors.Is(err, ErrDuplicateKey) && idemKey != "" {
+			if existing, gerr := s.store.getTipByIdempotencyKey(ctx, senderID, idemKey); gerr == nil {
+				return CreateTipResult{Tip: tipFromRow(existing), Duplicate: true}, nil
+			}
+		}
 		return CreateTipResult{}, err
 	}
 

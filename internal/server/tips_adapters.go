@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/opencollective"
 	"github.com/jedafe/japa/internal/organizations"
@@ -158,4 +159,18 @@ func (a tipsSettlementAdapter) NotifyTipReceived(ctx context.Context, tipID pgty
 // SyncOC delegates to SyncAll.
 func (a tipsSettlementAdapter) SyncOC(ctx context.Context) error {
 	return a.svc.SyncAll(ctx)
+}
+
+// tipsFeatureAdapter adapts *features.Checker to tips.FeatureChecker — the
+// flags live in feature_flags, toggled via admin → Extensions.
+type tipsFeatureAdapter struct {
+	checker *features.Checker
+}
+
+// IsEnabled delegates to the feature-flag checker.
+func (a tipsFeatureAdapter) IsEnabled(ctx context.Context, key string) bool {
+	if a.checker == nil {
+		return false
+	}
+	return a.checker.IsEnabled(ctx, key)
 }

@@ -9,6 +9,7 @@ type FetchOptions = {
 	method?: string;
 	body?: unknown;
 	signal?: AbortSignal;
+	headers?: Record<string, string>;
 };
 
 type ApiResult<T> =
@@ -1930,7 +1931,11 @@ export const sharePlatformsAdminApi = {
 export const tipsAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/tips${params ? `?${params}` : ''}`),
 	stats: (days = 30) => api<unknown>(`/admin/tips/stats?days=${days}`),
-	refund: (id: string) => api<unknown>(`/admin/tips/${id}/refund`, { method: 'POST' }),
+	refund: (id: string) =>
+		api<unknown>(`/admin/tips/${id}/refund`, {
+			method: 'POST',
+			headers: { 'idempotency-key': crypto.randomUUID() }
+		}),
 	getDonationSettings: () => api<unknown>('/admin/donation-settings'),
 	updateDonationSettings: (body: Record<string, unknown>) =>
 		api<unknown>('/admin/donation-settings', { method: 'PUT', body }),

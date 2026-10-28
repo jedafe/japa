@@ -143,7 +143,7 @@ func (s *Service) ImportOCWebhook(ctx context.Context, secret string, c OCContri
 // (queue 'low'); per-owner failures are logged and skipped so one bad
 // collective can't stall the sweep.
 func (s *Service) SyncAll(ctx context.Context) error {
-	if s.oc == nil {
+	if s.oc == nil || !s.ocEnabled(ctx) {
 		return nil
 	}
 	rows, err := s.store.listSettingsWithOCToken(ctx)

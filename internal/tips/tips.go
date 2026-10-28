@@ -285,6 +285,7 @@ type Service struct {
 	settings SettingsReader
 	perms    PermChecker
 	payments PaymentCreator
+	features FeatureChecker
 	orgs     OrgRoleChecker
 	oc       OCClient
 	notifier Notifier
@@ -316,11 +317,29 @@ func (s *Service) SetEnqueuer(e tipEnqueuer) { s.enqueuer = e }
 // SetSiteURL sets the public site URL for building webhook URLs.
 func (s *Service) SetSiteURL(u string) { s.siteURL = u }
 
+// FeatureChecker reads the feature_flags table (features.Checker). The
+// admin UI toggles tips.enabled/tips.opencollective there — NOT in
+// system_settings — so this seam is required for the flag to work.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature-flag checker.
+func (s *Service) SetFeatureChecker(f FeatureChecker) { s.features = f }
+
 func (s *Service) featureEnabled(ctx context.Context) bool {
-	if s.settings == nil {
-		return false
+	if s.features != nil {
+		return s.features.IsEnabled(ctx, "tips.enabled")
 	}
-	return s.settings.GetBoolOr(ctx, "tips.enabled", false)
+	// Fallback keeps unit tests working without a features seam.
+	return s.settings != nil && s.settings.GetBoolOr(ctx, "tips.enabled", false)
+}
+
+func (s *Service) ocEnabled(ctx context.Context) bool {
+	if s.features != nil {
+		return s.features.IsEnabled(ctx, "tips.opencollective")
+	}
+	return s.settings != nil && s.settings.GetBoolOr(ctx, "tips.opencollective", false)
 }
 
 func (s *Service) feePercent(ctx context.Context) int {

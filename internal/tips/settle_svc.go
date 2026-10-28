@@ -72,6 +72,11 @@ func (s *Service) ClawbackTip(ctx context.Context, tipID pgtype.UUID) error {
 	if tip.Status == StatusRefunded {
 		return nil
 	}
+	if tip.Status == StatusPending {
+		// Refund arrived before settlement — nothing to claw back, just
+		// mark refunded so the refund webhook doesn't retry forever.
+		return s.store.updateTipStatus(ctx, tipID, StatusRefunded)
+	}
 	if tip.Status != StatusCompleted {
 		return ErrInvalidStatus
 	}

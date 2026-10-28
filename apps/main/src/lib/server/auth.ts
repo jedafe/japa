@@ -398,7 +398,7 @@ export function forwardSetCookies(event: RequestEvent, setCookies: string[]): vo
 			// Leave undecodable values as-is.
 		}
 
-		const opts: Record<string, unknown> = { path: '/' };
+		const opts: NonNullable<Parameters<RequestEvent['cookies']['set']>[2]> = { path: '/' };
 		for (const attr of parts.slice(1)) {
 			const [rawKey, ...rest] = attr.split('=');
 			const key = rawKey.trim().toLowerCase();
@@ -418,7 +418,9 @@ export function forwardSetCookies(event: RequestEvent, setCookies: string[]): vo
 					opts.expires = new Date(attrValue);
 					break;
 				case 'samesite':
-					opts.sameSite = attrValue.toLowerCase();
+					if (['lax', 'strict', 'none'].includes(attrValue.toLowerCase())) {
+						opts.sameSite = attrValue.toLowerCase() as 'lax' | 'strict' | 'none';
+					}
 					break;
 				case 'secure':
 					opts.secure = true;
@@ -430,7 +432,7 @@ export function forwardSetCookies(event: RequestEvent, setCookies: string[]): vo
 		}
 
 		try {
-			event.cookies.set(name, value, opts as Parameters<typeof event.cookies.set>[2]);
+			event.cookies.set(name, value, opts);
 		} catch {
 			// Invalid attribute for this host (e.g. foreign Domain) — skip
 			// rather than fail the whole initiate.

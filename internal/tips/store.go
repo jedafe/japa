@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -169,7 +170,15 @@ func (s *Store) getTipByOCContributionID(ctx context.Context, ocID string) (gen.
 }
 
 func (s *Store) insertTip(ctx context.Context, p gen.InsertTipParams) (gen.Tip, error) {
-	return s.write.InsertTip(ctx, p)
+	t, err := s.write.InsertTip(ctx, p)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.Tip{}, ErrDuplicateKey
+		}
+		return gen.Tip{}, err
+	}
+	return t, nil
 }
 
 func (s *Store) updateTipStatus(ctx context.Context, id pgtype.UUID, status string) error {

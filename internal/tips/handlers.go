@@ -560,8 +560,8 @@ func (h *Handlers) HandleOCWebhook(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	if payload.Type != "order.processed" && payload.Type != "order.thankyou" && payload.Data.Order.ID == "" {
-		w.WriteHeader(http.StatusNoContent) // ignore non-contribution events
+	if payload.Data.Order.ID == "" {
+		w.WriteHeader(http.StatusNoContent) // non-contribution event — nothing to import
 		return
 	}
 	if err := h.service.ImportOCWebhook(r.Context(), secret, OCContribution{

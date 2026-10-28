@@ -20,12 +20,16 @@
 
 	onMount(async () => {
 		const res = await api.get<string[]>('/auth/oauth/providers');
-		const list = (res.data ?? []).filter((p): p is Provider =>
+		if (res.data === null) {
+			// Endpoint unreachable — keep the previous static set so the
+			// feature doesn't silently vanish on a transient failure.
+			providers = ['google', 'apple', 'facebook'];
+			return;
+		}
+		// A reachable empty list means nothing is configured — hide the buttons.
+		providers = res.data.filter((p): p is Provider =>
 			(KNOWN as readonly string[]).includes(p)
 		);
-		// Endpoint unreachable or empty: keep the previous static set so the
-		// feature doesn't silently vanish on a transient failure.
-		providers = list.length > 0 ? list : ['google', 'apple', 'facebook'];
 	});
 
 	async function initiate(provider: string) {
