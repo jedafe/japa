@@ -589,6 +589,7 @@
 												<label for="pf-label" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_label', 'Field label')}
 												</label>
+												<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.suggest.label_hint', 'The human-readable name shown to readers.')}</p>
 												<input
 													id="pf-label"
 													type="text"
@@ -601,6 +602,7 @@
 												<label for="pf-key" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_key', 'Field key')}
 												</label>
+												<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.suggest.key_hint', 'The internal key — lowercase, no spaces.')}</p>
 												<input
 													id="pf-key"
 													type="text"
@@ -613,6 +615,7 @@
 												<label for="pf-type" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_type', 'Field type')}
 												</label>
+												<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.suggest.type_hint', 'The kind of value — text, date, number.')}</p>
 												<AutocompleteSelect
 													id="pf-type"
 													bind:value={pfType}
@@ -624,6 +627,7 @@
 													<label for="pf-options" class="text-xs font-medium text-[var(--color-text)]">
 														{t('wiki.propose_options', 'Options')}{#if pfOptionsRequired}<span class="text-red-500">*</span>{/if}
 													</label>
+													<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.suggest.options_hint', 'Allowed values, comma-separated.')}</p>
 													<input
 														id="pf-options"
 														type="text"

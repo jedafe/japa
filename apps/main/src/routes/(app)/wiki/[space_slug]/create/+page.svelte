@@ -334,6 +334,7 @@
 				<label for="wiki-create-category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_category_label', 'Category')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.create.category_hint', 'The category this page belongs to.')}</p>
 				<AutocompleteSelect
 					id="wiki-create-category"
 					value={category}
@@ -352,6 +353,7 @@
 						<label for="wiki-create-page" class="block text-sm font-medium text-[var(--color-text)]">
 							{t('wiki.create_page_label', 'Page')}
 						</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.create.page_hint', 'The parent page — leave blank for top level.')}</p>
 						{#if canManageTemplates}
 							<button
 								type="button"
@@ -430,6 +432,7 @@
 				<label for="wiki-create-title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_title_label', 'Page title')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('wiki.create.title_hint', 'The page title shown in the wiki.')}</p>
 				<input
 					id="wiki-create-title"
 					type="text"

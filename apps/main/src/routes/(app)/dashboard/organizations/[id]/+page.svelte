@@ -473,22 +473,26 @@
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_name')}</span>
 				<input class={inputClass} value={name} oninput={(e) => (name = e.currentTarget.value)} />
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.name_hint', 'The public name of your organization.')}</p>
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_tagline')}</span>
 				<input class={inputClass} value={tagline} oninput={(e) => (tagline = e.currentTarget.value)} />
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.tagline_hint', 'One line — what the organization does.')}</p>
 			</label>
 		</div>
 
 		<label class="flex flex-col gap-1.5">
 			<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_description')}</span>
 			<textarea class={inputClass} rows={4} value={description} oninput={(e) => (description = e.currentTarget.value)}></textarea>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.desc_hint', 'Describe the organization, services and audience.')}</p>
 		</label>
 
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_website')}</span>
 				<input class={inputClass} value={websiteUrl} oninput={(e) => (websiteUrl = e.currentTarget.value)} placeholder="https://" />
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.website_hint', 'Optional — the organization website.')}</p>
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_country')}</span>
@@ -560,6 +564,7 @@
 			<label class="flex flex-1 flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_email', 'Email')}</span>
 				<input class={inputClass} type="email" bind:value={inviteEmail} placeholder="member@example.com" required />
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.invite_email_hint', 'The email of the person to invite.')}</p>
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>
@@ -598,6 +603,7 @@
 			<label class="flex flex-1 flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.add_member_username', 'Username')}</span>
 				<input class={inputClass} type="text" bind:value={addUsername} placeholder="@username" required />
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.username_hint', 'The member username — e.g. @jane.')}</p>
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>

@@ -295,6 +295,7 @@
 							placeholder={t('planning_groups.milestone_placeholder', 'Add a milestone…')}
 							class={inputClass}
 						/>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('planning_groups.milestone_hint', 'A shared deadline or step for the group.')}</p>
 						<button
 							type="submit"
 							disabled={milestoneLoading || !milestoneTitle.trim()}

@@ -204,6 +204,7 @@
 			<label for="intent" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_intent.label', 'Journey type')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('japa_stage.intent_hint', 'What you are planning — move, visit, study.')}</p>
 			<AutocompleteSelect
 				id="intent"
 				value={intent}
@@ -216,6 +217,7 @@
 			<label for="stage" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.current_stage', 'Current stage')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('japa_stage.stage_hint', 'Where you are in the process right now.')}</p>
 			<AutocompleteSelect
 				id="stage"
 				value={stage}
@@ -231,6 +233,7 @@
 			<label for="dest" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.dest_country', 'Destination country')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('japa_stage.dest_hint', 'The country you are heading to.')}</p>
 			<Autocomplete
 				placeholder={t('japa_stage.dest_placeholder', 'e.g. Canada')}
 				emptyMessage={t('common.no_results', 'No results found')}

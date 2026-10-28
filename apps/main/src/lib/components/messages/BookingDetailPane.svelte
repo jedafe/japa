@@ -618,6 +618,7 @@
 		class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 		placeholder={t('bookings.cancel_reason_ph', 'Reason for cancelling')}
 	></textarea>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('bookings.cancel_hint', 'Briefly why you are cancelling — shared with the other party.')}</p>
 	<div class="mt-3 flex justify-end gap-2">
 		<button
 			type="button"
@@ -649,6 +650,7 @@
 		class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 		placeholder={t('bookings.dispute_reason_ph', 'What happened?')}
 	></textarea>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('bookings.dispute_hint', 'Describe what went wrong — include dates and amounts.')}</p>
 	<div class="mt-3 flex justify-end gap-2">
 		<button
 			type="button"
