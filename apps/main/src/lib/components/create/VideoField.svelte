@@ -126,6 +126,7 @@
 				type="url"
 				class="video-input"
 				placeholder={t('create.video.url_placeholder', 'Paste a YouTube, Vimeo, TikTok, or Instagram Reels URL…')}
+				aria-describedby="video-url-hint"
 				bind:value={url}
 				disabled={busy}
 				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleResolve(); } }}
@@ -134,7 +135,8 @@
 				{#if busy}<Loader2 size={14} class="animate-spin" />{/if}
 				{t('create.video.resolve', 'Resolve')}
 			</button>
-		</div>
+				<p id="video-url-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.video.url_hint', 'We fetch the video details automatically once you paste the link.')}</p>
+</div>
 	{:else}
 		<div class="video-row">
 			<input

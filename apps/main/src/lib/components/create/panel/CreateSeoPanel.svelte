@@ -167,6 +167,7 @@
 				onedit();
 			}}
 		/>
+		<p class="field-hint">{t('create.seo.meta_title_hint', 'Shows as the page title in search results — aim for 55–60 characters.')}</p>
 		<div class="field-hint" data-status={metaTitleLenStatus}>
 			<span>{(metaTitle ?? '').length} / {SEO_MIN_LENGTHS.meta_title}–{SEO_MAX_LENGTHS.meta_title}</span>
 		</div>
@@ -182,6 +183,7 @@
 				onedit();
 			}}
 		>{metaDescription ?? ''}</textarea>
+		<p class="field-hint">{t('create.seo.meta_description_hint', 'The snippet shown under your title in search results — aim for 140–160 characters.')}</p>
 		<div class="field-hint" data-status={metaDescLenStatus}>
 			<span>{(metaDescription ?? '').length} / {SEO_MIN_LENGTHS.meta_description}–{SEO_MAX_LENGTHS.meta_description}</span>
 		</div>

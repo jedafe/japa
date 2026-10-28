@@ -75,7 +75,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 
 ---
 
-### Task 1: Shared `PasswordField` hint prop + auth surfaces
+### [DONE] Task 1: Shared `PasswordField` hint prop + auth surfaces
 
 **Files:**
 - Modify: `src/lib/components/auth/PasswordField.svelte` — add optional `hint?: string` prop
@@ -98,7 +98,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 - [ ] **Step 5: Re-run `bun run check`** — zero new errors vs baseline.
 - [ ] **Step 6: Commit** — `git add` the touched files + `en.json`; commit `feat(main): add field hints to auth forms`.
 
-### Task 2: Settings hub — profile, account & preference sections
+### [DONE] Task 2: Settings hub — profile, account & preference sections
 
 **Files:** `src/lib/components/hub/settings/sections/`: `ProfileSection.svelte`, `AccountSection.svelte`, `LocationSection.svelte`, `LanguageSection.svelte`, `NotificationsSection.svelte`, `PrivacySection.svelte`, `AIPrivacySection.svelte`. Keys: `src/lib/i18n/en.json` under `settings.*`.
 
@@ -108,7 +108,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 - [ ] **Step 4:** `bun run check` — zero new errors.
 - [ ] **Step 5: Commit** — `feat(main): add field hints to settings profile/preference sections`.
 
-### Task 3: Settings hub — monetization, keys & flow dialogs
+### [DONE] Task 3: Settings hub — monetization, keys & flow dialogs
 
 **Files:** `src/lib/components/hub/settings/sections/`: `NewsletterSection.svelte`, `ApiKeysSection.svelte`, `AIKeysSection.svelte`, `AffiliateSection.svelte`, `SubscriptionSection.svelte`, `MentorSection.svelte`, `DangerSection.svelte`; `flows/`: `ChangePasswordForm.svelte`, `TotpEnrollFlow.svelte`, `DeleteAccountDialog.svelte`, `ApiKeyRevealDialog.svelte`; `wallet/`: `WalletPurchaseTab.svelte`, `WalletConvertTab.svelte`, `WalletWithdrawTab.svelte`, `WalletDetailsTab.svelte`. Keys: `en.json` under each section's existing group.
 
@@ -118,7 +118,7 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 - [ ] **Step 4:** `bun run check` — zero new errors.
 - [ ] **Step 5: Commit** — `feat(main): add field hints to settings keys/wallet/flows`.
 
-### Task 4: Onboarding, profile & user dialogs
+### [DONE] Task 4: Onboarding, profile & user dialogs
 
 **Files:** `src/routes/onboarding/+page.svelte`, `src/lib/components/feed/JourneyOnboardingModal.svelte`, `src/lib/components/profile/JourneysPanel.svelte`, `MessageUserDialog.svelte`, `ReportDialog.svelte`, `src/lib/components/referral/ReferralWidget.svelte`, `src/lib/components/appeals/AppealButton.svelte`, `src/lib/components/landing/GuestHomePage.svelte`, `src/lib/components/marketplace/MarketplaceHero.svelte`, `src/routes/(app)/claim-ownership/+page.svelte`, `src/routes/(app)/u/[username]/claim/+page.svelte`, `src/routes/(app)/verification-request/+page.svelte`, `src/routes/(app)/dashboard/bookmarks/+page.svelte`. Keys: each area's existing group in `en.json`.
 
@@ -187,3 +187,13 @@ Custom component callsite (e.g. `AutocompleteSelect`, `TagInput`):
 - [ ] **Step 3: Full verification** — `bun run check` (zero new errors vs original baseline) and `bun run build` succeeds.
 - [ ] **Step 4: Manual spot-check** — run `bun run dev`, open login page + settings profile + one tool page; visually confirm hint text renders under fields, placeholders show, layout not broken.
 - [ ] **Step 5: Commit** any sweep fixes — `feat(main): field hints verification sweep`.
+
+---
+
+## Progress log (execution state)
+
+- Tasks 1–4 DONE & committed (auth, settings profile/prefs, settings keys/wallet/flows, onboarding/dialogs). svelte-check clean: 0 errors / 14 baseline warnings.
+- **Key inserter:** `/tmp/add_keys.py` — run from `apps/main`, JSON on stdin, inserts sorted into `src/lib/i18n/en.json`. Recreate if gone (json.load → sorted insert → dump indent=2 ensure_ascii=False + trailing newline).
+- **Commit surgically:** `git add` exact files only — tree has ~60 unrelated dirty files; a broad `git add apps/main/src` already caused one bad commit (fixed via `git reset --soft`).
+- **Intentionally skipped:** dynamic field renderers (CustomFieldGroup, claim-ownership, verification-request — admin-authored labels), readonly inputs (ReferralWidget share URL), hidden honeypots, search/composer inputs (MarketplaceHero, bookmarks search), MentorSection (already had help text), NotificationsSection/AIPrivacySection/LocationSection (already hint-complete).
+- Task 5 remaining: CreateJourneyPanel inputs, CreateSeoPanel (title/desc → length hints), CreateSettingsPanel (slug/canonical/publish_at), SeriesCreationModal (3), ComparisonBuilder, ListBuilder, TagInput, VideoField, CreateShell, SpaceCreationModal, SpaceSettings, SpaceCombobox, SidebarWidgetRenderer (email widget), dashboard/spaces (search only — skip).

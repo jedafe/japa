@@ -139,6 +139,7 @@
 				onfocus={onFocus}
 				oninput={(e) => onInput(e.currentTarget.value)}
 				onkeydown={onKeydown}
+				aria-describedby="tag-input-hint"
 				onblur={() => {
 					// Delay to allow click on suggestion
 					setTimeout(() => {
@@ -146,6 +147,7 @@
 					}, 150);
 				}}
 			/>
+			<p id="tag-input-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.tag_hint', 'Type and press Enter to add a tag.')}</p>
 		</div>
 	</div>
 

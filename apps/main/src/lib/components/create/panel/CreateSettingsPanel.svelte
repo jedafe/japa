@@ -37,6 +37,7 @@
 	<!-- Slug -->
 	<div class="field-row">
 		<label class="field-label" for="settings-slug">{t('create.label.slug')}</label>
+		<p class="field-hint">{t('create.settings.slug_hint', 'The URL path for this content — lowercase, hyphens, no spaces.')}</p>
 		<input
 			id="settings-slug"
 			type="text"
@@ -67,6 +68,7 @@
 	<!-- Canonical URL -->
 	<div class="field-row">
 		<label class="field-label" for="settings-canonical">{t('create.label.canonical_url')}</label>
+		<p class="field-hint">{t('create.settings.canonical_hint', 'Optional — the preferred URL search engines should index.')}</p>
 		<input
 			id="settings-canonical"
 			type="url"
@@ -83,6 +85,7 @@
 	<!-- Publish at -->
 	<div class="field-row">
 		<label class="field-label" for="settings-publishat">{t('create.label.publish_at')}</label>
+		<p class="field-hint">{t('create.settings.publish_at_hint', 'Leave blank to publish immediately.')}</p>
 		<input
 			id="settings-publishat"
 			type="datetime-local"

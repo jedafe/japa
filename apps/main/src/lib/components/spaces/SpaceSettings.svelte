@@ -542,9 +542,11 @@
 				<input
 					id="space-name"
 					type="text"
+					aria-describedby="ss-name-hint"
 					bind:value={name}
 					class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 				/>
+			<p id="ss-name-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('spaces.settings_name_hint', 'The public name of this space.')}</p>
 			</div>
 			<div class="mb-4">
 				<label for="space-description" class="mb-1 block text-xs text-[var(--color-muted)]">
@@ -556,7 +558,9 @@
 				rows="3"
 				placeholder={t('spaces.settings_description_placeholder', 'A short description of this space')}
 				class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+				aria-describedby="ss-desc-hint"
 			></textarea>
+			<p id="ss-desc-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('spaces.settings_desc_hint', 'Shown on the space page — what members can expect.')}</p>
 			</div>
 		<div>
 			<span class="mb-1 block text-xs text-[var(--color-muted)]">

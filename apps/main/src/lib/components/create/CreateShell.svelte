@@ -1,4 +1,6 @@
-<script lang="ts">
+<
+					<p class="field-hint">{t('create.category_hint', 'The topic category this guide belongs to.')}</p>
+					<p class="field-hint">{t('create.type_hint', 'What kind of content you are creating — picks the right editor.')}</p>script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, replaceState } from '$app/navigation';

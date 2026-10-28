@@ -79,7 +79,9 @@
 						placeholder={t('create.series.title_placeholder')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 						disabled={submitting}
+						aria-describedby="series-title-hint"
 					/>
+					<p id="series-title-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.series.title_hint', 'The public name of the series.')}</p>
 				</div>
 
 				<div>
@@ -91,7 +93,9 @@
 						placeholder={t('create.series.slug_placeholder')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 						disabled={submitting}
+						aria-describedby="series-slug-hint"
 					/>
+					<p id="series-slug-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.series.slug_hint', 'URL-safe identifier — auto-generated from the title.')}</p>
 				</div>
 
 				<div>
@@ -103,7 +107,9 @@
 						placeholder={t('create.series.description_placeholder')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 						disabled={submitting}
+						aria-describedby="series-desc-hint"
 					/>
+					<p id="series-desc-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('create.series.desc_hint', 'Optional — what this series is about.')}</p>
 				</div>
 
 				{#if error}

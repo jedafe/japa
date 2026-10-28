@@ -180,6 +180,7 @@
 		{#if stageOptions.length > 0}
 			<Autocomplete
 				placeholder={t('create.journey.stage_placeholder')}
+				aria-describedby="journey-stage-hint"
 				emptyMessage={t('journey.banner.no_options', 'No matching option')}
 				fetcher={optionFetcher(stageOptions)}
 				initialFetcher={() => optionInitial(stageOptions, journeyStage)}
@@ -188,6 +189,7 @@
 				onSelect={setJourney}
 				onClear={() => { onjourney(null); onedit(); }}
 			/>
+			<p id="journey-stage-hint" class="field-hint">{t('create.journey.stage_hint', 'Your current stage in the move — e.g. researching or preparing.')}</p>
 		{:else}
 			<input
 				id="journey-stage"
@@ -205,6 +207,7 @@
 		{#if visaOptions.length > 0}
 			<Autocomplete
 				placeholder={t('create.journey.visa_placeholder')}
+				aria-describedby="journey-visa-hint"
 				emptyMessage={t('journey.banner.no_options', 'No matching option')}
 				fetcher={optionFetcher(visaOptions)}
 				initialFetcher={() => optionInitial(visaOptions, visaRoute)}
@@ -214,6 +217,7 @@
 				onClear={() => { onvisa(null); onedit(); }}
 				allowFreeText
 			/>
+			<p id="journey-visa-hint" class="field-hint">{t('create.journey.visa_hint', 'The visa route this journey is for, if known.')}</p>
 		{:else}
 			<input
 				id="journey-visa"
@@ -279,6 +283,7 @@
 			<Autocomplete
 				id="journey-purpose"
 				placeholder={t('create.journey.purpose_placeholder', 'Select a purpose')}
+				aria-describedby="journey-purpose-hint"
 				emptyMessage={t('journey.banner.no_options', 'No matching option')}
 				fetcher={optionFetcher(purposeOptions)}
 				initialFetcher={() => optionInitial(purposeOptions, purpose)}
@@ -287,6 +292,7 @@
 				onSelect={setPurpose}
 				onClear={() => { onpurpose(null); onedit(); }}
 			/>
+			<p id="journey-purpose-hint" class="field-hint">{t('create.journey.purpose_hint', 'The main reason — study, work, family, and so on.')}</p>
 		{:else}
 			<input
 				id="journey-purpose"
