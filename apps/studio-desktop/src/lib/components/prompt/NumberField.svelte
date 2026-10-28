@@ -6,9 +6,10 @@
 		min?: number;
 		max?: number;
 		oninput?: (value: number) => void;
+		hint?: string;
 	}
 
-	let { label, value, placeholder, min, max, oninput }: Props = $props();
+	let { label, value, placeholder, min, max, oninput, hint }: Props = $props();
 
 	function clamp(num: number): number {
 		if (min !== undefined && num < min) return min;
@@ -35,4 +36,5 @@
 		max={max ?? undefined}
 		oninput={handleInput}
 	/>
+	{#if hint}<span class="mt-1 block text-xs text-muted">{hint}</span>{/if}
 </label>

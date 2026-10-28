@@ -9,9 +9,10 @@
 		values: Record<string, boolean>;
 		items: readonly Toggle[];
 		onchange?: (key: string, value: boolean) => void;
+		hint?: string;
 	}
 
-	let { label, values, items, onchange }: Props = $props();
+	let { label, values, items, onchange, hint }: Props = $props();
 </script>
 
 <div class="block text-sm font-medium">
@@ -32,4 +33,5 @@
 			</label>
 		{/each}
 	</div>
+{#if hint}<span class="mt-1 block text-xs text-muted">{hint}</span>{/if}
 </div>

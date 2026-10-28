@@ -477,6 +477,8 @@
 					value={promptStore.values.mode}
 					options={MODE_OPTIONS}
 					onchange={(value) => promptStore.setValue('mode', value as PromptMode)}
+				
+					hint="What the prompt should produce — draft, outline, or rewrite."
 				/>
 
 				<TextField
@@ -484,6 +486,8 @@
 					value={promptStore.values.title}
 					placeholder="e.g. Cost of Living in Toronto vs Lagos"
 					oninput={(value) => promptStore.setValue('title', value)}
+				
+					hint="The subject the AI writes about."
 				/>
 
 				<SelectField
@@ -492,6 +496,8 @@
 					options={contentTypeOptions}
 					placeholder="Select a content type"
 					onchange={handleContentTypeChange}
+				
+					hint="The kind of content to generate."
 				/>
 
 				{#if guideCategoryOptions.length > 0}
@@ -501,7 +507,9 @@
 						options={guideCategoryOptions}
 						placeholder="Select a guide category"
 						onchange={handleGuideCategoryChange}
-					/>
+					
+					hint="The guide category this targets."
+				/>
 				{/if}
 
 				{#if settings.mode !== 'member'}
@@ -511,7 +519,9 @@
 						options={personaOptions}
 						placeholder="Select a persona"
 						onchange={(value) => promptStore.setValue('persona_id', value)}
-					/>
+					
+					hint="The audience the text is written for."
+				/>
 				{/if}
 
 				<div class="grid grid-cols-2 gap-4">
@@ -520,7 +530,9 @@
 						value={promptStore.values.tone}
 						options={TONE_OPTIONS}
 						onchange={(value) => promptStore.setValue('tone', value as PromptTone)}
-					/>
+					
+					hint="How the writing should sound."
+				/>
 					{#if settings.mode !== 'member'}
 						<SelectField
 							label="Voice"
@@ -528,7 +540,9 @@
 							options={filteredVoiceOptions}
 							placeholder="Select a voice"
 							onchange={(value) => promptStore.setValue('voice_id', value)}
-						/>
+						
+					hint="The voice preset for audio output."
+				/>
 					{/if}
 				</div>
 
@@ -538,14 +552,18 @@
 						value={promptStore.values.framework}
 						options={FRAMEWORK_OPTIONS}
 						onchange={handleFrameworkChange}
-					/>
+					
+					hint="The structural framework for the output."
+				/>
 					<SelectField
 						label="Humanize level"
 						value={promptStore.values.humanize_level}
 						options={HUMANIZE_OPTIONS}
 						onchange={(value) =>
 							promptStore.setValue('humanize_level', value as HumanizeLevel)}
-					/>
+					
+					hint="How natural-sounding the result should be."
+				/>
 				</div>
 
 				<div class="grid grid-cols-3 gap-4">
@@ -554,19 +572,25 @@
 						value={promptStore.values.min_words}
 						min={0}
 						oninput={(value) => promptStore.setValue('min_words', value)}
-					/>
+					
+					hint="Minimum length the draft must reach."
+				/>
 					<NumberField
 						label="Paragraphs"
 						value={promptStore.values.paragraph_count}
 						min={0}
 						oninput={(value) => promptStore.setValue('paragraph_count', value)}
-					/>
+					
+					hint="How many paragraphs to generate."
+				/>
 					<NumberField
 						label="Min headings"
 						value={promptStore.values.heading_count}
 						min={0}
 						oninput={(value) => promptStore.setValue('heading_count', value)}
-					/>
+					
+					hint="Minimum section headings required."
+				/>
 				</div>
 
 				<div class="grid grid-cols-3 gap-4">
@@ -575,19 +599,25 @@
 						value={promptStore.values.min_paragraphs_per_heading}
 						min={0}
 						oninput={(value) => promptStore.setValue('min_paragraphs_per_heading', value)}
-					/>
+					
+					hint="Paragraphs required under each heading."
+				/>
 					<NumberField
 						label="Min external links"
 						value={promptStore.values.external_links}
 						min={0}
 						oninput={(value) => promptStore.setValue('external_links', value)}
-					/>
+					
+					hint="External sources the draft must cite."
+				/>
 					<NumberField
 						label="Min internal links"
 						value={promptStore.values.internal_links}
 						min={0}
 						oninput={(value) => promptStore.setValue('internal_links', value)}
-					/>
+					
+					hint="Links to other JapaConnect pages to include."
+				/>
 				</div>
 
 				<CheckboxGroup
@@ -595,6 +625,8 @@
 					values={structureValues}
 					items={STRUCTURE_TOGGLES}
 					onchange={(key, value) => setStoreValue(key, value)}
+				
+					hint="Which structural elements to include."
 				/>
 
 				<SelectField
@@ -603,6 +635,8 @@
 					options={spaceOptions}
 					placeholder="Select a space"
 					onchange={(value) => promptStore.setValue('space_id', value)}
+				
+					hint="The community space to publish into."
 				/>
 
 				<div class="grid grid-cols-2 gap-4">
@@ -611,13 +645,17 @@
 						value={promptStore.values.visibility}
 						options={visibilityOptions}
 						onchange={(value) => promptStore.setValue('visibility', value)}
-					/>
+					
+					hint="Who can see the result."
+				/>
 					<SelectField
 						label="Status"
 						value={promptStore.values.status}
 						options={statusOptions}
 						onchange={(value) => promptStore.setValue('status', value)}
-					/>
+					
+					hint="Draft or publish-ready state."
+				/>
 				</div>
 
 				<TextField

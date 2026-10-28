@@ -5,9 +5,10 @@
 		placeholder?: string;
 		type?: string;
 		oninput?: (value: string) => void;
+		hint?: string;
 	}
 
-	let { label, value, placeholder, type = 'text', oninput }: Props = $props();
+	let { label, value, placeholder, type = 'text', oninput, hint }: Props = $props();
 
 	function handleInput(event: Event) {
 		oninput?.((event.currentTarget as HTMLInputElement).value);
@@ -23,4 +24,5 @@
 		{placeholder}
 		oninput={handleInput}
 	/>
+	{#if hint}<span class="mt-1 block text-xs text-muted">{hint}</span>{/if}
 </label>

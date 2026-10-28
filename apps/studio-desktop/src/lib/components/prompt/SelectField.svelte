@@ -9,9 +9,10 @@
 		placeholder?: string;
 		disabled?: boolean;
 		onchange?: (value: string) => void;
+		hint?: string;
 	}
 
-	let { label, value, options, placeholder, disabled = false, onchange }: Props = $props();
+	let { label, value, options, placeholder, disabled = false, onchange, hint }: Props = $props();
 </script>
 
 <label class="block text-sm font-medium">
@@ -25,4 +26,5 @@
 			: options}
 		onValueChange={(v) => onchange?.(v)}
 	/>
+	{#if hint}<span class="mt-1 block text-xs text-muted">{hint}</span>{/if}
 </label>
