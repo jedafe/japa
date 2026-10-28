@@ -134,8 +134,7 @@
 			<div>
 				<label for="post-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 					{t('app.blog.field_slug', 'Slug')}
-				
-				<HintIcon text={t('app.blog.slug_hint', 'Leave blank to auto-generate from title')} /></label>
+				</label>
 				<input
 					id="post-slug"
 					type="text"
@@ -144,6 +143,7 @@
 					class="w-full rounded-lg border p-3 text-sm"
 					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				/>
+				<HintIcon text={t('app.blog.slug_hint', 'Leave blank to auto-generate from title')} />
 			</div>
 
 			<div>

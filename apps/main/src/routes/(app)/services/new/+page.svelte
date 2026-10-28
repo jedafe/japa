@@ -409,6 +409,7 @@
 				placeholder={t('services.description_placeholder', 'Describe the service you offer…')}
 				rows={5}
 			/>
+				<HintIcon text={t('services.desc_hint', 'Describe what you offer, your experience and what is included.')} />
 
 			<!-- Category -->
 			<div>
@@ -416,9 +417,10 @@
 					{t('services.field_category', 'Service category')} *
 				
 				<HintIcon text={t('services.category_hint', 'The service category — helps people find you.')}  />
-
-				<HintIcon text={t('services.category_hint', 'The service category — helps people find you.')}  /></label>
-		
+</label>
+				<Autocomplete
+					id="category"
+					placeholder={t('services.field_category', 'Service category')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={categoryFetcher}
 					initialFetcher={categoryFetcher}
@@ -435,9 +437,10 @@
 						{t('services.field_destination', 'Destination country')} <span class="text-red-500">*</span>
 					
 					<HintIcon text={t('services.dest_hint', 'The country this service is offered in.')}  />
-
-					<HintIcon text={t('services.dest_hint', 'The country this service is offered in.')}  /></label>
-					<Autocsage={t('common.no_results', 'No results found')}
+</label>
+					<Autocomplete
+						placeholder={t('services.dest_placeholder', 'Select a country')}
+						emptyMessage={t('common.no_results', 'No results found')}
 						fetcher={fetchDestinationCountries}
 						initialFetcher={fetchDestinationCountriesInitial}
 						selectedId={destinationSpaceId || null}
@@ -451,9 +454,11 @@
 						{t('services.field_city', 'City')}
 					
 					<HintIcon text={t('services.city_hint', 'Optional — the city you operate in.')}  />
-
-					<HintIcon text={t('services.city_hint', 'Optional — the city you operate in.')}  /></label>
-					<Autocomplt', 'Select a city (optional)')
+</label>
+					<Autocomplete
+						id="city"
+						placeholder={destinationSpaceId
+							? t('services.city_select', 'Select a city (optional)')
 							: t('services.city_select_dest_first', 'Select a country first')}
 						ariaLabel={t('services.field_city', 'City')}
 						emptyMessage={t('common.no_results', 'No results found')}
@@ -478,8 +483,7 @@
 			<div>
 				<label for="origin" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('services.field_origin_communities', 'Origin communities served')}
-				
-				<HintIcon text={t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.')} /></label>
+				</label>
 				<input
 					id="origin"
 					type="text"
@@ -487,7 +491,11 @@
 					placeholder={t('services.origin_placeholder', 'e.g. Nigerian, Ghanaian')}
 					class={inputClass}
 				/>
-				<HintIcon text={t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.'tings can be claimed later. -->
+				<HintIcon text={t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.')} />
+			</div>
+
+			<!-- §98 org link — optional; org-owned listings take inquiries
+				via the org inbox, personal listings can be claimed later. -->
 			{#if orgItems.length > 0}
 				<div>
 					<label for="org" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -535,9 +543,12 @@
 						{t('services.field_website', 'Website URL')}
 					
 					<HintIcon text={t('services.website_hint', 'Optional — your site or portfolio link.')}  />
-
-					<HintIcon text={t('services.website_hint', 'Optional — your site or portfolio link.')}  /></label>
-					<inices.website_placeholder', 'https://example.com')}
+</label>
+					<input
+						id="website"
+						type="url"
+						bind:value={websiteUrl}
+						placeholder={t('services.website_placeholder', 'https://example.com')}
 						class={inputClass}
 					/>
 				</div>
@@ -546,9 +557,12 @@
 						{t('services.field_booking', 'Booking URL')}
 					
 					<HintIcon text={t('services.booking_hint', 'Optional — direct link where clients book you.')}  />
-
-					<HintIcon text={t('services.booking_hint', 'Optional — direct link where clients book you.')}  /></label>
-	ices.booking_placeholder', 'https://booking.example.com')}
+</label>
+					<input
+						id="booking"
+						type="url"
+						bind:value={bookingUrl}
+						placeholder={t('services.booking_placeholder', 'https://booking.example.com')}
 						class={inputClass}
 					/>
 				</div>
@@ -560,9 +574,12 @@
 					{t('services.field_price_range', 'Price range')}
 				
 				<HintIcon text={t('services.price_hint', 'Rough pricing — e.g. £50–£150/hr or a flat fee.')}  />
-
-				<HintIcon text={t('services.price_hint', 'Rough pricing — e.g. £50–£150/hr or a flat fee.')}  /></label>
-			rice_placeholder', 'e.g. £50–£150/hr')}
+</label>
+				<input
+					id="price"
+					type="text"
+					bind:value={priceRange}
+					placeholder={t('services.price_placeholder', 'e.g. £50–£150/hr')}
 					class={inputClass}
 				/>
 			</div>

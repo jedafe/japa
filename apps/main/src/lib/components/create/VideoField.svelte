@@ -136,6 +136,7 @@
 				{#if busy}<Loader2 size={14} class="animate-spin" />{/if}
 				{t('create.video.resolve', 'Resolve')}
 			</button>
+				<HintIcon id="video-url-hint" text={t('create.video.url_hint', 'We fetch the video details automatically once you paste the link.')} />
 </div>
 	{:else}
 		<div class="video-row">

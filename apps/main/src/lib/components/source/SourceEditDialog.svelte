@@ -103,8 +103,7 @@
 				<div class="flex flex-col gap-1">
 					<label for="source-url" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.source_url', 'Source URL')}
 					<HintIcon text={t('sources.edit.url_hint', 'The main URL the source is fetched from.')}  />
-
-						<HintIcon text={t('sources.edit.reprobe_hint', 'Changing the URL re-runs channel detection for this source.')} /></label>
+</label>
 					<input
 						id="source-url"
 						type="url"
@@ -112,6 +111,7 @@
 						class="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 					/>
 					{#if sourceUrl !== (source.source_url ?? '')}
+						<HintIcon text={t('sources.edit.reprobe_hint', 'Changing the URL re-runs channel detection for this source.')} />
 					{/if}
 				</div>
 

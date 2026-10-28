@@ -512,10 +512,16 @@
 			</table>
 		</div>
 		{#if dimensions.length === 0}
+			<HintIcon text={t('create.comparison.add_dimension_hint', 'Add a dimension to start filling in values.')} />
 		{:else if items.length === 0}
 			<HintIcon text={t('create.comparison.add_item_hint', 'Add an item to start comparing.')} />
 		{/if}
-	{:else}			<p class="empty-text">{t('create.comparison.empty')}</p>
+	{:else}
+		<div class="empty-state">
+			<div class="empty-icon">
+				<TableIcon size={32} />
+			</div>
+			<p class="empty-text">{t('create.comparison.empty')}</p>
 		</div>
 	{/if}
 </div>

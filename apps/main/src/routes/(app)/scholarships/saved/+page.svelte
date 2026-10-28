@@ -222,6 +222,7 @@
 										placeholder={t('scholarships.notes_placeholder', 'Add notes...')}
 										class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none resize-none"
 									></textarea>
+										<HintIcon text={t('scholarships.notes_hint', 'Private notes — deadlines, requirements, reminders.')} />
 									<div class="flex items-center gap-2">
 										<label for="reminder-{item.id}" class="text-xs text-[var(--color-muted)]">{t('scholarships.reminder_days', 'Remind')}:</label>
 										<input

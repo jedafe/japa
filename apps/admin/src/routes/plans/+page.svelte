@@ -333,6 +333,7 @@
 <!-- Manage Tracks Modal (page-local sub-flow) -->
 <Modal bind:open={showTracksModal} title={t('plans.manage_tracks_title', 'Manage Tracks — {name}').replace('{name}', tracksPlanName)} size="lg">
 	<div class="space-y-3">
+		<HintIcon text={t('plans.tracks_hint', 'Select which courses are included in this subscription plan. When no tracks are selected, the plan includes ALL tracks (Pro = all).')} />
 		{#if loadingTracks}
 			<p class="text-sm" style="color: var(--color-muted)">{t('plans.loading_tracks', 'Loading tracks...')}</p>
 		{:else}
@@ -465,12 +466,12 @@
 		<div>
 			<label for="plan-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.name', 'Name')}
 			<HintIcon text={t('plans.name_hint', 'The name shown in admin lists and on the site where public.')}  />
-
-			<HintIcon text={t('plans.name_hint', 'The name shown in admin lists and on the site where public.')}  /></label>
+</label>
 			<input
 				id="plan-name"
 				type="text"
-				class="w-fullcolor-surface)"
+				class="w-full rounded-md border px-3 py-2 text-sm"
+				style="border-color: var(--color-border); background-color: var(--color-surface)"
 				placeholder={t('plans.ph_pro', 'Pro')}
 				bind:value={value.name}
 				oninput={() => {
@@ -481,12 +482,12 @@
 		<div>
 			<label for="plan-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.slug', 'Slug')}
 			<HintIcon text={t('plans.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  />
-
-			<HintIcon text={t('plans.slug_hint', 'URL-safe identifier — lowercase, hyphens, no spaces.')}  /></label>
+</label>
 			<input
 				id="plan-slug"
 				type="text"
-				class="w-full roundeor: var(--color-surface)"
+				class="w-full rounded-md border px-3 py-2 text-sm font-mono"
+				style="border-color: var(--color-border); background-color: var(--color-surface)"
 				placeholder="pro"
 				bind:value={value.slug}
 			/>
@@ -494,11 +495,11 @@
 		<div>
 			<label for="plan-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.description', 'Description')}
 			<HintIcon text={t('plans.desc_hint', 'Shown in detail views — keep it concise.')}  />
-
-			<HintIcon text={t('plans.desc_hint', 'Shown in detail views — keep it concise.')}  /></label>
+</label>
 			<textarea
 				id="plan-desc"
-				class="w-full rounded-md border px-3 py-2 tex)"
+				class="w-full rounded-md border px-3 py-2 text-sm"
+				style="border-color: var(--color-border); background-color: var(--color-surface)"
 				rows="2"
 				bind:value={value.description}
 			></textarea>
@@ -582,24 +583,26 @@
 			<div>
 				<label for="plan-monthly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.monthly_kobo', 'Monthly (in kobo/cents)')}
 			<HintIcon text={t('plans.monthly_hint', 'Monthly price in kobo or cents — the smallest currency unit.')}  />
-
-			<HintIcon text={t('plans.monthly_hint', 'Monthly price in kobo or cents — the smallest currency unit.')}  /></label>
+</label>
 				<input
 					id="plan-monthly"
 					type="number"
-					ackground-color: var(--color-surface)"
+					min="0"
+					class="w-full rounded-md border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background-color: var(--color-surface)"
 					bind:value={value.monthly_amount}
 				/>
 			</div>
 			<div>
 				<label for="plan-yearly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.yearly_kobo', 'Yearly (in kobo/cents)')}
 			<HintIcon text={t('plans.yearly_hint', 'Yearly price in kobo or cents — usually discounted vs monthly.')}  />
-
-			<HintIcon text={t('plans.yearly_hint', 'Yearly price in kobo or cents — usually discounted vs monthly.')}  /></label>
+</label>
 				<input
 					id="plan-yearly"
 					type="number"
-					ckground-color: var(--color-surface)"
+					min="0"
+					class="w-full rounded-md border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background-color: var(--color-surface)"
 					bind:value={value.yearly_amount}
 				/>
 			</div>
@@ -609,42 +612,45 @@
 			<div>
 				<label for="plan-currency" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.currency', 'Currency')}
 			<HintIcon text={t('plans.currency_hint', 'ISO currency code, e.g. NGN or USD.')}  />
-
-			<HintIcon text={t('plans.currency_hint', 'ISO currency code, e.g. NGN or USD.')}  /></label>
+</label>
 				<Select options={currencyOptions} bind:value={value.currency} />
 			</div>
-			var(--color-muted)">{t('plans.status', 'Status')}
+			<div>
+				<label for="plan-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.status', 'Status')}
 			<HintIcon text={t('plans.status_hint', 'The record state — controls visibility and actions.')}  />
-
-			<HintIcon text={t('plans.status_hint', 'The record state — controls visibility and actions.')}  /></label>
+</label>
 				<Select options={statuses} bind:value={value.status} />
-			</divck text-xs font-medium" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}
-			<HintIcon text={t('plans.tier_hint', 'The tier — e.g. free, partner, premium.')}  />
-
-			<HintIcon text={t('plans.tier_hint', 'The tier — e.g. free, partner, premium.')}  /></label>
-				<Select options={tierOptions} bind:value={value.tier} />
-			</div>
-			<div claked={value.highlighted} />
-				<label for="plan-highlight" class="flex items-center gap-1 text-sm">
-					<Star class="h-3.5 w-3.5" /> {t('plans.highlighted', 'Highlighted')}
-				
-			<HintIcon text={t('plans.highlight_hint', 'Highlighted plans stand out in listings.')}  />
-
-			<HintIcon text={t('plans.highlight_hint', 'Highlighted plans stand out in listings.')}  /></label>
 			</div>
 		</div>
 
 		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<lab('plans.sort_order', 'Sort Order')}
-			<HintIcon text={t('plans.sort_hint', 'Lower numbers appear first.')}  />
+				<label for="plan-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}
+			<HintIcon text={t('plans.tier_hint', 'The tier — e.g. free, partner, premium.')}  />
+</label>
+				<Select options={tierOptions} bind:value={value.tier} />
+			</div>
+			<div class="flex items-end gap-2 pb-2">
+				<input id="plan-highlight" type="checkbox" bind:checked={value.highlighted} />
+				<label for="plan-highlight" class="flex items-center gap-1 text-sm">
+					<Star class="h-3.5 w-3.5" /> {t('plans.highlighted', 'Highlighted')}
+				
+			<HintIcon text={t('plans.highlight_hint', 'Highlighted plans stand out in listings.')}  />
+</label>
+			</div>
+		</div>
 
-			<HintIcon text={t('plans.sort_hint', 'Lower numbers appear first.')}  /></label>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="plan-sort" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.sort_order', 'Sort Order')}
+			<HintIcon text={t('plans.sort_hint', 'Lower numbers appear first.')}  />
+</label>
 				<input
 					id="plan-sort"
 					type="number"
 					min="0"
-					class="w-full rounded-md bground-color: var(--color-surface)"
+					class="w-full rounded-md border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background-color: var(--color-surface)"
 					bind:value={value.sort_order}
 				/>
 			</div>

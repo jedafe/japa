@@ -244,8 +244,7 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="mreq-goals" class="text-sm font-medium text-[var(--color-text)]">
 					{t('mentors.field_goals', 'Your goals')}
-				
-					<HintIcon text={t('mentors.goals_hint', 'What you want to get out of the mentorship — be specific.')} /></label>
+				</label>
 				<textarea
 					id="mreq-goals"
 					rows={4}
@@ -253,6 +252,7 @@
 					placeholder={t('mentors.field_goals_placeholder', 'What do you hope to achieve?')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				></textarea>
+					<HintIcon text={t('mentors.goals_hint', 'What you want to get out of the mentorship — be specific.')} />
 			</div>
 
 			<div class="flex flex-col gap-1.5">

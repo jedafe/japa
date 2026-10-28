@@ -177,6 +177,7 @@
 				onSelect={(item) => { setStr(key, item.id); onPick?.(item.id); revalidate(); }}
 				onClear={() => { setStr(key, ''); onPick?.(''); revalidate(); }}
 			/>
+	<HintIcon text={t('studio.import.tags_hint', 'Comma-separated tags.')} />
 		</div>
 		{#if errors[key]}<p class={errCls}>{errors[key]}</p>{/if}
 	</div>

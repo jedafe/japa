@@ -247,6 +247,7 @@
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							disabled={submitting}
 						/>
+						<HintIcon id="space-name-hint" text={t('spaces.name_hint', 'The public name people see and search for.')} />
 						{#if nameSearchLoading}
 							<div class="absolute end-3 top-[26px]">
 								<Loader2 size={14} class="animate-spin text-[var(--color-muted)]" />
@@ -279,7 +280,11 @@
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 							disabled={submitting}
 						/>
-						<HintIcon id="space-slug-hint" text={t('spaces.slug_hint', 'URL-safe identifier — auto-generated from the nad)]">{t('spaces.description_label')}</label>
+						<HintIcon id="space-slug-hint" text={t('spaces.slug_hint', 'URL-safe identifier — auto-generated from the name.')} />
+					</div>
+
+					<div>
+						<label for="space-desc" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('spaces.description_label')}</label>
 						<textarea
 							id="space-desc"
 							bind:value={description}
@@ -294,7 +299,8 @@
 
 					<div>
 						<p class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-							{t('spaces.parl_label', 'optional')})</span>
+							{t('spaces.parent_label', 'Primary parent space(s)')}
+							<span class="font-normal text-[var(--color-muted)]">({t('spaces.optional_label', 'optional')})</span>
 						</p>
 						<SpaceCombobox
 							parentMode

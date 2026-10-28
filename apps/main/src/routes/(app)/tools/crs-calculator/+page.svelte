@@ -498,9 +498,9 @@
 				<label class="inline-flex items-center gap-2 text-sm text-[var(--color-text)]">
 					<input type="checkbox" bind:checked={hasCertificate} class="rounded" />
 					{t('crs_calculator.certificate', 'Certificate of qualification (trade)')}
-				
-			<HintIcon text={t('crs_calculator.french_hint', 'French test results entered above also count toward francophone bonus points automatically.')} /></label>
+				</label>
 			</div>
+			<HintIcon text={t('crs_calculator.french_hint', 'French test results entered above also count toward francophone bonus points automatically.')} />
 		</fieldset>
 
 		<div class="mt-5">
@@ -642,6 +642,7 @@
 		{/if}
 	{:else}
 		<div class="mt-6 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] p-4 text-center">
+			<HintIcon text={t('crs_calculator.signin_hint', 'Sign in to save your score history and track changes over time.')} />
 			<a
 				href="/login?redirect={encodeURIComponent(page.url.pathname)}"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"

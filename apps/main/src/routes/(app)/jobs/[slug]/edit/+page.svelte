@@ -173,8 +173,7 @@
 			<div class="space-y-2">
 				<label for="job-title" class="text-sm font-medium text-[var(--color-text)]">
 					{t('jobs.job_title', 'Job title')} <span class="text-[var(--destructive)]">*</span>
-				
-					<HintIcon text={t('jobs.title_hint', 'The role title candidates see in listings.')} /></label>
+				</label>
 				<input
 					id="job-title"
 					type="text"
@@ -182,13 +181,13 @@
 					placeholder={t('jobs.title_placeholder', 'e.g. Senior Software Engineer')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 				/>
+					<HintIcon text={t('jobs.title_hint', 'The role title candidates see in listings.')} />
 			</div>
 
 			<div class="space-y-2">
 				<label for="job-body" class="text-sm font-medium text-[var(--color-text)]">
 					{t('jobs.body', 'Description')}
-				
-					<HintIcon text={t('jobs.body_hint', 'Describe the role, responsibilities and requirements.')} /></label>
+				</label>
 				<textarea
 					id="job-body"
 					rows="5"
@@ -196,6 +195,7 @@
 					placeholder={t('jobs.body_placeholder', 'Describe the role, responsibilities, and requirements…')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				></textarea>
+					<HintIcon text={t('jobs.body_hint', 'Describe the role, responsibilities and requirements.')} />
 			</div>
 
 			<div class="space-y-2">

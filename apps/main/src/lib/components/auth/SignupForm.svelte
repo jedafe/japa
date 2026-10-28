@@ -112,6 +112,7 @@
 			aria-describedby={errors.email ? 'signup-email-hint signup-email-error' : 'signup-email-hint'}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
+		<HintIcon id="signup-email-hint" text={t('auth.signup.email_hint', 'Used for sign-in and receipts — we never share it.')} />
 		{#if errors.email}<p id="signup-email-error" class="text-sm text-red-500">{t(errors.email)}</p>{/if}
 	</div>
 
@@ -128,7 +129,11 @@
 			aria-describedby={errors.username ? 'signup-username-hint signup-username-error' : 'signup-username-hint'}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
-		<HintIcon id="signup-username-hint" text={t('auth.fields.username_hint', '3–30 characters — letters, numbers and underscoresswordField
+		<HintIcon id="signup-username-hint" text={t('auth.fields.username_hint', '3–30 characters — letters, numbers and underscores. This is your public handle.')} />
+		{#if errors.username}<p id="signup-username-error" class="text-sm text-red-500">{t(errors.username)}</p>{/if}
+	</div>
+
+	<PasswordField
 		id="signup-password"
 		label={t('auth.fields.password')}
 		bind:value={password}

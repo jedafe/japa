@@ -529,8 +529,7 @@
 						<div class="mt-4">
 							<label for="ext-manage-rollout" class="text-foreground block text-sm font-medium">
 								{t('extensions.rollout', 'Rollout')} %
-							
-							<HintIcon text={t('extensions.rollout_hint', '100 = fully on, 0 = off, 1-99 = gradual rollout.')} /></label>
+							</label>
 							<input
 								id="ext-manage-rollout"
 								type="number"
@@ -539,6 +538,7 @@
 								bind:value={draft.rollout}
 								class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus mt-1 block w-28 rounded-9px border px-3 py-2 text-sm transition-colors"
 							/>
+							<HintIcon text={t('extensions.rollout_hint', '100 = fully on, 0 = off, 1-99 = gradual rollout.')} />
 						</div>
 					</section>
 
@@ -547,6 +547,7 @@
 						<h4 class="text-muted-foreground mb-1 text-xs font-semibold uppercase tracking-wide">
 							{t('extensions.section_visibility', 'Visibility')}
 						</h4>
+						<HintIcon text={t('extensions.visibility_hint', 'Per-surface visibility and optional audience/geo restrictions.')} />
 						<div class="space-y-2">
 							{#each SURFACES as surface (surface)}
 								{@const rule = draft.surfaces[surface]}
@@ -622,7 +623,11 @@
 														compact
 													/>
 												</div>
-												<HintIcon text={t('extensions.audience_hint', 'Restrict to user groups (group:slug) or permission nodes (perm:n>
+												<HintIcon text={t('extensions.audience_hint', 'Restrict to user groups (group:slug) or permission nodes (perm:node). Empty = everyone.')} />
+											</div>
+
+											<div>
+												<span class="text-foreground flex items-center gap-1.5 text-xs font-medium">
 													<Globe class="size-3.5" />
 													{t('extensions.geo_allow', 'Only in countries')}
 												</span>
@@ -693,7 +698,7 @@
 											<div class="border-border-card flex flex-wrap gap-2 border-t pt-3">
 												<button
 													type="button"
-dium transition-colors"
+													class="border-border-input bg-background hover:bg-muted text-foreground rounded-7px border px-2.5 py-1 text-xs font-medium transition-colors"
 													onclick={() => presetBetaStaff(surface)}
 												>
 													{t('extensions.preset_beta_staff', 'Beta testers + staff')}
@@ -729,7 +734,10 @@ dium transition-colors"
 							<Route class="text-muted-foreground size-4" />
 							{#if ext.linked_roadmap_slug}
 								<span class="text-muted-foreground">{t('extensions.linked_roadmap', 'Linked roadmap item')}:</span>
-								<code class="bg-muted text-for:else}
+								<code class="bg-muted text-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">
+									{ext.linked_roadmap_slug}
+								</code>
+							{:else}
 								<span class="text-muted-foreground">{t('extensions.no_roadmap_link', 'No roadmap item linked')}</span>
 							{/if}
 						</div>
@@ -744,7 +752,10 @@ dium transition-colors"
 					<div class="flex items-center gap-3">
 						<button
 							type="button"
-							class="text-destructive hover:bg-destructive/10 me-auto flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ustom'
+							class="text-destructive hover:bg-destructive/10 me-auto flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+							disabled={saving || deleting}
+							onclick={remove}
+							title={ext.category === 'Custom'
 								? t('extensions.delete_custom_hint', 'Delete this custom flag row')
 								: t('extensions.reset_hint', 'Delete the stored row — reverts to the registry default')}
 						>

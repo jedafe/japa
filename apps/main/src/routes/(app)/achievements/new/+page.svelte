@@ -231,6 +231,7 @@
 			placeholder={t('achievements.body_placeholder', 'Share your journey…')}
 			rows={6}
 		/>
+			<HintIcon text={t('achievements.body_hint', 'Tell the story — what happened and what it means to you.')} />
 
 		<div class="flex flex-col gap-1.5">
 			<label for="milestone_type" class="text-sm font-medium text-[var(--color-text)]">

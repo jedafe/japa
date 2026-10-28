@@ -94,6 +94,7 @@
 	{/if}
 
 	{#if hint}
+		<HintIcon id="{id}-hint" text={hint} />
 	{/if}
 
 	{#if error}

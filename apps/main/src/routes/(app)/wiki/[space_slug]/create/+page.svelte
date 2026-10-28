@@ -385,6 +385,7 @@
 					</p>
 					{#if tplOpen && canManageTemplates}
 						<div class="mt-2 space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+							<HintIcon text={t('wiki.new_template_hint', 'Adds a predefined page under this category for every wiki of this type. Use {name} for the space name — e.g. "Prices in {name}".')} />
 							<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 								<input
 									type="text"
@@ -433,13 +434,14 @@
 					{t('wiki.create_title_label', 'Page title')}
 				
 				<HintIcon text={t('wiki.create.title_hint', 'The page title shown in the wiki.')}  />
-
-				<HintIcon text={t('wiki.create.title_hint', 'The page title shown in the wiki.')}  /></label>
+</label>
 				<input
 					id="wiki-create-title"
 					type="text"
 					bind:value={title}
-					on_placeholder', 'e.g. Cost of Living')}
+					oninput={onTitleInput}
+					disabled={templateLocked}
+					placeholder={t('wiki.create_title_placeholder', 'e.g. Cost of Living')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-70"
 				/>
 				{#if fieldErrors.title}

@@ -123,6 +123,7 @@
 			{#if data.endpoints.length > 0}
 				<div class="spec-endpoints">
 					<h2 class="spec-heading">{t('api.endpoints_from_spec')}</h2>
+					<HintIcon text={t('api.spec_endpoints_hint')} />
 
 					<div class="endpoint-filters">
 						<div class="ep-search-wrap">

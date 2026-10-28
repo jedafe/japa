@@ -203,8 +203,7 @@
 
 					<div class="mt-5">
 						<div class="field-row">
-							<label class="field-label" for={textareaId}>{t('appeals.reason_label', 'Why should this decision be reconsidered?')}
-						<HintIcon text={t('appeals.reason_hint', 'Be specific — cite the policy or evidence that supports your case.')} /></label>
+							<label class="field-label" for={textareaId}>{t('appeals.reason_label', 'Why should this decision be reconsidered?')}</label>
 							<textarea
 								id={textareaId}
 								rows="5"
@@ -214,6 +213,7 @@
 								class="field-input !h-auto py-2.5"
 							></textarea
 							>
+						<HintIcon text={t('appeals.reason_hint', 'Be specific — cite the policy or evidence that supports your case.')} />
 							<p class="text-end text-[11px] text-[var(--color-muted)]">{reason.length} / {MAX_REASON}</p>
 						</div>
 					</div>

@@ -349,8 +349,7 @@
 				<div class="field">
 					<label class="field-label" for="doc-parent">{t('new_page.field_parent', 'Parent page')}
 					<HintIcon text={t('new_page.parent_hint', 'Optional — nest this page under another.')}  />
-
-					<HintIcon text={t('new_page.parent_hint', 'A non-published parent hides this page from the nav until it publishes.')} /></label>
+</label>
 					<Autocomplete
 						id="doc-parent"
 						placeholder={t('new_page.no_parent', '— Top level —')}
@@ -362,6 +361,7 @@
 						onSelect={(item) => (parentId = item.id)}
 						onClear={() => (parentId = '')}
 					/>
+					<HintIcon text={t('new_page.parent_hint', 'A non-published parent hides this page from the nav until it publishes.')} />
 				</div>
 
 				<label class="field">

@@ -257,6 +257,7 @@
 				onSelect={(item) => addScope(item.id)}
 				disabled={creating}
 			/>
+			<HintIcon text={t('settings.apikeys.scopes_hint', 'The API endpoints this key can access — pick each permission it needs.')} />
 		</div>
 
 		{#if error}<p class="text-xs text-[var(--color-danger)]">{error}</p>{/if}
@@ -274,7 +275,9 @@
 		<HintIcon id="apikey-install-hint" text={t('settings.apikeys.connect_extension_hint')} />
 		<input
 			type="text"
-			bind:value=keys.install_id')}
+			bind:value={installId}
+			placeholder={t('settings.apikeys.install_id')}
+			aria-label={t('settings.apikeys.install_id')}
 			aria-describedby="apikey-install-hint"
 			class="mb-3 w-full max-w-md rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)]"
 		/>

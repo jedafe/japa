@@ -621,8 +621,7 @@
 						{t('cron.job_type', 'Job Type')}
 					
 					<HintIcon text={t('cron.type_hint', 'The task this job runs.')}  />
-
-					<HintIcon text={t('cron.job_type_hint', 'The Asynq task type to execute')} /></label>
+</label>
 					<Autocomplete
 						id="cron-type"
 						placeholder={t('cron.select_task_type', 'Select a task type...')}
@@ -635,6 +634,7 @@
 						onClear={() => (editForm.type = '')}
 						inputClass="font-mono"
 					/>
+					<HintIcon text={t('cron.job_type_hint', 'The Asynq task type to execute')} />
 				</div>
 				<div>
 					<label for="cron-schedule-preset" class="text-foreground mb-1 block text-sm font-medium">

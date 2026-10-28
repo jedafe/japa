@@ -348,6 +348,7 @@
 								/>
 							{:else}
 								<input id="journey-purpose" type="text" class="field-input" placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')} bind:value={purpose} aria-describedby="journey-purpose-hint" />
+								<HintIcon id="journey-purpose-hint" text={t('journey.banner.purpose_hint', 'E.g. study, work, family reunion.')} />
 							{/if}
 						</div>
 						<div class="field-row">
@@ -366,7 +367,12 @@
 								/>
 							{:else}
 								<input id="journey-visa" type="text" class="field-input" placeholder={t('journey.banner.visa_placeholder', 'e.g. student')} bind:value={visaRoute} aria-describedby="journey-visa-hint" />
-								<HintIcon id="journey-visa-hint" text={t('journey.banner.visa_hint', 'The visa category you are applying for, if kn>{t('journey.step3_title', 'A few more details')}</h2>
+								<HintIcon id="journey-visa-hint" text={t('journey.banner.visa_hint', 'The visa category you are applying for, if known.')} />
+							{/if}
+						</div>
+					</div>
+				{:else if step === 3}
+					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.step3_title', 'A few more details')}</h2>
 					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.step3_subtitle', 'Optional — helps us time the content we show you.')}</p>
 
 					<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -389,14 +395,14 @@
 							{/if}
 						</div>
 						<div class="field-row">
-							<label class="field-label" for="journey-travel-date">{t('journey.banner.travel_date', 'Planned travel date (optional)')}
-								<HintIcon id="journey-travel-date-hint" text={t('journey.banner.travel_date_hint', 'Your planned departure — used to time checklists and reminders.')} /></label>
+							<label class="field-label" for="journey-travel-date">{t('journey.banner.travel_date', 'Planned travel date (optional)')}</label>
 							<input id="journey-travel-date" type="date" class="field-input" bind:value={travelDate} aria-describedby="journey-travel-date-hint" />
 								<HintIcon id="journey-travel-date-hint" text={t('journey.banner.travel_date_hint', 'Your planned departure — used to time checklists and reminders.')} />
 						</div>
 					</div>
 				{:else}
-					<h2 class="text-xl font-bold text-[var(--color-text)]y details — you can change them anytime in your profile.')}</p>
+					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.step4_title', "You're all set!")}</h2>
+					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.step4_subtitle', 'Review your journey details — you can change them anytime in your profile.')}</p>
 
 					<dl class="mt-6 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
 						<div class="summary-row"><dt>{t('journey.banner.origin_country', 'Where are you now?')}</dt><dd>{countryLabel(origin)}</dd></div>

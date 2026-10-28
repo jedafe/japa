@@ -410,8 +410,7 @@
 				{t('app.data_imports.file_url', 'File URL')}
 			
 			<HintIcon text={t('app.data_imports.file_url_hint', 'Direct file URL — must be publicly reachable.')}  />
-
-			<HintIcon text={t('app.data_imports.file_url_hint', 'Path to the uploaded file. Upload the file first via the Media uploader, then paste the path here.')} /></label>
+</label>
 			<input
 				id="import-file-url"
 				type="text"
@@ -420,6 +419,7 @@
 				placeholder="/uploads/import-file.csv"
 				bind:value={value.file_url}
 			/>
+			<HintIcon text={t('app.data_imports.file_url_hint', 'Path to the uploaded file. Upload the file first via the Media uploader, then paste the path here.')} />
 		</div>
 		<div class="rounded-lg border p-3 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
 			{t('app.data_imports.form_help', 'In "create" mode, rows that conflict with existing records are skipped. In "upsert" mode, existing records are updated and new ones are inserted.')}

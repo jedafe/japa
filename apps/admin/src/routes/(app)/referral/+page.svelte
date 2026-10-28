@@ -294,8 +294,7 @@
 					<h3 class="mb-4 text-lg font-semibold text-foreground">{t('referral.program_settings')}</h3>
 					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 						<div>
-							<label for="prog-referrer-reward" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.referrer_reward')}
-							<HintIcon text={t('referral.cents_hint')} /></label>
+							<label for="prog-referrer-reward" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.referrer_reward')}</label>
 							<input
 								id="prog-referrer-reward"
 								type="number"
@@ -303,10 +302,10 @@
 								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={program.referrer_reward_cents}
 							/>
+							<HintIcon text={t('referral.cents_hint')} />
 						</div>
 						<div>
-							<label for="prog-referee-reward" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.referee_reward')}
-							<HintIcon text={t('referral.cents_hint')} /></label>
+							<label for="prog-referee-reward" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.referee_reward')}</label>
 							<input
 								id="prog-referee-reward"
 								type="number"
@@ -314,10 +313,10 @@
 								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={program.referee_reward_cents}
 							/>
+							<HintIcon text={t('referral.cents_hint')} />
 						</div>
 						<div>
-							<label for="prog-max-referrals" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.max_referrals')}
-							<HintIcon text={t('referral.max_referrals_hint')} /></label>
+							<label for="prog-max-referrals" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.max_referrals')}</label>
 							<input
 								id="prog-max-referrals"
 								type="number"
@@ -325,6 +324,7 @@
 								class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={program.max_referrals}
 							/>
+							<HintIcon text={t('referral.max_referrals_hint')} />
 						</div>
 						<div>
 							<label for="prog-cookie-days" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.cookie_days')}</label>

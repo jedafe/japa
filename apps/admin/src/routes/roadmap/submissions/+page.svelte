@@ -170,6 +170,7 @@
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('roadmap.decline_confirm', 'Are you sure you want to decline')} <strong>{actionTarget.title}</strong>?
 		</p>
+		<HintIcon text={t('roadmap.decline_hint', 'Declined submissions are hidden from the public board.')} />
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showDeclineConfirm = false)} disabled={acting}>

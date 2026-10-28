@@ -348,8 +348,7 @@
 					{t('academy.track_country_label', 'Country / primary market')}
 				
 				<HintIcon text={t('academy.track_country_hint', 'The country this track content targets.')}  />
-
-				<HintIcon text={t('academy.track_country_hint', 'Select the country this track is primarily for. This defaults the currency.')} /></label>
+</label>
 				<Autocomplete
 					id="country"
 					placeholder={t('academy.track_country_placeholder', 'Search countries…')}
@@ -361,6 +360,7 @@
 					onSelect={onSelectCountry}
 					onClear={onClearCountry}
 				/>
+				<HintIcon text={t('academy.track_country_hint', 'Select the country this track is primarily for. This defaults the currency.')} />
 			</div>
 
 			<!-- Currency (auto-filled from selected country; editable override) -->

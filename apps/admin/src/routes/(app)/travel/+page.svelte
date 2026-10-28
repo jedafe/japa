@@ -373,6 +373,7 @@
 				})}
 			</div>
 			{#if editing}
+				<HintIcon text={t('travel.api_config_hint', 'Leave blank to keep existing credentials. Any value entered here replaces them.')} />
 			{/if}
 		</div>
 		<div>
@@ -389,7 +390,9 @@
 			})}
 			<HintIcon text={t('travel.affiliate_hint', 'Appended to booking links as URL parameters (e.g. aff_id, aff_sub).')} />
 		</div>
-		<ds_active as true) — mirror that default in the checkbox
+		<div class="flex items-center gap-2">
+			<!-- New providers default to active (the create handler treats an
+			     unset is_active as true) — mirror that default in the checkbox
 			     so the visible state matches what will be submitted. -->
 			<input
 				type="checkbox"
@@ -401,14 +404,14 @@
 				{t('travel.active', 'Active')}
 			
 			<HintIcon text={t('travel.active_hint', 'Inactive routes are hidden from searches.')}  />
-
-			<HintIcon text={t('travel.active_hint', 'Inactive routes are hidden from searches.')}  /></label>
+</label>
 		</div>
 	</div>
 {/snippet}
 
 <!-- Key/value row editor for flat config maps (extra settings, affiliate
-     params). Mutations go through the add/remove egal). -->
+     params). Mutations go through the add/remove callbacks so state writes
+     stay inside event handlers (mutating in {@const}/render is illegal). -->
 {#snippet PairEditor({ pairs, add, remove, addLabel }: {
 	pairs: ConfigPair[];
 	add: () => void;

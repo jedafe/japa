@@ -735,6 +735,7 @@
 										value={editTitle}
 										oninput={(e) => (editTitle = e.currentTarget.value)}
 									/>
+										<HintIcon text={t('reviews.title_hint', 'Optional headline for your review.')} />
 									<textarea
 										class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 										rows="3"
@@ -742,7 +743,8 @@
 										value={editBody}
 										oninput={(e) => (editBody = e.currentTarget.value)}
 									></textarea>
-										<HintIcon text={t('reviews.body_hint', 'Share your honest experience — what helpep>{/if}
+										<HintIcon text={t('reviews.body_hint', 'Share your honest experience — what helped, what did not.')} />
+									{#if editError}<p class="text-xs text-[var(--color-danger,#dc2626)]">{editError}</p>{/if}
 									<div class="flex justify-end gap-2">
 										<button
 											type="button"
@@ -829,7 +831,14 @@
 							<HintIcon text={t('university.compare_hint', 'Add this university to the comparison tool')} />
 						</span>
 					</span>
-					<ArrowRight size={18} class="shrink-0 text-[var(--color-text-subtle)] rniversity.slug}"
+					<ArrowRight size={18} class="shrink-0 text-[var(--color-text-subtle)] rtl:-scale-x-100" />
+				</a>
+			</div>
+		{/if}
+
+		<!-- CTA to discussions -->
+		<a
+			href="/spaces/{university.slug}"
 			class="mt-3 flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
 			<span class="flex items-center gap-2.5">

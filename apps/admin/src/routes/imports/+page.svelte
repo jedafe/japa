@@ -459,8 +459,7 @@
 					{t('imports.source_url', 'Source URL')}
 				
 			<HintIcon text={t('imports.source_url_hint', 'The URL this data is pulled from — full URL including https://.')}  />
-
-				<HintIcon text={t('imports.source_url_hint', 'The RSS feed URL or profile URL of the blog to import.')} /></label>
+</label>
 				<input
 					id="import-source-url"
 					type="url"
@@ -469,6 +468,7 @@
 					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					style="border-color: var(--color-border)"
 				/>
+				<HintIcon text={t('imports.source_url_hint', 'The RSS feed URL or profile URL of the blog to import.')} />
 			</div>
 		{/if}
 		<div class="rounded-lg border p-3 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">

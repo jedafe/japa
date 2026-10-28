@@ -533,6 +533,7 @@
 						markDirty();
 					}}
 				/>
+					<HintIcon text={t('create.type_hint', 'What kind of content you are creating — picks the right editor.')} />
 			</div>
 		</div>
 
@@ -542,9 +543,11 @@
 					{t('create.guide.category_label')}
 				
 				<HintIcon text={t('create.category_hint', 'The topic category this guide belongs to.')}  />
-
-				<HintIcon text={t('create.category_hint', 'The topic category this guide belongs to.')}  /></label>
-				<Aut		emptyMessage={t('common.no_results', 'No results found')}
+</label>
+				<Autocomplete
+					id="guide-category"
+					placeholder={t('create.guide.category_placeholder')}
+					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={guideCategoryFetcher}
 					initialFetcher={guideCategoryFetcher}
 					selectedId={guideCategory}

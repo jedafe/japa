@@ -72,8 +72,7 @@
 		<div>
 			<label for="wallet-currency-select" class="mb-1.5 block text-sm text-[var(--color-muted)]">
 				{t('settings.wallet.currency', 'Preferred currency')}
-			
-			<HintIcon text={t('settings.wallet.currency_hint', 'Used to display wallet balances and prices.')} /></label>
+			</label>
 			<AutocompleteSelect
 				id="wallet-currency-select"
 				bind:value={choice}
@@ -86,6 +85,7 @@
 				placeholder={currency ? `${currency.symbol} ${currency.code}` : preferredCode || t('settings.wallet.currency_default', 'Default')}
 				onValueChange={(v) => v && changeCurrency(v)}
 			/>
+			<HintIcon text={t('settings.wallet.currency_hint', 'Used to display wallet balances and prices.')} />
 			{#if error}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
 		</div>
 	{/if}

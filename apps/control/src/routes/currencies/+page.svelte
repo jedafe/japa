@@ -284,8 +284,7 @@
 				<div>
 					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-code">{t('currencies.col_code', 'Code')}
 					<HintIcon text={t('currencies.code_hint', 'ISO code — e.g. NGN, USD.')}  />
-
-					<HintIcon text={t('currencies.code_hint', 'ISO 4217 — 3 letter code')} /></label>
+</label>
 					<input
 						id="curr-code"
 						type="text"
@@ -295,6 +294,7 @@
 						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 w-full rounded-md border px-3 py-2 text-sm uppercase transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus disabled:opacity-50"
 						placeholder="USD"
 					/>
+					<HintIcon text={t('currencies.code_hint', 'ISO 4217 — 3 letter code')} />
 				</div>
 				<div>
 					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-name">{t('currencies.col_name', 'Name')}

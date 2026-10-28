@@ -440,8 +440,7 @@
 			<div>
 				<label for="title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('services.field_title', 'Title')} <span class="text-red-500">*</span>
-				
-					<HintIcon text={t('services.title_hint', 'Your service headline — profession + specialty works best.')} /></label>
+				</label>
 				<input
 					id="title"
 					type="text"
@@ -449,6 +448,7 @@
 					placeholder={t('services.title_placeholder', 'e.g. Immigration Lawyer — UK Visa Applications')}
 					class={inputClass}
 				/>
+					<HintIcon text={t('services.title_hint', 'Your service headline — profession + specialty works best.')} />
 			</div>
 
 			<!-- Body -->
@@ -465,6 +465,7 @@
 				placeholder={t('services.description_placeholder', 'Describe the service you offer…')}
 				rows={5}
 			/>
+			<HintIcon text={t('services.desc_hint', 'Describe what you offer, your experience and what is included.')} />
 
 			<!-- Category -->
 			<div>
@@ -472,9 +473,10 @@
 					{t('services.field_category', 'Service category')}
 				
 				<HintIcon text={t('services.category_hint', 'The service category — helps people find you.')}  />
-
-				<HintIcon text={t('services.category_hint', 'The service category — helps people find you.')}  /></label>
-	}
+</label>
+				<Autocomplete
+					id="category"
+					placeholder={t('services.field_category', 'Service category')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={categoryFetcher}
 					initialFetcher={categoryFetcher}
@@ -502,15 +504,17 @@
 					/>
 						<HintIcon text={t('services.dest_hint', 'The country this service is offered in.')} />
 				</div>
-				<div			{t('services.field_city', 'City')}
+				<div>
+					<label for="city" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('services.field_city', 'City')}
 					
 					<HintIcon text={t('services.city_hint', 'Optional — the city you operate in.')}  />
-
-					<HintIcon text={t('services.city_hint', 'Optional — the city you operate in.')}  /></label>
+</label>
 					<Autocomplete
 						id="city"
 						placeholder={destinationSpaceId
-							? t('services.city_select',try first')}
+							? t('services.city_select', 'Select a city (optional)')
+							: t('services.city_select_dest_first', 'Select a country first')}
 						ariaLabel={t('services.field_city', 'City')}
 						emptyMessage={t('common.no_results', 'No results found')}
 						fetcher={fetchCities}
@@ -534,8 +538,7 @@
 			<div>
 				<label for="origin" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('services.field_origin_communities', 'Origin communities served')}
-				
-				<HintIcon text={t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.')} /></label>
+				</label>
 				<input
 					id="origin"
 					type="text"
@@ -547,7 +550,9 @@
 			</div>
 
 			<!-- §98 org assignment — org-less listings only; once linked the
-			   v>
+			     claim flow owns any transfer. PATCH rejects a non-member org. -->
+			{#if !svc.org_id && orgItems.length > 0}
+				<div>
 					<label for="org" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('services.field_org', 'List under an organization')}
 					</label>
@@ -566,7 +571,7 @@
 					<p class="mt-1 text-xs text-[var(--color-muted)]">
 						{t(
 							'services.org_hint',
-					'
+							'Pick an organization you belong to so inquiries land in its inbox — leave blank for a personal listing.'
 						)}
 					</p>
 				</div>
@@ -603,11 +608,12 @@
 				<div>
 					<label for="booking" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('services.field_booking', 'Booking URL')}
-					
-						<HintIcon text={t('services.website_hint', 'Optional — your site or portfolio link.')} /></label>
+					</label>
 					<input
 						id="booking"
-						ttps://booking.example.com')}
+						type="url"
+						bind:value={bookingUrl}
+						placeholder={t('services.booking_placeholder', 'https://booking.example.com')}
 						class={inputClass}
 					/>
 						<HintIcon text={t('services.booking_hint', 'Optional — direct link where clients book you.')} />
@@ -618,8 +624,7 @@
 			<div>
 				<label for="price" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('services.field_price_range', 'Price range')}
-				
-					<HintIcon text={t('services.price_hint', 'Rough pricing — e.g. £50–£150/hr or a flat fee.')} /></label>
+				</label>
 				<input
 					id="price"
 					type="text"
@@ -633,7 +638,11 @@
 			<!-- §114 featured image — contents.featured_image_id via
 				featured_media_id on the service payload; all listing kinds. -->
 			<div>
-				<span class="mb-1 block text-sm font-medium text-[var(--				mediaId={featuredMediaId}
+				<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+					{t('services.featured_image', 'Featured image')}
+				</span>
+				<CoverUploader
+					mediaId={featuredMediaId}
 					previewUrl={featuredPreview}
 					onUploaded={(a) => {
 						featuredMediaId = a.id;
@@ -677,13 +686,15 @@
 								{t('services.pkg_purchase_mode', 'Purchase mode')}
 							
 							<HintIcon text={t('services.pkg_mode_hint', 'How clients pay — direct booking or inquiry first.')}  />
-
-							<HintIcon text={t('services.pkg_mode_hint', 'How clients pay — direct booking or inquiry first.')}  /></label>
+</label>
 							<Autocomplete
 								id="pkg-mode"
 								placeholder={t('services.pkg_purchase_mode', 'Purchase mode')}
 								emptyMessage={t('common.no_results', 'No results found')}
-								fetc			selectedLabel={purchaseModeItems.find((o) => o.id === purchaseMode)?.label ?? null}
+								fetcher={purchaseModeFetcher}
+								initialFetcher={purchaseModeFetcher}
+								selectedId={purchaseMode}
+								selectedLabel={purchaseModeItems.find((o) => o.id === purchaseMode)?.label ?? null}
 								onSelect={(item) => (purchaseMode = item.id as typeof purchaseMode)}
 							/>
 						</div>
@@ -716,13 +727,15 @@
 							{t('services.pkg_price_per', 'Price is per')}
 						
 						<HintIcon text={t('services.pkg_per_hint', 'What the price covers — per person, package or group.')}  />
-
-						<HintIcon text={t('services.pkg_per_hint', 'What the price covers — per person, package or group.')}  /></label>
+</label>
 						<Autocomplete
 							id="pkg-price-per"
 							placeholder={t('services.pkg_price_per', 'Price is per')}
 							emptyMessage={t('common.no_results', 'No results found')}
-							fetcher=icePerItems.find((o) => o.id === pricePer)?.label ?? null}
+							fetcher={pricePerFetcher}
+							initialFetcher={pricePerFetcher}
+							selectedId={pricePer}
+							selectedLabel={pricePerItems.find((o) => o.id === pricePer)?.label ?? null}
 							onSelect={(item) => (pricePer = item.id as typeof pricePer)}
 						/>
 					</div>

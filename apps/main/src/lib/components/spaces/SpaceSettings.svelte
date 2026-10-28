@@ -483,13 +483,15 @@
 				</div>
 				<div>
 					<p class="text-sm font-medium text-[var(--color-text)]">{t('spaces.settings_logo', 'Logo')}</p>
+					<HintIcon text={t('spaces.settings_logo_hint', 'Click the camera to upload or pick from library')} />
 				</div>
 			</div>
 
 			<!-- Header image -->
 			<div class="mb-5">
 				<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('spaces.settings_header', 'Header image')}</p>
-				<HintIcon text={t('spaces.settings_header_hint', 'A banner image shown at the top of the space page')}rface-subtle)]">
+				<HintIcon text={t('spaces.settings_header_hint', 'A banner image shown at the top of the space page')} />
+				<div class="relative overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-subtle)]">
 					{#if headerUrl}
 						<img src={headerUrl} alt={t('spaces.settings_header', 'Header image')} class="h-32 w-full object-cover" />
 						{#if headerSaving}
@@ -563,7 +565,11 @@
 			</div>
 		<div>
 			<span class="mb-1 block text-xs text-[var(--color-muted)]">
-				{t('s}}
+				{t('spaces.settings_wiki', 'About / Wiki')}
+			</span>
+			<PostEditor
+				html={wikiHtml}
+				onhtml={(html) => { wikiHtml = html; }}
 				onedit={() => {}}
 			/>
 		</div>
@@ -579,7 +585,12 @@
 				{#if presetError}
 					<p class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{presetError}</p>
 				{/if}
-				<div			onclick={() => applyPreset(preset)}
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+					{#each presets as preset (preset.name)}
+						<button
+							type="button"
+							disabled={applyingPreset !== null}
+							onclick={() => applyPreset(preset)}
 							class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:border-[var(--color-primary)]/40 disabled:opacity-50"
 						>
 							<div class="flex items-center justify-between">
@@ -607,14 +618,14 @@
 				<label class="mb-2 flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text)]">
 					<input type="radio" name="visibility" value={opt.value} bind:group={visibility} class="mt-0.5" />
 					<span>{opt.label}</span>
-				
-			<HintIcon text={t('spaces.settings_visibility_hint', 'Controls who can see this space and its content.')} /></label>
+				</label>
 			{/each}
 		</fieldset>
 
 		<!-- Who can post -->
 		<fieldset class="rounded-lg border border-[var(--color-border)] p-5">
-			<ost')}
+			<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
+				{t('spaces.settings_posting', 'Who can post')}
 			</legend>
 			<HintIcon text={t('spaces.settings_posting_hint', 'Minimum role required to create content in this space.')} />
 			<AutocompleteSelect bind:value={postingPerm} options={permOptions} />
@@ -649,14 +660,22 @@
 			<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
 				{t('spaces.settings_keywords', 'Auto-assign keywords')}
 			</legend>
-			<HintIcon text={t('spaces.settings_keywords_hint', 'When sommatches, the content is automatically assigned to this space. Separate keywords with commas. Only applies to primary spaces (country, state, city) and public spaces.')} />
+			<HintIcon text={t('spaces.settings_keywords_hint', 'When someone creates content without selecting a space, the system checks the title for these keywords. If a keyword matches, the content is automatically assigned to this space. Separate keywords with commas. Only applies to primary spaces (country, state, city) and public spaces.')} />
 			<input
 				type="text"
 				bind:value={keywords}
 				placeholder={t('spaces.keywords_placeholder', 'e.g. nigeria, lagos, naija')}
 				class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			/>
-			<p cfont-semibold text-[var(--color-text)]">
+			<p class="mt-2 text-xs text-[var(--color-muted)]">
+				Current keywords: {initialKeywords.length}
+			</p>
+		</fieldset>
+
+		<!-- Moderators — owner/moderator (Ref: §05 lines 198-224, §03 spaces.moderator.assign) -->
+		{#if canManageModerators}
+			<fieldset class="rounded-lg border border-[var(--color-border)] p-5">
+				<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
 					{t('space.moderators.title', 'Moderators')}
 				</legend>
 				<p class="mb-3 text-xs text-[var(--color-muted)]">

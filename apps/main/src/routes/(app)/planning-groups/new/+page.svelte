@@ -117,8 +117,7 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="pg-name" class="text-sm font-medium text-[var(--color-text)]">
 					{t('planning_groups.field_name', 'Group name')} <span class="text-red-500">*</span>
-				
-					<HintIcon text={t('planning_groups.name_hint', 'A name others recognize — e.g. route + intake.')} /></label>
+				</label>
 				<input
 					id="pg-name"
 					type="text"
@@ -127,6 +126,7 @@
 					placeholder={t('planning_groups.field_name_placeholder', 'e.g. Canada Student Visa Q3 2026')}
 					class={inputClass}
 				/>
+					<HintIcon text={t('planning_groups.name_hint', 'A name others recognize — e.g. route + intake.')} />
 			</div>
 
 			<AiBodyField
@@ -142,6 +142,7 @@
 				placeholder={t('planning_groups.field_description_placeholder', 'What is this group about?')}
 				rows={4}
 			/>
+				<HintIcon text={t('planning_groups.desc_hint', 'What the group plans together and who should join.')} />
 
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div class="flex flex-col gap-1.5">
@@ -158,10 +159,13 @@
 						onSelect={(item) => (destinationSpaceId = item.id)}
 						onClear={() => (destinationSpaceId = '')}
 					/>
-						<HintIcon text={t('planning_groups.destination_hint', 'The destination country this group is planning t-[var(--color-text)]">
+						<HintIcon text={t('planning_groups.destination_hint', 'The destination country this group is planning for.')} />
+				</div>
+
+				<div class="flex flex-col gap-1.5">
+					<label for="pg-visa" class="text-sm font-medium text-[var(--color-text)]">
 						{t('planning_groups.field_visa', 'Visa category')}
-					
-						<HintIcon text={t('planning_groups.visa_hint', 'The visa type or route — e.g. Student, Work.')} /></label>
+					</label>
 					<input
 						id="pg-visa"
 						type="text"
@@ -176,7 +180,8 @@
 
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<div class="flex flex-col gap-1.5">
-					eld_window', 'Target departure window')}
+					<label for="pg-window" class="text-sm font-medium text-[var(--color-text)]">
+						{t('planning_groups.field_window', 'Target departure window')}
 					</label>
 					<input
 						id="pg-window"

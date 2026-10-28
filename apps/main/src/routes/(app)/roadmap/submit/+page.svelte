@@ -164,8 +164,7 @@
 				<label for="roadmap-title" class="text-sm font-medium text-[var(--color-text)]">
 					{t('roadmap.submit.field_title', 'Title')}
 					<span class="text-red-500" aria-hidden="true">*</span>
-				
-					<HintIcon text={t('roadmap.submit.title_hint', 'A short name for your request.')} /></label>
+				</label>
 				<input
 					id="roadmap-title"
 					type="text"
@@ -174,6 +173,7 @@
 					class={inputClass}
 					required
 				/>
+					<HintIcon text={t('roadmap.submit.title_hint', 'A short name for your request.')} />
 			</div>
 
 			<div class="flex flex-col gap-1.5">
@@ -193,8 +193,7 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="roadmap-summary" class="text-sm font-medium text-[var(--color-text)]">
 					{t('roadmap.submit.field_summary', 'Summary')}
-				
-					<HintIcon text={t('roadmap.submit.summary_hint', 'One or two sentences shown on the board card.')} /></label>
+				</label>
 				<textarea
 					id="roadmap-summary"
 					rows={2}
@@ -202,13 +201,13 @@
 					placeholder={t('roadmap.submit.field_summary_placeholder', 'One or two sentences shown on the board card')}
 					class={inputClass}
 				></textarea>
+					<HintIcon text={t('roadmap.submit.summary_hint', 'One or two sentences shown on the board card.')} />
 			</div>
 
 			<div class="flex flex-col gap-1.5">
 				<label for="roadmap-body" class="text-sm font-medium text-[var(--color-text)]">
 					{t('roadmap.submit.field_body', 'Details')}
-				
-					<HintIcon text={t('roadmap.submit.body_hint', 'Describe the feature, who it helps, and why it matters.')} /></label>
+				</label>
 				<textarea
 					id="roadmap-body"
 					rows={6}
@@ -216,6 +215,7 @@
 					placeholder={t('roadmap.submit.field_body_placeholder', 'Describe the feature, who it helps, and why it matters')}
 					class={inputClass}
 				></textarea>
+					<HintIcon text={t('roadmap.submit.body_hint', 'Describe the feature, who it helps, and why it matters.')} />
 			</div>
 
 			{#if errorKey}

@@ -93,8 +93,7 @@
 			oninput={(e) => form.set({ username: e.currentTarget.value })}
 		/>
 		<HintIcon id="account-username-hint" text={t('settings.account.username_hint', '3–30 characters — letters, numbers and underscores. This is your public handle.')} />
-	
-		<HintIcon id="account-theme-hint" text={t('settings.account.theme_hint', 'Applies immediately — System follows your device setting.')} /></label>
+	</label>
 	<div class="block">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.account.theme')}</span>
 		<AutocompleteSelect
@@ -103,6 +102,7 @@
 			ariaLabel={t('settings.account.theme')}
 			onValueChange={(v) => form.set({ theme: (v as ThemeName) || 'light' })}
 		/>
+		<HintIcon id="account-theme-hint" text={t('settings.account.theme_hint', 'Applies immediately — System follows your device setting.')} />
 	</div>
 
 	<!-- §07 Verification Requests: profile verification entry point. -->

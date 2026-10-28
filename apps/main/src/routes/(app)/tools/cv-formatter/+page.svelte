@@ -421,6 +421,7 @@
 							{#if fileError}
 								<p class="mt-2 text-sm text-[var(--color-error)]">{fileError}</p>
 							{/if}
+							<HintIcon text={t('cv_formatter.file_hint', 'Max 10 MB. Text is extracted on the server.')} />
 						</div>
 					{/if}
 

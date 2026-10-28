@@ -135,6 +135,7 @@
 			placeholder={t('ama.placeholder_intro', 'Introduce yourself and the kind of questions you can answer…')}
 			rows={5}
 		/>
+			<HintIcon text={t('ama.intro_hint', 'Your background and the topics you can answer — builds trust.')} />
 
 		<!-- Anonymous -->
 		<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">

@@ -2282,6 +2282,7 @@
 									{prefsSaved ? t('ai.tools.saved', 'Saved') : t('ai.tools.save_default', 'Use these as my defaults')}
 								</button>
 							{:else}
+								<HintIcon text={t('ai.tools.off_hint', 'Tools are off — messages are answered as plain chat.')} />
 							{/if}
 						</div>
 					{/if}

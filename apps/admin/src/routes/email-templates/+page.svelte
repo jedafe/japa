@@ -285,8 +285,8 @@
 				{t('email_templates.test_email', 'Test Email Address')}
 			
 			<HintIcon text={t('email_templates.et_test_email_hint', 'Where the test email is sent.')}  />
-
-			<HintIcon text={t('email_templates.test_email_hint', 'Where the test email is sent.')} /></label>
+</label>
+			<HintIcon text={t('email_templates.test_email_hint', 'Where the test email is sent.')} />
 			<input
 				id="et-test-email"
 				type="email"
@@ -402,8 +402,8 @@
 				{t('email_templates.subject', 'Subject')}
 			
 			<HintIcon text={t('email_templates.et_subject_hint', 'The email subject line recipients see.')}  />
-
-			<HintIcon text={t('email_templates.subject_hint', 'The email subject line recipients see.')} /></label>
+</label>
+			<HintIcon text={t('email_templates.subject_hint', 'The email subject line recipients see.')} />
 			<input
 				id="et-subject"
 				type="text"
@@ -418,8 +418,8 @@
 				{t('email_templates.body', 'Body (HTML)')}
 			
 			<HintIcon text={t('email_templates.et_body_hint', 'Email body HTML — test before publishing.')}  />
-
-			<HintIcon text={t('email_templates.body_hint', 'The main content body.')} /></label>
+</label>
+			<HintIcon text={t('email_templates.body_hint', 'The main content body.')} />
 			<Tabs
 				tabs={[
 					{ value: 'edit', label: t('email_templates.tab_edit', 'Edit') },
@@ -456,8 +456,8 @@
 				{t('email_templates.plain_text', 'Plain Text Body')}
 			
 			<HintIcon text={t('email_templates.et_plain_hint', 'Plain-text fallback for mail clients that block HTML.')}  />
-
-			<HintIcon text={t('email_templates.plain_hint', 'Plain-text fallback for mail clients that block HTML.')} /></label>
+</label>
+			<HintIcon text={t('email_templates.plain_hint', 'Plain-text fallback for mail clients that block HTML.')} />
 			<textarea
 				id="et-plain"
 				bind:value={value.plain_text_body}
@@ -479,8 +479,8 @@
 				{t('common.active', 'Active')}
 			
 			<HintIcon text={t('email_templates.et_active_hint', 'Inactive templates are not sent.')}  />
-
-			<HintIcon text={t('common.active_hint', 'Inactive records are hidden or disabled.')} /></label>
+</label>
+			<HintIcon text={t('common.active_hint', 'Inactive records are hidden or disabled.')} />
 		</div>
 
 		{#if editing && canManageTemplates}

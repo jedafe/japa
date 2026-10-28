@@ -611,6 +611,7 @@
 		title={t('personas.create_title', 'Create AI Personas')}
 	>
 		<div class="space-y-4">
+			<HintIcon text={t('personas.create_hint', 'Provision one or more AI personas. All personas in a batch are created in a single transaction.')} />
 			{#each newPersonas as persona, idx (idx)}
 				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
 					<div class="mb-2 flex items-center justify-between">
@@ -769,7 +770,8 @@
 							></textarea>
 							<HintIcon text={t('personas.action_budget_hint', 'Map of action type to max count per day.')} />
 						</div>
-						<div class="sm:col-span-r: var(--color-muted)">{t('personas.avoid_recent_authors', 'Avoid Recent Authors (comma-separated user IDs)')}</label>
+						<div class="sm:col-span-2">
+							<label for={`persona-avoid-recent-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.avoid_recent_authors', 'Avoid Recent Authors (comma-separated user IDs)')}</label>
 							<input
 								id={`persona-avoid-recent-${idx}`}
 								type="text"

@@ -74,6 +74,7 @@
 	<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 		{t('services.tier_items', 'Pricing tiers')}
 	</span>
+	<HintIcon text={t('services.tier_hint', 'Optional Good / Better / Best pricing — travellers pick a tier at booking. Rows render in this order.')} />
 	<div class="space-y-2">
 		{#each tiers as tier, idx (idx)}
 			<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">

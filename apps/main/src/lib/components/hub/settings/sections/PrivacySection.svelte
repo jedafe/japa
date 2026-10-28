@@ -65,6 +65,7 @@
 <SettingsSection titleKey="settings.nav.privacy" descKey="settings.privacy.desc" {form}>
 	<div class="mb-4">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.privacy.visibility')}</span>
+		<HintIcon text={t('settings.privacy.visibility_hint', 'Who can see your profile page and posts.')} />
 		<div class="flex flex-wrap gap-2">
 			{#each visibilityOptions as opt (opt.value)}
 				<button
@@ -82,7 +83,11 @@
 	</div>
 	<div class="mb-4">
 		<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.privacy.dm_privacy')}</span>
-		<HintIcon text={t('settings.privacy.dm_privacy_hint', 'Who can start a direct-message conversation wipe="button"
+		<HintIcon text={t('settings.privacy.dm_privacy_hint', 'Who can start a direct-message conversation with you.')} />
+		<div class="flex flex-wrap gap-2">
+			{#each dmPrivacyOptions as opt (opt.value)}
+				<button
+					type="button"
 					class="rounded-[var(--radius)] border px-3 py-1.5 text-sm {form.values.dm_privacy ===
 					opt.value
 						? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'

@@ -1379,8 +1379,7 @@
 					{t('app.media.field_alt_text', 'Alt Text')}
 				
 				<HintIcon text={t('media.edit_alt_hint', 'Alt text for accessibility.')}  />
-
-				<HintIcon text={t('app.media.alt_hint', 'Used by screen readers and SEO. Describe the image content.')} /></label>
+</label>
 				<textarea
 					id="edit-alt"
 					bind:value={editAltText}
@@ -1388,6 +1387,7 @@
 					placeholder={t('app.media.alt_placeholder', 'Accessibility description for screen readers...')}
 					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
 				></textarea>
+				<HintIcon text={t('app.media.alt_hint', 'Used by screen readers and SEO. Describe the image content.')} />
 			</div>
 		</div>
 		<div class="mt-4 flex justify-end gap-2">

@@ -553,6 +553,7 @@
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('page_builder.publish_confirm', 'Publish page')} <strong>{actionTarget.title}</strong>?
 		</p>
+		<HintIcon text={t('page_builder.publish_hint', 'This will make the page publicly visible.')} />
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showPublishConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
@@ -568,7 +569,10 @@
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('page_builder.archive_confirm', 'Archive page')} <strong>{actionTarget.title}</strong>?
 		</p>
-		<HintIcon text={t('page_builder.archive_hint', 'Archived pages are hidden from the public site.rchiveConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<HintIcon text={t('page_builder.archive_hint', 'Archived pages are hidden from the public site.')} />
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showArchiveConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={confirmArchive} disabled={acting}>
 			{acting ? t('common.saving', 'Saving...') : t('page_builder.archive', 'Archive')}
 		</Button>

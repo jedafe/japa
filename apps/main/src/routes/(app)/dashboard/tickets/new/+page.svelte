@@ -116,6 +116,7 @@
 						typeId = '';
 					}}
 				/>
+					<HintIcon text={t('tickets.type_hint', 'What kind of help you need — support, billing, bug.')} />
 			</div>
 		{/if}
 
@@ -172,7 +173,12 @@
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 			/>
 				<HintIcon text={t('tickets.email_hint', 'Optional — a different contact email for replies.')} />
-	d-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+		</div>
+
+		<div class="flex justify-end gap-2">
+			<a
+				href="/dashboard/tickets"
+				class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 			>
 				{t('tickets.cancel')}
 			</a>

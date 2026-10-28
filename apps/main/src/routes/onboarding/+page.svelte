@@ -379,13 +379,12 @@
 				</div>
 				<div class="space-y-4">
 					<div>
-						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-name">{t('onboarding.field_name', 'Your name')}
-						<HintIcon id="ob-name-hint" text={t('onboarding.name_hint', 'Your public display name — you can change it later.')} /></label>
+						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-name">{t('onboarding.field_name', 'Your name')}</label>
 						<input id="ob-name" bind:value={name} type="text" placeholder={t('onboarding.name_placeholder', 'e.g. Ada Lovelace')} aria-describedby="ob-name-hint" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />
+						<HintIcon id="ob-name-hint" text={t('onboarding.name_hint', 'Your public display name — you can change it later.')} />
 					</div>
 					<div>
-						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-status">{t('onboarding.field_japa_status', 'Where are you in your japa journey?')}
-						<HintIcon text={t('onboarding.status_hint', 'Your current stage — powers your personalized roadmap.')} /></label>
+						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-status">{t('onboarding.field_japa_status', 'Where are you in your japa journey?')}</label>
 						<AutocompleteSelect
 							id="ob-status"
 							bind:value={japaStatus}
@@ -397,6 +396,7 @@
 								}))
 							]}
 						/>
+						<HintIcon text={t('onboarding.status_hint', 'Your current stage — powers your personalized roadmap.')} />
 					</div>
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -422,8 +422,7 @@
 					</div>
 					{#if selectedCountry}
 						<div>
-							<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-state">{t('onboarding.field_state', 'State / Province')}
-								<HintIcon text={t('onboarding.state_hint', 'Your state or province.')} /></label>
+							<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-state">{t('onboarding.field_state', 'State / Province')}</label>
 							{#if loadingStates}
 								<p class="text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading...')}</p>
 							{:else if states.length > 0}
@@ -435,6 +434,7 @@
 										...states.map((s) => ({ value: s.id, label: s.name }))
 									]}
 								/>
+								<HintIcon text={t('onboarding.state_hint', 'Your state or province.')} />
 							{:else}
 								<p class="text-xs text-[var(--color-muted)]">{t('onboarding.no_states', 'No states available for this country')}</p>
 							{/if}
@@ -442,8 +442,7 @@
 					{/if}
 					{#if selectedState}
 						<div>
-							<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-city">{t('onboarding.field_city', 'City')}
-								<HintIcon text={t('onboarding.city_hint', 'Pick your city, or the closest one listed.')} /></label>
+							<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-city">{t('onboarding.field_city', 'City')}</label>
 							{#if loadingCities}
 								<p class="text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading...')}</p>
 							{:else if cities.length > 0}
@@ -455,15 +454,16 @@
 										...cities.map((c) => ({ value: c.id, label: c.name }))
 									]}
 								/>
+								<HintIcon text={t('onboarding.city_hint', 'Pick your city, or the closest one listed.')} />
 							{:else}
 								<p class="text-xs text-[var(--color-muted)]">{t('onboarding.no_cities', 'No cities available for this state')}</p>
 							{/if}
 						</div>
 					{/if}
 					<div>
-						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-location">{t('onboarding.field_location', 'Current location')}
-						<HintIcon id="ob-location-hint" text={t('onboarding.location_hint', 'Free text if your exact city is not listed above.')} /></label>
+						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-location">{t('onboarding.field_location', 'Current location')}</label>
 						<input id="ob-location" bind:value={currentLocation} type="text" placeholder={t('onboarding.location_placeholder', 'e.g. Lagos, Nigeria')} aria-describedby="ob-location-hint" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />
+						<HintIcon id="ob-location-hint" text={t('onboarding.location_hint', 'Free text if your exact city is not listed above.')} />
 					</div>
 				</div>
 			{/if}
@@ -484,10 +484,10 @@
 							onSelect={(item) => { destCountryCode = item.id; destination = item.label; }}
 							onClear={() => { destCountryCode = ''; destination = ''; }}
 						/>
+						<HintIcon text={t('onboarding.destination_hint', 'Where you plan to move — drives your tools, guides and feed.')} />
 					</div>
 					<div>
-						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-goal">{t('onboarding.field_goal', 'Primary goal')}
-						<HintIcon text={t('onboarding.goal_hint', 'The main reason for your move — work, study, family, and so on.')} /></label>
+						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-goal">{t('onboarding.field_goal', 'Primary goal')}</label>
 						<AutocompleteSelect
 							id="ob-goal"
 							bind:value={primaryGoal}
@@ -500,7 +500,13 @@
 							]}
 						/>
 						<HintIcon text={t('onboarding.goal_hint', 'The main reason for your move — work, study, family, and so on.')} />
-			l font-bold text-[var(--color-text)]">{t('onboarding.step3_title', 'What are you interested in?')}</h1>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Step 3: Interests/Tags -->
+			{#if currentStep === 3}
+				<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step3_title', 'What are you interested in?')}</h1>
 				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step3_subtitle', 'Select at least {n} topics to personalize your feed.').replace('{n}', String(minTags))}</p>
 				<div class="flex flex-wrap gap-2">
 					{#each data.tags as tag (tag.id)}

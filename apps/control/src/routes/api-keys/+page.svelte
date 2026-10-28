@@ -769,6 +769,7 @@
 						selectedId={null}
 						onSelect={(item) => { if (!createForm.scopes.includes(item.id)) createForm.scopes = [...createForm.scopes, item.id]; }}
 					/>
+					<HintIcon text={t('api_keys.scopes_hint')} />
 				</div>
 
 				<div>
@@ -788,15 +789,18 @@
 				<div>
 					<label for="create-expires" class="text-foreground block text-sm font-medium">
 						{t('api_keys.expires_at')}
-					
-					<HintIcon text={t('api_keys.expires_hint')} /></label>
+					</label>
 					<input
 						id="create-expires"
 						type="datetime-local"
 						bind:value={createForm.expires_at}
 						class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
-					<HintIcon text={t('api_keys.expires_hint')} /tify-end gap-3">
+					<HintIcon text={t('api_keys.expires_hint')} />
+				</div>
+			</div>
+
+			<div class="mt-6 flex justify-end gap-3">
 				<button
 					type="button"
 					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
@@ -918,7 +922,11 @@
 						selectedId={null}
 						onSelect={(item) => { if (!editForm.scopes.includes(item.id)) editForm.scopes = [...editForm.scopes, item.id]; }}
 					/>
-					<HintIcon text={t('api_keys.scopes_hint')} />class="text-foreground block text-sm font-medium">
+					<HintIcon text={t('api_keys.scopes_hint')} />
+				</div>
+
+				<div>
+					<label for="edit-tier" class="text-foreground block text-sm font-medium">
 						{t('api_keys.rate_limit_tier')}
 					</label>
 					<AutocompleteSelect

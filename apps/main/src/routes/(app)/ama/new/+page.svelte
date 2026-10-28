@@ -187,6 +187,7 @@
 			placeholder={t('ama.placeholder_intro', 'Introduce yourself and the kind of questions you can answer…')}
 			rows={5}
 		/>
+			<HintIcon text={t('ama.intro_hint', 'Your background and the topics you can answer — builds trust.')} />
 
 		<!-- Host profession + years abroad -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -210,10 +211,12 @@
 					{t('ama.field_years_abroad', 'Years abroad')}
 				
 				<HintIcon text={t('ama.years_hint', 'How many years you have lived abroad.')}  />
-
-				<HintIcon text={t('ama.years_hint', 'How many years you have lived abroad.')}  /></label>
+</label>
 				<input
-	}
+					id="host_years_abroad"
+					type="number"
+					min="0"
+					value={hostYearsAbroad}
 					oninput={(e) => (hostYearsAbroad = e.currentTarget.value)}
 					placeholder={t('ama.placeholder_years_abroad', 'e.g. 3')}
 					class={inputClass}

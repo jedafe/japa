@@ -183,6 +183,7 @@
 					aria-describedby="totp-code-hint"
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-center text-lg tracking-[0.5em] text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				/>
+				<HintIcon id="totp-code-hint" text={t('auth.totp.code_help')} />
 			</div>
 
 			<button
@@ -217,7 +218,12 @@
 					aria-describedby="totp-backup-hint"
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				/>
-				<HintIcon id="totp-backup-hint" text={t('auth.totp.backup_help')kupCooldown > 0}
+				<HintIcon id="totp-backup-hint" text={t('auth.totp.backup_help')} />
+			</div>
+
+			<button
+				type="submit"
+				disabled={loading || backupCooldown > 0}
 				class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
 			>
 				{#if backupCooldown > 0}

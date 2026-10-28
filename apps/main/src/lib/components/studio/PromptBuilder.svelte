@@ -157,6 +157,7 @@
 				values.guide_category = '';
 			}}
 		/>
+			<HintIcon text={t('studio.prompts.content_type_hint', 'The kind of content the AI should draft.')} />
 	</div>
 </div>
 
