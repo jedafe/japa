@@ -72,7 +72,8 @@
 <Modal bind:open onOpenChange={(isOpen) => { if (!isOpen) reset(); }} icon={Plus} title={t('create.series.create_title')} overlayClass="backdrop-blur-sm" size="max-w-[480px]">
 			<form onsubmit={submit} class="space-y-3">
 				<div>
-					<label for="series-title" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('create.series.title_label')}</label>
+					<label for="series-title" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('create.series.title_label')}
+					<HintIcon id="series-title-hint" text={t('create.series.title_hint', 'The public name of the series.')} /></label>
 					<input
 						id="series-title"
 						value={title}
@@ -82,11 +83,11 @@
 						disabled={submitting}
 						aria-describedby="series-title-hint"
 					/>
-					<HintIcon id="series-title-hint" text={t('create.series.title_hint', 'The public name of the series.')} />
 				</div>
 
 				<div>
-					<label for="series-slug" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('create.series.slug_label')}</label>
+					<label for="series-slug" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('create.series.slug_label')}
+					<HintIcon id="series-slug-hint" text={t('create.series.slug_hint', 'URL-safe identifier — auto-generated from the title.')} /></label>
 					<input
 						id="series-slug"
 						value={slug}
@@ -96,11 +97,11 @@
 						disabled={submitting}
 						aria-describedby="series-slug-hint"
 					/>
-					<HintIcon id="series-slug-hint" text={t('create.series.slug_hint', 'URL-safe identifier — auto-generated from the title.')} />
 				</div>
 
 				<div>
-					<label for="series-desc" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('create.series.description_label')}</label>
+					<label for="series-desc" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('create.series.description_label')}
+					<HintIcon id="series-desc-hint" text={t('create.series.desc_hint', 'Optional — what this series is about.')} /></label>
 					<input
 						id="series-desc"
 						value={description}
@@ -110,7 +111,6 @@
 						disabled={submitting}
 						aria-describedby="series-desc-hint"
 					/>
-					<HintIcon id="series-desc-hint" text={t('create.series.desc_hint', 'Optional — what this series is about.')} />
 				</div>
 
 				{#if error}

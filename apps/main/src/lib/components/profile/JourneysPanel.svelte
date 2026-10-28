@@ -238,7 +238,8 @@
 			<div class="flex flex-col gap-1.5">
 				<label for="j-dest" class="text-xs font-medium text-[var(--color-text)]">
 					{t('japa_stage.dest_country', 'Destination country')}
-				</label>
+				
+				<HintIcon text={t('journeys.dest_hint', 'Where you plan to move — drives guides and checklists.')} /></label>
 				<Autocomplete
 					placeholder={t('japa_stage.dest_placeholder', 'e.g. Canada')}
 					emptyMessage={t('common.no_results', 'No results found')}
@@ -249,14 +250,14 @@
 					onSelect={(item) => (jDest = item.id)}
 					onClear={() => (jDest = '')}
 				/>
-				<HintIcon text={t('journeys.dest_hint', 'Where you plan to move — drives guides and checklists.')} />
 			</div>
 
 			<div class="flex flex-col gap-1.5">
 				<label for="j-label" class="text-xs font-medium text-[var(--color-text)]">
 					{t('journeys.label', 'Label')}
 					<span class="font-normal text-[var(--color-text-subtle)]">({t('common.optional', 'optional')})</span>
-				</label>
+				
+				<HintIcon id="j-label-hint" text={t('journeys.label_hint', 'A name for this journey — e.g. a move, a trip, or an application.')} /></label>
 				<input
 					id="j-label"
 					type="text"
@@ -266,23 +267,22 @@
 					aria-describedby="j-label-hint"
 					maxlength="120"
 				/>
-				<HintIcon id="j-label-hint" text={t('journeys.label_hint', 'A name for this journey — e.g. a move, a trip, or an application.')} />
 			</div>
 
 			<div class="grid grid-cols-2 gap-3">
 				<div class="flex flex-col gap-1.5">
 					<label for="j-start" class="text-xs font-medium text-[var(--color-text)]">
 						{t('journeys.travel_start', 'Travel start')}
-					</label>
+					
+					<HintIcon id="j-start-hint" text={t('journeys.start_hint', 'When this trip or journey stage begins.')} /></label>
 					<input id="j-start" type="date" class={inputClass} bind:value={jStart} aria-describedby="j-start-hint" />
-					<HintIcon id="j-start-hint" text={t('journeys.start_hint', 'When this trip or journey stage begins.')} />
 				</div>
 				<div class="flex flex-col gap-1.5">
 					<label for="j-end" class="text-xs font-medium text-[var(--color-text)]">
 						{t('journeys.travel_end', 'Travel end')}
-					</label>
+					
+					<HintIcon id="j-end-hint" text={t('journeys.end_hint', 'Leave blank if the trip is ongoing.')} /></label>
 					<input id="j-end" type="date" class={inputClass} bind:value={jEnd} min={jStart || undefined} aria-describedby="j-end-hint" />
-					<HintIcon id="j-end-hint" text={t('journeys.end_hint', 'Leave blank if the trip is ongoing.')} />
 				</div>
 			</div>
 

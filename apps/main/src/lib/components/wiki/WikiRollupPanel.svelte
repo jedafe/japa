@@ -396,7 +396,8 @@
 													class="h-3.5 w-3.5 rounded border-[var(--color-border)]"
 												/>
 												{t('wiki.rollup_compare_row', 'Compare')}
-											</label>
+											
+						<HintIcon text={t('wiki.rollup_compare_hint', 'Pick 2–4 places to compare side by side.')} /></label>
 										{/if}
 									</td>
 								{/if}
@@ -406,7 +407,6 @@
 				</table>
 				{#if compareRows.length >= 2}
 					<div class="flex items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-2.5">
-						<HintIcon text={t('wiki.rollup_compare_hint', 'Pick 2–4 places to compare side by side.')} />
 						<a
 							href={compareHref || '/compare'}
 							aria-disabled={compareIds.length < 2}

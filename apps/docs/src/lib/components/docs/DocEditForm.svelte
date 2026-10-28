@@ -313,7 +313,6 @@
 		</button>
 		<a href={viewPath} class="ef-cancel">{t('editor.cancel', 'Cancel')}</a>
 		{#if demoteWarning}
-			<HintIcon text={t('edit.approved_demote_hint', 'Saving edits will return this page to review — its approval will be cleared.')} />
 		{/if}
 	</div>
 </form>

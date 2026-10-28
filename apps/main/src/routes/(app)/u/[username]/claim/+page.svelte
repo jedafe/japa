@@ -302,7 +302,8 @@
 				<div class="space-y-1">
 					<label for="evidence-url" class="text-sm font-medium text-[var(--color-text)]">
 						{t('video_claims.evidence_url', 'Evidence URL')}
-					</label>
+					
+					<HintIcon id="evidence-url-hint" text={t('video_claims.evidence_hint', 'A link proving your claim — e.g. your official site or profile.')} /></label>
 					<input
 						id="evidence-url"
 						type="url"
@@ -311,13 +312,13 @@
 						placeholder={t('video_claims.evidence_placeholder', 'https://example.com/evidence')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					/>
-					<HintIcon id="evidence-url-hint" text={t('video_claims.evidence_hint', 'A link proving your claim — e.g. your official site or profile.')} />
 				</div>
 
 				<div class="space-y-1">
 					<label for="notes" class="text-sm font-medium text-[var(--color-text)]">
 						{t('video_claims.notes', 'Notes')}
-					</label>
+					
+					<HintIcon id="notes-hint" text={t('video_claims.notes_hint', 'Explain why you are submitting this request — include any supporting details.')} /></label>
 					<textarea
 						id="notes"
 						bind:value={notes}
@@ -326,7 +327,6 @@
 						aria-describedby="notes-hint"
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					></textarea>
-					<HintIcon id="notes-hint" text={t('video_claims.notes_hint', 'Explain why you are submitting this request — include any supporting details.')} />
 				</div>
 
 				<button

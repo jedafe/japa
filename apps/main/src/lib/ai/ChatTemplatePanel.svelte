@@ -976,7 +976,6 @@
 							/>
 						{:else}
 							<input type="text" class="tpl-input" bind:value={values.content_type} />
-							<HintIcon text={t('ai.templates.content_type_hint', 'The content type this template generates.')} />
 						{/if}
 					</div>
 
@@ -1001,13 +1000,7 @@
 								}}
 								allowFreeText
 							/>
-								<HintIcon text={t('ai.templates.guide_cat_hint', 'Optional — the guide category to write for.')} />
-						</div>
-					{/if}
-
-					<div class:tpl-pair={hasVoiceField}>
-						<div class="tpl-field">
-							<span class="tpl-label">{t('studio.prompts.tone', 'Tone')}</span>
+								<HintIcon text={t('ai.templates.guide_cat_hint', 'Optional — the guide category to write for.')} />an class="tpl-label">{t('studio.prompts.tone', 'Tone')}</span>
 							<AutocompleteSelect
 								bind:value={values.tone}
 								options={toneOptions}

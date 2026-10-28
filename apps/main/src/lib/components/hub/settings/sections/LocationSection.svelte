@@ -598,7 +598,6 @@
 			{/if}
 		</div>
 
-		<HintIcon text={t('settings.location.origin_hint', 'Where you are from. Used to personalize content for your origin community.')} />
 		{#if originError}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{originError}</p>{/if}
 	</div>
 
@@ -622,12 +621,7 @@
 				<span class="absolute end-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
 			{/if}
 		</div>
-		<HintIcon text={t('settings.location.dest_hint', 'Where you are relocating to or planning to move. Used to surface relevant tools and guides.')} />
-		{#if destError}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{destError}</p>{/if}
-	</div>
-
-	<!-- Current Location -->
-	<div class="mt-6 border-t border-[var(--color-border)] pt-4">
+		<HintIcon text={t('settings.location.dest_hint', 'Where you are relocating to or planning to move. Used to surface relevant tools an<div class="mt-6 border-t border-[var(--color-border)] pt-4">
 		<span class="mb-2 flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
 			<MapPin size={14} /> {t('settings.location.current', 'Current location')}
 		</span>

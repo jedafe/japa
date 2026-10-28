@@ -299,7 +299,8 @@
 					<div>
 						<label for="np-category" class={labelClass}>
 							{t('deal.form.provider_category', 'Category')}
-						</label>
+						
+							<HintIcon text={t('deal.form.provider_category_hint', 'The category this provider operates in.')} /></label>
 						<Autocomplete
 							id="np-category"
 							freeText
@@ -312,7 +313,6 @@
 							onSelect={(i) => (np.category = i.id)}
 							onFreeTextBlur={(q) => (np.category = q)}
 						/>
-							<HintIcon text={t('deal.form.provider_category_hint', 'The category this provider operates in.')} />
 					</div>
 					<div>
 						<label for="np-base-url" class={labelClass}>
@@ -354,7 +354,8 @@
 		<div class="sm:col-span-2">
 			<label for="deal-title" class={labelClass}>
 				{t('deal.form.title', 'Title')} <span class="text-red-500">*</span>
-			</label>
+			
+				<HintIcon text={t('deal.form.title_hint', 'The deal headline users see — include the discount.')} /></label>
 			<input
 				id="deal-title"
 				type="text"
@@ -363,10 +364,10 @@
 				placeholder={t('deal.form.title_placeholder', 'e.g. 20% off airport transfers')}
 				class={inputClass}
 			/>
-				<HintIcon text={t('deal.form.title_hint', 'The deal headline users see — include the discount.')} />
 		</div>
 		<div>
-			<label for="deal-slug" class={labelClass}>{t('deal.form.slug', 'Slug')}</label>
+			<label for="deal-slug" class={labelClass}>{t('deal.form.slug', 'Slug')}
+			<HintIcon text={t('deal.form.slug_hint', 'URL-safe identifier — auto-generated from the title.')} /></label>
 			<input
 				id="deal-slug"
 				type="text"
@@ -374,10 +375,10 @@
 				oninput={onSlugInput}
 				class={inputClass}
 			/>
-			<HintIcon text={t('deal.form.slug_hint', 'URL-safe identifier — auto-generated from the title.')} />
 		</div>
 		<div>
-			<label for="deal-code" class={labelClass}>{t('deal.form.code', 'Coupon code')}</label>
+			<label for="deal-code" class={labelClass}>{t('deal.form.code', 'Coupon code')}
+			<HintIcon text={t('deal.form.code_hint', 'The code users enter at checkout — e.g. JAPA20.')} /></label>
 			<input
 				id="deal-code"
 				type="text"
@@ -385,7 +386,6 @@
 				placeholder={t('deal.form.code_placeholder', 'Optional — e.g. SAVE20')}
 				class={inputClass}
 			/>
-			<HintIcon text={t('deal.form.code_hint', 'The code users enter at checkout — e.g. JAPA20.')} />
 		</div>
 	</div>
 

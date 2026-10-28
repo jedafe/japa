@@ -404,7 +404,8 @@
 						<input id="sf-slug" type="text" bind:value={form.slug} class={inputClass} placeholder={t('intel.field_slug_placeholder', 'auto from name')} />
 					</div>
 					<div>
-						<label for="sf-kind" class={labelClass}>{t('intel.field_source_kind', 'Source Kind')}</label>
+						<label for="sf-kind" class={labelClass}>{t('intel.field_source_kind', 'Source Kind')}
+					<HintIcon text={t('intel.field_categories_hint', 'Every domain this source publishes — the first selection is stored as the primary category.')} /></label>
 						<AutocompleteSelect
 							id="sf-kind"
 							value={form.source_kind}
@@ -418,7 +419,6 @@
 
 				<div>
 					<span class={labelClass}>{t('intel.field_categories', 'Categories')}</span>
-					<HintIcon text={t('intel.field_categories_hint', 'Every domain this source publishes — the first selection is stored as the primary category.')} />
 					{#if categoryChecklist.length > 0}
 						<div class="mt-2 grid max-h-40 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto sm:grid-cols-3">
 							{#each categoryChecklist as c (c.value)}
@@ -472,7 +472,8 @@
 						/>
 					</div>
 					<div>
-						<label for="sf-method" class={labelClass}>{t('intel.field_crawl_method', 'Crawl Method')}</label>
+						<label for="sf-method" class={labelClass}>{t('intel.field_crawl_method', 'Crawl Method')}
+					<HintIcon text={t('intel.type_video_hint', 'Video platform URLs register as a channel subscription (video_channel) — the channel sync imports uploads as video content; crawl method/frequency are set to manual.')} /></label>
 						<AutocompleteSelect
 							id="sf-method"
 							value={form.crawl_method}
@@ -484,7 +485,6 @@
 				</div>
 
 				{#if form.source_type === 'video'}
-					<HintIcon text={t('intel.type_video_hint', 'Video platform URLs register as a channel subscription (video_channel) — the channel sync imports uploads as video content; crawl method/frequency are set to manual.')} />
 				{/if}
 
 				<div class="grid grid-cols-2 gap-4">
@@ -536,7 +536,6 @@
 				{#if entityTypeOptions.length > 0}
 					<div>
 						<span class={labelClass}>{t('intel.field_entity_types', 'Extraction domains (entity types)')}</span>
-						<HintIcon text={t('intel.field_entity_types_hint', 'Leave empty to extract under the category-derived type only. Check the domains a mixed source publishes to extract each of them.')} />
 						<div class="mt-2 grid max-h-40 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto">
 							{#each entityTypeOptions as et}
 								<label class="flex cursor-pointer items-center gap-2 text-sm">

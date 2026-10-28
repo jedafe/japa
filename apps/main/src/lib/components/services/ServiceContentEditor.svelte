@@ -283,7 +283,6 @@
 			<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('services.highlights_items', 'Highlights')}
 			</span>
-			<HintIcon text={t('services.highlights_hint', 'Checklist lines shown in the highlights card.')} />
 			<div class="space-y-2">
 				{#each highlights as line, idx (idx)}
 					<div class="flex items-center gap-2">
@@ -323,9 +322,7 @@
 				{t('services.audience_items', 'Who this is for')}
 			</span>
 			<HintIcon text={t('services.audience_hint', 'Checklist lines describing the ideal customer.')} />
-			<div class="space-y-2">
-				{#each audience as line, idx (idx)}
-					<div class="flex items-center gap-2">
+ gap-2">
 						<input
 							type="text"
 							value={line}

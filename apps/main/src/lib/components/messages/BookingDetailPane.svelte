@@ -669,7 +669,6 @@
 </Modal>
 
 <Modal bind:open={declineOpen} title={t('bookings.decline_title', 'Decline request')} size="md">
-	<HintIcon text={t('bookings.respond_note_hint', 'Add an optional note for the other person.')} />
 	<textarea
 		bind:value={declineNote}
 		rows="3"
@@ -699,11 +698,7 @@
 	title={t('bookings.cancel_mentorship', 'Cancel mentorship')}
 	size="md"
 >
-	<HintIcon text={t('bookings.respond_note_hint', 'Add an optional note for the other person.')} />
-	<textarea
-		bind:value={cancelNote}
-		rows="3"
-		class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+	<HintIcon text={t('bookings.respond_note_hint', 'Add an optional note for the other person.')} />r border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 		placeholder={t('bookings.respond_note_ph', 'Note (optional)')}
 	></textarea>
 	<div class="mt-3 flex justify-end gap-2">

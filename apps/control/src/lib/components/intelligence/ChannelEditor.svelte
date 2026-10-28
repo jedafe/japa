@@ -338,7 +338,6 @@
 				{#if entityTypeOptions.length > 0}
 					<div>
 						<span class={labelClass}>{t('intel.field_entity_types', 'Entity types')}</span>
-						<HintIcon text={t('intel.channel_entity_types_hint', 'Schemas that validate records from this channel — required for extract and curate pipelines.')} />
 						<div class="mt-2 grid max-h-40 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto sm:grid-cols-3">
 							{#each entityTypeOptions as et (et)}
 								<label class="flex cursor-pointer items-center gap-2 text-sm">
@@ -369,12 +368,7 @@
 						<p class="text-destructive mt-1 text-xs">{jsonError}</p>
 					{:else}
 						<HintIcon text={t('intel.channel_provider_config_hint', 'Optional per-method config (selectors, endpoints, headers). Leave empty for defaults.')} />
-					{/if}
-				</div>
-
-				<div class="grid grid-cols-1 gap-4">
-					<div>
-						<label for="ce-relevance" class={labelClass}>{t('intel.channel_relevance_mode', 'Relevance mode')}</label>
+			', 'Relevance mode')}</label>
 						<AutocompleteSelect
 							id="ce-relevance"
 							value={form.relevance_mode}
@@ -417,18 +411,8 @@
 					<HintIcon text={t('intel.channel_relevance_cache_hint', 'Verdicts are cached for 7 days — saved topic changes apply to newly crawled items.')} />
 				{/if}
 
-				<div class="flex items-center gap-6">
-					<label class="flex cursor-pointer items-center gap-2 text-sm">
-						<input type="checkbox" bind:checked={form.enabled} class="border-border-input bg-background size-3.5 rounded-sm accent-accent-foreground" />
-						{t('intel.field_enabled', 'Enabled')}
-					</label>
-				</div>
-			</form>
-
-			<div class="mt-6 flex justify-end gap-3">
-				<button
-					type="button"
-					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
+				<die="checkbox" bind:checked={form.enabled} class="border-border-input bg-background size-3.5 rounded-sm accent-accent-foreground" />
+						{t('intass="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
 					onclick={close}
 				>
 					{t('common.cancel', 'Cancel')}

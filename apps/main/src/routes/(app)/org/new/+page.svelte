@@ -128,7 +128,8 @@
 				<div>
 					<label for="name" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('organizations.new.field_name', 'Name')}
-					</label>
+					
+						<HintIcon text={t('organizations.new.name_hint', 'The public name of your organization.')} /></label>
 					<input
 						id="name"
 						name="name"
@@ -139,13 +140,13 @@
 						placeholder={t('organizations.new.name_placeholder', 'Organization name')}
 						class={inputClass}
 					/>
-						<HintIcon text={t('organizations.new.name_hint', 'The public name of your organization.')} />
 				</div>
 
 				<div>
 					<label for="slug" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('organizations.new.field_slug', 'Slug')}
-					</label>
+					
+					<HintIcon text={t('organizations.new.slug_hint', 'Used in the URL: /org/your-slug')} /></label>
 					<input
 						id="slug"
 						name="slug"
@@ -156,13 +157,13 @@
 						placeholder={t('organizations.new.slug_placeholder', 'organization-slug')}
 						class={inputClass}
 					/>
-					<HintIcon text={t('organizations.new.slug_hint', 'Used in the URL: /org/your-slug')} />
 				</div>
 
 				<div>
 					<label for="tagline" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('organizations.new.field_tagline', 'Tagline')}
-					</label>
+					
+						<HintIcon text={t('organizations.new.tagline_hint', 'One line — what the organization does.')} /></label>
 					<input
 						id="tagline"
 						name="tagline"
@@ -171,13 +172,13 @@
 						placeholder={t('organizations.new.tagline_placeholder', 'A short tagline')}
 						class={inputClass}
 					/>
-						<HintIcon text={t('organizations.new.tagline_hint', 'One line — what the organization does.')} />
 				</div>
 
 				<div>
 					<label for="description" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('organizations.new.field_description', 'Description')}
-					</label>
+					
+						<HintIcon text={t('organizations.new.desc_hint', 'Describe the organization, services and audience.')} /></label>
 					<textarea
 						id="description"
 						name="description"
@@ -186,7 +187,6 @@
 						placeholder={t('organizations.new.description_placeholder', 'Describe the organization…')}
 						class={inputClass}
 					></textarea>
-						<HintIcon text={t('organizations.new.desc_hint', 'Describe the organization, services and audience.')} />
 				</div>
 
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -220,7 +220,6 @@
 							onSelect={(item) => { countryCode = item.id; }}
 							onClear={() => { countryCode = ''; }}
 						/>
-							<HintIcon text={t('organizations.new.country_hint', 'Where the organization is based.')} />
 					</div>
 				</div>
 

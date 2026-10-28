@@ -64,7 +64,6 @@
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				aria-describedby="message-body-hint"
 			></textarea>
-			<HintIcon id="message-body-hint" text={t('services.message_hint', 'Introduce yourself and say what you need — max 2,000 characters.')} />
 			{#if sendError}
 				<p role="alert" class="text-sm text-[var(--color-danger)]">{sendError}</p>
 			{/if}

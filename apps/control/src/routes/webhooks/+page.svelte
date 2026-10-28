@@ -409,7 +409,8 @@
 						{t('webhooks.url', 'URL')}
 					
 					<HintIcon text={t('webhooks.url_hint', 'The URL that receives event payloads — must be HTTPS.')}  />
-</label>
+
+					<HintIcon text={t('webhooks.url_hint', 'The endpoint that will receive event deliveries.')} /></label>
 					<input
 						id="webhook-url"
 						type="url"
@@ -417,19 +418,18 @@
 						class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 						placeholder="https://example.com/webhook"
 					/>
-					<HintIcon text={t('webhooks.url_hint', 'The endpoint that will receive event deliveries.')} />
 				</div>
 				<div>
 					<label for="webhook-events" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.events', 'Events')}
 					
 					<HintIcon text={t('webhooks.events_hint', 'Which events trigger this webhook.')}  />
-</label>
+
+					<HintIcon text={t('webhooks.events_hint', 'Select the events to subscribe to.')} /></label>
 					<WebhookEventMultiSelect
 						value={form.event_types}
 						onchange={(next) => (form.event_types = next)}
 					/>
-					<HintIcon text={t('webhooks.events_hint', 'Select the events to subscribe to.')} />
 				</div>
 				<div class="rounded-9px border border-border-input p-3 text-xs text-muted-foreground">
 					{t('webhooks.secret_hint', 'The signing secret is generated automatically on creation and shown once. To rotate, delete and recreate the webhook.')}

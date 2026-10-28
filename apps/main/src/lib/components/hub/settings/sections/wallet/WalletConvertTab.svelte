@@ -92,7 +92,8 @@
 		<div>
 			<label for="convert-amount" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('wallet.convert.amount', 'Points to convert')}
-			</label>
+			
+			<HintIcon id="convert-amount-hint" text={t('wallet.convert.amount_hint', 'Points convert to wallet credits at the current rate, shown below.')} /></label>
 			<input
 				id="convert-amount"
 				type="number"
@@ -103,7 +104,6 @@
 				aria-describedby="convert-amount-hint"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 			/>
-			<HintIcon id="convert-amount-hint" text={t('wallet.convert.amount_hint', 'Points convert to wallet credits at the current rate, shown below.')} />
 		</div>
 
 		{#if estimatedCredits() > 0}

@@ -585,17 +585,13 @@
 							placeholder={t('academy.review_rating')}
 							class="mb-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 						/>
-							<HintIcon text={t('academy.review_title_hint', 'A short headline for your review — optional.')} />
 						<textarea
 							bind:value={reviewBody}
 							rows={3}
 							placeholder={t('academy.review_body')}
 							class="mb-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 						></textarea>
-							<HintIcon text={t('academy.review_body_hint', 'Share what was useful or missing — helps other learners.')} />
-						{#if reviewError}
-							<p class="mb-2 text-xs text-[var(--color-destructive)]">{reviewError}</p>
-						{/if}
+							<HintIcon text={t('academy.review_body_hint', 'Share what was useful or missing — helps other lear						{/if}
 						{#if reviewSuccess}
 							<p class="mb-2 text-xs text-[var(--color-success)]">{t('academy.review_submitted')}</p>
 						{/if}

@@ -213,7 +213,8 @@
 				{t('academy.track_slug_label')}
 			
 			<HintIcon text={t('academy.slug_hint', 'URL-safe identifier — auto-generated from the title.')}  />
-</label>
+
+			<HintIcon text={t('academy.track_slug_hint')} /></label>
 			<input
 				id="slug"
 				type="text"
@@ -223,7 +224,6 @@
 				placeholder={t('academy.slug_placeholder', 'mastering-go-for-backend-engineers')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
-			<HintIcon text={t('academy.track_slug_hint')} />
 		</div>
 
 		<!-- Description (optional) -->
@@ -282,7 +282,8 @@
 		<div>
 			<label for="country" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_country_label', 'Country / primary market')}
-			</label>
+			
+			<HintIcon text={t('academy.track_country_hint', 'Select the country this track is primarily for. This defaults the currency.')} /></label>
 			<Autocomplete
 				id="country"
 				placeholder={t('academy.track_country_placeholder', 'Search countries…')}
@@ -294,7 +295,6 @@
 				onSelect={onSelectCountry}
 				onClear={onClearCountry}
 			/>
-			<HintIcon text={t('academy.track_country_hint', 'Select the country this track is primarily for. This defaults the currency.')} />
 		</div>
 
 		<!-- Currency (auto-filled from selected country; editable override) -->

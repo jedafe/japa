@@ -135,7 +135,8 @@
 
 		<!-- Space selector -->
 		<div>
-			<label for="space_id" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">{t('create.label.space', 'Space')}</label>
+			<label for="space_id" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">{t('create.label.space', 'Space')}
+				<HintIcon text={t('forum.new.space_hint', 'The community this post belongs to.')} /></label>
 			<Autocomplete
 				placeholder={t('create.placeholder.space', 'Select a space…')}
 				emptyMessage={t('common.no_results', 'No results found')}
@@ -146,7 +147,6 @@
 				onSelect={(item) => (spaceId = item.id)}
 				onClear={() => (spaceId = '')}
 			/>
-				<HintIcon text={t('forum.new.space_hint', 'The community this post belongs to.')} />
 			<input type="hidden" name="space_id" value={spaceId} />
 		</div>
 
@@ -162,7 +162,8 @@
 
 		<!-- Title -->
 		<div>
-			<label for="title" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">{t('forum.new.label_title', 'Title')}</label>
+			<label for="title" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">{t('forum.new.label_title', 'Title')}
+				<HintIcon text={t('forum.new.title_hint', 'A clear, specific title gets better answers.')} /></label>
 			<input
 				id="title"
 				name="title"
@@ -172,7 +173,6 @@
 				maxlength="120"
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
-				<HintIcon text={t('forum.new.title_hint', 'A clear, specific title gets better answers.')} />
 			{#if title}
 				<p class="mt-1 text-xs text-[var(--color-muted)]">/forum/{titleSlug}</p>
 			{/if}

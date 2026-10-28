@@ -415,9 +415,9 @@
 			<textarea id="form-create-success-msg" rows="2" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('forms.success_message_placeholder', 'e.g., Thank you for your submission!')} bind:value={createSuccessMessage}></textarea>
 		</div>
 		<div>
-			<label for="form-create-fee-credits" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fee_credits', 'Submission Fee (credits)')}</label>
+			<label for="form-create-fee-credits" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fee_credits', 'Submission Fee (credits)')}
+			<HintIcon text={t('forms.fee_credits_hint', '0 = free submission')} /></label>
 			<input id="form-create-fee-credits" type="number" min="0" step="1" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={createSubmissionFeeCredits} />
-			<HintIcon text={t('forms.fee_credits_hint', '0 = free submission')} />
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="form-create-active" type="checkbox" bind:checked={createIsActive} class="rounded" />
@@ -425,10 +425,10 @@
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="form-create-multi-step" type="checkbox" bind:checked={createIsMultiStep} class="rounded" />
-			<label for="form-create-multi-step" class="text-sm text-foreground-alt">{t('forms.multi_step_label', 'Multi-step form')}</label>
+			<label for="form-create-multi-step" class="text-sm text-foreground-alt">{t('forms.multi_step_label', 'Multi-step form')}
+			<HintIcon text={t('forms.multi_step_hint', 'After creating the form, add steps on the form detail page, then add fields to each step.')} /></label>
 		</div>
 		{#if createIsMultiStep}
-			<HintIcon text={t('forms.multi_step_hint', 'After creating the form, add steps on the form detail page, then add fields to each step.')} />
 		{/if}
 	</div>
 	{#snippet footer()}
@@ -462,9 +462,9 @@
 				<textarea id="form-edit-success-msg" rows="2" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editSuccessMessage}></textarea>
 			</div>
 			<div>
-				<label for="form-edit-fee-credits" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fee_credits', 'Submission Fee (credits)')}</label>
+				<label for="form-edit-fee-credits" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fee_credits', 'Submission Fee (credits)')}
+				<HintIcon text={t('forms.fee_credits_hint', '0 = free submission')} /></label>
 				<input id="form-edit-fee-credits" type="number" min="0" step="1" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editSubmissionFeeCredits} />
-				<HintIcon text={t('forms.fee_credits_hint', '0 = free submission')} />
 			</div>
 			<div class="flex items-center gap-2">
 				<input id="form-edit-active" type="checkbox" bind:checked={editIsActive} class="rounded" />

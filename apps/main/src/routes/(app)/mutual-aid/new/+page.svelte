@@ -277,7 +277,6 @@
 				placeholder={t('mutual_aid.field_description_placeholder', 'Provide details about your request or offer…')}
 				rows={6}
 			/>
-				<HintIcon text={t('mutual_aid.desc_hint', 'Details: what, where, when, and how to reach you.')} />
 
 			<!-- Submit -->
 			<div class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-4">

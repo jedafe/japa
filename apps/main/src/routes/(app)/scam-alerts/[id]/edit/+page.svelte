@@ -285,7 +285,6 @@
 			placeholder={t('scam_alerts.placeholder_description', 'Describe what happened, how the scam worked, and any warning signs…')}
 			rows={6}
 		/>
-			<HintIcon text={t('scam_alerts.desc_hint', 'Describe what happened, how it worked, and warning signs.')} />
 
 		<!-- Reported to authorities -->
 		<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">

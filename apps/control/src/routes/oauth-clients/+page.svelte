@@ -378,9 +378,9 @@
 				<div>
 					<label for="oauth-client-secret" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_secret_label', 'Client Secret')}
 					<HintIcon text={t('oauth_clients.client_secret_hint', 'Stored encrypted — never shown again.')}  />
-</label>
+
+					<HintIcon text={t('oauth_clients.client_secret_hint', 'Used to authenticate with the OAuth provider. Stored encrypted. Revealed once after creation.')} /></label>
 					<input id="oauth-client-secret" type="password" bind:value={createClientSecret} required autocomplete="new-password" class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="GOCSPX-xxxxxxxxxxxxx" />
-					<HintIcon text={t('oauth_clients.client_secret_hint', 'Used to authenticate with the OAuth provider. Stored encrypted. Revealed once after creation.')} />
 				</div>
 				<div>
 					<label for="oauth-redirect" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.redirect_uri_label', 'Redirect URI')}

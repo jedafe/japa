@@ -608,7 +608,8 @@
 					</div>
 				{:else if assistAction === 'summarize'}
 					<div class="flex flex-col gap-1">
-						<label class="text-xs text-[var(--color-muted)]" for="ai-assist-max-words">{t('ai.assist.max_words', 'Max words')}</label>
+						<label class="text-xs text-[var(--color-muted)]" for="ai-assist-max-words">{t('ai.assist.max_words', 'Max words')}
+						<HintIcon text={t('ai.assist.summarize_hint', 'The result is applied to the meta description field.')} /></label>
 						<input
 							id="ai-assist-max-words"
 							type="number"
@@ -616,7 +617,6 @@
 							bind:value={assistMaxWords}
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 						/>
-						<HintIcon text={t('ai.assist.summarize_hint', 'The result is applied to the meta description field.')} />
 					</div>
 				{:else if assistAction === 'translate'}
 					<div class="flex flex-col gap-1">

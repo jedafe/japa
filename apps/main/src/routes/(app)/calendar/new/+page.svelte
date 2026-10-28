@@ -287,7 +287,6 @@
 				placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
 				rows={5}
 			/>
-				<HintIcon text={t('calendar.new.desc_hint', 'What people need to know — links and deadlines help.')} />
 
 			<!-- Dates -->
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -304,9 +303,9 @@
 						{t('calendar.new.label_ends_at', 'Ends (optional)')}
 					
 					<HintIcon text={t('calendar.new.ends_hint', 'Optional — when the event ends.')}  />
-</label>
-					<input id="ends_at" type="datetime-local" bind:value={endsAt} class={inputClass} />
-				</div>
+
+					<HintIcon text={t('calendar.new.ends_hint', 'Optional — when the event ends.')}  /></label>
+					<inp>
 			</div>
 
 			<!-- Recurrence -->
@@ -314,7 +313,8 @@
 				<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text)]">
 					<input type="checkbox" bind:checked={isRecurring} class="h-4 w-4 accent-[var(--color-primary)]" />
 					{t('calendar.new.label_recurring', 'Recurring event')}
-				</label>
+				
+						<HintIcon text={t('calendar.new.recurrence_hint', 'How often it repeats — e.g. annual, monthly.')} /></label>
 				{#if isRecurring}
 					<input
 						type="text"
@@ -322,22 +322,10 @@
 						placeholder={t('calendar.new.placeholder_recurrence', 'e.g. annual')}
 						class={inputClass}
 					/>
-						<HintIcon text={t('calendar.new.recurrence_hint', 'How often it repeats — e.g. annual, monthly.')} />
-				{/if}
-			</div>
-
-			<!-- Source URL (REQUIRED) -->
-			<div>
-				<label for="source_url" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
+						<HintIcon text={t('calendar.new.recurrence_hint', 'How often it repeats — e.g. annual, monthly.')} />lock text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_source', 'Official source URL')} <span class="text-red-500" aria-hidden="true">*</span>
 				
-				<HintIcon text={t('calendar.new.source_hint', 'Link to the official announcement — required for verification.')}  />
-</label>
-				<input
-					id="source_url"
-					type="url"
-					bind:value={sourceUrl}
-					placeholder={t('calendar.new.placeholder_source', 'https://official-source.example/…')}
+				<HintIcon text={t('calendar.new.source_hint', 'Link to the official announcement — required for verificalendar.new.placeholder_source', 'https://official-source.example/…')}
 					class={inputClass}
 				/>
 				<p class="mt-1 text-xs text-[var(--color-muted)]">

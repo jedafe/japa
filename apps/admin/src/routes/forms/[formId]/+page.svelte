@@ -846,7 +846,8 @@
 						</div>
 					</div>
 					<div>
-						<label for="form-fee-credits" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fee_credits', 'Submission Fee (credits)')}</label>
+						<label for="form-fee-credits" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fee_credits', 'Submission Fee (credits)')}
+						<HintIcon text={t('forms.fee_credits_hint', '0 = free submission')} /></label>
 						<input
 							id="form-fee-credits"
 							type="number"
@@ -855,7 +856,6 @@
 							class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 							bind:value={editSubmissionFeeCredits}
 						/>
-						<HintIcon text={t('forms.fee_credits_hint', '0 = free submission')} />
 					</div>
 					<div class="flex items-center gap-2">
 						<input id="form-active" type="checkbox" bind:checked={editIsActive} class="rounded" />

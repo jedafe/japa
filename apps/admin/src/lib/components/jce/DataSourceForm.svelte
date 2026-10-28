@@ -184,7 +184,6 @@
 		{#if validation.entity_id}
 			<p class="mt-1 text-xs" style="color: var(--color-danger)">{validation.entity_id}</p>
 		{:else}
-			<HintIcon text={t('data_sources.entity_id_hint', 'Optional UUID of an entity this source applies to')} />
 		{/if}
 	</div>
 
@@ -206,4 +205,4 @@
 			<HintIcon text={t('data_sources.config_hint', 'Optional JSON configuration object')} />
 		{/if}
 	</div>
-</div>
+<

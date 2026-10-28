@@ -180,7 +180,6 @@
 			placeholder={t('achievements.body_placeholder', 'Share your journey…')}
 			rows={6}
 		/>
-			<HintIcon text={t('achievements.body_hint', 'Tell the story — what happened and what it means to you.')} />
 
 		<div class="flex flex-col gap-1.5">
 			<label for="milestone_type" class="text-sm font-medium text-[var(--color-text)]">
@@ -204,10 +203,8 @@
 					<span class="text-red-500" aria-hidden="true">*</span>
 				
 				<HintIcon text={t('achievements.destination_hint', 'The country this achievement is about.')}  />
-</label>
-				<Autocomplete
-					placeholder={t('achievements.destination_placeholder', 'e.g. Canada')}
-					emptyMessage={t('common.no_results', 'No results found')}
+
+				<HintIcon text={t('achievements.destination_hint', 'The country this achievement is about.')}  /></label>ptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchDestinationCountries}
 					initialFetcher={fetchDestinationCountriesInitial}
 					selectedId={destinationSpaceId || null}
@@ -221,10 +218,10 @@
 					{t('achievements.field_origin', 'Origin country')}
 				
 				<HintIcon text={t('achievements.origin_hint', 'Where you started from.')}  />
-</label>
+
+				<HintIcon text={t('achievements.origin_hint', 'Where you started from.')}  /></label>
 				<Autocomplete
-					placeholder={t('achievements.origin_placeholder', 'e.g. Nigeria')}
-					emptyMessage={t('common.no_results', 'No results found')}
+	essage={t('common.no_results', 'No results found')}
 					fetcher={fetchOriginCountries}
 					initialFetcher={fetchOriginCountriesInitial}
 					selectedId={originSpaceId || null}

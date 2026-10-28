@@ -1593,14 +1593,14 @@
 					/>
 				</div>
 				<div>
-					<label for="page-description" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.description', 'Description')}</label>
+					<label for="page-description" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.description', 'Description')}
+					<HintIcon text={t('page_builder.description_hint', 'Used as the meta description on the published page.')} /></label>
 					<textarea id="page-description" rows="2" bind:value={pageDescription} oninput={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"></textarea>
-					<HintIcon text={t('page_builder.description_hint', 'Used as the meta description on the published page.')} />
 				</div>
 				<div>
-					<label for="page-seo-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.seo_title', 'SEO title')}</label>
+					<label for="page-seo-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.seo_title', 'SEO title')}
+					<HintIcon text={t('page_builder.seo_title_hint', 'Overrides the browser/OG title (stored in meta.title).')} /></label>
 					<input id="page-seo-title" type="text" bind:value={seoTitle} oninput={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" placeholder={pageTitle} />
-					<HintIcon text={t('page_builder.seo_title_hint', 'Overrides the browser/OG title (stored in meta.title).')} />
 				</div>
 			</div>
 			<div class="mt-4 flex justify-end gap-2">

@@ -211,7 +211,6 @@
 				placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
 				rows={5}
 			/>
-				<HintIcon text={t('calendar.new.desc_hint', 'What people need to know — links and deadlines help.')} />
 
 			<!-- Category -->
 			<div>
@@ -235,9 +234,8 @@
 						{t('calendar.new.label_destination', 'Destination country')}
 					
 					<HintIcon text={t('calendar.new.destination_hint', 'The country this event applies to.')}  />
-</label>
-					<Autocomplete
-						placeholder={t('calendar.new.placeholder_destination', 'Select a country')}
+
+					<HintIcon text={t('calendar.new.destination_hint', 'The country this event applies to.')}  /></label>)}
 						emptyMessage={t('common.no_results', 'No results found')}
 						fetcher={fetchDestinationCountries}
 						initialFetcher={fetchDestinationCountriesInitial}
@@ -286,12 +284,9 @@
 						{t('calendar.new.label_ends_at', 'Ends (optional)')}
 					
 					<HintIcon text={t('calendar.new.ends_hint', 'Optional — when the event ends.')}  />
-</label>
-					<input
-						id="ends_at"
-						type="datetime-local"
-						bind:value={endsAt}
-						class={inputClass}
+
+					<HintIcon text={t('calendar.new.ends_hint', 'Optional — when the event ends.')}  /></label>
+					<inpinputClass}
 					/>
 				</div>
 			</div>

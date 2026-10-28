@@ -109,7 +109,6 @@
 		<h2 class="mb-3 text-sm font-semibold tracking-wide text-[var(--color-muted)] uppercase">
 			{t('rss.section.topics', 'Topic feeds')}
 		</h2>
-		<HintIcon text={t('rss.section.topics_hint', 'One feed per content type — subscribe to just what you follow.')} />
 		<div class="flex flex-col gap-2">
 			{#each typeFeeds as feed (feed.path)}
 				{@render feedRow(feed)}
@@ -143,10 +142,7 @@
 			{t('rss.section.spaces', 'Space feeds')}
 		</h2>
 		<HintIcon text={t('rss.section.spaces_hint', 'Every public space has a feed at /spaces/{space}/feed.xml.')} />
-		{#if data.spaces.length > 0}
-			<div class="flex flex-col gap-2">
-				{#each data.spaces as space (space.slug)}
-					{@render feedRow({ name: space.name, desc: '', path: `/spaces/${space.slug}/feed.xml` })}
+		{			{@render feedRow({ name: space.name, desc: '', path: `/spaces/${space.slug}/feed.xml` })}
 				{/each}
 			</div>
 			<a href="/spaces" class="mt-3 inline-block text-sm font-medium text-[var(--color-primary)] hover:underline">
@@ -166,10 +162,7 @@
 		{#if data.tags.length > 0}
 			<div class="flex flex-col gap-2">
 				{#each data.tags as tag (tag.slug)}
-					{@render feedRow({ name: `#${tag.name}`, desc: '', path: `/tags/${tag.slug}/feed.xml` })}
-				{/each}
-			</div>
-			<a href="/tags" class="mt-3 inline-block text-sm font-medium text-[var(--color-primary)] hover:underline">
+					{@render feedRow({ nhref="/tags" class="mt-3 inline-block text-sm font-medium text-[var(--color-primary)] hover:underline">
 				{t('rss.section.browse_tags', 'Browse all tags →')}
 			</a>
 		{:else if !data.loadError}

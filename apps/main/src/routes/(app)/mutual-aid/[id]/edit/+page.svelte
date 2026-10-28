@@ -144,7 +144,6 @@
 			placeholder={t('mutual_aid.field_description_placeholder', 'Provide details about your request or offer…')}
 			rows={6}
 		/>
-			<HintIcon text={t('mutual_aid.desc_hint', 'Details: what, where, when, and how to reach you.')} />
 
 		<!-- Destination country (read-only — destination cannot be changed
 		     after creation; the backend UpdatePostRequest only accepts
@@ -172,13 +171,9 @@
 				{t('mutual_aid.field_city', 'City')}
 			
 			<HintIcon text={t('mutual_aid.city_hint', 'Optional — the city this applies to.')}  />
-</label>
-			<input
-				id="city"
-				type="text"
-				value={post.city_space_name ?? ''}
-				disabled
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
+
+			<HintIcon text={t('mutual_aid.city_hint', 'Optional — the city this applies to.')}  /></label>
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
 			/>
 		</div>
 

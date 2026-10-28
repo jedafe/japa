@@ -617,7 +617,6 @@
 				{STATUS_OPTIONS.find((s) => s.value === row.status)?.label ?? row.status}
 			</p>
 			{#if row.feature_flag_key}
-				<HintIcon text={t('roadmap.status_derived_hint', 'Status is derived from the linked feature flag — change the flag’s phase to move it.')} />
 			{/if}
 		</div>
 		{#if row.summary}

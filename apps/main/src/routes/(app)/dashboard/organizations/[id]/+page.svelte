@@ -594,7 +594,6 @@
 			<UserCheck class="h-4 w-4" />
 			{t('org_admin.add_member_section', 'Add member')}
 		</h2>
-		<HintIcon text={t('org_admin.add_member_hint', 'Add an existing {site} user directly by username.')} />
 		{#if addErrorKey}
 			<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{t(addErrorKey)}</p>
 		{/if}
@@ -603,9 +602,8 @@
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.add_member_username', 'Username')}</span>
 				<input class={inputClass} type="text" bind:value={addUsername} placeholder="@username" required />
 				<HintIcon text={t('organizations.username_hint', 'The member username — e.g. @jane.')} />
-			</label>
-			<label class="flex flex-col gap-1.5">
-				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>
+			
+				<HintIcon text={t('organizations.username_hint', 'The member username — e.g. @jane.')} /></label>or-text)]">{t('org_admin.invite_role', 'Role')}</span>
 				<AutocompleteSelect
 					bind:value={addRole}
 					options={(data.orgMeta?.member_roles ?? []).filter((r) => r.value !== 'owner')}

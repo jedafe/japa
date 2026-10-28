@@ -113,7 +113,6 @@
 			aria-describedby={errors.email ? 'login-email-hint login-email-error' : 'login-email-hint'}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
-		<HintIcon id="login-email-hint" text={t('auth.fields.email_hint', 'The email address on your account.')} />
 		{#if errors.email}<p id="login-email-error" class="text-sm text-red-500">{t(errors.email)}</p>{/if}
 	</div>
 

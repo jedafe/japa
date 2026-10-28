@@ -594,7 +594,6 @@
 								placeholder={t('scholarships.notes_placeholder', 'Add your notes about this scholarship...')}
 								class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 							></textarea>
-								<HintIcon text={t('scholarships.notes_hint', 'Private notes — deadlines, requirements, reminders.')} />
 							<div class="flex gap-2">
 								<button
 									onclick={saveNotes}

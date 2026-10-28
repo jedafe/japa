@@ -724,7 +724,6 @@ loadPermissionNodes();
 					inputClass="font-mono"
 				/>
 			</div>
-			<HintIcon text={t('menus.permission_node_hint', 'Optional. Restrict this item to users with the given permission node.')} />
 		</div>
 		{#if menuItems.length > 0}
 			<div class="col-span-2">

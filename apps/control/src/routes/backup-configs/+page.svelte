@@ -638,7 +638,6 @@
 						selectedId={null}
 						onSelect={(item) => addBackupTarget(item.id)}
 					/>
-					<HintIcon text={t('backup_configs.what_to_backup_hint', 'Select which components to include in the backup.')} />
 				</div>
 				<div>
 					<label for="bc-storage" class="text-foreground mb-1 block text-sm font-medium">
@@ -667,9 +666,7 @@
 					/>
 					<HintIcon text={t('backup_configs.destination_hint', 'Local path or cloud storage URL')} />
 				</div>
-				<div>
-					<label for="bc-retention" class="text-foreground mb-1 block text-sm font-medium">
-						{t('backup_configs.retention_days', 'Retention (days)')}
+				<div>'backup_configs.retention_days', 'Retention (days)')}
 					</label>
 					<input
 						id="bc-retention"

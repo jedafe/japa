@@ -1544,7 +1544,6 @@
 						{detSaving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 					</Button>
 				</div>
-				<HintIcon text={t('app.wiki.data_entity_type_hint', 'Binds this page to a child entity class for community field ops. Empty clears the binding.')} />
 			</div>
 		{/if}
 	</div>

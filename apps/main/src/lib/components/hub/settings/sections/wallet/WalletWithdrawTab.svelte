@@ -250,7 +250,6 @@
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 						placeholder={t('wallet.withdraw.enter_amount', 'Enter credit amount')}
 					/>
-					<HintIcon id="withdraw-amount-hint" text={t('wallet.withdraw.amount_hint', 'Credits to send to your payout method — fees are calculated below.')} />
 					{#if minWithdraw > 0}
 						<p class="mt-1 text-xs text-[var(--color-muted)]">
 							{t('wallet.withdraw.minimum', 'Minimum {n} credits').replace('{n}', minWithdraw.toLocaleString())}
@@ -261,7 +260,8 @@
 				<div>
 					<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="withdraw-currency">
 						{t('wallet.withdraw.currency', 'Currency')}
-					</label>
+					
+					<HintIcon text={t('wallet.withdraw.currency_hint', 'The currency you want to be paid in.')} /></label>
 					<AutocompleteSelect
 						id="withdraw-currency"
 						bind:value={selectedCurrency}
@@ -272,8 +272,7 @@
 			</div>
 
 			{#if methods.length > 0}
-				<div class="mt-4">
-					<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="withdraw-method">
+			"withdraw-method">
 						{t('wallet.withdraw.method', 'Payout Method')}
 					</label>
 					<AutocompleteSelect
@@ -290,8 +289,7 @@
 					<HintIcon text={t('wallet.withdraw.method_hint', 'One of your saved payout methods.')} />
 				</div>
 			{:else}
-				<p class="mt-4 rounded-[var(--radius)] bg-[var(--color-warning)]/10 px-3 py-2 text-sm text-[var(--color-warning)]">
-					{t('wallet.withdraw.no_methods', 'Add a payout method before withdrawing.')}
+				<p class="mt-4 rounded-[var(--rallet.withdraw.no_methods', 'Add a payout method before withdrawing.')}
 				</p>
 			{/if}
 
@@ -421,7 +419,7 @@
 		<div class="mt-3 flex justify-end">
 			<button
 				type="button"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+				class="inline-flex ite] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
 				onclick={addMethod}
 				disabled={addingMethod}
 			>
