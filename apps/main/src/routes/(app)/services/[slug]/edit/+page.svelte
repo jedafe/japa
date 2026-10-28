@@ -543,7 +543,6 @@
 					placeholder={t('services.origin_placeholder', 'e.g. Nigerian, Ghanaian')}
 					class={inputClass}
 				/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.origin_hint', 'Optional — the community you primarily serve.')}</p>
 				<p class="mt-1 text-xs text-[var(--color-muted)]">
 					{t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.')}
 				</p>

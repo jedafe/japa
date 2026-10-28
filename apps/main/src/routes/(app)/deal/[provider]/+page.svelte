@@ -326,18 +326,21 @@
 							{t('deal.form.provider_name', 'Provider name')}
 							<span class="text-red-500">*</span>
 						</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.pf_name_hint', 'The provider or brand name.')}</p>
 						<input id="pf-name" type="text" bind:value={pf.name} class={inputClass} />
 					</div>
 					<div>
 						<label for="pf-category" class={labelClass}>
 							{t('deal.form.provider_category', 'Category')}
 						</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.pf_category_hint', 'The category this provider operates in.')}</p>
 						<input id="pf-category" type="text" bind:value={pf.category} class={inputClass} />
 					</div>
 					<div>
 						<label for="pf-base-url" class={labelClass}>
 							{t('deal.form.provider_base_url', 'Base URL')}
 						</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.pf_url_hint', 'The provider homepage — where deals link.')}</p>
 						<input
 							id="pf-base-url"
 							type="url"
@@ -351,6 +354,7 @@
 					<label for="pf-description" class={labelClass}>
 						{t('deal.form.provider_description', 'Provider description')}
 					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.pf_desc_hint', 'A short description shown on the provider page.')}</p>
 					<textarea id="pf-description" bind:value={pf.description} rows={2} class={inputClass}
 					></textarea>
 				</div>

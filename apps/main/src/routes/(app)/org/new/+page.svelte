@@ -155,7 +155,6 @@
 						placeholder={t('organizations.new.slug_placeholder', 'organization-slug')}
 						class={inputClass}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('organizations.new.slug_hint', 'URL-safe identifier — auto-generated from the name.')}</p>
 					<p class="mt-1 text-xs text-[var(--color-muted)]">
 						{t('organizations.new.slug_hint', 'Used in the URL: /org/your-slug')}
 					</p>

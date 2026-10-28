@@ -61,12 +61,28 @@
 	let errorKey = $state('');
 	let successKey = $state('');
 
+	import { page } from '$app/state';
+	import { StopCircle } from 'lucide-svelte';
+
 	let formName = $state('');
 	let formSlotTypeId = $state('');
-	let formContent = $state('');
+	let formHeadline = $state('');
+	let formBody = $state('');
+	let formCta = $state('');
+	let formImageUrl = $state('');
 	let formTargetUrl = $state('');
 	let formDurationDays = $state(7);
 	let formStartDate = $state('');
+	let formTargetGeo = $state('');
+	let formFreqCap = $state('');
+	let errorDetail = $state('');
+
+	// ads.min_campaign_days is a system setting — honour it, don't hardcode.
+	const minDays = $derived(
+		Math.max(1, Number(page.data.siteSettings?.['ads.min_campaign_days'] ?? 3) || 3)
+	);
+	// §61: only verified orgs may create campaigns — surface that up front.
+	const orgVerified = $derived((org as { verified?: boolean } | null)?.verified !== false);
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
@@ -74,10 +90,15 @@
 	function resetForm() {
 		formName = '';
 		formSlotTypeId = '';
-		formContent = '';
+		formHeadline = '';
+		formBody = '';
+		formCta = '';
+		formImageUrl = '';
 		formTargetUrl = '';
 		formDurationDays = 7;
 		formStartDate = '';
+		formTargetGeo = '';
+		formFreqCap = '';
 	}
 
 	function statusBadgeClass(status: string): string {
@@ -140,21 +161,34 @@
 	async function createCampaign(e: SubmitEvent) {
 		e.preventDefault();
 		if (!org) return;
-		if (!formName || !formSlotTypeId) {
+		if (!formName || !formSlotTypeId || !formHeadline) {
 			errorKey = 'org_ads.errors.missing_fields';
+			errorDetail = '';
 			return;
 		}
 		creating = true;
 		errorKey = '';
+		errorDetail = '';
 		successKey = '';
 		try {
+			// Structured creative — AdSlot/NativeAd read headline/body/cta/
+			// image_url from content; a raw string would render a blank ad.
 			const body: Record<string, unknown> = {
 				name: formName,
 				slot_type_id: formSlotTypeId,
-				content: formContent,
+				content: {
+					headline: formHeadline,
+					...(formBody ? { body: formBody } : {}),
+					...(formCta ? { cta: formCta } : {}),
+					...(formImageUrl ? { image_url: formImageUrl } : {})
+				},
 				duration_days: formDurationDays
 			};
 			if (formTargetUrl) body.target_url = formTargetUrl;
+			if (formTargetGeo.trim()) {
+				body.target_geo = formTargetGeo.split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
+			}
+			if (formFreqCap) body.frequency_cap_per_user = Number(formFreqCap);
 			if (formStartDate) {
 				// Send an RFC3339 timestamp so the Go backend's *time.Time field
 				// unmarshals correctly (BUG: raw YYYY-MM-DD strings fail).
@@ -164,6 +198,7 @@
 			const res = await api.post(`/org/${org.id}/ads/campaigns`, body);
 			if (res.error) {
 				errorKey = 'org_ads.errors.create_failed';
+				errorDetail = typeof res.error === 'string' ? res.error : '';
 			} else {
 				successKey = 'org_ads.created_success';
 				resetForm();
@@ -189,6 +224,22 @@
 			}
 		} catch {
 			errorKey = 'org_ads.errors.pause_failed';
+		}
+	}
+
+	async function endCampaign(campaignId: string) {
+		if (!org) return;
+		errorKey = '';
+		try {
+			const res = await api.post(`/org/${org.id}/ads/campaigns/${campaignId}/end`);
+			if (res.error) {
+				errorKey = 'org_ads.errors.end_failed';
+				errorDetail = typeof res.error === 'string' ? res.error : '';
+			} else {
+				await invalidateAll();
+			}
+		} catch {
+			errorKey = 'org_ads.errors.end_failed';
 		}
 	}
 
@@ -237,7 +288,9 @@
 			</div>
 		</div>
 		<button
-			class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+			class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+			disabled={!orgVerified}
+			title={!orgVerified ? t('org_ads.not_verified', 'Only verified organizations can run ads') : ''}
 			onclick={() => (showCreateForm = !showCreateForm)}
 		>
 			<Plus class="h-4 w-4" />
@@ -247,12 +300,18 @@
 
 	{#if errorKey}
 		<div class="rounded-lg bg-[var(--color-danger)]/10 p-3 text-sm text-[var(--color-danger)]">
-			{t(errorKey, 'An error occurred')}
+			{t(errorKey, 'An error occurred')}{errorDetail ? ` — ${errorDetail}` : ''}
 		</div>
 	{/if}
 	{#if successKey}
 		<div class="rounded-lg bg-[var(--color-success)]/10 p-3 text-sm text-[var(--color-success)]">
 			{t(successKey, 'Campaign created successfully')}
+		</div>
+	{/if}
+
+	{#if !orgVerified}
+		<div class="rounded-lg bg-[var(--color-warning)]/10 p-3 text-sm text-[var(--color-warning)]">
+			{t('org_ads.not_verified', 'Only verified organizations can run ads')}
 		</div>
 	{/if}
 
@@ -271,6 +330,7 @@
 					<label for="ad-name" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.campaign_name', 'Campaign Name')}
 					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.name_hint', 'Internal name for this campaign — not shown to users.')}</p>
 					<input id="ad-name" class={inputClass} type="text" bind:value={formName} required />
 				</div>
 
@@ -278,6 +338,7 @@
 					<label for="ad-slot" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.slot_type', 'Ad Slot')}
 					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.slot_hint', 'Where the ad appears — feed, sidebar, banner.')}</p>
 					<AutocompleteSelect
 						id="ad-slot"
 						bind:value={formSlotTypeId}
@@ -295,11 +356,12 @@
 					<label for="ad-duration" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.duration_days', 'Duration (days)')}
 					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.duration_hint', 'How many days the campaign runs.')}</p>
 					<input
 						id="ad-duration"
 						class={inputClass}
 						type="number"
-						min="3"
+						min={minDays}
 						bind:value={formDurationDays}
 						required
 					/>
@@ -309,26 +371,63 @@
 					<label for="ad-start" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.start_date', 'Start Date')}
 					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.start_hint', 'When the campaign begins.')}</p>
 					<input id="ad-start" class={inputClass} type="date" bind:value={formStartDate} />
 				</div>
 
 				<div class="md:col-span-2">
-					<label for="ad-content" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-						{t('org_ads.content', 'Ad Content / Creative')}
+					<label for="ad-headline" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('org_ads.headline', 'Headline')} *
 					</label>
-					<textarea
-						id="ad-content"
-						class={inputClass}
-						rows="3"
-						bind:value={formContent}
-						placeholder={t('org_ads.content_placeholder', 'Ad copy or creative JSON...')}
-					></textarea>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.headline_hint', 'The main text users see.')}</p>
+					<input id="ad-headline" class={inputClass} type="text" bind:value={formHeadline} required />
+				</div>
+
+				<div class="md:col-span-2">
+					<label for="ad-body" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('org_ads.body', 'Body text')}
+					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.body_hint', 'Supporting copy under the headline.')}</p>
+					<textarea id="ad-body" class={inputClass} rows="3" bind:value={formBody}></textarea>
+				</div>
+
+				<div>
+					<label for="ad-cta" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('org_ads.cta', 'Call to action')}
+					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.cta_hint', 'The button text — e.g. Learn More.')}</p>
+					<input id="ad-cta" class={inputClass} type="text" bind:value={formCta} placeholder={t('org_ads.cta_ph', 'Learn More')} />
+				</div>
+
+				<div>
+					<label for="ad-image" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('org_ads.image_url', 'Image URL')}
+					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.image_hint', 'Direct image URL for the creative.')}</p>
+					<input id="ad-image" class={inputClass} type="url" bind:value={formImageUrl} placeholder="https://..." />
+				</div>
+
+				<div>
+					<label for="ad-geo" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('org_ads.target_geo', 'Target countries (ISO codes, comma-separated)')}
+					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.geo_hint', 'Country codes to target — e.g. NG, GB, US.')}</p>
+					<input id="ad-geo" class={inputClass} type="text" bind:value={formTargetGeo} placeholder="NG, GB, US" />
+				</div>
+
+				<div>
+					<label for="ad-freq" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{t('org_ads.freq_cap', 'Frequency cap / user / day')}
+					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.freq_hint', 'How often the ad shows per viewer.')}</p>
+					<input id="ad-freq" class={inputClass} type="number" min="0" bind:value={formFreqCap} />
 				</div>
 
 				<div>
 					<label for="ad-url" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.target_url', 'Target URL')}
 					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('org_ads.url_hint', 'Where clicks land.')}</p>
 					<input
 						id="ad-url"
 						class={inputClass}
@@ -454,6 +553,15 @@
 											onclick={() => resumeCampaign(campaign.id)}
 										>
 											<Play class="h-4 w-4" />
+										</button>
+									{/if}
+									{#if campaign.status === 'active' || campaign.status === 'paused' || campaign.status === 'pending_review'}
+										<button
+											class="rounded-lg p-2 text-[var(--color-danger)] transition-colors hover:bg-[var(--color-surface)]"
+											title={t('org_ads.end', 'End campaign')}
+											onclick={() => endCampaign(campaign.id)}
+										>
+											<StopCircle class="h-4 w-4" />
 										</button>
 									{/if}
 									{#if campaign.status === 'rejected'}

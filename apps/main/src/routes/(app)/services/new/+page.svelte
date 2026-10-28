@@ -479,7 +479,6 @@
 				<label for="origin" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('services.field_origin_communities', 'Origin communities served')}
 				</label>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.origin_hint', 'Optional — the community you primarily serve.')}</p>
 				<input
 					id="origin"
 					type="text"
