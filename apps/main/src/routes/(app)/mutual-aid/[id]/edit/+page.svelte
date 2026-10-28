@@ -1,5 +1,4 @@
-<script la
-			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.desc_hint', 'Details: what, where, when, and how to reach you.')}</p>ng="ts">
+<script lang="ts">
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 	import { t, siteName} from '$lib/i18n';
 	import { goto } from '$app/navigation';
@@ -84,6 +83,7 @@
 			<label for="post_type" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_post_type', 'Post type')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.type_hint', 'Whether you are offering or requesting help.')}</p>
 			<input
 				id="post_type"
 				type="text"
@@ -99,6 +99,7 @@
 				{t('mutual_aid.field_category', 'Category')}
 				<span class="text-red-500" aria-hidden="true">*</span>
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.category_hint', 'The kind of help — housing, transport, docs.')}</p>
 			<AutocompleteSelect
 				id="category"
 				value={category}
@@ -113,6 +114,7 @@
 				{t('mutual_aid.field_title', 'Title')}
 				<span class="text-red-500" aria-hidden="true">*</span>
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.title_hint', 'One line — what you need or what you are offering.')}</p>
 			<input
 				id="title"
 				type="text"
@@ -121,7 +123,6 @@
 				placeholder={t('mutual_aid.field_title_placeholder', 'Brief summary of what you need or offer')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.title_hint', 'One line — what you need or what you are offering.')}</p>
 		</div>
 
 		<!-- Description -->
@@ -139,6 +140,7 @@
 			placeholder={t('mutual_aid.field_description_placeholder', 'Provide details about your request or offer…')}
 			rows={6}
 		/>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.desc_hint', 'Details: what, where, when, and how to reach you.')}</p>
 
 		<!-- Destination country (read-only — destination cannot be changed
 		     after creation; the backend UpdatePostRequest only accepts
@@ -147,6 +149,7 @@
 			<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_destination', 'Destination country')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.destination_hint', 'The country where help is needed or offered.')}</p>
 			<AutocompleteSelect
 				id="destination_country"
 				value={destinationSpaceId}
@@ -156,7 +159,6 @@
 					...pinMarketsFirst(data.countries, destinationMarkets(data.siteSettings), (c) => c.geo_code).map((c) => ({ value: c.id, label: c.name }))
 				]}
 			/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.destination_hint', 'The country where help is needed or offered.')}</p>
 		</div>
 
 		<!-- City (read-only — same reason as destination. BUG-005.) -->
@@ -164,6 +166,7 @@
 			<label for="city" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_city', 'City')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mutual_aid.city_hint', 'Optional — the city this applies to.')}</p>
 			<input
 				id="city"
 				type="text"

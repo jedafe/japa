@@ -1,5 +1,4 @@
-<scrip
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deals.org_hint', 'Submit this deal on behalf of an organization you manage.')}</p>t lang="ts">
+<script lang="ts">
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 	// /deals/new — staff create (audience="staff") or organization deal
 	// submission (audience="org", create-only — org mode never PATCHes the
@@ -179,6 +178,7 @@
 			{#if data.orgs.length > 1}
 				<div>
 					<label for="deal-org" class={labelClass}>{t('deals.org_picker', 'Submitting as')}</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deals.org_hint', 'Submit this deal on behalf of an organization you manage.')}</p>
 					<AutocompleteSelect
 						id="deal-org"
 						bind:value={selectedOrgId}

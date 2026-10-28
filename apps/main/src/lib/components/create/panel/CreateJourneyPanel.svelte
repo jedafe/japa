@@ -177,10 +177,10 @@
 <div class="journey-panel">
 	<div class="field-row">
 		<label class="field-label" for="journey-stage">{t('create.journey.stage')}</label>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('create.journey.stage_hint', 'Your current stage in the move — e.g. researching or preparing.')}</p>
 		{#if stageOptions.length > 0}
 			<Autocomplete
 				placeholder={t('create.journey.stage_placeholder')}
-				aria-describedby="journey-stage-hint"
 				emptyMessage={t('journey.banner.no_options', 'No matching option')}
 				fetcher={optionFetcher(stageOptions)}
 				initialFetcher={() => optionInitial(stageOptions, journeyStage)}
@@ -189,7 +189,6 @@
 				onSelect={setJourney}
 				onClear={() => { onjourney(null); onedit(); }}
 			/>
-			<p id="journey-stage-hint" class="field-hint">{t('create.journey.stage_hint', 'Your current stage in the move — e.g. researching or preparing.')}</p>
 		{:else}
 			<input
 				id="journey-stage"
@@ -204,10 +203,10 @@
 
 	<div class="field-row">
 		<label class="field-label" for="journey-visa">{t('create.journey.visa')}</label>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('create.journey.visa_hint', 'The visa route this journey is for, if known.')}</p>
 		{#if visaOptions.length > 0}
 			<Autocomplete
 				placeholder={t('create.journey.visa_placeholder')}
-				aria-describedby="journey-visa-hint"
 				emptyMessage={t('journey.banner.no_options', 'No matching option')}
 				fetcher={optionFetcher(visaOptions)}
 				initialFetcher={() => optionInitial(visaOptions, visaRoute)}
@@ -217,7 +216,6 @@
 				onClear={() => { onvisa(null); onedit(); }}
 				allowFreeText
 			/>
-			<p id="journey-visa-hint" class="field-hint">{t('create.journey.visa_hint', 'The visa route this journey is for, if known.')}</p>
 		{:else}
 			<input
 				id="journey-visa"
@@ -232,6 +230,7 @@
 
 	<div class="field-row">
 		<label class="field-label" for="journey-source">{t('create.journey.source_country')}</label>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('create.journey.source_hint', 'The country you are moving from.')}</p>
 		<Autocomplete
 			placeholder={t('create.journey.source_country_placeholder')}
 			emptyMessage={t('create.journey.country_empty')}
@@ -246,6 +245,7 @@
 
 	<div class="field-row">
 		<label class="field-label" for="journey-target">{t('create.journey.target_country')}</label>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('create.journey.target_hint', 'The country you are moving to.')}</p>
 		<Autocomplete
 			placeholder={t('create.journey.target_country_placeholder')}
 			emptyMessage={t('create.journey.country_empty')}
@@ -260,6 +260,7 @@
 
 	<div class="field-row">
 		<label class="field-label" for="journey-dimension">{t('create.journey.dimension', 'Roadmap dimension')}</label>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('create.journey.dimension_hint', 'What part of the roadmap this journey covers.')}</p>
 		<Autocomplete
 			id="journey-dimension"
 			placeholder={t('create.journey.dimension_placeholder', 'Select a readiness dimension')}
@@ -279,11 +280,11 @@
 
 	<div class="field-row">
 		<label class="field-label" for="journey-purpose">{t('create.journey.purpose', 'Purpose')}</label>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('create.journey.purpose_hint', 'The main reason — study, work, family, and so on.')}</p>
 		{#if purposeOptions.length > 0}
 			<Autocomplete
 				id="journey-purpose"
 				placeholder={t('create.journey.purpose_placeholder', 'Select a purpose')}
-				aria-describedby="journey-purpose-hint"
 				emptyMessage={t('journey.banner.no_options', 'No matching option')}
 				fetcher={optionFetcher(purposeOptions)}
 				initialFetcher={() => optionInitial(purposeOptions, purpose)}
@@ -292,7 +293,6 @@
 				onSelect={setPurpose}
 				onClear={() => { onpurpose(null); onedit(); }}
 			/>
-			<p id="journey-purpose-hint" class="field-hint">{t('create.journey.purpose_hint', 'The main reason — study, work, family, and so on.')}</p>
 		{:else}
 			<input
 				id="journey-purpose"

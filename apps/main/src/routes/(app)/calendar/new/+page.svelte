@@ -1,5 +1,4 @@
-<script la
-				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.desc_hint', 'What people need to know — links and deadlines help.')}</p>ng="ts">
+<script lang="ts">
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -209,6 +208,7 @@
 					<label for="destination_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_destination', 'Destination country')} <span class="text-red-500" aria-hidden="true">*</span>
 					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.destination_hint', 'The country this event applies to.')}</p>
 					<Autocomplete
 						placeholder={t('calendar.new.placeholder_destination', 'Select a country')}
 						emptyMessage={t('common.no_results', 'No results found')}
@@ -219,12 +219,12 @@
 						onSelect={(item) => (destinationSpaceId = item.id)}
 						onClear={() => (destinationSpaceId = '')}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.destination_hint', 'The country this event applies to.')}</p>
 				</div>
 				<div>
 					<label for="origin_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_origin', 'Origin country (optional)')}
 					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.origin_hint', 'Optional — restrict to a specific origin country.')}</p>
 					<Autocomplete
 						placeholder={t('calendar.new.placeholder_origin', 'Leave blank for all origins')}
 						emptyMessage={t('common.no_results', 'No results found')}
@@ -235,7 +235,6 @@
 						onSelect={(item) => (originSpaceId = item.id)}
 						onClear={() => (originSpaceId = '')}
 					/>
-						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.origin_hint', 'Optional — restrict to a specific origin country.')}</p>
 				</div>
 			</div>
 
@@ -244,6 +243,7 @@
 				<label for="title" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_title', 'Title')} <span class="text-red-500" aria-hidden="true">*</span>
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.title_hint', 'A short event name shown on the calendar.')}</p>
 				<input
 					id="title"
 					type="text"
@@ -252,7 +252,6 @@
 					placeholder={t('calendar.new.placeholder_title', 'e.g. UK visa application window opens')}
 					class={inputClass}
 				/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.title_hint', 'A short event name shown on the calendar.')}</p>
 			</div>
 
 			<!-- Category -->
@@ -260,6 +259,7 @@
 				<label for="category" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_category', 'Category')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.category_hint', 'What kind of event — deadline, window, meetup.')}</p>
 				<AutocompleteSelect
 					id="category"
 					value={category}
@@ -282,6 +282,7 @@
 				placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
 				rows={5}
 			/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.desc_hint', 'What people need to know — links and deadlines help.')}</p>
 
 			<!-- Dates -->
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -289,15 +290,15 @@
 					<label for="occurs_at" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_occurs_at', 'Starts')} <span class="text-red-500" aria-hidden="true">*</span>
 					</label>
-					<input id="occurs_at" type="datetime-local" bind:value={occursAt} class={inputClass} />
 					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.occurs_hint', 'When the event starts (your local time).')}</p>
+					<input id="occurs_at" type="datetime-local" bind:value={occursAt} class={inputClass} />
 				</div>
 				<div>
 					<label for="ends_at" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_ends_at', 'Ends (optional)')}
 					</label>
-					<input id="ends_at" type="datetime-local" bind:value={endsAt} class={inputClass} />
 					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.ends_hint', 'Optional — when the event ends.')}</p>
+					<input id="ends_at" type="datetime-local" bind:value={endsAt} class={inputClass} />
 				</div>
 			</div>
 
@@ -323,6 +324,7 @@
 				<label for="source_url" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_source', 'Official source URL')} <span class="text-red-500" aria-hidden="true">*</span>
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.source_hint', 'Link to the official announcement — required for verification.')}</p>
 				<input
 					id="source_url"
 					type="url"
@@ -330,7 +332,6 @@
 					placeholder={t('calendar.new.placeholder_source', 'https://official-source.example/…')}
 					class={inputClass}
 				/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('calendar.new.source_hint', 'Link to the official announcement — required for verification.')}</p>
 				<p class="mt-1 text-xs text-[var(--color-muted)]">
 					{t('calendar.new.source_help', 'Must link to a verifiable official source.')}
 				</p>
