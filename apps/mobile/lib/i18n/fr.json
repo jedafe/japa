@@ -138,5 +138,8 @@
   "report.reason.illegal_content": "Contenu illégal",
   "report.reason.self_harm": "Automutilation",
   "report.reason.copyright": "Violation de droits d'auteur",
-  "report.reason.other": "Autre"
+  "report.reason.other": "Autre",
+  "profile.blocked_users": "Utilisateurs bloqués",
+  "profile.blocked_users_empty": "Aucun utilisateur bloqué",
+  "profile.unblock": "Débloquer"
 }

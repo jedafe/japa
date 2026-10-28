@@ -1253,12 +1253,24 @@ func (s *Service) UpdateSpaceHeaderImageID(ctx context.Context, params gen.Updat
 	return space, nil
 }
 
-// DeleteSpace deletes a space, scoped to the platform.
+// DeleteSpace deletes a space, scoped to the platform. Follow rows
+// targeting the space are removed so users' following lists cannot dangle.
 func (s *Service) DeleteSpace(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteSpace(ctx,
 		id,
 	); err != nil {
 		return fmt.Errorf("deleting space: %w", err)
+	}
+
+	if err := s.write.DeleteFollowsByEntity(ctx, gen.DeleteFollowsByEntityParams{
+		EntityType: "space",
+		EntityID:   id,
+	}); err != nil {
+		return fmt.Errorf("deleting space follows: %w", err)
+	}
+
+	if s.followInv != nil {
+		s.followInv(ctx, "space", id)
 	}
 
 	return nil
@@ -1272,6 +1284,19 @@ func (s *Service) HardDeleteSpace(ctx context.Context, id pgtype.UUID) error {
 	affected, err := s.write.HardDeleteSpace(ctx, id)
 	if err != nil {
 		return fmt.Errorf("hard deleting space: %w", err)
+	}
+
+	if affected > 0 {
+		if err := s.write.DeleteFollowsByEntity(ctx, gen.DeleteFollowsByEntityParams{
+			EntityType: "space",
+			EntityID:   id,
+		}); err != nil {
+			return fmt.Errorf("deleting space follows: %w", err)
+		}
+
+		if s.followInv != nil {
+			s.followInv(ctx, "space", id)
+		}
 	}
 
 	if affected == 0 {
@@ -1393,7 +1418,7 @@ func (s *Service) IsOwner(ctx context.Context, spaceID, userID pgtype.UUID) (boo
 
 // Join adds the user as a member of the space.
 func (s *Service) Join(ctx context.Context, spaceID, userID pgtype.UUID) error {
-	if err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+	if _, err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
 		SpaceID: spaceID,
 		UserID:  userID,
 	}); err != nil {
@@ -1528,13 +1553,15 @@ type SpaceMemberRow struct {
 }
 
 // ListMembers returns paginated members of a space with user profile data.
-func (s *Service) ListMembers(ctx context.Context, spaceID pgtype.UUID, limit, offset int32) ([]SpaceMemberRow, error) {
+// viewerID filters mutually-blocked members (BLK-006); invalid = unfiltered.
+func (s *Service) ListMembers(ctx context.Context, viewerID, spaceID pgtype.UUID, limit, offset int32) ([]SpaceMemberRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 
 	rows, err := s.read.ListSpaceMembersWithProfile(ctx, gen.ListSpaceMembersWithProfileParams{
-		SpaceID: spaceID,
+		SpaceID:  spaceID,
+		ViewerID: viewerID,
 
 		PageLimit:  limit,
 		PageOffset: offset,

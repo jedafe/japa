@@ -40,6 +40,10 @@ type Handlers struct {
 // Ref: japaconnect-engineering/sections/31-follow-system.md.
 type FollowService interface {
 	ToggleFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+	EnsureFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+	EnsureUnfollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+	CountFollowers(ctx context.Context, entityType string, entityID pgtype.UUID) (int32, error)
+	InvalidateEntityFollowers(ctx context.Context, entityType string, entityID pgtype.UUID)
 }
 
 // JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
@@ -442,6 +446,10 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.follows != nil {
+		h.follows.InvalidateEntityFollowers(r.Context(), entityTypeOrganization, id)
+	}
+
 	// §12 stale-index fix: remove the deleted org from the Meilisearch index.
 	h.enqueueSearchIndex("delete", id)
 
@@ -477,7 +485,12 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.ListMembers(r.Context(), orgID)
+	var viewerID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		viewerID = u.UserID
+	}
+
+	result, err := h.service.ListMembers(r.Context(), viewerID, orgID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -878,18 +891,21 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	following, err := h.follows.ToggleFollow(r.Context(), user.UserID, entityTypeOrganization, orgID)
+	// POST = ensure-follow, DELETE = ensure-unfollow (method semantics
+	// per api-routes-catalog); a raw toggle inverts state on repeats.
+	var following bool
+	if r.Method == http.MethodDelete {
+		following, err = h.follows.EnsureUnfollow(r.Context(), user.UserID, entityTypeOrganization, orgID)
+	} else {
+		following, err = h.follows.EnsureFollow(r.Context(), user.UserID, entityTypeOrganization, orgID)
+	}
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle follow")
 		return
 	}
 
-	if r.Method == http.MethodDelete {
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": false}})
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": following}})
+	fc, _ := h.follows.CountFollowers(r.Context(), entityTypeOrganization, orgID)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": following, "follower_count": fc}})
 }
 
 // GetOrganizationAnalytics handles GET /api/v1/organizations/{id}/analytics.
@@ -1060,6 +1076,10 @@ func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Reques
 	if err := h.service.AdminDeleteOrganization(r.Context(), id, force); err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	if h.follows != nil {
+		h.follows.InvalidateEntityFollowers(r.Context(), entityTypeOrganization, id)
 	}
 
 	// §12 stale-index fix: remove the deleted org from the Meilisearch index.

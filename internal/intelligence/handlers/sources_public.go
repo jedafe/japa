@@ -834,6 +834,7 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
+			"following":      isFollowing,
 			"is_following":   isFollowing,
 			"follower_count": src.FollowerCount,
 		},
@@ -1062,12 +1063,16 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 
 	sources := make([]blockedSource, 0, len(ids))
 
-	for _, id := range ids {
-		src, err := h.intelSources.Get(r.Context(), id)
-		if err != nil {
-			continue
-		}
+	// BLK-018: batch fetch instead of per-ID Get calls (O(1) query).
+	rows, err := h.intelStores.ListIntelSourcesByIDs(r.Context(), ids)
+	if err != nil {
+		slog.Error("intel: blocked sources batch fetch failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_blocked_sources_failed", "Failed to load blocked sources")
 
+		return
+	}
+
+	for _, src := range rows {
 		sources = append(sources, blockedSource{
 			ID:     pgtypeUUIDString(src.ID),
 			Slug:   derefString(src.Slug),

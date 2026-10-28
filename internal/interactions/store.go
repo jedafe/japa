@@ -7,6 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // BlockUser idempotently blocks a user and cancels side-effects per Section 41
@@ -17,6 +19,17 @@ import (
 func (s *Service) BlockUser(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
 	if blockerID == blockedID {
 		return errors.New("cannot block yourself")
+	}
+
+	// BLK-007: the target must exist — otherwise CreateUserBlock hits an FK
+	// violation and surfaces a raw 500 instead of a 404.
+	exists, err := s.read.ActiveUserExistsByID(ctx, blockedID)
+	if err != nil {
+		return fmt.Errorf("checking block target: %w", err)
+	}
+
+	if !exists {
+		return fmt.Errorf("%w: user", errpkg.ErrNotFound)
 	}
 
 	tx, err := s.db.Writer.Begin(ctx)
@@ -43,7 +56,17 @@ func (s *Service) BlockUser(ctx context.Context, blockerID, blockedID pgtype.UUI
 		return fmt.Errorf("deleting follows between users: %w", err)
 	}
 
-	// 3. Decline pending DM requests between the two users (BE-1 / Section 41).
+	// 3. BLK-003: recompute both users' denormalized follower_count inside
+	// the same tx — DeleteFollowsBetweenUsers bypasses the follows service's
+	// count updater, so without this every block leaves phantom followers.
+	if err := q.SyncFollowerCountAfterBlock(ctx, gen.SyncFollowerCountAfterBlockParams{
+		ID:   blockerID,
+		ID_2: blockedID,
+	}); err != nil {
+		return fmt.Errorf("syncing follower counts: %w", err)
+	}
+
+	// 4. Decline pending DM requests between the two users (BE-1 / Section 41).
 	if err := q.DeclinePendingDMRequestsBetweenUsers(ctx, gen.DeclinePendingDMRequestsBetweenUsersParams{
 		RequesterID: blockerID,
 		RecipientID: blockedID,
@@ -55,7 +78,57 @@ func (s *Service) BlockUser(ctx context.Context, blockerID, blockedID pgtype.UUI
 		return fmt.Errorf("committing block transaction: %w", err)
 	}
 
+	s.invalidateBlockSideEffectCaches(ctx, blockerID, blockedID)
+
+	if s.followInv != nil {
+		s.followInv(blockerID, blockedID)
+		s.followInv(blockedID, blockerID)
+	}
+
 	return nil
+}
+
+// invalidateBlockSideEffectCaches clears the follow-related caches whose
+// state changed inside the block transaction (BLK-016): the is_following
+// lookups for both directions (jc:is_following:*, 60s) and the ranked
+// for-you feed slices for both users (jc:cache:feed:foryou:*). Mirrors the
+// invalidation the follows service runs on toggle — best-effort, the TTLs
+// self-heal on failure. Key patterns per conventions/valkey-keys-catalog.md.
+func (s *Service) invalidateBlockSideEffectCaches(ctx context.Context, blockerID, blockedID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+
+	_ = s.vk.Del(ctx,
+		valkey.MustKey("is_following:%s:%s:%s", blockerID.String(), "user", blockedID.String()),
+		valkey.MustKey("is_following:%s:%s:%s", blockedID.String(), "user", blockerID.String()),
+	).Err()
+
+	for _, uid := range []pgtype.UUID{blockerID, blockedID} {
+		pattern := valkey.MustKey("cache:feed:foryou:%s:*", uid.String())
+
+		var cursor uint64
+
+		var keys []string
+
+		for {
+			scanKeys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
+			if err != nil {
+				break
+			}
+
+			keys = append(keys, scanKeys...)
+
+			cursor = nextCursor
+			if cursor == 0 {
+				break
+			}
+		}
+
+		if len(keys) > 0 {
+			_ = s.vk.Del(ctx, keys...).Err()
+		}
+	}
 }
 
 // UnblockUser idempotently removes a user block. Returns nil if not blocked.
@@ -83,6 +156,12 @@ type BlockedUserInfo struct {
 // ListBlockedUsers returns users blocked by the given user, platform-scoped
 // with profile enrichment (BUG-003, BUG-004).
 // Ref: japaconnect-engineering/sections/41-spam-content-safety.md.
+// CountBlockedUsers returns the caller's total block count — backs the
+// meta.total sidecar on GET /me/blocked-users.
+func (s *Service) CountBlockedUsers(ctx context.Context, blockerID pgtype.UUID) (int32, error) {
+	return s.read.CountBlockedUsers(ctx, blockerID)
+}
+
 func (s *Service) ListBlockedUsers(ctx context.Context, blockerID pgtype.UUID, limit, offset int32) ([]BlockedUserInfo, error) {
 	rows, err := s.read.ListBlockedUsers(ctx, gen.ListBlockedUsersParams{
 		BlockerID: blockerID,
@@ -115,6 +194,36 @@ func (s *Service) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool
 		BlockerID: userA,
 		BlockedID: userB,
 	})
+}
+
+// BlockStatus reports the directional block state between the viewer and a
+// target user (BLK-005 / BLK-013 — backs GET /users/{id}/block-status):
+// Blocked = viewer blocked target (drives the toggle label), BlockedBy =
+// target blocked viewer (drives the profile's interaction gating).
+type BlockStatus struct {
+	Blocked   bool `json:"blocked"`
+	BlockedBy bool `json:"blocked_by"`
+}
+
+// GetBlockStatus resolves both directions with two indexed EXISTS lookups.
+func (s *Service) GetBlockStatus(ctx context.Context, viewerID, targetID pgtype.UUID) (BlockStatus, error) {
+	blocked, err := s.read.IsUserBlockedDirectional(ctx, gen.IsUserBlockedDirectionalParams{
+		BlockerID: viewerID,
+		BlockedID: targetID,
+	})
+	if err != nil {
+		return BlockStatus{}, fmt.Errorf("checking block status: %w", err)
+	}
+
+	blockedBy, err := s.read.IsUserBlockedDirectional(ctx, gen.IsUserBlockedDirectionalParams{
+		BlockerID: targetID,
+		BlockedID: viewerID,
+	})
+	if err != nil {
+		return BlockStatus{}, fmt.Errorf("checking block status: %w", err)
+	}
+
+	return BlockStatus{Blocked: blocked, BlockedBy: blockedBy}, nil
 }
 
 // =====================

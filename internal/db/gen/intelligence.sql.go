@@ -1816,6 +1816,76 @@ func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, category strin
 	return items, nil
 }
 
+const listIntelSourcesByIDs = `-- name: ListIntelSourcesByIDs :many
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources WHERE id = ANY($1::uuid[])
+`
+
+// Batch fetch for the blocked-sources list (BLK-018 — replaces the per-ID
+// Get loop that was O(N) queries).
+func (q *Queries) ListIntelSourcesByIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]IntelSource, error) {
+	rows, err := q.db.Query(ctx, listIntelSourcesByIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntelSource
+	for rows.Next() {
+		var i IntelSource
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Domain,
+			&i.SourceUrl,
+			&i.Category,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.CrawlMethod,
+			&i.CrawlFrequency,
+			&i.CrawlFrequencyMins,
+			&i.RobotsPolicy,
+			&i.SourceLicense,
+			&i.AttributionRequired,
+			&i.UsageRestriction,
+			&i.ProviderConfig,
+			&i.Enabled,
+			&i.LastCrawledAt,
+			&i.LastSuccessAt,
+			&i.LastErrorAt,
+			&i.LastErrorMessage,
+			&i.LastChangedAt,
+			&i.ConsecutiveFailures,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PersonaID,
+			&i.Status,
+			&i.ProposedBy,
+			&i.ProposedAt,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.Slug,
+			&i.Description,
+			&i.LogoUrl,
+			&i.FollowerCount,
+			&i.PostCount,
+			&i.SourceKind,
+			&i.Keywords,
+			&i.Categories,
+			&i.ProbeReport,
+			&i.DetectedMethods,
+			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIntelSourcesFiltered = `-- name: ListIntelSourcesFiltered :many
 SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources
 WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%'

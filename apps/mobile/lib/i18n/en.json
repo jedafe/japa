@@ -138,5 +138,8 @@
   "report.reason.illegal_content": "Illegal content",
   "report.reason.self_harm": "Self-harm",
   "report.reason.copyright": "Copyright infringement",
-  "report.reason.other": "Other"
+  "report.reason.other": "Other",
+  "profile.blocked_users": "Blocked users",
+  "profile.blocked_users_empty": "No blocked users",
+  "profile.unblock": "Unblock"
 }

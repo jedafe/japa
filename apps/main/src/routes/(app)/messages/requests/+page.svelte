@@ -86,6 +86,11 @@
 
 	async function handleAction(req: DMRequest, action: 'accept' | 'decline' | 'block') {
 		if (acting) return;
+		// BLK-009: block is the only irreversible-flavoured request action —
+		// confirm before firing (writes user_blocks, removes follows).
+		if (action === 'block' && !confirm(t('messages.requests_block_confirm', 'Block this user? They will no longer be able to message you.'))) {
+			return;
+		}
 		actionError = '';
 		acting = req.id;
 		const res = await api.post<{ status: string; conversation_id?: string }>(

@@ -8,6 +8,34 @@ class SocialService {
     await _client.post<void>('/users/$userId/follow', parse: (_) {});
   }
 
+  // §41 user blocking (BLK-019). POST/DELETE /users/{id}/block are
+  // idempotent server-side and return {blocked: bool}; block-status
+  // returns {blocked, blocked_by} for the directional pair.
+  Future<void> blockUser(String userId) async {
+    await _client.post<void>('/users/$userId/block', parse: (_) {});
+  }
+
+  Future<void> unblockUser(String userId) async {
+    await _client.delete('/users/$userId/block');
+  }
+
+  Future<bool> isBlocked(String userId) async {
+    final data = await _client.get<Map<String, dynamic>>(
+      '/users/$userId/block-status',
+      parse: (json) => (json as Map).cast<String, dynamic>(),
+    );
+    return data['blocked'] == true;
+  }
+
+  Future<List<Map<String, dynamic>>> listBlockedUsers() async {
+    final data = await _client.get<List<Map<String, dynamic>>>(
+      '/me/blocked-users?page_size=100',
+      parse: (json) =>
+          (json as List).map((e) => (e as Map).cast<String, dynamic>()).toList(),
+    );
+    return data;
+  }
+
   Future<void> unfollowUser(String userId) async {
     await _client.delete('/users/$userId/follow');
   }

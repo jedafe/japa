@@ -317,7 +317,13 @@
 				if (q) {
 					const lq = q.toLowerCase();
 					items = items.filter(
-						(b) => b.blocker_id?.toLowerCase().includes(lq) || b.blocked_id?.toLowerCase().includes(lq)
+						(b) =>
+							b.blocker_id?.toLowerCase().includes(lq) ||
+							b.blocked_id?.toLowerCase().includes(lq) ||
+							b.blocker_username?.toLowerCase().includes(lq) ||
+							b.blocked_username?.toLowerCase().includes(lq) ||
+							b.blocker_display_name?.toLowerCase().includes(lq) ||
+							b.blocked_display_name?.toLowerCase().includes(lq)
 					);
 				}
 				return {

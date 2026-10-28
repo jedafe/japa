@@ -4141,23 +4141,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// M5: rate-limit all follow mutation routes to prevent follow spam.
 			r.With(features.Gate(featureChecker, "feature.follow")).Group(func(r chi.Router) {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/follows", followHandlers.ToggleFollow)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/following", followHandlers.ListMyFollowing)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followers", followHandlers.ListMyFollowers)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followed-tags", followHandlers.ListMyFollowedTags)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/follows", followHandlers.ToggleFollow)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/me/following", followHandlers.ListMyFollowing)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/me/followers", followHandlers.ListMyFollowers)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/me/followed-tags", followHandlers.ListMyFollowedTags)
 				// Follower/following lists are public per Section 31 — the
 				// handlers degrade is_following to false for anonymous callers.
 				// follow-status and mutual remain RequireAuth: both are
 				// caller-scoped and meaningless for guests.
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{user_id}/following", followHandlers.GetFollowing)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/follow-status", followHandlers.GetFollowStatus)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/users/{user_id}/follow-status", followHandlers.GetFollowStatus)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
 			})
 
 			// User Blocks (Section 41 — user-facing, non-admin)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage")).Post("/users/{user_id}/block", interactionsHandlers.BlockUser)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage")).Delete("/users/{user_id}/block", interactionsHandlers.UnblockUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/users/{user_id}/block", interactionsHandlers.BlockUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage"), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/users/{user_id}/block", interactionsHandlers.UnblockUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Get("/users/{user_id}/block-status", interactionsHandlers.GetUserBlockStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/blocked-users", interactionsHandlers.ListBlocked)
 
 			// User Mutes (Section 52)
@@ -4342,6 +4344,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wsService := websocket.NewService(database, wsHub)
 			wsDMStore := websocket.NewDMStore(gen.New(database.Reader), gen.New(database.Writer))
 			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
+			// BLK-004: route the DM-request "block" action through the full
+			// §41 side-effect path (follows + counts + caches), not just the
+			// bare user_blocks insert.
+			wsDMService.SetBlockApplier(interactionsService)
 			wsDMService.AsynqClient = asynqClient
 			wsDMService.SetValkeyClient(vkClient)
 			wsDMService.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in live DM broadcasts

@@ -3702,6 +3702,7 @@
   "roadmap.errors.not_voted": "You have not voted on this item.",
   "roadmap.errors.rate_limit_exceeded": "Too many requests — please try again in a moment.",
   "roadmap.errors.status_derived": "This item's status follows its linked feature flag — change the flag's phase instead.",
+  "roadmap.errors.submission_blocked": "Your submission was blocked by our safety filters. If you believe this is a mistake, contact support.",
   "roadmap.errors.submit_failed": "Failed to submit your request. Please try again.",
   "roadmap.errors.title_required": "Please enter a title for your request.",
   "roadmap.errors.unauthorized": "Please sign in to continue.",
@@ -6375,8 +6376,7 @@
   "wiki.view_all_articles": "View all articles",
   "wiki.view_more_prices": "View more {section} prices",
   "wiki.wiki_only_banner_body": "{name} is a wiki-only place — guides and facts live here instead of a community feed.",
-  "wiki.wiki_only_banner_title": "This place lives on the wiki"
-,
+  "wiki.wiki_only_banner_title": "This place lives on the wiki",
   "tips.below_minimum": "Below the recipient minimum",
   "tips.failed": "Tip failed — try again",
   "tips.history": "Tip history",
@@ -6388,5 +6388,18 @@
   "tips.transfer_pending": "Tip created — complete the payment to settle it.",
   "tips.transfer_pending_hint": "The tip is recorded once the payment is confirmed.",
   "tips.unavailable": "Tips are not available here",
-  "tips.view_history": "View tip history"
+  "tips.view_history": "View tip history",
+  "profile.block_error": "The action could not be completed. Please try again.",
+  "profile.blocked_state": "Blocked",
+  "profile.blocked_banner": "You blocked {name} — they can't follow or message you, and their posts are hidden.",
+  "profile.blocked_by_banner": "This account has restricted interaction with you.",
+  "profile.block_confirm_title": "Block {name}?",
+  "profile.block_confirm_body": "They will no longer be able to follow you or message you, and you will no longer see their posts. They will not be notified.",
+  "settings.privacy.blocked_users": "Manage blocked users",
+  "settings.privacy.blocked_users_desc": "Review and unblock accounts you have blocked.",
+  "messages.requests_block_confirm": "Block this user? They will no longer be able to message you.",
+  "space.followers_label": "Followers",
+  "entity.stat_following": "following",
+  "entity.stat_followers": "followers",
+  "profile.follows_you": "Follows you"
 }

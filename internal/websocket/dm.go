@@ -557,12 +557,27 @@ type DMPrivacyResult struct {
 
 // DMService provides DM operations with business logic.
 type DMService struct {
-	store       *DMStore
-	hub         *Hub
-	AsynqClient *asynq.Client
-	vkClient    *valkey.Client
-	lit         literalResolver // nil disables literal resolution (§14)
+	store        *DMStore
+	hub          *Hub
+	AsynqClient  *asynq.Client
+	vkClient     *valkey.Client
+	lit          literalResolver // nil disables literal resolution (§14)
+	blockApplier BlockApplier    // nil falls back to CreateUserBlock only
 }
+
+// BlockApplier applies the full §41 user-block side-effects (block row,
+// follow removal in both directions, follower_count sync, pending DM
+// request decline, cache invalidation). Implemented by
+// interactions.Service — wired via SetBlockApplier so the DM-request
+// "block" action converges to the same state as POST /users/{id}/block
+// (BLK-004).
+type BlockApplier interface {
+	BlockUser(ctx context.Context, blockerID, blockedID pgtype.UUID) error
+}
+
+// SetBlockApplier injects the full block implementation. Optional: when nil
+// the block path only writes the user_blocks row (legacy behaviour).
+func (s *DMService) SetBlockApplier(b BlockApplier) { s.blockApplier = b }
 
 // NewDMService creates a DMService with the given store and hub.
 func NewDMService(store *DMStore, hub *Hub) *DMService {
@@ -1246,13 +1261,24 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, requestID, userID 
 	case MessageRequestDeclined:
 		return "", s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestDeclined)
 	case MessageRequestBlocked:
-		if err := s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestBlocked); err != nil {
-			return "", err
-		}
 		// Section 48: block = decline + add requester to user_blocks so they
 		// can no longer DM or see the recipient's content (Section 41).
-		if err := s.store.CreateUserBlock(ctx, userID, dmReq.RequesterID); err != nil {
+		// BLK-004: when the full block service is wired, run the complete
+		// §41 side-effect set (follow removal + count sync + pending-request
+		// decline + cache invalidation) instead of the bare row insert.
+		// Ordering: apply the block FIRST — a status-update failure then
+		// leaves only an unstamped request (harmless, retriable), never a
+		// 'blocked' request with no user_blocks row.
+		if s.blockApplier != nil {
+			if err := s.blockApplier.BlockUser(ctx, userID, dmReq.RequesterID); err != nil {
+				return "", fmt.Errorf("creating user block: %w", err)
+			}
+		} else if err := s.store.CreateUserBlock(ctx, userID, dmReq.RequesterID); err != nil {
 			return "", fmt.Errorf("creating user block: %w", err)
+		}
+
+		if err := s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestBlocked); err != nil {
+			return "", err
 		}
 
 		return "", nil

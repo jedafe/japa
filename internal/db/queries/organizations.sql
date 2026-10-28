@@ -107,7 +107,15 @@ SELECT om.*, COALESCE(u.public_username, u.username, '') AS username, up.display
 FROM organization_members om
 JOIN users u ON u.id = om.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE om.organization_id = $1
+WHERE om.organization_id = @organization_id
+ AND (
+   sqlc.narg(viewer_id)::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = sqlc.narg(viewer_id)::uuid AND ub.blocked_id = om.user_id)
+        OR (ub.blocker_id = om.user_id AND ub.blocked_id = sqlc.narg(viewer_id)::uuid)
+   )
+ )
 ORDER BY om.joined_at DESC;
 
 -- name: UpdateOrganizationSourceID :exec
@@ -142,6 +150,14 @@ ORDER BY oi.created_at DESC;
 -- email+org (BUG-017). Returns pgx.ErrNoRows if none exists.
 SELECT id FROM organization_invitations
 WHERE organization_id = $1 AND email = $2 AND accepted_at IS NULL
+ AND (
+   sqlc.narg(viewer_id)::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = sqlc.narg(viewer_id)::uuid AND ub.blocked_id = om.user_id)
+        OR (ub.blocker_id = om.user_id AND ub.blocked_id = sqlc.narg(viewer_id)::uuid)
+   )
+ )
 LIMIT 1;
 
 -- name: AcceptOrganizationInvitation :exec

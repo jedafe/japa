@@ -133,6 +133,21 @@
 		/>
 	</label>
 
+	<!-- Manage blocked users — the blocked-accounts list lives on the
+	     dashboard Relationships tab; surface it here where users look for
+	     privacy controls (BLK-017). -->
+	<div class="mt-4">
+		<a
+			href="/dashboard/relationships"
+			class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
+		>
+			{t('settings.privacy.blocked_users', 'Manage blocked users')}
+		</a>
+		<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+			{t('settings.privacy.blocked_users_desc', 'Review and unblock accounts you have blocked.')}
+		</p>
+	</div>
+
 	<!-- Manage blocked sources — the unblock list lived at an orphaned URL
 	     (/me/blocked-sources) with no navigation path to it. -->
 	<div class="mt-4 border-t border-[var(--color-border)] pt-4">

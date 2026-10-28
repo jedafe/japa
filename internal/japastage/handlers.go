@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/jackc/pgx/v5/pgtype"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -215,6 +216,17 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get japa stage profile")
 
 		return
+	}
+
+	// §41 strict: a blocked viewer cannot read the japa-stage profile.
+	if viewer := auth.FromContext(r.Context()); viewer != nil && profile.UserID != "" && profile.UserID != viewer.UserID.String() {
+		var targetID pgtype.UUID
+		if err := targetID.Scan(profile.UserID); err == nil {
+			if blocked, bErr := h.service.IsBlocked(r.Context(), viewer.UserID, targetID); bErr == nil && blocked {
+				errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "This account is unavailable")
+				return
+			}
+		}
 	}
 
 	h.resolveLiterals(r, &profile)

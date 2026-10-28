@@ -358,6 +358,30 @@ func (s *Service) GetProfileByUsername(ctx context.Context, username string) (*U
 	}, nil
 }
 
+// FillBlockState populates IsBlocked/BlockedBy on a public profile response
+// for an authenticated viewer (BLK-006). Best-effort: lookup failures leave
+// the fields unset rather than failing the profile read.
+func (s *Service) FillBlockState(ctx context.Context, viewerID, targetID pgtype.UUID, resp *PublicProfileResponse) {
+	blocked, err := s.store.read.IsUserBlockedDirectional(ctx, gen.IsUserBlockedDirectionalParams{
+		BlockerID: viewerID,
+		BlockedID: targetID,
+	})
+	if err != nil {
+		return
+	}
+
+	blockedBy, err := s.store.read.IsUserBlockedDirectional(ctx, gen.IsUserBlockedDirectionalParams{
+		BlockerID: targetID,
+		BlockedID: viewerID,
+	})
+	if err != nil {
+		return
+	}
+
+	resp.IsBlocked = &blocked
+	resp.BlockedBy = &blockedBy
+}
+
 // GetPublicProfileByUsername returns the lean, PII-safe public profile for
 // the given username within a platform, restricted to active users. It never
 // exposes email, status, last_login_at, or groups (Section 19 / ADR-014).
@@ -1019,6 +1043,39 @@ var publicUserSortKeys = map[string]bool{
 // (total, page, total_pages).
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 // //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out).
+// AnnotateFollowing stamps is_following on each item for an authenticated
+// viewer via a single bulk query (Section 31).
+func (s *Service) AnnotateFollowing(ctx context.Context, callerID pgtype.UUID, items []PublicProfileResponse) {
+	if !callerID.Valid || len(items) == 0 {
+		return
+	}
+	ids := make([]pgtype.UUID, 0, len(items))
+	for i := range items {
+		var id pgtype.UUID
+		if err := id.Scan(items[i].ID); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	rows, err := s.store.read.GetBulkFollowingStatus(ctx, gen.GetBulkFollowingStatusParams{
+		FollowerID: callerID, EntityType: "user", EntityIds: ids,
+	})
+	if err != nil {
+		return
+	}
+	m := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		if r.EntityID.Valid {
+			m[r.EntityID.String()] = r.IsFollowing
+		}
+	}
+	for i := range items {
+		items[i].IsFollowing = m[items[i].ID]
+	}
+}
+
 func (s *Service) ListPublicUsers(ctx context.Context, search, profileType, sortKey string, limit, offset int32) (*PublicUserListResponse, error) {
 	if limit <= 0 {
 		limit = 20

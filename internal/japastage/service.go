@@ -703,3 +703,14 @@ func formatTs(t pgtype.Timestamptz) string {
 
 	return t.Time.UTC().Format(time.RFC3339)
 }
+
+// IsBlocked reports whether either user has blocked the other (§41).
+// japa_stage uses direct pgx (no sqlc queries yet) — same EXISTS shape.
+func (s *Service) IsBlocked(ctx context.Context, a, b pgtype.UUID) (bool, error) {
+	var blocked bool
+	err := s.store.pool.Reader.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM user_blocks
+		 WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1))`,
+		a, b).Scan(&blocked)
+	return blocked, err
+}

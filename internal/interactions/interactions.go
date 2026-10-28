@@ -18,10 +18,11 @@ const muteCacheTTL = 10 * time.Minute
 
 // Service provides block/mute operations with reader/writer pool separation.
 type Service struct {
-	db    *db.DB
-	read  *gen.Queries
-	write *gen.Queries
-	vk    valkeycompat.Cmdable // nil disables caching (tests/development)
+	followInv FollowCacheInvalidator
+	db        *db.DB
+	read      *gen.Queries
+	write     *gen.Queries
+	vk        valkeycompat.Cmdable // nil disables caching (tests/development)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -30,6 +31,21 @@ func NewService(database *db.DB) *Service {
 		db:    database,
 		read:  gen.New(database.Reader),
 		write: gen.New(database.Writer),
+	}
+}
+
+// followInv invalidates a cached jc:is_following key for one direction.
+// Wired by the server to follows.Service.InvalidateFollowing; nil disables.
+type FollowCacheInvalidator func(followerID, entityID pgtype.UUID)
+
+// SetFollowCacheInvalidator wires the follow cache invalidator used after
+// BlockUser deletes follows out-of-band.
+func (s *Service) SetFollowCacheInvalidator(fn func(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID)) {
+	if fn == nil {
+		return
+	}
+	s.followInv = func(a, b pgtype.UUID) {
+		fn(context.Background(), a, "user", b)
 	}
 }
 

@@ -50,6 +50,17 @@ type DispatchResult struct {
 // 3. If no window: create new window
 // Returns whether a new notification was created or batch was extended.
 func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.UUID, nType, _ string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, _, _, _ string) (DispatchResult, error) {
+	// §41 (BLK-008): a user block in either direction suppresses the
+	// notification entirely — the blocked party's actions must not reach
+	// the other side. Central check so every dispatch path (comments,
+	// reactions, follows, shares) inherits it. Best-effort: on lookup
+	// failure the notification proceeds rather than being dropped.
+	if actorID.Valid {
+		if blocked, err := s.store.isBlocked(ctx, recipientID, actorID); err == nil && blocked {
+			return DispatchResult{Action: "skipped"}, nil
+		}
+	}
+
 	// Check effective preferences (user override OR type default).
 	// BUG-001: previously only checked explicit user preferences, ignoring
 	// notification_type defaults. A type with default_in_app=false would
@@ -315,6 +326,15 @@ func stringPtr(s string) *string {
 // CreateNotification directly creates a single notification (non-batch path).
 // If the recipient has push enabled for this type, a push delivery task is enqueued.
 func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error {
+	// §41 (BLK-008): same suppression as DispatchNotification on the
+	// non-batch path — user-attributed notifications from a blocked actor
+	// never reach the recipient.
+	if actorID.Valid {
+		if blocked, err := s.store.isBlocked(ctx, recipientID, actorID); err == nil && blocked {
+			return nil
+		}
+	}
+
 	var actorTypePtr *string
 	if actorType != "" {
 		actorTypePtr = &actorType

@@ -4,7 +4,7 @@
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto, invalidate } from '$app/navigation';
 	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe, TriangleAlert } from 'lucide-svelte';
-	import { MenuItem } from '$lib/components/ui';
+	import { MenuItem, Modal } from '$lib/components/ui';
 	import { Chart, Bars, LineChart, Tooltip } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
@@ -83,6 +83,7 @@
 	// profile Videos tab alongside imported/uploaded video_sources.
 	const videoPosts = $derived(data.posts.filter((p) => p.content_type === 'video'));
 	const initiallyFollowing = $derived(data.initiallyFollowing);
+	const followedBy = $derived(data.initiallyFollowedBy ?? false);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'overview'));
 	let reportOpen = $state(false);
 	let messageOpen = $state(false);
@@ -140,19 +141,35 @@
 	// FollowButton pattern — local state seeded from SSR, optimistic update,
 	// invalidate the blocked-users list on success.
 	let isBlocked = $state(false);
+	let isBlockedBy = $state(false);
 	let blockPending = $state(false);
+	let blockConfirmOpen = $state(false);
+	let blockError = $state('');
 
-	// Re-seed isBlocked when the SSR data changes (e.g. navigating to a
+	// Re-seed the block state when the SSR data changes (e.g. navigating to a
 	// different user's profile). Using $effect avoids the
-	// state_referenced_locally warning and keeps the toggle in sync with
-	// the server-side blocked-users check on navigation.
+	// state_referenced_locally warning and keeps the toggle in sync with the
+	// server-side block-status check on navigation.
 	$effect(() => {
 		isBlocked = data.initiallyBlocked;
+		isBlockedBy = data.initiallyBlockedBy ?? false;
 	});
+
+	// BLK-009: blocking is destructive (both follows deleted, pending DM
+	// requests declined) — confirm first. Unblock stays instant.
+	function requestBlockToggle() {
+		if (blockPending) return;
+		if (isBlocked) {
+			toggleBlock();
+		} else {
+			blockConfirmOpen = true;
+		}
+	}
 
 	async function toggleBlock() {
 		if (blockPending) return;
 		blockPending = true;
+		blockError = '';
 		const wasBlocked = isBlocked;
 		isBlocked = !wasBlocked; // optimistic
 		try {
@@ -161,9 +178,13 @@
 			} else {
 				await blockUser(user.id);
 			}
-			await invalidate('/api/v1/me/blocked-users');
+			await invalidate(`/api/v1/users/${user.id}/block-status`);
 		} catch (e) {
 			isBlocked = wasBlocked; // revert on error
+			// BLK-010: surface the failure — previously the toggle silently
+			// reverted and the user could not tell the action failed.
+			blockError = t('profile.block_error', 'The action could not be completed. Please try again.');
+			setTimeout(() => (blockError = ''), 6000);
 		} finally {
 			blockPending = false;
 		}
@@ -773,9 +794,9 @@
 		{stats}
 		{savedLabel}
 		journey={journeyCard}
-		onMessage={openMessage}
+		onMessage={isBlocked || isBlockedBy ? undefined : openMessage}
 		onReport={() => (reportOpen = true)}
-		onToggleBlock={toggleBlock}
+		onToggleBlock={requestBlockToggle}
 		{isBlocked}
 		{blockPending}
 	/>
@@ -784,16 +805,27 @@
 <!-- Centered to the same max-w-3xl column as the tab body so the header's
      left/right margins stay symmetric when the side nav is collapsed. -->
 <div class="mx-auto w-full max-w-3xl">
-<ProfileHeader {user} {isOwnProfile} followers={data.followers} following={data.following}>
+<ProfileHeader {user} {isOwnProfile} {followedBy} followers={data.followers} following={data.following}>
 	{#if !isOwnProfile}
-		<FollowButton
-			entityType="user"
-			entityId={user.id}
-			{initiallyFollowing}
-			onChange={() => invalidate(`/api/v1/users/${user.username}`)}
-		/>
-		{#if data.features?.['tips.enabled']}
-			<TipButton recipientType="user" recipientKey={user.username} recipientId={user.id} recipientName={user.display_name ?? user.username} />
+		{#if isBlocked}
+			<!-- BLK-011/012: blocked state — replace interaction buttons with
+			     an unblock affordance, matching X's "blocked" profile state. -->
+			<button
+				type="button"
+				class="rounded-full border border-[var(--color-danger)] px-4 py-1.5 text-sm font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
+				disabled={blockPending}
+				onclick={toggleBlock}
+			>{t('profile.blocked_state', 'Blocked')}</button>
+		{:else if !isBlockedBy}
+			<FollowButton
+				entityType="user"
+				entityId={user.id}
+				{initiallyFollowing}
+				onChange={() => invalidate(`/api/v1/users/${user.username}`)}
+			/>
+			{#if data.features?.['tips.enabled']}
+				<TipButton recipientType="user" recipientKey={user.username} recipientId={user.id} recipientName={user.display_name ?? user.username} />
+			{/if}
 		{/if}
 	{/if}
 	{#snippet menuItems()}
@@ -801,7 +833,7 @@
 			<MenuItem icon={VolumeX} disabled={mutePending} onSelect={toggleMute}>
 				{isMuted ? t('profile.unmute', 'Unmute') : t('profile.mute', 'Mute')}
 			</MenuItem>
-			<MenuItem icon={Ban} destructive disabled={blockPending} onSelect={toggleBlock}>
+			<MenuItem icon={Ban} destructive disabled={blockPending} onSelect={requestBlockToggle}>
 				{isBlocked ? t('profile.unblock', 'Unblock') : t('profile.block', 'Block')}
 			</MenuItem>
 			<MenuItem icon={Flag} onSelect={() => (reportOpen = true)}>
@@ -816,6 +848,63 @@
 	{/snippet}
 </ProfileHeader>
 </div>
+
+<!-- BLK-010: transient error notice for failed block/unblock attempts. -->
+{#if blockError}
+	<div class="mx-auto mt-2 w-full max-w-3xl px-4" role="alert">
+		<div class="rounded-[var(--radius)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]">{blockError}</div>
+	</div>
+{/if}
+
+<!-- BLK-012: blocked-state banner — explains why the profile looks empty
+     and offers an immediate unblock path. -->
+{#if isBlocked}
+	<div class="mx-auto mt-3 w-full max-w-3xl px-4">
+		<div class="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3">
+			<p class="text-sm text-[var(--color-muted)]">
+				{t('profile.blocked_banner', 'You blocked {name} — they can\'t follow or message you, and their posts are hidden.', { name: user.display_name ?? user.username })}
+			</p>
+			<button
+				type="button"
+				class="shrink-0 rounded-full border border-[var(--color-border)] px-3 py-1 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface)] disabled:opacity-50"
+				disabled={blockPending}
+				onclick={toggleBlock}
+			>{t('profile.unblock', 'Unblock')}</button>
+		</div>
+	</div>
+{:else if isBlockedBy}
+	<div class="mx-auto mt-3 w-full max-w-3xl px-4">
+		<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3 text-sm text-[var(--color-muted)]">
+			{t('profile.blocked_by_banner', 'This account has restricted interaction with you.')}
+		</div>
+	</div>
+{/if}
+
+<!-- BLK-009: block confirmation — explains consequences before the
+     destructive action runs (unfollows both ways, declines DM requests). -->
+<Modal
+	bind:open={blockConfirmOpen}
+	icon={Ban}
+	title={t('profile.block_confirm_title', 'Block {name}?', { name: user.display_name ?? user.username })}
+	description={t('profile.block_confirm_body', 'They will no longer be able to follow you or message you, and you will no longer see their posts. They will not be notified.')}
+	size="sm"
+>
+	{#snippet children(close)}
+		<div class="flex justify-end gap-2">
+			<button
+				type="button"
+				class="rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				onclick={close}
+			>{t('common.cancel', 'Cancel')}</button>
+			<button
+				type="button"
+				class="rounded-full bg-[var(--color-danger)] px-4 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+				disabled={blockPending}
+				onclick={async () => { close(); await toggleBlock(); }}
+			>{t('profile.block', 'Block')}</button>
+		</div>
+	{/snippet}
+</Modal>
 
 <ReportDialog bind:open={reportOpen} entityType="user" entityId={user.id} entityName={user.display_name ?? user.username} />
 <MessageUserDialog bind:open={messageOpen} recipientId={messageRecipient.id} recipientName={messageRecipient.name} authed={isAuthenticated} />

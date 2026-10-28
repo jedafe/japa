@@ -115,7 +115,7 @@ ORDER BY ub.created_at DESC
 LIMIT $2 OFFSET $3;
 
 -- name: ListAllUserBlocks :many
--- Platform-scoped per JEOS §9 (BUG-001). Admin list must not cross platforms.
+-- Single-tenant deployment: user_blocks has no platform_id column. Admin list intentionally spans the whole instance.
 SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
  bu.username AS blocker_username, bp.display_name AS blocker_display_name,
  buu.username AS blocked_username, bpp.display_name AS blocked_display_name
@@ -149,6 +149,11 @@ SELECT COUNT(*)::int AS count
 FROM user_blocks
 ;
 
+-- name: CountBlockedUsers :one
+SELECT COUNT(*)::int AS count
+FROM user_blocks
+WHERE blocker_id = $1;
+
 -- name: IsBlocked :one
 -- Platform-scoped per JEOS §9 (BUG-006). Checks both directions in one query.
 SELECT EXISTS(
@@ -156,6 +161,37 @@ SELECT EXISTS(
  WHERE ((blocker_id = $1 AND blocked_id = $2)
  OR (blocker_id = $2 AND blocked_id = $1))
 ) AS blocked;
+
+-- name: IsUserBlockedDirectional :one
+-- Directional check: true only when blocker_id has blocked blocked_id.
+-- Backs GET /users/{id}/block-status (BLK-005) so the frontend no longer
+-- has to page the whole blocked-users list to hydrate the toggle.
+SELECT EXISTS(
+ SELECT 1 FROM user_blocks
+ WHERE blocker_id = $1 AND blocked_id = $2
+) AS blocked;
+
+-- name: GetMutuallyBlockedUserIDs :many
+-- Returns the subset of @candidate_ids that have a user_blocks row with
+-- @viewer_id in EITHER direction. Used for post-filtering search results
+-- (BLK-006 / §41 mutual invisibility) without N+1.
+SELECT DISTINCT other_id FROM (
+ SELECT ub.blocked_id AS other_id FROM user_blocks ub
+ WHERE ub.blocker_id = @viewer_id AND ub.blocked_id = ANY(@candidate_ids::uuid[])
+ UNION
+ SELECT ub.blocker_id AS other_id FROM user_blocks ub
+ WHERE ub.blocked_id = @viewer_id AND ub.blocker_id = ANY(@candidate_ids::uuid[])
+) blocked_pair;
+
+-- name: SyncFollowerCountAfterBlock :exec
+-- Recomputes both users' denormalized follower_count from the follows
+-- table. Run inside the block transaction after DeleteFollowsBetweenUsers
+-- so the count cannot drift the way a blind decrement could (BLK-003).
+UPDATE users u SET follower_count = (
+ SELECT COUNT(*) FROM follows f
+ WHERE f.entity_type = 'user' AND f.entity_id = u.id
+)
+WHERE u.id IN ($1, $2);
 
 -- =====================
 -- Block side-effects (BE-1 / Section 41 line 147)

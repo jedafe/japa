@@ -430,3 +430,18 @@ func (s *Service) ListComparisonContentsBySourceID(ctx context.Context, sourceID
 
 	return rows, int64(total), nil
 }
+
+// IsBlocked reports whether either user has blocked the other (§41).
+func (s *Service) IsBlocked(ctx context.Context, a, b pgtype.UUID) (bool, error) {
+	return s.read.IsBlocked(ctx, gen.IsBlockedParams{BlockerID: a, BlockedID: b})
+}
+
+// IsContentAuthorBlocked reports whether the viewer and the content's
+// author share a user_blocks row either direction (§41).
+func (s *Service) IsContentAuthorBlocked(ctx context.Context, viewerID, contentID pgtype.UUID) (bool, error) {
+	authorID, err := s.read.GetContentAuthorID(ctx, contentID)
+	if err != nil || !authorID.Valid || authorID == viewerID {
+		return false, err
+	}
+	return s.read.IsBlocked(ctx, gen.IsBlockedParams{BlockerID: viewerID, BlockedID: authorID})
+}

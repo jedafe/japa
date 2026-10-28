@@ -77,10 +77,14 @@ export const load: PageServerLoad = async (event) => {
 		jsonLd = envelope.json_ld ?? null;
 	} catch (e) {
 		const status = e instanceof Error && 'status' in e ? (e as { status: number }).status : 500;
-		throw error(status === 404 ? 404 : 500, {
-			code: status === 404 ? 'not_found' : 'server_error',
-			message: status === 404 ? 'User not found' : 'Failed to load profile'
-		});
+		// 403 = §41 strict block: the profile owner has blocked the viewer —
+		// surface "unavailable", not a server error.
+		const code = status === 404 ? 'not_found' : status === 403 ? 'user_blocked' : 'server_error';
+		const message =
+			status === 404 ? 'User not found'
+			: status === 403 ? 'This account is unavailable'
+			: 'Failed to load profile';
+		throw error(status === 404 || status === 403 ? status : 500, { code, message });
 	}
 
 	// §106: video-channel synthetic users have no public profile — the
@@ -110,27 +114,40 @@ export const load: PageServerLoad = async (event) => {
 	// relative-path invalidate to match this load.
 	event.depends(`/api/v1/users/${userId}/mute-status`);
 
+	// The block toggle's invalidate() targets the block-status key — declare
+	// it here so the relative-path invalidate re-runs this load and refreshes
+	// initiallyBlocked/initiallyBlockedBy authoritatively.
+	if (event.locals.user) {
+		event.depends(`/api/v1/users/${userId}/block-status`);
+	}
+
 	// C2: hydrate the follow button's initial state on SSR. Only fetch when
 	// the viewer is authenticated and viewing someone else's profile — own
 	// profile has no follow button, and guests can't follow. Best-effort:
 	// a failure degrades to `false` (not following).
-	const initiallyFollowing =
+	// BUG-026 (follows audit): single follow-status call feeds both the
+	// follow button state (following) and the "Follows you" badge
+	// (followed_by) already returned by the endpoint contract.
+	const followStatus =
 		!isOwnProfile && event.locals.user
-			? apiGet<{ following: boolean }>(ctx, `/users/${userId}/follow-status`)
-					.then((r) => r.following)
-					.catch(catchFalse('follow-status'))
-			: Promise.resolve(false);
+			? apiGet<{ following: boolean; followed_by: boolean }>(ctx, `/users/${userId}/follow-status`).catch(() => null)
+			: Promise.resolve(null);
 
-	// BUG-007: hydrate the block button's initial state on SSR. Fetches the
-	// viewer's blocked-users list and checks whether the profile user is in
-	// it. Only fetch when the viewer is authenticated and viewing someone
-	// else's profile. Best-effort: a failure degrades to `false` (not blocked).
-	const initiallyBlocked =
+	const initiallyFollowing = followStatus.then((r) => r?.following ?? false);
+	const initiallyFollowedBy = followStatus.then((r) => r?.followed_by ?? false);
+
+	// BUG-007: hydrate the block button's initial state on SSR via the
+	// directional block-status endpoint (BLK-005). Previously this fetched
+	// the first page of /me/blocked-users, so viewers with >20 blocked users
+	// got a wrong "not blocked" state for profiles beyond the first page.
+	// blocked_by additionally tells the page the target has blocked the
+	// viewer (interaction gating). Best-effort: a failure degrades to
+	// {blocked:false, blocked_by:false}.
+	const blockStatus: Promise<{ blocked: boolean; blocked_by: boolean } | null> =
 		!isOwnProfile && event.locals.user
-			? apiList<{ blocked_id: string }>(ctx, '/me/blocked-users')
-					.then((r) => r.items.some((b) => b.blocked_id === userId))
-					.catch(catchFalse('blocked-users'))
-			: Promise.resolve(false);
+			? apiGet<{ blocked: boolean; blocked_by: boolean }>(ctx, `/users/${userId}/block-status`)
+					.catch(catchNull('block-status'))
+			: Promise.resolve({ blocked: false, blocked_by: false });
 
 	// FE-1: hydrate the mute button's initial state on SSR. Fetches the
 	// per-user mute-status endpoint. Only fetch when the viewer is
@@ -214,7 +231,7 @@ export const load: PageServerLoad = async (event) => {
 		};
 	}
 
-	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following, videos, bookmarks] = await Promise.all([
+	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, followedBy, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following, videos, bookmarks] = await Promise.all([
 		// Tabs paginate client-side over the loaded list — fetch every page so
 		// totals, search, and paging reflect the whole dataset (capped at
 		// MAX_LIST_PAGES × 100).
@@ -231,6 +248,7 @@ export const load: PageServerLoad = async (event) => {
 			? apiGet<ProfileAnalytics>(ctx, `/users/${userId}/analytics`).catch(catchNull<ProfileAnalytics>('analytics'))
 			: Promise.resolve(null),
 		initiallyFollowing,
+		initiallyFollowedBy,
 		// Phase 34.03 — earned badges (Section 64, ADR-080). Own profile uses the
 		// authenticated /me/badges endpoint; other profiles use the public
 		// username-scoped route. Both return the same BadgeWithDetails shape.
@@ -250,7 +268,7 @@ export const load: PageServerLoad = async (event) => {
 		isOwnProfile
 			? apiList<TopContentItem>(ctx, '/me/analytics/content?page_size=10').then((r) => r.items).catch(catchEmpty<TopContentItem>('top-content'))
 			: Promise.resolve([] as TopContentItem[]),
-		initiallyBlocked,
+		blockStatus,
 		initiallyMuted,
 		// §87 — public japa stage. Best-effort: degrades to null when the
 		// feature flag is off, the profile is private, or the user has no
@@ -291,7 +309,9 @@ export const load: PageServerLoad = async (event) => {
 		isAuthenticated: !!event.locals.user,
 		currentUser: event.locals.user ?? null,
 		initiallyFollowing: isFollowing,
-		initiallyBlocked: isBlocked,
+		initiallyFollowedBy: followedBy,
+		initiallyBlocked: isBlocked?.blocked ?? false,
+		initiallyBlockedBy: isBlocked?.blocked_by ?? false,
 		initiallyMuted: isMuted,
 		posts,
 		replies,

@@ -22,6 +22,9 @@ type FollowerInfo struct {
 	AvatarURL   string `json:"avatar_url"`
 	ProfileType string `json:"profile_type"`
 	IsFollowing bool   `json:"is_following"`
+	// IsSynthetic marks persona/bot followers so UIs and consumers can flag
+	// or exclude synthetic activity per P10.
+	IsSynthetic bool `json:"is_synthetic"`
 }
 
 // FollowingInfo extends a follow row with the entity's display name + slug.
@@ -50,6 +53,12 @@ const joiningPermOpen = "open"
 // follow row can be inserted for a non-existent entity (data integrity).
 var ErrEntityNotFound = errors.New("entity not found")
 
+// ErrUserBlocked is returned by ToggleFollow when a follow would be created
+// between two users who share a user_blocks row in either direction
+// (Section 41: "B cannot follow A"). Unfollowing remains allowed so a stale
+// follow row can always be cleared.
+var ErrUserBlocked = errors.New("user blocked")
+
 // ToggleFollow handles follow/unfollow logic. Returns true if the user is now
 // following the entity, false if they unfollowed. When following a space with
 // `joining_perm = 'open'`, the follower is auto-joined as a member (BL-010 /
@@ -73,6 +82,26 @@ func (s *Service) ToggleFollow(ctx context.Context, followerID pgtype.UUID, enti
 	// without this check a follow row can dangle for a non-existent entity.
 	if err := s.validateEntityExists(ctx, entityType, entityId); err != nil {
 		return false, err
+	}
+
+	// §41 (BLK-001): a user block in either direction forbids creating a
+	// follow between the pair. Only block the CREATE leg — an existing
+	// follow must stay removable so block-time cleanup can never wedge.
+	if entityType == EntityTypeUser {
+		following, fErr := s.IsFollowing(ctx, followerID, entityType, entityId)
+		if fErr == nil && !following {
+			blocked, bErr := s.store.read.IsBlocked(ctx, gen.IsBlockedParams{
+				BlockerID: followerID,
+				BlockedID: entityId,
+			})
+			if bErr != nil {
+				return false, fmt.Errorf("checking block status: %w", bErr)
+			}
+
+			if blocked {
+				return false, ErrUserBlocked
+			}
+		}
 	}
 
 	// H1: wrap toggle + count update in a transaction so a count-update
@@ -109,12 +138,114 @@ func (s *Service) ToggleFollow(ctx context.Context, followerID pgtype.UUID, enti
 		return false, fmt.Errorf("committing transaction: %w", err)
 	}
 
-	// L3: invalidate the is_following cache for this follower-entity pair so
-	// the next IsFollowing call refetches the authoritative state from DB.
-	// Best-effort — a failed DEL degrades to a stale read that self-heals
-	// after the 60s TTL.
+	s.afterFollowChange(ctx, followerID, entityType, entityId, followed)
+
+	return followed, nil
+}
+
+// applyFollowState is the shared ensure-style primitive. wantFollow=true
+// inserts the follow if absent (ensure-follow); wantFollow=false deletes it
+// if present (ensure-unfollow). Count deltas and side effects fire ONLY on
+// an actual state change — the sqlc affected-rows count is authoritative,
+// so concurrent or repeated calls are safe and stale is_following cache
+// reads can never gate the decision (the DB row is the truth).
+func (s *Service) applyFollowState(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID, wantFollow bool) (bool, error) {
+	if !isValidEntityType(entityType) {
+		return false, fmt.Errorf("invalid entity type: %s", entityType)
+	}
+
+	if entityType == EntityTypeUser && followerID == entityID {
+		return false, errors.New("cannot follow yourself")
+	}
+
+	// Only validate existence when creating a follow — an unfollow must
+	// always succeed so stale rows are removable even for deleted entities.
+	if wantFollow {
+		if err := s.validateEntityExists(ctx, entityType, entityID); err != nil {
+			return false, err
+		}
+
+		// §41 (BLK-001): a user block in either direction forbids creating a
+		// follow between the pair.
+		if entityType == EntityTypeUser {
+			blocked, bErr := s.store.read.IsBlocked(ctx, gen.IsBlockedParams{
+				BlockerID: followerID,
+				BlockedID: entityID,
+			})
+			if bErr != nil {
+				return false, fmt.Errorf("checking block status: %w", bErr)
+			}
+
+			if blocked {
+				return false, ErrUserBlocked
+			}
+		}
+	}
+
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("beginning transaction: %w", err)
+	}
+
+	defer tx.Rollback(ctx)
+
+	q := gen.New(tx)
+
+	var changed bool
+	if wantFollow {
+		changed, err = s.store.insertFollowIfAbsentTx(ctx, q, followerID, entityType, entityID)
+	} else {
+		changed, err = s.store.deleteFollowIfPresentTx(ctx, q, followerID, entityType, entityID)
+	}
+	if err != nil {
+		return false, err
+	}
+
+	if changed {
+		delta := int32(-1)
+		if wantFollow {
+			delta = 1
+		}
+		if err := s.updateFollowerCountTx(ctx, tx, entityType, entityID, delta); err != nil {
+			return false, fmt.Errorf("updating follower count: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("committing transaction: %w", err)
+	}
+
+	if changed {
+		s.afterFollowChange(ctx, followerID, entityType, entityID, wantFollow)
+	} else {
+		// Self-heal: even when the row didn't change, a stale is_following
+		// cache entry disagreeing with the DB should not linger for the
+		// full 60s TTL — cheap unconditional DEL.
+		s.InvalidateFollowing(ctx, followerID, entityType, entityID)
+	}
+
+	return wantFollow, nil
+}
+
+// afterFollowChange runs the post-commit side effects for an actual
+// follow-state change: cache invalidation, space auto-join (BL-010),
+// follow.received notification, and the §64 follow.created activity.
+func (s *Service) afterFollowChange(ctx context.Context, followerID pgtype.UUID, entityType string, entityId pgtype.UUID, followed bool) {
+	// Side effects outlive the request — detach the ctx so a client
+	// disconnect after commit cannot cancel them (Rule 8 fire-and-forget).
+	ctx = context.WithoutCancel(ctx)
+
+	// L3: write-through the fresh is_following state for this pair. A plain
+	// DEL leaves a window where a concurrent read can re-cache the stale
+	// value for the full TTL — SET makes the actor's cache authoritative
+	// immediately (other readers still self-heal within the 60s TTL).
+	// Best-effort — a failed SET degrades to a stale read that self-heals.
 	if s.vk != nil {
-		_ = s.vk.Del(ctx, isFollowingKey(followerID, entityType, entityId)).Err()
+		fresh := "0"
+		if followed {
+			fresh = "1"
+		}
+		_ = s.vk.Set(ctx, isFollowingKey(followerID, entityType, entityId), fresh, isFollowingCacheTTL).Err()
 
 		// BUG-012: invalidate the follower's for-you feed cache so the new
 		// follow/unfollow is reflected immediately in their ranked feed.
@@ -155,10 +286,23 @@ func (s *Service) ToggleFollow(ctx context.Context, followerID pgtype.UUID, enti
 			slog.Warn("auto-join: failed to read space joining_perm",
 				"space_id", entityId, "error", permErr)
 		} else if perm == joiningPermOpen {
-			if joinErr := s.store.addSpaceMember(ctx, entityId, followerID); joinErr != nil {
+			inserted, joinErr := s.store.addSpaceMember(ctx, entityId, followerID)
+			if joinErr != nil {
 				slog.Warn("auto-join: failed to add space member",
 					"space_id", entityId, "user_id", followerID, "error", joinErr)
 			} else {
+				// member_count is incremented only when the member row was
+				// actually inserted — the Join+IncrementSpaceCount path does
+				// the same accounting, so skip it when the user was already
+				// a member (SPACES-004 parity).
+				if inserted {
+					if _, cntErr := s.db.Writer.Exec(ctx,
+						"UPDATE spaces SET member_count = member_count + 1 WHERE id = $1", entityId); cntErr != nil {
+						slog.Warn("auto-join: failed to increment member_count",
+							"space_id", entityId, "error", cntErr)
+					}
+				}
+
 				// §64: auto-join via follow is a real membership — record
 				// space.joined so badge/challenge triggers (e.g.
 				// space_explorer) fire on this path too.
@@ -181,26 +325,14 @@ func (s *Service) ToggleFollow(ctx context.Context, followerID pgtype.UUID, enti
 			fmt.Sprintf("follow:%s:%s", entityType, entityId.String()),
 			map[string]interface{}{"entity_type": entityType})
 	}
-
-	return followed, nil
 }
 
-// EnsureFollow is an idempotent follow: it checks whether the caller already
-// follows the entity, and only toggles on when not already following. This
-// avoids onboarding (and other bulk-follow paths) accidentally unfollowing an
-// entity the user is already following, while still preserving count updates,
-// auto-join, notifications, and activity events via ToggleFollow.
+// EnsureFollow is an idempotent follow: the follow row is inserted only when
+// absent. Safe to call repeatedly (onboarding, join auto-follow, personas) —
+// it can never unfollow an already-followed entity. Count deltas, auto-join,
+// notifications, and activity events fire only on an actual state change.
 func (s *Service) EnsureFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
-	following, err := s.IsFollowing(ctx, followerID, entityType, entityID)
-	if err != nil {
-		return false, fmt.Errorf("checking follow status: %w", err)
-	}
-
-	if following {
-		return true, nil
-	}
-
-	return s.ToggleFollow(ctx, followerID, entityType, entityID)
+	return s.applyFollowState(ctx, followerID, entityType, entityID, true)
 }
 
 // EnsureUnfollow is the idempotent counterpart of EnsureFollow: it only
@@ -209,16 +341,53 @@ func (s *Service) EnsureFollow(ctx context.Context, followerID pgtype.UUID, enti
 // and DELETE previously inverted state on repeated calls). Returns the
 // resulting follow state (false when the unfollow took effect).
 func (s *Service) EnsureUnfollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
-	following, err := s.IsFollowing(ctx, followerID, entityType, entityID)
-	if err != nil {
-		return false, fmt.Errorf("checking follow status: %w", err)
+	return s.applyFollowState(ctx, followerID, entityType, entityID, false)
+}
+
+// InvalidateFollowing deletes the cached is_following key for one
+// follower-entity pair. Called by out-of-band deletes (block, GDPR, entity
+// removal) that bypass ToggleFollow's own invalidation.
+func (s *Service) InvalidateFollowing(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+	_ = s.vk.Del(ctx, isFollowingKey(followerID, entityType, entityID)).Err()
+}
+
+// InvalidateEntityFollowers deletes every follower's cached is_following key
+// for an entity (e.g. when the entity is deleted). Uses a SCAN of the
+// jc:is_following:*:{type}:{id} key pattern rather than reading the follows
+// table — callers delete the rows before invalidating, so a row lookup would
+// always find an empty set and leave the stale keys behind (the very bug this
+// exists to fix). Best-effort: misses self-heal on the 60s TTL.
+func (s *Service) InvalidateEntityFollowers(ctx context.Context, entityType string, entityID pgtype.UUID) {
+	if s.vk == nil {
+		return
 	}
 
-	if !following {
-		return false, nil
+	pattern := valkey.MustKey("is_following:*:%s:%s", entityType, entityID.String())
+
+	var cursor uint64
+
+	var keys []string
+
+	for {
+		scanKeys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return
+		}
+
+		keys = append(keys, scanKeys...)
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
 	}
 
-	return s.ToggleFollow(ctx, followerID, entityType, entityID)
+	if len(keys) > 0 {
+		_ = s.vk.Del(ctx, keys...).Err()
+	}
 }
 
 // GetFollow returns the follow row for a specific follower-entity pair.
@@ -298,7 +467,15 @@ func (s *Service) IsMutualFollow(ctx context.Context, followerID, entityID pgtyp
 // callerID is valid, each item includes is_following indicating whether the
 // caller follows that follower back (Section 31: bulk is_following per item).
 func (s *Service) GetFollowers(ctx context.Context, callerID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]FollowerInfo, error) {
-	rows, err := s.store.getFollowers(ctx, entityType, entityID, limit, offset)
+	// §41 strict variant: a blocked viewer cannot read the target's social
+	// graph — 403, same as the profile itself.
+	if entityType == EntityTypeUser && callerID.Valid {
+		if blocked, bErr := s.store.read.IsBlocked(ctx, gen.IsBlockedParams{BlockerID: callerID, BlockedID: entityID}); bErr == nil && blocked {
+			return nil, ErrUserBlocked
+		}
+	}
+
+	rows, err := s.store.getFollowers(ctx, callerID, entityType, entityID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting followers: %w", err)
 	}
@@ -335,6 +512,7 @@ func (s *Service) GetFollowers(ctx context.Context, callerID pgtype.UUID, entity
 			DisplayName: r.DisplayName,
 			AvatarURL:   r.AvatarUrl,
 			ProfileType: r.ProfileType,
+			IsSynthetic: r.IsSynthetic,
 		}
 		if bulkStatus != nil {
 			result[i].IsFollowing = bulkStatus[r.FollowerID]
@@ -348,7 +526,13 @@ func (s *Service) GetFollowers(ctx context.Context, callerID pgtype.UUID, entity
 // is valid, each item includes is_following indicating whether the caller
 // also follows that entity (Section 31: bulk is_following per item).
 func (s *Service) GetFollowing(ctx context.Context, callerID, followerID pgtype.UUID, limit, offset int32) ([]FollowingInfo, error) {
-	rows, err := s.store.getFollowing(ctx, followerID, limit, offset)
+	if callerID.Valid {
+		if blocked, bErr := s.store.read.IsBlocked(ctx, gen.IsBlockedParams{BlockerID: callerID, BlockedID: followerID}); bErr == nil && blocked {
+			return nil, ErrUserBlocked
+		}
+	}
+
+	rows, err := s.store.getFollowing(ctx, followerID, callerID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting following: %w", err)
 	}
@@ -383,7 +567,7 @@ func (s *Service) GetFollowing(ctx context.Context, callerID, followerID pgtype.
 // user follows (catalog: GET /me/followed-tags passes entityType "tag").
 // When callerID is valid, each item includes is_following.
 func (s *Service) GetFollowingByType(ctx context.Context, callerID, followerID pgtype.UUID, entityType string, limit, offset int32) ([]FollowingInfo, error) {
-	rows, err := s.store.getFollowingByType(ctx, followerID, entityType, limit, offset)
+	rows, err := s.store.getFollowingByType(ctx, followerID, entityType, callerID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("getting following by type: %w", err)
 	}
@@ -461,11 +645,6 @@ func (s *Service) CountFollowers(ctx context.Context, entityType string, entityI
 	return s.store.countFollowers(ctx, entityType, entityID)
 }
 
-// CountFollowing returns the following count for a user.
-func (s *Service) CountFollowing(ctx context.Context, followerID pgtype.UUID) (int32, error) {
-	return s.store.countFollowing(ctx, followerID)
-}
-
 // GetBulkFollowingStatus returns follow status for multiple entities of the same type.
 func (s *Service) GetBulkFollowingStatus(ctx context.Context, followerID pgtype.UUID, entityType string, entityIDs []pgtype.UUID) (map[pgtype.UUID]bool, error) {
 	return s.store.getBulkFollowingStatus(ctx, followerID, entityType, entityIDs)
@@ -494,30 +673,28 @@ func (s *Service) updateFollowerCount(ctx context.Context, entityType string, en
 // for a non-existent entity. Returns ErrEntityNotFound when the entity does
 // not exist.
 func (s *Service) validateEntityExists(ctx context.Context, entityType string, entityID pgtype.UUID) error {
-	var table string
+	var existsQuery string
 
 	switch entityType {
 	case EntityTypeUser:
-		table = "users"
+		// Only active users are followable — following a deactivated/banned
+		// account would create a ghost edge invisible in lists but counted.
+		existsQuery = "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND status = 'active')"
 	case EntityTypeSpace:
-		table = "spaces"
+		existsQuery = "SELECT EXISTS(SELECT 1 FROM spaces WHERE id = $1 AND deleted_at IS NULL)"
 	case EntityTypeTag:
-		table = "tags"
+		existsQuery = "SELECT EXISTS(SELECT 1 FROM tags WHERE id = $1)"
 	case EntityTypeOrganization:
-		table = "organizations"
+		existsQuery = "SELECT EXISTS(SELECT 1 FROM organizations WHERE id = $1 AND deleted_at IS NULL)"
 	case EntityTypeSource:
-		table = "intel_sources"
+		existsQuery = "SELECT EXISTS(SELECT 1 FROM intel_sources WHERE id = $1)"
 	default:
 		return fmt.Errorf("invalid entity type: %s", entityType)
 	}
 
 	var exists bool
 
-	err := s.db.Reader.QueryRow(
-		ctx,
-		fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE id = $1) AS exists", table),
-		entityID,
-	).Scan(&exists)
+	err := s.db.Reader.QueryRow(ctx, existsQuery, entityID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("checking entity existence: %w", err)
 	}

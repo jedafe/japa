@@ -2570,6 +2570,12 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §41 strict: a blocked actor cannot react on the other party's content.
+	if blocked, bErr := h.Service.IsContentAuthorBlocked(r.Context(), user.UserID, contentID); bErr == nil && blocked {
+		errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot react to this content")
+		return
+	}
+
 	var input struct {
 		ReactionKey string `json:"reaction_key"`
 	}

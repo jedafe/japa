@@ -226,6 +226,17 @@ func (s *Store) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSo
 	return row, nil
 }
 
+// ListIntelSourcesByIDs batch-fetches sources for the blocked-sources list
+// (BLK-018 — replaces the per-ID Get loop in HandleListBlockedSources).
+func (s *Store) ListIntelSourcesByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.IntelSource, error) {
+	rows, err := s.queries.ListIntelSourcesByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list intel sources by ids: %w", err)
+	}
+
+	return rows, nil
+}
+
 // GetPersonaUserID resolves the backing user_id for an AI persona. Used by
 // promoters to stamp contents.author_id with the persona's bot user instead
 // of the invalid default author ID (FK violation fix). Returns an invalid

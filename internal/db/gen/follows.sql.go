@@ -32,19 +32,7 @@ func (q *Queries) CountFollowersByEntity(ctx context.Context, arg CountFollowers
 	return count, err
 }
 
-const countFollowingByUser = `-- name: CountFollowingByUser :one
-SELECT COUNT(*)::int AS count FROM follows
-WHERE follower_id = $1
-`
-
-func (q *Queries) CountFollowingByUser(ctx context.Context, followerID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countFollowingByUser, followerID)
-	var count int32
-	err := row.Scan(&count)
-	return count, err
-}
-
-const deleteFollowByFollowerEntity = `-- name: DeleteFollowByFollowerEntity :exec
+const deleteFollowByFollowerEntity = `-- name: DeleteFollowByFollowerEntity :execrows
 DELETE FROM follows
 WHERE follower_id = $1 AND entity_type = $2 AND entity_id = $3
 `
@@ -55,9 +43,13 @@ type DeleteFollowByFollowerEntityParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-func (q *Queries) DeleteFollowByFollowerEntity(ctx context.Context, arg DeleteFollowByFollowerEntityParams) error {
-	_, err := q.db.Exec(ctx, deleteFollowByFollowerEntity, arg.FollowerID, arg.EntityType, arg.EntityID)
-	return err
+// Returns rows affected: 1 = deleted (was following), 0 = no-op.
+func (q *Queries) DeleteFollowByFollowerEntity(ctx context.Context, arg DeleteFollowByFollowerEntityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteFollowByFollowerEntity, arg.FollowerID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteFollowByID = `-- name: DeleteFollowByID :exec
@@ -177,19 +169,30 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url,
- u.profile_type
+ u.profile_type,
+ u.is_synthetic
 FROM follows f
 JOIN users u ON u.id = f.follower_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE f.entity_type = $1 AND f.entity_id = $2
   AND u.status = 'active'
+  AND (
+    $1 <> 'user'
+    OR $3::uuid IS NULL
+    OR NOT EXISTS (
+      SELECT 1 FROM user_blocks ub
+      WHERE (ub.blocker_id = $3::uuid AND ub.blocked_id = f.follower_id)
+         OR (ub.blocker_id = f.follower_id AND ub.blocked_id = $3::uuid)
+    )
+  )
 ORDER BY f.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type GetFollowersByEntityParams struct {
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
+	ViewerID   pgtype.UUID `json:"viewer_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -204,6 +207,7 @@ type GetFollowersByEntityRow struct {
 	DisplayName string             `json:"display_name"`
 	AvatarUrl   string             `json:"avatar_url"`
 	ProfileType string             `json:"profile_type"`
+	IsSynthetic bool               `json:"is_synthetic"`
 }
 
 // =====================
@@ -213,6 +217,7 @@ func (q *Queries) GetFollowersByEntity(ctx context.Context, arg GetFollowersByEn
 	rows, err := q.db.Query(ctx, getFollowersByEntity,
 		arg.EntityType,
 		arg.EntityID,
+		arg.ViewerID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -233,6 +238,7 @@ func (q *Queries) GetFollowersByEntity(ctx context.Context, arg GetFollowersByEn
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.ProfileType,
+			&i.IsSynthetic,
 		); err != nil {
 			return nil, err
 		}
@@ -262,23 +268,34 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  WHEN 'source' THEN COALESCE((SELECT slug FROM intel_sources WHERE id = f.entity_id), '')
  ELSE ''
  END AS entity_slug,
- COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
+ CASE WHEN f.entity_type = 'user' THEN COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '') ELSE '' END::text AS entity_display_name,
  CASE f.entity_type
  WHEN 'source' THEN COALESCE((SELECT logo_url FROM intel_sources WHERE id = f.entity_id), '')
  ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
  END::text AS entity_avatar_url
 FROM follows f
 WHERE f.follower_id = $1
-  AND (f.entity_type <> 'user' OR EXISTS (
-    SELECT 1 FROM users fu
-    WHERE fu.id = f.entity_id AND fu.status = 'active'
-  ))
+  AND (
+    (f.entity_type = 'user' AND EXISTS (SELECT 1 FROM users fu WHERE fu.id = f.entity_id AND fu.status = 'active'))
+    OR (f.entity_type = 'space' AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = f.entity_id AND sp.deleted_at IS NULL))
+    OR (f.entity_type = 'tag' AND EXISTS (SELECT 1 FROM tags tg WHERE tg.id = f.entity_id))
+    OR (f.entity_type = 'organization' AND EXISTS (SELECT 1 FROM organizations og WHERE og.id = f.entity_id AND og.deleted_at IS NULL))
+    OR (f.entity_type = 'source' AND EXISTS (SELECT 1 FROM intel_sources src WHERE src.id = f.entity_id))
+  )
+  AND (f.entity_type <> 'user' OR $2::uuid IS NULL
+    OR NOT EXISTS (
+      SELECT 1 FROM user_blocks ub
+      WHERE (ub.blocker_id = $2::uuid AND ub.blocked_id = f.entity_id)
+         OR (ub.blocker_id = f.entity_id AND ub.blocked_id = $2::uuid)
+    )
+  )
 ORDER BY f.created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type GetFollowingByUserParams struct {
 	FollowerID pgtype.UUID `json:"follower_id"`
+	ViewerID   pgtype.UUID `json:"viewer_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -296,7 +313,12 @@ type GetFollowingByUserRow struct {
 }
 
 func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUserParams) ([]GetFollowingByUserRow, error) {
-	rows, err := q.db.Query(ctx, getFollowingByUser, arg.FollowerID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, getFollowingByUser,
+		arg.FollowerID,
+		arg.ViewerID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -343,24 +365,35 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  WHEN 'source' THEN COALESCE((SELECT slug FROM intel_sources WHERE id = f.entity_id), '')
  ELSE ''
  END AS entity_slug,
- COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
+ CASE WHEN f.entity_type = 'user' THEN COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '') ELSE '' END::text AS entity_display_name,
  CASE f.entity_type
  WHEN 'source' THEN COALESCE((SELECT logo_url FROM intel_sources WHERE id = f.entity_id), '')
  ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
  END::text AS entity_avatar_url
 FROM follows f
 WHERE f.follower_id = $1 AND f.entity_type = $2
-  AND (f.entity_type <> 'user' OR EXISTS (
-    SELECT 1 FROM users fu
-    WHERE fu.id = f.entity_id AND fu.status = 'active'
-  ))
+  AND (
+    (f.entity_type = 'user' AND EXISTS (SELECT 1 FROM users fu WHERE fu.id = f.entity_id AND fu.status = 'active'))
+    OR (f.entity_type = 'space' AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = f.entity_id AND sp.deleted_at IS NULL))
+    OR (f.entity_type = 'tag' AND EXISTS (SELECT 1 FROM tags tg WHERE tg.id = f.entity_id))
+    OR (f.entity_type = 'organization' AND EXISTS (SELECT 1 FROM organizations og WHERE og.id = f.entity_id AND og.deleted_at IS NULL))
+    OR (f.entity_type = 'source' AND EXISTS (SELECT 1 FROM intel_sources src WHERE src.id = f.entity_id))
+  )
+  AND (f.entity_type <> 'user' OR $3::uuid IS NULL
+    OR NOT EXISTS (
+      SELECT 1 FROM user_blocks ub
+      WHERE (ub.blocker_id = $3::uuid AND ub.blocked_id = f.entity_id)
+         OR (ub.blocker_id = f.entity_id AND ub.blocked_id = $3::uuid)
+    )
+  )
 ORDER BY f.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type GetFollowingByUserAndTypeParams struct {
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
+	ViewerID   pgtype.UUID `json:"viewer_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -381,6 +414,7 @@ func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowin
 	rows, err := q.db.Query(ctx, getFollowingByUserAndType,
 		arg.FollowerID,
 		arg.EntityType,
+		arg.ViewerID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -412,7 +446,7 @@ func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowin
 	return items, nil
 }
 
-const insertFollow = `-- name: InsertFollow :exec
+const insertFollow = `-- name: InsertFollow :execrows
 INSERT INTO follows (follower_id, entity_type, entity_id) VALUES ($1, $2, $3)
 
 ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING
@@ -424,9 +458,15 @@ type InsertFollowParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-func (q *Queries) InsertFollow(ctx context.Context, arg InsertFollowParams) error {
-	_, err := q.db.Exec(ctx, insertFollow, arg.FollowerID, arg.EntityType, arg.EntityID)
-	return err
+// Returns rows affected: 1 = inserted (newly following), 0 = conflict
+// (already following). Lets the service drive count deltas and side
+// effects off the actual state change, closing the check-then-insert race.
+func (q *Queries) InsertFollow(ctx context.Context, arg InsertFollowParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertFollow, arg.FollowerID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const isFollowing = `-- name: IsFollowing :one

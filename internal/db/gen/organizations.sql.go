@@ -590,18 +590,27 @@ func (q *Queries) GetPendingClaimByClaimant(ctx context.Context, arg GetPendingC
 const getPendingInvitationByEmail = `-- name: GetPendingInvitationByEmail :one
 SELECT id FROM organization_invitations
 WHERE organization_id = $1 AND email = $2 AND accepted_at IS NULL
+ AND (
+   $3::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = $3::uuid AND ub.blocked_id = om.user_id)
+        OR (ub.blocker_id = om.user_id AND ub.blocked_id = $3::uuid)
+   )
+ )
 LIMIT 1
 `
 
 type GetPendingInvitationByEmailParams struct {
 	OrganizationID pgtype.UUID `json:"organization_id"`
 	Email          string      `json:"email"`
+	ViewerID       pgtype.UUID `json:"viewer_id"`
 }
 
 // Checks if a pending (un-accepted) invitation already exists for the given
 // email+org (BUG-017). Returns pgx.ErrNoRows if none exists.
 func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, arg GetPendingInvitationByEmailParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getPendingInvitationByEmail, arg.OrganizationID, arg.Email)
+	row := q.db.QueryRow(ctx, getPendingInvitationByEmail, arg.OrganizationID, arg.Email, arg.ViewerID)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -812,8 +821,21 @@ FROM organization_members om
 JOIN users u ON u.id = om.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE om.organization_id = $1
+ AND (
+   $2::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = $2::uuid AND ub.blocked_id = om.user_id)
+        OR (ub.blocker_id = om.user_id AND ub.blocked_id = $2::uuid)
+   )
+ )
 ORDER BY om.joined_at DESC
 `
+
+type ListOrganizationMembersParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	ViewerID       pgtype.UUID `json:"viewer_id"`
+}
 
 type ListOrganizationMembersRow struct {
 	OrganizationID pgtype.UUID        `json:"organization_id"`
@@ -827,8 +849,8 @@ type ListOrganizationMembersRow struct {
 }
 
 // Platform-scoped via the users join (defense-in-depth, BUG-004).
-func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID pgtype.UUID) ([]ListOrganizationMembersRow, error) {
-	rows, err := q.db.Query(ctx, listOrganizationMembers, organizationID)
+func (q *Queries) ListOrganizationMembers(ctx context.Context, arg ListOrganizationMembersParams) ([]ListOrganizationMembersRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationMembers, arg.OrganizationID, arg.ViewerID)
 	if err != nil {
 		return nil, err
 	}

@@ -84,6 +84,19 @@ func (s *Store) SoftDeleteOrganization(ctx context.Context, id pgtype.UUID) erro
 	return s.write.SoftDeleteOrganization(ctx, id)
 }
 
+// DeleteOrgFollows removes all follows targeting this organization so
+// following lists cannot dangle after org deletion.
+func (s *Store) DeleteOrgFollows(ctx context.Context, id pgtype.UUID) error {
+	if err := s.write.DeleteFollowsByEntity(ctx, gen.DeleteFollowsByEntityParams{
+		EntityType: "organization",
+		EntityID:   id,
+	}); err != nil {
+		return fmt.Errorf("deleting organization follows: %w", err)
+	}
+
+	return nil
+}
+
 // HardDeleteOrganization permanently removes a soft-deleted organization.
 // Members, invitations, and boosts cascade; ownership claims must be cleared
 // first (ErrInUse). Returns pgx.ErrNoRows when missing and
@@ -134,9 +147,12 @@ func (s *Store) RemoveMember(ctx context.Context, organizationID, userID pgtype.
 
 // ListMembers returns members of an organization. Platform-scoped for
 // defense-in-depth (BUG-004).
-func (s *Store) ListMembers(ctx context.Context, organizationID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
+func (s *Store) ListMembers(ctx context.Context, viewerID, organizationID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
 	return s.read.ListOrganizationMembers(ctx,
-		organizationID,
+		gen.ListOrganizationMembersParams{
+			OrganizationID: organizationID,
+			ViewerID:       viewerID,
+		},
 	)
 }
 

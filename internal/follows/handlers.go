@@ -164,13 +164,25 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, ErrUserBlocked) {
+			errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot follow this user")
+			return
+		}
+
+		if errors.Is(err, ErrUserBlocked) {
+			errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot follow this user")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "follow_error", err.Error())
 
 		return
 	}
 
+	count, _ := h.service.CountFollowers(r.Context(), entityType, entityID)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]bool{"following": followed},
+		"data": map[string]any{"following": followed, "follower_count": count},
 	})
 }
 
@@ -370,6 +382,15 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// H4: allow checking follow status for any entity type, not just users.
+	// entity_id may be supplied as a query param (catalog contract); when
+	// absent it defaults to the {user_id} path value.
+	if eid := r.URL.Query().Get("entity_id"); eid != "" {
+		if err := targetID.Scan(eid); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
+			return
+		}
+	}
+
 	entityType := EntityTypeUser
 
 	if et := r.URL.Query().Get("entity_type"); et != "" {

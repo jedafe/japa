@@ -162,7 +162,11 @@ func searchCacheKey(query, typeFilter, geoCountry string, limit, offset int, sor
 // the fields relevant to the type are populated.
 // //nolint:revive // exported: stutter naming is intentional.
 type SearchResultItem struct {
-	ID           string `json:"id"`
+	ID string `json:"id"`
+	// AuthorID is the hit's author_user_id (content/forum_thread) or the
+	// user id (user type). It backs §41 mutual-block filtering — applied
+	// AFTER the shared result cache — and is never serialized.
+	AuthorID     string `json:"-"`
 	Title        string `json:"title,omitempty"`
 	Excerpt      string `json:"excerpt,omitempty"`
 	URL          string `json:"url,omitempty"`
@@ -289,6 +293,13 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
 
 		return
+	}
+
+	// §41 (BLK-006): drop results authored by users with a mutual block
+	// against the viewer. Applied AFTER the shared cache because the cached
+	// slice is viewer-agnostic. Best-effort: a lookup failure keeps results.
+	if authenticated {
+		results = h.filterBlockedAuthors(r.Context(), user.UserID, results)
 	}
 
 	tookMs := time.Since(searchStart).Milliseconds()
@@ -503,9 +514,10 @@ func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 	}
 
 	switch resultType {
-	case "content":
+	case "content", "forum_thread":
 		item.ContentType = stringField(hit, "content_type")
 		item.Slug = stringField(hit, "slug")
+		item.AuthorID = stringField(hit, "author_user_id")
 	case "user":
 		// User documents store username in "title" and display_name in
 		// "excerpt" for backward compatibility with the uniform mapper, but
@@ -522,6 +534,7 @@ func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 		// Clear title/excerpt since we've mapped them to type-specific fields.
 		item.Title = ""
 		item.Excerpt = ""
+		item.AuthorID = item.ID
 	case "space":
 		// Space documents store name in "title" for backward compatibility.
 		// §54 wants explicit name/level/member_count fields.
@@ -553,8 +566,6 @@ func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 		}
 
 		item.Title = ""
-	case "forum_thread":
-		item.Slug = stringField(hit, "slug")
 	case "academy_track":
 		item.Slug = stringField(hit, "slug")
 	}
@@ -820,6 +831,62 @@ func (h *Handlers) filterBlockedUsers(ctx context.Context, currentUserID pgtype.
 	return filtered
 }
 
+// filterBlockedAuthors removes search results whose author has a mutual
+// user_blocks relationship with the viewer (§41: blocked users' content is
+// hidden from each other's search results, BLK-006). One batch query
+// resolves all candidate ids — no N+1. Results without an author id (spaces,
+// tags, orgs, tracks) always pass through.
+func (h *Handlers) filterBlockedAuthors(ctx context.Context, viewerID pgtype.UUID, results []SearchResult) []SearchResult {
+	if h.queries == nil || len(results) == 0 {
+		return results
+	}
+
+	var candidates []pgtype.UUID
+
+	for _, r := range results {
+		if r.Item.AuthorID == "" {
+			continue
+		}
+
+		var uid pgtype.UUID
+		if err := uid.Scan(r.Item.AuthorID); err != nil {
+			continue
+		}
+
+		candidates = append(candidates, uid)
+	}
+
+	if len(candidates) == 0 {
+		return results
+	}
+
+	blockedIDs, err := h.queries.GetMutuallyBlockedUserIDs(ctx, gen.GetMutuallyBlockedUserIDsParams{
+		ViewerID:     viewerID,
+		CandidateIds: candidates,
+	})
+	if err != nil || len(blockedIDs) == 0 {
+		return results
+	}
+
+	blockedSet := make(map[string]struct{}, len(blockedIDs))
+	for _, id := range blockedIDs {
+		blockedSet[id.String()] = struct{}{}
+	}
+
+	filtered := results[:0]
+	for _, r := range results {
+		if r.Item.AuthorID != "" {
+			if _, isBlocked := blockedSet[r.Item.AuthorID]; isBlocked {
+				continue
+			}
+		}
+
+		filtered = append(filtered, r)
+	}
+
+	return filtered
+}
+
 // runAutocomplete queries the users, spaces, tags, and posts indexes with
 // a small limit for typeahead suggestions. typeFilter (§54: user|space|tag|
 // content) restricts which indexes are queried; empty means all four.
@@ -990,6 +1057,10 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// §41 (BLK-006): drop content authored by users with a mutual block
+	// against the viewer — same rule as the global Search handler.
+	results = h.filterBlockedAuthors(r.Context(), user.UserID, results)
+
 	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -1110,6 +1181,10 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 			Item: mapHitToItem("content", hit),
 		})
 	}
+
+	// §41 (BLK-006): drop content authored by users with a mutual block
+	// against the viewer — same rule as the global Search handler.
+	results = h.filterBlockedAuthors(r.Context(), user.UserID, results)
 
 	h.resolveLiterals(r, &results)
 

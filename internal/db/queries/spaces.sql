@@ -1067,7 +1067,7 @@ SELECT EXISTS(
  AND role = 'owner'
 ) AS is_owner;
 
--- name: AddSpaceMember :exec
+-- name: AddSpaceMember :execrows
 INSERT INTO space_members (space_id, user_id, role) VALUES (@space_id, @user_id, 'member')
 
 ON CONFLICT (space_id, user_id) DO NOTHING;
@@ -1153,6 +1153,14 @@ FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
 WHERE sm.space_id = @space_id AND sm.status = 'approved'
+ AND (
+   sqlc.narg(viewer_id)::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = sqlc.narg(viewer_id)::uuid AND ub.blocked_id = sm.user_id)
+        OR (ub.blocker_id = sm.user_id AND ub.blocked_id = sqlc.narg(viewer_id)::uuid)
+   )
+ )
 ORDER BY sm.joined_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -1288,17 +1296,7 @@ ORDER BY s.name LIMIT 20;
 -- Space Follower Count
 -- =====================
 
--- name: IncrementSpaceFollowerCount :exec
-UPDATE spaces SET follower_count = follower_count + 1
-WHERE id = @id;
 
--- name: DecrementSpaceFollowerCount :exec
-UPDATE spaces SET follower_count = follower_count - 1
-WHERE id = @id AND follower_count > 0;
-
--- =====================
--- Public Profile Spaces Tab
--- =====================
 
 -- name: ListPublicSpacesByMemberUser :many
 -- Public profile Spaces tab: PUBLIC, active spaces the user is a member of.
@@ -1317,6 +1315,11 @@ ORDER BY sm.joined_at DESC, s.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListSpaceMemberUserIDs :many
+-- BLK-006 (resolved): intentionally NOT viewer-filtered. This query feeds
+-- internal fan-out (member enumeration for notifications/follow checks),
+-- not a user-visible directory — ListSpaceMembersWithProfile carries the
+-- viewer-scoped mutual-block exclusion for the public list. Notification
+-- suppression for blocked actors happens centrally in dispatch (BLK-008).
 SELECT user_id FROM space_members
 WHERE space_id = @space_id
 LIMIT @limit_val;

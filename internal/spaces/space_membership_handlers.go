@@ -1,9 +1,11 @@
 package spaces
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -79,6 +81,16 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 			if err := h.Service.Join(r.Context(), space.ID, user.UserID); err != nil {
 				handleServiceError(w, err)
 				return
+			}
+
+			// BL-010 mirror: joining auto-follows the space server-side so
+			// every join path (UI, API clients, admin grants) produces the
+			// follow, not just the frontend's best-effort POST. Ensure
+			// semantics make the client's duplicate call a harmless no-op.
+			if h.follows != nil {
+				if _, ferr := h.follows.EnsureFollow(r.Context(), user.UserID, "space", space.ID); ferr != nil {
+					slog.Warn("join: auto-follow failed", "space_id", space.ID, "user_id", user.UserID, "error", ferr)
+				}
 			}
 
 			if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, 1); err != nil {
@@ -170,7 +182,12 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	members, err := h.Service.ListMembers(r.Context(), space.ID, limit, offset)
+	var viewerID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		viewerID = u.UserID
+	}
+
+	members, err := h.Service.ListMembers(r.Context(), viewerID, space.ID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

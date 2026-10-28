@@ -82,6 +82,12 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
+// isBlocked runs the §41 user_blocks EXISTS check (concrete *Store only —
+// test fakes don't reach this path).
+func (s *Store) isBlocked(ctx context.Context, a, b pgtype.UUID) (bool, error) {
+	return s.read.IsBlocked(ctx, gen.IsBlockedParams{BlockerID: a, BlockedID: b})
+}
+
 func (s *Store) getSettings(ctx context.Context, ownerType string, ownerID pgtype.UUID) (gen.TipSetting, error) {
 	row, err := s.read.GetTipSettings(ctx, gen.GetTipSettingsParams{OwnerType: ownerType, OwnerID: ownerID})
 	if err != nil {

@@ -63,6 +63,28 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 		return gen.Comment{}, fmt.Errorf("%w: content", errpkg.ErrNotFound)
 	}
 
+	// §41 (BLK-002): a user block in either direction forbids commenting on
+	// the other party's content. The block is on the CONTENT's author —
+	// a mutual block anywhere in the pair mutes the interaction.
+	authorID, err := s.read.GetContentAuthorID(ctx, input.ContentID)
+	if err != nil {
+		return gen.Comment{}, fmt.Errorf("resolving content author: %w", err)
+	}
+
+	if authorID.Valid && authorID != userID {
+		blocked, bErr := s.read.IsBlocked(ctx, gen.IsBlockedParams{
+			BlockerID: userID,
+			BlockedID: authorID,
+		})
+		if bErr != nil {
+			return gen.Comment{}, fmt.Errorf("checking block status: %w", bErr)
+		}
+
+		if blocked {
+			return gen.Comment{}, fmt.Errorf("%w: user_blocked", errpkg.ErrForbidden)
+		}
+	}
+
 	var depth int32
 
 	if input.ParentID.Valid {
@@ -80,6 +102,23 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 			parent.DeletedAt.Valid ||
 			parent.Status != "published" {
 			return gen.Comment{}, fmt.Errorf("%w: parent comment", errpkg.ErrNotFound)
+		}
+
+		// §41 (BLK-002): replying to someone's comment is the same class of
+		// interaction as commenting on their content — a mutual block
+		// between replier and parent author forbids it.
+		if parent.AuthorUserID.Valid && parent.AuthorUserID != userID {
+			blocked, bErr := s.read.IsBlocked(ctx, gen.IsBlockedParams{
+				BlockerID: userID,
+				BlockedID: parent.AuthorUserID,
+			})
+			if bErr != nil {
+				return gen.Comment{}, fmt.Errorf("checking block status: %w", bErr)
+			}
+
+			if blocked {
+				return gen.Comment{}, fmt.Errorf("%w: user_blocked", errpkg.ErrForbidden)
+			}
 		}
 
 		depth = parent.Depth + 1

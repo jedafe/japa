@@ -63,12 +63,12 @@ type CreateOrganizationInput struct {
 // Set marks which fields the caller actually supplied — a field absent from
 // the request keeps its stored value, a field supplied as "" clears to NULL.
 type UpdateOrganizationInput struct {
-	Name        string `json:"name,omitempty"`
-	Tagline     string `json:"tagline,omitempty"`
-	Description string `json:"description,omitempty"`
-	WebsiteURL  string `json:"website_url,omitempty"`
-	CountryCode string `json:"country_code,omitempty"`
-	OrgType     string `json:"org_type,omitempty"`
+	Name        string          `json:"name,omitempty"`
+	Tagline     string          `json:"tagline,omitempty"`
+	Description string          `json:"description,omitempty"`
+	WebsiteURL  string          `json:"website_url,omitempty"`
+	CountryCode string          `json:"country_code,omitempty"`
+	OrgType     string          `json:"org_type,omitempty"`
 	Set         map[string]bool `json:"-"`
 }
 
@@ -400,6 +400,11 @@ func (s *Service) DeleteOrganization(ctx context.Context, id, userID pgtype.UUID
 	}
 
 	if err := s.store.SoftDeleteOrganization(ctx, id); err != nil {
+		return err
+	}
+
+	// Remove follow rows targeting the org so following lists don't dangle.
+	if err := s.store.DeleteOrgFollows(ctx, id); err != nil {
 		return err
 	}
 
@@ -744,8 +749,8 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 
 // ListMembers returns all members of an organization. Platform-scoped for
 // defense-in-depth (BUG-004).
-func (s *Service) ListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
-	return s.store.ListMembers(ctx, orgID)
+func (s *Service) ListMembers(ctx context.Context, viewerID, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
+	return s.store.ListMembers(ctx, viewerID, orgID)
 }
 
 // UpdateMemberRole changes a member's role. Only owner can change roles.
@@ -1212,6 +1217,10 @@ func (s *Service) AdminDeleteOrganization(ctx context.Context, id pgtype.UUID, f
 		return err
 	}
 
+	if err := s.store.DeleteOrgFollows(ctx, id); err != nil {
+		return err
+	}
+
 	s.InvalidateOrgCache(ctx)
 
 	return nil
@@ -1220,7 +1229,8 @@ func (s *Service) AdminDeleteOrganization(ctx context.Context, id pgtype.UUID, f
 // AdminListMembers lists members of an organisation (no membership check).
 // Platform-scoped for defense-in-depth (BUG-004/005).
 func (s *Service) AdminListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
-	return s.store.ListMembers(ctx, orgID)
+	// Admin member lists are unfiltered — moderation views must see everyone.
+	return s.store.ListMembers(ctx, pgtype.UUID{}, orgID)
 }
 
 // AdminListInvitations lists invitations for an organisation (no membership check).

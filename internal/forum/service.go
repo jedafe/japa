@@ -396,6 +396,11 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 		return gen.ForumReply{}, fmt.Errorf("getting thread: %w", err)
 	}
 
+	// §41 strict: a blocked actor cannot reply on the thread author's thread.
+	if blocked, bErr := s.IsBlocked(ctx, authorUserID, thread.AuthorUserID); bErr == nil && blocked {
+		return gen.ForumReply{}, errpkg.ErrForbidden
+	}
+
 	// F-009: a viewer who can only see the title cannot reply to content
 	// they cannot read (members-only/private spaces).
 	if err := s.requireFullThreadAccess(ctx, threadID, authorUserID); err != nil {
@@ -540,6 +545,7 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 //     body + replies hidden — the space owner's default)
 //   - 'private' → ThreadAccessNone for non-members (404 — the owner chose
 //     to hide the space's forum content entirely)
+//
 // Members always get ThreadAccessFull.
 type ThreadAccessLevel int
 
@@ -1088,4 +1094,9 @@ func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, viewerID, tag
 // ListRepliesByThreadWithAuthor returns all replies for a thread with author data.
 func (s *Service) ListRepliesByThreadWithAuthor(ctx context.Context, threadID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
 	return s.store.listRepliesByThreadWithAuthor(ctx, threadID)
+}
+
+// IsBlocked reports whether either user has blocked the other (§41).
+func (s *Service) IsBlocked(ctx context.Context, a, b pgtype.UUID) (bool, error) {
+	return gen.New(s.db.Reader).IsBlocked(ctx, gen.IsBlockedParams{BlockerID: a, BlockedID: b})
 }

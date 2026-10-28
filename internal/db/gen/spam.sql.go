@@ -40,6 +40,19 @@ func (q *Queries) CountAllUserBlocks(ctx context.Context) (int32, error) {
 	return count, err
 }
 
+const countBlockedUsers = `-- name: CountBlockedUsers :one
+SELECT COUNT(*)::int AS count
+FROM user_blocks
+WHERE blocker_id = $1
+`
+
+func (q *Queries) CountBlockedUsers(ctx context.Context, blockerID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countBlockedUsers, blockerID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countCensoredWords = `-- name: CountCensoredWords :one
 SELECT COUNT(*)::int AS count
 FROM censored_words
@@ -391,6 +404,44 @@ func (q *Queries) GetIPBlockTypeForIP(ctx context.Context, ip netip.Prefix) (str
 	return block_type, err
 }
 
+const getMutuallyBlockedUserIDs = `-- name: GetMutuallyBlockedUserIDs :many
+SELECT DISTINCT other_id FROM (
+ SELECT ub.blocked_id AS other_id FROM user_blocks ub
+ WHERE ub.blocker_id = $1 AND ub.blocked_id = ANY($2::uuid[])
+ UNION
+ SELECT ub.blocker_id AS other_id FROM user_blocks ub
+ WHERE ub.blocked_id = $1 AND ub.blocker_id = ANY($2::uuid[])
+) blocked_pair
+`
+
+type GetMutuallyBlockedUserIDsParams struct {
+	ViewerID     pgtype.UUID   `json:"viewer_id"`
+	CandidateIds []pgtype.UUID `json:"candidate_ids"`
+}
+
+// Returns the subset of @candidate_ids that have a user_blocks row with
+// @viewer_id in EITHER direction. Used for post-filtering search results
+// (BLK-006 / §41 mutual invisibility) without N+1.
+func (q *Queries) GetMutuallyBlockedUserIDs(ctx context.Context, arg GetMutuallyBlockedUserIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getMutuallyBlockedUserIDs, arg.ViewerID, arg.CandidateIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var other_id pgtype.UUID
+		if err := rows.Scan(&other_id); err != nil {
+			return nil, err
+		}
+		items = append(items, other_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserBlocks = `-- name: GetUserBlocks :many
 SELECT blocker_id, blocked_id, created_at
 FROM user_blocks
@@ -449,6 +500,28 @@ SELECT EXISTS(
 
 func (q *Queries) IsIPBlocked(ctx context.Context, ip netip.Prefix) (bool, error) {
 	row := q.db.QueryRow(ctx, isIPBlocked, ip)
+	var blocked bool
+	err := row.Scan(&blocked)
+	return blocked, err
+}
+
+const isUserBlockedDirectional = `-- name: IsUserBlockedDirectional :one
+SELECT EXISTS(
+ SELECT 1 FROM user_blocks
+ WHERE blocker_id = $1 AND blocked_id = $2
+) AS blocked
+`
+
+type IsUserBlockedDirectionalParams struct {
+	BlockerID pgtype.UUID `json:"blocker_id"`
+	BlockedID pgtype.UUID `json:"blocked_id"`
+}
+
+// Directional check: true only when blocker_id has blocked blocked_id.
+// Backs GET /users/{id}/block-status (BLK-005) so the frontend no longer
+// has to page the whole blocked-users list to hydrate the toggle.
+func (q *Queries) IsUserBlockedDirectional(ctx context.Context, arg IsUserBlockedDirectionalParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isUserBlockedDirectional, arg.BlockerID, arg.BlockedID)
 	var blocked bool
 	err := row.Scan(&blocked)
 	return blocked, err
@@ -779,6 +852,27 @@ func (q *Queries) ListIPBlocksPaginated(ctx context.Context, arg ListIPBlocksPag
 		return nil, err
 	}
 	return items, nil
+}
+
+const syncFollowerCountAfterBlock = `-- name: SyncFollowerCountAfterBlock :exec
+UPDATE users u SET follower_count = (
+ SELECT COUNT(*) FROM follows f
+ WHERE f.entity_type = 'user' AND f.entity_id = u.id
+)
+WHERE u.id IN ($1, $2)
+`
+
+type SyncFollowerCountAfterBlockParams struct {
+	ID   pgtype.UUID `json:"id"`
+	ID_2 pgtype.UUID `json:"id_2"`
+}
+
+// Recomputes both users' denormalized follower_count from the follows
+// table. Run inside the block transaction after DeleteFollowsBetweenUsers
+// so the count cannot drift the way a blind decrement could (BLK-003).
+func (q *Queries) SyncFollowerCountAfterBlock(ctx context.Context, arg SyncFollowerCountAfterBlockParams) error {
+	_, err := q.db.Exec(ctx, syncFollowerCountAfterBlock, arg.ID, arg.ID_2)
+	return err
 }
 
 const updateCensoredWord = `-- name: UpdateCensoredWord :one

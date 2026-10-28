@@ -232,6 +232,14 @@ type PublicProfileResponse struct {
 	// §07 verification badge (ADR-029): verified flag + badge type.
 	Verified         bool    `json:"verified"`
 	VerificationType *string `json:"verification_type"`
+	// §41 viewer-relative block state (BLK-006): only populated when the
+	// request is authenticated and the viewer is not the profile owner.
+	// IsBlocked = viewer blocked this user; BlockedBy = this user blocked
+	// the viewer. Omitted for guests and own-profile responses.
+	IsBlocked *bool `json:"is_blocked,omitempty"`
+	BlockedBy *bool `json:"blocked_by,omitempty"`
+
+	IsFollowing bool `json:"is_following"`
 }
 
 // DraftResponse is the API response for GET /api/v1/me/drafts/{id}, used by

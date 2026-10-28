@@ -31,7 +31,7 @@ func (q *Queries) AddParentSpace(ctx context.Context, arg AddParentSpaceParams) 
 	return err
 }
 
-const addSpaceMember = `-- name: AddSpaceMember :exec
+const addSpaceMember = `-- name: AddSpaceMember :execrows
 INSERT INTO space_members (space_id, user_id, role) VALUES ($1, $2, 'member')
 
 ON CONFLICT (space_id, user_id) DO NOTHING
@@ -42,9 +42,12 @@ type AddSpaceMemberParams struct {
 	UserID  pgtype.UUID `json:"user_id"`
 }
 
-func (q *Queries) AddSpaceMember(ctx context.Context, arg AddSpaceMemberParams) error {
-	_, err := q.db.Exec(ctx, addSpaceMember, arg.SpaceID, arg.UserID)
-	return err
+func (q *Queries) AddSpaceMember(ctx context.Context, arg AddSpaceMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addSpaceMember, arg.SpaceID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const addSpaceMemberPending = `-- name: AddSpaceMemberPending :exec
@@ -850,16 +853,6 @@ func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams
 		&i.WikiOnly,
 	)
 	return i, err
-}
-
-const decrementSpaceFollowerCount = `-- name: DecrementSpaceFollowerCount :exec
-UPDATE spaces SET follower_count = follower_count - 1
-WHERE id = $1 AND follower_count > 0
-`
-
-func (q *Queries) DecrementSpaceFollowerCount(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, decrementSpaceFollowerCount, id)
-	return err
 }
 
 const deleteSpace = `-- name: DeleteSpace :exec
@@ -2105,20 +2098,6 @@ func (q *Queries) IncrementSpaceCount(ctx context.Context, arg IncrementSpaceCou
 	return err
 }
 
-const incrementSpaceFollowerCount = `-- name: IncrementSpaceFollowerCount :exec
-
-UPDATE spaces SET follower_count = follower_count + 1
-WHERE id = $1
-`
-
-// =====================
-// Space Follower Count
-// =====================
-func (q *Queries) IncrementSpaceFollowerCount(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, incrementSpaceFollowerCount, id)
-	return err
-}
-
 const isUserSpaceMember = `-- name: IsUserSpaceMember :one
 
 SELECT EXISTS (
@@ -2551,6 +2530,8 @@ func (q *Queries) ListPermissionPresets(ctx context.Context) ([]SpacePermissionP
 
 const listPublicSpacesByMemberUser = `-- name: ListPublicSpacesByMemberUser :many
 
+
+
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
@@ -2599,7 +2580,7 @@ type ListPublicSpacesByMemberUserRow struct {
 }
 
 // =====================
-// Public Profile Spaces Tab
+// Space Follower Count
 // =====================
 // Public profile Spaces tab: PUBLIC, active spaces the user is a member of.
 // Excludes 'members'/'private' visibility and non-active spaces. Public-safe.
@@ -2778,6 +2759,11 @@ type ListSpaceMemberUserIDsParams struct {
 	LimitVal int32       `json:"limit_val"`
 }
 
+// BLK-006 (resolved): intentionally NOT viewer-filtered. This query feeds
+// internal fan-out (member enumeration for notifications/follow checks),
+// not a user-visible directory — ListSpaceMembersWithProfile carries the
+// viewer-scoped mutual-block exclusion for the public list. Notification
+// suppression for blocked actors happens centrally in dispatch (BLK-008).
 func (q *Queries) ListSpaceMemberUserIDs(ctx context.Context, arg ListSpaceMemberUserIDsParams) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listSpaceMemberUserIDs, arg.SpaceID, arg.LimitVal)
 	if err != nil {
@@ -2804,12 +2790,21 @@ FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
 WHERE sm.space_id = $1 AND sm.status = 'approved'
+ AND (
+   $2::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = $2::uuid AND ub.blocked_id = sm.user_id)
+        OR (ub.blocker_id = sm.user_id AND ub.blocked_id = $2::uuid)
+   )
+ )
 ORDER BY sm.joined_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListSpaceMembersWithProfileParams struct {
 	SpaceID    pgtype.UUID `json:"space_id"`
+	ViewerID   pgtype.UUID `json:"viewer_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -2824,7 +2819,12 @@ type ListSpaceMembersWithProfileRow struct {
 
 // SPACES-007: only list approved members, not pending join requests.
 func (q *Queries) ListSpaceMembersWithProfile(ctx context.Context, arg ListSpaceMembersWithProfileParams) ([]ListSpaceMembersWithProfileRow, error) {
-	rows, err := q.db.Query(ctx, listSpaceMembersWithProfile, arg.SpaceID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listSpaceMembersWithProfile,
+		arg.SpaceID,
+		arg.ViewerID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

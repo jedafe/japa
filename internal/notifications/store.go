@@ -145,6 +145,12 @@ func (s *Store) upsertNotificationPreference(ctx context.Context, params gen.Ups
 	return nil
 }
 
+// isBlocked reports whether either user has blocked the other (§41).
+// Used to suppress notifications from blocked actors.
+func (s *Store) isBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
+	return s.read.IsBlocked(ctx, gen.IsBlockedParams{BlockerID: userA, BlockedID: userB})
+}
+
 // getOpenBatchWindow returns an open, non-dispatched batch window.
 func (s *Store) getOpenBatchWindow(ctx context.Context, params gen.GetOpenBatchWindowParams) (gen.NotificationBatchWindow, error) {
 	window, err := s.read.GetOpenBatchWindow(ctx, params)

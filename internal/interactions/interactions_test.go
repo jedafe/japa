@@ -212,6 +212,51 @@ func TestUnblockUser_SelfBlock(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// BlockStatus / cache-invalidation helpers (BLK-020)
+// ---------------------------------------------------------------------------
+
+func TestBlockStatus_JSONShape(t *testing.T) {
+	t.Parallel()
+
+	status := BlockStatus{Blocked: true, BlockedBy: false}
+
+	b, err := json.Marshal(status)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var m map[string]bool
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if m["blocked"] != true || m["blocked_by"] != false {
+		t.Errorf("shape = %v, want {blocked:true, blocked_by:false}", m)
+	}
+}
+
+func TestInvalidateBlockSideEffectCaches_NilValkey(t *testing.T) {
+	t.Parallel()
+
+	// nil Valkey client must be a safe no-op — the service is constructed
+	// without SetValkey in tests/dev.
+	svc := &Service{}
+	svc.invalidateBlockSideEffectCaches(t.Context(), pgtype.UUID{Valid: true}, pgtype.UUID{Valid: true})
+}
+
+func TestBlockUser_NilDBSelfBlockStillGuarded(t *testing.T) {
+	t.Parallel()
+
+	// Self-block must short-circuit before any DB access — a nil-pool
+	// service would panic otherwise.
+	svc := &Service{}
+	id := pgtype.UUID{Valid: true}
+	if err := svc.BlockUser(t.Context(), id, id); err == nil {
+		t.Fatal("expected error for self-block")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 

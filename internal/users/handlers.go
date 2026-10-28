@@ -268,6 +268,25 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §41: expose viewer-relative block state for authenticated viewers
+	// (OptionalAuth route — nil for guests / own profile).
+	if viewer := auth.FromContext(r.Context()); viewer != nil && viewer.UserID.String() != profile.ID {
+		var targetID pgtype.UUID
+		if err := targetID.Scan(profile.ID); err == nil {
+			h.Service.FillBlockState(r.Context(), viewer.UserID, targetID, profile)
+		}
+	}
+
+	// §41 amendment (BLK-006 strict variant): a viewer who is blocked by the
+	// profile owner cannot read the profile at all — deny with an explicit
+	// code rather than silently serving an empty header. Asymmetric: the
+	// reverse direction (viewer blocked the owner) stays readable so the
+	// unblock affordance remains reachable.
+	if profile.BlockedBy != nil && *profile.BlockedBy {
+		errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "This account is unavailable")
+		return
+	}
+
 	// JSON-LD structured data (Section 14 / Section 26). Resolve the
 	// admin-managed Person template, interpolating the profile's field
 	// values. Best-effort: a missing template or resolution error degrades
@@ -455,6 +474,11 @@ func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Stamp is_following for authenticated viewers (Section 31).
+	if u := auth.FromContext(r.Context()); u != nil && result != nil {
+		h.Service.AnnotateFollowing(r.Context(), u.UserID, result.Items)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{

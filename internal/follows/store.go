@@ -34,18 +34,19 @@ func (s *Store) getSpaceJoiningPerm(ctx context.Context, spaceID pgtype.UUID) (s
 	return space.JoiningPerm, nil
 }
 
-// addSpaceMember adds the user as a member of the space. The underlying
-// query is INSERT ... ON CONFLICT DO NOTHING, so calling this when the user
-// is already a member is a safe no-op (BL-010).
-func (s *Store) addSpaceMember(ctx context.Context, spaceID, userID pgtype.UUID) error {
-	if err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+// addSpaceMember adds the user as a member of the space, returning whether
+// the row was actually inserted (ON CONFLICT DO NOTHING → 0 rows when the
+// user is already a member). Callers use the flag to drive member_count.
+func (s *Store) addSpaceMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+	inserted, err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
 		SpaceID: spaceID,
 		UserID:  userID,
-	}); err != nil {
-		return fmt.Errorf("adding space member: %w", err)
+	})
+	if err != nil {
+		return false, fmt.Errorf("adding space member: %w", err)
 	}
 
-	return nil
+	return inserted > 0, nil
 }
 
 // toggleFollow inserts a follow row. Returns true if a new row was inserted,
@@ -58,35 +59,62 @@ func (s *Store) toggleFollow(ctx context.Context, followerID pgtype.UUID, entity
 // the provided gen.Queries (which may be backed by a transaction) for both
 // the read check and the write, ensuring the toggle + count update are atomic.
 func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
-	// First check if the follow already exists.
-	existing, err := q.GetFollow(ctx, gen.GetFollowParams{
+	// Race-safe toggle: attempt the insert first. If the row lands we are
+	// following (the ON CONFLICT row count is authoritative — no read-check
+	// that a concurrent request could also pass). If the insert is a no-op
+	// the follow already exists, so delete it.
+	inserted, err := q.InsertFollow(ctx, gen.InsertFollowParams{
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
-	if err == nil && existing.ID.Valid {
-		// Already following — delete (unfollow).
-		if err := q.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
-			FollowerID: followerID,
-			EntityType: entityType,
-			EntityID:   entityID,
-		}); err != nil {
-			return false, fmt.Errorf("deleting follow: %w", err)
-		}
-
-		return false, nil
+	if err != nil {
+		return false, fmt.Errorf("inserting follow: %w", err)
 	}
 
-	// Not following — insert.
-	if err := q.InsertFollow(ctx, gen.InsertFollowParams{
+	if inserted > 0 {
+		return true, nil
+	}
+
+	if _, err := q.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	}); err != nil {
+		return false, fmt.Errorf("deleting follow: %w", err)
+	}
+
+	return false, nil
+}
+
+// insertFollowIfAbsentTx inserts a follow only when the row is absent.
+// Returns true when the row was actually inserted (state changed).
+func (s *Store) insertFollowIfAbsentTx(ctx context.Context, q *gen.Queries, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+	inserted, err := q.InsertFollow(ctx, gen.InsertFollowParams{
+		FollowerID: followerID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	})
+	if err != nil {
 		return false, fmt.Errorf("inserting follow: %w", err)
 	}
 
-	return true, nil
+	return inserted > 0, nil
+}
+
+// deleteFollowIfPresentTx deletes a follow only when the row exists.
+// Returns true when a row was actually deleted (state changed).
+func (s *Store) deleteFollowIfPresentTx(ctx context.Context, q *gen.Queries, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+	deleted, err := q.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
+		FollowerID: followerID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("deleting follow: %w", err)
+	}
+
+	return deleted > 0, nil
 }
 
 // getFollow returns the follow row for a specific follower-entity pair.
@@ -133,7 +161,9 @@ func (s *Store) isMutualFollow(ctx context.Context, followerID, entityID pgtype.
 }
 
 // getFollowers returns paginated followers of an entity with user info.
-func (s *Store) getFollowers(ctx context.Context, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.GetFollowersByEntityRow, error) {
+// viewerID is nullable: when invalid the mutual user_blocks exclusion is
+// skipped (guests and workers see the unfiltered list). Section 41 (BLK-006).
+func (s *Store) getFollowers(ctx context.Context, viewerID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.GetFollowersByEntityRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -141,6 +171,7 @@ func (s *Store) getFollowers(ctx context.Context, entityType string, entityID pg
 	rows, err := s.read.GetFollowersByEntity(ctx, gen.GetFollowersByEntityParams{
 		EntityType: entityType,
 		EntityID:   entityID,
+		ViewerID:   viewerID,
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -152,13 +183,16 @@ func (s *Store) getFollowers(ctx context.Context, entityType string, entityID pg
 }
 
 // getFollowing returns paginated entities that a user follows.
-func (s *Store) getFollowing(ctx context.Context, followerID pgtype.UUID, limit, offset int32) ([]gen.GetFollowingByUserRow, error) {
+// viewerID filters followed users with a mutual block against the viewer
+// (BLK-006); pass an invalid UUID to skip the filter.
+func (s *Store) getFollowing(ctx context.Context, followerID, viewerID pgtype.UUID, limit, offset int32) ([]gen.GetFollowingByUserRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.GetFollowingByUser(ctx, gen.GetFollowingByUserParams{
 		FollowerID: followerID,
+		ViewerID:   viewerID,
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -171,7 +205,7 @@ func (s *Store) getFollowing(ctx context.Context, followerID pgtype.UUID, limit,
 
 // getFollowingByType returns paginated entities of one entity_type that a
 // user follows (catalog: GET /me/followed-tags uses entity_type "tag").
-func (s *Store) getFollowingByType(ctx context.Context, followerID pgtype.UUID, entityType string, limit, offset int32) ([]gen.GetFollowingByUserAndTypeRow, error) {
+func (s *Store) getFollowingByType(ctx context.Context, followerID pgtype.UUID, entityType string, viewerID pgtype.UUID, limit, offset int32) ([]gen.GetFollowingByUserAndTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -179,6 +213,7 @@ func (s *Store) getFollowingByType(ctx context.Context, followerID pgtype.UUID, 
 	rows, err := s.read.GetFollowingByUserAndType(ctx, gen.GetFollowingByUserAndTypeParams{
 		FollowerID: followerID,
 		EntityType: entityType,
+		ViewerID:   viewerID,
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -197,19 +232,6 @@ func (s *Store) countFollowers(ctx context.Context, entityType string, entityID 
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting followers: %w", err)
-	}
-
-	return count, nil
-}
-
-// countFollowing returns the number of entities a user follows.
-func (s *Store) countFollowing(ctx context.Context, followerID pgtype.UUID) (int32, error) {
-	count, err := s.read.CountFollowingByUser(ctx,
-
-		followerID,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("counting following: %w", err)
 	}
 
 	return count, nil

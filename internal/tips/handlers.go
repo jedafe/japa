@@ -488,6 +488,11 @@ func (h *Handlers) CreateTip(w http.ResponseWriter, r *http.Request) {
 			input.RecipientOrgID = rid
 		} else {
 			input.RecipientUserID = rid
+			// §41: tips are an interaction — blocked pairs cannot transact.
+			if blocked, bErr := h.service.IsBlocked(r.Context(), user.UserID, rid); bErr == nil && blocked {
+				errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot tip this user")
+				return
+			}
 		}
 	}
 	if in.ContentID != "" {

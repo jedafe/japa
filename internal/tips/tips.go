@@ -127,13 +127,13 @@ type Settings struct {
 // UpdateSettingsInput is the owner-editable settings patch. Nil fields keep
 // their current values (PUT semantics: body sends all fields).
 type UpdateSettingsInput struct {
-	TipsEnabled      bool    `json:"tips_enabled"`
-	AcceptPoints     bool    `json:"accept_points"`
-	AcceptCredits    bool    `json:"accept_credits"`
-	AcceptFiat       bool    `json:"accept_fiat"`
-	AcceptExternal   bool    `json:"accept_external"`
-	MinTipAmount     int64   `json:"min_tip_amount"`
-	ThankYouMessage  *string `json:"thank_you_message"`
+	TipsEnabled     bool    `json:"tips_enabled"`
+	AcceptPoints    bool    `json:"accept_points"`
+	AcceptCredits   bool    `json:"accept_credits"`
+	AcceptFiat      bool    `json:"accept_fiat"`
+	AcceptExternal  bool    `json:"accept_external"`
+	MinTipAmount    int64   `json:"min_tip_amount"`
+	ThankYouMessage *string `json:"thank_you_message"`
 	// OCCollectiveSlug is optional — only meaningful on the platform row via
 	// admin donation-settings; nil preserves the stored value (COALESCE).
 	OCCollectiveSlug *string `json:"oc_collective_slug,omitempty"`
@@ -307,19 +307,19 @@ type tipEnqueuer interface {
 // Service coordinates tip settings, settlement, and history. Transactional
 // boundaries (wallet ledger pairs) live inside *Store; tests fake tipStore.
 type Service struct {
-	store     tipStore
-	settings  SettingsReader
-	perms     PermChecker
-	payments  PaymentCreator
-	providers ProviderLister
-	features  FeatureChecker
-	orgs      OrgRoleChecker
-	oc        OCClient
-	notifier  Notifier
-	enqueuer  tipEnqueuer
-	locker    SyncLocker
+	store        tipStore
+	settings     SettingsReader
+	perms        PermChecker
+	payments     PaymentCreator
+	providers    ProviderLister
+	features     FeatureChecker
+	orgs         OrgRoleChecker
+	oc           OCClient
+	notifier     Notifier
+	enqueuer     tipEnqueuer
+	locker       SyncLocker
 	clawNotifier NotificationCreator
-	siteURL   string
+	siteURL      string
 }
 
 // SetSettings injects the global system_settings reader.
@@ -394,4 +394,14 @@ func (s *Service) feePercent(ctx context.Context) int {
 		return 100
 	}
 	return pct
+}
+
+// IsBlocked reports whether either user has blocked the other (§41).
+func (s *Service) IsBlocked(ctx context.Context, a, b pgtype.UUID) (bool, error) {
+	// tipStore is an interface; only the concrete *Store can run the
+	// user_blocks EXISTS check. Test fakes have no DB — treat as unblocked.
+	if st, ok := s.store.(*Store); ok {
+		return st.isBlocked(ctx, a, b)
+	}
+	return false, nil
 }

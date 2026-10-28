@@ -3683,6 +3683,7 @@
   "roadmap.errors.not_voted": "Vous n'avez pas voté pour cet élément.",
   "roadmap.errors.rate_limit_exceeded": "Trop de requêtes — veuillez réessayer dans un instant.",
   "roadmap.errors.status_derived": "Le statut de cet élément dépend de l'indicateur de fonctionnalité associé — modifiez la phase de l'indicateur pour le faire évoluer.",
+  "roadmap.errors.submission_blocked": "Votre soumission a été bloquée par nos filtres de sécurité. Si vous pensez qu’il s’agit d’une erreur, contactez le support.",
   "roadmap.errors.submit_failed": "Échec de l'envoi de votre demande. Veuillez réessayer.",
   "roadmap.errors.title_required": "Veuillez saisir un titre pour votre demande.",
   "roadmap.errors.unauthorized": "Veuillez vous connecter pour continuer.",
@@ -6352,8 +6353,7 @@
   "wiki.view_all_articles": "Voir tous les articles",
   "wiki.view_more_prices": "Voir plus de prix {section}",
   "wiki.wiki_only_banner_body": "{name} est un lieu wiki uniquement — les guides et informations sont ici plutôt que dans un fil communautaire.",
-  "wiki.wiki_only_banner_title": "Ce lieu vit sur le wiki"
-,
+  "wiki.wiki_only_banner_title": "Ce lieu vit sur le wiki",
   "tips.below_minimum": "En dessous du minimum du destinataire",
   "tips.failed": "Échec du pourboire — réessayez",
   "tips.history": "Historique des pourboires",
@@ -6365,5 +6365,18 @@
   "tips.transfer_pending": "Pourboire créé — effectuez le paiement pour le valider.",
   "tips.transfer_pending_hint": "Le pourboire est enregistré une fois le paiement confirmé.",
   "tips.unavailable": "Les pourboires ne sont pas disponibles ici",
-  "tips.view_history": "Voir l’historique"
+  "tips.view_history": "Voir l’historique",
+  "profile.block_error": "L'action n'a pas pu être terminée. Veuillez réessayer.",
+  "profile.blocked_state": "Bloqué",
+  "profile.blocked_banner": "Vous avez bloqué {name} — cette personne ne peut plus vous suivre ni vous envoyer de messages, et ses publications sont masquées.",
+  "profile.blocked_by_banner": "Ce compte a restreint les interactions avec vous.",
+  "profile.block_confirm_title": "Bloquer {name} ?",
+  "profile.block_confirm_body": "Cette personne ne pourra plus vous suivre ni vous envoyer de messages, et vous ne verrez plus ses publications. Elle ne sera pas notifiée.",
+  "settings.privacy.blocked_users": "Gérer les utilisateurs bloqués",
+  "settings.privacy.blocked_users_desc": "Consultez et débloquez les comptes que vous avez bloqués.",
+  "messages.requests_block_confirm": "Bloquer cet utilisateur ? Il ne pourra plus vous envoyer de messages.",
+  "space.followers_label": "Abonnés",
+  "entity.stat_following": "abonnements",
+  "entity.stat_followers": "abonnés",
+  "profile.follows_you": "Vous suit"
 }

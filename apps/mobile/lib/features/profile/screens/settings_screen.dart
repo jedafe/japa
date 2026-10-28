@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/profile/providers/profile_provider.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
+import 'package:japaconnect_mobile/features/social/screens/blocked_users_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -22,6 +23,14 @@ class SettingsScreen extends ConsumerWidget {
             ListTile(
                 title: Text(t('profile.language')),
                 subtitle: Text(prefs.language ?? 'en')),
+            ListTile(
+              title: Text(t('profile.blocked_users')),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                    builder: (_) => const BlockedUsersScreen()),
+              ),
+            ),
           ],
         ),
         loading: () => const LoadingShimmer(),

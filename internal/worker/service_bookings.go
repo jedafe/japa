@@ -230,7 +230,7 @@ func notifyOrgMembers(ctx context.Context, q *gen.Queries, bk gen.GetServiceBook
 		return nil
 	}
 
-	members, err := q.ListOrganizationMembers(ctx, bk.OrgID)
+	members, err := q.ListOrganizationMembers(ctx, gen.ListOrganizationMembersParams{OrganizationID: bk.OrgID})
 	if err != nil {
 		return fmt.Errorf("list org members: %w", err)
 	}
@@ -573,7 +573,7 @@ func HandleServiceBookingExpirePending(ctx context.Context, t *asynq.Task) error
 			continue // raced an org response or a duplicate sweep
 		}
 
-		members, err := q.ListOrganizationMembers(ctx, bk.OrgID)
+		members, err := q.ListOrganizationMembers(ctx, gen.ListOrganizationMembersParams{OrganizationID: bk.OrgID})
 		if err != nil {
 			slog.Error("task:service:booking_expire_pending: list org members failed",
 				"booking_id", bk.ID, "org_id", bk.OrgID, "error", err)

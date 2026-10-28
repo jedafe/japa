@@ -22,6 +22,11 @@ SELECT * FROM intel_sources WHERE source_url = $1;
 -- name: GetIntelSourceBySlug :one
 SELECT * FROM intel_sources WHERE slug = $1;
 
+-- name: ListIntelSourcesByIDs :many
+-- Batch fetch for the blocked-sources list (BLK-018 — replaces the per-ID
+-- Get loop that was O(N) queries).
+SELECT * FROM intel_sources WHERE id = ANY($1::uuid[]);
+
 -- name: ListIntelSources :many
 SELECT * FROM intel_sources WHERE true ORDER BY created_at DESC LIMIT $1 OFFSET $2;
 

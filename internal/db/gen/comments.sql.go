@@ -562,7 +562,14 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.content_id = $2
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
- AND (c.parent_id IS NULL)
+ AND (c.parent_id IS NULL) AND (
+   $1::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = $1::uuid AND ub.blocked_id = c.author_user_id)
+        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $1::uuid)
+   )
+ )
 ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -669,7 +676,14 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.content_id = $2
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
- AND (c.parent_id IS NULL)
+ AND (c.parent_id IS NULL) AND (
+   $1::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = $1::uuid AND ub.blocked_id = c.author_user_id)
+        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $1::uuid)
+   )
+ )
 ORDER BY c.is_pinned DESC, c.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -774,7 +788,14 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.content_id = $2
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
- AND (c.parent_id IS NULL)
+ AND (c.parent_id IS NULL) AND (
+   $1::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = $1::uuid AND ub.blocked_id = c.author_user_id)
+        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $1::uuid)
+   )
+ )
 ORDER BY c.is_pinned DESC, c.created_at ASC
 LIMIT $4 OFFSET $3
 `
@@ -1156,7 +1177,14 @@ JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.parent_id = $2 AND c.content_id = $3
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
- AND c.status = 'published'
+ AND c.status = 'published' AND (
+   $1::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = $1::uuid AND ub.blocked_id = c.author_user_id)
+        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $1::uuid)
+   )
+ )
 ORDER BY c.vote_score DESC, c.created_at ASC
 LIMIT $5 OFFSET $4
 `

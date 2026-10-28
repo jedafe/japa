@@ -3,6 +3,7 @@
 package interactions
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -111,6 +112,11 @@ func (h *Handlers) BlockUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.BlockUser(r.Context(), user.UserID, targetID); err != nil {
+		if errors.Is(err, errpkg.ErrNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "The target user does not exist")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
@@ -151,6 +157,33 @@ func (h *Handlers) UnblockUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetUserBlockStatus handles GET /api/v1/users/{user_id}/block-status.
+// Returns the directional block state between the caller and the target so
+// the frontend can hydrate the block toggle without paging the whole
+// blocked-users list (BLK-005 — mute-status parity).
+func (h *Handlers) GetUserBlockStatus(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	targetID, err := parseUUIDParam(r, "user_id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+
+		return
+	}
+
+	status, err := h.service.GetBlockStatus(r.Context(), user.UserID, targetID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check block status")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": status})
+}
+
 // ListBlocked handles GET /api/v1/me/blocked-users.
 func (h *Handlers) ListBlocked(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -168,7 +201,16 @@ func (h *Handlers) ListBlocked(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": blocked})
+	count, _ := h.service.CountBlockedUsers(r.Context(), user.UserID)
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (count + limit - 1) / limit
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": blocked,
+		"meta": map[string]any{"total": count, "page_size": limit, "page_offset": offset, "total_pages": totalPages},
+	})
 }
 
 // ---------------------------------------------------------------------------
