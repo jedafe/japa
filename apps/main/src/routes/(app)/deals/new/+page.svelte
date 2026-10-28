@@ -1,4 +1,5 @@
-<script lang="ts">
+<scrip
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deals.org_hint', 'Submit this deal on behalf of an organization you manage.')}</p>t lang="ts">
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 	// /deals/new — staff create (audience="staff") or organization deal
 	// submission (audience="org", create-only — org mode never PATCHes the

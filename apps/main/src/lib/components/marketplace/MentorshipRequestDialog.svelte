@@ -251,6 +251,7 @@
 					placeholder={t('mentors.field_goals_placeholder', 'What do you hope to achieve?')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				></textarea>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('mentors.goals_hint', 'What you want to get out of the mentorship — be specific.')}</p>
 			</div>
 
 			<div class="flex flex-col gap-1.5">

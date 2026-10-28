@@ -1,4 +1,5 @@
-<script lang="ts">
+<script la
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.desc_hint', 'Describe what you offer, your experience and what is included.')}</p>ng="ts">
 	// Ref: japaconnect-engineering/sections/98-service-directory.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -390,6 +391,7 @@
 					placeholder={t('services.title_placeholder', 'e.g. Immigration Lawyer — UK Visa Applications')}
 					class={inputClass}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.title_hint', 'Your service headline — profession + specialty works best.')}</p>
 			</div>
 
 			<!-- Body -->
@@ -440,6 +442,7 @@
 						onSelect={(item) => (destinationSpaceId = item.id)}
 						onClear={() => (destinationSpaceId = '')}
 					/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.dest_hint', 'The country this service is offered in.')}</p>
 				</div>
 				<div>
 					<label for="city" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -481,6 +484,7 @@
 					placeholder={t('services.origin_placeholder', 'e.g. Nigerian, Ghanaian')}
 					class={inputClass}
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.origin_hint', 'Optional — the community you primarily serve.')}</p>
 				<p class="mt-1 text-xs text-[var(--color-muted)]">
 					{t('services.origin_hint', 'Comma-separated communities this provider specialises in serving.')}
 				</p>
@@ -504,6 +508,7 @@
 						onSelect={(item) => (orgId = item.id)}
 						onClear={() => (orgId = '')}
 					/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.org_hint', 'List under an organization, or as a personal listing.')}</p>
 					<p class="mt-1 text-xs text-[var(--color-muted)]">
 						{t(
 							'services.org_hint',

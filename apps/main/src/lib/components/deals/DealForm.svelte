@@ -311,6 +311,7 @@
 							onSelect={(i) => (np.category = i.id)}
 							onFreeTextBlur={(q) => (np.category = q)}
 						/>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.provider_category_hint', 'The category this provider operates in.')}</p>
 					</div>
 					<div>
 						<label for="np-base-url" class={labelClass}>
@@ -361,6 +362,7 @@
 				placeholder={t('deal.form.title_placeholder', 'e.g. 20% off airport transfers')}
 				class={inputClass}
 			/>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.title_hint', 'The deal headline users see — include the discount.')}</p>
 		</div>
 		<div>
 			<label for="deal-slug" class={labelClass}>{t('deal.form.slug', 'Slug')}</label>
@@ -371,6 +373,7 @@
 				oninput={onSlugInput}
 				class={inputClass}
 			/>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.slug_hint', 'URL-safe identifier — auto-generated from the title.')}</p>
 		</div>
 		<div>
 			<label for="deal-code" class={labelClass}>{t('deal.form.code', 'Coupon code')}</label>
@@ -381,6 +384,7 @@
 				placeholder={t('deal.form.code_placeholder', 'Optional — e.g. SAVE20')}
 				class={inputClass}
 			/>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('deal.form.code_hint', 'The code users enter at checkout — e.g. JAPA20.')}</p>
 		</div>
 	</div>
 

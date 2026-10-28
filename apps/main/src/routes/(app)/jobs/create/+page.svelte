@@ -163,6 +163,7 @@
 					placeholder={t('jobs.title_placeholder', 'e.g. Senior Software Engineer')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 				/>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('jobs.title_hint', 'The role title candidates see in listings.')}</p>
 			</div>
 
 			<div class="space-y-2">
@@ -176,6 +177,7 @@
 					placeholder={t('jobs.body_placeholder', 'Describe the role, responsibilities, and requirements…')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				></textarea>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('jobs.body_hint', 'Describe the role, responsibilities and requirements.')}</p>
 			</div>
 
 			<div class="space-y-2">

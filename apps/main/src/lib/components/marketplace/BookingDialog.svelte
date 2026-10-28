@@ -537,6 +537,7 @@
 							autocomplete="off"
 							class="{inputCls} flex-1"
 						/>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.coupon_hint', 'Enter a discount code if you have one.')}</p>
 						<button
 							type="button"
 							onclick={applyCoupon}
@@ -625,6 +626,7 @@
 					placeholder={t('services.book_note_ph', 'Questions, requirements, context…')}
 					class="{inputCls} w-full"
 				></textarea>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.book_note_hint', 'Anything the provider should know — requirements, questions.')}</p>
 			</div>
 
 			{#if isPaid}
@@ -660,6 +662,7 @@
 							placeholder={t('services.book_email_ph', 'you@example.com')}
 							class="{inputCls} w-full"
 						/>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('services.book_email_hint', 'Booking confirmations are sent here.')}</p>
 					</div>
 				</div>
 			{/if}
