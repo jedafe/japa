@@ -57,6 +57,7 @@
 	import CtaBanner from '$lib/components/marketplace/CtaBanner.svelte';
 	import StickyBookBar from '$lib/components/marketplace/StickyBookBar.svelte';
 	import BookingDialog from '$lib/components/marketplace/BookingDialog.svelte';
+	import TipButton from '$lib/components/tips/TipButton.svelte';
 	import MentorshipRequestDialog from '$lib/components/marketplace/MentorshipRequestDialog.svelte';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import MessageDialog from '$lib/components/marketplace/MessageDialog.svelte';
@@ -1067,6 +1068,15 @@
 											</span>
 										{/snippet}
 									</UserHoverCard>
+									{#if service.author_id !== data.currentUserId}
+										<TipButton
+											recipientType="user"
+											recipientKey={mentor.username}
+											recipientId={service.author_id}
+											recipientName={mentorName}
+											compact
+										/>
+									{/if}
 								{:else}
 									{#if mentor.avatar_url}
 										<img

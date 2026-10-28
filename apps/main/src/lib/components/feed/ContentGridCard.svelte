@@ -11,6 +11,7 @@
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
 	import ShareButton from '$lib/components/ui/ShareButton.svelte';
+	import TipButton from '$lib/components/tips/TipButton.svelte';
 
 	interface Props {
 		item: FeedItem;
@@ -238,6 +239,17 @@
 					size={18}
 					class="group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
 				/>
+
+				{#if item.author_username}
+					<TipButton
+						recipientType="user"
+						recipientKey={item.author_username}
+						recipientId={item.author_id}
+						recipientName={item.author_name ?? item.author_username}
+						contentId={item.id}
+						compact
+					/>
+				{/if}
 			</div>
 		</div>
 	</div>

@@ -16,9 +16,10 @@
 		recipientId?: string; // user uuid — required for POST /tips
 		recipientName: string;
 		contentId?: string;
+		compact?: boolean; // icon-only variant for feed/action rows
 		class?: string;
 	}
-	let { recipientType, recipientKey, recipientId, recipientName, contentId, class: cls = '' }: Props = $props();
+	let { recipientType, recipientKey, recipientId, recipientName, contentId, compact = false, class: cls = '' }: Props = $props();
 
 	let open = $state(false);
 	let loading = $state(false);
@@ -50,11 +51,13 @@
 	onclick={click}
 	disabled={loading}
 	onmouseenter={ensureConfig}
-	class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-muted disabled:opacity-50 {cls}"
+	class={compact
+		? 'group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] disabled:opacity-50 ' + cls
+		: 'inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-muted disabled:opacity-50 ' + cls}
 	title={t('tips.title')}
 >
-	<Gift class="size-4" />
-	{t('tips.title')}
+	<Gift class={compact ? 'size-[18px]' : 'size-4'} />
+	{#if !compact}{t('tips.title')}{/if}
 </button>
 
 {#if config}
