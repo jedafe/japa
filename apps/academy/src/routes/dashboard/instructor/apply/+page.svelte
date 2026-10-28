@@ -57,6 +57,7 @@
 			<label for="display_name" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.display_name_label')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.display_name_hint', 'Your public instructor name.')}</p>
 			<input
 				id="display_name"
 				type="text"
@@ -72,6 +73,7 @@
 			<label for="headline" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.headline_label')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.headline_hint', 'One line shown under your name — role or specialty.')}</p>
 			<input
 				id="headline"
 				type="text"
@@ -86,6 +88,7 @@
 			<label for="bio" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.bio_label')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.bio_hint', 'Shown on your instructor page — experience and expertise.')}</p>
 			<textarea
 				id="bio"
 				bind:value={bio}
@@ -100,6 +103,7 @@
 			<label for="application_note" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.application_note_label')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.note_hint', 'Portfolio, expertise areas or sample links — helps reviewers.')}</p>
 			<textarea
 				id="application_note"
 				bind:value={applicationNote}

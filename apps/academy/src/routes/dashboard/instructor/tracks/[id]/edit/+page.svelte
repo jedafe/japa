@@ -277,6 +277,7 @@
 				<label for="title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.title_label', 'Title')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.title_hint', 'The course title learners see in listings.')}</p>
 				<input
 					id="title"
 					type="text"
@@ -292,6 +293,7 @@
 				<label for="description" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.description_label', 'Description')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.description_hint', 'A short summary shown on the track page.')}</p>
 				<textarea
 					id="description"
 					bind:value={description}
@@ -306,6 +308,7 @@
 				<label for="difficulty" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.difficulty_label', 'Difficulty')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.difficulty_hint', 'The level learners need — beginner, intermediate, advanced.')}</p>
 				<AutocompleteSelect
 					id="difficulty"
 					bind:value={difficulty}
@@ -319,6 +322,7 @@
 				<label for="price" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.price_label', 'Price')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.price_hint', 'Price in the chosen currency — leave 0 for free.')}</p>
 				<input
 					id="price"
 					type="number"
@@ -338,6 +342,7 @@
 				<label for="country" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.track_country_label', 'Country / primary market')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.track_country_hint', 'The country this track content targets.')}</p>
 				<Autocomplete
 					id="country"
 					placeholder={t('academy.track_country_placeholder', 'Search countries…')}
@@ -359,6 +364,7 @@
 				<label for="currency" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('academy.currency_label', 'Currency')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.currency_hint', 'The currency the price is charged in.')}</p>
 				{#if currencyOptions.length > 0}
 					<AutocompleteSelect
 						id="currency"

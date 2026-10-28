@@ -194,6 +194,7 @@
 			<label for="title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_title_label')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.title_hint', 'The course title learners see in listings.')}</p>
 			<input
 				id="title"
 				type="text"
@@ -209,6 +210,7 @@
 			<label for="slug" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_slug_label')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.slug_hint', 'URL-safe identifier — auto-generated from the title.')}</p>
 			<input
 				id="slug"
 				type="text"
@@ -228,6 +230,7 @@
 			<label for="description" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_description_label')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.description_hint', 'A short summary shown on the track page.')}</p>
 			<textarea
 				id="description"
 				bind:value={description}
@@ -242,6 +245,7 @@
 			<label for="difficulty" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_difficulty_label')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.difficulty_hint', 'The level learners need — beginner, intermediate, advanced.')}</p>
 			<AutocompleteSelect
 				id="difficulty"
 				bind:value={difficulty}
@@ -255,6 +259,7 @@
 			<label for="price" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('academy.track_price_label')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('academy.price_hint', 'Price in the chosen currency — leave 0 for free.')}</p>
 			<input
 				id="price"
 				type="number"

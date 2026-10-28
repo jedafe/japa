@@ -210,7 +210,9 @@
 								maxlength={MAX_REASON}
 								placeholder={t('appeals.reason_placeholder', 'Explain briefly why the decision was wrong — links or reference details help the review.')}
 								class="field-input !h-auto py-2.5"
-							></textarea>
+							></textarea
+							>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('appeals.reason_hint', 'Be specific — cite the policy or evidence that supports your case.')}</p>
 							<p class="text-end text-[11px] text-[var(--color-muted)]">{reason.length} / {MAX_REASON}</p>
 						</div>
 					</div>
