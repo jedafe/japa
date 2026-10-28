@@ -235,6 +235,7 @@
 						<label for="source_url" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.source_url', 'YouTube URL')}
 						</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.videos.url_hint', 'Paste a YouTube video URL to import.')}</p>
 						<input
 							id="source_url"
 							name="source_url"
@@ -247,6 +248,7 @@
 						<label for="query" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.query', 'Search keyword')}
 						</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.videos.query_hint', 'A keyword or phrase to search for.')}</p>
 						<input
 							id="query"
 							name="query"
@@ -265,6 +267,7 @@
 						<label for="target_username" class="block text-xs font-medium text-[var(--color-muted)]">
 							{t('studio.target_username', 'Target username (optional)')}
 						</label>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.videos.username_hint', 'The account handle to pull videos from.')}</p>
 						<input
 							id="target_username"
 							name="target_username"

@@ -734,6 +734,7 @@
 										value={editTitle}
 										oninput={(e) => (editTitle = e.currentTarget.value)}
 									/>
+										<p class="mt-1 text-xs text-[var(--color-muted)]">{t('reviews.title_hint', 'Optional headline for your review.')}</p>
 									<textarea
 										class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 										rows="3"
@@ -741,6 +742,7 @@
 										value={editBody}
 										oninput={(e) => (editBody = e.currentTarget.value)}
 									></textarea>
+										<p class="mt-1 text-xs text-[var(--color-muted)]">{t('reviews.body_hint', 'Share your honest experience — what helped, what did not.')}</p>
 									{#if editError}<p class="text-xs text-[var(--color-danger,#dc2626)]">{editError}</p>{/if}
 									<div class="flex justify-end gap-2">
 										<button

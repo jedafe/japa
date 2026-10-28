@@ -756,6 +756,7 @@
 			<div class="space-y-3">
 				<div>
 					<label for="edit-alt" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_alt')}</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('media.alt_hint', 'Describes the image for screen readers and SEO.')}</p>
 					<input
 						id="edit-alt"
 						type="text"
@@ -765,6 +766,7 @@
 				</div>
 				<div>
 					<label for="edit-caption" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_caption')}</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('media.caption_hint', 'Optional caption shown under the media.')}</p>
 					<input
 						id="edit-caption"
 						type="text"

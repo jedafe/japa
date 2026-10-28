@@ -571,6 +571,7 @@
 					<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="status">
 						{t('scholarships.application_status', 'Application status')}
 					</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scholarships.status_hint', 'Where you are with this application.')}</p>
 					<AutocompleteSelect
 						id="status"
 						value={savedItem.status}
@@ -591,6 +592,7 @@
 								placeholder={t('scholarships.notes_placeholder', 'Add your notes about this scholarship...')}
 								class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 							></textarea>
+								<p class="mt-1 text-xs text-[var(--color-muted)]">{t('scholarships.notes_hint', 'Private notes — deadlines, requirements, reminders.')}</p>
 							<div class="flex gap-2">
 								<button
 									onclick={saveNotes}

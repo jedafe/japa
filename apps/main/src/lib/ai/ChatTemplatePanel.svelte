@@ -975,6 +975,7 @@
 							/>
 						{:else}
 							<input type="text" class="tpl-input" bind:value={values.content_type} />
+							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ai.templates.content_type_hint', 'The content type this template generates.')}</p>
 						{/if}
 					</div>
 
@@ -999,6 +1000,7 @@
 								}}
 								allowFreeText
 							/>
+								<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ai.templates.guide_cat_hint', 'Optional — the guide category to write for.')}</p>
 						</div>
 					{/if}
 
@@ -1061,6 +1063,7 @@
 						<label class="tpl-label" for="tpl-instructions"
 							>{t('ai.templates.instructions', 'Extra instructions')}</label
 						>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('ai.templates.instructions_hint', 'Extra instructions the AI follows every time.')}</p>
 						<textarea
 							id="tpl-instructions"
 							rows="3"

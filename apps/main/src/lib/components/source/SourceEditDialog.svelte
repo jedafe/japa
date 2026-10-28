@@ -77,6 +77,7 @@
 			<div class="flex flex-col gap-3">
 				<div class="flex flex-col gap-1">
 					<label for="source-name" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.name', 'Name')}</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.edit.name_hint', 'The official name of the source.')}</p>
 					<input
 						id="source-name"
 						type="text"
@@ -87,6 +88,7 @@
 
 				<div class="flex flex-col gap-1">
 					<label for="source-description" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.description', 'Description')}</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.edit.desc_hint', 'What this source covers.')}</p>
 					<textarea
 						id="source-description"
 						bind:value={description}
@@ -97,6 +99,7 @@
 
 				<div class="flex flex-col gap-1">
 					<label for="source-url" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.source_url', 'Source URL')}</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.edit.url_hint', 'The main URL the source is fetched from.')}</p>
 					<input
 						id="source-url"
 						type="url"
@@ -112,6 +115,7 @@
 
 				<div class="flex flex-col gap-1">
 					<label for="source-logo" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.logo_url', 'Logo URL')}</label>
+					<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.edit.logo_hint', 'Direct image URL for the source logo.')}</p>
 					<input
 						id="source-logo"
 						type="url"

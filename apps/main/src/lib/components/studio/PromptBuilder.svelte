@@ -156,6 +156,7 @@
 				values.guide_category = '';
 			}}
 		/>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.prompts.content_type_hint', 'The kind of content the AI should draft.')}</p>
 	</div>
 </div>
 
@@ -164,6 +165,7 @@
 		<label for="guide-category" class="guide-category-label">
 			{t('studio.prompts.guide_category', 'Guide category')}
 		</label>
+		<p class="mt-1 text-xs text-[var(--color-muted)]">{t('studio.prompts.category_hint', 'The guide category this prompt targets.')}</p>
 		<Autocomplete
 			id="guide-category"
 			placeholder={t('studio.prompts.guide_category', 'Guide category')}

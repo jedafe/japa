@@ -9,7 +9,7 @@
 	// by the /sources/submit page and inside ProposeSourceModal.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { isAuthed, requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Loader2, ScanSearch, AlertTriangle, X } from 'lucide-svelte';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -127,6 +127,16 @@
 		return s.length > 3 && (/^https?:\/\//i.test(s) || s.includes('.'));
 	}
 
+	// Scheme-less input (daad.de/...) is normalized to https:// so the
+	// type="url" input's native validation and the probe gate agree — without
+	// this, a pasted domain passes looksLikeUrl but fails form submission.
+	function normalizeUrl() {
+		const v = sourceUrl.trim();
+		if (v && !/^https?:\/\//i.test(v) && !v.includes('://')) {
+			sourceUrl = `https://${v}`;
+		}
+	}
+
 	function onUrlInput() {
 		if (sourceUrl.trim() !== probeUrl) {
 			probeReport = null;
@@ -139,10 +149,14 @@
 	}
 
 	// Debounced probe on blur (spec §5: "URL blur → POST /sources/probe").
+	// Guests are skipped silently — the probe endpoint requires auth and a
+	// blur event must never bounce the user to /login. The explicit
+	// "Check URL" button still redirects as an intentional action.
 	function scheduleProbe() {
+		normalizeUrl();
 		if (probeTimer) clearTimeout(probeTimer);
 		const url = sourceUrl.trim();
-		if (!looksLikeUrl(url) || url === probeUrl) return;
+		if (!looksLikeUrl(url) || url === probeUrl || !isAuthed()) return;
 		probeTimer = setTimeout(() => void runProbe(), 600);
 	}
 
@@ -200,6 +214,7 @@
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
+		normalizeUrl();
 		if (!validate()) return;
 		// Proposals require auth — send guests to login instead of surfacing
 		// a raw 401 from /sources/propose.
@@ -248,6 +263,28 @@
 {#if submitted}
 	<div class="rounded-md bg-green-100 p-4 text-sm text-green-800 dark:bg-green-900/20 dark:text-green-200">
 		{t('sources.submit.success', 'Source proposed successfully. It will appear in the directory once approved.')}
+		<div class="mt-3 flex items-center gap-3">
+			<a href="/sources" class="font-medium underline underline-offset-2">
+				{t('sources.submit.browse_directory', 'Browse the directory')}
+			</a>
+			<button
+				type="button"
+				class="font-medium underline underline-offset-2"
+				onclick={() => {
+					// Reset for another proposal without leaving the page.
+					submitted = false;
+					name = '';
+					domain = '';
+					sourceUrl = '';
+					categories = [];
+					description = '';
+					probeReport = null;
+					probeUrl = '';
+				}}
+			>
+				{t('sources.submit.propose_another', 'Propose another')}
+			</button>
+		</div>
 	</div>
 {:else}
 	<form onsubmit={submit} class="flex flex-col gap-3">
@@ -255,6 +292,7 @@
 			<label class="mb-1 block text-sm font-medium" for="psf-name">
 				{t('sources.submit.name', 'Source name')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.name_hint', 'The official name of the source.')}</p>
 			<input id="psf-name" name="name" bind:value={name} class={inputClass()} placeholder="DAAD Scholarships" disabled={loading} />
 		</div>
 
@@ -262,6 +300,7 @@
 			<label class="mb-1 block text-sm font-medium" for="psf-source-url">
 				{t('sources.submit.source_url', 'Source URL')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.url_hint', 'The main URL — where the data is published.')}</p>
 			<div class="flex items-start gap-2">
 				<input
 					id="psf-source-url"
@@ -410,6 +449,7 @@
 			<label class="mb-1 block text-sm font-medium" for="psf-domain">
 				{t('sources.submit.domain', 'Domain (optional)')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.domain_hint', 'The domain, e.g. daad.de — used for matching.')}</p>
 			<input
 				id="psf-domain"
 				name="domain"
@@ -488,6 +528,7 @@
 				<label class="mb-1 block text-sm font-medium" for="psf-source-kind">
 					{t('sources.submit.source_kind', 'Source kind')}
 				</label>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.kind_hint', 'What kind of source — database, list, feed.')}</p>
 				<AutocompleteSelect id="psf-source-kind" name="source_kind" bind:value={sourceKind} options={kindOptions} disabled={loading} />
 			</div>
 		{/if}
@@ -496,6 +537,7 @@
 			<label class="mb-1 block text-sm font-medium" for="psf-description">
 				{t('sources.submit.description_label', 'Description')}
 			</label>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{t('sources.submit.desc_hint', 'What this source covers and why it should be added.')}</p>
 			<textarea
 				id="psf-description"
 				name="description"
