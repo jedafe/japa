@@ -413,6 +413,7 @@
 			<form class="flex items-center gap-1 pt-2" onsubmit={(e) => { e.preventDefault(); createFolder(); }}>
 				<input
 					type="text"
+					aria-label={t('bookmarks.new_folder', 'New folder')}
 					bind:value={newFolderName}
 					placeholder={t('bookmarks.new_folder', 'New folder…')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"

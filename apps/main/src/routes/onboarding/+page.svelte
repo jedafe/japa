@@ -379,7 +379,8 @@
 				<div class="space-y-4">
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-name">{t('onboarding.field_name', 'Your name')}</label>
-						<input id="ob-name" bind:value={name} type="text" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />
+						<input id="ob-name" bind:value={name} type="text" placeholder={t('onboarding.name_placeholder', 'e.g. Ada Lovelace')} aria-describedby="ob-name-hint" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />
+						<p id="ob-name-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('onboarding.name_hint', 'Your public display name — you can change it later.')}</p>
 					</div>
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-status">{t('onboarding.field_japa_status', 'Where are you in your japa journey?')}</label>
@@ -394,6 +395,7 @@
 								}))
 							]}
 						/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('onboarding.status_hint', 'Your current stage — powers your personalized roadmap.')}</p>
 					</div>
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -409,6 +411,7 @@
 							onClear={() => (selectedCountry = '')}
 						/>
 						</label>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('onboarding.country_hint', 'The country you live in now.')}</p>
 						{#if data.geoContext?.is_valid}
 							<p class="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted)]">
 								<MapPin size={11} /> {t('onboarding.geo_detected', 'Detected: {country}').replace('{country}', data.geoContext.country_name)}
@@ -429,6 +432,7 @@
 										...states.map((s) => ({ value: s.id, label: s.name }))
 									]}
 								/>
+								<p class="mt-1 text-xs text-[var(--color-muted)]">{t('onboarding.state_hint', 'Your state or province.')}</p>
 							{:else}
 								<p class="text-xs text-[var(--color-muted)]">{t('onboarding.no_states', 'No states available for this country')}</p>
 							{/if}
@@ -448,6 +452,7 @@
 										...cities.map((c) => ({ value: c.id, label: c.name }))
 									]}
 								/>
+								<p class="mt-1 text-xs text-[var(--color-muted)]">{t('onboarding.city_hint', 'Pick your city, or the closest one listed.')}</p>
 							{:else}
 								<p class="text-xs text-[var(--color-muted)]">{t('onboarding.no_cities', 'No cities available for this state')}</p>
 							{/if}
@@ -455,7 +460,8 @@
 					{/if}
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-location">{t('onboarding.field_location', 'Current location')}</label>
-						<input id="ob-location" bind:value={currentLocation} type="text" placeholder={t('onboarding.location_placeholder', 'e.g. Lagos, Nigeria')} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />
+						<input id="ob-location" bind:value={currentLocation} type="text" placeholder={t('onboarding.location_placeholder', 'e.g. Lagos, Nigeria')} aria-describedby="ob-location-hint" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />
+						<p id="ob-location-hint" class="mt-1 text-xs text-[var(--color-muted)]">{t('onboarding.location_hint', 'Free text if your exact city is not listed above.')}</p>
 					</div>
 				</div>
 			{/if}
@@ -476,6 +482,7 @@
 							onSelect={(item) => { destCountryCode = item.id; destination = item.label; }}
 							onClear={() => { destCountryCode = ''; destination = ''; }}
 						/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('onboarding.destination_hint', 'Where you plan to move — drives your tools, guides and feed.')}</p>
 					</div>
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-goal">{t('onboarding.field_goal', 'Primary goal')}</label>
@@ -490,6 +497,7 @@
 								}))
 							]}
 						/>
+						<p class="mt-1 text-xs text-[var(--color-muted)]">{t('onboarding.goal_hint', 'The main reason for your move — work, study, family, and so on.')}</p>
 					</div>
 				</div>
 			{/if}

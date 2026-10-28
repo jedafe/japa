@@ -198,8 +198,12 @@
 						rows={4}
 						maxlength={NOTES_MAX}
 						placeholder={t('report.notes_placeholder', 'Add any details that may help our moderation team...')}
+						aria-describedby="report-notes-hint"
 						class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					></textarea>
+					<span id="report-notes-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+						{t('report.notes_hint', 'Include links or details that help our moderation team review faster.')}
+					</span>
 				</label>
 
 				<label class="mb-4 block">
@@ -210,8 +214,12 @@
 						bind:value={evidenceInput}
 						rows={2}
 						placeholder={t('report.evidence_placeholder', 'https://… — one link per line')}
+						aria-describedby="report-evidence-hint"
 						class="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					></textarea>
+					<span id="report-evidence-hint" class="mt-1 block text-xs text-[var(--color-muted)]">
+						{t('report.evidence_hint', 'URLs to screenshots, listings or profiles — one per line.')}
+					</span>
 				</label>
 
 				{#if status === 'error'}

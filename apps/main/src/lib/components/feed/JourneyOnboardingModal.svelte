@@ -297,6 +297,7 @@
 					<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="field-row">
 							<label class="field-label" for="journey-origin">{t('journey.banner.origin_country', 'Where are you now?')}</label>
+							<p class="field-hint">{t('journey.banner.origin_hint', 'The country you currently live in.')}</p>
 							<Autocomplete
 								placeholder={t('journey.banner.origin_placeholder', 'e.g. Nigeria')}
 								emptyMessage={t('create.journey.country_empty', 'No country found')}
@@ -310,6 +311,7 @@
 						</div>
 						<div class="field-row">
 							<label class="field-label" for="journey-destination">{t('journey.banner.destination_country', 'Where do you want to go?')}</label>
+							<p class="field-hint">{t('journey.banner.destination_hint', 'The country you plan to move to — drives your checklist.')}</p>
 							<Autocomplete
 								placeholder={t('journey.banner.destination_placeholder', 'e.g. Canada')}
 								emptyMessage={t('create.journey.country_empty', 'No country found')}
@@ -342,7 +344,8 @@
 									allowFreeText
 								/>
 							{:else}
-								<input id="journey-purpose" type="text" class="field-input" placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')} bind:value={purpose} />
+								<input id="journey-purpose" type="text" class="field-input" placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')} bind:value={purpose} aria-describedby="journey-purpose-hint" />
+								<p id="journey-purpose-hint" class="field-hint">{t('journey.banner.purpose_hint', 'E.g. study, work, family reunion.')}</p>
 							{/if}
 						</div>
 						<div class="field-row">
@@ -360,7 +363,8 @@
 									allowFreeText
 								/>
 							{:else}
-								<input id="journey-visa" type="text" class="field-input" placeholder={t('journey.banner.visa_placeholder', 'e.g. student')} bind:value={visaRoute} />
+								<input id="journey-visa" type="text" class="field-input" placeholder={t('journey.banner.visa_placeholder', 'e.g. student')} bind:value={visaRoute} aria-describedby="journey-visa-hint" />
+								<p id="journey-visa-hint" class="field-hint">{t('journey.banner.visa_hint', 'The visa category you are applying for, if known.')}</p>
 							{/if}
 						</div>
 					</div>
@@ -383,12 +387,14 @@
 									onClear={() => { japaStage = ''; }}
 								/>
 							{:else}
-								<input id="journey-stage" type="text" class="field-input" placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')} bind:value={japaStage} />
+								<input id="journey-stage" type="text" class="field-input" placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')} bind:value={japaStage} aria-describedby="journey-stage-hint" />
+								<p id="journey-stage-hint" class="field-hint">{t('journey.banner.stage_hint', 'E.g. researching, preparing documents, waiting on a decision.')}</p>
 							{/if}
 						</div>
 						<div class="field-row">
 							<label class="field-label" for="journey-travel-date">{t('journey.banner.travel_date', 'Planned travel date (optional)')}</label>
-							<input id="journey-travel-date" type="date" class="field-input" bind:value={travelDate} />
+							<input id="journey-travel-date" type="date" class="field-input" bind:value={travelDate} aria-describedby="journey-travel-date-hint" />
+								<p id="journey-travel-date-hint" class="field-hint">{t('journey.banner.travel_date_hint', 'Your planned departure — used to time checklists and reminders.')}</p>
 						</div>
 					</div>
 				{:else}

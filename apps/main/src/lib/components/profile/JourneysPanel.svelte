@@ -248,6 +248,7 @@
 					onSelect={(item) => (jDest = item.id)}
 					onClear={() => (jDest = '')}
 				/>
+				<p class="text-xs text-[var(--color-muted)]">{t('journeys.dest_hint', 'Where you plan to move — drives guides and checklists.')}</p>
 			</div>
 
 			<div class="flex flex-col gap-1.5">
@@ -261,8 +262,10 @@
 					class={inputClass}
 					bind:value={jLabel}
 					placeholder={t('journeys.label_placeholder', 'e.g. Lagos business trip')}
+					aria-describedby="j-label-hint"
 					maxlength="120"
 				/>
+				<p id="j-label-hint" class="text-xs text-[var(--color-muted)]">{t('journeys.label_hint', 'A name for this journey — e.g. a move, a trip, or an application.')}</p>
 			</div>
 
 			<div class="grid grid-cols-2 gap-3">
@@ -270,13 +273,15 @@
 					<label for="j-start" class="text-xs font-medium text-[var(--color-text)]">
 						{t('journeys.travel_start', 'Travel start')}
 					</label>
-					<input id="j-start" type="date" class={inputClass} bind:value={jStart} />
+					<input id="j-start" type="date" class={inputClass} bind:value={jStart} aria-describedby="j-start-hint" />
+					<p id="j-start-hint" class="text-xs text-[var(--color-muted)]">{t('journeys.start_hint', 'When this trip or journey stage begins.')}</p>
 				</div>
 				<div class="flex flex-col gap-1.5">
 					<label for="j-end" class="text-xs font-medium text-[var(--color-text)]">
 						{t('journeys.travel_end', 'Travel end')}
 					</label>
-					<input id="j-end" type="date" class={inputClass} bind:value={jEnd} min={jStart || undefined} />
+					<input id="j-end" type="date" class={inputClass} bind:value={jEnd} min={jStart || undefined} aria-describedby="j-end-hint" />
+					<p id="j-end-hint" class="text-xs text-[var(--color-muted)]">{t('journeys.end_hint', 'Leave blank if the trip is ongoing.')}</p>
 				</div>
 			</div>
 

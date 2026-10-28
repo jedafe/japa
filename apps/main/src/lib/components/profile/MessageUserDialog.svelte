@@ -61,7 +61,11 @@
 				maxlength={2000}
 				placeholder={t('services.message_placeholder', 'Write your message…')}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+				aria-describedby="message-body-hint"
 			></textarea>
+			<p id="message-body-hint" class="text-xs text-[var(--color-muted)]">
+				{t('services.message_hint', 'Introduce yourself and say what you need — max 2,000 characters.')}
+			</p>
 			{#if sendError}
 				<p role="alert" class="text-sm text-[var(--color-danger)]">{sendError}</p>
 			{/if}

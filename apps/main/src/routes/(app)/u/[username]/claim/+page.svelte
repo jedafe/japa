@@ -306,9 +306,13 @@
 						id="evidence-url"
 						type="url"
 						bind:value={evidenceUrl}
+						aria-describedby="evidence-url-hint"
 						placeholder={t('video_claims.evidence_placeholder', 'https://example.com/evidence')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					/>
+					<p id="evidence-url-hint" class="text-xs text-[var(--color-muted)]">
+						{t('video_claims.evidence_hint', 'A link proving your claim — e.g. your official site or profile.')}
+					</p>
 				</div>
 
 				<div class="space-y-1">
@@ -320,8 +324,12 @@
 						bind:value={notes}
 						rows={4}
 						placeholder={t('video_claims.notes_placeholder', 'Explain why you are submitting this request…')}
+						aria-describedby="notes-hint"
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 					></textarea>
+					<p id="notes-hint" class="text-xs text-[var(--color-muted)]">
+						{t('video_claims.notes_hint', 'Explain why you are submitting this request — include any supporting details.')}
+					</p>
 				</div>
 
 				<button

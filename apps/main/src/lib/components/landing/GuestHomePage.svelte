@@ -556,11 +556,14 @@
 		<form class="newsletter-form" onsubmit={subscribe}>
 			<input
 				type="email"
+				aria-label={t('auth.fields.email', 'Email')}
+				aria-describedby="guest-newsletter-hint"
 				bind:value={email}
 				placeholder={t('landing.home.newsletter_placeholder', 'Enter your email address')}
 				class="newsletter-input"
 				required
 			/>
+			<p id="guest-newsletter-hint" class="newsletter-hint">{t('landing.home.newsletter_hint', 'Weekly digest and updates — unsubscribe anytime.')}</p>
 			<button type="submit" class="newsletter-btn" disabled={newsletterStatus === 'loading'}>
 				{t('landing.home.newsletter_cta', 'Subscribe Now')}
 				<ArrowRight class="rtl:-scale-x-100" size={18} />
