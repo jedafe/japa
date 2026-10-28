@@ -282,6 +282,7 @@
 			<div class="space-y-4">
 				<div>
 					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-code">{t('currencies.col_code', 'Code')}</label>
+					<p class="text-muted-foreground mt-1 text-xs">{t('currencies.code_hint', 'ISO code — e.g. NGN, USD.')}</p>
 					<input
 						id="curr-code"
 						type="text"
@@ -295,6 +296,7 @@
 				</div>
 				<div>
 					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-name">{t('currencies.col_name', 'Name')}</label>
+					<p class="text-muted-foreground mt-1 text-xs">{t('currencies.name_hint', 'The display name of the currency.')}</p>
 					<input
 						id="curr-name"
 						type="text"
@@ -305,6 +307,7 @@
 				</div>
 				<div>
 					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-symbol">{t('currencies.col_symbol', 'Symbol')}</label>
+					<p class="text-muted-foreground mt-1 text-xs">{t('currencies.symbol_hint', 'The symbol shown next to amounts — e.g. ₦, $.')}</p>
 					<input
 						id="curr-symbol"
 						type="text"
@@ -316,6 +319,7 @@
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label class="text-foreground mb-1 block text-sm font-medium" for="curr-rate">{t('currencies.col_rate', 'Credits per Unit')}</label>
+						<p class="text-muted-foreground mt-1 text-xs">{t('currencies.rate_hint', 'Wallet credits granted per unit of this currency.')}</p>
 						<input
 							id="curr-rate"
 							type="number"
@@ -327,6 +331,7 @@
 					</div>
 					<div>
 						<label class="text-foreground mb-1 block text-sm font-medium" for="curr-pos">{t('currencies.col_position', 'Position')}</label>
+						<p class="text-muted-foreground mt-1 text-xs">{t('currencies.pos_hint', 'Ordering position — lower numbers show first.')}</p>
 						<input
 							id="curr-pos"
 							type="number"
@@ -345,6 +350,7 @@
 							class="border-border-input bg-background size-4 rounded"
 						/>
 						<label class="text-foreground text-sm font-medium" for="curr-active">{t('currencies.col_status', 'Status')} — {formData.is_active ? t('currencies.status_active', 'Active') : t('currencies.status_inactive', 'Inactive')}</label>
+						<p class="text-muted-foreground mt-1 text-xs">{t('currencies.active_hint', 'Inactive currencies are hidden from pickers.')}</p>
 					</div>
 				{/if}
 				<div>

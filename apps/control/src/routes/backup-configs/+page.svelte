@@ -558,6 +558,7 @@
 					<label for="bc-name" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.name', 'Name')}
 					</label>
+					<p class="text-muted-foreground mt-1 text-xs">{t('backup_configs.name_hint', 'A label for this backup job.')}</p>
 					<input
 						id="bc-name"
 						type="text"
@@ -570,6 +571,7 @@
 					<label for="bc-schedule" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.schedule', 'Schedule')}
 					</label>
+					<p class="text-muted-foreground mt-1 text-xs">{t('backup_configs.schedule_hint', 'How often the backup runs.')}</p>
 					<Autocomplete
 						id="bc-schedule"
 						placeholder={t('backup_configs.schedule', 'Select schedule...')}
@@ -600,6 +602,7 @@
 					<label for="backup-targets" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.what_to_backup', 'What to Backup')}
 					</label>
+					<p class="text-muted-foreground mt-1 text-xs">{t('backup_configs.targets_hint', 'What to include — database, media, config.')}</p>
 
 					{#if selectedTargetLabels.length > 0}
 						<div class="mb-2 flex flex-wrap gap-1.5">

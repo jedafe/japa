@@ -93,6 +93,7 @@
 		<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="space-y-4">
 			<div>
 				<label for="email" class="text-foreground mb-1 block text-sm font-medium">{t('login.email', 'Email')}</label>
+				<p class="text-muted-foreground mt-1 text-xs">{t('login.email_hint', 'The email for your admin account.')}</p>
 				<input
 					id="email"
 					type="email"
@@ -105,6 +106,7 @@
 
 			<div>
 				<label for="password" class="text-foreground mb-1 block text-sm font-medium">{t('login.password', 'Password')}</label>
+				<p class="text-muted-foreground mt-1 text-xs">{t('login.password_hint', 'Your admin account password.')}</p>
 				<input
 					id="password"
 					type="password"

@@ -200,10 +200,12 @@
 					<div class="grid grid-cols-2 gap-2">
 						<div>
 							<label class={labelCls} for="seed-op-kind-{i}">{t('seeds_editor.kind', 'Kind (unique id)')}</label>
+							<p class="text-muted-foreground mt-1 text-xs">{t('seeds_editor.kind_hint', 'Unique identifier for this seed operation.')}</p>
 							<input id="seed-op-kind-{i}" class="{inputCls} font-mono" placeholder="my_op" bind:value={op.kind} oninput={emit} {disabled} />
 						</div>
 						<div>
 							<label class={labelCls} for="seed-op-task-{i}">{t('seeds_editor.task_type', 'Task type')}</label>
+							<p class="text-muted-foreground mt-1 text-xs">{t('seeds_editor.task_hint', 'The task type this op runs.')}</p>
 							<select id="seed-op-task-{i}" class={inputCls} bind:value={op.task_type} onchange={emit} {disabled}>
 								<option value="">{t('seeds_editor.no_task', '— none (display/CLI only) —')}</option>
 								{#each taskTypes as tt (tt.type)}
@@ -214,15 +216,18 @@
 					</div>
 					<div>
 						<label class={labelCls} for="seed-op-desc-{i}">{t('seeds_editor.description', 'Description')}</label>
+						<p class="text-muted-foreground mt-1 text-xs">{t('seeds_editor.desc_hint', 'What this op does — for admin reference.')}</p>
 						<input id="seed-op-desc-{i}" class={inputCls} bind:value={op.description} oninput={emit} {disabled} />
 					</div>
 					<div class="grid grid-cols-2 gap-2">
 						<div>
 							<label class={labelCls} for="seed-op-cmd-{i}">{t('seeds_editor.command', 'CLI command (optional)')}</label>
+							<p class="text-muted-foreground mt-1 text-xs">{t('seeds_editor.cmd_hint', 'Optional CLI command to run instead.')}</p>
 							<input id="seed-op-cmd-{i}" class="{inputCls} font-mono" placeholder="go run ./cmd/..." bind:value={op.command} oninput={emit} {disabled} />
 						</div>
 						<div>
 							<label class={labelCls} for="seed-op-static-{i}">{t('seeds_editor.static', 'Static payload JSON (optional)')}</label>
+							<p class="text-muted-foreground mt-1 text-xs">{t('seeds_editor.static_hint', 'Optional static JSON payload.')}</p>
 							<input
 								id="seed-op-static-{i}"
 								class="{inputCls} font-mono"

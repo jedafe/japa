@@ -361,10 +361,12 @@
 						<label for="sf-name" class={labelClass}>
 							{t('intel.field_name', 'Name')} <span class="text-destructive">*</span>
 						</label>
+						<p class="text-muted-foreground mt-1 text-xs">{t('intel.source_name_hint', 'The official name of the source.')}</p>
 						<input id="sf-name" type="text" bind:value={form.name} class={inputClass} placeholder="e.g. DAAD Scholarships" />
 					</div>
 					<div>
 						<label for="sf-domain" class={labelClass}>{t('intel.field_domain', 'Domain')}</label>
+						<p class="text-muted-foreground mt-1 text-xs">{t('intel.domain_hint', 'The domain, e.g. daad.de — used for matching.')}</p>
 						<input id="sf-domain" type="text" bind:value={form.domain} class={inputClass} placeholder="daad.de" />
 					</div>
 				</div>
@@ -374,16 +376,19 @@
 						<label for="sf-url" class={labelClass}>
 							{t('intel.field_source_url', 'Source URL')} <span class="text-destructive">*</span>
 						</label>
+						<p class="text-muted-foreground mt-1 text-xs">{t('intel.source_url_hint', 'The main URL the source is fetched from.')}</p>
 						<input id="sf-url" type="url" bind:value={form.source_url} class={inputClass} placeholder="https://www.daad.de/en/" />
 					</div>
 					<div>
 						<label for="sf-logo" class={labelClass}>{t('intel.field_logo_url', 'Logo URL')}</label>
+						<p class="text-muted-foreground mt-1 text-xs">{t('intel.logo_hint', 'Direct image URL for the source logo.')}</p>
 						<input id="sf-logo" type="url" bind:value={form.logo_url} class={inputClass} placeholder="https://daad.de/logo.png" />
 					</div>
 				</div>
 
 				<div>
 					<label for="sf-description" class={labelClass}>{t('intel.field_description', 'Description')}</label>
+					<p class="text-muted-foreground mt-1 text-xs">{t('intel.desc_hint', 'What this source publishes.')}</p>
 					<textarea id="sf-description" bind:value={form.description} class={inputClass} rows={2} placeholder={t('intel.field_description_placeholder', 'What this source publishes')}></textarea>
 				</div>
 

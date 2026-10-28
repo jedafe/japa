@@ -158,6 +158,7 @@
 					<label for="totp-code" class="text-foreground mb-1 block text-sm font-medium">
 						{t('auth.totp.code_label', 'Verification code')}
 					</label>
+					<p class="text-muted-foreground mt-1 text-xs">{t('auth.totp.code_help', 'Open your authenticator app and enter the 6-digit code.')}</p>
 					<input
 						id="totp-code"
 						inputmode="numeric"
@@ -192,6 +193,7 @@
 					<label for="totp-backup" class="text-foreground mb-1 block text-sm font-medium">
 						{t('auth.totp.backup_label', 'Backup code')}
 					</label>
+					<p class="text-muted-foreground mt-1 text-xs">{t('auth.totp.backup_help', 'Enter one of the one-time backup codes you saved when enabling 2FA.')}</p>
 					<input
 						id="totp-backup"
 						autocomplete="off"
