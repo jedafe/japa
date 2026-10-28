@@ -86,6 +86,7 @@ func (a tipsPaymentAdapter) CreatePayment(ctx context.Context, userID pgtype.UUI
 		PurposeID:   in.PurposeID,
 		Amount:      in.Amount,
 		Currency:    in.Currency,
+		Email:       in.Email,
 		Metadata:    in.Metadata,
 	})
 	if err != nil {

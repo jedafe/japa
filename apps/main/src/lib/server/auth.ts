@@ -342,12 +342,24 @@ export async function consumeTotpBackup(
 	return result;
 }
 
-/** POST /auth/oauth/{provider}/initiate — returns { auth_url }. */
+/** Result of POST /auth/oauth/{provider}/initiate. */
+export interface OAuthInitResult {
+	authUrl: string;
+	/** Raw Set-Cookie headers — the OAuth flow cookies the callback needs. */
+	setCookies: string[];
+}
+
+/** POST /auth/oauth/{provider}/initiate — returns { auth_url } plus the flow
+ * cookies (jc_oauth_state, jc_oauth_redirect, jc_oauth_verifier). The caller
+ * MUST forward setCookies to the browser via forwardSetCookies — the backend
+ * validates the state cookie on callback, and this server-side fetch's
+ * Set-Cookie headers would otherwise never reach the user's browser.
+ */
 export async function initiateOAuth(
 	ctx: ApiContext,
 	provider: string,
 	redirect: string
-): Promise<string> {
+): Promise<OAuthInitResult> {
 	const res = await fetch(buildApiUrl(`/auth/oauth/${provider}/initiate`, API_BASE), {
 		method: 'POST',
 		headers: authHeaders(ctx),
@@ -358,7 +370,72 @@ export async function initiateOAuth(
 		const err = payload?.error;
 		throw new ApiError(res.status, err?.code ?? 'api_error', err?.message ?? res.statusText);
 	}
-	return payload.data.auth_url as string;
+	return {
+		authUrl: payload.data.auth_url as string,
+		setCookies: res.headers.getSetCookie?.() ?? []
+	};
+}
+
+/**
+ * Re-set backend Set-Cookie headers on the SvelteKit response. Attributes
+ * (Domain, Path, SameSite, Secure, Max-Age, Expires, HttpOnly) are preserved
+ * so split-host deployments (site japa.to, callback api.japa.to) still
+ * receive the flow cookies — the backend sets Domain=.japa.to for that.
+ * Cookie values are decoded first because event.cookies.set re-encodes.
+ */
+export function forwardSetCookies(event: RequestEvent, setCookies: string[]): void {
+	for (const header of setCookies) {
+		const parts = header.split(';');
+		const nameValue = parts[0];
+		const eq = nameValue.indexOf('=');
+		if (eq < 0) continue;
+
+		const name = nameValue.slice(0, eq).trim();
+		let value = nameValue.slice(eq + 1).trim();
+		try {
+			value = decodeURIComponent(value);
+		} catch {
+			// Leave undecodable values as-is.
+		}
+
+		const opts: Record<string, unknown> = { path: '/' };
+		for (const attr of parts.slice(1)) {
+			const [rawKey, ...rest] = attr.split('=');
+			const key = rawKey.trim().toLowerCase();
+			const attrValue = rest.join('=').trim();
+
+			switch (key) {
+				case 'path':
+					opts.path = attrValue;
+					break;
+				case 'domain':
+					opts.domain = attrValue;
+					break;
+				case 'max-age':
+					opts.maxAge = Number(attrValue);
+					break;
+				case 'expires':
+					opts.expires = new Date(attrValue);
+					break;
+				case 'samesite':
+					opts.sameSite = attrValue.toLowerCase();
+					break;
+				case 'secure':
+					opts.secure = true;
+					break;
+				case 'httponly':
+					opts.httpOnly = true;
+					break;
+			}
+		}
+
+		try {
+			event.cookies.set(name, value, opts as Parameters<typeof event.cookies.set>[2]);
+		} catch {
+			// Invalid attribute for this host (e.g. foreign Domain) — skip
+			// rather than fail the whole initiate.
+		}
+	}
 }
 
 /** Resolve the post-login redirect: /onboarding if incomplete, else the sanitized target or /. */

@@ -564,19 +564,18 @@ func (h *Handlers) HandleOCWebhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent) // ignore non-contribution events
 		return
 	}
-	ok, err := h.service.ImportOCWebhook(r.Context(), secret, OCContribution{
+	if err := h.service.ImportOCWebhook(r.Context(), secret, OCContribution{
 		ID:          payload.Data.Order.ID,
 		AmountCents: payload.Data.Order.TotalAmount.ValueInCents,
 		Currency:    payload.Data.Order.TotalAmount.Currency,
 		FromName:    payload.Data.Order.FromAccount.Name,
 		FromSlug:    payload.Data.Order.FromAccount.Slug,
-	})
-	if err != nil {
+	}); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook secret")
+			return
+		}
 		writeTipError(w, err)
-		return
-	}
-	if !ok {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook secret")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

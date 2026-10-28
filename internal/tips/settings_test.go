@@ -152,6 +152,9 @@ func (f *fakeStore) getContentAuthorID(context.Context, pgtype.UUID) (pgtype.UUI
 func (f *fakeStore) getUserIDByUsername(context.Context, string) (pgtype.UUID, error) {
 	return pgtype.UUID{}, ErrNotFound
 }
+func (f *fakeStore) getUserEmail(context.Context, pgtype.UUID) (string, error) {
+	return "sender@test.dev", nil
+}
 func (f *fakeStore) getUserIDByEmail(_ context.Context, email string) (pgtype.UUID, error) {
 	if id, ok := f.emailToUser[email]; ok {
 		return id, nil

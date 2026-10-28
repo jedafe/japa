@@ -65,12 +65,21 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 		return CreateTipResult{}, err
 	}
 
+	// Paystack requires the payer email at /transaction/initialize; resolve it
+	// from the sender's user row (best-effort — providers that don't need it
+	// ignore the field).
+	var email string
+	if e, err := s.store.getUserEmail(ctx, senderID); err == nil {
+		email = e
+	}
+
 	pay, err := s.payments.CreatePayment(ctx, senderID, PaymentCreateInput{
 		Provider:    in.Method,
 		PurposeType: "donation",
 		PurposeID:   tip.ID.String(),
 		Amount:      amount,
 		Currency:    currency,
+		Email:       email,
 		Metadata: map[string]interface{}{
 			"tip_id":         tip.ID.String(),
 			"recipient_type": owner.Type,

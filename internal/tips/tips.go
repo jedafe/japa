@@ -64,6 +64,7 @@ var (
 	ErrNotAuthorized       = errors.New("not authorized for this organization")
 	ErrOCNotConnected      = errors.New("open collective not connected")
 	ErrAlreadySettled      = errors.New("tip already settled")
+	ErrDuplicateKey        = errors.New("duplicate idempotency key")
 	ErrInvalidStatus       = errors.New("invalid tip status for this operation")
 )
 
@@ -230,6 +231,7 @@ type PaymentCreateInput struct {
 	PurposeID   string
 	Amount      int64
 	Currency    string
+	Email       string // payer email — required by Paystack /transaction/initialize
 	Metadata    map[string]interface{}
 }
 

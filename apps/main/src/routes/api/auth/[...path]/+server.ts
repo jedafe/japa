@@ -18,6 +18,7 @@ import {
 	verifyTotpChallenge,
 	consumeTotpBackup,
 	initiateOAuth,
+	forwardSetCookies,
 	refreshSession,
 	setSessionCookie,
 	setRefreshCookie,
@@ -207,7 +208,10 @@ export async function GET(event: RequestEvent) {
 
 	try {
 		const ctx = apiContext(event);
-		const authUrl = await initiateOAuth(ctx, provider, redirect);
+		const { authUrl, setCookies } = await initiateOAuth(ctx, provider, redirect);
+		// Forward the backend's OAuth flow cookies to the browser (see
+		// /api/auth/oauth — without them the callback fails missing_state).
+		forwardSetCookies(event, setCookies);
 		return json({ redirect_url: authUrl });
 	} catch (err) {
 		return apiErrorResponse(err);

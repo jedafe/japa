@@ -141,7 +141,13 @@ func (s *Service) NotifyTipReceived(ctx context.Context, tipID pgtype.UUID, noti
 		body = *tip.Message
 	}
 	actionURL := "/me/tips/received"
-	return notify.CreateNotification(ctx, recipient, "tip.received", "user", tip.SenderUserID, "tip", tip.ID, title, body, actionURL)
+	// Anonymous tips keep the sender identity out of the notification actor —
+	// the actor field is exposed to notification renderers and would leak it.
+	var actorID pgtype.UUID
+	if !tip.IsAnonymous {
+		actorID = tip.SenderUserID
+	}
+	return notify.CreateNotification(ctx, recipient, "tip.received", "user", actorID, "tip", tip.ID, title, body, actionURL)
 }
 
 // tipDisplayAmount renders a human amount for notifications.

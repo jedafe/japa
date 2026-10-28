@@ -10,24 +10,26 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// ListTipsSent returns the member's outgoing tips, newest first.
+// ListTipsSent returns the member's outgoing tips, newest first. The sender
+// already knows their identity — no masking needed on this view.
 func (s *Service) ListTipsSent(ctx context.Context, senderID pgtype.UUID, page, limit int32) ([]Tip, error) {
 	rows, err := s.store.listTipsSent(ctx, senderID, limit, (page-1)*limit)
 	if err != nil {
 		return nil, err
 	}
-	return s.hydrateTips(ctx, rows, true), nil
+	return s.hydrateTips(ctx, rows, false), nil
 }
 
 // ListTipsReceived returns tips where the member is the recipient (direct
 // user tips only — org tips surface through org reporting, not personal
-// history). Anonymous tips keep their real sender visible to the recipient.
+// history). §125 anonymity rule: the recipient and admins retain the real
+// sender — masking applies only to public aggregate surfaces.
 func (s *Service) ListTipsReceived(ctx context.Context, userID pgtype.UUID, page, limit int32) ([]Tip, error) {
 	rows, err := s.store.listTipsReceived(ctx, userID, limit, (page-1)*limit)
 	if err != nil {
 		return nil, err
 	}
-	return s.hydrateTips(ctx, rows, true), nil
+	return s.hydrateTips(ctx, rows, false), nil
 }
 
 // CountTipsReceived totals the member's received tips for the stats widget.

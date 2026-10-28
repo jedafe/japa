@@ -3,7 +3,7 @@
 // window.location.assign to. The backend callback handles the rest.
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { apiContext, initiateOAuth } from '$lib/server/auth';
+import { apiContext, initiateOAuth, forwardSetCookies } from '$lib/server/auth';
 
 export const GET: RequestHandler = async (event) => {
 	const provider = event.url.searchParams.get('provider');
@@ -15,7 +15,10 @@ export const GET: RequestHandler = async (event) => {
 
 	const ctx = apiContext(event);
 	try {
-		const authUrl = await initiateOAuth(ctx, provider, redirect);
+		const { authUrl, setCookies } = await initiateOAuth(ctx, provider, redirect);
+		// The backend's flow cookies (state, redirect, PKCE verifier) were set
+		// on this server-side response — forward them or the callback fails.
+		forwardSetCookies(event, setCookies);
 		return json({ redirect_url: authUrl });
 	} catch (err) {
 		const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 500;

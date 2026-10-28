@@ -61,8 +61,8 @@
 		const res = await sendTip(
 			{
 				recipient_type: recipientType,
-				recipient_id: recipientId,
-				content_id: contentId,
+				recipient_id: recipientId || undefined,
+				content_id: contentId || undefined,
 				method,
 				amount: amt,
 				message: message || undefined,

@@ -177,6 +177,13 @@ func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, own
 		idempotencyKey:  idemKey,
 	})
 	if err != nil {
+		// tips_idem_unique (000949): a concurrent same-key request that won
+		// the race committed first — replay its result instead of erroring.
+		if errors.Is(err, ErrDuplicateKey) && idemKey != "" {
+			if existing, gerr := s.store.getTipByIdempotencyKey(ctx, senderID, idemKey); gerr == nil {
+				return CreateTipResult{Tip: tipFromRow(existing), Duplicate: true}, nil
+			}
+		}
 		return CreateTipResult{}, err
 	}
 

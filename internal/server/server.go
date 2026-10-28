@@ -740,6 +740,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	oauthHandlers.Settings = settingsService
 	oauthHandlers.SetTierManager(tierService)
+	oauthHandlers.AsynqClient = asynqClient
+	oauthHandlers.SiteName = cfg.SiteName
+	oauthHandlers.Clients = auth.NewValkeyOAuthClientStore(vkClient.Redis())
 
 	kr.Settings = settingsService
 	contentHandlers.AsynqClient = asynqClient
@@ -3600,9 +3603,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Post("/resend-verification", authHandlers.HandleResendVerification)
 
 				// OAuth social login routes.
-				// POST returns auth_url as JSON for frontend-driven redirect.
+				// GET /oauth/providers lists configured providers for the
+				// frontend buttons; POST initiate returns auth_url as JSON
+				// for frontend-driven redirect. The callback serves GET
+				// (standard redirect) and POST (Sign in with Apple uses
+				// response_mode=form_post).
+				r.Get("/oauth/providers", oauthHandlers.HandleProviders)
 				r.Post("/oauth/{provider}/initiate", oauthHandlers.HandleInitiate)
 				r.Get("/oauth/{provider}/callback", oauthHandlers.HandleCallback)
+				r.Post("/oauth/{provider}/callback", oauthHandlers.HandleCallback)
 			})
 
 			// Feature flags endpoint (public - frontend needs flags to
@@ -5109,11 +5118,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Put("/admin/donation-settings", tipsHandlers.AdminUpdateDonationSettings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate"),
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).Post("/admin/tips/{id}/refund", tipsHandlers.AdminRefundTip)
-			})
 
-			// §125 inbound Open Collective contribution webhook — per-collective
-			// secret in the query param identifies the owner.
-			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Post("/tips/webhook/opencollective", tipsHandlers.HandleOCWebhook)
+				// §125 inbound Open Collective contribution webhook —
+				// per-collective secret in the query param identifies the owner.
+				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Post("/tips/webhook/opencollective", tipsHandlers.HandleOCWebhook)
+			})
 
 			// Advertising routes (Section 25 — Ad Placement)
 			// Admin campaign management

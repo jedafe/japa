@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -102,6 +103,10 @@ func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.
 		IdempotencyKey:          strPtrOrNil(p.idempotencyKey),
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.Tip{}, ErrDuplicateKey
+		}
 		return gen.Tip{}, fmt.Errorf("inserting tip: %w", err)
 	}
 

@@ -125,21 +125,17 @@ func (s *Service) ImportContribution(ctx context.Context, owner Owner, c OCContr
 }
 
 // ImportOCWebhook resolves the owner from the per-collective webhook secret
-// and imports the contribution. Returns false for an unknown secret.
-func (s *Service) ImportOCWebhook(ctx context.Context, secret string, c OCContribution) (bool, error) {
+// and imports the contribution. Returns ErrNotFound for an unknown secret so
+// the handler can 401; duplicate imports are idempotent (the UNIQUE index on
+// oc_contribution_id also catches replays).
+func (s *Service) ImportOCWebhook(ctx context.Context, secret string, c OCContribution) error {
 	row, err := s.store.getSettingsByOCWebhookSecret(ctx, secret)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return false, nil
-		}
-		return false, err
+		return err // ErrNotFound → 401 at the handler
 	}
 	owner := Owner{Type: row.OwnerType, ID: row.OwnerID}
-	inserted, err := s.ImportContribution(ctx, owner, c)
-	if err != nil {
-		return false, err
-	}
-	return inserted, nil
+	_, err = s.ImportContribution(ctx, owner, c)
+	return err
 }
 
 // SyncAll iterates settings rows holding an OC token and imports new
