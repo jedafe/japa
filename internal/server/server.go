@@ -5098,6 +5098,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.send"),
 					mw.RateLimit(vkClient.Redis(), "strict"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/tips", tipsHandlers.CreateTip)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/tips/sent", tipsHandlers.ListMyTipsSent)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/tips/received", tipsHandlers.ListMyTipsReceived)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Get("/content/{id}/tip-summary", tipsHandlers.ContentTipSummary)
+
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/tips", tipsHandlers.AdminListTips)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/tips/stats", tipsHandlers.AdminTipStats)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/donation-settings", tipsHandlers.AdminGetDonationSettings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Put("/admin/donation-settings", tipsHandlers.AdminUpdateDonationSettings)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -579,6 +580,89 @@ func (h *Handlers) HandleOCWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Tip history ----------------------------------------------------------------
+
+// ListMyTipsSent handles GET /api/v1/me/tips/sent.
+func (h *Handlers) ListMyTipsSent(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	page, limit := parsePageOffset(r), parsePageSize(r)
+	tips, err := h.service.ListTipsSent(r.Context(), user.UserID, page/limit+1, limit)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tips})
+}
+
+// ListMyTipsReceived handles GET /api/v1/me/tips/received.
+func (h *Handlers) ListMyTipsReceived(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	page, limit := parsePageOffset(r), parsePageSize(r)
+	tips, err := h.service.ListTipsReceived(r.Context(), user.UserID, page/limit+1, limit)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	total, err := h.service.CountTipsReceived(r.Context(), user.UserID)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tips, "meta": map[string]any{"total_received": total}})
+}
+
+// ContentTipSummary handles GET /api/v1/content/{id}/tip-summary — public.
+func (h *Handlers) ContentTipSummary(w http.ResponseWriter, r *http.Request) {
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	summary, err := h.service.ContentTipSummary(r.Context(), contentID)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": summary})
+}
+
+// --- Admin tips surface ---------------------------------------------------------
+
+// AdminListTips handles GET /api/v1/admin/tips.
+func (h *Handlers) AdminListTips(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	method := r.URL.Query().Get("method")
+	page, limit := parsePageOffset(r), parsePageSize(r)
+	tips, total, err := h.service.AdminListTips(r.Context(), status, method, page/limit+1, limit)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tips, "meta": map[string]any{"total": total}})
+}
+
+// AdminTipStats handles GET /api/v1/admin/tips/stats — 30-day window by
+// default, override with ?days=N.
+func (h *Handlers) AdminTipStats(w http.ResponseWriter, r *http.Request) {
+	days, err := strconv.Atoi(r.URL.Query().Get("days"))
+	if err != nil || days <= 0 || days > 365 {
+		days = 30
+	}
+	var since pgtype.Timestamptz
+	_ = since.Scan(time.Now().AddDate(0, 0, -days))
+	stats, err := h.service.AdminTipStats(r.Context(), since)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // --- Public config ------------------------------------------------------------
