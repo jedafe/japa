@@ -75,8 +75,15 @@ SELECT * FROM tips WHERE oc_contribution_id = @oc_contribution_id;
 SELECT * FROM tips WHERE sender_user_id = @sender_user_id AND idempotency_key = @idempotency_key;
 
 -- name: UpdateTipStatus :exec
-UPDATE tips SET status = @status, payment_id = COALESCE(@payment_id, payment_id),
-    net_credits = COALESCE(@net_credits, net_credits), updated_at = now()
+UPDATE tips SET status = @status, updated_at = now()
+WHERE id = @id;
+
+-- name: AttachTipPayment :exec
+UPDATE tips SET payment_id = @payment_id, updated_at = now()
+WHERE id = @id;
+
+-- name: SettleTip :exec
+UPDATE tips SET status = 'completed', net_credits = @net_credits, updated_at = now()
 WHERE id = @id;
 
 -- name: ListTipsSent :many
@@ -128,4 +135,4 @@ FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE u.id = ANY(@ids::uuid[]);
 
 -- name: IsMentorProfile :one
-SELECT is_mentor FROM user_profiles WHERE user_id = @user_id;
+SELECT COALESCE(is_mentor, false) FROM user_profiles WHERE user_id = @user_id;

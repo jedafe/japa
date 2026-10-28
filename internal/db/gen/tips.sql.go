@@ -123,6 +123,21 @@ func (q *Queries) AdminTipStats(ctx context.Context, since pgtype.Timestamptz) (
 	return i, err
 }
 
+const attachTipPayment = `-- name: AttachTipPayment :exec
+UPDATE tips SET payment_id = $1, updated_at = now()
+WHERE id = $2
+`
+
+type AttachTipPaymentParams struct {
+	PaymentID pgtype.UUID `json:"payment_id"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) AttachTipPayment(ctx context.Context, arg AttachTipPaymentParams) error {
+	_, err := q.db.Exec(ctx, attachTipPayment, arg.PaymentID, arg.ID)
+	return err
+}
+
 const clearOCCredentials = `-- name: ClearOCCredentials :exec
 UPDATE tip_settings SET oc_collective_slug = NULL, oc_api_token_encrypted = NULL,
     oc_webhook_secret = NULL, updated_at = now()
@@ -535,12 +550,12 @@ func (q *Queries) InsertTip(ctx context.Context, arg InsertTipParams) (Tip, erro
 }
 
 const isMentorProfile = `-- name: IsMentorProfile :one
-SELECT is_mentor FROM user_profiles WHERE user_id = $1
+SELECT COALESCE(is_mentor, false) FROM user_profiles WHERE user_id = $1
 `
 
-func (q *Queries) IsMentorProfile(ctx context.Context, userID pgtype.UUID) (*bool, error) {
+func (q *Queries) IsMentorProfile(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, isMentorProfile, userID)
-	var is_mentor *bool
+	var is_mentor bool
 	err := row.Scan(&is_mentor)
 	return is_mentor, err
 }
@@ -752,6 +767,21 @@ func (q *Queries) SetOCCredentials(ctx context.Context, arg SetOCCredentialsPara
 	return err
 }
 
+const settleTip = `-- name: SettleTip :exec
+UPDATE tips SET status = 'completed', net_credits = $1, updated_at = now()
+WHERE id = $2
+`
+
+type SettleTipParams struct {
+	NetCredits int64       `json:"net_credits"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) SettleTip(ctx context.Context, arg SettleTipParams) error {
+	_, err := q.db.Exec(ctx, settleTip, arg.NetCredits, arg.ID)
+	return err
+}
+
 const sumTipperPointsToday = `-- name: SumTipperPointsToday :one
 SELECT COALESCE(sum(points_amount),0)::bigint FROM tips
 WHERE sender_user_id = $1 AND method = 'points'
@@ -802,25 +832,17 @@ func (q *Queries) UpdateTipExternalLink(ctx context.Context, arg UpdateTipExtern
 }
 
 const updateTipStatus = `-- name: UpdateTipStatus :exec
-UPDATE tips SET status = $1, payment_id = COALESCE($2, payment_id),
-    net_credits = COALESCE($3, net_credits), updated_at = now()
-WHERE id = $4
+UPDATE tips SET status = $1, updated_at = now()
+WHERE id = $2
 `
 
 type UpdateTipStatusParams struct {
-	Status     string      `json:"status"`
-	PaymentID  pgtype.UUID `json:"payment_id"`
-	NetCredits int64       `json:"net_credits"`
-	ID         pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateTipStatus(ctx context.Context, arg UpdateTipStatusParams) error {
-	_, err := q.db.Exec(ctx, updateTipStatus,
-		arg.Status,
-		arg.PaymentID,
-		arg.NetCredits,
-		arg.ID,
-	)
+	_, err := q.db.Exec(ctx, updateTipStatus, arg.Status, arg.ID)
 	return err
 }
 
